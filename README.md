@@ -21,3 +21,5 @@ client
 https://github.com/kopipejst/just.randomstring
 <br>
 https://github.com/wwwtyro/cryptico
+<br>
+https://github.com/ricmoo/aes-js
