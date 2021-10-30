@@ -47,8 +47,7 @@
           height: 50px;
         }
 
-
-        #chat-context-container, #spacer-between-chat-and-users, #connected-users-container
+        #chat-context-container, #spacer-between-chat-and-users, #channel-list-container
         {
           display: inline-block;
           vertical-align: top;
@@ -56,6 +55,7 @@
           overflow-y: scroll;
           height: 100%;
         }
+
 
         #space-devider1, #space-devider2, #space-devider4
         {
@@ -69,7 +69,6 @@
           padding-top: 10px;
           padding-bottom: 10px
         }
-
 
         #communication-system-container
         {
@@ -91,6 +90,7 @@
         .connected-user-p
         {
           display: inline-block;
+          color: #63eb2c;
         }
 
         .connected-user-p-received-messages-number
@@ -143,6 +143,13 @@
         {
           width: 75%;
           height: 100%;
+          left: -4px;
+        }
+
+        #channel-properties-input-container
+        {
+            height: 153px;
+            text-align: center;
         }
 
         #connect-form-sub-container-1, #connect-form-sub-container-2
@@ -214,9 +221,9 @@
           font-family: sans-serif;
         }
 
-        #connected-users-container
+        #channel-list-container
         {
-          background-color: #36393f;
+          background-color: #202020;
           color: white;
           height: 100%;
           font-family: sans-serif;
@@ -231,6 +238,10 @@
           right: 4px;
         }
 
+        .single-channel
+        {
+
+        }
 
         .single-channel2
         {
@@ -243,45 +254,72 @@
             border-radius: 15px;
         }
 
+        #contextmenus-container
+        {
+            position: absolute;
+            z-index: 1;
+            top: 0px;
+            width: 0px;
+            height: 0px;
+        }
+
+        .channel-list-context-menu-background
+        {
+            background-color: #60656f;
+            width: 130px;
+            height: 150px;
+            border-radius: 10px;
+            opacity: 0.8;
+        }
+        .channel-list-context-menu-items
+        {
+            position: absolute;
+            top: 0px;
+            width: 130px;
+            overflow: hidden;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+        }
+        .channel-list-context-menu-items p
+        {
+            color: white;
+            top: 0px;
+            width: 130px;
+            font-size: 1em;
+            font-family: sans-serif;
+            padding: 5px;
+            cursor: pointer;
+        }
+        .channel-list-context-menu-items p:hover
+        {
+            color: white;
+            top: 0px;
+            width: 130px;
+            font-size: 1em;
+            font-family: sans-serif;
+            padding: 5px;
+            cursor: pointer;
+            background-color: #b9d436;
+        }
 
         .single-channel
         {
-            top: 10px;
             cursor: pointer;
-            padding: 5px;
+            padding-left: 15px;
+            padding-top: 5px;
+            padding-bottom: 5px;
             font-family: sans-serif;
-            border-bottom: 3px solid gold;
-            border-top: 3px solid gold;
-            border-left: 3px solid #202020;
-            border-right: 3px solid #202020;
-            border-left-color: #202020;
-            border-right-color: #202020;
-            background-color: #202020;
-            border-top-style: solid;
-            border-left-style: solid;
-            border-right-style: solid;
-            width: 42px;
-            height: 42px;
             color: white;
-            left: 26%;
-            border-radius: 46px;
         }
 
         .single-channel:hover
         {
-            transition: 5s ease;
-            border-bottom-color:#202020;
-            border-top-color: #202020;
-            border-left-color: gold;
-            border-right-color: gold;
-            /*background-color: linear-gradient(to right, #5081d5, #36393f); */
-            //background-color: #67ddeb;
+            background-color: #333030;
         }
 
         .single-channel p
         {
             padding-left: 3px;
-            top: 9px;
             font: 16px sans-serif;
         }
 
@@ -307,7 +345,7 @@
         }
 
 
-        #connected-users-container::-webkit-scrollbar,
+        #channel-list-container::-webkit-scrollbar,
         #chat-context-container::-webkit-scrollbar,
         #chat-input-container-text-input::-webkit-scrollbar,
         body::-webkit-scrollbar
@@ -315,7 +353,7 @@
           width: 6px;
         }
 
-        #connected-users-container::-webkit-scrollbar-track,
+        #channel-list-container::-webkit-scrollbar-track,
         #chat-context-container::-webkit-scrollbar-track,
         #chat-input-container-text-input::-webkit-scrollbar-track,
         body::-webkit-scrollbar-track
@@ -324,7 +362,7 @@
         }
 
 
-        #connected-users-container::-webkit-scrollbar-thumb,
+        #channel-list-container::-webkit-scrollbar-thumb,
         #chat-context-container::-webkit-scrollbar-thumb,
         #chat-input-container-text-input::-webkit-scrollbar-thumb,
         body::-webkit-scrollbar-track
@@ -350,13 +388,14 @@
 
         #connected-local-user-input
         {
-          background-color: inherit;
-          color: white;
-          height: 100%;
-          font-family: sans-serif;
-          outline: none;
-          border: 0px;
-          width: 100%;
+            background-color: inherit;
+            height: 100%;
+            font-family: sans-serif;
+            font-weight: bold;
+            outline: none;
+            border: 0px;
+            width: 84%;
+            color: #CDDC39;
         }
 
         .single-chat-message-avatar
@@ -464,13 +503,14 @@
 
         .connected-user, .connected-user-you
         {
-            padding: 12px;
+            padding-top: 2px;
+            padding-bottom: 2px;
         }
 
         .connected-local-user
         {
-          padding: 12px;
-          background-color: #6b7c9a;
+            padding-top: 2px;
+            padding-bottom: 2px;
         }
 
         .connected-user-you
@@ -596,6 +636,125 @@
             color: white;
             cursor: pointer;
             background: #7d8799;
+        }
+
+        .chat-context-selector
+        {
+            background-color: #7d8799;
+            display: inline-block;
+            min-height: 6px;
+            height: 15px;
+            padding: 4px;
+            border-radius: 3px;
+            margin-left: 1px;
+            margin-right: 1px;
+            cursor: pointer;
+        }
+
+        .chat-context-selector:hover
+        {
+            //background-color: #202020;
+        }
+
+        .chat-context-selector:hover .remove-chat-context-selector
+        {
+            visibility: visible;
+        }
+
+        .remove-chat-context-selector:hover
+        {
+            background-color: blue;
+        }
+
+        .chat-context-selector .p-container
+        {
+            display: inline-block;
+            vertical-align: top;
+            font-size: 12px;
+            font-family: sans-serif;
+            min-width: 35px;
+            color: white;
+        }
+
+        .remove-chat-context-selector
+        {
+            height: 14px;
+            width: 14px;
+            background-color: black;
+            display: inline-block;
+            cursor: pointer;
+            visibility: hidden;
+        }
+
+        #chat-context-selectors-container
+        {
+            padding-left: 25px;
+            background-color: #202020;
+        }
+
+        #background-container
+        {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: #000010;
+            z-index: 1;
+            opacity: 0.5;
+            top: 0px;
+            display: none;
+            text-align: center;
+        }
+
+        #channel-properties-container
+        {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            top: 0px;
+            display: none;
+            z-index: 5;
+        }
+
+        #channel-properties-edit
+        {
+            top: 25%;
+            width: 322px;
+            height: 219px;
+            background-color: #414847;
+            margin: 0 auto;
+        }
+
+        #menu-bar-container
+        {
+            background-color: #8b802e;
+            height: 29px;
+            text-align: right;
+        }
+
+        #channel-properties-close-button
+        {
+            width: 29px;
+            height: 29px;
+            background-color: antiquewhite;
+            float: right;
+        }
+        #channel-properties-close-button:hover
+        {
+            background-color: blue;
+        }
+
+        #create-channel-button
+        {
+            width: 58px;
+            height: 29px;
+            border: 0px;
+            transition: 0.3s ease;
+            border-radius: 3px;
+            color: white;
+            cursor: pointer;
+            background: #7d8799;
+            vertical-align: top;
         }
 
     </style>
@@ -5654,10 +5813,12 @@
     var host = "";
     var port = 0;
     var socket;
-    var current_username = "";
+    var local_username = "";
+    var local_userid = 0;
     var is_authenticated = false;
     var is_connection_check_thread_running = false;
-    var current_chat_context_id = "chat-context-channel-main";
+    var current_channel_id = 1;
+    var current_chat_context_id = "chat-context-channel-1";
     var chat_message_receiver_type = "channel"; //from local user perspective
     var chat_message_receiver_id = "main"; //from local user perspective
     var textarea_log;
@@ -5665,8 +5826,11 @@
     var rsa_public_key_string = "";
     var is_rsa_key_generated = false;
     var is_client_list_retrieved = false;
+    var is_channel_list_retrieved = false;
     var users = [];
     var loading_gif = "";
+    var channel_list = [];
+    var selected_channel_id;
 
     function sleep(ms)
     {
@@ -5675,7 +5839,7 @@
 
     var chat_context_array = [{
         "type":"channel",
-        "chat_context_id": "chat-context-channel-main",
+        "chat_context_id": "chat-context-channel-1",
         "last_known_message_sender_username" : ""
     }];
 
@@ -5729,6 +5893,51 @@
         return -1;
     }
 
+    function get_channels_by_channel_parent_id(channels, parent_channel_id)
+    {
+        let result = [];;
+        for(var i = 0; i < channels.length; i++)
+        {
+            if(channels[i].parent_channel_id == parent_channel_id)
+            {
+                result.push(channels[i]);
+            }
+        }
+        return result;
+    }
+
+    function get_channel_by_id(channel_list_a, channel_id)
+    {
+        let result = null;
+
+        for(let x = 0; x < channel_list_a.length; x++)
+        {
+            if(channel_list_a[x].channel_id == channel_id)
+            {
+                result = channel_list_a[x];
+                break;
+            }
+        }
+
+        return result;
+    }
+
+
+    function get_channel_index_by_channel_id(channel_list_a, channel_id)
+    {
+        let result = -1;
+
+        for(let x = 0; x < channel_list_a.length; x++)
+        {
+            if(channel_list_a[x].channel_id == channel_id)
+            {
+                result = x;
+                break;
+            }
+        }
+
+        return result;
+    }
 
     function encrypt_direct_message_and_convert_to_base64(keys, string_to_encrypt)
     {
@@ -5851,6 +6060,36 @@
         return new_string;
     }
 
+
+    function get_indend_level(channel_id,channels)
+    {
+        let result = 0;
+        let is_root_channel_found = false;
+        let channel_id_currently_looking_for = channel_id;
+
+        while(is_root_channel_found == false)
+        {
+            for(let i = 0; i < channels.length; i++)
+            {
+                if(channels[i].channel_id == channel_id_currently_looking_for)
+                {
+                    if(channels[i].parent_channel_id != -1)
+                    {
+                        result++;
+                        channel_id_currently_looking_for = channels[i].parent_channel_id;
+                        break;
+                    }
+                    else
+                    {
+                        is_root_channel_found = true;
+                        break;
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
     function send_channel_chat_message()
     {
         let chat_message_to_send_value = document.getElementById('chat-input-container-text-input').value;
@@ -5870,14 +6109,27 @@
 
         if(base64_picture_string_to_send.length > 0)
         {
-            let html_to_append = "<div class=\"single-chat-message\"><div class=\"single-message-content\"><div class=\"single-chat-message-sender-local-username-container\"><p>"+ current_username +"</p></div><div class=\"single-chat-message-sender-time\"><p>"+ new Date().toLocaleTimeString() +"</p></div><div class=\"single-chat-message-content\"><img src="+ base64_picture_string_to_send +" style=\"max-width: 500px;\"></img></div></div></div>";
-            document.getElementById(current_chat_context_id).innerHTML += html_to_append;
+            let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer').length;
 
-            for(let i = 0; i < document.getElementsByClassName('chat-spacer').length; i++)
+            for(let i = 0; i < element_count; i++)
             {
-                document.getElementsByClassName('chat-spacer')[i].remove();
+                document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer')[0].remove();
             }
 
+            let html_to_append = "<div class=\"single-chat-message\">\n\
+                                    <div class=\"single-message-content\">\n\
+                                        <div class=\"single-chat-message-sender-local-username-container\">\n\
+                                            <p>"+ local_username +"</p>\n\
+                                        </div>\n\
+                                        <div class=\"single-chat-message-sender-time\">\n\
+                                            <p>"+ new Date().toLocaleTimeString() +"</p>\n\
+                                        </div>\n\
+                                        <div class=\"single-chat-message-content\">\n\
+                                            <img src="+ base64_picture_string_to_send +" style=\"max-width: 500px;\"></img>\n\
+                                        </div>\n\
+                                    </div>\n\
+                                </div>";
+            document.getElementById(current_chat_context_id).innerHTML += html_to_append;
             document.getElementById(current_chat_context_id).innerHTML += '<div class=\"chat-spacer\"></div>';
             document.getElementById('chat-context-container').scrollTop = document.getElementById('chat-context-container').scrollHeight;
 
@@ -5886,7 +6138,7 @@
                   "type" : "client_chat_picture",
                   "value" : base64_picture_string_to_send,
                   "receiver_type" : chat_message_receiver_type,
-                  "receiver_id" : chat_message_receiver_id
+                  "receiver_id" : current_channel_id.toString()
                 }
             };
 
@@ -5898,11 +6150,11 @@
             }
             base64_picture_string_to_send = "";
             document.getElementById("image-upload-preview").style.backgroundImage = "";
-            chat_context_array[chat_context_index].last_known_message_sender_username = current_username;
+            chat_context_array[chat_context_index].last_known_message_sender_username = local_username;
         }
         else if(chat_message_to_send_value.length > 0)
         {
-            if(chat_context_array[chat_context_index].last_known_message_sender_username == current_username)
+            if(chat_context_array[chat_context_index].last_known_message_sender_username == local_username)
             {
                 let chat_message = "<p>" + sanitize_string(chat_message_to_send_value) + "</p>";
                 let last_child_index = document.getElementById(current_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
@@ -5910,17 +6162,30 @@
             }
             else
             {
-                let html_to_append = "<div class=\"single-chat-message\"><div class=\"single-message-content\"><div class=\"single-chat-message-sender-local-username-container\"><p>"+ current_username +"</p></div><div class=\"single-chat-message-sender-time\"><p>"+ new Date().toLocaleTimeString() +"</p></div><div class=\"single-chat-message-content\"><p>"+ sanitize_string(chat_message_to_send_value) +"</p></div></div></div>";
-                document.getElementById(current_chat_context_id).innerHTML += html_to_append;
-                let elements_count = document.getElementsByClassName("chat-spacer").length;
 
-                for(let i = 0; i < elements_count; i++)
+                let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer').length;
+
+                for(let i = 0; i < element_count; i++)
                 {
-                    document.getElementsByClassName("chat-spacer")[0].remove();
+                    document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer')[0].remove();
                 }
 
-                let html_to_append1 = "<div class=\"chat-spacer\"></div>";
-                document.getElementById(current_chat_context_id).innerHTML += html_to_append1;
+                let html_to_append = "<div class=\"single-chat-message\">\n\
+                                        <div class=\"single-message-content\">\n\
+                                            <div class=\"single-chat-message-sender-local-username-container\">\n\
+                                                <p>"+ local_username +"</p>\n\
+                                            </div>\n\
+                                            <div class=\"single-chat-message-sender-time\">\n\
+                                                <p>"+ new Date().toLocaleTimeString() +"</p>\n\
+                                            </div>\n\
+                                            <div class=\"single-chat-message-content\">\n\
+                                                <p>"+ sanitize_string(chat_message_to_send_value) +"</p>\n\
+                                            </div>\n\
+                                        </div>\n\
+                                    </div>";
+
+                document.getElementById(current_chat_context_id).innerHTML += html_to_append;
+                document.getElementById(current_chat_context_id).innerHTML += '<div class=\"chat-spacer\"></div>';
             }
 
             document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
@@ -5930,7 +6195,7 @@
                   "type" : "client_chat_message",
                   "value" : chat_message_to_send_value,
                   "receiver_type" : "channel",
-                  "receiver_id" : chat_message_receiver_id
+                  "receiver_id" : current_channel_id.toString()
                 }
             };
 
@@ -5942,7 +6207,7 @@
                 socket.send(data);
             }
 
-            chat_context_array[chat_context_index].last_known_message_sender_username = current_username;
+            chat_context_array[chat_context_index].last_known_message_sender_username = local_username;
         }
     }
 
@@ -6007,18 +6272,31 @@
                 message_keys : encryption_result.cipher,
                 message_value : ""
             };
-            message_data.message_value = encrypt_direct_message_and_convert_to_base64(message_keys, base64_picture_string_to_send);
-            let html_to_append = "<div class=\"single-chat-message\"><div class=\"single-message-content\"><div class=\"single-chat-message-sender-local-username-container\"><p>"+ current_username +"</p></div><div class=\"single-chat-message-sender-time\"><p>"+ new Date().toLocaleTimeString() +"</p></div><div class=\"single-chat-message-content\"><img src="+ base64_picture_string_to_send +" style=\"max-width: 500px;\"></img></div></div></div>";
-            document.getElementById(current_chat_context_id).innerHTML += html_to_append;
-            let elements_count = document.getElementsByClassName("chat-spacer").length;
 
-            for(let i = 0; i < elements_count; i++)
+            message_data.message_value = encrypt_direct_message_and_convert_to_base64(message_keys, base64_picture_string_to_send);
+
+            let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer').length;
+            for(let i = 0; i < element_count; i++)
             {
-                document.getElementsByClassName("chat-spacer")[0].remove();
+                let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer')[0].remove();
             }
 
-            let html_to_append1 = "<div class=\"chat-spacer\"></div>";
-            document.getElementById(current_chat_context_id).innerHTML += html_to_append1;
+            let html_to_append = "<div class=\"single-chat-message\">\n\
+                                    <div class=\"single-message-content\">\n\
+                                        <div class=\"single-chat-message-sender-local-username-container\">\n\
+                                            <p>"+ local_username +"</p>\n\
+                                        </div>\n\
+                                        <div class=\"single-chat-message-sender-time\">\n\
+                                            <p>"+ new Date().toLocaleTimeString() +"</p>\n\
+                                            </div>\n\
+                                            <div class=\"single-chat-message-content\">\n\
+                                            <img src="+ base64_picture_string_to_send +" style=\"max-width: 500px;\"></img>\n\
+                                            </div>\n\
+                                        </div>\n\
+                                    </div>";
+
+            document.getElementById(current_chat_context_id).innerHTML += html_to_append;
+            document.getElementById(current_chat_context_id).innerHTML += "<div class=\"chat-spacer\"></div>";
             document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
 
             let message_object = {
@@ -6044,7 +6322,7 @@
 
             base64_picture_string_to_send = "";
             document.getElementById('image-upload-preview').style.backgroundImage = "";
-            chat_context_array[chat_context_index].last_known_message_sender_username = current_username;
+            chat_context_array[chat_context_index].last_known_message_sender_username = local_username;
         }
         else if(chat_message_to_send_value.length > 0)
         {
@@ -6083,7 +6361,7 @@
 
             message_data.message_value = encrypt_direct_message_and_convert_to_base64(message_keys, chat_message_to_send_value);
 
-            if(chat_context_array[chat_context_index].last_known_message_sender_username == current_username)
+            if(chat_context_array[chat_context_index].last_known_message_sender_username == local_username)
             {
                 let chat_message = "<p>" + sanitize_string(chat_message_to_send_value) + "</p>";
                 let last_child_index = document.getElementById(current_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
@@ -6091,13 +6369,26 @@
             }
             else
             {
-                let html_to_append = "<div class=\"single-chat-message\"><div class=\"single-message-content\"><div class=\"single-chat-message-sender-local-username-container\"><p>"+ current_username +"</p></div><div class=\"single-chat-message-sender-time\"><p>"+ new Date().toLocaleTimeString() +"</p></div><div class=\"single-chat-message-content\"><p>"+ sanitize_string(chat_message_to_send_value) +"</p></div></div></div>";
-                document.getElementById(current_chat_context_id).innerHTML += html_to_append;
-                let elements_count = document.getElementsByClassName("chat-spacer").length;
+                let html_to_append = "<div class=\"single-chat-message\">\n\
+                                        <div class=\"single-message-content\">\n\
+                                            <div class=\"single-chat-message-sender-local-username-container\">\n\
+                                                <p>"+ local_username +"</p>\n\
+                                            </div>\n\
+                                            <div class=\"single-chat-message-sender-time\">\n\
+                                                <p>"+ new Date().toLocaleTimeString() +"</p>\n\
+                                            </div>\n\
+                                            <div class=\"single-chat-message-content\">\n\
+                                                <p>"+ sanitize_string(chat_message_to_send_value) +"</p>\n\
+                                            </div>\n\
+                                        </div>\n\
+                                    </div>";
 
-                for(let i = 0; i < elements_count; i++)
+                document.getElementById(current_chat_context_id).innerHTML += html_to_append;
+                let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer').length;
+
+                for(let i = 0; i < element_count; i++)
                 {
-                    document.getElementsByClassName("chat-spacer")[0].remove();
+                    document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer')[0].remove();
                 }
 
                 html_to_append = "<div class=\"chat-spacer\"></div>";
@@ -6128,7 +6419,7 @@
                 socket.send(data);
             }
 
-            chat_context_array[chat_context_index].last_known_message_sender_username = current_username;
+            chat_context_array[chat_context_index].last_known_message_sender_username = local_username;
         }
     }
 
@@ -6160,10 +6451,10 @@
             }
         };
 
-        let index = get_user_index_by_username(current_username);
-        //users[index].username = new_username;
-        current_username = new_username;
-        document.getElementById('connected-local-user-input').setAttribute('value',current_username);
+        let index = get_user_index_by_username(local_username);
+        users[index].username = new_username;
+        local_username = new_username;
+        document.getElementById('connected-local-user-input').setAttribute('value',local_username);
         let message_json_string = JSON.stringify(message_object);
         let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
@@ -6242,8 +6533,6 @@
             }
             let msg = JSON.parse(decrypted_metadata);
 
-            //add username change
-
             log('msg.message.type : ' + msg.message.type + ' | size in bytes: ' + decrypted_metadata.length);
             if(msg.message.type == "client_list")
             {
@@ -6255,25 +6544,30 @@
 
                 is_client_list_retrieved = true;
 
-                document.getElementById("connected-users-container").innerHTML = "";
-
                 for(let i = 0; i < msg.message.clients.length; i++)
                 {
                     let username = sanitize_string(msg.message.clients[i].username);
                     let user_id = sanitize_string(msg.message.clients[i].user_id);
+                    let indend_level = get_indend_level(msg.message.clients[i].channel_id, channel_list) + 1;
+                    var html_to_append = "";
 
-                    if(username == sanitize_string(msg.message.local_username))
+                    if(username != sanitize_string(msg.message.local_username))
                     {
-                        current_username = sanitize_string(msg.message.local_username);
-                        let html_to_append = "<div class=\"connected-local-user\"><input maxlength=\"40\" id=\"connected-local-user-input\"></div>";
-                        document.getElementById("connected-users-container").innerHTML += html_to_append;
-                        document.getElementById("connected-local-user-input").setAttribute("value",username);
+                        html_to_append = "<div class=\"connected-user\" data-connected-user-id=\""+user_id+"\">\n\
+                                              <p style=\"padding-left: " + indend_level * 20 + "px;\"class=\"connected-user-p\">" + username + "</p>\n\
+                                              <p class=\"connected-user-p-received-messages-number\">0</p>\n\
+                                         </div>";
                     }
                     else
                     {
-                        let html_to_append = "<div class=\"connected-user\" data-connected-user-id=\""+user_id+"\"><p class=\"connected-user-p\">" + username + "</p><p class=\"connected-user-p-received-messages-number\">0</p></div>";
-                        document.getElementById('connected-users-container').innerHTML += html_to_append;
+                        local_username = sanitize_string(msg.message.local_username);
+
+                        html_to_append = "<div class=\"connected-local-user\">\n\
+                                              <input style=\"padding-left: " + indend_level * 20 + "px;\" maxlength=\"40\" id=\"connected-local-user-input\" value=\"" + username + "\">\n\
+                                          </div>";
                     }
+
+                    document.querySelector('[data-channel-id="'+msg.message.clients[i].channel_id+'"]').insertAdjacentHTML("afterend",html_to_append);
 
                     let single_user = {
                        user_id : 0,
@@ -6284,7 +6578,8 @@
                     single_user.user_id = parseInt(user_id);
                     single_user.username = username;
                     single_user.public_key = msg.message.clients[i].public_key;
-                    users[i] = single_user;
+
+                    users.push(single_user);
                 }
 
                 for(let x = 0; x < chat_context_array.length; x++)
@@ -6309,24 +6604,148 @@
                     }
                 }
 
+                let elements = document.getElementsByClassName('connected-user');
+                for(let i = 0; i < elements.length; i++)
+                {
+                    elements[i].onclick = connected_user_on_click;
+                    elements[i].style.backgroundColor = "";
+                }
                 document.getElementById('connected-local-user-input').addEventListener("focusout", connected_local_user_input_on_focusout);
 
-                for(let i = 0; i < document.getElementsByClassName('connected-user').length; i++)
+            }
+            else if(msg.message.type == "channel_list")
+            {
+                if(is_channel_list_retrieved == true)
                 {
-                    document.getElementsByClassName('connected-user')[i].onclick = connected_user_on_click;
-                    document.getElementsByClassName('connected-user')[i].style.backgroundColor = "";
+                    log("channel_list message received more than once. Server is doing something weird");
+                    return;
                 }
 
-                if(chat_message_receiver_type == "user")
+                is_channel_list_retrieved = true;
+                document.getElementById("channel-list-container").innerHTML = "";
+                var root_channels = get_channels_by_channel_parent_id(msg.message.channels, -1);
+
+                let processed_channels = [];
+                let current_parent_channel_id_to_find = -1;
+                let previous_parent_channel_id_to_find = -1;
+		    
+
+                while(processed_channels.length != msg.message.channels.length)
                 {
-                    document.querySelector('[data-connected-user-id="'+chat_message_receiver_id+'"]').style.backgroundColor = "#202020";
+                    if(current_parent_channel_id_to_find == previous_parent_channel_id_to_find)
+                    {
+                        current_parent_channel_id_to_find = -1;
+                    }
+                    previous_parent_channel_id_to_find = current_parent_channel_id_to_find;
+
+                    var child_channels = get_channels_by_channel_parent_id(msg.message.channels,current_parent_channel_id_to_find);
+
+                    for(let a = 0; a < child_channels.length; a++)
+                    {
+                        //
+                        //first, check if current child channel is present in HTML. That is done by checking its presence in channel_list array.
+                        //if not, add current channel to channel_list and append channel to HTML
+                        //
+
+                        let is_channel_added_to_html = get_channel_by_id(channel_list,child_channels[a].channel_id);
+
+                        if(is_channel_added_to_html == null)
+                        {
+                            channel_list.push(child_channels[a]);
+                            let indend_left = get_indend_level(child_channels[a].channel_id, msg.message.channels);
+                            let html_to_append = "<div class=\"single-channel\" data-channel-id=\""+child_channels[a].channel_id+"\" data-channel-parent-id=\""+child_channels[a].parent_channel_id+"\">\n\
+                                                      <p data-channel-name-id=\""+child_channels[a].channel_id+"\" style=\"padding-left: "+indend_left * 20 +"px;\">"+child_channels[a].name+"</p>\n\
+                                                  </div>";
+
+                            document.getElementById("channel-list-container").innerHTML += html_to_append;
+                        }
+
+                        //
+                        //next, check if channel is already processed. If it is, check if for loop is at end
+                        //If it is and current channel in loop is processed, that means all child channels of a parent channel were processed and that they have no more inner child channels in them
+                        //
+
+                        let is_channel_already_processed = processed_channels.indexOf(child_channels[a].channel_id) != -1;
+
+                        if(is_channel_already_processed == true)
+                        {
+                            if((a + 1) == child_channels.length)
+                            {
+                                if(current_parent_channel_id_to_find == -1)
+                                {
+                                    continue;
+                                }
+
+                                //
+                                //all child channels of parent channel are processed at this point
+                                //add parent channel to processed_channels
+                                //
+
+                                processed_channels.push(current_parent_channel_id_to_find);
+                            }
+                        }
+                        else
+                        {
+                            //
+                            //if channel is not processed, find out if the current channel in loop has any children. If it has, change current_parent_channel_id_to_find
+                            //if not, push channel to processed_channels
+                            //
+
+                            var children_of_child_channel = get_channels_by_channel_parent_id(msg.message.channels, child_channels[a].channel_id);
+                            if(children_of_child_channel.length > 0)
+                            {
+                                current_parent_channel_id_to_find = child_channels[a].channel_id;
+                                break;
+                            }
+
+                            processed_channels.push(child_channels[a].channel_id);
+                        }
+                    }
+                }
+
+                let elements = document.getElementsByClassName('single-channel');
+
+                for(let i = 0; i < elements.length; i++)
+                {
+                    elements[i].addEventListener("mousedown", single_channel_onmousedown);
+                }
+            }
+            else if(msg.message.type == "channel_join")
+            {
+                //local user has different html structure of ... channel entry
+
+                let username = get_username_by_user_id(msg.message.user_id);
+                if(username == local_username)
+                {
+                    document.getElementsByClassName("connected-local-user")[0].remove();
+                    let indend_level = get_indend_level(msg.message.channel_id, channel_list) + 1;
+                    let html_to_append = "<div class=\"connected-local-user\">\n\
+                                            <input style=\"padding-left: " + indend_level * 20 + "px;\" maxlength=\"40\" id=\"connected-local-user-input\" value=\"" + username + "\">\n\
+                                          </div>";
+                    document.querySelector('[data-channel-id="'+msg.message.channel_id+'"]').insertAdjacentHTML("afterend",html_to_append);
+                    document.getElementById('connected-local-user-input').addEventListener("focusout", connected_local_user_input_on_focusout);
+
+                    current_channel_id = msg.message.channel_id;
                 }
                 else
                 {
-                    log("chat_message_receiver_type " + chat_message_receiver_type);
+                    let indend_level = get_indend_level(msg.message.channel_id, channel_list) + 1;
+
+                    let html_to_append = "<div class=\"connected-user\" data-connected-user-id=\""+msg.message.user_id+"\">\n\
+                                            <p style=\"padding-left: " + indend_level * 20 + "px;\"class=\"connected-user-p\">" + username + "</p>\n\
+                                            <p class=\"connected-user-p-received-messages-number\">0</p>\n\
+                                          </div>";
+
+                    document.querySelector('[data-connected-user-id="'+msg.message.user_id+'"]').remove();
+                    document.querySelector('[data-channel-id="'+msg.message.channel_id+'"]').insertAdjacentHTML("afterend",html_to_append);
+                }
+                let elements = document.getElementsByClassName('connected-user');
+                for(let i = 0; i < elements.length; i++)
+                {
+                    elements[i].onclick = connected_user_on_click;
                 }
             }
-            else if(msg.message.type == "broadcast_username_change")
+            else if(msg.message.type == "client_rename")
             {
                 let user_id = sanitize_string(msg.message.user_id);
                 let user_index = get_user_index_in_array_by_user_id(parseInt(user_id));
@@ -6339,14 +6758,24 @@
                 log(users[user_index].username + ' renamed to -> ' + msg.message.new_username);
                 users[user_index].username = msg.message.new_username;
                 document.querySelector('[data-connected-user-id="'+user_id+'"]').getElementsByClassName("connected-user-p")[0].innerHTML = msg.message.new_username;
-                log(users.toString());
+
+                let is_found = document.querySelector('[data-chat-context-selector-id="user-'+user_id+'"]');
+                if(is_found != null)
+                {
+                    document.querySelector('[data-chat-context-selector-id="user-'+user_id+'"]').getElementsByClassName("p-container")[0].innerHTML = msg.message.new_username;
+                }
             }
             else if(msg.message.type == "client_connect")
             {
                 let username = sanitize_string(msg.message.username);
                 let user_id = sanitize_string(msg.message.user_id);
-                let to_append = "<div class=\"connected-user\" data-connected-user-id=\""+user_id+"\"><p class=\"connected-user-p\">" + username + "</p><p class=\"connected-user-p-received-messages-number\">0</p></div>";
-                document.getElementById("connected-users-container").innerHTML += to_append;
+                let indend_level = get_indend_level(msg.message.channel_id, channel_list) + 1;
+                let html_to_append = "<div class=\"connected-user\" data-connected-user-id=\""+user_id+"\">\n\
+                                          <p style=\"padding-left: " + indend_level * 20 + "px;\"class=\"connected-user-p\">" + username + "</p>\n\
+                                          <p class=\"connected-user-p-received-messages-number\">0</p>\n\
+                                     </div>";
+
+                document.querySelector('[data-channel-id="'+ msg.message.channel_id +'"]').insertAdjacentHTML("afterend",html_to_append);
 
                 let single_user = {
                    user_id : null,
@@ -6366,8 +6795,6 @@
                     //elements[i].style.backgroundColor = "";
                 }
 
-                //html got re-written, create event handler again
-                //instead of assigning onfocusout event directly, use addEventListener. element.onfocusout = function() did not work in chrome
                 document.getElementById('connected-local-user-input').addEventListener("focusout", connected_local_user_input_on_focusout);
             }
             else if(msg.message.type == "client_disconnect")
@@ -6391,70 +6818,82 @@
                     chat_context_array.splice(chat_context_index_to_remove, 1);
                 }
 
-                //if used chat context was deleted one, switch to main
                 if(current_chat_context_id == "chat-context-pm-"+user_id)
                 {
-                    current_chat_context_id = "chat-context-channel-main";
-                    document.getElementById("chat-context-channel-main").style.display = "block";
+                    current_chat_context_id = "chat-context-channel-" + current_channel_id;
+                    document.getElementById("chat-context-channel-" + current_channel_id).style.display = "block";
+                    chat_message_receiver_type = "channel";
                 }
                 let user_index_to_remove = get_user_index_in_array_by_user_id(parseInt(user_id));
                 users.splice(user_index_to_remove, 1);
             }
             else if(msg.message.type == "chat_picture_accepted")
             {
-                log("chat picture accepted");
             }
             else if(msg.message.type == "channel_chat_message")
             {
-                if(msg.message.sender_username == current_username)
+                if(msg.message.sender_username == local_username)
                 {
                     return;
                 }
 
                 let chat_message_username = sanitize_string(msg.message.sender_username);
-                let chat_context_index = get_chat_context_index_by_id("chat-context-channel-main");
-                let chat_context_id = "chat-context-channel-" + msg.message.receiver_channel;
+                let receiving_chat_context_id = "chat-context-channel-" + msg.message.channel_id;
+                let chat_context_index = get_chat_context_index_by_id(receiving_chat_context_id);
 
                 if(chat_context_array[chat_context_index].last_known_message_sender_username == chat_message_username)
                 {
                     let sanitized_value = sanitize_string(msg.message.value);
                     let chat_message = "<p>" + sanitized_value + "</p>";
-                    let last_child_index = document.getElementById(current_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
-                    document.getElementById(chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].innerHTML += chat_message;
+                    let last_child_index = document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
+                    document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].innerHTML += chat_message;
                 }
                 else
                 {
                     let sanitized_value = sanitize_string(msg.message.value);
-                    let html_to_append = "<div class=\"single-chat-message\"><div class=\"single-message-content\"><div class=\"single-chat-message-sender-username-container\"><p>"+ chat_message_username +"</p></div><div class=\"single-chat-message-sender-time\"><p>"+ new Date().toLocaleTimeString() +"</p></div><div class=\"single-chat-message-content\"><p>"+ sanitized_value +"</p></div></div></div>";
-                    let elements_count = document.getElementsByClassName("chat-spacer").length;
+                    let html_to_append = "<div class=\"single-chat-message\">\n\
+                                            <div class=\"single-message-content\">\n\
+                                                <div class=\"single-chat-message-sender-username-container\">\n\
+                                                    <p>"+ chat_message_username +"</p>\n\
+                                                </div>\n\
+                                                <div class=\"single-chat-message-sender-time\">\n\
+                                                    <p>"+ new Date().toLocaleTimeString() +"</p>\n\
+                                                </div>\n\
+                                                <div class=\"single-chat-message-content\">\n\
+                                                    <p>"+ sanitized_value +"</p>\n\
+                                                </div>\n\
+                                            </div>\n\
+                                        </div>";
+
+                    let elements_count = document.getElementById(receiving_chat_context_id).getElementsByClassName("chat-spacer").length;
 
                     for(let i = 0; i < elements_count; i++)
                     {
-                        document.getElementsByClassName("chat-spacer")[0].remove();
+                        document.getElementById(receiving_chat_context_id).getElementsByClassName("chat-spacer")[0].remove();
                     }
 
-                    document.getElementById(chat_context_id).innerHTML += html_to_append;
+                    document.getElementById(receiving_chat_context_id).innerHTML += html_to_append;
                 }
 
                 document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
 
-                if(current_username == chat_message_username)
+                if(local_username == chat_message_username)
                 {
                     document.getElementById("chat-input-container-text-input").value = "";
                 }
 
                 chat_context_array[chat_context_index].last_known_message_sender_username = chat_message_username;
             }
-            else if(msg.message.type == "chat_picture_broadcast")
+            else if(msg.message.type == "channel_chat_picture")
             {
                 document.getElementById("chat-picture-img-"+msg.message.picture_id).src = msg.message.value;
             }
             else if(msg.message.type == "server_info_broadcast")
             {
-                let chat_context_index = get_chat_context_index_by_id("chat-context-channel-main");
+                let chat_context_index = get_chat_context_index_by_id("chat-context-channel-1");
                 chat_context_array[chat_context_index].last_known_message_sender_username = "";
                 let html_to_append = "<div class=\"single-server-message\">" + sanitize_string(msg.message.value) + " " + new Date().toLocaleTimeString() + "</div>";
-                document.getElementById("chat-context-channel-main").innerHTML += html_to_append;
+                document.getElementById("chat-context-channel-1").innerHTML += html_to_append;
                 let elements_count = document.getElementsByClassName("chat-spacer").length;
 
                 for(let i = 0; i < elements_count; i++)
@@ -6463,25 +6902,38 @@
                 }
 
                 let html_to_append1 = "<div class=\"chat-spacer\"></div>";
-                document.getElementById("chat-context-channel-main").innerHTML += html_to_append1;
+                document.getElementById("chat-context-channel-1").innerHTML += html_to_append1;
                 document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
             }
-            else if(msg.message.type == "chat_picture_meta_data_broadcast")
+            else if(msg.message.type == "channel_chat_picture_metadata")
             {
                 let username_message_sender = sanitize_string(msg.message.username);
-                let chat_context_index = get_chat_context_index_by_id("chat-context-channel-main");
+                let chat_context_index = get_chat_context_index_by_id("chat-context-channel-" + current_channel_id);
+
                 chat_context_array[chat_context_index].last_known_message_sender_username = username_message_sender;
-                let html_to_append = "<div class=\"single-chat-message\"><div class=\"single-message-content\"><div class=\"single-chat-message-sender-username-container\"><p>"+ username_message_sender +"</p></div><div class=\"single-chat-message-sender-time\"><p>"+ new Date().toLocaleTimeString() +"</p></div><div class=\"single-chat-message-content\"><img class=\"chat-picture-img\" id=\"chat-picture-img-"+msg.message.picture_id+"\" src=\""+ loading_gif + "\" style=\"max-width: 500px;\"></img></div></div></div>";
-                document.getElementById("chat-context-channel-main").innerHTML += html_to_append;
-                let elements_count = document.getElementsByClassName("chat-spacer").length;
+
+                let elements_count = document.getElementsByClassName('chat-spacer').length;
 
                 for(let i = 0; i < elements_count; i++)
                 {
-                    document.getElementsByClassName("chat-spacer")[0].remove();
+                    document.getElementsByClassName('chat-spacer')[0].remove();
                 }
 
-                let html_to_append1 = "<div class=\"chat-spacer\"></div>";
-                document.getElementById("chat-context-channel-main").innerHTML += html_to_append1;
+                let html_to_append = "<div class=\"single-chat-message\">\n\
+                                        <div class=\"single-message-content\">\n\
+                                            <div class=\"single-chat-message-sender-username-container\">\n\
+                                                <p>"+ username_message_sender +"</p>\n\
+                                            </div>\n\
+                                        <div class=\"single-chat-message-sender-time\">\n\
+                                            <p>"+ new Date().toLocaleTimeString() +"</p>\n\
+                                        </div>\n\
+                                        <div class=\"single-chat-message-content\">\n\
+                                            <img class=\"chat-picture-img\" id=\"chat-picture-img-"+msg.message.picture_id+"\" src=\""+ loading_gif + "\" style=\"max-width: 500px;\"></img>\n\
+                                        </div>\n\
+                                     </div>";
+
+                document.getElementById("chat-context-channel-" + current_channel_id).innerHTML += html_to_append;
+                document.getElementById("chat-context-channel-" + current_channel_id).innerHTML += "<div class=\"chat-spacer\"></div>";;
                 document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
             }
             else if(msg.message.type == "direct_chat_message")
@@ -6504,7 +6956,12 @@
 
                 if(is_found == null)
                 {
-                    let html_to_append = "<div class=\"chat-context\" id=\""+received_direct_message_chat_context_id+"\"><div class=\"single-server-message\">now talking to user:  " + msg.message.sender_username+"</div><div class=\"single-server-message\">your public key: "+rsa_public_key_string+"</div><div class=\"single-server-message\">his public key: "+get_public_key_by_user_id(msg.message.sender_id)+"</div><div class=\"single-server-message\">always verify if other users sees same keys. If noth, somebody else is listening. If they match, chat is E2EE </div></div>";
+                    let html_to_append = "<div class=\"chat-context\" id=\""+received_direct_message_chat_context_id+"\">\n\
+                                            <div class=\"single-server-message\">now talking to user:  " + msg.message.sender_username+"</div>\n\
+                                            <div class=\"single-server-message\">your public key: "+rsa_public_key_string+"</div>\n\
+                                            <div class=\"single-server-message\">his public key: "+get_public_key_by_user_id(msg.message.sender_id)+"</div>\n\
+                                            <div class=\"single-server-message\">always verify if other users sees same keys. If noth, somebody else is listening. If they match, chat is E2EE </div>\n\
+                                         </div>";
 
                     document.getElementById('chat-context-container').innerHTML += html_to_append;
                     document.getElementById(received_direct_message_chat_context_id).style.display = "none";
@@ -6526,11 +6983,23 @@
                     let last_child_index = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
                     let exists = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message") != "undefined";
                     document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].innerHTML += chat_message;
-                    document.querySelector('[data-connected-user-id="'+msg.message.sender_id+'"]').getElementsByClassName("connected-user-p-received-messages-number")[0].style.display = "inline-block";
+                    document.querySelector('[data-connected-user-id="'+msg.message.sender_id+'"]').getElementsByClassName("connected-user-p-received-messages-number")[0].style.display = "none";
                 }
                 else
                 {
-                    let html_to_append = "<div class=\"single-chat-message\"><div class=\"single-message-content\"><div class=\"single-chat-message-sender-username-container\"><p>"+ msg.message.sender_username +"</p></div><div class=\"single-chat-message-sender-time\"><p>"+  new Date().toLocaleTimeString() +"</p></div><div class=\"single-chat-message-content\"><p>"+ decrypted_text +"</p></div></div></div>";
+                    let html_to_append = "<div class=\"single-chat-message\">\n\
+                                            <div class=\"single-message-content\">\n\
+                                                <div class=\"single-chat-message-sender-username-container\">\n\
+                                                    <p>"+ msg.message.sender_username +"</p>\n\
+                                                </div>\n\
+                                                <div class=\"single-chat-message-sender-time\">\n\
+                                                    <p>"+  new Date().toLocaleTimeString() +"</p>\n\
+                                                </div>\n\
+                                                <div class=\"single-chat-message-content\"><p>"+ decrypted_text +"</p>\n\
+                                                </div>\n\
+                                            </div>\n\
+                                        </div>";
+
                     document.getElementById(received_direct_message_chat_context_id).innerHTML += html_to_append;
                     let elements_count = document.getElementsByClassName("chat-spacer").length;
 
@@ -6552,14 +7021,20 @@
                 }
                 chat_context_array[chat_context_index].last_known_message_sender_username = msg.message.sender_username;
             }
-            else if(msg.message.type == 'direct_chat_picture_meta_information')
+            else if(msg.message.type == 'direct_chat_picture_metadata')
             {
                 let received_direct_message_chat_context_id = 'chat-context-pm-'+msg.message.sender_id;
-                let is_found = document.getElementById('chat-context-pm-'+msg.message.sender_id);
+                let is_found = document.getElementById(received_direct_message_chat_context_id);
 
                 if(is_found == null)
                 {
-                    let html_to_append = "<div class=\"chat-context\" id=\""+received_direct_message_chat_context_id+"\"><div class=\"single-server-message\">now talking to user: " + msg.message.sender_username+"</div><div class=\"single-server-message\">your public key: "+rsa_public_key_string+"</div><div class=\"single-server-message\">his public key: "+get_public_key_by_user_id(msg.message.sender_id)+"</div><div class=\"single-server-message\">always verify if other users sees same keys. If they do not match, somebody else is listening. If they match, chat is E2EE </div></div>";
+                    let html_to_append = "<div class=\"chat-context\" id=\""+received_direct_message_chat_context_id+"\">\n\
+                                            <div class=\"single-server-message\">now talking to user: " + msg.message.sender_username+"</div>\n\
+                                                <div class=\"single-server-message\">your public key: "+rsa_public_key_string+"</div>\n\
+                                                <div class=\"single-server-message\">his public key: "+get_public_key_by_user_id(msg.message.sender_id)+"</div>\n\
+                                            <div class=\"single-server-message\">always verify if other users sees same keys. If they do not match, somebody else is listening. If they match, chat is E2EE </div>\n\
+                                        </div>";
+
                     document.getElementById("chat-context-container").innerHTML += html_to_append;
                     document.getElementById(received_direct_message_chat_context_id).style.display = "none";
 
@@ -6573,7 +7048,19 @@
                 }
 
                 let chat_context_index = get_chat_context_index_by_id(received_direct_message_chat_context_id);
-                let html_to_append = "<div class=\"single-chat-message\"><div class=\"single-message-content\"><div class=\"single-chat-message-sender-username-container\"><p>"+ msg.message.sender_username +"</p></div><div class=\"single-chat-message-sender-time\"><p>"+ new Date().toLocaleTimeString() +"</p></div><div class=\"single-chat-message-content\"><img class=\"chat-picture-img\" id=\"chat-picture-img-"+msg.message.picture_id+"\" src=\""+ loading_gif + "\" style=\"max-width: 500px;\"></img></div></div></div>";
+                let html_to_append = "<div class=\"single-chat-message\">\n\
+                                        <div class=\"single-message-content\">\n\
+                                            <div class=\"single-chat-message-sender-username-container\">\n\
+                                                <p>"+ msg.message.sender_username +"</p>\n\
+                                            </div>\n\
+                                            <div class=\"single-chat-message-sender-time\"><p>"+ new Date().toLocaleTimeString() +"</p>\n\
+                                            </div>\n\
+                                            <div class=\"single-chat-message-content\">\n\
+                                                <img class=\"chat-picture-img\" id=\"chat-picture-img-"+msg.message.picture_id+"\" src=\""+ loading_gif + "\" style=\"max-width: 500px;\"></img>\n\
+                                            </div>\n\
+                                        </div>\n\
+                                     </div>";
+
                 document.getElementById(received_direct_message_chat_context_id).innerHTML += html_to_append;
                 let elements_count = document.getElementsByClassName("chat-spacer").length;
 
@@ -6611,6 +7098,40 @@
                 let decrypted_data = decrypt_direct_message(message_keys,message_data.message_value);
                 let picture_base64 = sanitize_string(decrypted_data);
                 document.getElementById("chat-picture-img-"+msg.message.picture_id).src = picture_base64;
+            }
+            else if(msg.message.type == "channel_delete")
+            {
+                let channel_index = get_channel_index_by_channel_id(channel_list, msg.message.channel_id);
+                if(channel_index != -1)
+                {
+                    channel_list.splice(channel_index, 1);
+                    document.querySelector('[data-channel-id="'+msg.message.channel_id+'"]').remove();
+                }
+            }
+            else if(msg.message.type == "channel_create")
+            {
+                let new_channel = {
+                    "channel_id" : msg.message.channel_id,
+                    "parent_channel_id" : msg.message.parent_channel_id,
+                    "name" : msg.message.name,
+                    "description" : msg.message.description,
+                };
+
+                channel_list.push(new_channel);
+                let indend_left = get_indend_level(new_channel.channel_id, channel_list);
+                let html_to_append = "<div class=\"single-channel\" data-channel-id=\""+new_channel.channel_id+"\" data-channel-parent-id=\""+new_channel.parent_channel_id+"\">\n\
+                                          <p data-channel-name-id=\""+new_channel.channel_id+"\" style=\"padding-left: "+indend_left * 20 +"px;\">"+new_channel.name+"</p>\n\
+                                      </div>";
+
+
+                document.querySelector("[data-channel-id='"+new_channel.parent_channel_id+"']").insertAdjacentHTML("afterend",html_to_append);
+
+                let elements = document.getElementsByClassName('single-channel');
+
+                for(let i = 0; i < elements.length; i++)
+                {
+                    elements[i].addEventListener("mousedown", single_channel_onmousedown);
+                }
             }
         }
     }
@@ -6732,6 +7253,81 @@
         }
     }
 
+    function chat_context_selector_onclick()
+    {
+        let id_to_find = "";
+        let user_id = "";
+        let channel_id = "";
+        let selector_type = this.getAttribute("data-chat-context-selector-type");
+
+        for(let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
+        {
+            document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
+        }
+
+        this.style.backgroundColor = "#36393f";
+
+        for(let i = 0; i < document.getElementsByClassName("chat-context").length; i++)
+        {
+            document.getElementsByClassName("chat-context")[i].style.display = "none";
+        }
+
+        if(selector_type == "user")
+        {
+            id_to_find = "chat-context-pm-";
+            user_id = this.getAttribute("data-chat-context-selector-id").split("user-")[1];
+            id_to_find += user_id;
+
+            document.getElementById(id_to_find).style.display = "block";
+            document.querySelector('[data-connected-user-id="'+user_id+'"]').getElementsByClassName('connected-user-p-received-messages-number')[0].style.display = "none";
+            document.querySelector('[data-connected-user-id="'+user_id+'"]').getElementsByClassName('connected-user-p-received-messages-number')[0].innerHTML = '0';
+
+            current_chat_context_id = id_to_find;
+
+            chat_message_receiver_type = "user"; //from local user perspective
+            chat_message_receiver_id = user_id; //from local user perspective
+
+        }
+        else if(selector_type == "channel")
+        {
+            id_to_find = "chat-context-channel-";
+            channel_id = this.getAttribute("data-chat-context-selector-id").split("channel-")[1];
+            id_to_find += channel_id;
+
+            chat_message_receiver_type = "channel";
+
+            let is_found = document.getElementById(id_to_find);
+            if(is_found)
+            {
+                document.getElementById(id_to_find).style.display = "block";
+            }
+
+            if(current_channel_id == channel_id)
+            {
+                enable_inputs();
+                current_chat_context_id = id_to_find;
+            }
+            else
+            {
+                disable_inputs();
+            }
+        }
+    }
+
+    function enable_inputs()
+    {
+        document.getElementById("chat-input-container-text-input").disabled = false;
+        document.getElementById("chat-input-container-send-chat-input").disabled = false;
+        document.getElementById("choose_image_input").disabled = false;
+    }
+
+    function disable_inputs()
+    {
+        document.getElementById("chat-input-container-text-input").disabled = true;
+        document.getElementById("chat-input-container-send-chat-input").disabled = true;
+        document.getElementById("choose_image_input").disabled = true;
+    }
+
     function connected_user_on_click()
     {
         for(let i = 0; i < document.getElementsByClassName('connected-user').length; i++)
@@ -6739,9 +7335,15 @@
             document.getElementsByClassName('connected-user')[i].style.backgroundColor = "";
         }
 
-        this.style.backgroundColor = "#202020";
+        for(let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
+        {
+            document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
+        }
+
         chat_message_receiver_type = "user";
         chat_message_receiver_id = this.getAttribute("data-connected-user-id");
+
+        let user_id = this.getAttribute("data-connected-user-id");
         let data_username = get_username_by_user_id(chat_message_receiver_id);
         let id_to_find = "chat-context-pm-" + chat_message_receiver_id;
         current_chat_context_id = id_to_find;
@@ -6755,7 +7357,13 @@
                 document.getElementsByClassName("chat-context")[i].style.display = "none";
             }
 
-            let html_to_append = "<div class=\"chat-context\" id=\""+id_to_find+"\"><div class=\"single-server-message\">now talking to user: " +data_username+"</div><div class=\"single-server-message\">your public key: "+rsa_public_key_string+"</div><div class=\"single-server-message\">his public key: "+get_public_key_by_user_id(chat_message_receiver_id)+"</div><div class=\"single-server-message\">always verify if other users sees same keys.. If not, somebody else is listening. If they match, chat is E2EE </div></div>";
+            let html_to_append = "<div class=\"chat-context\" id=\""+id_to_find+"\">\n\
+                                    <div class=\"single-server-message\">now talking to user: " +data_username+"</div>\n\
+                                    <div class=\"single-server-message\">your public key: "+rsa_public_key_string+"</div>\n\
+                                    <div class=\"single-server-message\">his public key: "+get_public_key_by_user_id(chat_message_receiver_id)+"</div>\n\
+                                    <div class=\"single-server-message\">always verify if other users sees same keys.. If not, somebody else is listening. If they match, chat is E2EE </div>\n\
+                                </div>";
+
             document.getElementById('chat-context-container').innerHTML += html_to_append;
 
             let single_chat_context = {
@@ -6774,8 +7382,93 @@
             }
 
             document.getElementById(id_to_find).style.display = "block";
-            document.querySelector('[data-connected-user-id="'+chat_message_receiver_id+'"]').getElementsByClassName('connected-user-p-received-messages-number')[0].style.display = "none";
-            document.querySelector('[data-connected-user-id="'+chat_message_receiver_id+'"]').getElementsByClassName('connected-user-p-received-messages-number')[0].innerHTML = '0';
+            document.querySelector('[data-connected-user-id="'+user_id+'"]').getElementsByClassName('connected-user-p-received-messages-number')[0].style.display = "none";
+            document.querySelector('[data-connected-user-id="'+user_id+'"]').getElementsByClassName('connected-user-p-received-messages-number')[0].innerHTML = '0';
+        }
+        is_found = document.querySelector('[data-chat-context-selector-id="user-'+user_id+'"]');
+
+        if(is_found == null)
+        {
+            let to_append = "<div class=\"chat-context-selector\" data-chat-context-selector-type=\"user\" data-chat-context-selector-id=\"user-"+user_id+"\">\n\
+                                <div class=\"p-container\">\n\
+                                    <p>"+data_username+"</p>\n\
+                                </div>\n\
+                                <div class=\"remove-chat-context-selector\" data-chat-context-remove-selector-type=\"user\" data-chat-context-remove-selector-id=\"user-"+user_id+"\">\n\
+                                </div>\n\
+                            </div>";
+
+            document.getElementById("chat-context-selectors-container").innerHTML += to_append;
+        }
+
+        for(let x = 0; x < document.getElementsByClassName("remove-chat-context-selector").length; x++)
+        {
+            document.getElementsByClassName("remove-chat-context-selector")[x].onclick = chat_context_remove_onclick;
+        }
+
+        for(let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
+        {
+            document.getElementsByClassName("chat-context-selector")[x].onclick = chat_context_selector_onclick;
+        }
+
+        document.querySelector('[data-chat-context-selector-id="user-'+user_id+'"]').style.backgroundColor = "#36393f";
+
+    }
+
+    function chat_context_remove_onclick(event)
+    {
+        event.stopPropagation();
+
+        let selector_type = event.srcElement.getAttribute("data-chat-context-remove-selector-type");
+
+        if(selector_type == "user")
+        {
+            let selector_id = this.getAttribute("data-chat-context-remove-selector-id");
+            let user_id = selector_id.split("user-")[1];
+            document.querySelector('[data-chat-context-selector-id="'+selector_id+'"]').remove();
+            document.getElementById("chat-context-pm-"+user_id).remove();
+
+            let chat_context_index_to_remove = get_chat_context_index_by_id("chat-context-pm-"+user_id);
+
+            if(chat_context_index_to_remove != -1)
+            {
+                chat_context_array.splice(chat_context_index_to_remove, 1);
+            }
+
+            document.getElementById("chat-context-channel-"+current_channel_id).style.display = "block";
+            current_chat_context_id = "chat-context-channel-"+current_channel_id;
+            chat_message_receiver_type = "channel";
+
+            for(let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
+            {
+                document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
+            }
+
+            document.querySelector('[data-chat-context-selector-id="channel-'+current_channel_id+'"]').style.backgroundColor = "#36393f";
+        }
+        else if(selector_type == "channel")
+        {
+            let selector_id = this.getAttribute("data-chat-context-remove-selector-id");
+            let channel_id = selector_id.split("channel-")[1];
+
+            if(current_channel_id == channel_id)
+            {
+                window.alert("current channel, can't remove");
+                return;
+            }
+
+            document.querySelector('[data-chat-context-selector-id="'+selector_id+'"]').remove();
+            document.getElementById("chat-context-channel-"+channel_id).remove();
+
+            let chat_context_index_to_remove = get_chat_context_index_by_id("chat-context-channel-"+channel_id);
+
+            if(chat_context_index_to_remove != -1)
+            {
+                chat_context_array.splice(chat_context_index_to_remove, 1);
+            }
+
+            document.getElementById("chat-context-channel-"+current_channel_id).style.display = "block";
+            current_chat_context_id = "chat-context-channel-"+current_channel_id;
+            document.querySelector('[data-chat-context-selector-id="channel-'+current_channel_id+'"]').style.backgroundColor = "#36393f";
         }
     }
 
@@ -6799,10 +7492,10 @@
             document.getElementsByClassName("connected-user")[i].style.backgroundColor = "";
         }
 
-        document.getElementById("chat-context-channel-main").style.display = "block";
+        document.getElementById("chat-context-channel-1").style.display = "block";
         chat_message_receiver_type = "channel";
         chat_message_receiver_id = "main";
-        current_chat_context_id = "chat-context-channel-main";
+        current_chat_context_id = "chat-context-channel-1";
     }
 
     function show_hide_log_on_click()
@@ -6817,6 +7510,227 @@
         }
     }
 
+    function contextmenuitem_onclick(event)
+    {
+        event.stopPropagation();
+        let data_action = event.srcElement.getAttribute("data-action");
+
+        if(data_action == 0)
+        {
+            document.getElementsByClassName("channel-list-context-menu")[0].remove();
+            document.getElementById("background-container").style.display = "block";
+            document.getElementById("channel-properties-container").style.display = "block";
+            document.getElementById("create-channel-hidden-parent-id").value = selected_channel_id;
+        }
+
+        else if(data_action == 1)
+        {
+            let message_object = {"message" :
+                {
+                    "type" : "delete_channel_request",
+                    "channel_id" : selected_channel_id.toString()
+                }
+            };
+
+            let message_json_string = JSON.stringify(message_object);
+            let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+            if(socket.readyState === 1)
+            {
+                socket.send(data);
+            }
+
+            document.getElementsByClassName("channel-list-context-menu")[0].remove();
+        }
+        else if(data_action == 3)
+        {
+            let message_object = {"message" :
+                {
+                    "type" : "join_channel_request",
+                    "channel_id" : selected_channel_id.toString()
+                }
+            };
+
+            let message_json_string = JSON.stringify(message_object);
+            let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+            if(socket.readyState === 1)
+            {
+                socket.send(data);
+            }
+
+            document.getElementsByClassName("channel-list-context-menu")[0].remove();
+            let is_found = document.querySelector('[data-chat-context-selector-id="channel-'+selected_channel_id.toString()+'"]');
+
+            if(is_found == null)
+            {
+                let channel_name = document.querySelector('[data-channel-name-id="'+selected_channel_id.toString()+'"]').innerHTML;
+                let to_append = "<div class=\"chat-context-selector\" data-chat-context-selector-type=\"channel\" data-chat-context-selector-id=\"channel-"+selected_channel_id.toString()+"\">\n\
+                                    <div class=\"p-container\">\n\
+                                        <p>"+channel_name+"</p>\n\
+                                    </div>\n\
+                                    <div class=\"remove-chat-context-selector\" data-chat-context-remove-selector-type=\"channel\" data-chat-context-remove-selector-id=\"channel-"+selected_channel_id.toString()+"\">\n\
+                                    </div>\n\
+                                </div>";
+
+                document.getElementById("chat-context-selectors-container").innerHTML += to_append;
+
+                for(let x = 0; x < document.getElementsByClassName("remove-chat-context-selector").length; x++)
+                {
+                    document.getElementsByClassName("remove-chat-context-selector")[x].onclick = chat_context_remove_onclick;
+                }
+
+                for(let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
+                {
+                    document.getElementsByClassName("chat-context-selector")[x].onclick = chat_context_selector_onclick;
+                }
+            }
+
+            for(let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
+            {
+                document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
+            }
+
+            document.querySelector('[data-chat-context-selector-id="channel-'+selected_channel_id+'"]').style.backgroundColor = "#36393f";
+
+            is_found = document.getElementById("chat-context-channel-" + selected_channel_id);
+            if(is_found == null)
+            {
+                let channel_name = document.querySelector('[data-channel-name-id="'+selected_channel_id.toString()+'"]').innerHTML;
+                let html_to_append3 = '<div class="chat-context" id="chat-context-channel-'+selected_channel_id+'" style="display: none;">\n\
+                                        <div class="single-server-message">now talking channel: ' + channel_name + '</div>\n\
+                                            <div class="single-server-message">! group chat / chat in channel is not E2EE !</div>\n\
+                                                <div class="single-server-message">[i] connected : anon2 8:05:53 AM</div><div class="chat-spacer"></div>\n\
+                                            </div>\n\
+                                        </div>\n\
+                                      </div>';
+
+                let count = document.getElementsByClassName("chat-context").length;
+                document.getElementsByClassName("chat-context")[count - 1].insertAdjacentHTML("afterend",html_to_append3);
+
+                let single_chat_context = {
+                    "type":"channel",
+                    "chat_context_id": "chat-context-channel-"+selected_channel_id,
+                    "last_known_message_sender_username" : ""
+                };
+
+                chat_context_array.push(single_chat_context);
+            }
+
+            let count1 = document.getElementsByClassName("chat-context").length;
+
+            for(let i = 0; i < count1; i++)
+            {
+                document.getElementsByClassName("chat-context")[i].style.display = "none";
+            }
+
+            document.getElementById("chat-context-channel-" + selected_channel_id).style.display = "block";
+            current_chat_context_id = "chat-context-channel-"+selected_channel_id;
+            chat_message_receiver_type = "channel";
+            enable_inputs();
+        }
+    }
+
+    function single_channel_onmousedown(event)
+    {
+        if(event.which == 3)
+        {
+            event.stopPropagation();
+            let elements = document.getElementsByClassName('single-channel');
+
+            for(let i = 0; i < elements.length; i++)
+            {
+                elements[i].style.backgroundColor = "";
+            }
+
+            this.style.backgroundColor = "#333030";
+            selected_channel_id = parseInt(this.getAttribute("data-channel-id"));
+            let elements_count = document.getElementsByClassName("channel-list-context-menu").length;
+
+            for(let i = 0; i < elements_count; i++)
+            {
+                document.getElementsByClassName("channel-list-context-menu")[0].remove();
+            }
+
+            let contextmenu_html = "<div class=\"channel-list-context-menu\" style=\"top: "+ event.clientY.toString() + "px; left:" + event.clientX.toString() + "px; \">\n\
+                                        <div class='channel-list-context-menu-background'>\n\
+                                        </div>\n\
+                                        <div class='channel-list-context-menu-items'>\n\
+                                            <p class='context-menu-item' data-action='0'>create</p>\n\
+                                            <p class='context-menu-item' data-action='1'>delete</p>\n\
+                                            <p class='context-menu-item' data-action='2'>edit</p>\n\
+                                            <p class='context-menu-item' data-action='3'>join</p>\n\
+                                        </div>\n\
+                                    </div>";
+
+            document.getElementById("contextmenus-container").innerHTML += contextmenu_html;
+            document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.top = event.clientY.toString();
+            document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.left = event.clientX.toString();
+
+            let contextmenu_item_count = document.getElementsByClassName("context-menu-item").length;
+
+            for(let i = 0; i < contextmenu_item_count; i++)
+            {
+                document.getElementsByClassName("context-menu-item")[i].addEventListener("click", contextmenuitem_onclick);
+            }
+        }
+    }
+
+    function channel_properties_closebutton_onclick()
+    {
+        document.getElementById("channel-properties-container").style.display = "none";
+        document.getElementById("background-container").style.display = "none";
+    }
+
+    function create_channel_button_onclick()
+    {
+        let parent_channel_id = document.getElementById("create-channel-hidden-parent-id").value;
+        let channel_name = document.getElementById("channel-properties-input-channel-name").value;
+        let channel_description = document.getElementById("channel-properties-input-channel-description").value;
+
+        let message_object = {"message" :
+            {
+                "type" : "create_channel_request",
+                "channel_name" : channel_name,
+                "channel_description" : channel_description,
+                "parent_channel_id" : parent_channel_id.toString()
+            }
+        };
+
+        let message_json_string = JSON.stringify(message_object);
+        let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+        if(socket.readyState === 1)
+        {
+            socket.send(data);
+        }
+
+        document.getElementById("channel-properties-container").style.display = "none";
+        document.getElementById("background-container").style.display = "none";
+    }
+
+    function channel_list_onmousedown(event)
+    {
+        event.stopPropagation();
+
+        switch(event.which)
+        {
+            case 3:
+            case 1:
+                let elements_count1 = document.getElementsByClassName("channel-list-context-menu").length;
+                for(let i = 0; i < elements_count1; i++)
+                {
+                    document.getElementsByClassName("channel-list-context-menu")[0].remove();
+                    let elements = document.getElementsByClassName('single-channel');
+                    for(let i = 0; i < elements.length; i++)
+                    {
+                        elements[i].style.backgroundColor = "";
+                    }
+                }
+            break;
+        }
+    }
+
     async function generate_rsa_keypair()
     {
         log("generating random public/private key pair");
@@ -6828,6 +7742,18 @@
         log(rsa_public_key_string);
     }
 
+    function document_onmousedown(event)
+    {
+        return;
+        let elements_count = document.getElementsByClassName("channel-list-context-menu").length;
+
+        for(let i = 0; i < elements_count; i++)
+        {
+            document.getElementsByClassName("channel-list-context-menu")[0].remove();
+        }
+    }
+
+
     function window_onload()
     {
         document.getElementById("chat-input-container-send-chat-input").onclick = send_chat_input_on_click;
@@ -6835,10 +7761,16 @@
         document.getElementById("chat-input-container-text-input").onkeyup = chat_input_on_keyup;
         document.getElementById("choose_image_input").onchange = choose_image_input;
         document.getElementById("add-key-button").onclick = add_key_button_on_click;
-        document.getElementsByClassName("single-channel")[0].onclick = channel_on_click;
         textarea_log = document.getElementById("textarea-log");
         document.getElementById("show-hide-log-button").onclick = show_hide_log_on_click;
         generate_rsa_keypair();
+
+        document.addEventListener("contextmenu", e => {e.preventDefault();});
+        document.addEventListener("mousedown", document_onmousedown);
+        document.getElementById("channel-list-container").addEventListener("mousedown", channel_list_onmousedown);
+        document.querySelector("[data-chat-context-remove-selector-id='channel-1']").onclick = chat_context_remove_onclick;
+        document.getElementById("channel-properties-close-button").onclick = channel_properties_closebutton_onclick;
+        document.getElementById("create-channel-button").onclick = create_channel_button_onclick;
     }
 
     window.onload = window_onload;
@@ -6890,23 +7822,28 @@
                 <div id="communication-system-head-menu">
                 </div>
                 <div id="space-devider1">
-                    <div id="connected-users-container">
+                    <div id="channel-list-container">
                     </div>
                 </div>
                 <div id="space-devider2">
+                    <div id="chat-context-selectors-container">
+                        <div class="chat-context-selector" data-chat-context-selector-type="channel" data-chat-context-selector-id="channel-1" style="background-color: rgb(54, 57, 63);">
+                            <div class="p-container">
+                                <p id="current-channel-name">root</p>
+                            </div>
+                            <div class="remove-chat-context-selector" data-chat-context-remove-selector-type="channel" data-chat-context-remove-selector-id="channel-1">
+                            </div>
+                        </div>
+                    </div>
                     <div id="chat-context-container">
-                        <div class="chat-context" id="chat-context-channel-main">
+                        <div class="chat-context" id="chat-context-channel-1">
                             <div class="single-server-message">now talking channel: main</div>
                             <div class="single-server-message">! group chat / chat in channel is not E2EE !</div>
                         </div>
                     </div>
                 </div>
                 <div id="space-devider-42">
-                    <div id="channels-container">
-                        <div class="single-channel" data-name="main">
-                            <p>main</p>
-                        </div>
-                    </div>
+
                 </div>
                 <div></div>
                 <div id="space-devider3">
@@ -6932,4 +7869,34 @@
         </div>
         <input type="button" value="log" id="show-hide-log-button">
     </body>
+
+    <div id="contextmenus-container">
+    </div>
+    <div id="background-container">
+    </div>
+
+    <div id="channel-properties-container">
+        <div id="channel-properties-edit">
+            <div id="menu-bar-container">
+                <div id="channel-properties-close-button">
+                </div>
+            </div>
+            <div id="channel-properties-input-container">
+                <div>
+                    <p>channel name</p>
+                </div>
+                <div>
+                    <input id="channel-properties-input-channel-name" type="text" value="new_channel">
+                </div>
+                <div>
+                    <p>description</p>
+                </div>
+                <div>
+                    <input id="channel-properties-input-channel-description" type="text" value="">
+                </div>
+            </div>
+            <input type="hidden" id="create-channel-hidden-parent-id" value="">
+            <input type="button" id="create-channel-button" value="confirm">
+        </div>
+    </div>
 </html>
