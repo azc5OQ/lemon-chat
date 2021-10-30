@@ -22,7 +22,7 @@ void clib__int_to_hex_string(int n, char* hex_string)
         hex_string[j++] = hex_string[i];
     }
 
-    //hex_string[j + 1] = 0;
+    hex_string[j + 1] = 0;
     //add null terminator to end of string
 }
 
@@ -34,35 +34,28 @@ bool clib__is_str_number(char* string_to_check)
         return true;
     }
 
+    bool result = true;
+    char numbers[] = "0123456789";
+    bool is_check_finished = false;
 
-    bool result = false;
-    char allowed_numbers[] = "0123456789";
-    bool check_ended = false;
 
     for (int i = 0; i < strlen(string_to_check); i++)
     {
-        if(check_ended == true)
+        if(is_check_finished == true)
         {
-            result = false;
             break;
         }
 
-        for(int x = 0; x < strlen(allowed_numbers); x++)
+        for(int x = 0; x < strlen(numbers); x++)
         {
-            if(string_to_check[i] == allowed_numbers[x])
+            if(string_to_check[i] == numbers[x])
             {
                 break;
             }
-            else
+            if((x + 1) == strlen(numbers))
             {
-                if(x == strlen(allowed_numbers) - 1)
-                {
-                    check_ended = true;
-                }
-            }
-            if(i == strlen(string_to_check) - 1)
-            {
-                result = true;
+                is_check_finished = true;
+                result = false;
             }
         }
     }
