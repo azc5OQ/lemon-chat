@@ -21,25 +21,40 @@
 //#define DEBUG_HEAP 1
 
 
-int g_count_connected_clients = 0;
-int g_count_channels;
-
 server_settings_t g_server_settings;
-client_t g_client_list[MAX_CLIENTS];
-channel_t channel_list[MAX_CHANNELS];
+client_t clients_array[MAX_CLIENTS];
+channel_t channel_array[MAX_CHANNELS];
 
-int g_id_last_sent_picture = 0;
+int id_last_sent_picture = 0;
 
 int get_client_index_with_fd(int fd)
 {
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(g_client_list[i].fd == fd)
+        if(clients_array[i].fd == fd)
         {
-            return g_client_list[i].user_id;
+            return clients_array[i].user_id;
         }
     }
     return -1;
+}
+
+int get_channel_index_by_channel_id(int channel_id)
+{
+    int result = -1;
+    for(int i = 0; i < MAX_CHANNELS; i++)
+    {
+        if(channel_array[i].channel_id != channel_id)
+        {
+            continue;
+        }
+        if(channel_array[i].is_channel == true)
+        {
+            result = i;
+            break;
+        }
+    }
+    return result;
 }
 
 int get_new_index_for_client()
@@ -47,7 +62,7 @@ int get_new_index_for_client()
     int result = 0;
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(g_client_list[i].timestamp_connected == 0)
+        if(clients_array[i].timestamp_connected == 0)
         {
             return i;
         }
@@ -58,7 +73,6 @@ int get_new_index_for_client()
 unsigned long long get_timestamp_ms()
 {
     static struct timeb timer_msec;
-
     static unsigned long long timestamp_msec;
     timestamp_msec = 0;
     if(!ftime(&timer_msec))
@@ -75,28 +89,25 @@ unsigned long long get_timestamp_ms()
 
 void broadcast_channel_create(channel_t* channel)
 {
-    cJSON *json_root_object1 = 0;
-    cJSON *json_message_object1 = 0;
-
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    cJSON *json_root_object1 = cJSON_CreateObject();
+    cJSON *json_message_object1 = cJSON_CreateObject();
 
     cJSON_AddStringToObject(json_message_object1, "type", "channel_create");
     cJSON_AddNumberToObject(json_message_object1, "channel_id", channel->channel_id);
     cJSON_AddNumberToObject(json_message_object1, "parent_channel_id", channel->parent_channel_id);
     cJSON_AddStringToObject(json_message_object1, "name", channel->name);
     cJSON_AddStringToObject(json_message_object1, "description", channel->description);
+    cJSON_AddNumberToObject(json_message_object1, "maintainer_id", -1);
 
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
     int size_of_allocated_message_buffer = 0;
     char* msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(!g_client_list[i].is_authenticated)
+        if(!clients_array[i].is_authenticated)
         {
             continue;
         }
@@ -106,13 +117,13 @@ void broadcast_channel_create(channel_t* channel)
         #endif
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","broadcast_channel_create() g_client_list[i].fd ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","broadcast_channel_create() clients_array[i].fd ", clients_array[i].fd , "\n");
         #endif
 
-        ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","test ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","test ", clients_array[i].fd , "\n");
         #endif
     }
 
@@ -133,7 +144,6 @@ void broadcast_channel_create(channel_t* channel)
     }
 }
 
-
 void broadcast_channel_delete(int channel_id)
 {
     cJSON *json_root_object1 = 0;
@@ -153,7 +163,7 @@ void broadcast_channel_delete(int channel_id)
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(!g_client_list[i].is_authenticated)
+        if(!clients_array[i].is_authenticated)
         {
             continue;
         }
@@ -163,17 +173,17 @@ void broadcast_channel_delete(int channel_id)
         #endif
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","broadcast_channel_delete() g_client_list[i].fd ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","broadcast_channel_delete() clients_array[i].fd ", clients_array[i].fd , "\n");
         #endif
 
-        ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","test ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","test ", clients_array[i].fd , "\n");
         #endif
     }
 
-    clib__null_memory(msg_text, size_of_allocated_message_buffer);
+    clib__null_memory(msg_text, size_of_allocated_message_buffer); //clear bytes
 
     free(msg_text);
     msg_text = 0;
@@ -200,12 +210,7 @@ void broadcast_client_rename(client_t* client)
 
     cJSON_AddStringToObject(json_message_object1, "type", "client_rename");
     cJSON_AddStringToObject(json_message_object1, "new_username", client->username);
-
-    char user_id_string[16];
-    clib__null_memory(user_id_string, sizeof(user_id_string));
-    sprintf(user_id_string,"%d",client->user_id);
-
-    cJSON_AddStringToObject(json_message_object1, "user_id", user_id_string);
+    cJSON_AddNumberToObject(json_message_object1, "user_id", client->user_id);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
     char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
@@ -214,12 +219,12 @@ void broadcast_client_rename(client_t* client)
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(!g_client_list[i].is_authenticated)
+        if(!clients_array[i].is_authenticated)
         {
             continue;
         }
 
-        if(g_client_list[i].user_id == client->user_id)
+        if(clients_array[i].user_id == client->user_id)
         {
             continue;
         }
@@ -229,20 +234,20 @@ void broadcast_client_rename(client_t* client)
         #endif
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","broadcast_client_rename() g_client_list[i].fd ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","broadcast_client_rename() clients_array[i].fd ", clients_array[i].fd , "\n");
         #endif
 
-        ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","test ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","test ", clients_array[i].fd , "\n");
         #endif
     }
 
     clib__null_memory(msg_text, size_of_allocated_message_buffer); //clear bytes
 
-    free(msg_text);
-    msg_text = 0;
+    free(msg_text); //free memory
+    msg_text = 0; //ged rid of dangling pointer
 
     free(json_root_object1_string);
     json_root_object1_string = 0;
@@ -256,10 +261,10 @@ void broadcast_client_rename(client_t* client)
     }
 }
 
-void send_client_list_to_client(client_t* client)
+void send_client_list_to_client(client_t* receiver)
 {
     #ifdef DEBUG_PROGRAM
-    printf("%s %d %s", "sending client list to -> ", client->user_id, "\n");
+    printf("%s %d %s", "sending client list to -> ", receiver->user_id, "\n");
     #endif
 
     cJSON *json_root_object1 = 0;
@@ -268,17 +273,17 @@ void send_client_list_to_client(client_t* client)
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(!g_client_list[i].is_authenticated)
+        if(!clients_array[i].is_authenticated)
         {
             continue;
         }
 
         //
         //client list information is only sent to single user.
-        //single client can accept client list only once
+        //single client only allows list to be retrieved once. Client discards other client_list messages, if server would send them
         //
 
-        if(g_client_list[i].user_id != client->user_id)
+        if(clients_array[i].user_id != receiver->user_id)
         {
             continue;
         }
@@ -294,18 +299,13 @@ void send_client_list_to_client(client_t* client)
         // create array of clients
         for(int x = 0; x < MAX_CLIENTS; x++)
         {
-            if(g_client_list[x].is_authenticated)
+            if(clients_array[x].is_authenticated)
             {
                 cJSON *single_client = cJSON_CreateObject();
-                cJSON_AddStringToObject(single_client, "username", g_client_list[x].username);
-                cJSON_AddStringToObject(single_client, "public_key", g_client_list[x].public_key);
-                cJSON_AddNumberToObject(single_client, "channel_id", g_client_list[x].channel_id);
-
-                char id_string[16];
-                clib__null_memory(id_string, sizeof(id_string));
-                sprintf(id_string,"%d",x);
-
-                cJSON_AddStringToObject(single_client, "user_id", id_string);
+                cJSON_AddStringToObject(single_client, "username", clients_array[x].username);
+                cJSON_AddStringToObject(single_client, "public_key", clients_array[x].public_key);
+                cJSON_AddNumberToObject(single_client, "channel_id", clients_array[x].channel_id);
+                cJSON_AddNumberToObject(single_client, "user_id", clients_array[x].user_id);
                 cJSON_AddItemToArray(json_client_array, single_client);
             }
         }
@@ -313,7 +313,7 @@ void send_client_list_to_client(client_t* client)
         cJSON_AddStringToObject(json_message_object1, "type", "client_list");
         cJSON_AddItemToObject(json_message_object1, "clients", json_client_array);
         cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-        cJSON_AddStringToObject(json_message_object1, "local_username", g_client_list[i].username);
+        cJSON_AddStringToObject(json_message_object1, "local_username", clients_array[i].username);
 
         char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
@@ -325,12 +325,12 @@ void send_client_list_to_client(client_t* client)
         #endif
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","send_client_list_to_client g_client_list[i].fd ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","send_client_list_to_client clients_array[i].fd ", clients_array[i].fd , "\n");
         #endif
-        ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","test ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","test ", clients_array[i].fd , "\n");
         #endif
 
         clib__null_memory(msg_text, size_of_allocated_message_buffer);
@@ -351,9 +351,10 @@ void send_client_list_to_client(client_t* client)
     }
 }
 
-void send_channel_list_to_client(client_t* client)
+void send_channel_list_to_client(client_t* receiver)
 {
-    if(client == 0)
+    //why not
+    if(receiver == 0)
     {
         #ifdef DEBUG_PROGRAM
         printf("%s", "send_channel_list_to_client() client == 0 \n");
@@ -361,7 +362,7 @@ void send_channel_list_to_client(client_t* client)
         return;
     }
     #ifdef DEBUG_PROGRAM
-    printf("%s %d %s", "send_channel_list_to_client() for -> ", client->user_id, "\n");
+    printf("%s %d %s", "send_channel_list_to_client() for -> ", receiver->user_id, "\n");
     #endif
 
     cJSON *json_root_object1 = 0;
@@ -378,31 +379,25 @@ void send_channel_list_to_client(client_t* client)
 
     for(int i = 0; i < MAX_CHANNELS; i++)
     {
-        if(channel_list[i].is_channel == false)
+        if(channel_array[i].is_channel == false)
         {
             continue;
         }
 
         cJSON *single_channel = cJSON_CreateObject();
-        cJSON_AddNumberToObject(single_channel, "channel_id", channel_list[i].channel_id);
-        cJSON_AddNumberToObject(single_channel, "parent_channel_id", channel_list[i].parent_channel_id);
-        cJSON_AddStringToObject(single_channel, "name", channel_list[i].name);
-        cJSON_AddNumberToObject(single_channel, "current_clients", channel_list[i].current_clients);
-        cJSON_AddNumberToObject(single_channel, "max_clients", channel_list[i].max_clients);
-        cJSON_AddStringToObject(single_channel, "description", channel_list[i].description);
-        cJSON_AddBoolToObject(single_channel, "is_using_password", channel_list[i].is_using_password);
-        cJSON_AddNumberToObject(single_channel, "type", channel_list[i].type);
-
+        cJSON_AddNumberToObject(single_channel, "channel_id", channel_array[i].channel_id);
+        cJSON_AddNumberToObject(single_channel, "parent_channel_id", channel_array[i].parent_channel_id);
+        cJSON_AddStringToObject(single_channel, "name", channel_array[i].name);
+        cJSON_AddStringToObject(single_channel, "description", channel_array[i].description);
+        cJSON_AddBoolToObject(single_channel, "is_using_password", channel_array[i].is_using_password);
+        cJSON_AddNumberToObject(single_channel, "maintainer_id", channel_array[i].maintainer_id);
         cJSON_AddItemToArray(json_channel_array, single_channel);
     }
 
     cJSON_AddStringToObject(json_message_object1, "type", "channel_list");
-
     cJSON_AddItemToObject(json_message_object1, "channels", json_channel_array);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
     msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
 
     #ifdef DEBUG_PROGRAM
@@ -411,7 +406,7 @@ void send_channel_list_to_client(client_t* client)
 
     if(msg_text != 0)
     {
-        ws_sendframe(client->fd, msg_text, strlen(msg_text), false, 1);
+        ws_sendframe(receiver->fd, msg_text, strlen(msg_text), false, 1);
         clib__null_memory(msg_text, size_of_allocated_message_buffer);
         free(msg_text);
         msg_text = 0;
@@ -460,12 +455,12 @@ void broadcast_client_connect(client_t* client)
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(!g_client_list[i].is_authenticated)
+        if(!clients_array[i].is_authenticated)
         {
             continue;
         }
 
-        if(g_client_list[i].user_id == client->user_id)
+        if(clients_array[i].user_id == client->user_id)
         {
             continue;
         }
@@ -475,20 +470,20 @@ void broadcast_client_connect(client_t* client)
         #endif
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","send_client_list_to_client g_client_list[i].fd ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","send_client_list_to_client clients_array[i].fd ", clients_array[i].fd , "\n");
         #endif
 
-        ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","test ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","test ", clients_array[i].fd , "\n");
         #endif
     }
 
 
     clib__null_memory(msg_text, size_of_allocated_message_buffer); //clear bytes
-    free(msg_text);
-    msg_text = 0;
+    free(msg_text); //free memory
+    msg_text = 0; //ged rid of dangling pointer
 
     free(json_root_object1_string);
     json_root_object1_string = 0;
@@ -511,13 +506,7 @@ void broadcast_client_disconnect(client_t* client)
     json_message_object1 = cJSON_CreateObject();
 
     cJSON_AddStringToObject(json_message_object1, "type", "client_disconnect");
-
-    char user_id_string[16];
-    clib__null_memory(user_id_string, sizeof(user_id_string));
-    sprintf(user_id_string,"%d",client->user_id);
-
-    cJSON_AddStringToObject(json_message_object1, "user_id", user_id_string);
-
+    cJSON_AddNumberToObject(json_message_object1, "user_id", client->user_id);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
@@ -527,12 +516,12 @@ void broadcast_client_disconnect(client_t* client)
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(!g_client_list[i].is_authenticated)
+        if(!clients_array[i].is_authenticated)
         {
             continue;
         }
 
-        if(g_client_list[i].user_id == client->user_id)
+        if(clients_array[i].user_id == client->user_id)
         {
             continue;
         }
@@ -542,13 +531,13 @@ void broadcast_client_disconnect(client_t* client)
         #endif
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","send_client_list_to_client g_client_list[i].fd ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","send_client_list_to_client clients_array[i].fd ", clients_array[i].fd , "\n");
         #endif
 
-        ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","test ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","test ", clients_array[i].fd , "\n");
         #endif
     }
 
@@ -567,6 +556,50 @@ void broadcast_client_disconnect(client_t* client)
         #endif
         cJSON_Delete(json_root_object1);
     }
+
+    //
+    //check if the client that left was the maintainer of channel
+    //if he was, pick new maintainer
+    //
+
+    for(int i = 0; i < MAX_CHANNELS; i++)
+    {
+        if(channel_array[i].is_channel == false)
+        {
+            continue;
+        }
+        if(channel_array[i].maintainer_id == client->user_id)
+        {
+            channel_array[i].maintainer_id = -1;
+            #ifdef DEBUG_PROGRAM
+            printf("%s%s%s%s%s","[i] broadcast_client_disconnect() client ", client->username , " was the maintainer of channel: ", channel_array[i].name ,"\n");
+            #endif
+
+            bool is_new_maintainer_found = false;
+
+            for(int y = 0; y < MAX_CLIENTS; y++)
+            {
+                if(!clients_array[y].is_authenticated)
+                {
+                    continue;
+                }
+                if(channel_array[i].channel_id == clients_array[y].channel_id)
+                {
+                    channel_array[i].maintainer_id = clients_array[y].user_id;
+                    is_new_maintainer_found = true;
+
+                    #ifdef DEBUG_PROGRAM
+                    printf("%s%d%s%s%s","broadcast_client_disconnect() new maintainer of channel(id) ", channel_array[i].channel_id , " is user ", clients_array[y].username , "\n");
+                    #endif
+
+                    send_channel_maintainer_id(&channel_array[i]);
+
+                    break;
+                }
+            }
+            return;
+        }
+    }
 }
 
 void mark_channels_for_deletion(int channel_id, int* current_index, int* channel_indices)
@@ -577,39 +610,25 @@ void mark_channels_for_deletion(int channel_id, int* current_index, int* channel
     }
     for(int i = 0; i < MAX_CHANNELS; i++)
     {
-        if(channel_id == channel_list[i].parent_channel_id)
+        if(channel_id == channel_array[i].parent_channel_id)
         {
             channel_indices[*current_index] = i;
             *current_index += 1;
             #ifdef DEBUG_PROGRAM
-            printf("%s %s %s", "need to remove channel ", channel_list[i].name, " \n");
+            printf("%s %s %s", "need to remove channel ", channel_array[i].name, " \n");
             #endif
-            mark_channels_for_deletion(channel_list[i].channel_id, current_index, channel_indices);
+            mark_channels_for_deletion(channel_array[i].channel_id, current_index, channel_indices);
         }
     }
 }
 
 void broadcast_channel_join(client_t* client)
 {
-    cJSON *json_root_object1 = 0;
-    cJSON *json_message_object1 = 0;
-
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
-
+    cJSON *json_root_object1 = cJSON_CreateObject();
+    cJSON *json_message_object1 = cJSON_CreateObject();
     cJSON_AddStringToObject(json_message_object1, "type", "channel_join");
-
-    char user_id_string[16];
-    clib__null_memory(user_id_string, sizeof(user_id_string));
-    sprintf(user_id_string,"%d",client->user_id);
-
-    char channel_id_string[16];
-    clib__null_memory(channel_id_string, sizeof(channel_id_string));
-    sprintf(channel_id_string,"%d",client->channel_id);
-
-    cJSON_AddStringToObject(json_message_object1, "user_id", user_id_string);
-    cJSON_AddStringToObject(json_message_object1, "channel_id", channel_id_string);
-
+    cJSON_AddNumberToObject(json_message_object1, "user_id", client->user_id);
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", client->channel_id);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
@@ -619,23 +638,29 @@ void broadcast_channel_join(client_t* client)
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(!g_client_list[i].is_authenticated)
+        if(!clients_array[i].is_authenticated)
         {
             continue;
         }
+
+
+        //if(clients_array[i].user_id == client->user_id)
+        //{
+            //continue;
+        //}
 
         #ifdef DEBUG_PROGRAM
         printf("%s %s %s","broadcast_channel_join: msg_text ", msg_text , "\n");
         #endif
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","broadcast_channel_join g_client_list[i].fd ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","broadcast_channel_join clients_array[i].fd ", clients_array[i].fd , "\n");
         #endif
 
-        ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %d %s","test ", g_client_list[i].fd , "\n");
+        printf("%s %d %s","test ", clients_array[i].fd , "\n");
         #endif
     }
 
@@ -665,18 +690,10 @@ void send_direct_chat_picture_metadata(char* username, size_t picture_size, int 
     cJSON *json_root_object1 = cJSON_CreateObject();
     cJSON *json_message_object1 = cJSON_CreateObject();
 
-    char sender_id_string[16];
-    clib__null_memory(sender_id_string, sizeof(sender_id_string));
-    sprintf(sender_id_string,"%d",sender_id);
-
-    char picture_id_string[16];
-    clib__null_memory(picture_id_string, sizeof(picture_id_string));
-    sprintf(picture_id_string,"%d",picture_id);
-
     cJSON_AddStringToObject(json_message_object1, "type", "direct_chat_picture_metadata");
     cJSON_AddStringToObject(json_message_object1, "sender_username", username);
-    cJSON_AddStringToObject(json_message_object1, "sender_id", sender_id_string);
-    cJSON_AddStringToObject(json_message_object1, "picture_id", picture_id_string);
+    cJSON_AddNumberToObject(json_message_object1, "sender_id", sender_id);
+    cJSON_AddNumberToObject(json_message_object1, "picture_id", picture_id); //name of sender
 
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
@@ -686,12 +703,12 @@ void send_direct_chat_picture_metadata(char* username, size_t picture_size, int 
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(g_client_list[i].is_authenticated && i == receiver_id)
+        if(clients_array[i].is_authenticated && i == receiver_id)
         {
             #ifdef DEBUG_PROGRAM
             printf("%s %d %s", "[i] sending direct chat picture meta information to user :", i, "\n");
             #endif
-            ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+            ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
             break;
         }
     }
@@ -718,19 +735,12 @@ void send_direct_chat_picture(char* username, char* chat_picture_base64, int pic
     cJSON *json_root_object1 = cJSON_CreateObject();
     cJSON *json_message_object1 = cJSON_CreateObject();
 
-    char sender_id_string[16];
-    clib__null_memory(sender_id_string, sizeof(sender_id_string));
-    sprintf(sender_id_string,"%d",sender_id);
-
-    char picture_id_string[16];
-    clib__null_memory(picture_id_string, sizeof(picture_id_string));
-    sprintf(picture_id_string,"%d",picture_id);
 
     cJSON_AddStringToObject(json_message_object1, "type", "direct_chat_picture");
     cJSON_AddStringToObject(json_message_object1, "value", chat_picture_base64);
     cJSON_AddStringToObject(json_message_object1, "sender_username", username);
-    cJSON_AddStringToObject(json_message_object1, "sender_id", sender_id_string);
-    cJSON_AddStringToObject(json_message_object1, "picture_id", picture_id_string);
+    cJSON_AddNumberToObject(json_message_object1, "sender_id", sender_id);
+    cJSON_AddNumberToObject(json_message_object1, "picture_id", picture_id);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
@@ -739,12 +749,12 @@ void send_direct_chat_picture(char* username, char* chat_picture_base64, int pic
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(g_client_list[i].is_authenticated && i == receiver_id)
+        if(clients_array[i].is_authenticated && i == receiver_id)
         {
             #ifdef DEBUG_PROGRAM
             printf("%s %d %s", "[i] sending direct chat picture to user :", i, "\n");
             #endif
-            ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+            ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
             break;
         }
     }
@@ -769,14 +779,10 @@ void send_direct_chat_message(char* username, char* chat_message_value, int send
     cJSON *json_root_object1 = cJSON_CreateObject();
     cJSON *json_message_object1 = cJSON_CreateObject();
 
-    char sender_id_string[16];
-    clib__null_memory(sender_id_string, sizeof(sender_id_string));
-    sprintf(sender_id_string,"%d",sender_id);
-
     cJSON_AddStringToObject(json_message_object1, "type", "direct_chat_message");
     cJSON_AddStringToObject(json_message_object1, "value", chat_message_value);
     cJSON_AddStringToObject(json_message_object1, "sender_username", username);
-    cJSON_AddStringToObject(json_message_object1, "sender_id", sender_id_string);
+    cJSON_AddNumberToObject(json_message_object1, "sender_id", sender_id);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
@@ -785,20 +791,23 @@ void send_direct_chat_message(char* username, char* chat_message_value, int send
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(g_client_list[i].is_authenticated && i == receiver_id)
+        if(clients_array[i].is_authenticated && i == receiver_id)
         {
             #ifdef DEBUG_PROGRAM
             printf("%s %d %s", "[i] sending DM to user :", i, "\n");
             #endif
-            ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+            ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
             break;
         }
     }
 
     cJSON_Delete(json_root_object1);
+
     cJSON_free(json_root_object1_string);
     json_root_object1_string = 0;
-    clib__null_memory(msg_text, size_of_allocated_message_buffer);
+
+    clib__null_memory(msg_text, size_of_allocated_message_buffer); // null contents of memory
+
     free(msg_text);
     msg_text = 0;
 }
@@ -812,13 +821,11 @@ void send_channel_chat_message(int channel_id, client_t* sender, char* chat_mess
     cJSON *json_root_object1 = cJSON_CreateObject();
     cJSON *json_message_object1 = cJSON_CreateObject();
 
-    char receiver_channel_string[16] = {0};
-    sprintf(receiver_channel_string,"%d",channel_id);
-
-    cJSON_AddStringToObject(json_message_object1, "channel_id", receiver_channel_string);
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", channel_id);
     cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_message");
     cJSON_AddStringToObject(json_message_object1, "value", chat_message_value);
     cJSON_AddStringToObject(json_message_object1, "sender_username", sender->username);
+
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
@@ -828,19 +835,19 @@ void send_channel_chat_message(int channel_id, client_t* sender, char* chat_mess
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(g_client_list[i].is_authenticated == false)
+        if(clients_array[i].is_authenticated == false)
         {
             continue;
         }
-        if(g_client_list[i].channel_id != channel_id)
+        if(clients_array[i].channel_id != channel_id)
         {
             continue;
         }
 
-        ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
 
         #ifdef DEBUG_PROGRAM
-        printf("%s %s %s","send_channel_chat_message() sending message to -> ", g_client_list[i].username , "\n");
+        printf("%s %s %s","send_channel_chat_message() sending message to -> ", clients_array[i].username , "\n");
         #endif
     }
 
@@ -854,7 +861,145 @@ void send_channel_chat_message(int channel_id, client_t* sender, char* chat_mess
 
     free(json_root_object1_string);
     json_root_object1_string = 0;
+
     clib__null_memory(msg_text, size_of_allocated_message_buffer);
+
+    free(msg_text);
+    msg_text = 0;
+}
+
+void send_channel_maintainer_id(channel_t* channel)
+{
+    #ifdef DEBUG_PROGRAM
+        printf("%s %s","send_channel_maintainer_id", "\n");
+    #endif
+
+    cJSON *json_root_object1 = cJSON_CreateObject();
+    cJSON *json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", channel->channel_id);
+    cJSON_AddNumberToObject(json_message_object1, "maintainer_id", channel->maintainer_id);
+    cJSON_AddStringToObject(json_message_object1, "type", "channel_maintainer_id");
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    //#ifdef DEBUG_PROGRAM
+    // printf("%s %s", json_root_object1_string , "\n");
+    //#endif
+
+    if(json_root_object1 != 0)
+    {
+        #ifdef DEBUG_HEAP
+        printf("send_channel_maintainer_id() cJSON_Delete(json_root_object1); \n");
+        cJSON_Delete(json_root_object1);
+        #endif
+
+        json_root_object1 = 0;
+        json_message_object1 = 0;
+    }
+
+    int size_of_allocated_message_buffer = 0;
+    char* msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    if(json_root_object1_string != 0)
+    {
+        #ifdef DEBUG_HEAP
+        printf("send_channel_maintainer_id free(json_root_object1_string); \n");
+        #endif
+        clib__null_memory(json_root_object1_string, strlen(json_root_object1_string));
+        free(json_root_object1_string);
+        json_root_object1_string = 0;
+    }
+
+    #ifdef DEBUG_PROGRAM
+    printf("%s %s",msg_text , "\n");
+    #endif
+
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        if(clients_array[i].is_authenticated == false)
+        {
+            continue;
+        }
+        if(clients_array[i].channel_id != channel->channel_id)
+        {
+            continue;
+        }
+
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
+    }
+
+    clib__null_memory(msg_text, size_of_allocated_message_buffer);
+
+    free(msg_text);
+    msg_text = 0;
+}
+
+void send_maintainer_id_to_client(client_t* receiver, channel_t* channel)
+{
+    #ifdef DEBUG_PROGRAM
+        printf("%s %s","send_channel_maintainer_id", "\n");
+    #endif
+
+    cJSON *json_root_object1 = cJSON_CreateObject();
+    cJSON *json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", channel->channel_id);
+    cJSON_AddNumberToObject(json_message_object1, "maintainer_id", channel->maintainer_id);
+    cJSON_AddStringToObject(json_message_object1, "type", "channel_maintainer_id");
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    //#ifdef DEBUG_PROGRAM
+    // printf("%s %s", json_root_object1_string , "\n");
+    //#endif
+
+    if(json_root_object1 != 0)
+    {
+        #ifdef DEBUG_HEAP
+        printf("send_channel_maintainer_id() cJSON_Delete(json_root_object1); \n");
+        cJSON_Delete(json_root_object1);
+        #endif
+
+        json_root_object1 = 0;
+        json_message_object1 = 0;
+    }
+
+    int size_of_allocated_message_buffer = 0;
+    char* msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    if(json_root_object1_string != 0)
+    {
+        #ifdef DEBUG_HEAP
+        printf("send_channel_maintainer_id free(json_root_object1_string); \n");
+        #endif
+        clib__null_memory(json_root_object1_string, strlen(json_root_object1_string));
+        free(json_root_object1_string);
+        json_root_object1_string = 0;
+    }
+
+    #ifdef DEBUG_PROGRAM
+    printf("%s %s",msg_text , "\n");
+    #endif
+
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        if(clients_array[i].is_authenticated == false)
+        {
+            continue;
+        }
+        if(clients_array[i].user_id != receiver->user_id)
+        {
+            continue;
+        }
+
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
+    }
+
+    clib__null_memory(msg_text, size_of_allocated_message_buffer);
+
     free(msg_text);
     msg_text = 0;
 }
@@ -865,21 +1010,14 @@ void send_channel_chat_picture(int channel_id, client_t* sender, char* chat_pict
         printf("%s %s","send_channel_chat_picture", "\n");
     #endif
 
-    char picture_id_string[16];
-    clib__null_memory(picture_id_string, sizeof(picture_id_string));
-    sprintf(picture_id_string,"%d",picture_id);
-
     cJSON *json_root_object1 = cJSON_CreateObject();
     cJSON *json_message_object1 = cJSON_CreateObject();
 
-    char receiver_channel_string[16] = {0};
-    sprintf(receiver_channel_string,"%d",channel_id);
-
-    cJSON_AddStringToObject(json_message_object1, "channel_id", receiver_channel_string);
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", channel_id); //useless?
     cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_picture");
     cJSON_AddStringToObject(json_message_object1, "value", chat_picture_base64);
     cJSON_AddStringToObject(json_message_object1, "username", sender->username);
-    cJSON_AddStringToObject(json_message_object1, "picture_id", picture_id_string);
+    cJSON_AddNumberToObject(json_message_object1, "picture_id", picture_id);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
@@ -918,18 +1056,18 @@ void send_channel_chat_picture(int channel_id, client_t* sender, char* chat_pict
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(g_client_list[i].is_authenticated == false)
+        if(clients_array[i].is_authenticated == false)
         {
             continue;
         }
-        if(g_client_list[i].channel_id != channel_id)
+        if(clients_array[i].channel_id != channel_id)
         {
             continue;
         }
 
-        if(g_client_list[i].user_id != sender->user_id)
+        if(clients_array[i].user_id != sender->user_id)
         {
-            ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+            ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
         }
         else
         {
@@ -946,7 +1084,7 @@ void send_channel_chat_picture(int channel_id, client_t* sender, char* chat_pict
 
             int size_of_allocated_message_buffer = 0;
             char* msg_text2 = encrypt_websocket_msg(json_root_object2_string, &size_of_allocated_message_buffer);
-            ws_sendframe(g_client_list[i].fd, msg_text2, strlen(msg_text2), false, 1);
+            ws_sendframe(clients_array[i].fd, msg_text2, strlen(msg_text2), false, 1);
 
             if(json_root_object2_string != 0)
             {
@@ -986,28 +1124,17 @@ void send_channel_chat_picture_metadata(int channel_id, client_t* sender, size_t
     printf("%s %s","send_channel_chat_picture_metadata", "\n");
     #endif
 
-    char picture_size_string[16];
-    clib__null_memory(picture_size_string, sizeof(picture_size_string));
-    sprintf(picture_size_string,"%zu",picture_size);
-
-    char picture_id_string[16];
-    clib__null_memory(picture_id_string, sizeof(picture_id_string));
-    sprintf(picture_id_string,"%d",picture_id);
-
     cJSON *json_root_object1 = cJSON_CreateObject();
     cJSON *json_message_object1 = cJSON_CreateObject();
 
-    char receiver_channel_string[16] = {0};
-    sprintf(receiver_channel_string,"%d",channel_id);
-
-    cJSON_AddStringToObject(json_message_object1, "channel_id", receiver_channel_string);
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", channel_id);
     cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_picture_metadata");
-    cJSON_AddStringToObject(json_message_object1, "size", picture_size_string);
-    cJSON_AddStringToObject(json_message_object1, "picture_id", picture_id_string);
-    cJSON_AddStringToObject(json_message_object1, "username", sender->username)
+    cJSON_AddNumberToObject(json_message_object1, "size", picture_size);
+    cJSON_AddNumberToObject(json_message_object1, "picture_id", picture_id);
+    cJSON_AddStringToObject(json_message_object1, "username", sender->username);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
-    char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+    char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1); //should not this be freed?
 
     //#ifdef DEBUG_PROGRAM
     // printf("%s %s", json_root_object1_string , "\n");
@@ -1039,20 +1166,20 @@ void send_channel_chat_picture_metadata(int channel_id, client_t* sender, size_t
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(g_client_list[i].is_authenticated == false)
+        if(clients_array[i].is_authenticated == false)
         {
             continue;
         }
-        if(g_client_list[i].channel_id != channel_id)
+        if(clients_array[i].channel_id != channel_id)
         {
             continue;
         }
 
-        if(g_client_list[i].user_id == sender->user_id)
+        if(clients_array[i].user_id == sender->user_id)
         {
             continue;
         }
-        ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
     }
 
     clib__null_memory(msg_text, size_of_allocated_message_buffer);
@@ -1091,9 +1218,9 @@ void broadcast_server_info(char* info)
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(g_client_list[i].is_authenticated)
+        if(clients_array[i].is_authenticated)
         {
-            ws_sendframe(g_client_list[i].fd, msg_text, strlen(msg_text), false, 1);
+            ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), false, 1);
         }
     }
 
@@ -1137,10 +1264,10 @@ void onopen(int fd)
     printf("%s%d%s","[i] onopen : new client id: ", index, "\n");
     #endif
 
-    g_client_list[index].is_authenticated = false;
-    g_client_list[index].timestamp_connected = get_timestamp_ms();
-    g_client_list[index].fd = fd;
-    g_client_list[index].user_id = index;
+    clients_array[index].is_authenticated = false;
+    clients_array[index].timestamp_connected = get_timestamp_ms();
+    clients_array[index].fd = fd;
+    clients_array[index].user_id = index;
     char *cli;
     cli = ws_getaddress(fd);
     #ifdef DEBUG_PROGRAM
@@ -1149,7 +1276,7 @@ void onopen(int fd)
 	free(cli);
     cli = 0;
 
-    //broadcast_client_connect(&g_client_list[index]);
+    //broadcast_client_connect(&clients_array[index]);
 }
 
 void onclose(int fd)
@@ -1169,20 +1296,23 @@ void onclose(int fd)
 
         char server_info[400];
         clib__null_memory(server_info, sizeof(server_info));
-        sprintf(server_info,"%s%s","[i] disconnected : ", g_client_list[index].username);
+        sprintf(server_info,"%s%s","[i] disconnected : ", clients_array[index].username);
         broadcast_server_info(server_info);
 
         #ifdef DEBUG_PROGRAM
-        printf("clib__null_memory(&g_client_list[fd], sizeof(client_t),0);");
+        printf("clib__null_memory(&clients_array[fd], sizeof(client_t),0);");
         #endif
 
-        broadcast_client_disconnect(&g_client_list[index]);
+        broadcast_client_disconnect(&clients_array[index]);
 
-        clib__null_memory(&g_client_list[index], sizeof(client_t));
+        //
+        //set all bytes of client_t structure to null, nulling out every data of his
+        //
+        clib__null_memory(&clients_array[index], sizeof(client_t));
     }
 }
 
-void process_authenticated_client_message(int fd, int index, unsigned char *decrypted_websocket_data_buffer,uint64_t size,int type)
+void process_authenticated_client_message(int fd, int index, unsigned char *decrypted_websocket_data_buffer, uint64_t size, int type)
 {
     char* encrypted_data_to_send_buffer = 0;
     int size_of_allocated_message_buffer = 0;
@@ -1208,6 +1338,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
         #endif
 
         ws_close_client(fd);
+
         return;
     }
 
@@ -1256,7 +1387,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
     {
         unsigned long long timestamp_now = get_timestamp_ms();
 
-        if(g_client_list[index].timestamp_last_sent_chat_message + g_server_settings.chat_cooldown_milliseconds > timestamp_now)
+        if(clients_array[index].timestamp_last_sent_chat_message + g_server_settings.chat_cooldown_milliseconds > timestamp_now)
         {
             #ifdef DEBUG_PROGRAM
             printf("%s%d%s","[!] client : ", index, " can not sent chat message. cooldown active \n");
@@ -1313,8 +1444,8 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
                 cJSON_Delete(json_root);
                 return;
             }
-            g_client_list[index].timestamp_last_sent_chat_message = get_timestamp_ms();
-            g_id_last_sent_picture++;
+            clients_array[index].timestamp_last_sent_chat_message = get_timestamp_ms();
+            id_last_sent_picture++;
 
             int receiver_id_int = atoi(receiver_id->valuestring);
 
@@ -1322,8 +1453,8 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
                 printf("%s%d%s","[i] sending direct chat picture to user ", receiver_id_int, "\n");
             #endif
 
-            send_direct_chat_picture_metadata(g_client_list[index].username, strlen(json_chat_message_value->valuestring),g_id_last_sent_picture,index, receiver_id_int);
-            send_direct_chat_picture(g_client_list[index].username,json_chat_message_value->valuestring, g_id_last_sent_picture, index, receiver_id_int);
+            send_direct_chat_picture_metadata(clients_array[index].username, strlen(json_chat_message_value->valuestring),id_last_sent_picture,index, receiver_id_int);
+            send_direct_chat_picture(clients_array[index].username,json_chat_message_value->valuestring, id_last_sent_picture, index, receiver_id_int);
 
         }
 
@@ -1342,10 +1473,10 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
             int channel_id_int = atoi(receiver_id->valuestring);
 
-            g_client_list[index].timestamp_last_sent_chat_message = get_timestamp_ms();
-            g_id_last_sent_picture++;
-            send_channel_chat_picture_metadata(channel_id_int, &g_client_list[index], strlen(json_chat_message_value->valuestring), g_id_last_sent_picture);
-            send_channel_chat_picture(channel_id_int, &g_client_list[index], json_chat_message_value->valuestring, g_id_last_sent_picture);
+            clients_array[index].timestamp_last_sent_chat_message = get_timestamp_ms();
+            id_last_sent_picture++;
+            send_channel_chat_picture_metadata(channel_id_int, &clients_array[index], strlen(json_chat_message_value->valuestring), id_last_sent_picture);
+            send_channel_chat_picture(channel_id_int, &clients_array[index], json_chat_message_value->valuestring, id_last_sent_picture);
         }
 
         cJSON_Delete(json_root);
@@ -1358,7 +1489,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
     {
         unsigned long long timestamp_now = get_timestamp_ms();
 
-        if(g_client_list[index].timestamp_last_sent_join_channel_request + g_server_settings.join_channel_request_cooldown_milliseconds > timestamp_now)
+        if(clients_array[index].timestamp_last_sent_join_channel_request + g_server_settings.join_channel_request_cooldown_milliseconds > timestamp_now)
         {
             #ifdef DEBUG_PROGRAM
             printf("%s%d%s","[!] client : ", index, " can not sent chat message. cooldown active \n");
@@ -1367,10 +1498,15 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             return;
         }
 
-        g_client_list[index].timestamp_last_sent_join_channel_request = timestamp_now;
+        clients_array[index].timestamp_last_sent_join_channel_request = timestamp_now;
+
+        //
+        //check if channel exists
+        //
 
         cJSON* target_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
 
+        //check receiver type
         if (!cJSON_IsString(target_channel_id) || target_channel_id->valuestring == NULL || strlen(target_channel_id->valuestring) == 0 || !clib__is_str_number(target_channel_id->valuestring))
         {
             #ifdef DEBUG_PROGRAM
@@ -1381,27 +1517,110 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             return;
         }
 
+        //
+        //check if target channel exists
+        //
+
         int target_channel_id_int = atoi(target_channel_id->valuestring);
-        bool is_channel_found = false;
+        int target_channel_index = get_channel_index_by_channel_id(target_channel_id_int);
 
-        for(int i = 0; i < MAX_CHANNELS; i++)
+        if(target_channel_index == -1)
         {
-            if(channel_list[i].channel_id != target_channel_id_int)
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","[!] client : ", index, "join_channel_request target_channel_index not found \n");
+            #endif
+            cJSON_Delete(json_root);
+            return;
+        }
+
+        //
+        //check if user is a maintainer of the current channel before letting him join new channel
+        //if he is, pick new maintainer from other users currently present in his current channel
+        //if there are no users to pick from, set maintaner to -1
+        //
+
+        int current_channel_index = get_channel_index_by_channel_id(clients_array[index].channel_id);
+        int current_channel_maintainer_id = channel_array[current_channel_index].maintainer_id;
+
+        if(clients_array[index].channel_id == target_channel_id_int)
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s%d%s","[!] client : ", index, "join_channel_request client is already at the channel",target_channel_id_int,"not found \n");
+            #endif
+            cJSON_Delete(json_root);
+            return;
+        }
+
+        //
+        //safe to join new channel at this point
+        //
+
+        clients_array[index].channel_id = target_channel_id_int;
+        broadcast_channel_join(&clients_array[index]);
+
+        //
+        //check if the user that left channel was the maintainer of channel
+        //
+
+        if(current_channel_maintainer_id == clients_array[index].user_id)
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%s%s%s%s","[i] client ", clients_array[index].username , " is maintainer of channel: ", channel_array[current_channel_index].name ,"\n");
+            #endif
+
+            bool is_new_maintainer_found = false;
+
+            for(int i = 0; i < MAX_CLIENTS; i++)
             {
-                continue;
+                if(!clients_array[i].is_authenticated)
+                {
+                    continue;
+                }
+                if(clients_array[i].channel_id == channel_array[current_channel_index].channel_id)
+                {
+                    channel_array[current_channel_index].maintainer_id = clients_array[i].user_id;
+                    is_new_maintainer_found = true;
+
+                    #ifdef DEBUG_PROGRAM
+                    printf("%s%d%s%s%s","new maintainer of channel(id) ", channel_array[current_channel_index].channel_id , " is user ", clients_array[i].username , "\n");
+                    #endif
+
+                    send_channel_maintainer_id(&channel_array[current_channel_index]);
+
+                    break;
+                }
             }
-            if(channel_list[i].is_channel == true)
+
+            if(is_new_maintainer_found == false)
             {
-                is_channel_found = true;
-                break;
+                #ifdef DEBUG_PROGRAM
+                printf("%s%d%s","new maintainer of channel(id) ", channel_array[current_channel_index].channel_id , " is no one (-1) \n");
+                #endif
+
+                channel_array[current_channel_index].maintainer_id = -1;
+            }
+            else
+            {
+                send_channel_maintainer_id(&channel_array[target_channel_index]);
             }
         }
 
-        if(is_channel_found == true)
+        if(channel_array[target_channel_index].maintainer_id == -1)
         {
-            g_client_list[index].channel_id = target_channel_id_int;
-            broadcast_channel_join(&g_client_list[index]);
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","client : ", index, " if(channel_array[target_channel_index].maintainer_id == -1) \n");
+            #endif
+            channel_array[target_channel_index].maintainer_id = clients_array[index].user_id;
+            send_channel_maintainer_id(&channel_array[target_channel_index]);
         }
+        else
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","client : ", index, " send_maintainer_id_to_client() \n");
+            #endif
+            send_maintainer_id_to_client(&clients_array[index], &channel_array[target_channel_index]);
+        }
+
 
         cJSON_Delete(json_root);
     }
@@ -1409,7 +1628,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
     {
         unsigned long long timestamp_now = get_timestamp_ms();
 
-        if(g_client_list[index].timestamp_last_sent_create_channel_request + g_server_settings.create_channel_request_cooldown_milliseconds > timestamp_now)
+        if(clients_array[index].timestamp_last_sent_create_channel_request + g_server_settings.create_channel_request_cooldown_milliseconds > timestamp_now)
         {
             #ifdef DEBUG_PROGRAM
             printf("%s%d%s","[!] client : ", index, " can not create channel. cooldown active \n");
@@ -1418,40 +1637,49 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             return;
         }
 
-        g_client_list[index].timestamp_last_sent_create_channel_request = timestamp_now;
+        clients_array[index].timestamp_last_sent_create_channel_request = timestamp_now;
+
+        //
+        //check if channel exists
+        //
 
         cJSON* new_channel_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_name");
 
+        //check parent_channel_id
         if (!cJSON_IsString(new_channel_name) || new_channel_name->valuestring == NULL || strlen(new_channel_name->valuestring) == 0 || strlen(new_channel_name->valuestring) >= 128)
         {
-            //#ifdef DEBUG_PROGRAM
+            #ifdef DEBUG_PROGRAM
             printf("%s%d%s","[!] client : ", index, " new_channel_name is wrong \n");
-            //#endif
+            #endif
             //ws_close_client(fd);
             cJSON_Delete(json_root);
             return;
         }
-
 
         cJSON* parent_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "parent_channel_id");
 
+        //check parent_channel_id
         if (!cJSON_IsString(parent_channel_id) || parent_channel_id->valuestring == NULL || strlen(parent_channel_id->valuestring) == 0 || !clib__is_str_number(parent_channel_id->valuestring))
         {
-            //#ifdef DEBUG_PROGRAM
+            #ifdef DEBUG_PROGRAM
             printf("%s%d%s","[!] client : ", index, " parent_channel_id is wrong \n");
-            //#endif
+            #endif
             //ws_close_client(fd);
             cJSON_Delete(json_root);
             return;
         }
+
+        //
+        //check description
+        //
 
         cJSON* channel_description = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_description");
 
         if (!cJSON_IsString(channel_description) || channel_description->valuestring == NULL || strlen(channel_description->valuestring) >= 1000)
         {
-            //#ifdef DEBUG_PROGRAM
+            #ifdef DEBUG_PROGRAM
             printf("%s%d%s","[!] client : ", index, " channel_description is wrong \n");
-            //#endif
+            #endif
             //ws_close_client(fd);
             cJSON_Delete(json_root);
             return;
@@ -1462,20 +1690,21 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
         for(int i = 0; i < MAX_CHANNELS; i++)
         {
-            if(channel_list[i].is_channel == false)
+            if(channel_array[i].is_channel == false)
             {
                 int new_channel_id = i + 1;
-                channel_list[i].channel_id = new_channel_id;
-                channel_list[i].parent_channel_id = parent_channel_id_int;
-                channel_list[i].is_channel = true;
-                channel_list[i].max_clients = MAX_CLIENTS;
+                channel_array[i].channel_id = new_channel_id;
+                channel_array[i].parent_channel_id = parent_channel_id_int;
+                channel_array[i].is_channel = true;
+                channel_array[i].max_clients = MAX_CLIENTS;
 
-                clib__copy_memory((void*)new_channel_name->valuestring, (void*)&channel_list[i].name, strlen(new_channel_name->valuestring));
-                clib__copy_memory((void*)channel_description->valuestring, (void*)&channel_list[i].description, strlen(channel_description->valuestring));
-                channel_list[i].type = 1;
-                channel_list[i].is_channel = true;
+                clib__copy_memory((void*)new_channel_name->valuestring, (void*)&channel_array[i].name, strlen(new_channel_name->valuestring));
+                clib__copy_memory((void*)channel_description->valuestring, (void*)&channel_array[i].description, strlen(channel_description->valuestring));
+                channel_array[i].type = 1;
+                channel_array[i].is_channel = true;
+                channel_array[i].maintainer_id = -1;
 
-                broadcast_channel_create(&channel_list[i]);
+                broadcast_channel_create(&channel_array[i]);
 
                 break;
             }
@@ -1485,7 +1714,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
     }
     else if(strcmp(json_message_type->valuestring, "delete_channel_request") == 0)
     {
-        if(g_client_list[index].is_admin == false)
+        if(clients_array[index].is_admin == false)
         {
             cJSON_Delete(json_root);
             return;
@@ -1493,7 +1722,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
         unsigned long long timestamp_now = get_timestamp_ms();
 
-        if(g_client_list[index].timestamp_last_sent_delete_channel_request + g_server_settings.delete_channel_request_cooldown_milliseconds > timestamp_now)
+        if(clients_array[index].timestamp_last_sent_delete_channel_request + g_server_settings.delete_channel_request_cooldown_milliseconds > timestamp_now)
         {
             #ifdef DEBUG_PROGRAM
             printf("%s%d%s","[!] client : ", index, " can not sent chat message. cooldown active \n");
@@ -1502,16 +1731,21 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             return;
         }
 
-        g_client_list[index].timestamp_last_sent_delete_channel_request = timestamp_now;
+        clients_array[index].timestamp_last_sent_delete_channel_request = timestamp_now;
+
+        //
+        //check if channel exists
+        //
 
         cJSON* target_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
 
+        //check receiver type
         if (!cJSON_IsString(target_channel_id) || target_channel_id->valuestring == NULL || strlen(target_channel_id->valuestring) == 0 || !clib__is_str_number(target_channel_id->valuestring))
         {
             #ifdef DEBUG_PROGRAM
             printf("%s%d%s","[!] client : ", index, " target_channel_id is wrong \n");
             #endif
-            ws_close_client(fd);
+            //ws_close_client(fd);
             cJSON_Delete(json_root);
             return;
         }
@@ -1529,11 +1763,11 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
         for(int i = 0; i < MAX_CHANNELS; i++)
         {
-            if(channel_list[i].channel_id != target_channel_id_int)
+            if(channel_array[i].channel_id != target_channel_id_int)
             {
                 continue;
             }
-            if(channel_list[i].is_channel == true)
+            if(channel_array[i].is_channel == true)
             {
                 channel_index_in_array = i;
                 is_channel_found = true;
@@ -1553,7 +1787,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
         marked_channel_indices[0] = channel_index_in_array;
         num_channels += 1;
-        mark_channels_for_deletion(channel_list[channel_index_in_array].channel_id, &num_channels, marked_channel_indices);
+        mark_channels_for_deletion(channel_array[channel_index_in_array].channel_id, &num_channels, marked_channel_indices);
 
 
         for(int i = 0; i < num_channels; i++)
@@ -1563,23 +1797,29 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             #endif
 
             int index_of_channel_to_delete = marked_channel_indices[i];
-            int channel_id_to_delete = channel_list[index_of_channel_to_delete].channel_id;
+            int channel_id_to_delete = channel_array[index_of_channel_to_delete].channel_id;
 
-            clib__null_memory(&channel_list[index_of_channel_to_delete],sizeof(channel_t));
-            g_count_channels--;
+            clib__null_memory(&channel_array[index_of_channel_to_delete],sizeof(channel_t));
+
+
+            //
+            //move clients from channel, if there are any, to root channel with id 1
+            //
+
 
             for(int x = 0; x < MAX_CLIENTS; x++)
             {
-                if(!g_client_list[x].is_authenticated)
+                if(!clients_array[x].is_authenticated)
                 {
                     continue;
                 }
-                if(g_client_list[x].channel_id == channel_id_to_delete)
+                if(clients_array[x].channel_id == channel_id_to_delete)
                 {
-                    g_client_list[x].channel_id = 1;
-                    broadcast_channel_join(&g_client_list[x]);
+                    clients_array[x].channel_id = 1;
+                    broadcast_channel_join(&clients_array[x]);
                 }
             }
+
             broadcast_channel_delete(channel_id_to_delete);
         }
 
@@ -1591,20 +1831,20 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
     }
     else if(strcmp(json_message_type->valuestring, "client_chat_message") == 0)
     {
-        unsigned long long timestamp_now = get_timestamp_ms();
+        //unsigned long long timestamp_now = get_timestamp_ms();
 
-        if(g_client_list[index].timestamp_last_sent_chat_message + g_server_settings.chat_cooldown_milliseconds > timestamp_now)
-        {
-            #ifdef DEBUG_PROGRAM
-            printf("%s%d%s","[!] client : ", index, " can not sent chat message. cooldown active \n");
-            #endif
-            cJSON_Delete(json_root);
-            return;
-        }
+        //if(clients_array[index].timestamp_last_sent_chat_message + g_server_settings.chat_cooldown_milliseconds > timestamp_now)
+        //{
+            //#ifdef DEBUG_PROGRAM
+            //printf("%s%d%s","[!] client : ", index, " can not sent chat message. cooldown active \n");
+            //#endif
+            //cJSON_Delete(json_root);
+            //return;
+        //}
 
         cJSON* json_chat_message_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
         cJSON* receiver_type = cJSON_GetObjectItemCaseSensitive(json_message_object, "receiver_type");
-        cJSON* receiver_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "receiver_id");
+        cJSON* receiver_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "receiver_id"); //must be string of certain length
 
         if (!cJSON_IsString(json_chat_message_value) || json_chat_message_value->valuestring == NULL ||
         strlen(json_chat_message_value->valuestring) > g_server_settings.websocket_chat_message_string_max_length || strlen(json_chat_message_value->valuestring) == 0)
@@ -1618,17 +1858,21 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             return;
         }
 
+        //check receiver_id
+
         if (!cJSON_IsString(receiver_id) || receiver_id->valuestring == NULL || strlen(receiver_id->valuestring) == 0 || strlen(receiver_id->valuestring) > 10)
         {
             #ifdef DEBUG_PROGRAM
-            printf("%s%d%s","[!] client : ", index, " receiver_id is wrong \n");
+            printf("%s%d%s","[!] client : ", index, " receiver_id is wrong", "\n");
             #endif
 
             ws_close_client(fd);
             cJSON_Delete(json_root);
             return;
         }
-
+        //
+        //check receiver type
+        //
 
         if (!cJSON_IsString(receiver_type) || receiver_type->valuestring == NULL || strlen(receiver_type->valuestring) == 0 || strlen(receiver_type->valuestring) > 10)
         {
@@ -1641,6 +1885,10 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             return;
         }
 
+        //
+        //check if receiver type is channel or user
+        //
+
         if(strcmp(receiver_type->valuestring, "user") != 0 && strcmp(receiver_type->valuestring, "channel") != 0)
         {
             #ifdef DEBUG_PROGRAM
@@ -1651,6 +1899,10 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             cJSON_Delete(json_root);
             return;
         }
+
+        //
+        //check time
+        //
 
         if(strcmp(receiver_type->valuestring, "user") == 0)
         {
@@ -1666,7 +1918,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
                 return;
             }
 
-            g_client_list[index].timestamp_last_sent_chat_message = get_timestamp_ms();
+            clients_array[index].timestamp_last_sent_chat_message = get_timestamp_ms();
 
             int receiver_id_int = atoi(receiver_id->valuestring);
 
@@ -1674,7 +1926,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             printf("%s%d%s","[i] sending direct message to user ", receiver_id_int, "\n");
             #endif
 
-            send_direct_chat_message(g_client_list[index].username, json_chat_message_value->valuestring, index, receiver_id_int);
+            send_direct_chat_message(clients_array[index].username, json_chat_message_value->valuestring, index, receiver_id_int);
         }
 
         if(strcmp(receiver_type->valuestring, "channel") == 0)
@@ -1692,8 +1944,8 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
             int channel_id_int = atoi(receiver_id->valuestring);
 
-            g_client_list[index].timestamp_last_sent_chat_message = get_timestamp_ms();
-            send_channel_chat_message(channel_id_int, &g_client_list[index], json_chat_message_value->valuestring);
+            clients_array[index].timestamp_last_sent_chat_message = get_timestamp_ms();
+            send_channel_chat_message(channel_id_int, &clients_array[index], json_chat_message_value->valuestring);
         }
 
         cJSON_Delete(json_root);
@@ -1703,7 +1955,11 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
     {
         unsigned long long timestamp_now = get_timestamp_ms();
 
-        if(g_client_list[index].timestamp_username_changed + 3000 > timestamp_now)
+        //
+        //avoid spam
+        //
+
+        if(clients_array[index].timestamp_username_changed + 3000 > timestamp_now)
         {
             #ifdef DEBUG_PROGRAM
             printf("%s%d%s","[!] client : ", index, " could not change username. Cooldown active \n");
@@ -1737,11 +1993,11 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
         for(int i = 0; i < MAX_CLIENTS; i++)
         {
-            if(!g_client_list[i].is_authenticated)
+            if(!clients_array[i].is_authenticated)
             {
                 continue;
             }
-            if(strcmp(json_new_username->valuestring, g_client_list[i].username) == 0)
+            if(strcmp(json_new_username->valuestring, clients_array[i].username) == 0)
             {
                 #ifdef DEBUG_PROGRAM
                 printf("[!] username already taken \n");
@@ -1754,21 +2010,21 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
         char server_info[400] = {0};
         clib__null_memory(server_info, sizeof(server_info));
-        sprintf(server_info,"%s%s%s%s","[i] ", g_client_list[index].username, " renamed to ", json_new_username->valuestring);
+        sprintf(server_info,"%s%s%s%s","[i] ", clients_array[index].username, " renamed to ", json_new_username->valuestring);
         broadcast_server_info(server_info);
 
-        clib__null_memory(g_client_list[index].username,sizeof(g_client_list[index].username));
-        clib__copy_memory(json_new_username->valuestring, g_client_list[index].username, strlen(json_new_username->valuestring));
-        g_client_list[index].timestamp_username_changed = get_timestamp_ms();
+        clib__null_memory(clients_array[index].username,sizeof(clients_array[index].username));
+        clib__copy_memory(json_new_username->valuestring, clients_array[index].username, strlen(json_new_username->valuestring));
+        clients_array[index].timestamp_username_changed = get_timestamp_ms();
 
-        broadcast_client_rename(&g_client_list[index]);
+        broadcast_client_rename(&clients_array[index]);
 
         cJSON_Delete(json_root);
     }
     else if(strcmp(json_message_type->valuestring, "client_connection_test") == 0)
     {
         unsigned long long timestamp_now = get_timestamp_ms();
-        g_client_list[index].timestamp_last_maintain_connection_message_received = timestamp_now;
+        clients_array[index].timestamp_last_maintain_connection_message_received = timestamp_now;
         cJSON_Delete(json_root);
     }
     else
@@ -1790,7 +2046,6 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
     if(cli != 0)
     {
-        printf("864 free cli \n");
         free(cli);
     }
 
@@ -1914,32 +2169,33 @@ void process_not_authenticated_client_message(int fd, int index, unsigned char *
     {
         //
         //at this point client is verified
-        //give him some username, add him to some channel, save his public key and send him list of connected clients
+        //give him some username, add him to root channel, save his public key,
+        //send him list of channels, send him list of clients and send him ID of the maintaner of current channel, root channel
         //
 
-        g_client_list[index].channel_id = 1; //root channel, id is 1
-        g_client_list[index].is_admin = 1;
+        clients_array[index].channel_id = 1; //root channel, id is 1
+        clients_array[index].is_admin = 1;
 
         #ifdef DEBUG_PROGRAM
         printf("%s %d %s","[i] client ", index ," authenticated \n");
         #endif
 
-        clib__copy_memory(g_server_settings.default_client_name ,  g_client_list[index].username, strlen(g_server_settings.default_client_name));
+        clib__copy_memory(g_server_settings.default_client_name ,  clients_array[index].username, strlen(g_server_settings.default_client_name));
         char index_string[5] = {0};
         sprintf(index_string,"%d",index);
-        clib__copy_memory(index_string,&g_client_list[index].username[strlen(g_client_list[index].username)], strlen(index_string));
+        clib__copy_memory(index_string,&clients_array[index].username[strlen(clients_array[index].username)], strlen(index_string));
         char *ip_address = 0;
 
         #ifdef DEBUG_PROGRAM
-        ip_address = ws_getaddress(g_client_list[index].fd);
+        ip_address = ws_getaddress(clients_array[index].fd);
         if(fd != 0)
         {
-            printf("%s %s %s %s","new user connected: " , ip_address, g_client_list[index].username, "\n");
+            printf("%s %s %s %s","new user connected: " , ip_address, clients_array[index].username, "\n");
         }
         #endif
 
-        clib__copy_memory(json_message_value->valuestring , g_client_list[index].public_key, strlen(json_message_value->valuestring));
-        g_client_list[index].is_authenticated = true;
+        clib__copy_memory(json_message_value->valuestring , clients_array[index].public_key, strlen(json_message_value->valuestring));
+        clients_array[index].is_authenticated = true; //DO NOT set without setting up username first
         int size_of_allocated_message_buffer = 0;
         char* msg_text = encrypt_websocket_msg("auth_ok", &size_of_allocated_message_buffer);
 
@@ -1951,16 +2207,53 @@ void process_not_authenticated_client_message(int fd, int index, unsigned char *
         clib__null_memory(msg_text, size_of_allocated_message_buffer);
         free(msg_text);
         msg_text = 0;
-        broadcast_client_connect(&g_client_list[index]);
-        send_channel_list_to_client(&g_client_list[index]);
-        send_client_list_to_client(&g_client_list[index]);
+        broadcast_client_connect(&clients_array[index]);
+        send_channel_list_to_client(&clients_array[index]);
+        send_client_list_to_client(&clients_array[index]);
         char server_info[200];
         clib__null_memory(server_info, sizeof(server_info));
-        sprintf(server_info,"%s%s","[i] connected : ", g_client_list[index].username);
+        sprintf(server_info,"%s%s","[i] connected : ", clients_array[index].username);
         broadcast_server_info(server_info);
+
+        int channel_index = get_channel_index_by_channel_id(1);
+        if(channel_index == -1)
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s","[i] root channel not found \n");
+            #endif
+
+            cJSON_Delete(json_root);
+            ws_close_client(fd);
+            return;
+        }
+
+        int client_count_in_channel = 0;
+
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+            if(!clients_array[i].is_authenticated)
+            {
+                continue;
+            }
+            if(clients_array[i].channel_id == 1)
+            {
+                client_count_in_channel++;
+            }
+        }
+
+        if(client_count_in_channel == 1)
+        {
+            channel_array[channel_index].maintainer_id = clients_array[index].user_id;
+        }
+
+        #ifdef DEBUG_PROGRAM
+        printf("%s %d %s","[i] send_maintainer_id_to_client client ", index ,"  \n");
+        #endif
+        send_maintainer_id_to_client(&clients_array[index], &channel_array[channel_index]);
     }
     else
     {
+        cJSON_Delete(json_root);
         ws_close_client(fd);
     }
 }
@@ -1994,7 +2287,7 @@ void onmessage(int fd, const unsigned char *websocket_msg, uint64_t size, int ty
 
     decrypt_websocket_msg(websocket_msg, decrypted_websocket_data_buffer, size);
 
-    if(g_client_list[index].is_authenticated == false)
+    if(clients_array[index].is_authenticated == false)
     {
         process_not_authenticated_client_message(fd, index, decrypted_websocket_data_buffer, size, type);
     }
@@ -2030,7 +2323,6 @@ void decrypt_websocket_msg(const unsigned char *msg, char* out_buffer, int out_b
 
 char* encrypt_websocket_msg(unsigned char* msg, int* out_allocated_buffer_size)
 {
-
     int encryption_buffer_size = 0;
     int base64_out_string_size = 0;
 
@@ -2114,12 +2406,12 @@ void websocket_check_thread()
 
         for(int i = 0; i < MAX_CLIENTS; i++)
         {
-            if(g_client_list[i].timestamp_connected == 0)
+            if(clients_array[i].timestamp_connected == 0)
             {
                 continue;
             }
 
-            if(g_client_list[i].is_authenticated == true)
+            if(clients_array[i].is_authenticated == true)
             {
                 unsigned long long timestamp_now = get_timestamp_ms();
 
@@ -2127,23 +2419,23 @@ void websocket_check_thread()
                 //disconnect client who has not sent maintain_connection_message in given time limit
                 //
 
-                if(g_client_list[i].timestamp_last_maintain_connection_message_received + 180000 < timestamp_now)
+                if(clients_array[i].timestamp_last_maintain_connection_message_received + 180000 < timestamp_now)
                 {
                     #ifdef DEBUG_PROGRAM
-                    printf("%s%d%s","trying to disconnect client. did not receive maintain connection message : ", g_client_list[i].fd  ,"\n");
+                    printf("%s%d%s","trying to disconnect client. did not receive maintain connection message : ", clients_array[i].fd  ,"\n");
                     #endif
 
-                    broadcast_client_disconnect(&g_client_list[i]);
+                    broadcast_client_disconnect(&clients_array[i]);
 
-                    ws_close_client(g_client_list[i].fd);
-                    clib__null_memory(&g_client_list[i], sizeof(client_t));
+                    ws_close_client(clients_array[i].fd);
+                    clib__null_memory(&clients_array[i], sizeof(client_t));
 
                     continue;
                 }
 
                 int size_of_allocated_message_buffer = 0;
                 char* msg = encrypt_websocket_msg("test", &size_of_allocated_message_buffer);
-                ws_sendframe(g_client_list[i].fd, msg, strlen(msg), false, 1);
+                ws_sendframe(clients_array[i].fd, msg, strlen(msg), false, 1);
                 if(msg != 0)
                 {
                     clib__null_memory(msg, size_of_allocated_message_buffer);
@@ -2155,16 +2447,16 @@ void websocket_check_thread()
             }
 
             //
-            //remove client who did not authenticate within given time limit
+            //remove client who does not authenticate within given time limit
             //
 
-            if(g_client_list[i].timestamp_connected + 60000 < timestamp_now)
+            if(clients_array[i].timestamp_connected + 60000 < timestamp_now)
             {
                 #ifdef DEBUG_PROGRAM
-                printf("%s%d%s","trying to disconnect client : ", g_client_list[i].fd  ,"\n");
+                printf("%s%d%s","trying to disconnect client : ", clients_array[i].fd  ,"\n");
                 #endif
-                ws_close_client(g_client_list[i].fd);
-                clib__null_memory(&g_client_list[i], sizeof(client_t));
+                ws_close_client(clients_array[i].fd);
+                clib__null_memory(&clients_array[i], sizeof(client_t));
             }
         }
 
@@ -2178,6 +2470,7 @@ void websocket_check_thread()
 
 void init_setup(void)
 {
+    //local input, wont check length
     char input2[10] = {0};
     printf("WebSocket port: ");
     fgets(input2, sizeof(input2), stdin);
@@ -2220,23 +2513,26 @@ void init_setup(void)
 
         unsigned char custom_iv[16] =  {90,11,8,33,4,50,50,88,    8,89,200,15,24,4,15,10};
 
+        //destination,                        source,             length
+
         clib__copy_memory(custom_iv, &g_server_settings.keys[i].key_iv, 16);
     }
 }
 
 void init_channel_list(void)
 {
-    clib__null_memory(&channel_list, sizeof(channel_t) * MAX_CHANNELS);
+    clib__null_memory(&channel_array, sizeof(channel_t) * MAX_CHANNELS);
 
-    channel_list[0].channel_id = 1;
-    channel_list[0].parent_channel_id = -1;
-    channel_list[0].is_channel = true;
-    channel_list[0].max_clients = MAX_CLIENTS;
+    channel_array[0].channel_id = 1;
+    channel_array[0].parent_channel_id = -1;
+    channel_array[0].is_channel = true;
+    channel_array[0].max_clients = MAX_CLIENTS;
     char channel_name[] = "root";
-    clib__copy_memory((void*)&channel_name, (void*)&channel_list[0].name, strlen(channel_name));
+    clib__copy_memory((void*)&channel_name, (void*)&channel_array[0].name, strlen(channel_name));
     char description[] = "this is default entry channel";
-    clib__copy_memory((void*)&description, (void*)&channel_list[0].description, strlen(description));
-    channel_list[0].type = 1;
+    clib__copy_memory((void*)&description, (void*)&channel_array[0].description, strlen(description));
+    channel_array[0].type = 1;
+    channel_array[0].maintainer_id = -1;
 }
 
 void process_local_command(char* command)
@@ -2247,11 +2543,25 @@ void process_local_command(char* command)
 
         for(int i = 0; i < MAX_CLIENTS; i++)
         {
-            if(!g_client_list[i].is_authenticated)
+            if(!clients_array[i].is_authenticated)
             {
                 continue;
             }
-            printf("%d %s %s %s %d", g_client_list[i].user_id, ":" , g_client_list[i].username,",",(int)g_client_list[i].is_admin);
+            printf("%d %s %s %s %d", clients_array[i].user_id, ":" , clients_array[i].username,",",(int)clients_array[i].is_admin);
+            printf("%s", "\n");
+        }
+    }
+    else if(strcmp(command, "channel_list") == 0)
+    {
+        printf("%s","channel id, name , maintainer_id \n");
+
+        for(int i = 0; i < MAX_CHANNELS; i++)
+        {
+            if(!channel_array[i].is_channel)
+            {
+                continue;
+            }
+            printf("%d %s %s %s %d", channel_array[i].channel_id, ":" , channel_array[i].name,",",(int)channel_array[i].maintainer_id);
             printf("%s", "\n");
         }
     }
@@ -2283,19 +2593,19 @@ void process_local_command(char* command)
 
         for(int i = 0; i < MAX_CLIENTS; i++)
         {
-            if(!g_client_list[i].is_authenticated)
+            if(!clients_array[i].is_authenticated)
             {
                 continue;
             }
 
             //
             //client list information is only sent to single user.
-            //single client only allows list to be retrieved once
+            //single client only allows list to be retrieved once. Client discards other client_list messages, if server would send them
             //
 
-            if(g_client_list[i].user_id == user_id)
+            if(clients_array[i].user_id == user_id)
             {
-                g_client_list[i].is_admin = !g_client_list[i].is_admin;
+                clients_array[i].is_admin = !clients_array[i].is_admin;
                 break;
             }
         }
