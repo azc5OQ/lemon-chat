@@ -14,7 +14,6 @@ typedef struct server_settings
 {
     int keys_count;
     key_data_t keys[100];
-    int encryption_algoryhm_choice;
     bool is_logging_of_failed_attempts_active;
     char client_verificaton_message_cleartext[1024]; //should be enough
     int port_number_WebSocket;
@@ -57,6 +56,7 @@ typedef struct channel
     char description[1000];
     bool is_using_password;
     int type;
+    int maintainer_id;
 } channel_t;
 
 typedef struct message
@@ -93,12 +93,16 @@ void broadcast_channel_create(channel_t* channel);
 void send_channel_chat_picture(int channel_id, client_t* sender, char* chat_picture_base64, int picture_id);
 void send_channel_chat_picture_metadata(int channel_id, client_t* sender, size_t picture_size, int picture_id);
 void send_channel_chat_message(int channel_id, client_t* sender, char* chat_message_value);
+void send_channel_maintainer_id(channel_t* channel);
 
 void send_direct_chat_message(char* username, char* chat_message_value, int sender_id, int receiver_id);
 void send_direct_chat_picture_metadata(char* username, size_t picture_size, int picture_id, int sender_id, int receiver_id);
 void send_direct_chat_picture(char* username, char* chat_picture_base64, int picture_id, int sender_id, int receiver_id);
 
-void send_client_list_to_client(client_t* client);
-void send_channel_list_to_client(client_t* client);
+void send_client_list_to_client(client_t* receiver);
+void send_channel_list_to_client(client_t* receiver);
+void send_maintainer_id_to_client(client_t* receiver, channel_t* channel);
+
+int get_channel_index_by_channel_id(int channel_id);
 
 #endif
