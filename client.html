@@ -562,6 +562,15 @@
           vertical-align: top;
         }
 
+        #current-channel-description
+        {
+            word-break: break-all;
+            font: 12px sans-serif;
+            font-style: italic;
+            color: #ffffff;
+        }
+
+
         .custom-file-upload-button:hover
         {
             background-color: #7d8799;
@@ -689,7 +698,7 @@
         #chat-context-selectors-container
         {
             padding-left: 25px;
-            background-color: #202020;
+            background-color: #000000;
         }
 
         #background-container
@@ -5805,6 +5814,16 @@
 
 <script type="text/javascript">
 
+    var is_autoconnect_active = false;
+
+    var autoconnect_details = {
+        "host" : "127.0.0.1",
+        "port" : 1234,
+        "keys" : [
+            "some_key"
+        ]
+    };
+
     var custom_key_count = 1;
     var metadata_keys = [];
     var base64_picture_string_to_send = "";
@@ -5814,13 +5833,15 @@
     var port = 0;
     var socket;
     var local_username = "";
-    var local_userid = 0;
+    var local_user_id = 0;
     var is_authenticated = false;
+    var is_local_user_maintainer = false;
+    var is_encryption_key_of_channel_obtained = false;
     var is_connection_check_thread_running = false;
     var current_channel_id = 1;
     var current_chat_context_id = "chat-context-channel-1";
-    var chat_message_receiver_type = "channel"; //from local user perspective
-    var chat_message_receiver_id = "main"; //from local user perspective
+    var chat_message_receiver_type = "channel";
+    var chat_message_receiver_id = "main";
     var textarea_log;
     var my_rsa_key_object = null;
     var rsa_public_key_string = "";
@@ -5831,6 +5852,7 @@
     var loading_gif = "";
     var channel_list = [];
     var selected_channel_id;
+    var current_channel_keys = null;
 
     function sleep(ms)
     {
@@ -5869,7 +5891,7 @@
         }
     }
 
-    function get_chat_context_index_by_id(id)
+    function get_chat_context_index_by_chat_context_id(id)
     {
         for(var i = 0; i < chat_context_array.length; i++)
         {
@@ -5922,7 +5944,6 @@
         return result;
     }
 
-
     function get_channel_index_by_channel_id(channel_list_a, channel_id)
     {
         let result = -1;
@@ -5939,7 +5960,7 @@
         return result;
     }
 
-    function encrypt_direct_message_and_convert_to_base64(keys, string_to_encrypt)
+    function encrypt_with_aes_keys_and_convert_to_base64(keys, string_to_encrypt)
     {
         var byteArrayToSend = new Uint8Array(1024);
         if(string_to_encrypt.length > 1024)
@@ -5972,7 +5993,7 @@
         return base64EncryptedData;
     }
 
-    function decrypt_direct_message(keys, string_to_decrypt)
+    function decrypt_with_aes_keys(keys, string_to_decrypt)
     {
         let encrypted_data_in_current_iteration = base64StringToBytes(string_to_decrypt);
 
@@ -6060,7 +6081,6 @@
         return new_string;
     }
 
-
     function get_indend_level(channel_id,channels)
     {
         let result = 0;
@@ -6092,6 +6112,7 @@
 
     function send_channel_chat_message()
     {
+        console.log("send_channel_chat_message()")
         let chat_message_to_send_value = document.getElementById('chat-input-container-text-input').value;
         document.getElementById('chat-input-container-text-input').value = "";
 
@@ -6100,7 +6121,7 @@
             return;
         }
 
-        let chat_context_index = get_chat_context_index_by_id(current_chat_context_id);
+        let chat_context_index = get_chat_context_index_by_chat_context_id(current_chat_context_id);
         if(chat_context_index == -1)
         {
             log('could not find ' + current_chat_context_id.toString());
@@ -6129,6 +6150,7 @@
                                         </div>\n\
                                     </div>\n\
                                 </div>";
+
             document.getElementById(current_chat_context_id).innerHTML += html_to_append;
             document.getElementById(current_chat_context_id).innerHTML += '<div class=\"chat-spacer\"></div>';
             document.getElementById('chat-context-container').scrollTop = document.getElementById('chat-context-container').scrollHeight;
@@ -6136,18 +6158,23 @@
             let message_object = {"message" :
                 {
                   "type" : "client_chat_picture",
-                  "value" : base64_picture_string_to_send,
+                  "value" : "",
                   "receiver_type" : chat_message_receiver_type,
                   "receiver_id" : current_channel_id.toString()
                 }
             };
 
+            message_object.message.value = encrypt_with_aes_keys_and_convert_to_base64(current_channel_keys,base64_picture_string_to_send);
+
+
             let message_json_string = JSON.stringify(message_object);
             let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
             if(socket.readyState === 1)
             {
                 socket.send(data);
             }
+
             base64_picture_string_to_send = "";
             document.getElementById("image-upload-preview").style.backgroundImage = "";
             chat_context_array[chat_context_index].last_known_message_sender_username = local_username;
@@ -6162,7 +6189,6 @@
             }
             else
             {
-
                 let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer').length;
 
                 for(let i = 0; i < element_count; i++)
@@ -6193,12 +6219,15 @@
             let message_object = {
                 "message" : {
                   "type" : "client_chat_message",
-                  "value" : chat_message_to_send_value,
+                  "value" : "",
                   "receiver_type" : "channel",
                   "receiver_id" : current_channel_id.toString()
                 }
             };
 
+            message_object.message.value = encrypt_with_aes_keys_and_convert_to_base64(current_channel_keys,chat_message_to_send_value);
+
+            console.log(message_object);
             let message_json_string = JSON.stringify(message_object);
             let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
@@ -6221,7 +6250,7 @@
             return;
         }
 
-        let chat_context_index = get_chat_context_index_by_id(current_chat_context_id);
+        let chat_context_index = get_chat_context_index_by_chat_context_id(current_chat_context_id);
 
         if(chat_context_index == -1)
         {
@@ -6239,7 +6268,6 @@
 
         if(base64_picture_string_to_send.length > 0)
         {
-            //aes keys for single sent message, randomly generated, stored as objects in array of objects
             let message_keys = [];
 
             for(let i = 0; i < 4; i++)
@@ -6268,14 +6296,15 @@
 
             let single_message_aes_keys_string = JSON.stringify(message_keys);
             let encryption_result = cryptico.encrypt(single_message_aes_keys_string, receiver_public_key);
+
             let message_data = {
                 message_keys : encryption_result.cipher,
                 message_value : ""
             };
 
-            message_data.message_value = encrypt_direct_message_and_convert_to_base64(message_keys, base64_picture_string_to_send);
-
+            message_data.message_value = encrypt_with_aes_keys_and_convert_to_base64(message_keys, base64_picture_string_to_send);
             let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer').length;
+
             for(let i = 0; i < element_count; i++)
             {
                 let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer')[0].remove();
@@ -6335,16 +6364,15 @@
                     key_bytes : null,
                     iv_bytes : null
                 };
+
                 single_key.key_string = just.randomstring(16);
                 let hash = sha256.create();
                 hash.update(single_key.key_string);
-                hash.array();
                 key_bytes = hash.array();
                 single_key.key_bytes = key_bytes;
                 let iv_string = just.randomstring(16);
                 let hash1 = sha256.create();
                 hash1.update(iv_string);
-                hash1.array();
                 iv_bytes = hash1.array();
                 iv_bytes.splice(0,16);
                 single_key.iv_bytes = iv_bytes;
@@ -6359,7 +6387,12 @@
                 message_value : ""
             };
 
-            message_data.message_value = encrypt_direct_message_and_convert_to_base64(message_keys, chat_message_to_send_value);
+            let message_value_object = {
+                type : "direct_chat_message",
+                value : chat_message_to_send_value
+            };
+
+            message_data.message_value = encrypt_with_aes_keys_and_convert_to_base64(message_keys, JSON.stringify(message_value_object));
 
             if(chat_context_array[chat_context_index].last_known_message_sender_username == local_username)
             {
@@ -6397,7 +6430,6 @@
 
             document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
 
-              //sender user id is associated with websocket and can not change
             let message_object = {
                 "message" : {
                   "type" : null,
@@ -6427,6 +6459,11 @@
     {
         if(chat_message_receiver_type == "channel")
         {
+            if(current_channel_keys == null)
+            {
+                console.log("can not sent, no channel keys");
+                return;
+            }
             send_channel_chat_message();
         }
         else if (chat_message_receiver_type == "user")
@@ -6437,6 +6474,7 @@
 
     function connected_local_user_input_on_focusout()
     {
+        console.log("on focus out");
         let new_username = this.value;
 
         if(new_username.length == 0)
@@ -6464,7 +6502,7 @@
         }
     }
 
-    function get_user_index_in_array_by_user_id(user_id)
+    function get_user_index_by_user_id(user_id)
     {
         let result = -1;
         for(let i = 0; i < users.length; i++)
@@ -6533,6 +6571,8 @@
             }
             let msg = JSON.parse(decrypted_metadata);
 
+            //console.log(msg);
+
             log('msg.message.type : ' + msg.message.type + ' | size in bytes: ' + decrypted_metadata.length);
             if(msg.message.type == "client_list")
             {
@@ -6547,7 +6587,7 @@
                 for(let i = 0; i < msg.message.clients.length; i++)
                 {
                     let username = sanitize_string(msg.message.clients[i].username);
-                    let user_id = sanitize_string(msg.message.clients[i].user_id);
+                    let user_id = msg.message.clients[i].user_id;
                     let indend_level = get_indend_level(msg.message.clients[i].channel_id, channel_list) + 1;
                     var html_to_append = "";
 
@@ -6561,7 +6601,7 @@
                     else
                     {
                         local_username = sanitize_string(msg.message.local_username);
-
+                        local_user_id = msg.message.clients[i].user_id;
                         html_to_append = "<div class=\"connected-local-user\">\n\
                                               <input style=\"padding-left: " + indend_level * 20 + "px;\" maxlength=\"40\" id=\"connected-local-user-input\" value=\"" + username + "\">\n\
                                           </div>";
@@ -6570,14 +6610,16 @@
                     document.querySelector('[data-channel-id="'+msg.message.clients[i].channel_id+'"]').insertAdjacentHTML("afterend",html_to_append);
 
                     let single_user = {
-                       user_id : 0,
-                       username : "",
-                       public_key : ""
+                       user_id : null,
+                       username : null,
+                       public_key : null,
+                       channel_id : null
                     };
 
                     single_user.user_id = parseInt(user_id);
                     single_user.username = username;
                     single_user.public_key = msg.message.clients[i].public_key;
+                    single_user.channel_id = msg.message.clients[i].channel_id;
 
                     users.push(single_user);
                 }
@@ -6607,7 +6649,7 @@
                 let elements = document.getElementsByClassName('connected-user');
                 for(let i = 0; i < elements.length; i++)
                 {
-                    elements[i].onclick = connected_user_on_click;
+                    elements[i].onclick = connected_user_onclick;
                     elements[i].style.backgroundColor = "";
                 }
                 document.getElementById('connected-local-user-input').addEventListener("focusout", connected_local_user_input_on_focusout);
@@ -6615,6 +6657,7 @@
             }
             else if(msg.message.type == "channel_list")
             {
+                //console.log("received channel list");
                 if(is_channel_list_retrieved == true)
                 {
                     log("channel_list message received more than once. Server is doing something weird");
@@ -6628,7 +6671,6 @@
                 let processed_channels = [];
                 let current_parent_channel_id_to_find = -1;
                 let previous_parent_channel_id_to_find = -1;
-		    
 
                 while(processed_channels.length != msg.message.channels.length)
                 {
@@ -6647,11 +6689,13 @@
                         //if not, add current channel to channel_list and append channel to HTML
                         //
 
+
                         let is_channel_added_to_html = get_channel_by_id(channel_list,child_channels[a].channel_id);
 
                         if(is_channel_added_to_html == null)
                         {
                             channel_list.push(child_channels[a]);
+
                             let indend_left = get_indend_level(child_channels[a].channel_id, msg.message.channels);
                             let html_to_append = "<div class=\"single-channel\" data-channel-id=\""+child_channels[a].channel_id+"\" data-channel-parent-id=\""+child_channels[a].parent_channel_id+"\">\n\
                                                       <p data-channel-name-id=\""+child_channels[a].channel_id+"\" style=\"padding-left: "+indend_left * 20 +"px;\">"+child_channels[a].name+"</p>\n\
@@ -6660,25 +6704,29 @@
                             document.getElementById("channel-list-container").innerHTML += html_to_append;
                         }
 
+                        //console.log("child_channels[a].channel_id " + child_channels[a].channel_id);
+
                         //
-                        //next, check if channel is already processed. If it is, check if for loop is at end
-                        //If it is and current channel in loop is processed, that means all child channels of a parent channel were processed and that they have no more inner child channels in them
+                        //next, check if channel is already processed. If it is, check if for loop is at its end.
+                        //If for loop is at its end, and current channel is processed, that means all child channels of a parent channel were processed and that they have no more inner child channels in them
                         //
 
                         let is_channel_already_processed = processed_channels.indexOf(child_channels[a].channel_id) != -1;
 
                         if(is_channel_already_processed == true)
                         {
+                            //console.log("channel -> " + child_channels[a].name + " already processed");
                             if((a + 1) == child_channels.length)
                             {
                                 if(current_parent_channel_id_to_find == -1)
                                 {
                                     continue;
                                 }
+                                //console.log("added parent channel " + get_channel_by_id(msg.message.channels,current_parent_channel_id_to_find).name + " to  processed_channels" + processed_channels);
 
                                 //
-                                //all child channels of parent channel are processed at this point
-                                //add parent channel to processed_channels
+                                //all child channels in parent channel are processed.\
+                                //add parent channel of child channels in this loop to processed_channels
                                 //
 
                                 processed_channels.push(current_parent_channel_id_to_find);
@@ -6688,17 +6736,19 @@
                         {
                             //
                             //if channel is not processed, find out if the current channel in loop has any children. If it has, change current_parent_channel_id_to_find
-                            //if not, push channel to processed_channels
+                            //if not, push channel to processed_channel list
                             //
 
                             var children_of_child_channel = get_channels_by_channel_parent_id(msg.message.channels, child_channels[a].channel_id);
                             if(children_of_child_channel.length > 0)
                             {
+                                //console.log("channel -> " + child_channels[a].name + " has children");
                                 current_parent_channel_id_to_find = child_channels[a].channel_id;
                                 break;
                             }
 
                             processed_channels.push(child_channels[a].channel_id);
+                            //console.log("added channel " + get_channel_by_id(msg.message.channels,child_channels[a].channel_id).name + " to processed_channels");
                         }
                     }
                 }
@@ -6712,23 +6762,28 @@
             }
             else if(msg.message.type == "channel_join")
             {
-                //local user has different html structure of ... channel entry
-
                 let username = get_username_by_user_id(msg.message.user_id);
-                if(username == local_username)
+                users[get_user_index_by_user_id(msg.message.user_id)].channel_id = msg.message.channel_id;
+
+                if(msg.message.user_id == local_user_id)
                 {
                     document.getElementsByClassName("connected-local-user")[0].remove();
                     let indend_level = get_indend_level(msg.message.channel_id, channel_list) + 1;
+
                     let html_to_append = "<div class=\"connected-local-user\">\n\
                                             <input style=\"padding-left: " + indend_level * 20 + "px;\" maxlength=\"40\" id=\"connected-local-user-input\" value=\"" + username + "\">\n\
                                           </div>";
+
                     document.querySelector('[data-channel-id="'+msg.message.channel_id+'"]').insertAdjacentHTML("afterend",html_to_append);
                     document.getElementById('connected-local-user-input').addEventListener("focusout", connected_local_user_input_on_focusout);
 
                     current_channel_id = msg.message.channel_id;
+                    current_channel_keys = null;
+                    console.log("local_user joined new channel, current_channel_keys = 0");
                 }
                 else
                 {
+                    document.querySelector('[data-connected-user-id="'+msg.message.user_id+'"]').remove();
                     let indend_level = get_indend_level(msg.message.channel_id, channel_list) + 1;
 
                     let html_to_append = "<div class=\"connected-user\" data-connected-user-id=\""+msg.message.user_id+"\">\n\
@@ -6736,33 +6791,46 @@
                                             <p class=\"connected-user-p-received-messages-number\">0</p>\n\
                                           </div>";
 
-                    document.querySelector('[data-connected-user-id="'+msg.message.user_id+'"]').remove();
                     document.querySelector('[data-channel-id="'+msg.message.channel_id+'"]').insertAdjacentHTML("afterend",html_to_append);
+
+                    if(msg.message.channel_id == current_channel_id)
+                    {
+                        console.log("user '"+username+"' joined current_channel where local_user is. setting current_channel_keys to null");
+                        current_channel_keys = null;
+                        let channel_index = get_channel_index_by_channel_id(channel_list, current_channel_id);
+                        if(channel_list[channel_index].maintainer_id == local_user_id)
+                        {
+                            console.log("local_user is the maintainer of current_channel. create_and_send_new_channel_keys()");
+                            create_and_send_new_channel_keys();
+                        }
+                        else
+                        {
+                            console.log("local user is not maintainer of current channel. Waiting for new keys");
+                        }
+                    }
                 }
+
                 let elements = document.getElementsByClassName('connected-user');
+
                 for(let i = 0; i < elements.length; i++)
                 {
-                    elements[i].onclick = connected_user_on_click;
+                    elements[i].onclick = connected_user_onclick;
                 }
             }
             else if(msg.message.type == "client_rename")
             {
-                let user_id = sanitize_string(msg.message.user_id);
-                let user_index = get_user_index_in_array_by_user_id(parseInt(user_id));
-
+                let user_index = get_user_index_by_user_id(parseInt(msg.message.user_id));
                 if(user_index == -1)
                 {
                     return;
                 }
-
                 log(users[user_index].username + ' renamed to -> ' + msg.message.new_username);
                 users[user_index].username = msg.message.new_username;
-                document.querySelector('[data-connected-user-id="'+user_id+'"]').getElementsByClassName("connected-user-p")[0].innerHTML = msg.message.new_username;
-
-                let is_found = document.querySelector('[data-chat-context-selector-id="user-'+user_id+'"]');
+                document.querySelector('[data-connected-user-id="'+msg.message.user_id+'"]').getElementsByClassName("connected-user-p")[0].innerHTML = msg.message.new_username;
+                let is_found = document.querySelector('[data-chat-context-selector-id="user-'+msg.message.user_id+'"]');
                 if(is_found != null)
                 {
-                    document.querySelector('[data-chat-context-selector-id="user-'+user_id+'"]').getElementsByClassName("p-container")[0].innerHTML = msg.message.new_username;
+                    document.querySelector('[data-chat-context-selector-id="user-'+msg.message.user_id+'"]').getElementsByClassName("p-container")[0].innerHTML = msg.message.new_username;
                 }
             }
             else if(msg.message.type == "client_connect")
@@ -6780,51 +6848,82 @@
                 let single_user = {
                    user_id : null,
                    username : null,
-                   public_key : null
+                   public_key : null,
+                   channel_id : null
                 };
 
                 single_user.user_id = parseInt(user_id);
                 single_user.username = username;
                 single_user.public_key = msg.message.public_key;
+                single_user.channel_id = msg.message.channel_id;
+
                 users.push(single_user);
+
                 let elements = document.getElementsByClassName('connected-user');
 
                 for(let i = 0; i < elements.length; i++)
                 {
-                    elements[i].onclick = connected_user_on_click;
+                    elements[i].onclick = connected_user_onclick;
                     //elements[i].style.backgroundColor = "";
                 }
 
+                //
+                //html got re-written, assign event handler to html element again
+                //used addEventListener("focusout",function), object.onfocusout = function() did not work in chrome
+                //
+
                 document.getElementById('connected-local-user-input').addEventListener("focusout", connected_local_user_input_on_focusout);
+
+                //
+                //if local_user is maintainer of root channel, he will sent new keys for root channel
+                //if not, client will wait for keys for root channel
+                //current_channel_keys must be nulled if current channel id is 1 (root channel) where new users join
+                //xxkasdasd
+
+                if(current_channel_id == 1)
+                {
+                    current_channel_keys = null;
+                    console.log("setting current keys to null")
+                }
+
+                let index = get_channel_index_by_channel_id(channel_list, current_channel_id);
+                if(channel_list[index].maintainer_id == local_user_id)
+                {
+                    create_and_send_new_channel_keys();
+                }
+                else
+                {
+                    console.log("waiting for keys from maintainer");
+                }
             }
             else if(msg.message.type == "client_disconnect")
             {
-                var user_id = sanitize_string(msg.message.user_id);
-
-                if(document.querySelector('.connected-user[data-connected-user-id="'+user_id+'"]') != null)
+                if(document.querySelector('.connected-user[data-connected-user-id="'+msg.message.user_id+'"]') != null)
                 {
-                    document.querySelector('.connected-user[data-connected-user-id="'+user_id+'"]').remove();
+                    document.querySelector('.connected-user[data-connected-user-id="'+msg.message.user_id+'"]').remove();
                 }
 
-                if(document.getElementById('chat-context-pm-'+user_id) != null)
+                if(document.getElementById('chat-context-pm-'+msg.message.user_id) != null)
                 {
-                   document.getElementById('chat-context-pm-'+user_id).remove();
+                   document.getElementById('chat-context-pm-'+msg.message.user_id).remove();
                 }
 
-                let chat_context_index_to_remove = get_chat_context_index_by_id("chat-context-pm-"+user_id);
+                let chat_context_index_to_remove = get_chat_context_index_by_chat_context_id("chat-context-pm-"+msg.message.user_id);
 
                 if(chat_context_index_to_remove != -1)
                 {
                     chat_context_array.splice(chat_context_index_to_remove, 1);
                 }
 
-                if(current_chat_context_id == "chat-context-pm-"+user_id)
+                //if used chat context was deleted one, switch to current channel
+                if(current_chat_context_id == "chat-context-pm-"+msg.message.user_id)
                 {
                     current_chat_context_id = "chat-context-channel-" + current_channel_id;
                     document.getElementById("chat-context-channel-" + current_channel_id).style.display = "block";
                     chat_message_receiver_type = "channel";
                 }
-                let user_index_to_remove = get_user_index_in_array_by_user_id(parseInt(user_id));
+
+                let user_index_to_remove = get_user_index_by_user_id(parseInt(msg.message.user_id));
                 users.splice(user_index_to_remove, 1);
             }
             else if(msg.message.type == "chat_picture_accepted")
@@ -6839,18 +6938,18 @@
 
                 let chat_message_username = sanitize_string(msg.message.sender_username);
                 let receiving_chat_context_id = "chat-context-channel-" + msg.message.channel_id;
-                let chat_context_index = get_chat_context_index_by_id(receiving_chat_context_id);
+                let chat_context_index = get_chat_context_index_by_chat_context_id(receiving_chat_context_id);
+                let decrypted_value = decrypt_with_aes_keys(current_channel_keys, msg.message.value);
+                let sanitized_value = sanitize_string(decrypted_value);
 
                 if(chat_context_array[chat_context_index].last_known_message_sender_username == chat_message_username)
                 {
-                    let sanitized_value = sanitize_string(msg.message.value);
                     let chat_message = "<p>" + sanitized_value + "</p>";
                     let last_child_index = document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
                     document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].innerHTML += chat_message;
                 }
                 else
                 {
-                    let sanitized_value = sanitize_string(msg.message.value);
                     let html_to_append = "<div class=\"single-chat-message\">\n\
                                             <div class=\"single-message-content\">\n\
                                                 <div class=\"single-chat-message-sender-username-container\">\n\
@@ -6886,11 +6985,13 @@
             }
             else if(msg.message.type == "channel_chat_picture")
             {
-                document.getElementById("chat-picture-img-"+msg.message.picture_id).src = msg.message.value;
+                let decrypted_base64 = decrypt_with_aes_keys(current_channel_keys, msg.message.value);
+                document.getElementById("chat-picture-img-"+msg.message.picture_id).src = decrypted_base64;
+
             }
             else if(msg.message.type == "server_info_broadcast")
             {
-                let chat_context_index = get_chat_context_index_by_id("chat-context-channel-1");
+                let chat_context_index = get_chat_context_index_by_chat_context_id("chat-context-channel-1");
                 chat_context_array[chat_context_index].last_known_message_sender_username = "";
                 let html_to_append = "<div class=\"single-server-message\">" + sanitize_string(msg.message.value) + " " + new Date().toLocaleTimeString() + "</div>";
                 document.getElementById("chat-context-channel-1").innerHTML += html_to_append;
@@ -6908,7 +7009,7 @@
             else if(msg.message.type == "channel_chat_picture_metadata")
             {
                 let username_message_sender = sanitize_string(msg.message.username);
-                let chat_context_index = get_chat_context_index_by_id("chat-context-channel-" + current_channel_id);
+                let chat_context_index = get_chat_context_index_by_chat_context_id("chat-context-channel-" + current_channel_id);
 
                 chat_context_array[chat_context_index].last_known_message_sender_username = username_message_sender;
 
@@ -6948,78 +7049,98 @@
                 }
 
                 message_keys = JSON.parse(decryption_result.plaintext);
-                let decrypted_text = decrypt_direct_message(message_keys,message_data.message_value);
-                decrypted_text = sanitize_string(decrypted_text);
-                log(msg.message.sender_username + ' -> '+ decrypted_text);
-                let received_direct_message_chat_context_id = "chat-context-pm-"+msg.message.sender_id;
-                let is_found = document.getElementById("chat-context-pm-"+msg.message.sender_id);
-
-                if(is_found == null)
+                let decrypted_text = decrypt_with_aes_keys(message_keys,message_data.message_value);
+                let some_json = JSON.parse(decrypted_text);
+                if(some_json.type == "direct_chat_message")
                 {
-                    let html_to_append = "<div class=\"chat-context\" id=\""+received_direct_message_chat_context_id+"\">\n\
-                                            <div class=\"single-server-message\">now talking to user:  " + msg.message.sender_username+"</div>\n\
-                                            <div class=\"single-server-message\">your public key: "+rsa_public_key_string+"</div>\n\
-                                            <div class=\"single-server-message\">his public key: "+get_public_key_by_user_id(msg.message.sender_id)+"</div>\n\
-                                            <div class=\"single-server-message\">always verify if other users sees same keys. If noth, somebody else is listening. If they match, chat is E2EE </div>\n\
-                                         </div>";
+                    decrypted_text = sanitize_string(some_json.value);
+                    log(msg.message.sender_username + ' -> '+ decrypted_text);
+                    let received_direct_message_chat_context_id = "chat-context-pm-"+msg.message.sender_id;
+                    let is_found = document.getElementById("chat-context-pm-"+msg.message.sender_id);
 
-                    document.getElementById('chat-context-container').innerHTML += html_to_append;
-                    document.getElementById(received_direct_message_chat_context_id).style.display = "none";
-
-                    let single_chat_context = {
-                        "type":"user",
-                        "chat_context_id": received_direct_message_chat_context_id,
-                        "last_known_message_sender_username" : ""
-                    };
-
-                    chat_context_array.push(single_chat_context);
-                }
-
-                let chat_context_index = get_chat_context_index_by_id(received_direct_message_chat_context_id);
-
-                if(chat_context_array[chat_context_index].last_known_message_sender_username == msg.message.sender_username)
-                {
-                    let chat_message = "<p>" + decrypted_text + "</p>";
-                    let last_child_index = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
-                    let exists = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message") != "undefined";
-                    document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].innerHTML += chat_message;
-                    document.querySelector('[data-connected-user-id="'+msg.message.sender_id+'"]').getElementsByClassName("connected-user-p-received-messages-number")[0].style.display = "none";
-                }
-                else
-                {
-                    let html_to_append = "<div class=\"single-chat-message\">\n\
-                                            <div class=\"single-message-content\">\n\
-                                                <div class=\"single-chat-message-sender-username-container\">\n\
-                                                    <p>"+ msg.message.sender_username +"</p>\n\
-                                                </div>\n\
-                                                <div class=\"single-chat-message-sender-time\">\n\
-                                                    <p>"+  new Date().toLocaleTimeString() +"</p>\n\
-                                                </div>\n\
-                                                <div class=\"single-chat-message-content\"><p>"+ decrypted_text +"</p>\n\
-                                                </div>\n\
-                                            </div>\n\
-                                        </div>";
-
-                    document.getElementById(received_direct_message_chat_context_id).innerHTML += html_to_append;
-                    let elements_count = document.getElementsByClassName("chat-spacer").length;
-
-                    for(let i = 0; i < elements_count; i++)
+                    if(is_found == null)
                     {
-                        document.getElementsByClassName("chat-spacer")[0].remove();
+                        let html_to_append = "<div class=\"chat-context\" id=\""+received_direct_message_chat_context_id+"\">\n\
+                                                <div class=\"single-server-message\">now talking to user:  " + msg.message.sender_username+"</div>\n\
+                                                <div class=\"single-server-message\">your public key: "+rsa_public_key_string+"</div>\n\
+                                                <div class=\"single-server-message\">his public key: "+get_public_key_by_user_id(msg.message.sender_id)+"</div>\n\
+                                                <div class=\"single-server-message\">always verify if other users sees same keys. If noth, somebody else is listening. If they match, chat is E2EE </div>\n\
+                                             </div>";
+
+                        document.getElementById('chat-context-container').innerHTML += html_to_append;
+                        document.getElementById(received_direct_message_chat_context_id).style.display = "none";
+
+                        let single_chat_context = {
+                            "type":"user",
+                            "chat_context_id": received_direct_message_chat_context_id,
+                            "last_known_message_sender_username" : ""
+                        };
+
+                        chat_context_array.push(single_chat_context);
                     }
 
-                    let html_to_append1 = "<div class=\"chat-spacer\"></div>";
-                    document.getElementById(received_direct_message_chat_context_id).innerHTML += html_to_append1;
+                    let chat_context_index = get_chat_context_index_by_chat_context_id(received_direct_message_chat_context_id);
+
+                    if(chat_context_array[chat_context_index].last_known_message_sender_username == msg.message.sender_username)
+                    {
+                        let chat_message = "<p>" + decrypted_text + "</p>";
+                        let last_child_index = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
+                        let exists = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message") != "undefined";
+                        document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].innerHTML += chat_message;
+                        document.querySelector('[data-connected-user-id="'+msg.message.sender_id+'"]').getElementsByClassName("connected-user-p-received-messages-number")[0].style.display = "none";
+                    }
+                    else
+                    {
+                        let html_to_append = "<div class=\"single-chat-message\">\n\
+                                                <div class=\"single-message-content\">\n\
+                                                    <div class=\"single-chat-message-sender-username-container\">\n\
+                                                        <p>"+ msg.message.sender_username +"</p>\n\
+                                                    </div>\n\
+                                                    <div class=\"single-chat-message-sender-time\">\n\
+                                                        <p>"+  new Date().toLocaleTimeString() +"</p>\n\
+                                                    </div>\n\
+                                                    <div class=\"single-chat-message-content\"><p>"+ decrypted_text +"</p>\n\
+                                                    </div>\n\
+                                                </div>\n\
+                                            </div>";
+
+                        document.getElementById(received_direct_message_chat_context_id).innerHTML += html_to_append;
+                        let elements_count = document.getElementsByClassName("chat-spacer").length;
+
+                        for(let i = 0; i < elements_count; i++)
+                        {
+                            document.getElementsByClassName("chat-spacer")[0].remove();
+                        }
+
+                        let html_to_append1 = "<div class=\"chat-spacer\"></div>";
+                        document.getElementById(received_direct_message_chat_context_id).innerHTML += html_to_append1;
+                    }
+                    if(current_chat_context_id != received_direct_message_chat_context_id)
+                    {
+                        document.querySelector('[data-connected-user-id="'+msg.message.sender_id+'"]').getElementsByClassName("connected-user-p-received-messages-number")[0].style.display = "inline-block";
+                        let current_received_message_number_string = document.querySelector('[data-connected-user-id="'+msg.message.sender_id+'"]').getElementsByClassName("connected-user-p-received-messages-number")[0].innerHTML;
+                        current_received_message_number = parseInt(current_received_message_number_string);
+                        current_received_message_number += 1;
+                        document.querySelector('[data-connected-user-id="'+msg.message.sender_id+'"]').getElementsByClassName("connected-user-p-received-messages-number")[0].innerHTML = current_received_message_number;
+                    }
+                    chat_context_array[chat_context_index].last_known_message_sender_username = msg.message.sender_username;
                 }
-                if(current_chat_context_id != received_direct_message_chat_context_id)
+                else if(some_json.type == "channel_keys_from_maintainer")
                 {
-                    document.querySelector('[data-connected-user-id="'+msg.message.sender_id+'"]').getElementsByClassName("connected-user-p-received-messages-number")[0].style.display = "inline-block";
-                    let current_received_message_number_string = document.querySelector('[data-connected-user-id="'+msg.message.sender_id+'"]').getElementsByClassName("connected-user-p-received-messages-number")[0].innerHTML;
-                    current_received_message_number = parseInt(current_received_message_number_string);
-                    current_received_message_number += 1;
-                    document.querySelector('[data-connected-user-id="'+msg.message.sender_id+'"]').getElementsByClassName("connected-user-p-received-messages-number")[0].innerHTML = current_received_message_number;
+                    let index = get_channel_index_by_channel_id(channel_list, current_channel_id);
+                    if(channel_list[index].maintainer_id == msg.message.sender_id)
+                    {
+                        console.log("received keys for channel '" + channel_list[index].name + "' from user : '" + msg.message.sender_username + "'. Setting new value of current_channel_keys");
+                        current_channel_keys = JSON.parse(some_json.value);
+                        console.log("current_channel_keys -> ", current_channel_keys);
+                    }
+                    else
+                    {
+                        console.log("received keys for channel '" + channel_list[index].name + "' from user : '" + msg.message.sender_username + "' The user is not maintainer of current channel. Refusing to set keys");
+                        console.log("channel_list[index].maintainer_id = " + channel_list[index].maintainer_id);
+                        console.log("msg.message.sender_id = " + msg.message.sender_id);
+                    }
                 }
-                chat_context_array[chat_context_index].last_known_message_sender_username = msg.message.sender_username;
             }
             else if(msg.message.type == 'direct_chat_picture_metadata')
             {
@@ -7047,7 +7168,7 @@
                     chat_context_array.push(single_chat_context);
                 }
 
-                let chat_context_index = get_chat_context_index_by_id(received_direct_message_chat_context_id);
+                let chat_context_index = get_chat_context_index_by_chat_context_id(received_direct_message_chat_context_id);
                 let html_to_append = "<div class=\"single-chat-message\">\n\
                                         <div class=\"single-message-content\">\n\
                                             <div class=\"single-chat-message-sender-username-container\">\n\
@@ -7095,7 +7216,7 @@
                 }
 
                 message_keys = JSON.parse(decryption_result.plaintext);
-                let decrypted_data = decrypt_direct_message(message_keys,message_data.message_value);
+                let decrypted_data = decrypt_with_aes_keys(message_keys,message_data.message_value);
                 let picture_base64 = sanitize_string(decrypted_data);
                 document.getElementById("chat-picture-img-"+msg.message.picture_id).src = picture_base64;
             }
@@ -7115,6 +7236,7 @@
                     "parent_channel_id" : msg.message.parent_channel_id,
                     "name" : msg.message.name,
                     "description" : msg.message.description,
+                    "maintainer_id" : msg.message.maintainer_id
                 };
 
                 channel_list.push(new_channel);
@@ -7123,15 +7245,134 @@
                                           <p data-channel-name-id=\""+new_channel.channel_id+"\" style=\"padding-left: "+indend_left * 20 +"px;\">"+new_channel.name+"</p>\n\
                                       </div>";
 
-
                 document.querySelector("[data-channel-id='"+new_channel.parent_channel_id+"']").insertAdjacentHTML("afterend",html_to_append);
-
                 let elements = document.getElementsByClassName('single-channel');
 
                 for(let i = 0; i < elements.length; i++)
                 {
                     elements[i].addEventListener("mousedown", single_channel_onmousedown);
                 }
+            }
+            else if(msg.message.type == "channel_maintainer_id")
+            {
+                let index = get_channel_index_by_channel_id(channel_list, current_channel_id);
+                channel_list[index].maintainer_id = msg.message.maintainer_id;
+                if((local_user_id == msg.message.maintainer_id) && (current_channel_id == msg.message.channel_id))
+                {
+                    console.log("local user is maintainer of channel '" + channel_list[get_channel_index_by_channel_id(channel_list, msg.message.channel_id)].name + "'");
+                    create_and_send_new_channel_keys();
+                }
+                else if((current_channel_id == msg.message.channel_id) && (local_user_id != msg.message.maintainer_id))
+                {
+                    console.log("channel_maintainer_id received: " + msg.message.maintainer_id);
+                    console.log("local_user_id" + local_user_id);
+                    console.log("msg.message.maintainer_id " + msg.message.maintainer_id);
+                }
+            }
+        }
+    }
+
+    function create_and_send_new_channel_keys()
+    {
+        //lets create channel keys
+        current_channel_keys = [];
+
+        for(let i = 0; i < 4; i++)
+        {
+            let single_key = {
+                key_string : null,
+                key_bytes : null,
+                iv_bytes : null
+            };
+
+            single_key.key_string = just.randomstring(16);
+            let hash = sha256.create();
+            hash.update(single_key.key_string);
+            key_bytes = hash.array();
+            single_key.key_bytes = key_bytes;
+            let iv_string = just.randomstring(16);
+            let hash1 = sha256.create();
+            hash1.update(iv_string);
+            iv_bytes = hash1.array();
+            iv_bytes.splice(0,16);
+            single_key.iv_bytes = iv_bytes;
+            current_channel_keys.push(single_key);
+        }
+
+        console.log("current channel keys - > ", current_channel_keys);
+
+        for(let i = 0; i < users.length; i++)
+        {
+            if(users[i].channel_id != current_channel_id)
+            {
+                continue;
+            }
+            if(users[i].user_id == local_user_id)
+            {
+                continue;
+            }
+
+            console.log(users[i]);
+
+            let message_keys = [];
+
+            for(let i = 0; i < 4; i++)
+            {
+                let single_key = {
+                    key_string : null,
+                    key_bytes : null,
+                    iv_bytes : null
+                };
+
+                single_key.key_string = just.randomstring(16);
+                let hash = sha256.create();
+                hash.update(single_key.key_string);
+                key_bytes = hash.array();
+                single_key.key_bytes = key_bytes;
+                let iv_string = just.randomstring(16);
+                let hash1 = sha256.create();
+                hash1.update(iv_string);
+                iv_bytes = hash1.array();
+                iv_bytes.splice(0,16);
+                single_key.iv_bytes = iv_bytes;
+                message_keys.push(single_key);
+            }
+
+            let single_message_aes_keys_string = JSON.stringify(message_keys);
+            let encryption_result = cryptico.encrypt(single_message_aes_keys_string, users[i].public_key);
+
+            let message_data = {
+                message_keys : encryption_result.cipher,
+                message_value : ""
+            };
+
+            let message_value_object = {
+                type : "channel_keys_from_maintainer",
+                value : JSON.stringify(current_channel_keys)
+            };
+
+            message_data.message_value = encrypt_with_aes_keys_and_convert_to_base64(message_keys, JSON.stringify(message_value_object));
+
+            let message_object = {
+                "message" : {
+                  "type" : null,
+                  "value" : null,
+                  "receiver_type" : null,
+                  "receiver_id" : null
+                }
+            };
+
+            message_object.message.type = "client_chat_message";
+            message_object.message.value = JSON.stringify(message_data);
+            message_object.message.receiver_type = "user";
+            message_object.message.receiver_id = users[i].user_id.toString();
+            let message_json_string = JSON.stringify(message_object);
+            var data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+            if(socket.readyState === 1)
+            {
+                console.log("sending channel keys to user -> " + users[i].username);
+                socket.send(data);
             }
         }
     }
@@ -7143,30 +7384,55 @@
 
     function init_keys_object()
     {
-        for(let i = 0; i < custom_key_count; i++)
+        if(is_autoconnect_active == true)
         {
-            let key_string_value = document.getElementById('input-key-'+i+'').value;
-            let hash = sha256.create();
-            hash.update(key_string_value);
-            hash.array();
-            key_bytes = hash.array();
+            for(let i = 0; i < autoconnect_details.keys.length; i++)
+            {
+                let key_string_value = autoconnect_details.keys[i];
+                let hash = sha256.create();
+                hash.update(key_string_value);
+                hash.array();
+                key_bytes = hash.array();
 
-            let iv_bytes = [90,11,8,33,4,50,50,88,8,89,200,15,24,4,15,10];
+                let iv_bytes = [90,11,8,33,4,50,50,88,8,89,200,15,24,4,15,10];
 
-            let single_key = {
-                info: "aes-ctr",
-                key_string: key_string_value,
-                key : key_bytes,
-                iv : iv_bytes
-            };
+                let single_key = {
+                    info: "aes-ctr",
+                    key_string: key_string_value,
+                    key : key_bytes,
+                    iv : iv_bytes
+                };
 
-            metadata_keys[i] = single_key;
+                metadata_keys[i] = single_key;
+            }
+        }
+        else
+        {
+            for(let i = 0; i < custom_key_count; i++)
+            {
+                let key_string_value = document.getElementById('input-key-'+i+'').value;
+                let hash = sha256.create();
+                hash.update(key_string_value);
+                hash.array();
+                key_bytes = hash.array();
+
+                let iv_bytes = [90,11,8,33,4,50,50,88,8,89,200,15,24,4,15,10];
+
+                let single_key = {
+                    info: "aes-ctr",
+                    key_string: key_string_value,
+                    key : key_bytes,
+                    iv : iv_bytes
+                };
+
+                metadata_keys[i] = single_key;
+            }
         }
     }
 
-    function connect_button_on_click()
+    function connect_to_server()
     {
-        if(!is_rsa_key_generated)
+        if(is_rsa_key_generated == false)
         {
             log('rsa keypair not generated yet');
             return;
@@ -7174,10 +7440,16 @@
 
         init_keys_object();
 
-        if(!socket_connected)
+        if(socket_connected == false)
         {
             host = document.getElementById('input-ip-address').value;
             port = document.getElementById('input-port-number').value;
+
+            if(is_autoconnect_active == true)
+            {
+                host = autoconnect_details.host;
+                port = autoconnect_details.port;
+            }
 
             try
             {
@@ -7274,6 +7546,7 @@
 
         if(selector_type == "user")
         {
+            enable_inputs();
             id_to_find = "chat-context-pm-";
             user_id = this.getAttribute("data-chat-context-selector-id").split("user-")[1];
             id_to_find += user_id;
@@ -7283,9 +7556,10 @@
             document.querySelector('[data-connected-user-id="'+user_id+'"]').getElementsByClassName('connected-user-p-received-messages-number')[0].innerHTML = '0';
 
             current_chat_context_id = id_to_find;
+            console.log("current_chat_context_id -> " , current_chat_context_id);
 
-            chat_message_receiver_type = "user"; //from local user perspective
-            chat_message_receiver_id = user_id; //from local user perspective
+            chat_message_receiver_type = "user";
+            chat_message_receiver_id = user_id;
 
         }
         else if(selector_type == "channel")
@@ -7294,7 +7568,8 @@
             channel_id = this.getAttribute("data-chat-context-selector-id").split("channel-")[1];
             id_to_find += channel_id;
 
-            chat_message_receiver_type = "channel";
+            console.log("trying to find id - > ", id_to_find)
+            chat_message_receiver_type = "channel"; //from local user perspective
 
             let is_found = document.getElementById(id_to_find);
             if(is_found)
@@ -7306,6 +7581,7 @@
             {
                 enable_inputs();
                 current_chat_context_id = id_to_find;
+                console.log("changed current_chat_context_id to -> " + id_to_find);
             }
             else
             {
@@ -7316,6 +7592,7 @@
 
     function enable_inputs()
     {
+        console.log("function disable_inputs()");
         document.getElementById("chat-input-container-text-input").disabled = false;
         document.getElementById("chat-input-container-send-chat-input").disabled = false;
         document.getElementById("choose_image_input").disabled = false;
@@ -7323,13 +7600,15 @@
 
     function disable_inputs()
     {
+        console.log("function enable_inputs()");
         document.getElementById("chat-input-container-text-input").disabled = true;
         document.getElementById("chat-input-container-send-chat-input").disabled = true;
         document.getElementById("choose_image_input").disabled = true;
     }
 
-    function connected_user_on_click()
+    function connected_user_onclick()
     {
+        document.getElementById("current-channel-description").innerHTML = "";
         for(let i = 0; i < document.getElementsByClassName('connected-user').length; i++)
         {
             document.getElementsByClassName('connected-user')[i].style.backgroundColor = "";
@@ -7427,7 +7706,7 @@
             document.querySelector('[data-chat-context-selector-id="'+selector_id+'"]').remove();
             document.getElementById("chat-context-pm-"+user_id).remove();
 
-            let chat_context_index_to_remove = get_chat_context_index_by_id("chat-context-pm-"+user_id);
+            let chat_context_index_to_remove = get_chat_context_index_by_chat_context_id("chat-context-pm-"+user_id);
 
             if(chat_context_index_to_remove != -1)
             {
@@ -7444,22 +7723,26 @@
             }
 
             document.querySelector('[data-chat-context-selector-id="channel-'+current_channel_id+'"]').style.backgroundColor = "#36393f";
+
+
         }
         else if(selector_type == "channel")
         {
+            //cannot remove current channel
+
             let selector_id = this.getAttribute("data-chat-context-remove-selector-id");
             let channel_id = selector_id.split("channel-")[1];
 
             if(current_channel_id == channel_id)
             {
-                window.alert("current channel, can't remove");
+                window.alert("current channel, can not delete");
                 return;
             }
 
             document.querySelector('[data-chat-context-selector-id="'+selector_id+'"]').remove();
             document.getElementById("chat-context-channel-"+channel_id).remove();
 
-            let chat_context_index_to_remove = get_chat_context_index_by_id("chat-context-channel-"+channel_id);
+            let chat_context_index_to_remove = get_chat_context_index_by_chat_context_id("chat-context-channel-"+channel_id);
 
             if(chat_context_index_to_remove != -1)
             {
@@ -7492,6 +7775,7 @@
             document.getElementsByClassName("connected-user")[i].style.backgroundColor = "";
         }
 
+        console.log("is this active ? should not be");
         document.getElementById("chat-context-channel-1").style.display = "block";
         chat_message_receiver_type = "channel";
         chat_message_receiver_id = "main";
@@ -7517,6 +7801,8 @@
 
         if(data_action == 0)
         {
+            console.log("trying to create channel");
+
             document.getElementsByClassName("channel-list-context-menu")[0].remove();
             document.getElementById("background-container").style.display = "block";
             document.getElementById("channel-properties-container").style.display = "block";
@@ -7532,6 +7818,8 @@
                 }
             };
 
+            console.log(message_object);
+
             let message_json_string = JSON.stringify(message_object);
             let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
@@ -7539,11 +7827,17 @@
             {
                 socket.send(data);
             }
-
             document.getElementsByClassName("channel-list-context-menu")[0].remove();
+            document.getElementById("current-channel-description").innerHTML = "";
+
         }
         else if(data_action == 3)
         {
+            if(selected_channel_id == current_channel_id)
+            {
+                console.log("cannot join current channel"); // checked also at server side
+                return;
+            }
             let message_object = {"message" :
                 {
                     "type" : "join_channel_request",
@@ -7596,7 +7890,9 @@
             is_found = document.getElementById("chat-context-channel-" + selected_channel_id);
             if(is_found == null)
             {
+                console.log("adding channel");
                 let channel_name = document.querySelector('[data-channel-name-id="'+selected_channel_id.toString()+'"]').innerHTML;
+
                 let html_to_append3 = '<div class="chat-context" id="chat-context-channel-'+selected_channel_id+'" style="display: none;">\n\
                                         <div class="single-server-message">now talking channel: ' + channel_name + '</div>\n\
                                             <div class="single-server-message">! group chat / chat in channel is not E2EE !</div>\n\
@@ -7625,14 +7921,26 @@
             }
 
             document.getElementById("chat-context-channel-" + selected_channel_id).style.display = "block";
+
             current_chat_context_id = "chat-context-channel-"+selected_channel_id;
             chat_message_receiver_type = "channel";
+            console.log("joined new channel, current_channel_keys = 0");
+            current_channel_keys = null;
+
             enable_inputs();
         }
     }
 
     function single_channel_onmousedown(event)
     {
+        if(event.which == 1)
+        {
+            event.stopPropagation();
+            let channel_id = parseInt(this.getAttribute("data-channel-id"));
+            let index = get_channel_index_by_channel_id(channel_list, channel_id);
+
+            document.getElementById("current-channel-description").innerHTML = sanitize_string(channel_list[index].description);
+        }
         if(event.which == 3)
         {
             event.stopPropagation();
@@ -7673,6 +7981,11 @@
             {
                 document.getElementsByClassName("context-menu-item")[i].addEventListener("click", contextmenuitem_onclick);
             }
+
+            let channel_id = parseInt(this.getAttribute("data-channel-id"));
+            let index = get_channel_index_by_channel_id(channel_list, channel_id);
+
+            document.getElementById("current-channel-description").innerHTML = sanitize_string(channel_list[index].description);
         }
     }
 
@@ -7696,6 +8009,8 @@
                 "parent_channel_id" : parent_channel_id.toString()
             }
         };
+
+        console.log(message_object);
 
         let message_json_string = JSON.stringify(message_object);
         let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
@@ -7721,6 +8036,7 @@
                 for(let i = 0; i < elements_count1; i++)
                 {
                     document.getElementsByClassName("channel-list-context-menu")[0].remove();
+                    console.log("channel_list_onmousedown() contextmenu removed");
                     let elements = document.getElementsByClassName('single-channel');
                     for(let i = 0; i < elements.length; i++)
                     {
@@ -7745,6 +8061,7 @@
     function document_onmousedown(event)
     {
         return;
+        //remove context menu, if any
         let elements_count = document.getElementsByClassName("channel-list-context-menu").length;
 
         for(let i = 0; i < elements_count; i++)
@@ -7753,11 +8070,10 @@
         }
     }
 
-
     function window_onload()
     {
         document.getElementById("chat-input-container-send-chat-input").onclick = send_chat_input_on_click;
-        document.getElementById("connect-button").onclick = connect_button_on_click;
+        document.getElementById("connect-button").onclick = connect_to_server;
         document.getElementById("chat-input-container-text-input").onkeyup = chat_input_on_keyup;
         document.getElementById("choose_image_input").onchange = choose_image_input;
         document.getElementById("add-key-button").onclick = add_key_button_on_click;
@@ -7771,6 +8087,11 @@
         document.querySelector("[data-chat-context-remove-selector-id='channel-1']").onclick = chat_context_remove_onclick;
         document.getElementById("channel-properties-close-button").onclick = channel_properties_closebutton_onclick;
         document.getElementById("create-channel-button").onclick = create_channel_button_onclick;
+
+        if(is_autoconnect_active == true)
+        {
+            connect_to_server();
+        }
     }
 
     window.onload = window_onload;
@@ -7843,7 +8164,8 @@
                     </div>
                 </div>
                 <div id="space-devider-42">
-
+                    <div id="current-channel-description">
+                    </div>
                 </div>
                 <div></div>
                 <div id="space-devider3">
@@ -7893,6 +8215,12 @@
                 </div>
                 <div>
                     <input id="channel-properties-input-channel-description" type="text" value="">
+                </div>
+                <div>
+                    <p>password</p>
+                </div>
+                <div>
+                    <input id="channel-properties-input-channel-password" type="text" value="">
                 </div>
             </div>
             <input type="hidden" id="create-channel-hidden-parent-id" value="">
