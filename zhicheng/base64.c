@@ -1,14 +1,10 @@
-/* This is a public domain base64 implementation written by WEI Zhicheng. */
-
-//for some reason, this base64 function sometimes add 3 more bytes when it should not
-//check if it works correctly
 #include "base64.h"
 
 #define BASE64_PAD '='
 #define BASE64DE_FIRST '+'
 #define BASE64DE_LAST 'z'
 
-/* BASE 64 encode table */
+
 static const char base64en[] = {
 	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
 	'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
@@ -20,7 +16,6 @@ static const char base64en[] = {
 	'4', '5', '6', '7', '8', '9', '+', '/',
 };
 
-/* ASCII order for BASE 64 decode, 255 in unused character */
 static const unsigned char base64de[] = {
 	/* nul, soh, stx, etx, eot, enq, ack, bel, */
 	   255, 255, 255, 255, 255, 255, 255, 255,
