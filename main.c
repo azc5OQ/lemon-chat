@@ -27,6 +27,12 @@ channel_t channel_array[MAX_CHANNELS];
 
 int id_last_sent_picture = 0;
 
+//
+//finds first unused id
+//ids range from 1 to 500
+//returns 0 if no id was found
+//
+
 int get_client_index_with_fd(int fd)
 {
     for(int i = 0; i < MAX_CLIENTS; i++)
@@ -127,6 +133,7 @@ void broadcast_channel_create(channel_t* channel)
         #endif
     }
 
+    //check null pointers
     clib__null_memory(msg_text, size_of_allocated_message_buffer); //clear bytes
 
     free(msg_text);
@@ -183,10 +190,11 @@ void broadcast_channel_delete(int channel_id)
         #endif
     }
 
+    //check null pointers
     clib__null_memory(msg_text, size_of_allocated_message_buffer); //clear bytes
 
-    free(msg_text);
-    msg_text = 0;
+    free(msg_text); //free memory
+    msg_text = 0; //ged rid of dangling pointer
 
     free(json_root_object1_string);
     json_root_object1_string = 0;
@@ -224,6 +232,8 @@ void broadcast_client_rename(client_t* client)
             continue;
         }
 
+        //wont send message to ourselves
+        //alternatively, could compare it to "i" which is equal to user_id
         if(clients_array[i].user_id == client->user_id)
         {
             continue;
@@ -244,6 +254,7 @@ void broadcast_client_rename(client_t* client)
         #endif
     }
 
+    //check null pointers
     clib__null_memory(msg_text, size_of_allocated_message_buffer); //clear bytes
 
     free(msg_text); //free memory
@@ -305,6 +316,13 @@ void send_client_list_to_client(client_t* receiver)
                 cJSON_AddStringToObject(single_client, "username", clients_array[x].username);
                 cJSON_AddStringToObject(single_client, "public_key", clients_array[x].public_key);
                 cJSON_AddNumberToObject(single_client, "channel_id", clients_array[x].channel_id);
+
+
+                //wut
+                //char id_string[16];
+                //clib__null_memory(id_string, sizeof(id_string)); since when is index same as ID?
+                //sprintf(id_string,"%d",x);
+
                 cJSON_AddNumberToObject(single_client, "user_id", clients_array[x].user_id);
                 cJSON_AddItemToArray(json_client_array, single_client);
             }
@@ -558,8 +576,7 @@ void broadcast_client_disconnect(client_t* client)
     }
 
     //
-    //check if the client that left was the maintainer of channel
-    //if he was, pick new maintainer
+    //check if user that disconnected, was maintainer of one of the channels
     //
 
     for(int i = 0; i < MAX_CHANNELS; i++)
@@ -604,6 +621,7 @@ void broadcast_client_disconnect(client_t* client)
 
 void mark_channels_for_deletion(int channel_id, int* current_index, int* channel_indices)
 {
+    //cant be too careful in C
     if(current_index == 0 || channel_indices == 0)
     {
         return;
@@ -808,8 +826,8 @@ void send_direct_chat_message(char* username, char* chat_message_value, int send
 
     clib__null_memory(msg_text, size_of_allocated_message_buffer); // null contents of memory
 
-    free(msg_text);
-    msg_text = 0;
+    free(msg_text); //free memory
+    msg_text = 0; //null pointer
 }
 
 void send_channel_chat_message(int channel_id, client_t* sender, char* chat_message_value)
@@ -1134,7 +1152,7 @@ void send_channel_chat_picture_metadata(int channel_id, client_t* sender, size_t
     cJSON_AddStringToObject(json_message_object1, "username", sender->username);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
-    char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1); //should not this be freed?
+    char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
     //#ifdef DEBUG_PROGRAM
     // printf("%s %s", json_root_object1_string , "\n");
@@ -1534,9 +1552,9 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
         }
 
         //
-        //check if user is a maintainer of the current channel before letting him join new channel
-        //if he is, pick new maintainer from other users currently present in his current channel
-        //if there are no users to pick from, set maintaner to -1
+        //check if user is a maintainer of the current channel before letting him join new channel.
+        //If he is, pick new maintainer from other users currently present in current channel.
+        //If there are no users to pick from, set maintaner to -1
         //
 
         int current_channel_index = get_channel_index_by_channel_id(clients_array[index].channel_id);
@@ -1669,10 +1687,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             return;
         }
 
-        //
         //check description
-        //
-
         cJSON* channel_description = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_description");
 
         if (!cJSON_IsString(channel_description) || channel_description->valuestring == NULL || strlen(channel_description->valuestring) >= 1000)
@@ -1684,6 +1699,21 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             cJSON_Delete(json_root);
             return;
         }
+
+
+        //check password
+        cJSON* channel_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_password");
+
+        if (!cJSON_IsString(channel_password) || channel_password->valuestring == NULL || strlen(channel_password->valuestring) >= 128)
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","[!] client : ", index, " channel_password is wrong \n");
+            #endif
+            //ws_close_client(fd);
+            cJSON_Delete(json_root);
+            return;
+        }
+
 
         int parent_channel_id_int = atoi(parent_channel_id->valuestring);
         bool is_channel_found = false;
@@ -1703,6 +1733,11 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
                 channel_array[i].type = 1;
                 channel_array[i].is_channel = true;
                 channel_array[i].maintainer_id = -1;
+
+                if(strlen(channel_password->valuestring) > 0)
+                {
+                    channel_array[i].is_using_password = true;
+                }
 
                 broadcast_channel_create(&channel_array[i]);
 
@@ -1803,7 +1838,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
 
             //
-            //move clients from channel, if there are any, to root channel with id 1
+            //move clients from channel, if there are any, to root channel
             //
 
 
@@ -2046,6 +2081,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
     if(cli != 0)
     {
+        printf("864 free cli \n");
         free(cli);
     }
 
@@ -2170,7 +2206,7 @@ void process_not_authenticated_client_message(int fd, int index, unsigned char *
         //
         //at this point client is verified
         //give him some username, add him to root channel, save his public key,
-        //send him list of channels, send him list of clients and send him ID of the maintaner of current channel, root channel
+        //send him list of channels, send him list of clients and send him ID of maintaner of the current channel (root)
         //
 
         clients_array[index].channel_id = 1; //root channel, id is 1
