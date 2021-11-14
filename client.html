@@ -64,7 +64,7 @@
           height: 100%;
         }
 
-        .connect-input-container
+        .connect-form-input-container
         {
           padding-top: 10px;
           padding-bottom: 10px
@@ -549,7 +549,7 @@
           background-size: contain;
         }
 
-        #add-key-button
+        .button-1
         {
           width: 58px;
           height: 29px;
@@ -602,6 +602,7 @@
           color: white;
         }
 
+
         .text-input-pretty[disabled]
         {
           padding: 5px;
@@ -618,17 +619,36 @@
           outline: none;
         }
 
-        #connect-button
+        .text-input-2
         {
-          width: 58px;
-          height: 29px;
-          border: 0px;
-          transition: 0.3s ease;
-          border-radius: 3px;
+          padding: 5px;
+          font-family: sans-serif;
+          width: 185px;
+          border-bottom: 1px solid white;
+          border-left-color: #36393f;
+          border-right-color: #36393f;
+          border-top-color: #36393f;
+          background-color: #36393f;
+          border-top-style: solid;
+          border-left-style: solid;
+          border-right-style: solid;
           color: white;
-          cursor: pointer;
-          background: #7d8799;
-          vertical-align: top;
+        }
+
+        .text-input-2[disabled]
+        {
+          padding: 5px;
+          font-family: sans-serif;
+          background-color: #36393f;
+          border-style: solid;
+          color: white;
+          width: 67px;
+          border-bottom-color: #36393f;
+        }
+
+        .text-input-2:focus
+        {
+          outline: none;
         }
 
         #show-hide-log-button
@@ -730,40 +750,31 @@
             top: 25%;
             width: 322px;
             height: 219px;
-            background-color: #414847;
+            background-color: #36393f;
             margin: 0 auto;
+            border-radius: 13px;
+            overflow: hidden;
         }
 
         #menu-bar-container
         {
-            background-color: #8b802e;
             height: 29px;
             text-align: right;
         }
 
-        #channel-properties-close-button
+        #close-button
         {
             width: 29px;
-            height: 29px;
-            background-color: antiquewhite;
+            height: 25px;
+            border: 2px solid #9e8232;
             float: right;
-        }
-        #channel-properties-close-button:hover
-        {
-            background-color: blue;
-        }
-
-        #create-channel-button
-        {
-            width: 58px;
-            height: 29px;
-            border: 0px;
-            transition: 0.3s ease;
-            border-radius: 3px;
-            color: white;
+            border-bottom-left-radius: 16px;
+            border-top-right-radius: 16px;
             cursor: pointer;
-            background: #7d8799;
-            vertical-align: top;
+        }
+        #close-button:hover
+        {
+            border-color: #d8d22b;
         }
 
     </style>
@@ -5818,9 +5829,9 @@
 
     var autoconnect_details = {
         "host" : "127.0.0.1",
-        "port" : 1234,
+        "port" : 1111,
         "keys" : [
-            "some_key"
+            "test"
         ]
     };
 
@@ -6189,6 +6200,7 @@
             }
             else
             {
+
                 let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer').length;
 
                 for(let i = 0; i < element_count; i++)
@@ -6461,7 +6473,7 @@
         {
             if(current_channel_keys == null)
             {
-                console.log("can not sent, no channel keys");
+                console.log("cant sent, dont have channel keys");
                 return;
             }
             send_channel_chat_message();
@@ -6488,6 +6500,8 @@
                 "new_username" : new_username
             }
         };
+
+        console.log(message_object);
 
         let index = get_user_index_by_username(local_username);
         users[index].username = new_username;
@@ -6696,11 +6710,22 @@
                         {
                             channel_list.push(child_channels[a]);
 
-                            let indend_left = get_indend_level(child_channels[a].channel_id, msg.message.channels);
-                            let html_to_append = "<div class=\"single-channel\" data-channel-id=\""+child_channels[a].channel_id+"\" data-channel-parent-id=\""+child_channels[a].parent_channel_id+"\">\n\
-                                                      <p data-channel-name-id=\""+child_channels[a].channel_id+"\" style=\"padding-left: "+indend_left * 20 +"px;\">"+child_channels[a].name+"</p>\n\
-                                                  </div>";
+                            let intend_level = get_indend_level(child_channels[a].channel_id, msg.message.channels);
 
+                            let html_to_append = "";
+
+                            if(child_channels[a].is_using_password == true)
+                            {
+                                html_to_append = "<div class=\"single-channel\" data-channel-id=\""+child_channels[a].channel_id+"\" data-channel-parent-id=\""+child_channels[a].parent_channel_id+"\">\n\
+                                                       <p data-channel-name-id=\""+child_channels[a].channel_id+"\" style=\"padding-left: "+intend_level * 20 +"px; background-position-x: "+(intend_level - 1) * 20 +"px; background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEwAACxMBAJqcGAAAAgJJREFUWIXtlbFPFEEUxr/3ZoE1hBx4B7ESE0NhgY12dP4PkiNia6ExGiOxgVyIKLGwMAQKKwPEmCD/AJWdEToLExMLrwMvyCFCDt15zwL3uKi7N+fuZRPjV83uvPd9v5nMzgL/lbGo5Y7LavLnbJFhxwS4yEABwBdVbBCZ5cqmeYGn9L0tAIXJ2pDCvGTG+agaEbwF7Oj2jP8+VYDCZG0ITK8JnG9Wq5BtFR1xgWCn9JJ6ymY1DBeRA1WdIgrOVsjrMNacUdUpETkAAALnwWYF17SjmbXnkj9gbVEZw2G4R3Rp637nm3B+EygDmDlZ+rYmKq8YfIKB4f5TtlgBluK8nXZAyY6FYyKabQxv1OfpznUCzdb71I4383YCEMKFegPb53G1xtrl+kNDXyIABgbC8ad3fjmuduuB//E4v/mBdTuE4OOvZYVsfC2pm2dLAO1T5gCRF9FgSf19DR4T5ArAub+PkD1VXuxm7255mmq/zkbeA0fhuJ58k7iHCDf2NVAAN3+bjWo7Wnl6IsjVP72PWV6SbXf3y/wQJgJQ6J3cjvGhOpEJQO+Ot/Bhjg+7vnrzmQDs9ga3AOCwJ7idCQCIHv0cPMwGIAUlBugr6elMATwNYn/PbQdIqhgA2Us3SnZbAhDlZ6nmR/hFAvRVzYQo5qLInSVSheJJrmruJfL5Z/UDfaOsxxIePTcAAAAASUVORK5CYII=); background-repeat: no-repeat; background-size: 20px 18px; \">"+child_channels[a].name+"</p>\n\
+                                                  </div>";
+                            }
+                            else
+                            {
+                                html_to_append = "<div class=\"single-channel\" data-channel-id=\""+child_channels[a].channel_id+"\" data-channel-parent-id=\""+child_channels[a].parent_channel_id+"\">\n\
+                                                       <p data-channel-name-id=\""+child_channels[a].channel_id+"\" style=\"padding-left: "+intend_level * 20 +"px;\">"+child_channels[a].name+"</p>\n\
+                                                  </div>";
+                            }
                             document.getElementById("channel-list-container").innerHTML += html_to_append;
                         }
 
@@ -6779,7 +6804,7 @@
 
                     current_channel_id = msg.message.channel_id;
                     current_channel_keys = null;
-                    console.log("local_user joined new channel, current_channel_keys = 0");
+                    console.log("local_user joined new channel, nulling out current_channel_keys");
                 }
                 else
                 {
@@ -6918,6 +6943,7 @@
                 //if used chat context was deleted one, switch to current channel
                 if(current_chat_context_id == "chat-context-pm-"+msg.message.user_id)
                 {
+                    console.log("switching to main channel? ");
                     current_chat_context_id = "chat-context-channel-" + current_channel_id;
                     document.getElementById("chat-context-channel-" + current_channel_id).style.display = "block";
                     chat_message_receiver_type = "channel";
@@ -7144,11 +7170,14 @@
             }
             else if(msg.message.type == 'direct_chat_picture_metadata')
             {
+                console.log("recevied message");
                 let received_direct_message_chat_context_id = 'chat-context-pm-'+msg.message.sender_id;
                 let is_found = document.getElementById(received_direct_message_chat_context_id);
 
                 if(is_found == null)
                 {
+                    console.log("element not found");
+
                     let html_to_append = "<div class=\"chat-context\" id=\""+received_direct_message_chat_context_id+"\">\n\
                                             <div class=\"single-server-message\">now talking to user: " + msg.message.sender_username+"</div>\n\
                                                 <div class=\"single-server-message\">your public key: "+rsa_public_key_string+"</div>\n\
@@ -7240,9 +7269,9 @@
                 };
 
                 channel_list.push(new_channel);
-                let indend_left = get_indend_level(new_channel.channel_id, channel_list);
+                let intend_level = get_indend_level(new_channel.channel_id, channel_list);
                 let html_to_append = "<div class=\"single-channel\" data-channel-id=\""+new_channel.channel_id+"\" data-channel-parent-id=\""+new_channel.parent_channel_id+"\">\n\
-                                          <p data-channel-name-id=\""+new_channel.channel_id+"\" style=\"padding-left: "+indend_left * 20 +"px;\">"+new_channel.name+"</p>\n\
+                                          <p data-channel-name-id=\""+new_channel.channel_id+"\" style=\"padding-left: "+intend_level * 20 +"px;\">"+new_channel.name+"</p>\n\
                                       </div>";
 
                 document.querySelector("[data-channel-id='"+new_channel.parent_channel_id+"']").insertAdjacentHTML("afterend",html_to_append);
@@ -7298,6 +7327,7 @@
             single_key.iv_bytes = iv_bytes;
             current_channel_keys.push(single_key);
         }
+
 
         console.log("current channel keys - > ", current_channel_keys);
 
@@ -7371,7 +7401,7 @@
 
             if(socket.readyState === 1)
             {
-                console.log("sending channel keys to user -> " + users[i].username);
+                console.log("sending key data to user -> " + users[i].username);
                 socket.send(data);
             }
         }
@@ -7558,8 +7588,8 @@
             current_chat_context_id = id_to_find;
             console.log("current_chat_context_id -> " , current_chat_context_id);
 
-            chat_message_receiver_type = "user";
-            chat_message_receiver_id = user_id;
+            chat_message_receiver_type = "user"; //from local user perspective
+            chat_message_receiver_id = user_id; //from local user perspective
 
         }
         else if(selector_type == "channel")
@@ -7735,7 +7765,7 @@
 
             if(current_channel_id == channel_id)
             {
-                window.alert("current channel, can not delete");
+                window.alert("current channel, can't remove");
                 return;
             }
 
@@ -7895,7 +7925,7 @@
 
                 let html_to_append3 = '<div class="chat-context" id="chat-context-channel-'+selected_channel_id+'" style="display: none;">\n\
                                         <div class="single-server-message">now talking channel: ' + channel_name + '</div>\n\
-                                            <div class="single-server-message">! group chat / chat in channel is not E2EE !</div>\n\
+                                            <div class="single-server-message">! group chat / chat in channel is E2EE</div>\n\
                                                 <div class="single-server-message">[i] connected : anon2 8:05:53 AM</div><div class="chat-spacer"></div>\n\
                                             </div>\n\
                                         </div>\n\
@@ -7924,7 +7954,7 @@
 
             current_chat_context_id = "chat-context-channel-"+selected_channel_id;
             chat_message_receiver_type = "channel";
-            console.log("joined new channel, current_channel_keys = 0");
+            console.log("joined new channel, nulling out current_channel_keys");
             current_channel_keys = null;
 
             enable_inputs();
@@ -8000,12 +8030,14 @@
         let parent_channel_id = document.getElementById("create-channel-hidden-parent-id").value;
         let channel_name = document.getElementById("channel-properties-input-channel-name").value;
         let channel_description = document.getElementById("channel-properties-input-channel-description").value;
+        let channel_password = document.getElementById("channel-properties-input-channel-password").value;
 
         let message_object = {"message" :
             {
                 "type" : "create_channel_request",
                 "channel_name" : channel_name,
                 "channel_description" : channel_description,
+                "channel_password" : channel_password,
                 "parent_channel_id" : parent_channel_id.toString()
             }
         };
@@ -8085,7 +8117,7 @@
         document.addEventListener("mousedown", document_onmousedown);
         document.getElementById("channel-list-container").addEventListener("mousedown", channel_list_onmousedown);
         document.querySelector("[data-chat-context-remove-selector-id='channel-1']").onclick = chat_context_remove_onclick;
-        document.getElementById("channel-properties-close-button").onclick = channel_properties_closebutton_onclick;
+        document.getElementById("close-button").onclick = channel_properties_closebutton_onclick;
         document.getElementById("create-channel-button").onclick = create_channel_button_onclick;
 
         if(is_autoconnect_active == true)
@@ -8107,34 +8139,34 @@
             <div style="height: 25vmin;"></div>
                 <div id="container-2" style="min-width: 330px;">
                     <div id="connect-form-sub-container-1">
-                        <div class="connect-input-container">
+                        <div class="connect-form-input-container">
                             <input type="text" disabled class="text-input-pretty" value="address">
                         </div>
-                        <div class="connect-input-container">
+                        <div class="connect-form-input-container">
                             <input type="text" disabled class="text-input-pretty" value="port">
                         </div>
-                        <div class="connect-input-container">
+                        <div class="connect-form-input-container">
                             <input type="text" disabled class="text-input-pretty" value="key 0">
                         </div>
                     </div>
                     <div id="connect-form-sub-container-2">
-                        <div class="connect-input-container">
+                        <div class="connect-form-input-container">
                             <input type="text" id="input-ip-address" class="text-input-pretty" value="127.0.0.1">
                         </div>
-                        <div class="connect-input-container">
+                        <div class="connect-form-input-container">
                             <input type="text" id="input-port-number" class="text-input-pretty" value="1111">
                         </div>
-                        <div class="connect-input-container">
+                        <div class="connect-form-input-container">
                             <input type="text" id="input-key-0" data-id="0" class="text-input-pretty" value="test">
                         </div>
                     </div>
                     <div>
                     </div>
                     <div style="display: inline-block;text-align: left;vertical-align: top;width: 63px;">
-                        <input type="button" id="add-key-button" value="add">
+                        <input type="button" class="button-1" id="add-key-button" value="add">
                     </div>
                     <div style="display: inline-block;text-align: left; width: 214px;">
-                        <input type="button" id="connect-button" value="connect">
+                        <input type="button" class="button-1" id="connect-button" value="connect">
                     </div>
                 </div>
                 <div style="height: 25vmin;"></div>
@@ -8159,7 +8191,6 @@
                     <div id="chat-context-container">
                         <div class="chat-context" id="chat-context-channel-1">
                             <div class="single-server-message">now talking channel: main</div>
-                            <div class="single-server-message">! group chat / chat in channel is not E2EE !</div>
                         </div>
                     </div>
                 </div>
@@ -8200,31 +8231,36 @@
     <div id="channel-properties-container">
         <div id="channel-properties-edit">
             <div id="menu-bar-container">
-                <div id="channel-properties-close-button">
+                <div id="close-button">
                 </div>
             </div>
             <div id="channel-properties-input-container">
-                <div>
-                    <p>channel name</p>
+                <div style="display: inline-block;">
+                    <div class="connect-form-input-container">
+                        <input type="text" disabled="" class="text-input-2" value="name">
+                    </div>
+                    <div class="connect-form-input-container">
+                        <input type="text" disabled="" class="text-input-2" value="description">
+                    </div>
+                    <div class="connect-form-input-container">
+                        <input type="text" disabled="" class="text-input-2" value="password">
+                    </div>
                 </div>
-                <div>
-                    <input id="channel-properties-input-channel-name" type="text" value="new_channel">
+                <div style="display: inline-block;">
+                    <div class="connect-form-input-container">
+                        <input class="text-input-2" id="channel-properties-input-channel-description" type="text" value="">
+                    </div>
+                    <div class="connect-form-input-container">
+                        <input class="text-input-2" id="channel-properties-input-channel-name" type="text" value="new_channel">
+                    </div>
+                    <div class="connect-form-input-container">
+                        <input class="text-input-2" id="channel-properties-input-channel-password" type="text" value="">
+                    </div>
                 </div>
-                <div>
-                    <p>description</p>
-                </div>
-                <div>
-                    <input id="channel-properties-input-channel-description" type="text" value="">
-                </div>
-                <div>
-                    <p>password</p>
-                </div>
-                <div>
-                    <input id="channel-properties-input-channel-password" type="text" value="">
+                <input type="hidden" id="create-channel-hidden-parent-id" value="">
+                <div style="text-align: right;">
+                    <input type="button" id="create-channel-button" class="button-1" value="create" style="right: 20px;">
                 </div>
             </div>
-            <input type="hidden" id="create-channel-hidden-parent-id" value="">
-            <input type="button" id="create-channel-button" value="confirm">
         </div>
-    </div>
 </html>
