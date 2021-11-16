@@ -1,9 +1,3 @@
-Lemon Chat or "le chat" in short is application with focus on secure and private communication
-
-all client side code is contained in single .html file
-
-Server was tested under debian, ubuntu and macos
-
 Used libraries:
 <br>
 Server
