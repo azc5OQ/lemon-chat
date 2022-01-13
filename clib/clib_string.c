@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
 #include "clib_string.h"
 
@@ -27,26 +26,27 @@ void clib__int_to_hex_string(int n, char* hex_string)
 }
 
 
-bool clib__is_str_number(char* string_to_check)
+BOOL clib__is_str_number(char* string_to_check)
 {
+    BOOL result = TRUE;
+    char numbers[] = "0123456789";
+    BOOL is_check_finished = FALSE;
+    int i;
+    int x;
+
     if(strcmp("0", string_to_check) == 0)
     {
-        return true;
+        return TRUE;
     }
 
-    bool result = true;
-    char numbers[] = "0123456789";
-    bool is_check_finished = false;
-
-
-    for (int i = 0; i < strlen(string_to_check); i++)
+    for (i = 0; i < strlen(string_to_check); i++)
     {
-        if(is_check_finished == true)
+        if(is_check_finished == TRUE)
         {
             break;
         }
 
-        for(int x = 0; x < strlen(numbers); x++)
+        for(x = 0; x < strlen(numbers); x++)
         {
             if(string_to_check[i] == numbers[x])
             {
@@ -54,10 +54,25 @@ bool clib__is_str_number(char* string_to_check)
             }
             if((x + 1) == strlen(numbers))
             {
-                is_check_finished = true;
-                result = false;
+                is_check_finished = TRUE;
+                result = FALSE;
             }
         }
     }
     return result;
+}
+
+void clib__sanitize_stdin(char* input)
+{
+    if(input == 0)
+    {
+        return;
+    }
+    if(strlen(input) > 0)
+    {
+        if(input[strlen(input) - 1] == 10)
+        {
+            input[strlen(input) - 1] = 0;
+        }
+    }
 }
