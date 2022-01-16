@@ -1624,7 +1624,6 @@ void onclose_audio(int fd)
     //printf("audio socket closed \n");
 }
 
-//can fd be 0?
 void onmessage_audio(int fd, const unsigned char *websocket_msg, unsigned long size, int type)
 {
     if(size == 0)
@@ -1681,7 +1680,7 @@ void onmessage_audio(int fd, const unsigned char *websocket_msg, unsigned long s
         if(found_index != -1)
         {
             #ifdef DEBUG_PROGRAM
-            printf("%s%s%s", " found client with name" , clients_array[i].username, "\n");
+            printf("%s%s%s", " found client with name" , clients_array[found_index].username, "\n");
             #endif
 
             clients_array[found_index].websocket_audio_fd = fd;
