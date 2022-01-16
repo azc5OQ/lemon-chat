@@ -1,6 +1,6 @@
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en">index
     <head>
         <title>chat</title>
 	<link rel="icon" type="image/x-icon" href=""/>
@@ -8006,9 +8006,9 @@
             return;
         }
 
-        let index = get_chat_context_index_by_chat_context_id(current_chat_context_id);
+        let chat_context_index = get_chat_context_index_by_chat_context_id(current_chat_context_id);
 
-        if (index == -1)
+        if (chat_context_index == -1)
         {
             log("could not find " + current_chat_context_id.toString());
             return;
