@@ -13,7 +13,6 @@ chmod +x build.sh
 <br>
 ./build.sh
 <br>
-./server.exe
 
 <br>
 Used libraries:
