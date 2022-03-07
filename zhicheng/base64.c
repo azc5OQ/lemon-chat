@@ -67,7 +67,7 @@ static const unsigned char base64de[] = {
 };
 
 unsigned int
-zchg_base64_encode(const unsigned char *in, unsigned int inlen, char *out)
+zchg_base64_encode(unsigned char *in, unsigned int inlen, char *out)
 {
 	int s;
 	unsigned int i;
@@ -116,7 +116,7 @@ zchg_base64_encode(const unsigned char *in, unsigned int inlen, char *out)
 }
 
 unsigned int
-zchg_base64_decode(const char *in, unsigned int inlen, unsigned char *out)
+zchg_base64_decode(char *in, unsigned int inlen, unsigned char *out)
 {
 	unsigned int i;
 	unsigned int j;
