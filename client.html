@@ -1,6 +1,5 @@
-
 <!DOCTYPE html>
-<html lang="en">index
+<html lang="en">
     <head>
         <title>chat</title>
 	<link rel="icon" type="image/x-icon" href=""/>
@@ -65,7 +64,7 @@
           height: 100%;
         }
 
-        .some-container
+        .text-input-container
         {
           padding-top: 10px;
           padding-bottom: 10px
@@ -203,6 +202,11 @@
           border: none;
           padding: 0.5em;
           font-family: sans-serif;
+        }
+
+        #chat-input-container-text-input[disabled]
+        {
+            background-color: #36393f;
         }
 
         #space-devider4
@@ -7380,7 +7384,7 @@
 
 
 <script type="text/javascript">
-    var is_autoconnect_active = false;
+    var is_autoconnect_active = true;
 
     var autoconnect_details = {
         "host": "127.0.0.1",
@@ -7402,8 +7406,6 @@
     var local_username = "";
     var local_user_id = 0;
     var is_authenticated = false;
-    var is_local_user_maintainer = false;
-    var is_encryption_key_of_channel_obtained = false;
     var is_connection_check_running = false;
     var current_channel_id = 1;
     var current_chat_context_id = "chat-context-channel-1";
@@ -8029,26 +8031,25 @@
             for (let i = 0; i < 4; i++)
             {
                 let single_key = {
-                    key_string: null,
-                    key_bytes: null,
-                    iv_bytes: null
+                    key_bytes: [],
+                    iv_bytes: []
                 };
 
-                single_key.key_string = just.randomstring(16);
-                let hash = sha256.create();
-                hash.update(single_key.key_string);
-                hash.array();
-                key_bytes = hash.array();
-                single_key.key_bytes = key_bytes;
-                let iv_string = just.randomstring(16);
-                let hash1 = sha256.create();
-                hash1.update(iv_string);
-                hash1.array();
-                iv_bytes = hash1.array();
-                iv_bytes.splice(0, 16);
-                single_key.iv_bytes = iv_bytes;
+                for (let ii = 0; ii < 32; ii++)
+                {
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.key_bytes.push(single_byte);
+                }
+
+                for (let ii = 0; ii < 16; ii++)
+                {
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.iv_bytes.push(single_byte);
+                }
+
                 message_keys.push(single_key);
             }
+
 
             let single_message_aes_keys_string = JSON.stringify(message_keys);
             let encryption_result = cryptico.encrypt(single_message_aes_keys_string, receiver_public_key);
@@ -8118,22 +8119,22 @@
             for (let i = 0; i < 4; i++)
             {
                 let single_key = {
-                    key_string: null,
-                    key_bytes: null,
-                    iv_bytes: null
+                    key_bytes: [],
+                    iv_bytes: []
                 };
 
-                single_key.key_string = just.randomstring(16);
-                let hash = sha256.create();
-                hash.update(single_key.key_string);
-                key_bytes = hash.array();
-                single_key.key_bytes = key_bytes;
-                let iv_string = just.randomstring(16);
-                let hash1 = sha256.create();
-                hash1.update(iv_string);
-                iv_bytes = hash1.array();
-                iv_bytes.splice(0, 16);
-                single_key.iv_bytes = iv_bytes;
+                for (let ii = 0; ii < 32; ii++)
+                {
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.key_bytes.push(single_byte);
+                }
+
+                for (let ii = 0; ii < 16; ii++)
+                {
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.iv_bytes.push(single_byte);
+                }
+
                 message_keys.push(single_key);
             }
 
@@ -8348,11 +8349,11 @@
                     public_key: null,
                     channel_id: null
                 };
-		   
+
 		//
 		//they killed the subcultures they cancelled the future and for what, for you to not be offended
 		//
-		      
+
                 single_user.user_id = parseInt(user_id);
                 single_user.username = username;
                 single_user.public_key = msg.message.clients[i].public_key;
@@ -8482,7 +8483,7 @@
                     else
                     {
                         //
-                        //if channel is not processed, find out if the current channel in loop has any children. If it has, change current_parent_channel_id_to_find
+                        //if channel is not processed, find out if the current channel in loop has any child channels. If it has, change current_parent_channel_id_to_find
                         //if not, push channel to processed_channel list
                         //
 
@@ -8516,8 +8517,8 @@
             {
                 document.getElementById("channel-password-enter-container").style.display = "none";
                 document.getElementById("background-container").style.display = "none";
-
                 document.getElementsByClassName("connected-local-user")[0].remove();
+
                 let indend_level = get_indend_level(msg.message.channel_id, channel_list) + 1;
 
                 let html_to_append = "<div class=\"connected-local-user\">\n\
@@ -8529,18 +8530,19 @@
 
                 current_channel_id = msg.message.channel_id;
                 current_channel_keys = null;
+
                 console.log("local_user joined new channel, nulling out current_channel_keys");
 
-                let is_found = document.querySelector('[data-chat-context-selector-id="channel-' + msg.message.channel_id.toString() + '"]');
+                let is_found = document.querySelector('[data-chat-context-selector-id="channel-' + msg.message.channel_id + '"]');
 
                 if (is_found == null)
                 {
-                    let channel_name = document.querySelector('[data-channel-name-id="' + msg.message.channel_id.toString() + '"]').innerHTML;
-                    let to_append = "<div class=\"chat-context-selector\" data-chat-context-selector-type=\"channel\" data-chat-context-selector-id=\"channel-" + selected_channel_id.toString() + "\">\n\
+                    let channel_name = document.querySelector('[data-channel-name-id="' + msg.message.channel_id + '"]').innerHTML;
+                    let to_append = "<div class=\"chat-context-selector\" data-chat-context-selector-type=\"channel\" data-chat-context-selector-id=\"channel-" + msg.message.channel_id + "\">\n\
                                             <div class=\"p-container\">\n\
                                                 <p>" + channel_name + "</p>\n\
                                             </div>\n\
-                                            <div class=\"remove-chat-context-selector\" data-chat-context-remove-selector-type=\"channel\" data-chat-context-remove-selector-id=\"channel-" + selected_channel_id.toString() + "\">\n\
+                                            <div class=\"remove-chat-context-selector\" data-chat-context-remove-selector-type=\"channel\" data-chat-context-remove-selector-id=\"channel-" + msg.message.channel_id + "\">\n\
                                             </div>\n\
                                         </div>";
 
@@ -8562,18 +8564,17 @@
                     document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
                 }
 
-                document.querySelector('[data-chat-context-selector-id="channel-' + selected_channel_id + '"]').style.backgroundColor = "#36393f";
+                document.querySelector('[data-chat-context-selector-id="channel-' + msg.message.channel_id + '"]').style.backgroundColor = "#36393f";
 
-                is_found = document.getElementById("chat-context-channel-" + selected_channel_id);
+                is_found = document.getElementById("chat-context-channel-" + msg.message.channel_id);
+
                 if (is_found == null)
                 {
                     console.log("adding channel");
                     let channel_name = document.querySelector('[data-channel-name-id="' + msg.message.channel_id.toString() + '"]').innerHTML;
 
-                    let html_to_append3 = '<div class="chat-context" id="chat-context-channel-' + selected_channel_id + '" style="display: none;">\n\
+                    let html_to_append3 = '<div class="chat-context" id="chat-context-channel-' + msg.message.channel_id + '" style="display: none;">\n\
                                                 <div class="single-server-message">now talking channel: ' + channel_name + '</div>\n\
-                                                    <div class="single-server-message">! group chat / chat in channel is E2EE</div>\n\
-                                                        <div class="single-server-message">[i] connected : anon2 8:05:53 AM</div><div class="chat-spacer"></div>\n\
                                                     </div>\n\
                                                 </div>\n\
                                               </div>';
@@ -8713,8 +8714,8 @@
 
             //
             //if local_user is maintainer of root channel, he will sent new keys for root channel
-            //if not, client will wait for keys for root channel
-            //current_channel_keys must be nulled if current channel id is 1 (root channel) where new users join
+            //if not, client will wait for channel keys
+            //current_channel_keys must be set to null at client_connect if local client is at current_channnel_id
             //
 
             if (current_channel_id == 1)
@@ -8724,7 +8725,12 @@
             }
 
             let index = get_channel_index_by_channel_id(channel_list, current_channel_id);
-            if (channel_list[index].maintainer_id == local_user_id)
+
+            //
+            //if we are maintainers of root channel, send new keys
+            //
+
+            if (channel_list[index].maintainer_id == local_user_id && current_channel_id == 1)
             {
                 create_and_send_new_channel_keys();
             }
@@ -8809,6 +8815,9 @@
                 }
 
                 document.getElementById(receiving_chat_context_id).innerHTML += html_to_append;
+                document.getElementById(receiving_chat_context_id).innerHTML += "<div class=\"chat-spacer\"></div>";;
+                document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
+
             }
 
             document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
@@ -8824,6 +8833,7 @@
         {
             let decrypted_base64 = decrypt_base64_contents_with_aes_keys(current_channel_keys, msg.message.value);
             document.getElementById("chat-picture-img-" + msg.message.picture_id).src = decrypted_base64;
+            document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
         }
         else if (msg.message.type == "server_info_broadcast")
         {
@@ -8842,10 +8852,31 @@
             document.getElementById("chat-context-channel-1").innerHTML += html_to_append1;
             document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
         }
+        else if (msg.message.type == "channel_edit")
+        {
+            let index = get_channel_index_by_channel_id(channel_list, msg.message.channel_id);
+            document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[0].innerHTML = msg.message.channel_name;
+            channel_list[index].description = msg.message.channel_description;
+            channel_list[index].is_using_password = msg.message.is_using_password;
+
+            if (msg.message.is_using_password == true)
+            {
+                document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[0].style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEwAACxMBAJqcGAAAAgJJREFUWIXtlbFPFEEUxr/3ZoE1hBx4B7ESE0NhgY12dP4PkiNia6ExGiOxgVyIKLGwMAQKKwPEmCD/AJWdEToLExMLrwMvyCFCDt15zwL3uKi7N+fuZRPjV83uvPd9v5nMzgL/lbGo5Y7LavLnbJFhxwS4yEABwBdVbBCZ5cqmeYGn9L0tAIXJ2pDCvGTG+agaEbwF7Oj2jP8+VYDCZG0ITK8JnG9Wq5BtFR1xgWCn9JJ6ymY1DBeRA1WdIgrOVsjrMNacUdUpETkAAALnwWYF17SjmbXnkj9gbVEZw2G4R3Rp637nm3B+EygDmDlZ+rYmKq8YfIKB4f5TtlgBluK8nXZAyY6FYyKabQxv1OfpznUCzdb71I4383YCEMKFegPb53G1xtrl+kNDXyIABgbC8ad3fjmuduuB//E4v/mBdTuE4OOvZYVsfC2pm2dLAO1T5gCRF9FgSf19DR4T5ArAub+PkD1VXuxm7255mmq/zkbeA0fhuJ58k7iHCDf2NVAAN3+bjWo7Wnl6IsjVP72PWV6SbXf3y/wQJgJQ6J3cjvGhOpEJQO+Ot/Bhjg+7vnrzmQDs9ga3AOCwJ7idCQCIHv0cPMwGIAUlBugr6elMATwNYn/PbQdIqhgA2Us3SnZbAhDlZ6nmR/hFAvRVzYQo5qLInSVSheJJrmruJfL5Z/UDfaOsxxIePTcAAAAASUVORK5CYII=)";
+
+                document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[0].style.backgroundSize = "20px 18px";
+                document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[0].style.backgroundRepeat = "no-repeat";
+                document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[0].style.backgroundPositionX = "0px";
+            }
+            else
+            {
+                document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[0].style.backgroundImage = "";
+            }
+        }
         else if (msg.message.type == "channel_chat_picture_metadata")
         {
             let username_message_sender = sanitize_string(msg.message.username);
             let index = get_chat_context_index_by_chat_context_id("chat-context-channel-" + current_channel_id);
+            let receiving_chat_context_id = "chat-context-channel-" + msg.message.channel_id;
 
             chat_context_array[index].last_known_message_sender_username = username_message_sender;
 
@@ -8869,9 +8900,8 @@
                                         </div>\n\
                                      </div>";
 
-            document.getElementById("chat-context-channel-" + current_channel_id).innerHTML += html_to_append;
-            document.getElementById("chat-context-channel-" + current_channel_id).innerHTML += "<div class=\"chat-spacer\"></div>";;
-            document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
+            document.getElementById(receiving_chat_context_id).innerHTML += html_to_append;
+            document.getElementById(receiving_chat_context_id).innerHTML += "<div class=\"chat-spacer\"></div>";
         }
         else if (msg.message.type == "direct_chat_message")
         {
@@ -8900,8 +8930,8 @@
                                                 <div class=\"single-server-message\">now talking to user:  " + msg.message.sender_username + "</div>\n\
                                                 <div class=\"single-server-message\">your public key: " + rsa_public_key_string + "</div>\n\
                                                 <div class=\"single-server-message\">his public key: " + get_public_key_by_user_id(msg.message.sender_id) + "</div>\n\
-                                                <div class=\"single-server-message\">always verify if other users sees same keys. If noth, somebody else is listening. If they match, chat is E2EE </div>\n\
-                                             </div>";
+                                                <div class=\"single-server-message\">its good to verify if other user sees your public key and also if you see his public key. To prevent server from manipulating them</div>\n\
+                                             </div>"
 
                     document.getElementById('chat-context-container').innerHTML += html_to_append;
                     document.getElementById(received_direct_message_chat_context_id).style.display = "none";
@@ -9058,6 +9088,8 @@
             let decrypted_data = decrypt_base64_contents_with_aes_keys(message_keys, message_data.message_value);
             let picture_base64 = sanitize_string(decrypted_data);
             document.getElementById("chat-picture-img-" + msg.message.picture_id).src = picture_base64;
+
+            document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
         }
         else if (msg.message.type == "channel_delete")
         {
@@ -9136,7 +9168,12 @@
         }
     }
 
-    function onmessage_socket(event)
+    function websocket_onerror(event)
+    {
+        console.log("error");
+    }
+
+    function websocket_onmessage(event)
     {
         let decrypted_metadata = decrypt_message_metadata(event.data);
 
@@ -9240,8 +9277,8 @@
             process_received_message(msg);
         }
     }
-	
-    
+
+
     function create_and_send_new_channel_keys()
     {
         //lets create channel keys
@@ -9250,22 +9287,22 @@
         for (let i = 0; i < 4; i++)
         {
             let single_key = {
-                key_string: null,
-                key_bytes: null,
-                iv_bytes: null
+                key_bytes: [],
+                iv_bytes: []
             };
 
-            single_key.key_string = just.randomstring(16);
-            let hash = sha256.create();
-            hash.update(single_key.key_string);
-            key_bytes = hash.array();
-            single_key.key_bytes = key_bytes;
-            let iv_string = just.randomstring(16);
-            let hash1 = sha256.create();
-            hash1.update(iv_string);
-            iv_bytes = hash1.array();
-            iv_bytes.splice(0, 16);
-            single_key.iv_bytes = iv_bytes;
+            for (let ii = 0; ii < 32; ii++)
+            {
+                let single_byte = Math.floor(Math.random() * 254);
+                single_key.key_bytes.push(single_byte);
+            }
+
+            for (let ii = 0; ii < 16; ii++)
+            {
+                let single_byte = Math.floor(Math.random() * 254);
+                single_key.iv_bytes.push(single_byte);
+            }
+
             current_channel_keys.push(single_key);
         }
 
@@ -9290,24 +9327,25 @@
             for (let i = 0; i < 4; i++)
             {
                 let single_key = {
-                    key_string: null,
-                    key_bytes: null,
-                    iv_bytes: null
+                    key_bytes: [],
+                    iv_bytes: []
                 };
 
-                single_key.key_string = just.randomstring(16);
-                let hash = sha256.create();
-                hash.update(single_key.key_string);
-                key_bytes = hash.array();
-                single_key.key_bytes = key_bytes;
-                let iv_string = just.randomstring(16);
-                let hash1 = sha256.create();
-                hash1.update(iv_string);
-                iv_bytes = hash1.array();
-                iv_bytes.splice(0, 16);
-                single_key.iv_bytes = iv_bytes;
+                for (let ii = 0; ii < 32; ii++)
+                {
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.key_bytes.push(single_byte);
+                }
+
+                for (let ii = 0; ii < 16; ii++)
+                {
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.iv_bytes.push(single_byte);
+                }
+
                 message_keys.push(single_key);
             }
+
 
             let single_message_aes_keys_string = JSON.stringify(message_keys);
             let encryption_result = cryptico.encrypt(single_message_aes_keys_string, users[i].public_key);
@@ -9423,17 +9461,8 @@
                 port = autoconnect_details.port;
             }
 
-            try
-            {
-                websocket = new WebSocket('ws://' + host + ':' + port + '/');
-            }
-            catch (Exception)
-            {
-                log(Exception.toString());
-                window.alert('connection failed');
-                return;
-            }
-            websocket.onmessage = onmessage_socket;
+            websocket = new WebSocket('ws://' + host + ':' + port + '/');
+            websocket.addEventListener('message', websocket_onmessage);
 
             let message_object = {
                 "message":
@@ -9525,6 +9554,8 @@
                 is_microphone_enabled = true;
 
                 document.getElementById("toggle-microphone-label").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAE30lEQVR4Xu2ae+jfUxjHX2MyImxJ5hKSrLX5T/xpNZeUkcsfiCSstTFrbRTij03mtpFEolzKJffLpqTUUlptjBqR27BFsdxyp3c7nzy/0/f3+5znfM75RPuc/z7f33Oe5znv53p+55lEv+twYB5wOnAEcGgQ/wXwKfAS8DywtS+1JvUk6BDgBuBSYPcWmX8BTwPLAihVVewDgDOBR4B9nCf5AbgQeMG5z0VeG4CrgDuA3Vxa/Ussb7gauCtzf+u2mgDI8nLl3MM3yguEs2p5Qi0AlNy2ZLj9eBZTOBwLfNVqUidBLQAeBC5x6tJG/gBwWRuR9+81AFCp+zgh23t1/TOUTpXMYqsGAFcCa4ppOJbRQuCekrxrALAWOLWkkobXK6GJKsa+BgAfAkcX03Asow9CMizGvgYAytjepif1QD8C+6YSp9DVAODvFMEdaIrqXJRZONQAQAfrpmwtarSizAYP2InAEAIpftyBpqjXFmU2hMAQAkMOGJLgUAV2gTIY1/m4kvTdB7TpM2HFzSmDbQIHADo0OSlb2zzOZVQX8TiNTptCKYfy0LTJc53JRTwAMLrTa7OIx7optG3yXEZ1EQ8e8N/zgMnA75HbuIzqIg6CfgP2MEKnAL+a75r/FP0e2M/IOjh6LpNue6bEUUOTA8B3wP5GyEHA1+Zb/7o+xqOEg/Z9YIahnw28Y76/BaY5+JEDwHvATCPkBOAt893nw4heoJ81st8FBEryygFAAiW4WVcA95tvPV/dnayBj3ABcK/ZshrQDEKzngHO9rDMAeBaYKUR8hRwnvk+DPikwuPoH8CRgH0cfRs4zsheDqyqDcCJwJtGiBLTdOAn85uesjUPVHLdB8w3DBWGcnlrxOOBDR6hOR6giQ9NcenQ44WBhqI0IFHqGUsga0Bim5EpQC433/IMPc27LmM5AEimJr5uMsI1D6DsrDLUrNOAFwuEgkZklHPEq1kqfx8Be5vfrgNWeKwv2lwApgKfRY+g1wC3RApoVuDODnNCOvziEUn1SeBcI0u9h6y/oy8AJOd2YIkRqGZIMbg5UuIM4NGMcJDbXxCGJy1LDVo+F8m4NcwVes+f7QESpGZIh1XWb5amPZUkt0eaHAjIRVXG1L5OtGT1xwBldBvz2jMLeAM4wDD4MvyuBs29ckOgETQXeDUKJYFyyggQtEfTY82orEqaHZVVHnk5jMONmgM6ClgPKP6bpYR3MvCa++RhQ1cAxEYxrji1S4c5B9iUq1i0bw7wOCBPskuybRi6xZUAQLO/DwPnR9J/AW4MANnq4FFyL2BpqDpx6ChMLgY0PZa9SgAg4VJOCtmOsFFK5eq2MC/8c6KmKm8XAddH/Uaz/YmQIDsdXsxKAdCAoDosi40aj9V8jy5KrwMbQzP1Tbi+aqZIOUEXGY3SK7fI+vFSglSrK2DUGndeJQFolFG8ajrcdoqdFQ1Xbrn8uhLMGh41ABBv3cmVnBZl1P/4fOoHdLvU1Lnu+0VXLQAaJdUx6rqquWHbL6Qc4nPgoTAqX/zgtT0gPqCAVpd4EnBzy+l13Vae0K3OdbFJQXWUYjn7uuxpO1Rtrxyje6/CguQBgBb36dUovQobPGAnAkMIDCEwMQK9hmWvwnaVHNAW4116CO0tarSizBItPADQEYGiRivK7P/oAf8Ae0zZQdfLrKYAAAAASUVORK5CYII=)";
+
+                window.alert("press Q to speak");
             })
             .catch(function(error)
             {
@@ -9554,12 +9585,35 @@
 
     function add_key_button_on_click()
     {
-        let generated_id_for_html_input = "input-key-";
-        generated_id_for_html_input += custom_key_count;
-        let html_to_append = '<div style="padding-top: 10px; padding-bottom: 10px;"><input type="text" disabled class="text-input-pretty" value="key ' + custom_key_count + '"></div>';
-        document.getElementById('connect-form-sub-container-1').innerHTML += html_to_append;
-        let html_to_append2 = '<div style="padding-top: 10px; padding-bottom: 10px;"><input type="text" id="' + generated_id_for_html_input + '" data-id="' + custom_key_count + '" class="text-input-pretty" value=""></div>';
-        document.getElementById('connect-form-sub-container-2').innerHTML += html_to_append2;
+        const node = document.createElement("div");
+        node.style.paddingTop = "10px";
+        node.style.padingBottom = "10px";
+        node.className = "text-input-container";
+
+        const node2 = document.createElement("input");
+        node2.className = "text-input-pretty";
+        node2.value = "key " + custom_key_count;
+        node2.disabled = true;
+        node.appendChild(node2);
+
+        document.getElementById('connect-form-sub-container-1').appendChild(node);
+
+        let generated_id_for_html_input = "input-key-"+ custom_key_count;
+
+        const node3 = document.createElement("div");
+        node3.style.paddingTop = "10px";
+        node3.style.padingBottom = "10px";
+        node3.className = "text-input-container";
+
+        const node4 = document.createElement("input");
+        node4.className = "text-input-pretty";
+        node4.id = generated_id_for_html_input;
+        node4.setAttribute("data-id", custom_key_count);
+
+        node3.appendChild(node4);
+
+        document.getElementById('connect-form-sub-container-2').appendChild(node3);
+
         document.getElementById("verification-system").scrollTop = document.getElementById("verification-system").scrollHeight;
         custom_key_count++;
     }
@@ -9662,6 +9716,9 @@
                 disable_inputs();
             }
         }
+
+        document.getElementById('chat-context-container').scrollTop = document.getElementById('chat-context-container').scrollHeight;
+
     }
 
     function enable_inputs()
@@ -9877,8 +9934,10 @@
             document.getElementById("background-container").style.display = "block";
             document.getElementById("channel-properties-edit-container").style.display = "block";
             document.getElementById("create-channel-hidden-parent-id").value = selected_channel_id;
-        }
 
+            document.getElementById("create-channel-button").style.display = "";
+            document.getElementById("edit-channel-button").style.display = "none";
+        }
         else if (action == 1)
         {
             let message_object = {
@@ -9901,6 +9960,22 @@
 
             document.getElementsByClassName("channel-list-context-menu")[0].remove();
             document.getElementById("current-channel-description").innerHTML = "";
+        }
+        else if (action == 2)
+        {
+            console.log("qwjfqwoifjqwf");
+            document.getElementById("background-container").style.display = "block";
+            document.getElementById("channel-properties-edit-container").style.display = "block";
+            document.getElementById("create-channel-hidden-parent-id").value = selected_channel_id;
+
+            let index = get_channel_index_by_channel_id(channel_list, selected_channel_id);
+            document.getElementById("channel-properties-input-channel-name").value = sanitize_string(channel_list[index].name);
+            document.getElementById("channel-properties-input-channel-description").value = sanitize_string(channel_list[index].description);
+
+            document.getElementsByClassName("channel-list-context-menu")[0].remove();
+
+            document.getElementById("create-channel-button").style.display = "none";
+            document.getElementById("edit-channel-button").style.display = "";
         }
         else if (action == 3)
         {
@@ -10014,6 +10089,48 @@
         document.getElementById("background-container").style.display = "none";
     }
 
+    function edit_channel_button_onclick()
+    {
+        let parent_channel_id = document.getElementById("create-channel-hidden-parent-id").value;
+        let channel_name = document.getElementById("channel-properties-input-channel-name").value;
+
+        if (channel_name.length == 0)
+        {
+            window.alert("empty channel name ?");
+            return;
+        }
+
+        let channel_description = document.getElementById("channel-properties-input-channel-description").value;
+        let channel_password = document.getElementById("channel-properties-input-channel-password").value;
+
+        let message_object = {
+            "message":
+            {
+                "type": "edit_channel_request",
+                "channel_id" : selected_channel_id.toString(),
+                "channel_name": channel_name,
+                "channel_description": channel_description,
+                "channel_password": channel_password
+            }
+        };
+
+        console.log(message_object);
+
+        let message_json_string = JSON.stringify(message_object);
+        let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+        if (websocket.readyState === 1)
+        {
+            websocket.send(data);
+        }
+
+        document.getElementById("channel-properties-edit-container").style.display = "none";
+        document.getElementById("background-container").style.display = "none";
+        document.getElementById("channel-properties-input-channel-name").value = "";
+        document.getElementById("channel-properties-input-channel-description").value = "";
+        document.getElementById("channel-properties-input-channel-password").value = "";
+    }
+
     function create_channel_button_onclick()
     {
         let parent_channel_id = document.getElementById("create-channel-hidden-parent-id").value;
@@ -10108,8 +10225,8 @@
         let passphrase = just.randomstring(50);
 
         //
-        //server requires usage of 2048bit RSA.
-        //server checks if strlen() of clients public key is equal to 344
+        //server requires usage of 2048bit RSA
+        //that means server checks if strlen() of client public key is equal to 344
         //if client has sent public key of wrong length, server closes connection with the client
         //this behaviour can be changed in main.c process_not_authenticated_client_message()
         //
@@ -10118,7 +10235,6 @@
         rsa_public_key_string = cryptico.publicKeyString(my_rsa_key_object);
         is_rsa_key_generated = true;
         log("public key: " + rsa_public_key_string);
-
     }
 
     function window_onload()
@@ -10139,6 +10255,7 @@
         document.querySelector("[data-chat-context-remove-selector-id='channel-1']").onclick = chat_context_remove_onclick;
         document.getElementById("close-button").onclick = channel_properties_closebutton_onclick;
         document.getElementById("create-channel-button").onclick = create_channel_button_onclick;
+        document.getElementById("edit-channel-button").onclick = edit_channel_button_onclick;
         document.getElementById("close-button-enter-password").onclick = enter_channel_password_closebutton_onclick;
         document.getElementById("join-passworded-channel-button").onclick = channel_join_button_onclick;
         document.getElementById("toggle-microphone").addEventListener("change", toggle_microphone_onclick);
@@ -10162,24 +10279,24 @@
             <div style="height: 25vmin;"></div>
                 <div id="container-2" style="min-width: 330px;">
                     <div id="connect-form-sub-container-1">
-                        <div class="some-container">
+                        <div class="text-input-container">
                             <input type="text" disabled class="text-input-pretty" value="address">
                         </div>
-                        <div class="some-container">
+                        <div class="text-input-container">
                             <input type="text" disabled class="text-input-pretty" value="port">
                         </div>
-                        <div class="some-container">
+                        <div class="text-input-container">
                             <input type="text" disabled class="text-input-pretty" value="key 0">
                         </div>
                     </div>
                     <div id="connect-form-sub-container-2">
-                        <div class="some-container">
+                        <div class="text-input-container">
                             <input type="text" id="input-ip-address" class="text-input-pretty" value="192.168.2.182">
                         </div>
-                        <div class="some-container">
+                        <div class="text-input-container">
                             <input type="text" id="input-port-number" class="text-input-pretty" value="1111">
                         </div>
-                        <div class="some-container">
+                        <div class="text-input-container">
                             <input type="text" id="input-key-0" data-id="0" class="text-input-pretty" value="test">
                         </div>
                     </div>
@@ -10262,30 +10379,31 @@
             </div>
             <div id="channel-properties-input-container">
                 <div style="display: inline-block;">
-                    <div class="some-container">
+                    <div class="text-input-container">
                         <input type="text" disabled="" class="text-input-not-pretty" value="name">
                     </div>
-                    <div class="some-container">
+                    <div class="text-input-container">
                         <input type="text" disabled="" class="text-input-not-pretty" value="description">
                     </div>
-                    <div class="some-container">
+                    <div class="text-input-container">
                         <input type="text" disabled="" class="text-input-not-pretty" value="password">
                     </div>
                 </div>
                 <div style="display: inline-block;">
-                    <div class="some-container">
+                    <div class="text-input-container">
                         <input class="text-input-not-pretty" id="channel-properties-input-channel-name" type="text" value="">
                     </div>
-                    <div class="some-container">
+                    <div class="text-input-container">
                         <input class="text-input-not-pretty" id="channel-properties-input-channel-description" type="text" value="">
                     </div>
-                    <div class="some-container">
+                    <div class="text-input-container">
                         <input class="text-input-not-pretty" id="channel-properties-input-channel-password" type="text" value="">
                     </div>
                 </div>
                 <input type="hidden" id="create-channel-hidden-parent-id" value="">
                 <div style="text-align: right;">
                     <input type="button" id="create-channel-button" class="button-1" value="create" style="right: 20px;">
+                    <input type="button" id="edit-channel-button" class="button-1" value="edit" style="right: 20px;">
                 </div>
             </div>
         </div>
@@ -10299,12 +10417,12 @@
             <div id="channel-password-input-container">
                 <div style="display: inline-block;">
                     <div style="display: inline-block;">
-                        <div class="some-container">
+                        <div class="text-input-container">
                             <input type="text" disabled="" class="text-input-not-pretty" value="password">
                         </div>
                     </div>
                     <div style="display: inline-block;">
-                        <div class="some-container">
+                        <div class="text-input-container">
                             <input class="text-input-not-pretty" id="input-channel-password" type="password" value="">
                         </div>
                     </div>
