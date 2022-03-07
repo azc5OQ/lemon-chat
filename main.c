@@ -69,7 +69,6 @@ int get_channel_index_by_channel_id(int channel_id)
 
 int get_new_index_for_client()
 {
-    int result = 0;
     int i;
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -79,6 +78,30 @@ int get_new_index_for_client()
         }
     }
     return -1;
+}
+
+static void free_json_message(cJSON* json_root_object1, char* json_root_object1_string)
+{
+    //
+    //if encrypt_null_terminated_string_and_convert_to_b64 failed and msg_text is null free allocated memory and return
+    //
+
+    if(json_root_object1 != 0)
+    {
+        #ifdef DEBUG_HEAP
+        printf("free_json_message() cJSON_Delete(json_root_object1); \n");
+        #endif
+        cJSON_Delete(json_root_object1);
+    }
+
+    if(json_root_object1_string != 0)
+    {
+        #ifdef DEBUG_HEAP
+        printf("free_json_message() free(json_root_object1_string); \n");
+        #endif
+
+        free(json_root_object1_string);
+    }
 }
 
 unsigned long long get_timestamp_ms()
@@ -116,8 +139,14 @@ void broadcast_channel_create(channel_t* channel)
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-    size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -146,17 +175,61 @@ void broadcast_channel_create(channel_t* channel)
 
     free(msg_text);
     msg_text = 0;
+}
 
-    free(json_root_object1_string);
-    json_root_object1_string = 0;
+void broadcast_channel_edit(channel_t* channel)
+{
+    cJSON *json_root_object1 = cJSON_CreateObject();
+    cJSON *json_message_object1 = cJSON_CreateObject();
+    char* json_root_object1_string = 0;
+    int size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    int i;
 
-    if(json_root_object1 != 0)
+    cJSON_AddStringToObject(json_message_object1, "type", "channel_edit");
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", channel->channel_id);
+    cJSON_AddStringToObject(json_message_object1, "channel_name", channel->name);
+    cJSON_AddStringToObject(json_message_object1, "channel_description", channel->description);
+    cJSON_AddBoolToObject(json_message_object1, "is_using_password", channel->is_using_password);
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
     {
-        #ifdef DEBUG_HEAP
-        printf("broadcast_channel_create() cJSON_Delete(json_root_object1); \n");
-        #endif
-        cJSON_Delete(json_root_object1);
+        return;
     }
+
+    for(i = 0; i < MAX_CLIENTS; i++)
+    {
+        if(clients_array[i].is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        #ifdef DEBUG_PROGRAM
+        printf("%s %s %s","broadcast_channel_edit() : msg_text ", msg_text , "\n");
+        #endif
+
+        #ifdef DEBUG_PROGRAM
+        printf("%s %d %s","broadcast_channel_edit() clients_array[i].fd ", clients_array[i].fd , "\n");
+        #endif
+
+        ws_sendframe(clients_array[i].fd, msg_text, strlen(msg_text), FALSE, 1);
+
+        #ifdef DEBUG_PROGRAM
+        printf("%s %d %s","test ", clients_array[i].fd , "\n");
+        #endif
+    }
+
+    //check null pointers
+    clib__null_memory(msg_text, size_of_allocated_message_buffer); //clear bytes
+
+    free(msg_text);
+    msg_text = 0;
 }
 
 void broadcast_channel_delete(int channel_id)
@@ -178,7 +251,14 @@ void broadcast_channel_delete(int channel_id)
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -207,17 +287,6 @@ void broadcast_channel_delete(int channel_id)
 
     free(msg_text); //free memory
     msg_text = 0; //ged rid of dangling pointer
-
-    free(json_root_object1_string);
-    json_root_object1_string = 0;
-
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("broadcast_channel_delete() cJSON_Delete(json_root_object1); \n");
-        #endif
-        cJSON_Delete(json_root_object1);
-    }
 }
 
 void broadcast_client_rename(client_t* client)
@@ -239,7 +308,14 @@ void broadcast_client_rename(client_t* client)
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -272,20 +348,8 @@ void broadcast_client_rename(client_t* client)
 
     //check null pointers
     clib__null_memory(msg_text, size_of_allocated_message_buffer); //clear bytes
-
     free(msg_text); //free memory
     msg_text = 0; //ged rid of dangling pointer
-
-    free(json_root_object1_string);
-    json_root_object1_string = 0;
-
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("send_client_list_to_client() cJSON_Delete(json_root_object1); \n");
-        #endif
-        cJSON_Delete(json_root_object1);
-    }
 }
 
 void send_client_list_to_client(client_t* receiver)
@@ -338,13 +402,6 @@ void send_client_list_to_client(client_t* receiver)
                 cJSON_AddStringToObject(single_client, "username", clients_array[x].username);
                 cJSON_AddStringToObject(single_client, "public_key", clients_array[x].public_key);
                 cJSON_AddNumberToObject(single_client, "channel_id", clients_array[x].channel_id);
-
-
-                //wut
-                //char id_string[16];
-                //clib__null_memory(id_string, sizeof(id_string)); since when is index same as ID?
-                //sprintf(id_string,"%d",x);
-
                 cJSON_AddNumberToObject(single_client, "user_id", clients_array[x].user_id);
                 cJSON_AddItemToArray(json_client_array, single_client);
             }
@@ -358,7 +415,14 @@ void send_client_list_to_client(client_t* receiver)
         json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
         size_of_allocated_message_buffer = 0;
-        msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+        msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+        free_json_message(json_root_object1, json_root_object1_string);
+
+        if(msg_text == 0)
+        {
+            return;
+        }
 
         #ifdef DEBUG_PROGRAM
         printf("%s %s %s","send_client_list_to_client: msg_text ", msg_text , "\n");
@@ -374,20 +438,8 @@ void send_client_list_to_client(client_t* receiver)
         #endif
 
         clib__null_memory(msg_text, size_of_allocated_message_buffer);
-
         free(msg_text);
         msg_text = 0;
-
-        free(json_root_object1_string);
-        json_root_object1_string = 0;
-
-        if(json_root_object1 != 0)
-        {
-            #ifdef DEBUG_HEAP
-            printf("send_client_list_to_client() cJSON_Delete(json_root_object1); \n");
-            #endif
-            cJSON_Delete(json_root_object1);
-        }
     }
 }
 
@@ -441,33 +493,24 @@ void send_channel_list_to_client(client_t* receiver)
     cJSON_AddItemToObject(json_message_object1, "channels", json_channel_array);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     #ifdef DEBUG_PROGRAM
     printf("%s %s %s","send_channel_list_to_client(): msg_text ", msg_text , "\n");
     #endif
 
-    if(msg_text != 0)
-    {
-        ws_sendframe(receiver->fd, msg_text, strlen(msg_text), FALSE, 1);
-        clib__null_memory(msg_text, size_of_allocated_message_buffer);
-        free(msg_text);
-        msg_text = 0;
-    }
 
-    if(json_root_object1_string != 0)
-    {
-        free(json_root_object1_string);
-        json_root_object1_string = 0;
-    }
-
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("send_channel_list_to_client() cJSON_Delete(json_root_object1); \n");
-        #endif
-        cJSON_Delete(json_root_object1);
-    }
+    ws_sendframe(receiver->fd, msg_text, strlen(msg_text), FALSE, 1);
+    clib__null_memory(msg_text, size_of_allocated_message_buffer);
+    free(msg_text);
+    msg_text = 0;
 }
 
 void broadcast_client_connect(client_t* client)
@@ -491,7 +534,14 @@ void broadcast_client_connect(client_t* client)
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -520,21 +570,9 @@ void broadcast_client_connect(client_t* client)
         #endif
     }
 
-
     clib__null_memory(msg_text, size_of_allocated_message_buffer); //clear bytes
     free(msg_text); //free memory
     msg_text = 0; //ged rid of dangling pointer
-
-    free(json_root_object1_string);
-    json_root_object1_string = 0;
-
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("send_client_list_to_client() cJSON_Delete(json_root_object1); \n");
-        #endif
-        cJSON_Delete(json_root_object1);
-    }
 }
 
 void send_channel_maintainer_id(channel_t* channel)
@@ -545,7 +583,6 @@ void send_channel_maintainer_id(channel_t* channel)
     char* json_root_object1_string = 0;
     int size_of_allocated_message_buffer = 0;
     char* msg_text = 0;
-
 
     #ifdef DEBUG_PROGRAM
         printf("%s %s","send_channel_maintainer_id", "\n");
@@ -565,28 +602,14 @@ void send_channel_maintainer_id(channel_t* channel)
     // printf("%s %s", json_root_object1_string , "\n");
     //#endif
 
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("send_channel_maintainer_id() cJSON_Delete(json_root_object1); \n");
-        cJSON_Delete(json_root_object1);
-        #endif
-
-        json_root_object1 = 0;
-        json_message_object1 = 0;
-    }
-
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
 
-    if(json_root_object1_string != 0)
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
     {
-        #ifdef DEBUG_HEAP
-        printf("send_channel_maintainer_id free(json_root_object1_string); \n");
-        #endif
-        clib__null_memory(json_root_object1_string, strlen(json_root_object1_string));
-        free(json_root_object1_string);
-        json_root_object1_string = 0;
+        return;
     }
 
     #ifdef DEBUG_PROGRAM
@@ -615,12 +638,19 @@ void send_channel_maintainer_id(channel_t* channel)
 
 void send_channel_microphone_usage(client_t* client)
 {
+    char* json_root_object1_string = 0;
+    int size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON *json_root_object1 = 0;
+    cJSON *json_message_object1 = 0;
+
+
     #ifdef DEBUG_PROGRAM
         printf("%s %s","send_channel_microphone_usage", "\n");
     #endif
 
-    cJSON *json_root_object1 = cJSON_CreateObject();
-    cJSON *json_message_object1 = cJSON_CreateObject();
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
 
     cJSON_AddNumberToObject(json_message_object1, "client_id", client->user_id);
     cJSON_AddNumberToObject(json_message_object1, "channel_id", client->channel_id);
@@ -628,34 +658,21 @@ void send_channel_microphone_usage(client_t* client)
     cJSON_AddStringToObject(json_message_object1, "type", "channel_microphone_usage");
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
-    char* json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
     //#ifdef DEBUG_PROGRAM
     // printf("%s %s", json_root_object1_string , "\n");
     //#endif
 
-    if(json_root_object1 != 0)
+    size_of_allocated_message_buffer = 0;
+
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
     {
-        #ifdef DEBUG_HEAP
-        printf("send_channel_maintainer_id() cJSON_Delete(json_root_object1); \n");
-        cJSON_Delete(json_root_object1);
-        #endif
-
-        json_root_object1 = 0;
-        json_message_object1 = 0;
-    }
-
-    int size_of_allocated_message_buffer = 0;
-    char* msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
-
-    if(json_root_object1_string != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("send_channel_maintainer_id free(json_root_object1_string); \n");
-        #endif
-        clib__null_memory(json_root_object1_string, strlen(json_root_object1_string));
-        free(json_root_object1_string);
-        json_root_object1_string = 0;
+        return;
     }
 
     #ifdef DEBUG_PROGRAM
@@ -681,7 +698,6 @@ void send_channel_microphone_usage(client_t* client)
     }
 
     clib__null_memory(msg_text, size_of_allocated_message_buffer);
-
     free(msg_text);
     msg_text = 0;
 }
@@ -707,7 +723,14 @@ void broadcast_client_disconnect(client_t* client)
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -741,19 +764,8 @@ void broadcast_client_disconnect(client_t* client)
     free(msg_text);
     msg_text = 0;
 
-    free(json_root_object1_string);
-    json_root_object1_string = 0;
-
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("send_client_list_to_client() cJSON_Delete(json_root_object1); \n");
-        #endif
-        cJSON_Delete(json_root_object1);
-    }
-
     //
-    //check if user that disconnected, was maintainer of one of the channels
+    //check if user to be disconnected is maintainer of some of the channels
     //
 
     for(i = 0; i < MAX_CHANNELS; i++)
@@ -771,13 +783,19 @@ void broadcast_client_disconnect(client_t* client)
 
             is_new_maintainer_found = FALSE;
 
-            for(y = 0; y < MAX_CLIENTS; y++)
+            for (y = 0; y < MAX_CLIENTS; y++)
             {
-                if(clients_array[y].is_authenticated == FALSE)
+                if (clients_array[y].is_authenticated == FALSE)
                 {
                     continue;
                 }
-                if(channel_array[i].channel_id == clients_array[y].channel_id)
+
+                if (clients_array[y].user_id == client->user_id)
+                {
+                    continue;
+                }
+
+                if (channel_array[i].channel_id == clients_array[y].channel_id)
                 {
                     channel_array[i].maintainer_id = clients_array[y].user_id;
                     is_new_maintainer_found = TRUE;
@@ -838,7 +856,14 @@ void broadcast_channel_join(client_t* client)
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -867,21 +892,14 @@ void broadcast_channel_join(client_t* client)
         #endif
     }
 
+    //
+    //check if user to be disconnected is maintainer of some of the channels
+    //
+
     clib__null_memory(msg_text, size_of_allocated_message_buffer);
 
     free(msg_text);
     msg_text = 0;
-
-    free(json_root_object1_string);
-    json_root_object1_string = 0;
-
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("broadcast_channel_join() cJSON_Delete(json_root_object1); \n");
-        #endif
-        cJSON_Delete(json_root_object1);
-    }
 }
 
 void send_direct_chat_picture_metadata(char* username, unsigned long long picture_size, int picture_id, int sender_id, int receiver_id)
@@ -908,7 +926,14 @@ void send_direct_chat_picture_metadata(char* username, unsigned long long pictur
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -921,11 +946,6 @@ void send_direct_chat_picture_metadata(char* username, unsigned long long pictur
             break;
         }
     }
-
-    cJSON_Delete(json_root_object1);
-    clib__null_memory(json_root_object1_string, strlen(json_root_object1_string));
-    cJSON_free(json_root_object1_string);
-    json_root_object1_string = 0;
     clib__null_memory(msg_text, size_of_allocated_message_buffer);
     free(msg_text);
     msg_text = 0;
@@ -956,7 +976,14 @@ void send_direct_chat_picture(char* username, char* chat_picture_base64, int pic
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -970,13 +997,7 @@ void send_direct_chat_picture(char* username, char* chat_picture_base64, int pic
         }
     }
 
-    cJSON_Delete(json_root_object1);
-
-    cJSON_free(json_root_object1_string);
-    json_root_object1_string = 0;
-
     clib__null_memory(msg_text, size_of_allocated_message_buffer);
-
     free(msg_text);
     msg_text = 0;
 }
@@ -1005,7 +1026,14 @@ void send_direct_chat_message(char* username, char* chat_message_value, int send
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -1019,13 +1047,7 @@ void send_direct_chat_message(char* username, char* chat_message_value, int send
         }
     }
 
-    cJSON_Delete(json_root_object1);
-
-    cJSON_free(json_root_object1_string);
-    json_root_object1_string = 0;
-
     clib__null_memory(msg_text, size_of_allocated_message_buffer); // null contents of memory
-
     free(msg_text); //free memory
     msg_text = 0; //null pointer
 }
@@ -1055,7 +1077,14 @@ void send_channel_chat_message(int channel_id, client_t* sender, char* chat_mess
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -1075,19 +1104,7 @@ void send_channel_chat_message(int channel_id, client_t* sender, char* chat_mess
         #endif
     }
 
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("send_channel_chat_message() cJSON_Delete(json_root_object1); \n");
-        #endif
-        cJSON_Delete(json_root_object1);
-    }
-
-    free(json_root_object1_string);
-    json_root_object1_string = 0;
-
     clib__null_memory(msg_text, size_of_allocated_message_buffer);
-
     free(msg_text);
     msg_text = 0;
 }
@@ -1102,7 +1119,7 @@ void send_maintainer_id_to_client(client_t* receiver, channel_t* channel)
     char* msg_text = 0;
 
     #ifdef DEBUG_PROGRAM
-        printf("%s %s","send_channel_maintainer_id", "\n");
+        printf("%s %s","send_maintainer_id_to_client", "\n");
     #endif
 
     json_root_object1 = cJSON_CreateObject();
@@ -1119,28 +1136,14 @@ void send_maintainer_id_to_client(client_t* receiver, channel_t* channel)
     // printf("%s %s", json_root_object1_string , "\n");
     //#endif
 
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("send_channel_maintainer_id() cJSON_Delete(json_root_object1); \n");
-        cJSON_Delete(json_root_object1);
-        #endif
-
-        json_root_object1 = 0;
-        json_message_object1 = 0;
-    }
-
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
 
-    if(json_root_object1_string != 0)
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
     {
-        #ifdef DEBUG_HEAP
-        printf("send_channel_maintainer_id free(json_root_object1_string); \n");
-        #endif
-        clib__null_memory(json_root_object1_string, strlen(json_root_object1_string));
-        free(json_root_object1_string);
-        json_root_object1_string = 0;
+        return;
     }
 
     #ifdef DEBUG_PROGRAM
@@ -1201,28 +1204,14 @@ void send_channel_chat_picture(int channel_id, client_t* sender, char* chat_pict
     // printf("%s %s", json_root_object1_string , "\n");
     //#endif
 
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_HEAP
-        printf("476 send_channel_chat_picture() cJSON_Delete(json_root_object1); \n");
-        cJSON_Delete(json_root_object1);
-        #endif
-
-        json_root_object1 = 0;
-        json_message_object1 = 0;
-    }
-
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
 
-    if(json_root_object1_string != 0)
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
     {
-        #ifdef DEBUG_HEAP
-        printf("490 send_channel_chat_picture free(json_root_object1_string); \n");
-        #endif
-        clib__null_memory(json_root_object1_string, strlen(json_root_object1_string));
-        free(json_root_object1_string);
-        json_root_object1_string = 0;
+        return;
     }
 
     #ifdef DEBUG_PROGRAM
@@ -1254,29 +1243,17 @@ void send_channel_chat_picture(int channel_id, client_t* sender, char* chat_pict
 
             json_root_object2_string = cJSON_PrintUnformatted(json_root_object2);
             size_of_allocated_message_buffer = 0;
-            msg_text2 = encrypt_websocket_msg(json_root_object2_string, &size_of_allocated_message_buffer);
+
+            msg_text2 = encrypt_cstring_and_convert_to_base64(json_root_object2_string, &size_of_allocated_message_buffer);
+
+            free_json_message(json_root_object2, json_root_object2_string);
+
+            if(msg_text2 == 0)
+            {
+                continue;
+            }
+
             ws_sendframe(clients_array[i].fd, msg_text2, strlen(msg_text2), FALSE, 1);
-
-            if(json_root_object2_string != 0)
-            {
-                #ifdef DEBUG_HEAP
-                printf("send_channel_chat_picture free(json_root_object2_string); \n");
-                #endif
-
-                free(json_root_object2_string);
-                json_root_object2_string = 0;
-            }
-
-            if(json_root_object2 != 0)
-            {
-                #ifdef DEBUG_HEAP
-                printf("send_channel_chat_picture() cJSON_free(json_root_object2); \n");
-                #endif
-
-                cJSON_free(json_message_object2);
-                cJSON_free(json_root_object2);
-            }
-
             clib__null_memory(msg_text2, size_of_allocated_message_buffer);
             free(msg_text2);
             msg_text2 = 0;
@@ -1320,29 +1297,15 @@ void send_channel_chat_picture_metadata(int channel_id, client_t* sender, unsign
     // printf("%s %s", json_root_object1_string , "\n");
     //#endif
 
-    if(json_root_object1 != 0)
-    {
-        cJSON_Delete(json_root_object1);
-        json_root_object1 = 0;
-        json_message_object1 = 0;
-    }
-
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
 
-    if(json_root_object1_string != 0)
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
     {
-        #ifdef DEBUG_HEAP
-      printf("135 send_channel_chat_picture_metadata free(json_root_object1_string); \n");
-    #endif
-        clib__null_memory(json_root_object1_string, strlen(json_root_object1_string));
-        free(json_root_object1_string);
-        json_root_object1_string = 0;
+        return;
     }
-
-  #ifdef DEBUG_PROGRAM
-    printf("%s %s",msg_text , "\n");
-  #endif
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -1363,7 +1326,6 @@ void send_channel_chat_picture_metadata(int channel_id, client_t* sender, unsign
     }
 
     clib__null_memory(msg_text, size_of_allocated_message_buffer);
-
     free(msg_text);
     msg_text = 0;
 }
@@ -1386,19 +1348,15 @@ void broadcast_server_info(char* info)
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
-    if(json_root_object1 != 0)
-    {
-        #ifdef DEBUG_PROGRAM
-        printf("broadcast_server_info() cJSON_Delete(json_root_object1); \n");
-        #endif
-
-        cJSON_Delete(json_root_object1);
-        json_root_object1 = 0;
-        json_message_object1 = 0;
-    }
-
     size_of_allocated_message_buffer = 0;
-    msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+    msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
+
+    free_json_message(json_root_object1, json_root_object1_string);
+
+    if(msg_text == 0)
+    {
+        return;
+    }
 
     for(i = 0; i < MAX_CLIENTS; i++)
     {
@@ -1408,55 +1366,59 @@ void broadcast_server_info(char* info)
         }
     }
 
-    free(json_root_object1_string);
-    json_root_object1_string = 0;
-
     clib__null_memory(msg_text, size_of_allocated_message_buffer);
     free(msg_text);
     msg_text = 0;
 }
 
-char* encrypt_websocket_msg(unsigned char* msg, int* out_allocated_buffer_size)
+char* encrypt_cstring_and_convert_to_base64(char* string, int* out_allocated_buffer_size)
 {
     int encryption_buffer_size = 0;
     int base64_out_string_size = 0;
-    char* encryption_buffer = 0;
+    unsigned char* encryption_buffer = 0;
     char* base64_out_string = 0;
-
     struct AES_ctx ctx;
     int i = 0;
 
-
-    if(strlen(msg) < 1026)
+    if(strlen(string) < 1026)
     {
         encryption_buffer_size = 1026;
         base64_out_string_size = ((4 * encryption_buffer_size / 3) + 3) & ~3;
     }
     else
     {
-        encryption_buffer_size = strlen(msg);
+        encryption_buffer_size = strlen(string);
         base64_out_string_size = ((4 * encryption_buffer_size / 3) + 3) & ~3;
     }
 
     base64_out_string_size += 4;
 
+    //check size
+
+    if(base64_out_string_size > g_server_settings.websocket_message_max_length)
+    {
+        #ifdef DEBUG_PROGRAM
+        printf("%s","encrypt_cstring_and_convert_to_base64()  base64_out_string_size > g_server_settings.websocket_message_max_length) returning null \n");
+        #endif
+
+        return 0;
+    }
+
+
     *out_allocated_buffer_size = base64_out_string_size;
 
     #ifdef DEBUG_PROGRAM
-    printf("%s%d%s","encrypt_websocket_msg() encryption_buffer_size" , encryption_buffer_size, "\n");
+    printf("%s%d%s","encrypt_cstring_and_convert_to_base64() encryption_buffer_size" , encryption_buffer_size, "\n");
     #endif
 
     #ifdef DEBUG_PROGRAM
     printf("%s%d%s","base64_out_string_size() base64_out_string_size" , base64_out_string_size, "\n");
     #endif
 
-
-    encryption_buffer = (char*)calloc(encryption_buffer_size, sizeof(char));
-
+    encryption_buffer = (unsigned char*)calloc(encryption_buffer_size, sizeof(char));
     base64_out_string = (char*)calloc(base64_out_string_size, sizeof(char));
 
-    clib__copy_memory(msg, encryption_buffer, strlen(msg));
-
+    clib__copy_memory(string, encryption_buffer, strlen(string));
 
     for(i = 0; i < g_server_settings.keys_count; i++)
     {
@@ -1464,7 +1426,7 @@ char* encrypt_websocket_msg(unsigned char* msg, int* out_allocated_buffer_size)
         AES_CTR_xcrypt_buffer(&ctx, encryption_buffer, encryption_buffer_size);
     }
 
-    zchg_base64_encode((const unsigned char *)encryption_buffer, encryption_buffer_size , base64_out_string);
+    zchg_base64_encode(encryption_buffer, encryption_buffer_size , base64_out_string);
 
     //
     //encryption_buffer is freed here, base64_out_string is freed outside of function
@@ -1484,20 +1446,20 @@ char* encrypt_websocket_msg(unsigned char* msg, int* out_allocated_buffer_size)
     return base64_out_string;
 }
 
-void decrypt_websocket_msg(const unsigned char *msg, char* out_buffer, int out_buffer_length)
+void get_data_from_base64_and_decrypt_it(char *base64_string, unsigned char* out_buffer, int out_buffer_length)
 {
     struct AES_ctx ctx;
     int i = 0;
 
     #ifdef DEBUG_PROGRAM
-    printf("%s %lu %s","[i] decrypt_websocket_msg ", strlen(msg), "\n");
+    printf("%s %lu %s","[i] get_data_from_base64_and_decrypt_it ", strlen(msg), "\n");
     #endif
 
-    zchg_base64_decode(msg, strlen(msg), out_buffer);
-
+    zchg_base64_decode(base64_string, strlen(base64_string), out_buffer);
 
     //
     //first key used in decryption is last key used in encryption
+    //this only decrypts metadata. Does not decrypt content of messages
     //
 
     for(i = (g_server_settings.keys_count - 1); i >= 0; i--)
@@ -1512,12 +1474,25 @@ void decrypt_websocket_msg(const unsigned char *msg, char* out_buffer, int out_b
 
 void onopen(int fd)
 {
+    g_server_settings.client_count++;
+
     int index = get_new_index_for_client();
     char *cli;
 
+    if(g_server_settings.client_count > g_server_settings.max_client_count)
+    {
+        printf("max client reached. Closing connection with client");
+
+        ws_close_client(fd);
+        return;
+    }
+
     if(index == -1)
     {
+        #ifdef DEBUG_PROGRAM
         printf("get_new_index_for_client returned -1, closing socket");
+        #endif
+
         ws_close_client(fd);
         return;
     }
@@ -1542,6 +1517,8 @@ void onopen(int fd)
 
 void onclose(int fd)
 {
+    g_server_settings.client_count--;
+
     int index = get_client_index_with_fd(fd);
 
     char *cli;
@@ -1567,9 +1544,7 @@ void onclose(int fd)
 
         broadcast_client_disconnect(&clients_array[index]);
 
-        //
-        //set all bytes of client_t structure to null, nulling out every data of his
-        //
+        //clear client_r structure in memory
         clib__null_memory(&clients_array[index], sizeof(client_t));
     }
 }
@@ -1577,8 +1552,9 @@ void onclose(int fd)
 void onmessage(int fd, const unsigned char *websocket_msg, unsigned long size, int type)
 {
     int index = get_client_index_with_fd(fd);
-    char* decrypted_websocket_data_buffer = 0;
-
+    unsigned char* decrypted_websocket_data_buffer = 0;
+    char* base64_to_process_and_decrypt = 0;
+    char* decrypted_metadata_cstring = 0;
     #ifdef DEBUG_PROGRAM
     printf("%s %lu %s","onmessage() received websocket data size is : ", size ,"\n");
     #endif
@@ -1595,22 +1571,26 @@ void onmessage(int fd, const unsigned char *websocket_msg, unsigned long size, i
         return;
     }
 
-    decrypted_websocket_data_buffer = (char*)calloc(size, sizeof(char));
+    decrypted_websocket_data_buffer = (unsigned char*)calloc(size, sizeof(unsigned char));
 
     if(decrypted_websocket_data_buffer == 0)
     {
         return;
     }
 
-    decrypt_websocket_msg(websocket_msg, decrypted_websocket_data_buffer, size);
+    base64_to_process_and_decrypt = (char*)websocket_msg;
+
+    get_data_from_base64_and_decrypt_it(base64_to_process_and_decrypt, decrypted_websocket_data_buffer, size);
+
+    decrypted_metadata_cstring = (char*)decrypted_websocket_data_buffer;
 
     if(clients_array[index].is_authenticated == FALSE)
     {
-        process_not_authenticated_client_message(fd, index, decrypted_websocket_data_buffer, size, type);
+        process_not_authenticated_client_message(fd, index, decrypted_metadata_cstring, size, type);
     }
     else
     {
-        process_authenticated_client_message(fd, index, decrypted_websocket_data_buffer, size, type);
+        process_authenticated_client_message(fd, index, decrypted_metadata_cstring, size, type);
     }
 }
 
@@ -1626,6 +1606,9 @@ void onclose_audio(int fd)
 
 void onmessage_audio(int fd, const unsigned char *websocket_msg, unsigned long size, int type)
 {
+    char* base64_to_process_and_decrypt = 0;
+    char* decrypted_metadata_cstring = 0;
+
     if(size == 0)
     {
         #ifdef DEBUG_PROGRAM
@@ -1653,14 +1636,18 @@ void onmessage_audio(int fd, const unsigned char *websocket_msg, unsigned long s
         printf("index is -1");
         #endif
 
-        char* decrypted_websocket_data_buffer = decrypted_websocket_data_buffer = (char*)calloc(size, sizeof(char));
+        unsigned char* decrypted_websocket_data_buffer = decrypted_websocket_data_buffer = (unsigned char*)calloc(size, sizeof(unsigned char));
 
         if(decrypted_websocket_data_buffer == 0)
         {
             return;
         }
 
-        decrypt_websocket_msg(websocket_msg, decrypted_websocket_data_buffer, size);
+        base64_to_process_and_decrypt = (char*)websocket_msg;
+
+        get_data_from_base64_and_decrypt_it(base64_to_process_and_decrypt, decrypted_websocket_data_buffer, size);
+
+        decrypted_metadata_cstring = (char*)decrypted_websocket_data_buffer;
 
         #ifdef DEBUG_PROGRAM
         printf("%s %s", decrypted_websocket_data_buffer, "\n");
@@ -1670,7 +1657,7 @@ void onmessage_audio(int fd, const unsigned char *websocket_msg, unsigned long s
 
         for (int i = 0; i < MAX_CLIENTS; i++)
         {
-            if (strcmp(decrypted_websocket_data_buffer, clients_array[i].websocket_audio_auth_string_base64) == 0)
+            if (strcmp(decrypted_metadata_cstring, clients_array[i].websocket_audio_auth_string_base64) == 0)
             {
                 found_index = i;
                 break;
@@ -1726,87 +1713,63 @@ void onmessage_audio(int fd, const unsigned char *websocket_msg, unsigned long s
                 continue;
             }
 
-            ws_sendframe(clients_array[i].websocket_audio_fd, websocket_msg, size, FALSE, type);
+            ws_sendframe(clients_array[i].websocket_audio_fd, (char*)websocket_msg, size, FALSE, type);
         }
     }
 
     //printf("onmessage_audio(int fd, const unsigned char *msg, unsigned long size, int type)");
 }
 
-void process_authenticated_client_message(int fd, int index, unsigned char *decrypted_websocket_data_buffer, unsigned long long size, int type)
+void process_authenticated_client_message(int fd, int index, char *decrypted_metadata_cstring, unsigned long long size, int type)
 {
-    //
-    //C89 requires all local variables to be declared at the start of the function/subroutine
-    //
-
     char* encrypted_data_to_send_buffer = 0;
     int size_of_allocated_message_buffer = 0;
     cJSON* json_root = 0;
     cJSON* json_message_object = 0;
     cJSON* json_message_type = 0;
     unsigned long long timestamp_now = 0;
-
     cJSON* json_chat_message_value = 0;
     cJSON* receiver_type = 0;
     cJSON* receiver_id = 0;
-
     BOOL is_string_number = FALSE;
-
     int receiver_id_int = 0;
     int channel_id_int = 0;
-
     cJSON* target_channel_id = 0;
     int target_channel_id_int = 0;
     int target_channel_index = 0;
     int current_channel_index = 0;
     int current_channel_maintainer_id = 0;
-
     BOOL is_new_maintainer_found = FALSE;
-
     int i = 0;
     int x = 0;
     cJSON* new_channel_name = 0;
     cJSON* parent_channel_id = 0;
-
     cJSON* channel_description = 0;
-
     cJSON* channel_password = 0;
-
-
     int parent_channel_id_int = 0;
     BOOL is_channel_found = FALSE;
-
-
     int channel_index_in_array = 0;
-
     int num_channels = 0;
     int* marked_channel_indices = 0;
-
     int index_of_channel_to_delete = 0;
     int channel_id_to_delete = 0;
-
-
     cJSON *json_new_username = 0;
-
     char server_info[400] = {0};
-
-
     char *cli;
 
-
     //#ifdef DEBUG_PROGRAM
-    //printf("%s%s%s", "[i] decrypted received data: " , decrypted_websocket_data_buffer, "\n");
+    //printf("%s%s%s", "[i] decrypted received data: " , decrypted_metadata_cstring, "\n");
     //#endif
 
-    json_root = cJSON_Parse(decrypted_websocket_data_buffer);
+    json_root = cJSON_Parse(decrypted_metadata_cstring);
 
     #ifdef DEBUG_HEAP
-    printf("%s", "[i] free (decrypted_websocket_data_buffer); \n");
+    printf("%s", "[i] free (decrypted_metadata_cstring); \n");
     #endif
 
-    clib__null_memory(decrypted_websocket_data_buffer,size);
-    free(decrypted_websocket_data_buffer);
-    decrypted_websocket_data_buffer = 0;
+    clib__null_memory(decrypted_metadata_cstring, size);
+    free(decrypted_metadata_cstring);
+    decrypted_metadata_cstring = 0;
 
     if (json_root == 0)
     {
@@ -2053,9 +2016,9 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
 
 
         //
-        //check if user is a maintainer of the current channel before letting him join new channel.
+        //check if user is a maintainer of the current channel before letting him leave his current channel.
         //If he is, pick new maintainer from other users currently present in current channel.
-        //If there are no users to pick from, set maintaner to -1
+        //If there are no users to pick from, set maintaner of channel to -1
         //
 
         current_channel_index = get_channel_index_by_channel_id(clients_array[index].channel_id);
@@ -2087,7 +2050,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
         }
 
         //
-        //at this point it is safe to join channel
+        //join new channel
         //
 
         clients_array[index].channel_id = target_channel_id_int;
@@ -2158,6 +2121,15 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
     else if(strcmp(json_message_type->valuestring, "create_channel_request") == 0)
     {
         timestamp_now = get_timestamp_ms();
+
+        if(g_server_settings.channel_count >= g_server_settings.max_channel_count)
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","[!] client : ", index, " can not create channel. max channel count reached \n");
+            #endif
+            cJSON_Delete(json_root);
+            return;
+        }
 
         if(clients_array[index].timestamp_last_sent_create_channel_request + g_server_settings.create_channel_request_cooldown_milliseconds > timestamp_now)
         {
@@ -2252,11 +2224,124 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
                     clib__copy_memory((void*)channel_password->valuestring, (void*)&channel_array[i].password, strlen(channel_password->valuestring));
                 }
 
+                g_server_settings.channel_count++;
                 broadcast_channel_create(&channel_array[i]);
 
                 break;
             }
         }
+
+        cJSON_Delete(json_root);
+    }
+    else if(strcmp(json_message_type->valuestring, "edit_channel_request") == 0)
+    {
+        timestamp_now = get_timestamp_ms();
+
+        if(clients_array[index].timestamp_last_sent_create_channel_request + g_server_settings.create_channel_request_cooldown_milliseconds > timestamp_now)
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","[!] client : ", index, " can not create channel. cooldown active \n");
+            #endif
+            cJSON_Delete(json_root);
+            return;
+        }
+
+        clients_array[index].timestamp_last_sent_create_channel_request = timestamp_now;
+
+        cJSON* id_of_channel_to_be_edited = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+
+        //
+        //check if value of channel id to edit is not wrong
+        //
+
+        if (!cJSON_IsString(id_of_channel_to_be_edited) || id_of_channel_to_be_edited->valuestring == NULL || strlen(id_of_channel_to_be_edited->valuestring) == 0 || !clib__is_str_number(id_of_channel_to_be_edited->valuestring))
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","[!] client : ", index, " channel_id is wrong \n");
+            #endif
+            //ws_close_client(fd);
+            cJSON_Delete(json_root);
+            return;
+        }
+
+        //
+        //check if channel exists
+        //
+
+        int id_to_edit = atoi(id_of_channel_to_be_edited->valuestring);
+        int index_of_channel_to_edit = get_channel_index_by_channel_id(id_to_edit);
+
+        if(index_of_channel_to_edit == -1)
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","[!] client : ", index_of_channel_to_edit, " channel_id is wrong cant edit channel\n");
+            #endif
+            //ws_close_client(fd);
+            cJSON_Delete(json_root);
+            return;
+        }
+
+
+        new_channel_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_name");
+        if (!cJSON_IsString(new_channel_name) || new_channel_name->valuestring == NULL || strlen(new_channel_name->valuestring) == 0 || strlen(new_channel_name->valuestring) >= 128)
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","[!] client : ", index, " new_channel_name is wrong \n");
+            #endif
+            //ws_close_client(fd);
+            cJSON_Delete(json_root);
+            return;
+        }
+
+
+        //check description
+        channel_description = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_description");
+
+        if (!cJSON_IsString(channel_description) || channel_description->valuestring == NULL || strlen(channel_description->valuestring) >= 1000)
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","[!] client : ", index, " channel_description is wrong \n");
+            #endif
+            //ws_close_client(fd);
+            cJSON_Delete(json_root);
+            return;
+        }
+
+        //check password
+        channel_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_password");
+
+        if (!cJSON_IsString(channel_password) || channel_password->valuestring == NULL || strlen(channel_password->valuestring) >= 128)
+        {
+            #ifdef DEBUG_PROGRAM
+            printf("%s%d%s","[!] client : ", index, " channel_password is wrong \n");
+            #endif
+            //ws_close_client(fd);
+            cJSON_Delete(json_root);
+            return;
+        }
+
+
+        //clear out old channel name and set new one
+
+        clib__null_memory(&channel_array[index_of_channel_to_edit].name[0], 128);
+        clib__copy_memory((void*)new_channel_name->valuestring, (void*)&channel_array[index_of_channel_to_edit].name, strlen(new_channel_name->valuestring));
+
+        clib__null_memory(&channel_array[index_of_channel_to_edit].description[0], 1000);
+        clib__copy_memory((void*)channel_description->valuestring, (void*)&channel_array[index_of_channel_to_edit].description, strlen(channel_description->valuestring));
+
+        if(strlen(channel_password->valuestring) > 0)
+        {
+            channel_array[index_of_channel_to_edit].is_using_password = TRUE;
+            clib__null_memory(&channel_array[index_of_channel_to_edit].password[0], 128);
+            clib__copy_memory((void*)channel_password->valuestring, (void*)&channel_array[index_of_channel_to_edit].password, strlen(channel_password->valuestring));
+        }
+        else
+        {
+            channel_array[index_of_channel_to_edit].is_using_password = FALSE;
+            clib__null_memory(&channel_array[index_of_channel_to_edit].password[0], 128);
+        }
+
+        broadcast_channel_edit(&channel_array[index_of_channel_to_edit]);
 
         cJSON_Delete(json_root);
     }
@@ -2348,7 +2433,7 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
             clib__null_memory(&channel_array[index_of_channel_to_delete],sizeof(channel_t));
 
             //
-            //move clients from channel, if there are any, to root channel
+            //move clients from channel, if there are any in channels to be deleted to the root channel
             //
 
             for(x = 0; x < MAX_CLIENTS; x++)
@@ -2357,13 +2442,30 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
                 {
                     continue;
                 }
-                if(clients_array[x].channel_id == channel_id_to_delete)
+
+                //
+                //skip client if his channel is not deleted
+                //
+
+                if(clients_array[x].channel_id != channel_id_to_delete)
                 {
-                    clients_array[x].channel_id = 1;
-                    broadcast_channel_join(&clients_array[x]);
+                    continue;
                 }
+
+                //check if root channel has any maintainer
+
+                clients_array[x].channel_id = 1;
+                broadcast_channel_join(&clients_array[x]);
+
+                if(channel_array[0].maintainer_id == -1)
+                {
+                    channel_array[0].maintainer_id = clients_array[x].user_id;
+                }
+
+                send_maintainer_id_to_client(&clients_array[x], &channel_array[0]);
             }
 
+            g_server_settings.channel_count--;
             broadcast_channel_delete(channel_id_to_delete);
         }
 
@@ -2605,39 +2707,35 @@ void process_authenticated_client_message(int fd, int index, unsigned char *decr
     }
 }
 
-void process_not_authenticated_client_message(int fd, int index, unsigned char *decrypted_websocket_data_buffer, unsigned long long size, int type)
+void process_not_authenticated_client_message(int fd, int index, char *decrypted_metadata_cstring, unsigned long long size, int type)
 {
     cJSON* json_root = 0;
     cJSON* json_message_object = 0;
     cJSON* json_message_type = 0;
     cJSON* json_message_value = 0;
     cJSON* verification_string = 0;
-    char index_string[5];
-    char *ip_address = 0;
-    int size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
+    char index_string[10];
     char server_info[200];
     int channel_index = 0;
     int client_count_in_channel = 0;
-    int i = 0;
 
     #ifdef DEBUG_PROGRAM
     printf("%s %d %s","[i] authenticating client ", fd, "\n");
     #endif
 
     #ifdef DEBUG_PROGRAM
-    printf("%s %s %s","decrypted client verification message : ", decrypted_websocket_data_buffer, "\n");
+    printf("%s %s %s","decrypted client verification message : ", decrypted_metadata_cstring, "\n");
     #endif
 
-    json_root = cJSON_Parse(decrypted_websocket_data_buffer);
+    json_root = cJSON_Parse(decrypted_metadata_cstring);
 
     #ifdef DEBUG_HEAP
-    printf("%s", "[i] free (decrypted_websocket_data_buffer); \n");
+    printf("%s", "[i] free (decrypted_metadata_cstring); \n");
     #endif
 
-    clib__null_memory(decrypted_websocket_data_buffer,size);
-    free(decrypted_websocket_data_buffer);
-    decrypted_websocket_data_buffer = 0;
+    clib__null_memory(decrypted_metadata_cstring, size);
+    free(decrypted_metadata_cstring);
+    decrypted_metadata_cstring = 0;
 
     if (json_root == 0)
     {
@@ -2697,7 +2795,11 @@ void process_not_authenticated_client_message(int fd, int index, unsigned char *
     json_message_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
 
     //
-    //public RSA key should be 344 characters in length
+    //check length of public key
+    //
+
+    //
+    //should also check if client really sent correct public key, by sending some test string and checking if he can decrypt the string and sent it back to us
     //
 
     if (!cJSON_IsString(json_message_value) || json_message_value->valuestring == NULL || strlen(json_message_value->valuestring) != 344)
@@ -2745,22 +2847,23 @@ void process_not_authenticated_client_message(int fd, int index, unsigned char *
         printf("%s %d %s","[i] client ", index ," authenticated \n");
         #endif
 
+
         clib__copy_memory(g_server_settings.default_client_name ,  clients_array[index].username, strlen(g_server_settings.default_client_name));
+
+        //
+        //append index of client to clients username
+        //
+
+        clib__null_memory(index_string, sizeof(index_string));
         sprintf(index_string,"%d",index);
         clib__copy_memory(index_string,&clients_array[index].username[strlen(clients_array[index].username)], strlen(index_string));
-        ip_address = 0;
 
         #ifdef DEBUG_PROGRAM
-        ip_address = ws_getaddress(clients_array[index].fd);
-        if(fd != 0)
-        {
-            printf("%s %s %s %s","new user connected: " , ip_address, clients_array[index].username, "\n");
-        }
+        printf("%s %s %s","new user connected: " , clients_array[index].username, "\n");
         #endif
 
         clib__copy_memory(json_message_value->valuestring , clients_array[index].public_key, strlen(json_message_value->valuestring));
         clients_array[index].is_authenticated = TRUE; //DO NOT set without setting up username first
-        size_of_allocated_message_buffer = 0;
 
         cJSON *json_root_object1 = cJSON_CreateObject();
         cJSON *json_message_object1 = cJSON_CreateObject();
@@ -2786,11 +2889,12 @@ void process_not_authenticated_client_message(int fd, int index, unsigned char *
 
             for(int x = 0; x < 32; x++)
             {
-                random_bytes[x] = (unsigned char)((rand() % (255 - 100 + 1)) + 100);
+                //not really random?
+                random_bytes[x] = (unsigned char)((rand() % 255) + 1);
             }
 
             char* websocket_audio_auth_string = (char*)calloc(45, sizeof(char));
-            zchg_base64_encode((const unsigned char *)random_bytes, sizeof(random_bytes) , websocket_audio_auth_string);
+            zchg_base64_encode(random_bytes, sizeof(random_bytes) , websocket_audio_auth_string);
 
             clib__copy_memory(websocket_audio_auth_string, clients_array[index].websocket_audio_auth_string_base64, strlen(websocket_audio_auth_string));
 
@@ -2806,7 +2910,7 @@ void process_not_authenticated_client_message(int fd, int index, unsigned char *
         }
 
         json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-        msg_text = encrypt_websocket_msg(json_root_object1_string, &size_of_allocated_message_buffer);
+        msg_text = encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer);
 
         ws_sendframe(fd, msg_text, strlen(msg_text), FALSE, type);
 
@@ -2944,7 +3048,7 @@ void websocket_connection_check_thread(void)
                 }
 
                 size_of_allocated_message_buffer = 0;
-                msg = encrypt_websocket_msg((unsigned char*)"connection_test", &size_of_allocated_message_buffer);
+                msg = encrypt_cstring_and_convert_to_base64("connection_test", &size_of_allocated_message_buffer);
                 ws_sendframe(clients_array[i].fd, msg, strlen(msg), FALSE, 1);
                 if(msg != 0)
                 {
@@ -3061,6 +3165,32 @@ void set_server_settings(void)
         clib__sanitize_stdin(input);
         g_server_settings.websocket_audio_port_number = strtol(input, 0, 10);
         clib__null_memory(input, sizeof(input));
+    }
+
+
+    clib__null_memory(input, sizeof(input));
+    printf("%s", "max allowed number of clients {from 1 to 499} : ");
+    fgets(input, sizeof(input), stdin);
+    clib__sanitize_stdin(input);
+    g_server_settings.max_client_count = atoi(input);
+
+    if(g_server_settings.max_client_count > 499)
+    {
+        printf("SETUP FAIL");
+        return;
+    }
+
+
+    clib__null_memory(input, sizeof(input));
+    printf("%s", "max allowed number of channels {from 1 to 99} : ");
+    fgets(input, sizeof(input), stdin);
+    clib__sanitize_stdin(input);
+    g_server_settings.max_channel_count = atoi(input);
+
+    if(g_server_settings.max_client_count > 99)
+    {
+        printf("SETUP FAIL");
+        return;
     }
 }
 
