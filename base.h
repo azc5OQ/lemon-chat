@@ -38,6 +38,10 @@ typedef struct server_settings
     unsigned long long create_channel_request_cooldown_milliseconds;
     char default_client_name[30];
     BOOL is_voice_chat_active;
+    int channel_count;
+    int max_channel_count;
+    int client_count;
+    int max_client_count;
 } server_settings_t;
 
 typedef struct client
@@ -93,20 +97,23 @@ void onclose_audio(int fd);
 void onmessage_audio(int fd, const unsigned char *msg, unsigned long size, int type);
 
 
-void process_authenticated_client_message(int fd, int client_index,unsigned char *decrypted_websocket_data_buffer,unsigned long long size,int type);
-void process_not_authenticated_client_message(int fd, int index, unsigned char *decrypted_websocket_data_buffer, unsigned long long size, int type);
+void process_authenticated_client_message(int fd, int client_index, char *decrypted_metadata_cstring, unsigned long long size,int type);
+void process_not_authenticated_client_message(int fd, int index, char *decrypted_metadata_cstring, unsigned long long size, int type);
 
-char* encrypt_websocket_msg(unsigned char* msg, int* out_allocated_buffer_size);
-void decrypt_websocket_msg(const unsigned char *msg, char* out_buffer, int out_buffer_length);
+//used for encrypting and decrypting metadata
+char* encrypt_cstring_and_convert_to_base64(char* cstring, int* out_allocated_buffer_size);
+void get_data_from_base64_and_decrypt_it(char *base64_string, unsigned char* out_buffer, int out_buffer_length);
 
 void broadcast_server_info(char* info);
 
 void broadcast_client_connect(client_t* client);
 void broadcast_client_disconnect(client_t* client);
 void broadcast_client_rename(client_t* client);
+
 void broadcast_channel_join(client_t* client);
 void broadcast_channel_delete(int channel_id);
 void broadcast_channel_create(channel_t* channel);
+void broadcast_channel_edit(channel_t* channel);
 
 void send_channel_chat_picture(int channel_id, client_t* sender, char* chat_picture_base64, int picture_id);
 void send_channel_chat_picture_metadata(int channel_id, client_t* sender, unsigned long long picture_size, int picture_id);
