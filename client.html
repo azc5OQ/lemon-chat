@@ -10927,15 +10927,9 @@
           }
       }
 
-      //
-      //needs to be checked because all javascript code is passed to webworker that does not know window object
-      //
-
-      if(typeof window !== 'undefined')
+      async function window_onload()
       {
-          window.onload = function()
-          {
-              document.getElementById("another-buttons-loading-container").style.backgroundImage = "url(" + loading_gif + ")";
+            document.getElementById("another-buttons-loading-container").style.backgroundImage = "url(" + loading_gif + ")";
 
               textarea_log = document.getElementById("textarea-log");
 
@@ -10965,9 +10959,21 @@
 
               if (is_autoconnect_active == true)
               {
+		  while(!is_authenticated)
+		  {
+		  	await sleep(1000);
+		  }
                   connect_to_server();
               }
-          }
+      }
+	    
+      //
+      //needs to be checked because all javascript code is passed to webworker that does not know window object
+      //
+
+      if(typeof window !== 'undefined')
+      {
+          window.onload = window_onload;
       }
     }));
 
