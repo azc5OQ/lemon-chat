@@ -15,8 +15,6 @@ https://github.com/zhicheng/base64
 
 client
 <br>
-https://github.com/kopipejst/just.randomstring
-<br>
 https://github.com/wwwtyro/cryptico
 <br>
 https://github.com/ricmoo/aes-js
