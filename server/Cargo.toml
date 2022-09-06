@@ -1,0 +1,22 @@
+[package]
+name = "lemonchat-server"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aes = "0.8.1"
+ctr = "0.9.1"
+simple-websockets = "0.1.4"
+base64 = "0.13.0"
+sha2 = "0.10.2"
+serde_json = "1.0.82"
+chrono = "0.4.19"
+webrtc = "0.4.0"
+anyhow = "1.0.58"
+futures = "0.3.21"
+tokio = "1.20.0"
+rustun = "0.4.0"
+fibers_global = "0.1.2"
+lazy_static = "1.4.0"
