@@ -4,6 +4,9 @@
 - install rust -> https://www.rust-lang.org/tools/install
 - cargo run
 
+![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic3.png)
+
+
 
 ## how to start client:
 - open "client.html" file in browser
