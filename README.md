@@ -9,12 +9,10 @@
 - open "client.html" file in browser
 
 
-![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic.png)
-
 ![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic2.png)
 
 
-
+![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic.png)
 
 
 <br>
