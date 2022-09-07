@@ -1,17 +1,26 @@
-chat system that can be self hosted
+### chat system that can be self hosted
+
+## how to start server:
+- install rust -> https://www.rust-lang.org/tools/install
+- cargo run
+
+
+## how to start client:
+- open "client.html" file in browser
+
+
+**what does it look like**
+
+![]({{site.baseurl}}/https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic.png)
+
+![]({{site.baseurl}}/https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic2.png)
+
+
+
+
 
 <br>
 Used libraries:
-<br>
-Server
-<br>
-https://github.com/Theldus/wsServer
-<br>
-https://github.com/DaveGamble/cJSON
-<br>
-https://github.com/kokke/tiny-AES-c
-<br>
-https://github.com/zhicheng/base64
 
 client
 <br>
