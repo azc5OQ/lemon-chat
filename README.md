@@ -11,9 +11,9 @@
 
 **what does it look like**
 
-![]({{site.baseurl}}/https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic.png)
+![]({{site.baseurl}}https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic.png)
 
-![]({{site.baseurl}}/https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic2.png)
+![]({{site.baseurl}}https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic2.png)
 
 
 
