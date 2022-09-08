@@ -255,11 +255,12 @@ async fn set_ice_candidate_from_client(
     let extracted_candidate = String::from(message["value"]["candidate"].as_str().unwrap());
     //println!("extracted_candidate -> {}", extracted_candidate);
 
-    let extracted_sdp_mid = String::from(message["value"]["sdpMid"].as_str().unwrap());
+    let extracted_sdp_mid: Option<String> = Option::from(String::from(message["value"]["sdpMid"].as_str().unwrap()));
     //println!("extracted_sdpMid -> {}", extracted_sdp_mid);
 
-    let extracted_sdp_mline_index = message["value"]["sdpMLineIndex"].as_u64().unwrap();
-  //  println!("extracted_sdpMLineIndex -> {}", extracted_sdp_mline_index);
+    let extracted_sdp_mline_index: Option<u16> = Option::from(message["value"]["sdpMLineIndex"].as_u64().unwrap() as u16);
+
+    //  println!("extracted_sdpMLineIndex -> {}", extracted_sdp_mline_index);
 
     let client_id: u64 = message["client_id"].as_u64().unwrap();
 
@@ -269,7 +270,7 @@ async fn set_ice_candidate_from_client(
 
     ice_candidate_init.candidate = extracted_candidate;
     ice_candidate_init.sdp_mid = extracted_sdp_mid;
-    ice_candidate_init.sdp_mline_index = extracted_sdp_mline_index as u16;
+    ice_candidate_init.sdp_mline_index = extracted_sdp_mline_index;
 
     let a = peer_connection.add_ice_candidate(ice_candidate_init).await;
 
@@ -328,16 +329,13 @@ async fn create_new_peer(
    peer_connections.insert(client_id, connection);
 
    let peer_connection: &RTCPeerConnection = peer_connections.get(&client_id).unwrap();
-
-   let datachannelid = client_id.clone() as u16;
-
+    
    let datachannel_settings: RTCDataChannelInit = RTCDataChannelInit {
        ordered: Option::from(false),
        max_packet_life_time: None,
        max_retransmits: Option::from(0),
        protocol: None,
        negotiated: None,
-       id: Option::from(datachannelid)
    };
 
    let data_channel_options: Option<RTCDataChannelInit> = Option::from(datachannel_settings);
@@ -493,6 +491,8 @@ async fn create_new_peer(
            send_cross_thread_message_sdp_offer(thread_message_channel_sender1, client_id.clone(), value).await?;
 
            let mut gather_complete = peer_connection.gathering_complete_promise().await;
+
+           println!("gather_complete done");
 
            // Sets the LocalDescription, and starts our UDP listeners
            peer_connection.set_local_description(offer).await?;
