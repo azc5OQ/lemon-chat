@@ -118,6 +118,47 @@ fn send_for_clients_in_channel_maintainer_id(clients: &HashMap<u64, Client>, web
     }
 }
 
+
+fn send_connection_check_response_to_single_cient(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("connection_check_response"));
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    for (_key, client) in clients {
+
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false{
+            continue;
+        }
+
+        if client.client_id != client_id {
+            continue;
+        }
+
+        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                websocket.send(Message::Text(data_to_send_base64));
+            }
+        }
+    }
+}
+
+
 fn send_maintainer_id_to_single_client(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>,  channel_id: u64,  client_id: u64, maintainer_id_to_send: u64, ) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -1945,7 +1986,7 @@ fn process_ice_candidate_message(sender: &std::sync::mpsc::Sender<String>, clien
     }
 }
 
-fn process_client_connection_check_message(client_id: u64, clients: &mut HashMap<u64, Client>) {
+fn process_client_connection_check_message(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, client_id: u64) {
     let a: Option<&mut Client> = clients.get_mut(&client_id);
     match a {
         None => {}
@@ -1954,6 +1995,9 @@ fn process_client_connection_check_message(client_id: u64, clients: &mut HashMap
             let timestamp_now: i64 = datetime.timestamp();
             client.timestamp_last_sent_check_connection_message = timestamp_now;
             //println!("process_client_connection_check_message client updated {}", client.username);
+
+
+            send_connection_check_response_to_single_cient(clients, websockets, client_id);
         }
     }
 }
@@ -2063,7 +2107,7 @@ fn process_authenticated_message(client_id: u64, websockets: &mut HashMap<u64, R
         }
     }
     else if message_type == "client_connection_check" {
-        process_client_connection_check_message(client_id, clients);
+        process_client_connection_check_message(clients, websockets, client_id);
     }
     else if message_type == "admin_password" {
         let msg_admin_password: &Value = &message["message"]["value"];
@@ -2387,7 +2431,6 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
         }
         else if json_message["type"] == "peer_connection_state_change_from_webrtc_thread" {
 
-
             let msg_client_id: u64 = json_message["client_id"].as_u64().unwrap();
             let msg_peer_connection_state: u64 = json_message["value"].as_u64().unwrap();
 
@@ -2408,7 +2451,6 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
                     }
                     else if msg_peer_connection_state > 3 {
                         client.microphone_state = 4; //audio disabled
-
                         client.is_webrtc_datachannel_connected = false; //this will allow client to set
                     }
                     broadcast_peer_connection_state(clients, websockets, msg_client_id, msg_peer_connection_state);
