@@ -370,14 +370,14 @@ async fn create_new_peer(
                send_cross_thread_message_on_peer_connection_state_change(sender_for_closure, client_id_for_closure, peer_connection_state).await.expect("TODO: panic message");
 
            })
-       })).await;
+       }));
 
    peer_connection.on_ice_connection_state_change(Box::new(
        |connection_state: RTCIceConnectionState| {
            println!("ICE Connection State has changed: {}", connection_state);
            Box::pin(async {})
        },
-   )).await;
+   ));
 
    peer_connection.on_ice_candidate(Box::new(move |ice_candidate_option| {
        let client_id_for_closure = client_id.clone();
@@ -389,7 +389,7 @@ async fn create_new_peer(
                Some(ice_candidate) => {
                    println!("on_ice_candidate {:?}", ice_candidate);
 
-                   let candidate= ice_candidate.to_json().await;
+                   let candidate= ice_candidate.to_json();
 
                    match candidate {
                        Ok(candidate) => {
@@ -416,7 +416,7 @@ async fn create_new_peer(
                None => {}
            }
        })
-   })).await;
+   }));
 
    data_channel.on_message(Box::new(move |msg: DataChannelMessage| {
        Box::pin(async move {
@@ -468,7 +468,7 @@ async fn create_new_peer(
                }
            }
        })
-   })).await;
+   }));
 
    // Create an offer to send to the browser
 
