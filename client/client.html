@@ -8305,10 +8305,11 @@
         var is_autoconnect_active = false;
 
         var autoconnect_details = {
-            "host": "192.168.2.182",
+            "host": "127.0.0.1",
             "port": 1111,
             "keys": [
-              "test"
+              "test1",
+              "test2"
             ]
         };
 
@@ -10592,10 +10593,9 @@
 
         async function connect_to_server()
         {
-            if (is_rsa_key_generated == false)
+            while (is_rsa_key_generated == false)
             {
-                log('rsa keypair not generated yet');
-                return;
+                await sleep(500);
             }
 
             init_keys_object();
@@ -10621,6 +10621,9 @@
                     host = autoconnect_details.host;
                     port = autoconnect_details.port;
                 }
+
+
+                console.log("pripajam sa a server");
 
                 websocket = new WebSocket('ws://' + host + ':' + port + '/');
                 websocket.addEventListener('message', websocket_onmessage);
@@ -10670,6 +10673,7 @@
                     websocket.send(data);
                 }
             }
+        
         }
 
         function player_onaudioprocess(e)
@@ -11659,11 +11663,11 @@
 
             if (is_autoconnect_active == true)
             {
+                connect_to_server();
                 while(!is_authenticated)
                 {
                     await sleep(1000);
                 }
-                connect_to_server();
             }
         }
 
