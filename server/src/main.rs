@@ -14,6 +14,7 @@ use std::sync::mpsc::{Sender, Receiver, SyncSender};
 use serde_json::{Map, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use lazy_static::lazy_static;
+use std::io::Write;
 
 type AesCtr = ctr::Ctr128BE<aes::Aes256>;
 
@@ -2463,7 +2464,8 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
 
 fn get_websocket_port_number() -> u16 {
     let mut result: u16 = 0;
-    println!("enter websocket port: ");
+    print!("[*] enter websocket port: ");
+    std::io::stdout().flush().unwrap();
 
     let lines = std::io::stdin().lines();
     for line in lines {
@@ -2475,12 +2477,12 @@ fn get_websocket_port_number() -> u16 {
                         break;
                     }
                     Err(error) => {
-                        println!("error {}", error);
+                        println!("[!] error {}", error);
                     }
                 }
             }
             Err(error) => {
-                println!("error {}", error);
+                println!("[!] error {}", error);
             }
         }
     }
@@ -2488,7 +2490,10 @@ fn get_websocket_port_number() -> u16 {
 }
 
 fn handle_setup() {
-    println!("enter how many keys to use");
+    println!("[i] This is initial setup. What needs to be specified includes exact number of keys to be used (following with entering of individual string key values) , WebSocket port and admin password. The keys serve purpose of protecting server with password from random connections and also encrypt transmitted data on top of already existing encryption. After sucessfull setup, server can be joined by opening client.html, specifying ip address, WebSocket port and keys that server was setup with");
+
+    print!("[*] enter how many keys to use: ");
+    std::io::stdout().flush().unwrap();
 
     let mut number_of_keys_to_use: i32 = 0;
 
@@ -2502,25 +2507,26 @@ fn handle_setup() {
                             number_of_keys_to_use = value;
                             break;
                         } else {
-                            println!("at least 1 key is nessecary");
+                            println!("[!] at least 1 key is nessecary");
                         }
                     }
                     Err(error) => {
-                        println!("error {}", error);
+                        println!("[!] error {}", error);
                     }
                 }
             }
             Err(error) => {
-                println!("error {}", error);
+                println!("[!] error {}", error);
             }
         }
     }
 
-    println!("{} keys will be used", number_of_keys_to_use);
+    println!("[i] {} keys will be used", number_of_keys_to_use);
 
 
     for n in 0..number_of_keys_to_use {
-        println!("enter key {} :", n);
+        print!("[*] enter key {}: ", n);
+	std::io::stdout().flush().unwrap();
 
         let lines = std::io::stdin().lines();
         for line in lines {
@@ -2531,13 +2537,14 @@ fn handle_setup() {
                     break;
                 }
                 Err(error) => {
-                    println!("error {}", error);
+                    println!("[!] error {}", error);
                 }
             }
         }
     }
 
-    println!("enter admin password (used for gaining privileges): ");
+    print!("[*] enter admin password (used for gaining privileges): ");
+    std::io::stdout().flush().unwrap();
 
     let lines = std::io::stdin().lines();
 
@@ -2549,7 +2556,7 @@ fn handle_setup() {
                     admin_password.push_str(value.as_str());
                     break;
                 } else {
-                    println!("admin password can not be empty");
+                    println!("[!] admin password can not be empty");
                 }     
             }
             Err(error) => {
@@ -2559,7 +2566,7 @@ fn handle_setup() {
     }
 
     let admin_password: &RwLockReadGuard<String> = &ADMIN_PASSWORD.read().unwrap();
-    println!("admin_password: {} ", admin_password);
+    println!("[i] admin_password is set to: {} ", admin_password);
 }
 
 fn check_clients(clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, websockets: &mut HashMap<u64, Responder>, sender: &std::sync::mpsc::Sender<String>) {
@@ -2604,7 +2611,7 @@ fn main() {
         stun_server::start();
     });
 
-    println!("stun server running on port 3478");
+    println!("[i] stun server running on port 3478 (Can be changed in stun_server.rs) ");
 
     //used for receiving messages in webrtc thread, sending from main thread
     let thread_messaging_channel: (Sender<String>, Receiver<String>) = std::sync::mpsc::channel();
@@ -2640,9 +2647,9 @@ fn main() {
     let websocket_port: u16 = get_websocket_port_number();
     let event_hub = simple_websockets::launch(websocket_port).expect("failed to listen on port 8080");
 
-    println!("websocket server running on port {}", websocket_port);
-
-
+    println!("[i] websocket server running on port {}", websocket_port);
+    println!("[i] initial setup done");
+   
     loop {
 
         //everytime server handles websocket event, handle_messages_from_webrtc_thread_and_check_clients is run
