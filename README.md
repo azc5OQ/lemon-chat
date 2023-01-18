@@ -39,7 +39,7 @@ https://github.com/Ivan-Feofanov/ws-audio-api
 <b>Questions I got</b>
 
 <br>
-<b>Q</b> I see you have 127.0.0.1 (local address) in screenshot. Does this also work over internet?
+<b>Q</b> I see you used 127.0.0.1 in screenshot. Does this also work over internet?
 <br>
 <b>A</b>  Yes..... You can launch the .html file from desktop and it will also connect to remote server, if you enter its address. That was the point of this app. To make secure chat easily available.
 
