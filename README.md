@@ -32,10 +32,6 @@ https://github.com/Ivan-Feofanov/ws-audio-api
 
 <br>
 <br>
-<br>
-<br>
-<br>
-
 <b>Questions I got</b>
 
 <br>
@@ -48,7 +44,7 @@ https://github.com/Ivan-Feofanov/ws-audio-api
 <br>
 <b>A</b> I found them to be usable for this project
 
-
+<br>
 <b>Q</b>  Can this be embedded into website?
 <br>
 <b>A</b>  Yes, if you know what you are doing. Web browsers enforce WSS (websockets secure) on https secured domains to be used instead of websockets (WS).
