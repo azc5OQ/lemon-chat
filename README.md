@@ -62,6 +62,6 @@ You will also need to use https://www.stunnel.org/ in front of the already runni
 
 <b>Q</b> How secure is the chat?
 <br>
-<b>A</b> It uses form of end to end encryption. This deserves own documentation . Server cannot access any chat messages by default, private or channel messages or voice data. But this would be clear to you if you checked the code to see how it works. You can suggest possible improvements in security in issues
+<b>A</b> It uses form of end to end encryption. This deserves own documentation . Server cannot access any chat messages by default, private or channel messages or voice data. Server also does not store logs by default. But this would be clear to you if you checked the code to see how it works. You can suggest possible improvements in security in issues
 
 
