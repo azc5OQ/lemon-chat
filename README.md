@@ -58,3 +58,10 @@ You will also need to use https://www.stunnel.org/ in front of the already runni
 <b>Q</b>  This also contains audio?
 <br>
 <b>A</b>  Yes. You can press Q to talk, it will send microphone output over webrtc datachannel. (same like websockets, datachannels here are not peer to peer and client only connects to server and not other clients)
+
+
+<b>Q</b> How secure is the chat?
+<br>
+<b>A</b> It uses a certain form of end to end encryption. This probably deserves own documentation and possible improvements. Server cannot access any chat messages by default, private or channel messages or voice data. But this would be clear to you if you checked code.
+
+
