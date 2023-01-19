@@ -51,8 +51,8 @@ A: You can change this by editing one line of css in client.html<br />
 <b>Q</b>  Can this be embedded into website?
 <br>
 <b>A</b>  Yes, if you know what you are doing. Web browsers enforce WSS (websockets secure) on https secured domains to be used instead of plain websockets (WS).
-The chat app already has own encryption but SSL will still be needed to be used on top of it because web-browsers enforce it.
-You will also need to use https://www.stunnel.org/ in front of the already running server (or similar) and make client connect to stunnel port instead of lemonchat websocket port. Websocket data, sent to stunnel SSL port from browser will then be redirect to server webocket port interally. Embedding this to website will also make it not possible to connect to other servers other then the server of website this is embedded within (limitation of browsers). But this is known to people that work with websockets.
+The client.html already has encryption on its own but SSL will needs to be be used on top everything because web-browsers enforce it.
+That is why you will need to use https://www.stunnel.org/ in front of the already running server (or similar) and make client connect to stunnel port instead of lemonchat websocket port. Websocket data, sent to stunnel SSL port from browser will then be redirect to server webocket port interally. Embedding this to website will also make it not possible to connect to other servers other then the server of website this is embedded within (limitation of browsers). But this is known to people that work with websockets.
 
 
 <b>Q</b>  This also contains audio?
