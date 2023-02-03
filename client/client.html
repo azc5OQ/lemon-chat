@@ -1791,9 +1791,10 @@
       	}
       }
       //Initialize WebKit Audio:
-      (function () {
+     /* (function () {
       	if (!launchedContext) {
       		try {
+                console.log("audioContextHandle = new AudioContext();");
       			audioContextHandle = new AudioContext();							//Create a system audio context.
       		}
       		catch (error) {
@@ -1820,7 +1821,42 @@
       		}
       		launchedContext = true;
       	}
-      })();
+      })(); */
+
+        function initializeWebkitAudio()
+        {
+            if (!launchedContext) 
+            {
+                try {
+                    console.log("audioContextHandle = new AudioContext();");
+                    audioContextHandle = new AudioContext();							//Create a system audio context.
+                }
+                catch (error) {
+                    try {
+                        audioContextHandle = new AudioContext();								//Create a system audio context.
+                    }
+                    catch (error) {
+                        return;
+                    }
+                }
+                try {
+                    audioSource = audioContextHandle.createBufferSource();						//We need to create a false input to get the chain started.
+                    audioSource.loop = false;	//Keep this alive forever (Event handler will know when to ouput.)
+                    XAudioJSSampleRate = webAudioActualSampleRate = audioContextHandle.sampleRate;
+                    audioSource.buffer = audioContextHandle.createBuffer(1, 1, webAudioActualSampleRate);	//Create a zero'd input buffer for the input to be valid.
+                    audioNode = audioContextHandle.createJavaScriptNode(samplesPerCallback, 1, 2);			//Create 2 outputs and ignore the input buffer (Just copy buffer 1 over if mono)
+                    audioNode.onaudioprocess = audioOutputEvent;								//Connect the audio processing event to a handling function so we can manipulate output
+                    audioSource.connect(audioNode);												//Send and chain the input to the audio manipulation.
+                    audioNode.connect(audioContextHandle.destination);							//Send and chain the output of the audio manipulation to the system audio output.
+                    audioSource.noteOn(0);														//Start the loop!
+                }
+                catch (error) {
+                    return;
+                }
+                launchedContext = true;
+            }
+        }
+
     </script>
 
 
@@ -8396,27 +8432,27 @@
         var silence = null;
 
         var audio_queue = {
-        buffer: new Float32Array(0),
+            buffer: new Float32Array(0),
 
-        write: function(newAudio) {
-          var currentQLength = this.buffer.length;
-          newAudio = audio_player_sampler.resampler(newAudio);
-          var newBuffer = new Float32Array(currentQLength + newAudio.length);
-          newBuffer.set(this.buffer, 0);
-          newBuffer.set(newAudio, currentQLength);
-          this.buffer = newBuffer;
-        },
+            write: function(newAudio) {
+                var currentQLength = this.buffer.length;
+                newAudio = audio_player_sampler.resampler(newAudio);
+                var newBuffer = new Float32Array(currentQLength + newAudio.length);
+                newBuffer.set(this.buffer, 0);
+                newBuffer.set(newAudio, currentQLength);
+                this.buffer = newBuffer;
+            },
 
-        read: function(nSamples) {
-          var samplesToPlay = this.buffer.subarray(0, nSamples);
-          this.buffer = this.buffer.subarray(nSamples, this.buffer.length);
-          return samplesToPlay;
-        },
+            read: function(nSamples) {
+                var samplesToPlay = this.buffer.subarray(0, nSamples);
+                this.buffer = this.buffer.subarray(nSamples, this.buffer.length);
+                return samplesToPlay;
+            },
 
-        length: function() {
-          return this.buffer.length;
-        }
-      };
+            length: function() {
+                return this.buffer.length;
+            }
+        };
 
         function document_onkeyup(event)
         {
@@ -8464,52 +8500,52 @@
         }
 
         function document_onkeydown(event)
-      {
-          if(is_microphone_enabled == false)
-          {
-              return;
-          }
-          if (is_voice_chat_allowed_by_server == false)
-          {
-              return;
-          }
+        { 
+            if(is_microphone_enabled == false)
+            {
+                return;
+            }
+            if (is_voice_chat_allowed_by_server == false)
+            {
+                return;
+            }
 
-          if (event.which == 81)
-          {
-              if(last_sent_value_microphone_usage == true)
-              {
-                  return;
-              }
-              if (local_audio_stream == null)
-              {
-                  return;
-              }
+            if (event.which == 81)
+            {
+                if(last_sent_value_microphone_usage == true)
+                {
+                    return;
+                }
+                if (local_audio_stream == null)
+                {
+                    return;
+                }
 
-              if (local_audio_stream.getTracks() == null)
-              {
-                  return;
-              }
+                if (local_audio_stream.getTracks() == null)
+                {
+                    return;
+                }
 
-              local_audio_stream.getTracks()[0].enabled = true;
+                local_audio_stream.getTracks()[0].enabled = true;
 
-    
-              is_microphone_active = true;
-              let message_object = {
-                  "message":
-                  {
-                      "type": "microphone_usage",
-                      "value": 1,
-                  }
-              };
+        
+                is_microphone_active = true;
+                let message_object = {
+                    "message":
+                    {
+                        "type": "microphone_usage",
+                        "value": 1,
+                    }
+                };
 
-              let message_json_string = JSON.stringify(message_object);
-              let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                let message_json_string = JSON.stringify(message_object);
+                let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
-              if (websocket.readyState === 1)
-              {
-                  websocket.send(data);
-                  last_sent_value_microphone_usage = 1;
-              }
+                if (websocket.readyState === 1)
+                {
+                    websocket.send(data);
+                    last_sent_value_microphone_usage = 1;
+                }
             }
         }
 
@@ -10585,6 +10621,7 @@
 
         function connect_button_onclick()
         {
+            initializeWebkitAudio();
             document.getElementById("another-buttons-sub-container").style.display = "none";
             document.getElementById("another-buttons-sub-loading-container").style.display = "";
             document.getElementById("another-buttons-loading-container-p").innerHTML = "connecting to server...";
