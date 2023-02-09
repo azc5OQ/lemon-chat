@@ -56,10 +56,9 @@ A: You can change this by editing one line of css in client.html<br />
 <br/>
 <br/>
 
-<br /><b>Q</b> How is this supposed tobe simple, if client has to enter connection details?
+<br /><b>Q</b> How is this supposed to be simple to use, if client has to enter connection details?
 <br>
-<b>A</b> client.html can have autoconnect set
-<br/>
+<b>A</b> client.html can be set to automatically connect on start and then handed over to user who is lazy to enter details
 <br/>
 
 <b>Q</b>  Can this be embedded into website?
@@ -68,8 +67,6 @@ A: You can change this by editing one line of css in client.html<br />
 Here is app running on website:
 https://fruitchattest.click/client.html
 
-
-
 <b>Q</b>  This also contains audio?
 <br>
 <b>A</b>  Yes. You can press Q to talk, it will send microphone output over webrtc datachannel. (same like websockets, datachannels here are not peer to peer and client only connects to server and not other clients)
@@ -77,7 +74,6 @@ https://fruitchattest.click/client.html
 <b>Q</b> How secure is the chat?
 <br>
 <b>A</b> content of messages and voice is encrypted and can not be read by server, metadata (usernames, channel names) are known to server
-
 
 <b>Q</b> How does the chat work?
 <br>
