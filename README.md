@@ -61,11 +61,6 @@ A: You can change this by editing one line of css in client.html<br />
 <b>A</b> client.html can be set to automatically connect on start and then handed over to user who is lazy to enter details
 <br/>
 
-<b>Q</b>  Can this be embedded into website?
-<br>
-<b>A</b>  Yes, if you know what you are doing. To place client.html in some website, [stunnel](https://www.stunnel.org/) (or similar) will need to be placed in front of lemonchat's websocket port. Stunnel will forward data coming to its port to lemonchat websocket port interally. That is because web browsers enforce WSS (websockets secure) to be used instead of plain websockets(WS). client.html already encrypts websocket and webrtc data without help of TLS, because client.html is ment to be run from desktop where https is not present. Still, this "secure" layer needs to be used on top of already existing encryption because webbrowsers dont let you connect to WS port is you are located on https domain. You need to use WSS. Of course, if you are running client.html from desktop, you can use websocket port.
-That being said, here is client running on website to show that it can be done:
-https://fruitchattest.click/client.html
 
 <b>Q</b>  This also contains audio?
 <br>
@@ -78,5 +73,28 @@ https://fruitchattest.click/client.html
 <b>Q</b> How does the chat work?
 <br>
 <b>A</b> text/images are sent using websocket, voice using webrtc datachannels (not peer to peer)
+
+<b>Q</b> Can the client.html be put into website?
+<br>
+<b>A</b>  Yes, if you know what you are doing. Here is chat running live to show it can be done: https://fruitchattest.click/client.html
+To place client.html in some website, [stunnel](https://www.stunnel.org/) (or similar) will need to be placed in front of lemonchat's websocket port. Stunnel will forward data coming to its port to lemonchat websocket port interally. That is because web browsers enforce WSS (websockets secure) to be used instead of plain websockets(WS). client.html already encrypts websocket and webrtc data without help of TLS, because client.html is ment to be run from desktop where https is not present. Still, this "secure" layer needs to be used on top of already existing encryption because webbrowsers dont let you connect to plain websocket(WS) port is you are located on https secured site. 
+
+steps to make client.html work in https site
+1 in client.html edit connection string from ws:/ to wss:/ , put connection details there for user
+2 apt install stunnel
+3 sudo certbot --apache
+4 vim /etc/stunnel.conf
+
+put this in /etc/stunnel.conf
+[someserver]
+accept = 0.0.0.0:1112 
+connect = 127.0.0.1:1111
+cert = /etc/letsencrypt/live/fruitchattest.click/cert.pem
+key = /etc/letsencrypt/live/fruitchattest.click/privkey.pem
+
+5. run "stunnel" command in terminal. If there is no error, stunnel is running. Try to join the server from client.html within the website
+
+its also important to know about certain limitation of WSS
+if client.html is put in domain fruitchattest.click, browser will not allow websocket connections to other address than "fruitchattest.click", not even ip address of domain. From desktop this works fine.
 
 
