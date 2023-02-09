@@ -79,18 +79,19 @@ A: You can change this by editing one line of css in client.html<br />
 To place client.html in some website, [stunnel](https://www.stunnel.org/) (or similar) will need to be placed in front of lemonchat's websocket port. Stunnel will forward data coming to its port to lemonchat websocket port interally. That is because web browsers enforce WSS (websockets secure) to be used instead of plain websockets(WS). client.html already encrypts websocket and webrtc data without help of TLS, because client.html is ment to be run from desktop where https is not present. Still, this "secure" layer needs to be used on top of already existing encryption because webbrowsers dont let you connect to plain websocket(WS) port is you are located on https secured site. 
 <br />
 <br />
-steps to make client.html work within https context with assumptions:<br />
+
+with these assumptions: <br />
 - websocket port: 1111<br />
 - websockets secure port: 1112<br />
-- letsencrypt used for getting ceritificate <br />
+- certbot used for getting ceritificate <br />
 - domain name "fruitchattest.click"<br />
 - apache2 server<br />
 
-<br />
-1 - in client.html edit connection string from ws:/ to wss:/ <br />
-2 - apt install stunnel<br />
-3 - sudo certbot --apache<br />
-4 - vim /etc/stunnel.conf<br />
+steps for embedding client.html to https context would be following
+- in client.html edit connection string from ws:/ to wss:/ <br />
+- apt install stunnel<br />
+- sudo certbot --apache<br />
+- vim /etc/stunnel.conf<br />
 
 put this in /etc/stunnel.conf<br />
 [someserver]<br />
@@ -99,9 +100,9 @@ connect = 127.0.0.1:1111<br />
 cert = /etc/letsencrypt/live/fruitchattest.click/cert.pem<br />
 key = /etc/letsencrypt/live/fruitchattest.click/privkey.pem<br />
 
-5. run "stunnel" command in terminal. If there is no error, stunnel is running. Try to join the server from client.html within the website<br />
+- run "stunnel" command in terminal. If there is no error, stunnel is running and client.html should work within https context<br />
 
-its also important to know about certain limitation of WSS
+its also important to know about boundaries of WSS.
 if client.html is put in domain fruitchattest.click, browser will not allow websocket connections to other address than "fruitchattest.click", not even ip address of domain. From desktop this works fine.
 
 
