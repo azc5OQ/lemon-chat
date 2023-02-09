@@ -63,8 +63,8 @@ A: You can change this by editing one line of css in client.html<br />
 
 <b>Q</b>  Can this be embedded into website?
 <br>
-<b>A</b>  Yes, if you know what you are doing. To place client.html in some website, [stunnel](https://www.stunnel.org/) (or similar) will need to be placed in front of lemonchat's websocket port. Stunnel will forward data coming to its port to lemonchat websocket port interally. That is because web browsers enforce WSS (websockets secure) to be used instead of plain websockets(WS). client.html already encrypts websocket and webrtc data without help of TLS, because client.html is ment to be run from desktop where https is not present. Still, this "secure" layer needs to be used on top of already existing encryption because webbrowsers dont let you connect to WS port is you are located on https domain. You need to use WSS. Of course, if you are running client.html from desktop, you can use normal websocket port.
-Here is app running on website:
+<b>A</b>  Yes, if you know what you are doing. To place client.html in some website, [stunnel](https://www.stunnel.org/) (or similar) will need to be placed in front of lemonchat's websocket port. Stunnel will forward data coming to its port to lemonchat websocket port interally. That is because web browsers enforce WSS (websockets secure) to be used instead of plain websockets(WS). client.html already encrypts websocket and webrtc data without help of TLS, because client.html is ment to be run from desktop where https is not present. Still, this "secure" layer needs to be used on top of already existing encryption because webbrowsers dont let you connect to WS port is you are located on https domain. You need to use WSS. Of course, if you are running client.html from desktop, you can use websocket port.
+That being said, here is client running on website:
 https://fruitchattest.click/client.html
 
 <b>Q</b>  This also contains audio?
