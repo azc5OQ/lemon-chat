@@ -61,14 +61,13 @@ A: You can change this by editing one line of css in client.html<br />
 <b>A</b> client.html can be set to automatically connect on start and then handed over to user who is lazy to enter details
 <br/>
 
-
 <b>Q</b>  This also contains audio?
 <br>
 <b>A</b>  Yes. You can press Q to talk, it will send microphone output over webrtc datachannel. (same like websockets, datachannels here are not peer to peer and client only connects to server and not other clients)
 
 <b>Q</b> How secure is the chat?
 <br>
-<b>A</b> content of messages and voice is encrypted and can not be read by server, metadata (usernames, channel names) are known to server
+<b>A</b> content of messages and voice is encrypted and can not be read by server, metadata (usernames, channel names) are known to server. But it is always possible to spoof content
 
 <b>Q</b> How does the chat work?
 <br>
@@ -78,21 +77,22 @@ A: You can change this by editing one line of css in client.html<br />
 <br>
 <b>A</b>  Yes, if you know what you are doing. Here is chat running live to show it can be done: https://fruitchattest.click/client.html
 To place client.html in some website, [stunnel](https://www.stunnel.org/) (or similar) will need to be placed in front of lemonchat's websocket port. Stunnel will forward data coming to its port to lemonchat websocket port interally. That is because web browsers enforce WSS (websockets secure) to be used instead of plain websockets(WS). client.html already encrypts websocket and webrtc data without help of TLS, because client.html is ment to be run from desktop where https is not present. Still, this "secure" layer needs to be used on top of already existing encryption because webbrowsers dont let you connect to plain websocket(WS) port is you are located on https secured site. 
-
+<br />
 steps to make client.html work in https site
-1 in client.html edit connection string from ws:/ to wss:/ , put connection details there for user
-2 apt install stunnel
-3 sudo certbot --apache
-4 vim /etc/stunnel.conf
+<br />
+1 in client.html edit connection string from ws:/ to wss:/ , put connection details there for user<br />
+2 apt install stunnel<br />
+3 sudo certbot --apache<br />
+4 vim /etc/stunnel.conf<br />
 
-put this in /etc/stunnel.conf
-[someserver]
-accept = 0.0.0.0:1112 
-connect = 127.0.0.1:1111
-cert = /etc/letsencrypt/live/fruitchattest.click/cert.pem
-key = /etc/letsencrypt/live/fruitchattest.click/privkey.pem
+put this in /etc/stunnel.conf<br />
+[someserver]<br />
+accept = 0.0.0.0:1112 <br />
+connect = 127.0.0.1:1111<br />
+cert = /etc/letsencrypt/live/fruitchattest.click/cert.pem<br />
+key = /etc/letsencrypt/live/fruitchattest.click/privkey.pem<br />
 
-5. run "stunnel" command in terminal. If there is no error, stunnel is running. Try to join the server from client.html within the website
+5. run "stunnel" command in terminal. If there is no error, stunnel is running. Try to join the server from client.html within the website<br />
 
 its also important to know about certain limitation of WSS
 if client.html is put in domain fruitchattest.click, browser will not allow websocket connections to other address than "fruitchattest.click", not even ip address of domain. From desktop this works fine.
