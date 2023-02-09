@@ -78,12 +78,19 @@ A: You can change this by editing one line of css in client.html<br />
 <b>A</b>  Yes, if you know what you are doing. Here is chat running live to show it can be done: https://fruitchattest.click/client.html
 To place client.html in some website, [stunnel](https://www.stunnel.org/) (or similar) will need to be placed in front of lemonchat's websocket port. Stunnel will forward data coming to its port to lemonchat websocket port interally. That is because web browsers enforce WSS (websockets secure) to be used instead of plain websockets(WS). client.html already encrypts websocket and webrtc data without help of TLS, because client.html is ment to be run from desktop where https is not present. Still, this "secure" layer needs to be used on top of already existing encryption because webbrowsers dont let you connect to plain websocket(WS) port is you are located on https secured site. 
 <br />
-steps to make client.html work in https site
 <br />
-1 in client.html edit connection string from ws:/ to wss:/ , put connection details there for user<br />
-2 apt install stunnel<br />
-3 sudo certbot --apache<br />
-4 vim /etc/stunnel.conf<br />
+steps to make client.html work within https context with assumptions:<br />
+- websocket port: 1111<br />
+- websockets secure port: 1112<br />
+- letsencrypt used for getting ceritificate <br />
+- domain name "fruitchattest.click"<br />
+- apache2 server<br />
+
+<br />
+1 - in client.html edit connection string from ws:/ to wss:/ <br />
+2 - apt install stunnel<br />
+3 - sudo certbot --apache<br />
+4 - vim /etc/stunnel.conf<br />
 
 put this in /etc/stunnel.conf<br />
 [someserver]<br />
