@@ -32,4 +32,8 @@ https://github.com/Ivan-Feofanov/ws-audio-api
 
 
 
+char running live here:
+https://fruitchattest.click/client.html
+
+
 
