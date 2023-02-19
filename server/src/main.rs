@@ -159,6 +159,46 @@ fn send_connection_check_response_to_single_cient(clients: &HashMap<u64, Client>
     }
 }
 
+fn send_image_sent_status_back_to_sender(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, status: String) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("image_sent_status"));
+    json_message_object.insert(String::from("value"),serde_json::Value::from(status));
+
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    for (_key, client) in clients {
+
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false{
+            continue;
+        }
+
+        if client.client_id != client_id {
+            continue;
+        }
+
+        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                websocket.send(Message::Text(data_to_send_base64));
+            }
+        }
+    }
+}
 
 fn send_maintainer_id_to_single_client(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>,  channel_id: u64,  client_id: u64, maintainer_id_to_send: u64, ) {
 
@@ -1894,6 +1934,7 @@ fn process_direct_chat_picture(clients: &mut HashMap<u64, Client>, websockets: &
             Some(_client) => {
                 send_direct_chat_picture_metadata(clients, websockets,  sender_id, msg_receiver_id);
                 send_direct_chat_picture(clients, websockets, msg_value, sender_id, msg_receiver_id);
+                send_image_sent_status_back_to_sender(clients, websockets, sender_id,"success".to_string());
             }
         }
     }
@@ -1920,6 +1961,8 @@ fn process_channel_chat_picture(clients: &mut HashMap<u64, Client>, channels: &m
                 println!("send_channel_chat_picture");
 
                 send_channel_chat_picture(clients, websockets, msg_value, sender_id, msg_channel_id);
+
+                send_image_sent_status_back_to_sender(clients, websockets, sender_id,"success".to_string());
             }
         }
     } else {
@@ -2266,7 +2309,8 @@ fn send_authentication_status_to_client(responder: &Responder) {
         "message" : {
             "type": "authentication_status",
             "value": "success",
-            "is_voice_chat_active" : true
+            "is_voice_chat_active" : true,
+            "stun_port": 3478
         }
     });
 
