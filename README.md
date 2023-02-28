@@ -27,8 +27,7 @@ client
 https://github.com/wwwtyro/cryptico
 <br>
 https://github.com/ricmoo/aes-js
-
-
+https://github.com/azc5OQ/libopusjs
 
 char running live here:
 https://fruitchattest.click/client.html
