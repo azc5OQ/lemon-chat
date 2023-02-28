@@ -30,8 +30,6 @@ https://github.com/ricmoo/aes-js
 <br>
 https://github.com/azc5OQ/libopusjs
 
-char running live here:
-https://fruitchattest.click/client.html
 
 
 
