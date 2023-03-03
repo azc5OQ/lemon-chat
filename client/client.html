@@ -674,12 +674,18 @@
             box-shadow: 0px 1px 0px #016DB0;
         }
 
-        #upload-image-container, #play-song-container
+        #upload-image-container
         {
             display: inline-block;
             vertical-align: top;
         }
 
+        #play-song-container
+        {
+            display: inline-block;
+            vertical-align: top;
+            visibility: hidden;
+        }
         #custom-file-upload-button-song
         {
             background-image: url(data:application/octet-stream;base64,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)
@@ -1084,40 +1090,7 @@ background-color: black;
       			return audioContextSampleBuffer.slice(0, audioBufferSize);
       		}
       	}
-      }
-
-      //Initialize WebKit Audio:
-     /* (function () {
-      	if (!launchedContext) {
-      		try {
-                console.log("audioContextHandle = new AudioContext();");
-      			audioContextHandle = new AudioContext();							//Create a system audio context.
-      		}
-      		catch (error) {
-      			try {
-      				audioContextHandle = new AudioContext();								//Create a system audio context.
-      			}
-      			catch (error) {
-      				return;
-      			}
-      		}
-      		try {
-      			audioSource = audioContextHandle.createBufferSource();						//We need to create a false input to get the chain started.
-      			audioSource.loop = false;	//Keep this alive forever (Event handler will know when to ouput.)
-      			XAudioJSSampleRate = webAudioActualSampleRate = audioContextHandle.sampleRate;
-      			audioSource.buffer = audioContextHandle.createBuffer(1, 1, webAudioActualSampleRate);	//Create a zero'd input buffer for the input to be valid.
-      			audioNode = audioContextHandle.createJavaScriptNode(samplesPerCallback, 1, 2);			//Create 2 outputs and ignore the input buffer (Just copy buffer 1 over if mono)
-      			audioNode.onaudioprocess = audioOutputEvent;								//Connect the audio processing event to a handling function so we can manipulate output
-      			audioSource.connect(audioNode);												//Send and chain the input to the audio manipulation.
-      			audioNode.connect(audioContextHandle.destination);							//Send and chain the output of the audio manipulation to the system audio output.
-      			audioSource.noteOn(0);														//Start the loop!
-      		}
-      		catch (error) {
-      			return;
-      		}
-      		launchedContext = true;
-      	}
-      })(); */
+        }
 
         function initializeWebkitAudio()
         {
@@ -8450,207 +8423,163 @@ background-color: black;
         return SpeexResampler;
     })();
 
-
-        var OpusApplication;
-      (function (OpusApplication) {
-          OpusApplication[OpusApplication["VoIP"] = 2048] = "VoIP";
-          OpusApplication[OpusApplication["Audio"] = 2049] = "Audio";
-          OpusApplication[OpusApplication["RestrictedLowDelay"] = 2051] = "RestrictedLowDelay";
-      })(OpusApplication || (OpusApplication = {}));
-      var OpusError;
-      (function (OpusError) {
-          OpusError[OpusError["OK"] = 0] = "OK";
-          OpusError[OpusError["BadArgument"] = -1] = "BadArgument";
-          OpusError[OpusError["BufferTooSmall"] = -2] = "BufferTooSmall";
-          OpusError[OpusError["InternalError"] = -3] = "InternalError";
-          OpusError[OpusError["InvalidPacket"] = -4] = "InvalidPacket";
-          OpusError[OpusError["Unimplemented"] = -5] = "Unimplemented";
-          OpusError[OpusError["InvalidState"] = -6] = "InvalidState";
-          OpusError[OpusError["AllocFail"] = -7] = "AllocFail";
-      })(OpusError || (OpusError = {}));
-      var Opus = (function () {
-          function Opus() {
-          }
-          Opus.getVersion = function () {
-              var ptr = _opus_get_version_string();
-              return Pointer_stringify(ptr);
-          };
-          Opus.getMaxFrameSize = function (numberOfStreams) {
-              if (numberOfStreams === void 0) { numberOfStreams = 1; }
-              return (1275 * 3 + 7) * numberOfStreams;
-          };
-          Opus.getMinFrameDuration = function () {
-              return 2.5;
-          };
-          Opus.getMaxFrameDuration = function () {
-              return 60;
-          };
-          Opus.validFrameDuration = function (x) {
-              return [2.5, 5, 10, 20, 40, 60].some(function (element) {
-                  return element == x;
-              });
-          };
-          Opus.getMaxSamplesPerChannel = function (sampling_rate) {
-              return sampling_rate / 1000 * Opus.getMaxFrameDuration();
-          };
-          return Opus;
-      })();
-      var OpusEncoder = (function () {
-          function OpusEncoder(sampling_rate, channels, app, frame_duration) {
-              if (frame_duration === void 0) { frame_duration = 20; }
-              this.handle = 0;
-              this.frame_size = 0;
-              this.in_ptr = 0;
-              this.in_off = 0;
-              this.out_ptr = 0;
-              if (!Opus.validFrameDuration(frame_duration))
-                  throw 'invalid frame duration';
-              this.frame_size = sampling_rate * frame_duration / 1000;
-              var err_ptr = allocate(4, ALLOC_STACK);
-              this.handle = _opus_encoder_create(sampling_rate, channels, app, err_ptr);
-              if (getValue(err_ptr, 'i32') != 0 /* OK */)
-                  throw 'opus_encoder_create failed: ' + getValue(err_ptr, 'i32');
-              this.in_ptr = _malloc(this.frame_size * channels * 4);
-              this.in_len = this.frame_size * channels;
-              this.in_i16 = HEAP16.subarray(this.in_ptr >> 1, (this.in_ptr >> 1) + this.in_len);
-              this.in_f32 = HEAPF32.subarray(this.in_ptr >> 2, (this.in_ptr >> 2) + this.in_len);
-              this.out_bytes = Opus.getMaxFrameSize();
-              this.out_ptr = _malloc(this.out_bytes);
-              this.out_buf = HEAPU8.subarray(this.out_ptr, this.out_ptr + this.out_bytes);
-          }
-          OpusEncoder.prototype.encode = function (pcm) {
-              var output = [];
-              var pcm_off = 0;
-              while (pcm.length - pcm_off >= this.in_len - this.in_off) {
-                  if (this.in_off > 0) {
-                      this.in_i16.set(pcm.subarray(pcm_off, pcm_off + this.in_len - this.in_off), this.in_off);
-                      pcm_off += this.in_len - this.in_off;
-                      this.in_off = 0;
-                  }
-                  else {
-                      this.in_i16.set(pcm.subarray(pcm_off, pcm_off + this.in_len));
-                      pcm_off += this.in_len;
-                  }
-                  var ret = _opus_encode(this.handle, this.in_ptr, this.frame_size, this.out_ptr, this.out_bytes);
-                  if (ret <= 0)
-                      throw 'opus_encode failed: ' + ret;
-                  var packet = new ArrayBuffer(ret);
-                  new Uint8Array(packet).set(this.out_buf.subarray(0, ret));
-                  output.push(packet);
-              }
-              if (pcm_off < pcm.length) {
-                  this.in_i16.set(pcm.subarray(pcm_off));
-                  this.in_off = pcm.length - pcm_off;
-              }
-              return output;
-          };
-          OpusEncoder.prototype.encode_float = function (pcm) {
-              var output = [];
-              var pcm_off = 0;
-              while (pcm.length - pcm_off >= this.in_len - this.in_off) {
-                  if (this.in_off > 0) {
-                      this.in_f32.set(pcm.subarray(pcm_off, pcm_off + this.in_len - this.in_off), this.in_off);
-                      pcm_off += this.in_len - this.in_off;
-                      this.in_off = 0;
-                  }
-                  else {
-                      this.in_f32.set(pcm.subarray(pcm_off, pcm_off + this.in_len));
-                      pcm_off += this.in_len;
-                  }
-                  var ret = _opus_encode_float(this.handle, this.in_ptr, this.frame_size, this.out_ptr, this.out_bytes);
-                  if (ret <= 0)
-                      throw 'opus_encode failed: ' + ret;
-                  var packet = new ArrayBuffer(ret);
-                  new Uint8Array(packet).set(this.out_buf.subarray(0, ret));
-                  output.push(packet);
-              }
-              if (pcm_off < pcm.length) {
-                  this.in_f32.set(pcm.subarray(pcm_off));
-                  this.in_off = pcm.length - pcm_off;
-              }
-              return output;
-          };
-          OpusEncoder.prototype.encode_final = function () {
-              if (this.in_off == 0)
-                  return new ArrayBuffer(0);
-              for (var i = this.in_off; i < this.in_len; ++i)
-                  this.in_i16[i] = 0;
-              var ret = _opus_encode(this.handle, this.in_ptr, this.frame_size, this.out_ptr, this.out_bytes);
-              if (ret <= 0)
-                  throw 'opus_encode failed: ' + ret;
-              var packet = new ArrayBuffer(ret);
-              new Uint8Array(packet).set(this.out_buf.subarray(0, ret));
-              return packet;
-          };
-          OpusEncoder.prototype.encode_float_final = function () {
-              if (this.in_off == 0)
-                  return new ArrayBuffer(0);
-              for (var i = this.in_off; i < this.in_len; ++i)
-                  this.in_f32[i] = 0;
-              var ret = _opus_encode_float(this.handle, this.in_ptr, this.frame_size, this.out_ptr, this.out_bytes);
-              if (ret <= 0)
-                  throw 'opus_encode failed: ' + ret;
-              var packet = new ArrayBuffer(ret);
-              new Uint8Array(packet).set(this.out_buf.subarray(0, ret));
-              return packet;
-          };
-          OpusEncoder.prototype.destroy = function () {
-              if (!this.handle)
-                  return;
-              _opus_encoder_destroy(this.handle);
-              _free(this.in_ptr);
-              this.handle = this.in_ptr = 0;
-          };
-          return OpusEncoder;
-      })();
-      var OpusDecoder = (function () {
-          function OpusDecoder(sampling_rate, channels) {
-              this.handle = 0;
-              this.in_ptr = 0;
-              this.out_ptr = 0;
-              this.channels = channels;
-              var err_ptr = allocate(4, ALLOC_STACK);
-              this.handle = _opus_decoder_create(sampling_rate, channels, err_ptr);
-              if (getValue(err_ptr, 'i32') != 0 /* OK */)
-                  throw 'opus_decoder_create failed: ' + getValue(err_ptr, 'i32');
-              this.in_ptr = _malloc(Opus.getMaxFrameSize(channels));
-              this.in_buf = HEAPU8.subarray(this.in_ptr, this.in_ptr + Opus.getMaxFrameSize(channels));
-              this.out_len = Opus.getMaxSamplesPerChannel(sampling_rate);
-              var out_bytes = this.out_len * channels * 4;
-              this.out_ptr = _malloc(out_bytes);
-              this.out_i16 = HEAP16.subarray(this.out_ptr >> 1, (this.out_ptr + out_bytes) >> 1);
-              this.out_f32 = HEAPF32.subarray(this.out_ptr >> 2, (this.out_ptr + out_bytes) >> 2);
-          }
-          OpusDecoder.prototype.decode = function (packet) {
-              this.in_buf.set(new Uint8Array(packet));
-              var ret = _opus_decode(this.handle, this.in_ptr, packet.byteLength, this.out_ptr, this.out_len, 0);
-              if (ret < 0)
-                  throw 'opus_decode failed: ' + ret;
-              var samples = new Int16Array(ret * this.channels);
-              samples.set(this.out_i16.subarray(0, samples.length));
-              return samples;
-          };
-          OpusDecoder.prototype.decode_float = function (packet) {
-              this.in_buf.set(new Uint8Array(packet));
-              var ret = _opus_decode_float(this.handle, this.in_ptr, packet.byteLength, this.out_ptr, this.out_len, 0);
-              if (ret < 0)
-                  throw 'opus_decode failed: ' + ret;
-              var samples = new Float32Array(ret * this.channels);
-              samples.set(this.out_f32.subarray(0, samples.length));
-              return samples;
-          };
-          OpusDecoder.prototype.destroy = function () {
-              if (!this.handle)
-                  return;
-              _opus_decoder_destroy(this.handle);
-              _free(this.in_ptr);
-              _free(this.out_ptr);
-              this.handle = this.in_ptr = this.out_ptr = 0;
-          };
-          return OpusDecoder;
-      })();
+            var type = (function(global) {
+            var cache = {};
+            return function(obj) {
+                var key;
+                return obj === null ? 'null' // null
+                    : obj === global ? 'global' // window in browser or global in nodejs
+                    : (key = typeof obj) !== 'object' ? key // basic: string, boolean, number, undefined, function
+                    : obj.nodeType ? 'object' // DOM element
+                    : cache[key = ({}).toString.call(obj)] // cached. date, regexp, error, object, array, math
+                    || (cache[key] = key.slice(8, -1).toLowerCase()); // get XXXX from [object XXXX], and cache it
+            };
+        }(this));
 
 
+
+        function OpusEncoder(application, frameDuration, sampleRate, originalRate, channels, params)
+        {
+            var err;
+            var bufSize;
+            var outSize;
+
+            this.resampler = null;
+            this.bufPos = 0;
+            err = Module._malloc(4);
+            
+            this.frameSize = sampleRate * frameDuration / 1000;
+            this.channels = channels;
+
+            //sample rate must be one of 8000, 12000, 16000, 24000, or 48000.
+
+            this.handle = _opus_encoder_create(sampleRate, channels, application, err);
+
+            if (this.handle == 0)
+            {
+                throw new Error('_opus_encoder_create fail ');
+                return;
+            } 
+
+            if (sampleRate != originalRate) 
+            {
+                try 
+                {
+                    console.log("originalRate" + originalRate);
+                    console.log("sampleRate" + sampleRate);
+
+                    this.resampler = new SpeexResampler(channels, 48000, sampleRate)
+                } 
+                catch (e) 
+                {
+                    console.log("encoder new SpeexResampler(channels, originalRate, sampleRate) error");
+                    return;
+                }
+            }
+            Module._free(err);
+            bufSize = 4 * this.frameSize * this.channels;
+            this.bufPtr = Module._malloc(bufSize);
+            this.buf = Module.HEAPF32.subarray(this.bufPtr / 4, (this.bufPtr + bufSize) / 4);
+            outSize = 1275 * 3 + 7;
+            this.outPtr = Module._malloc(outSize);
+            this.out = Module.HEAPU8.subarray(this.outPtr, this.outPtr + outSize);
+        }
+
+        OpusEncoder.prototype.encode = function(samples) {
+            var size;
+            var ret;
+            var packets = [];
+
+            if (this.resampler) 
+            {
+                try 
+                {
+                    samples = this.resampler.process(samples);
+                } catch (e) 
+                {
+                    console.log(e);
+                    return;
+                }
+            }
+            while (samples && samples.length > 0) 
+            {
+                size = Math.min(samples.length, this.buf.length - this.bufPos);
+                this.buf.set(samples.subarray(0, size), this.bufPos);
+                this.bufPos += size;
+                samples = samples.subarray(size);
+                if (this.bufPos == this.buf.length) 
+                {
+                    this.bufPos = 0;
+
+                    ret = _opus_encode_float(this.handle, this.bufPtr, this.frameSize, this.outPtr, this.out.byteLength);
+                    if (ret < 0) 
+                    {
+                        console.log("encoder error");
+                        return;
+                    }
+                    result = (new Uint8Array(this.out.subarray(0, ret))).buffer;
+                    packets.push(result);
+                }
+            }
+            if (packets.length > 0)
+            {
+                return packets;
+            }
+        }
+
+        OpusEncoder.prototype.destroy = function() 
+        {
+            _opus_encoder_destroy(this.handle);
+            if (this.resampler) {
+                this.resampler.destroy();
+            }
+            this.handle = null;
+            this.buf = null;
+            this.pcm = null;
+        }
+
+        function OpusDecoder(sampleRate, channels) 
+        {
+            this.channels = channels;
+            var err = Module._malloc(4);
+            this.handle = _opus_decoder_create(sampleRate, this.channels, err);
+            var errNum = Module.getValue(err, "i32");
+            Module._free(err);
+            if (errNum != 0) 
+            {
+                console.log("there is error");
+                return;
+            }
+
+            this.frameSize = sampleRate * 60 / 1000;
+            var bufSize = 1275 * 3 + 7;
+            var pcmSamples = this.frameSize * this.channels;
+            this.bufPtr = Module._malloc(bufSize);
+            this.pcmPtr = Module._malloc(4 * pcmSamples);
+            this.buf = Module.HEAPU8.subarray(this.bufPtr, this.bufPtr + bufSize);
+            this.pcm = Module.HEAPF32.subarray(this.pcmPtr / 4, this.pcmPtr / 4 + pcmSamples);
+        }
+
+        OpusDecoder.prototype.decode = function(payload) {
+            this.buf.set(new Uint8Array(payload));
+            var ret = _opus_decode_float(this.handle, this.bufPtr, payload.byteLength, this.pcmPtr, this.frameSize, 0);
+            if (ret < 0) {
+
+                console.log("OpusDecoder error");
+            } else {
+  
+                let aa = new Float32Array(this.pcm.subarray(0, ret * this.channels));
+                return aa;
+            }
+        }
+
+        OpusDecoder.prototype.destroy = function() 
+        {
+            _opus_decoder_destroy(this.handle);
+            this.handle = null;
+            this.buf = null;
+            this.pcm = null;
+        }
 
         var IS_WORKER = !global.document && !!global.postMessage;
         var IS_CURRENT_THREAD_WORKER = IS_WORKER && /blob:/i.test((global.location || {}).protocol);
@@ -8662,8 +8591,10 @@ background-color: black;
             let URL = global.URL || global.webkitURL || null;
             let code = moduleFactory.toString();
 
-            //when creating new webworker, within same file, get the string that represents code
+            //
+            //when creating new webworker within same file, get the string that represents code
             //alter the string, add variable to it with name of the worker
+            //
 
             let string_to_find = "var THREAD_NAME = "; //first offurence is this variable
             let first_occurence_index = code.indexOf(string_to_find); 
@@ -8768,25 +8699,25 @@ background-color: black;
                 };
 
                 is_voice_chat_allowed_by_server = true;
-
                 audio_context = new(window.AudioContext || window.webkitAudioContext)();
+                console.log("audio_context.sampleRate" + audio_context.sampleRate);
 
-                //audio_player_sampler = new Resampler(audio_config.codec.sampleRate, audio_context.sampleRate, 1, audio_config.codec.bufferSize);
-                //Resampler(fromSampleRate, toSampleRate, channels, outputBufferSize, noReturn) {
-                //SpeexResampler(channels, inRate, outRate, quality)
+                let opus_decoding_sampler_channels = 1;
+                let opus_decoding_sampler_input_rate = 48000;
+                let opus_decoding_sampler_output_rate = audio_context.sampleRate;
 
-
-                audio_player_sampler = new SpeexResampler(1, audio_config.codec.sampleRate, audio_context.sampleRate);
-
+                opus_decoding_sampler = new SpeexResampler(opus_decoding_sampler_channels, 
+                opus_decoding_sampler_input_rate, 
+                opus_decoding_sampler_output_rate);
                 
-                opus_decoder_worker.postMessage({type: "init", sampleRate: audio_context.sampleRate});
+                opus_decoder_worker.postMessage({
+                    type: "init", 
+                    sampleRate: opus_decoding_sampler_output_rate
+                });
 
                 silence = new Float32Array(audio_config.codec.bufferSize);
                 player = audio_context.createScriptProcessor(audio_config.codec.bufferSize, 1, 1);
-                console.log(audio_player_gain_node);
-
                 player.onaudioprocess = player_onaudioprocess;
-
                 audio_player_gain_node = audio_context.createGain();
                 player.connect(audio_player_gain_node);
                 audio_player_gain_node.connect(audio_context.destination);
@@ -8925,13 +8856,13 @@ background-color: black;
             }
         }
 
-
+        //e.data.value is Float32Array
         function opus_encoder_worker_onmessage(e)
         {
             if (e.data.type == "encode")
             {               
-                let resampled = audio_recorder_sampler.process(e.data.value);
-                let opus_data_chunks = encoder.encode_float(resampled);
+                //let resampled = opus_encoding_sampler.process(e.data.value);
+                let opus_data_chunks = encoder.encode(e.data.value);
 
                 global.postMessage({
                     type : "opus_encoder_worker__encode_result",
@@ -8940,21 +8871,20 @@ background-color: black;
 
             }
             else if (e.data.type == "init")
-            {
-                let audio_config = {
-                    codec: {
-                        sampleRate: 24000,
-                        channels: 1,
-                        app: 2048,
-                        frameDuration: 20,
-                        bufferSize: 4096
-                    }
-                };
+            { 
+                //let resampler_channels = 1;
+                //let resampler_input_samplerate = e.data.sampleRate;
+                //let resampler_output_samplerate = 48000;
+                //opus_encoding_sampler = new SpeexResampler(resampler_channels, resampler_input_samplerate,resampler_output_samplerate);
 
 
-                //audio_recorder_sampler = new Resampler(e.data.sampleRate, audio_config.codec.sampleRate, 1, audio_config.codec.bufferSize);
-                audio_recorder_sampler = new SpeexResampler(1, e.data.sampleRate, audio_config.codec.sampleRate);
-                encoder = new OpusEncoder(audio_config.codec.sampleRate, audio_config.codec.channels, audio_config.codec.app, audio_config.codec.frameDuration);
+                let encoder_application_use = 2048; //VOIP use
+                let encoder_frame_duration = 40; //Opus can encode frames of 2.5, 5, 10, 20, 40, or 60 ms
+                let encoder_channels = 1;
+                let encoder_input_samplerate = e.data.sampleRate;
+                let encoder_output_samplerate = 48000; //if unsupported sample rate is used, Encoder wont construct
+                let encoder_original_samplerate = e.data.sampleRate;
+                encoder = new OpusEncoder(encoder_application_use, encoder_frame_duration, encoder_output_samplerate, encoder_original_samplerate, encoder_channels, 0);
             }
         }
 
@@ -8962,7 +8892,7 @@ background-color: black;
         {
             if (e.data.type == "decode")
             {
-                let webaudio_bytes = decoder.decode_float(e.data.value);
+                let webaudio_bytes = decoder.decode(e.data.value);
 
                 global.postMessage({
                     type : "opus_decoder_worker__decode_result",
@@ -8971,20 +8901,9 @@ background-color: black;
             }
             else if (e.data.type == "init")
             {
-                let audio_config = {
-                    codec: {
-                        sampleRate: 24000,
-                        channels: 1,
-                        app: 2048,
-                        frameDuration: 20,
-                        bufferSize: 4096
-                    }
-                };
-
-                decoder = new OpusDecoder(audio_config.codec.sampleRate, audio_config.codec.channels);
+                decoder = new OpusDecoder(48000, 1);
             }
         }
-
 
         function cryptoworker_onmessage(e)
         {
@@ -9098,14 +9017,14 @@ background-color: black;
                         }
                         //console.log(msg);
 
-                        let str = 'msg.message.type : ' + msg.message.type + ' | size in bytes: ' + decrypted_metadata.length;
+                        let str = '[R] msg.message.type : ' + msg.message.type + ' | size in bytes: ' + decrypted_metadata.length;
 
                         global.postMessage({
                             type : "log",
                             value : str
                         });
 
-                        console.log(msg);
+                        //console.log(msg);
                     
                     if (msg.message.type == "connection_check_response")
                     {
@@ -9653,7 +9572,7 @@ background-color: black;
 
         function websocket_worker_onmessage(e)
         {
-            console.log("%c websocket_worker_onmessage() e.data.type: " + e.data.type + "", "color: green");
+            //console.log("%c websocket_worker_onmessage() e.data.type: " + e.data.type + "", "color: green");
 
             if (e.data.type == "create_websocket_object")
             {
@@ -9696,6 +9615,14 @@ background-color: black;
             }
         }
 
+        function audio_file_worker_onmessage(e)
+        {
+            if (e.data.type == "process_file")
+            {
+                console.log(e.data.value);
+            }
+        }
+
         //this variable value is hardcoded in create_new_webworker_in_same_file function
         var THREAD_NAME = "                                                   ";
 
@@ -9715,11 +9642,15 @@ background-color: black;
             {
                 global.onmessage = opus_encoder_worker_onmessage;
                 asm = createWasm();
-
             }
             else if (THREAD_NAME == "opus_decoder_worker")
             {
                 global.onmessage = opus_decoder_worker_onmessage;
+                asm = createWasm();
+            }
+            else if (THREAD_NAME == "audio_file_worker")
+            {
+                global.onmessage = audio_file_worker_onmessage;
                 asm = createWasm();
             }
         }
@@ -9799,18 +9730,14 @@ background-color: black;
 
         var audio_config = {
             codec: {
-                sampleRate: 24000,
-                channels: 1,
-                app: 2048,
-                frameDuration: 20,
-                bufferSize: 4096
+                bufferSize: 16384 / 2
             }
         };
 
         var g_datachannel = null;
 
-        var audio_player_sampler = null;
-        var audio_recorder_sampler = null;
+        var opus_decoding_sampler = null;
+        var opus_encoding_sampler = null;
 
         var decoder = null;
         var silence = null;
@@ -9819,6 +9746,8 @@ background-color: black;
         var microphone_recorder = null;
         var player = null;
 
+        var is_playig_music = false;
+
         var audio_player_gain_node = null;
         var audio_recorder_gain_node = null;
         var audio_input = null;
@@ -9826,29 +9755,35 @@ background-color: black;
         var audio_queue = {
             buffer: new Float32Array(0),
 
-            write: function(newAudio) {
+            write: function(newAudio) 
+            {
                 var currentQLength = this.buffer.length;
-                newAudio = audio_player_sampler.process(newAudio);
+               // newAudio = opus_decoding_sampler.process(newAudio); not needed
                 var newBuffer = new Float32Array(currentQLength + newAudio.length);
                 newBuffer.set(this.buffer, 0);
                 newBuffer.set(newAudio, currentQLength);
                 this.buffer = newBuffer;
             },
 
-            read: function(nSamples) {
+            read: function(nSamples) 
+            {
                 var samplesToPlay = this.buffer.subarray(0, nSamples);
                 this.buffer = this.buffer.subarray(nSamples, this.buffer.length);
                 return samplesToPlay;
             },
 
-            length: function() {
+            length: function() 
+            {
                 return this.buffer.length;
             }
         };
 
         function document_onkeyup(event)
         {
-
+            if (is_playig_music)
+            {
+                return;
+            }
             if (microphone_recorder != null)
             {
                 microphone_recorder.onaudioprocess = null;
@@ -9898,7 +9833,11 @@ background-color: black;
         }
 
         function document_onkeydown(event)
-        { 
+        {
+            if (is_playig_music)
+            {
+                return;
+            }
             if(is_microphone_enabled == false)
             {
                 return;
@@ -10345,7 +10284,10 @@ background-color: black;
             if (typeof (event.data) != 'string')
             {
                 let decrypted_data = decrypt_data_with_aes_keys(current_channel_keys, event.data);
-                opus_decoder_worker.postMessage({type:"decode", value: decrypted_data});
+                opus_decoder_worker.postMessage({
+                    type: "decode", 
+                    value: decrypted_data
+                });
             }
             //console.log(`Message from received: ${e.data}`);
         }
@@ -12014,8 +11956,6 @@ background-color: black;
 
                 let connection_string = protocol_part_of_connection_string + '' + host + ':' + port + '/';
                 
-
-
                 let message_object = {
                     "message":
                     {
@@ -12103,6 +12043,7 @@ background-color: black;
             if (event.currentTarget.checked)
             {
                 console.log("toggle_microphone_onclick");
+
                 //
                 //get the correct navigator object
                 //
@@ -12115,16 +12056,10 @@ background-color: black;
                 navigator.mediaDevices.getUserMedia({audio : true})
                 .then(function(stream) {
 
-
-
                     opus_encoder_worker.postMessage({
                             type : "init",
                             sampleRate: audio_context.sampleRate
                     });
-
-                    //audio_recorder_sampler = new Resampler(audio_context.sampleRate, audio_config.codec.sampleRate, 1, audio_config.codec.bufferSize);
-                    //encoder = new OpusEncoder(audio_config.codec.sampleRate, audio_config.codec.channels, audio_config.codec.app, audio_config.codec.frameDuration);
-                    //do not allow browser automatically send audio
 
                     stream.getTracks()[0].enabled = false;
                     local_audio_stream = stream;
@@ -12147,6 +12082,7 @@ background-color: black;
 
                     is_microphone_enabled = true;
 
+                    document.getElementById("play-song-container").style.visibility = "visible";
                     document.getElementById("toggle-microphone-label").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAE30lEQVR4Xu2ae+jfUxjHX2MyImxJ5hKSrLX5T/xpNZeUkcsfiCSstTFrbRTij03mtpFEolzKJffLpqTUUlptjBqR27BFsdxyp3c7nzy/0/f3+5znfM75RPuc/z7f33Oe5znv53p+55lEv+twYB5wOnAEcGgQ/wXwKfAS8DywtS+1JvUk6BDgBuBSYPcWmX8BTwPLAihVVewDgDOBR4B9nCf5AbgQeMG5z0VeG4CrgDuA3Vxa/Ussb7gauCtzf+u2mgDI8nLl3MM3yguEs2p5Qi0AlNy2ZLj9eBZTOBwLfNVqUidBLQAeBC5x6tJG/gBwWRuR9+81AFCp+zgh23t1/TOUTpXMYqsGAFcCa4ppOJbRQuCekrxrALAWOLWkkobXK6GJKsa+BgAfAkcX03Asow9CMizGvgYAytjepif1QD8C+6YSp9DVAODvFMEdaIrqXJRZONQAQAfrpmwtarSizAYP2InAEAIpftyBpqjXFmU2hMAQAkMOGJLgUAV2gTIY1/m4kvTdB7TpM2HFzSmDbQIHADo0OSlb2zzOZVQX8TiNTptCKYfy0LTJc53JRTwAMLrTa7OIx7optG3yXEZ1EQ8e8N/zgMnA75HbuIzqIg6CfgP2MEKnAL+a75r/FP0e2M/IOjh6LpNue6bEUUOTA8B3wP5GyEHA1+Zb/7o+xqOEg/Z9YIahnw28Y76/BaY5+JEDwHvATCPkBOAt893nw4heoJ81st8FBEryygFAAiW4WVcA95tvPV/dnayBj3ABcK/ZshrQDEKzngHO9rDMAeBaYKUR8hRwnvk+DPikwuPoH8CRgH0cfRs4zsheDqyqDcCJwJtGiBLTdOAn85uesjUPVHLdB8w3DBWGcnlrxOOBDR6hOR6giQ9NcenQ44WBhqI0IFHqGUsga0Bim5EpQC433/IMPc27LmM5AEimJr5uMsI1D6DsrDLUrNOAFwuEgkZklHPEq1kqfx8Be5vfrgNWeKwv2lwApgKfRY+g1wC3RApoVuDODnNCOvziEUn1SeBcI0u9h6y/oy8AJOd2YIkRqGZIMbg5UuIM4NGMcJDbXxCGJy1LDVo+F8m4NcwVes+f7QESpGZIh1XWb5amPZUkt0eaHAjIRVXG1L5OtGT1xwBldBvz2jMLeAM4wDD4MvyuBs29ckOgETQXeDUKJYFyyggQtEfTY82orEqaHZVVHnk5jMONmgM6ClgPKP6bpYR3MvCa++RhQ1cAxEYxrji1S4c5B9iUq1i0bw7wOCBPskuybRi6xZUAQLO/DwPnR9J/AW4MANnq4FFyL2BpqDpx6ChMLgY0PZa9SgAg4VJOCtmOsFFK5eq2MC/8c6KmKm8XAddH/Uaz/YmQIDsdXsxKAdCAoDosi40aj9V8jy5KrwMbQzP1Tbi+aqZIOUEXGY3SK7fI+vFSglSrK2DUGndeJQFolFG8ajrcdoqdFQ1Xbrn8uhLMGh41ABBv3cmVnBZl1P/4fOoHdLvU1Lnu+0VXLQAaJdUx6rqquWHbL6Qc4nPgoTAqX/zgtT0gPqCAVpd4EnBzy+l13Vae0K3OdbFJQXWUYjn7uuxpO1Rtrxyje6/CguQBgBb36dUovQobPGAnAkMIDCEwMQK9hmWvwnaVHNAW4116CO0tarSizBItPADQEYGiRivK7P/oAf8Ae0zZQdfLrKYAAAAASUVORK5CYII=)";
 
                     let message_object = {
@@ -12164,7 +12100,7 @@ background-color: black;
 
                     last_sent_value_microphone_usage = 2;             
 
-                    window.alert("press Q to speak");
+                    //window.alert("press Q to speak");
                 })
                 .catch(function(error)
                 {
@@ -12175,6 +12111,8 @@ background-color: black;
             }
             else
             {
+                document.getElementById("play-song-container").style.visibility = "hidden";
+    
                 let message_object = {
                     "message":
                     {
@@ -12247,18 +12185,19 @@ background-color: black;
             {
                 return;
             }
-            let fileInput = document.getElementById('choose_song_input');
-            let allowedExtensions = ['mp3', 'opus'];
 
-            for (let x = 0; x < fileInput.files.length; x++)
+            if (is_microphone_enabled)
             {
-                let file = fileInput.files[x];
+                let fileInput = document.getElementById('choose_song_input');
+                let allowedExtensions = ['wav'];
+
+                let file = fileInput.files[0];
                 let extension = file.name.split('.').pop().toLowerCase();
-                let max_size = 10 * 1024 * 1024;
+                let max_size = 40 * 1024 * 1024;
 
                 if (file.size > max_size)
                 {
-                    window.alert("image is too large. Max size: 10mb");
+                    window.alert("file is too large. Max size: 40mb");
                     return;
                 }
 
@@ -12266,47 +12205,99 @@ background-color: black;
 
                 if (index == -1)
                 {
-                    window.alert('file extension : ' + extension + ' is not supported');
+                    window.alert('o');
                     return;
+                }            
+
+                var fileReader = new FileReader();
+                
+                if (fileReader && fileInput.files && fileInput.files.length)
+                {
+                    fileReader.readAsArrayBuffer(fileInput.files[0]);
+
+                    is_microphone_active = true;
+                    let message_object = {
+                        "message":
+                        {
+                            "type": "microphone_usage",
+                            "value": 1,
+                        }
+                    };
+
+                    is_playig_music = true;
+
+                    let message_json_string = JSON.stringify(message_object);
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+                    websocket_worker_send(data);
+                    last_sent_value_microphone_usage = 1;       
+
+                    fileReader.onload = function () 
+                    {   
+                        let arrayBuffer = fileReader.result;
+                        let data_chunks = chunkBuffers(arrayBuffer, 4096);
+                        send_song_by_chunks(data_chunks);
+                    };
                 }
             }
-
-            var fileReader = new FileReader();
-            
-            if (fileReader && fileInput.files && fileInput.files.length)
+        }
+        
+        
+        async function send_song_by_chunks(data_chunks)
+        {
+            for (var i = 0; i < data_chunks.length; i++)
             {
-                fileReader.readAsArrayBuffer(fileInput.files[0]);
-                fileReader.onload = function () {
-                    if(is_microphone_enabled)
-                    {
-                        console.log(data);
-
-                        //var resampled = audio_recorder_sampler.resampler(data);
-                        //var packets = encoder.encode_float(resampled);
-                        for (var i = 0; i < 5000; i++)
-                        {
-                            console.log("sending data");
-
-                            const some_bytes = new Uint8Array(fileReader.result.slice(i * 120, i * 120 + 120));
-                           
-                            var resampled = audio_recorder_sampler.resampler(some_bytes);
-                           
-                            //var array123 = Array.from(some_bytes);
-
-                            var packets = encoder.encode_float(resampled);
-                            
-                            for (var i = 0; i < packets.length; i++)
-                            {
-                                let data = encrypt_data_with_aes_keys(current_channel_keys, packets[i]);
-                                g_datachannel.send(data);
-                            }
-                        }
-                    }
-                };
+                opus_encoder_worker.postMessage({
+                    type:'encode',
+                    value: data_chunks[i]
+                })
+                await sleep(60); 
             }
 
+            //
+            //update microphone state for other users
+            //
 
+            is_microphone_active = true;
+            let message_object = {
+                "message":
+                {
+                    "type": "microphone_usage",
+                    "value": 2,
+                }
+            };
+
+            let message_json_string = JSON.stringify(message_object);
+            let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+            websocket_worker_send(data);
+            last_sent_value_microphone_usage = 2;    
+            
+            is_playig_music = false;
         }
+
+
+        function chunkBuffers(arrayBuffer, chunkLength)
+        {
+            var chunkedBuffers = [];
+
+            var totalFile = new Int16Array(arrayBuffer);
+            // Skip wave header; 44 bytes
+            for (i = 22; i < totalFile.length; i += chunkLength) {
+
+                // Convert 16 bit signed int to 32bit float
+                var bufferChunk = new Float32Array(chunkLength);
+                for (j = 0 ; j < chunkLength; j++)
+                {
+                    bufferChunk[j] = (totalFile[i + j]+ 0.5) / 32767.5;
+                }
+
+                chunkedBuffers.push(bufferChunk) ;
+            };
+
+            //console.log(chunkedBuffers);
+            return chunkedBuffers 
+        }
+
 
         function choose_image_input()
         {
