@@ -72,7 +72,7 @@
         
         #drag-resize-chat:hover
         {
-            border-left: 2px solid pink;
+            border-left: 2px solid #696555;
             cursor: resize;
         }
 
@@ -106,13 +106,13 @@
 
         #space-devider2
         {
-          display: inline-block;
-          vertical-align: top;
-          height: 100%;
-          width: 75%;
-          left: -4px;
-	  scrollbar-width: thin;
-	  scrollbar-color: #3f3f4d #6b7c9a;
+            display: inline-block;
+            vertical-align: top;
+            height: 100%;
+            width: 75%;
+            left: -4px;
+            scrollbar-width: thin;
+            scrollbar-color: #3f3f4d #6b7c9a;
         }
 
         #space-devider4
@@ -136,7 +136,8 @@
         }
 
 
-        .client-audio-state {
+        .client-audio-state 
+        {
             display: inline-block;
             width: 20px;
             height: 20px;
@@ -145,15 +146,18 @@
             background-size: 17px 17px;
         }
 
-        .client-audio-state-microphone-disabled {
+        .client-audio-state-microphone-disabled 
+        {
             background-image: url("data:image/png;base64,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");
         }
 
-        .client-audio-state-microphone-active {
+        .client-audio-state-microphone-active 
+        {
             background-image: url("data:image/png;base64,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");
         }
 
-        .client-audio-state-microphone-enabled {
+        .client-audio-state-microphone-enabled 
+        {
             background-image: url("data:image/png;base64,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");   
         }
     
@@ -165,25 +169,10 @@
         }
     
 
-        .client-roles {
+        .client-roles 
+        {
             display: inline-block;
 	        float: right;
-        }
-
-        .microphone-state-webrtc-disabled {
-            display: inline-block;
-            margin-left: 20px;
-            width: 20px;
-            background-color: red;
-        }
-
-        #space-devider42
-        {
-          display: inline-block;
-          background-color: #a05a5a;
-          width: 8%;
-          height: 50px;
-          cursor: pointer;
         }
 
         .connected-user-p
@@ -270,14 +259,6 @@
             left: 10px;
         }
 
-        #send-button-image-preview-container
-        {
-          width: 26%;
-          display: inline-block;
-          vertical-align: top;
-          text-align: right;
-        }
-
 
         #chat-input-container-text-input
         {
@@ -315,22 +296,6 @@
           background-color: inherit;
           width: 7%;
           height: 100%;
-        }
-
-        #space-devider5
-        {
-          width: 9%;
-          display: inline-block;
-          vertical-align: top;
-          display: inline-block;
-          height: 25%;
-        }
-
-        .pretty-p
-        {
-          color: white;
-          display: inline-block;
-          font-family: sans-serif;
         }
 
         #channel-list-container
@@ -500,15 +465,6 @@
             color: #CDDC39;
         }
 
-        .single-chat-message-avatar
-        {
-          display: inline-block;
-          background-color: beige;
-          width: 59px;
-          height: 59px;
-          vertical-align: top;
-        }
-
         .single-message-content
         {
           display: inline-block;
@@ -532,14 +488,6 @@
           height: 1px;
           width: 14%;
           display: inline-block;
-        }
-
-        .single-chat-message-seniner
-        {
-          display: inline-block;
-         
-          padding-right: 11px;
-          color: #a7bce0;
         }
 
         .single-chat-message-sender-time
@@ -572,22 +520,26 @@
 
         .single-chat-message-content
         {
-          padding-top: 3px;
-          font-size: 12px;
-          max-width: 943px;
-          word-break: break-all;
+            padding-top: 3px;
+            font-size: 12px;
+            max-width: 943px;
+            word-break: break-all;
         }
 
-        .connected-user
+        .connected-user, .connected-local-user
         {
-          cursor: pointer;
-          -webkit-tap-highlight-color: transparent;
+            -webkit-tap-highlight-color: transparent;
             -webkit-touch-callout: none;
             -webkit-user-select: none;
             -khtml-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
             user-select: none;
+        }
+
+        .connected-user
+        {
+            cursor: pointer;
         }
 
         .connected-user:hover
@@ -988,8 +940,6 @@ background-color: black;
             position: absolute;
             display: none;
         }
-
-
 
     </style>
 
@@ -8618,16 +8568,23 @@ background-color: black;
 
             if (e.data.type == "log")
             {
-                log(e.data.value);
+                custom_log(e.data.value);
             }
             else if (e.data.type == "opus_encoder_worker__encode_result")
             {
-                let opus_data_chunks = e.data.value;
-
-                for (var i = 0; i < opus_data_chunks.length; i++)
+                if (current_channel_keys != null)
                 {
-                    let data = encrypt_data_with_aes_keys(current_channel_keys, opus_data_chunks[i]);
-                    g_datachannel.send(data);
+                    let opus_data_chunks = e.data.value;
+
+                    for (var i = 0; i < opus_data_chunks.length; i++)
+                    {
+                        let data = encrypt_data_with_aes_keys(current_channel_keys, opus_data_chunks[i]);
+                        g_datachannel.send(data);
+                    }
+                }
+                else
+                {
+                    custom_log("dont have channel keys, cant encrypt audio for sending");
                 }
             }
             else if (e.data.type == "opus_decoder_worker__decode_result")
@@ -8692,9 +8649,21 @@ background-color: black;
             }
             else if (e.data.type == "cryptoworker__audio_enabled")
             {
+                //
+                //default stun port is 3478 for lemonchat. Stun port is given to client with websocket connection, stun port can be changed if needed, there are two places that need to be edited in code of server to set different stun port
+                //in stun_server.rs in this line let bind_address: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 3478);
+                //in main.rs in beginning of this function: fn send_authentication_status_to_client(responder: &Responder)
+                //    let message_to_send: serde_json::Value = serde_json::json!({
+                //   "message" : {
+                //        "value": "success",
+                //  "stun_port": 3478
+                //    }
+                //});
+                //
+
                 iceconfig = {
                     iceServers : [ {
-                        urls : "stun:"+host+":"+e.data.stun_port, //TODO: websocket server SHOULD send correct STUN port information
+                        urls : "stun:"+host+":"+e.data.stun_port,
                     } ],
                 };
 
@@ -8717,6 +8686,7 @@ background-color: black;
 
                 silence = new Float32Array(audio_config.codec.bufferSize);
                 player = audio_context.createScriptProcessor(audio_config.codec.bufferSize, 1, 1);
+                console.log(audio_context);
                 player.onaudioprocess = player_onaudioprocess;
                 audio_player_gain_node = audio_context.createGain();
                 player.connect(audio_player_gain_node);
@@ -8731,7 +8701,7 @@ background-color: black;
                 }
                 catch (Exception)
                 {
-                    log(Exception.toString());
+                    custom_log(Exception.toString());
                     window.alert('audio connection failed');
                     return;
                 }
@@ -8782,7 +8752,23 @@ background-color: black;
             }
             else if (e.data.type == "cryptoworker__microphone_usage_from_server")
             {
-                process_microphone_usage_from_server(e.data.value);
+                let client = {
+                    client_id: e.data.value.message.client_id,
+                    microphone_state: e.data.value.message.value,
+                }
+                process_microphone_usage_in_gui(client);
+            }
+            else if (e.data.type == "cryptoworker__current_channel_active_microphone_usage_from_server")
+            {
+                console.log(e.data.value);
+                for (var i = 0; i < e.data.value.message.clients.length; i++)
+                {
+                    let client = {
+                        client_id: e.data.value.message.clients[i].client_id,
+                        microphone_state: e.data.value.message.clients[i].microphone_state,
+                    }
+                    process_microphone_usage_in_gui(e.data.value.message.clients[i]);
+                }
             }
             else if (e.data.type == "cryptoworker__sdp_offer_from_server")
             {
@@ -8917,11 +8903,10 @@ background-color: black;
             }
             else if (e.data.type == "mainthread__generate_rsa_keypair")
             {
-                global.postMessage({
-                    type : "log",
-                    value : "generating random public/private key pair"
-                });
 
+                custom_log("generating random public/private key pair");
+
+                
                 const randomstring = (length = 8) => {
                     // Declare all characters
                     let chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -8947,10 +8932,7 @@ background-color: black;
                     value : rsa_public_key_string
                 });
 
-                global.postMessage({
-                    type : "log",
-                    value : "public key: " + rsa_public_key_string
-                });
+                custom_log("public key: " + rsa_public_key_string);
             }
             else if (e.data.type == "mainthread__process_received_websocket_message")
             {
@@ -9019,12 +9001,7 @@ background-color: black;
 
                         let str = '[R] msg.message.type : ' + msg.message.type + ' | size in bytes: ' + decrypted_metadata.length;
 
-                        global.postMessage({
-                            type : "log",
-                            value : str
-                        });
-
-                        //console.log(msg);
+                        custom_log(str);
                     
                     if (msg.message.type == "connection_check_response")
                     {
@@ -9100,6 +9077,13 @@ background-color: black;
                     {
                         global.postMessage({
                             type : "cryptoworker__microphone_usage_from_server",
+                            value : msg
+                        });
+                    }
+                    else if (msg.message.type == "current_channel_active_microphone_usage")
+                    {
+                        global.postMessage({
+                            type : "cryptoworker__current_channel_active_microphone_usage_from_server",
                             value : msg
                         });
                     }
@@ -9183,10 +9167,7 @@ background-color: black;
                         }
                         else
                         {
-                            global.postMessage({
-                                type : "log",
-                                value : "channel_chat_message decrypt failed"
-                            });
+                            custom_log("channel_chat_message decrypt failed");
                         }
                     }
                     else if (msg.message.type == "direct_chat_message")
@@ -9200,10 +9181,7 @@ background-color: black;
 
                         if (decryption_result.status == 'failure')
                         {
-                            global.postMessage({
-                                type : "log",
-                                value : "failed to decrypt direct chat message"
-                            });
+                            custom_log("failed to decrypt direct chat message");
                             return;
                         }
 
@@ -9233,11 +9211,9 @@ background-color: black;
                         if (decryption_result.status == 'failure')
                         {
                             if (decryption_result.status == 'failure')
-                            {
-                                global.postMessage({
-                                    type : "log",
-                                    value : "failed to decrypt direct chat picture"
-                                });
+                            {             
+                                log("failed to decrypt direct chat picture");
+
                                 return;
                             }
                             return;
@@ -9270,10 +9246,8 @@ background-color: black;
                         }
                         else
                         {
-                            global.postMessage({
-                                type : "log",
-                                value : "channel_chat_picture decrypt failed, cryptoWorker thread missing current channel keys"
-                            });
+
+                            custom_log("channel_chat_picture decrypt failed, cryptoWorker thread missing current channel keys");
                         }
                     }
                     else if (msg.message.type == "image_sent_status")
@@ -9384,7 +9358,8 @@ background-color: black;
 
                     message_object.message.type = "direct_chat_message";
                     message_object.message.value = JSON.stringify(message_data);
-                    message_object.message.receiver_id = parseInt(e.data.users[x].client_id)
+                    message_object.message.receiver_id = parseInt(e.data.users[x].client_id);
+
                     let message_json_string = JSON.stringify(message_object);
                     let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
@@ -9454,7 +9429,7 @@ background-color: black;
                 message_object.message.value = JSON.stringify(message_data);
                 message_object.message.receiver_id = parseInt(e.data.chat_message_receiver_id);
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
 
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
@@ -9516,7 +9491,7 @@ background-color: black;
                 message_object.message.value = JSON.stringify(message_data);
                 message_object.message.receiver_id = parseInt(e.data.chat_message_receiver_id);
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                 global.postMessage({
@@ -9537,7 +9512,7 @@ background-color: black;
 
                 message_object.message.value = encrypt_with_aes_keys_and_convert_to_base64(e.data.current_channel_keys, e.data.base64_picture_string_to_send);
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                 global.postMessage({
@@ -9557,7 +9532,7 @@ background-color: black;
 
                 message_object.message.value = encrypt_with_aes_keys_and_convert_to_base64(e.data.current_channel_keys, e.data.chat_message_to_send_value);
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
       
                 global.postMessage({
@@ -9758,11 +9733,15 @@ background-color: black;
             write: function(newAudio) 
             {
                 var currentQLength = this.buffer.length;
-               // newAudio = opus_decoding_sampler.process(newAudio); not needed
                 var newBuffer = new Float32Array(currentQLength + newAudio.length);
                 newBuffer.set(this.buffer, 0);
                 newBuffer.set(newAudio, currentQLength);
                 this.buffer = newBuffer;
+            },
+
+            clear: function()
+            {
+                this.buffer = silence;
             },
 
             read: function(nSamples) 
@@ -9824,7 +9803,7 @@ background-color: black;
                     }
                 };
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                 websocket_worker_send(data);
@@ -9882,7 +9861,7 @@ background-color: black;
                     }
                 };
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
       
@@ -9896,8 +9875,22 @@ background-color: black;
            return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        function log(text)
+        function custom_log(text)
         {
+            //
+            //textarea_log only exists in main thread
+            //in case its null, use global log
+            //
+
+            if (textarea_log == null)
+            {
+                global.postMessage({
+                    type : "log",
+                    value : text
+                });
+                return;
+            }
+
            // textarea_log.value = textarea_log.value + text + "\n";
             let aa = new Date();
             let a = aa.toLocaleTimeString();
@@ -9935,7 +9928,7 @@ background-color: black;
                     }
                 };
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                 websocket_worker_send(data);
@@ -10198,7 +10191,7 @@ background-color: black;
 
                 console.log(message_object);
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
        
                 websocket_worker_send(data);       
@@ -10249,7 +10242,7 @@ background-color: black;
 
             console.log(message_object);
 
-            let message_json_string = JSON.stringify(message_object);
+            let message_json_string = process_message_before_sending(message_object);
             let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
             websocket_worker_send(data);  
@@ -10269,6 +10262,17 @@ background-color: black;
             }
 
             document.getElementById("client-audio-state-"+local_client_id).classList.add("client-audio-state-microphone-disabled");
+        
+            let message_object = {
+                    message : {
+                        type: "client_connection_check",
+                    }
+                };
+
+            let message_json_string = process_message_before_sending(message_object);
+            let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+            websocket_worker_send(data);   
         }
 
         function datachannel_onclose()
@@ -10279,7 +10283,11 @@ background-color: black;
 
         function datachannel_onmessage(event)
         {
-          //console.log(typeof(e.data));
+            if (current_channel_keys == null)
+            {
+                //dont try to decrypt audio if you dont have channel keys..
+                return;
+            }
 
             if (typeof (event.data) != 'string')
             {
@@ -10295,6 +10303,12 @@ background-color: black;
         function handleOnConnectionChangeEvent()
         {
             console.log("peer_connection_with_server connectionState changed to " + peer_connection_with_server.connectionState);
+           
+            if (peer_connection_with_server.connectionState == "disconnected")
+            {
+                document.getElementById("toggle-microphone-label").style.display = "none";
+                document.getElementById("toggle-microphone-label").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAELklEQVRoQ+2ZWehOXRTGf+hDuJIpmVKUJIUiY9wRMpRMFy58hogoZUgk04WUqQyJEqJMZSgy9hlKXBK5+MgsuVDm0KN9tJ3/Gfbe55z3f2PdvO85Z++1n2fvtddae+0GlC/DgOmAftsDDYHnwDVgL3C9zCEblKisFbAPGJ2j8xTwL/CmjLHLItAFuAh0dQT1PzAc0G8hKYNAC+AG0MsTyX2gH/DBs98fzcsgsA5YHghiPbAisO+vbkUJNAdeAfoNkRdAB+B7QufWwDjgYNYqFSUwFtCmDBGZjjb85YTObc37HuZX7RJNrSiBZYDMwFdcwUd6RTKRRFECm4FFnuh9wUfqZwF74mMVJbAFWOBBIBS8PJYCY53YUUsCAj8GuJRAuI153zPh2wMTM7Th60itCFQCvgw36mJClYGvBYFKwVdNoHLwVRKoCfiqCNQMvCuBf4AdQB9gFXDG8mXxTRzq5+8BI0xepYi7GrgLzAO+ZsUZFzc6BThklCiQyGdHYhMIBS8/ryClpFCiMXQ4kkwFDhcloEgroJHYpCMCoWYjnVuBhZb+H9Z/vdf3VHFZgTwCMwMjbASqXglsBM4HpAf2jFZOYDaw0xpRm/qbeW6Wkqfb+XyWBejbJmCJadQY+Gx1mBsbu44uFxPSqeiE1VPgXmeg8gEvNQIvEpKOwBNL90TgeNE90B+4ZSmRx1CNJ0l8wUuH3Gd0KhsA3LQUDwH+K0qgpZnxRsZcpFQ+Oi4h4LWSOhNHvn4psMEo1jm5XV79yMWEpE8z3tfxDJtn8/Z3ebht1gtV7Qaa5zum7JKpz5WAIqKiZd4B3Af8BWCU5RAEXOYSYXIqubgSSAMWYjbSpUKYUoZ3RrFwaJUHm+cvQLfYhk7EUIRACHgBk8momGW7SxXGVCCLZBcwx2U5QwlkgdcBfD8wCOgMKDV4amb4KPA4BkyuUu9VxZa8BXoDz6oiEHwATwCkUsl2QMFRIrLjfYplviuQNfPxrDJrArUySkMmxxqtBVa6zHzUxodAns3LvmUKB4ArgJ5tUZqgIDgBmAE0jX3XWWOND3i1dSWQBz4+rgLTQxMAZR4yu04JoNXvI7A4L+dJI+ZCIG/D6pJipO/MmfYqcilZfBTYP3cF8sDrlkUnqaHAfEDV6iY5YOQ+laDtBq6ajRuKP5OAK3h7cN0TyM7lBuXHZTYSuU7l/UoPlEe9D0Yc65hmQrpc0OyoPh8X+flo5rNwnLVM65xJG8rC/VtPGgHdImqJQ8GrX70S0EnrtJnpiITrzEft65WAQNgkksDLZ0+yomh8tZTLS4dEVYuXKfYjl3vE1Jy8TSzPjQrANOBk7GCh69Hb3qNld5BObXIvySOQpkwX20odFF3LEEXt7gmJXq7uUAJSHKUF8ZQgd9BYg0/AsYxzdqa+IgR8gVbS/i+BSqbVQ+lPvaMNQOE4cEcAAAAASUVORK5CYII=)";
+            }
         }
 
         function peerconnection_on_datachannel_receive(event)
@@ -10361,7 +10375,7 @@ background-color: black;
             let chat_context_index = get_chat_context_index_by_chat_context_id(current_chat_context_id);
             if (chat_context_index == -1)
             {
-                log('could not find ' + current_chat_context_id.toString());
+                custom_log('could not find ' + current_chat_context_id.toString());
                 return;
             }
 
@@ -10467,7 +10481,7 @@ background-color: black;
 
             if (chat_context_index == -1)
             {
-                log("could not find " + current_chat_context_id.toString());
+                custom_log("could not find " + current_chat_context_id.toString());
                 return;
             }
 
@@ -10475,7 +10489,7 @@ background-color: black;
 
             if (receiver_public_key == "" || receiver_public_key == null)
             {
-                log("public key not found ");
+                custom_log("public key not found ");
                 return;
             }
 
@@ -10612,7 +10626,7 @@ background-color: black;
             users[index].username = new_username;
             local_username = new_username;
             document.getElementById('connected-local-user-input').setAttribute('value', local_username);
-            let message_json_string = JSON.stringify(message_object);
+            let message_json_string = process_message_before_sending(message_object);
             let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
             websocket_worker_send(data); 
@@ -10800,17 +10814,25 @@ background-color: black;
 
         function process_channel_join_from_server(msg)
         {
-            let current_client = users[get_user_index_by_client_id(msg.message.client_id)];
-            current_client.channel_id = msg.message.channel_id;
+            let client_that_joined = users[get_user_index_by_client_id(msg.message.client_id)];
+            client_that_joined.channel_id = msg.message.channel_id;
 
-
+            //
             //for properly displaying client's microphone state
+            //
+
+            console.log("microphone state " + msg.message.microphone_state);
+
             let client_microphone_state_html_class = "";
 
-            switch(current_client.microphone_state)
+            //
+            //
+            //
+            
+            switch(msg.message.microphone_state)
             {
                 case 1:
-                    client_microphone_state_html_class = "client-audio-state-microphone-enabled";
+                    client_microphone_state_html_class = "client-audio-state-microphone-active";
                     break;
 
                 case 2:
@@ -10828,7 +10850,7 @@ background-color: black;
 
             let client_roles_html_string = "";
 
-            let is_admin_role_active = is_client_role_active(current_client, "admin");
+            let is_admin_role_active = is_client_role_active(client_that_joined, "admin");
 
             if (is_admin_role_active == true)
             {
@@ -10837,6 +10859,7 @@ background-color: black;
 
             if (msg.message.client_id == local_client_id)
             {
+                audio_queue.clear();
                 document.getElementById("channel-password-enter-container").style.display = "none";
                 document.getElementById("background-container").style.display = "none";
                 document.getElementsByClassName("connected-local-user")[0].remove();
@@ -10848,7 +10871,7 @@ background-color: black;
                                         </div>\n\
                                         <div class='client-audio-state "+client_microphone_state_html_class +"' id=\"client-audio-state-" + msg.message.client_id + "\">\n\
                                         </div>\n\
-                                        <input maxlength=\"40\" id=\"connected-local-user-input\" value=\"" + current_client.username + "\">\n\
+                                        <input maxlength=\"40\" id=\"connected-local-user-input\" value=\"" + client_that_joined.username + "\">\n\
                                         <div class='client-roles' id=\"client-roles-" + msg.message.client_id + "\">\n\
                                             "+client_roles_html_string +"\n\
                                         </div>\n\
@@ -10934,6 +10957,27 @@ background-color: black;
                 console.log("joined new channel, nulling out current_channel_keys");
                 current_channel_keys = null;
 
+                //
+                //joined new channel, now loop through clients and set microphone state to 2 for all clients that have it set to 1
+                //because, only clients in current channel should have microphone state set to 1
+                //information about active mic state of clients in new channel is later received through websocket and processed
+                //
+
+                for (var i = 0; i < users.length; i++)
+                {
+                    if (users[i].microphone_state == 1)
+                    {
+                        users[i].microphone_state = 2; //not active but enabled
+
+                        let client = {
+                            client_id: users[i].client_id,
+                            microphone_state: users[i].microphone_state
+                        };
+                        
+                        process_microphone_usage_in_gui(client);
+                    }
+                }
+
                 enable_inputs();
             }
             else
@@ -10946,7 +10990,7 @@ background-color: black;
                                         </div>\n\
                                         <div class='client-audio-state "+client_microphone_state_html_class +"' id=\"client-audio-state-" + msg.message.client_id + "\">\n\
                                         </div>\n\
-                                        <p class=\"connected-user-p\">" + current_client.username + "</p>\n\
+                                        <p class=\"connected-user-p\">" + client_that_joined.username + "</p>\n\
                                         <p class=\"connected-user-p-received-messages-number\">0</p>\n\
                                         <div class='client-roles' id=\"client-roles-" + msg.message.client_id + "\">\n\
                                             "+client_roles_html_string +"\n\
@@ -10959,7 +11003,7 @@ background-color: black;
 
                 if (msg.message.channel_id == current_channel_id)
                 {
-                    console.log("user '" + current_client.username + "' joined current_channel where local_user is. setting current_channel_keys to null");
+                    console.log("user '" + client_that_joined.username + "' joined current_channel where local_user is. setting current_channel_keys to null");
                     current_channel_keys = null;
                     let channel_index = get_channel_index_by_channel_id(channel_list, current_channel_id);
                     if (channel_list[channel_index].maintainer_id == local_client_id)
@@ -10988,7 +11032,7 @@ background-color: black;
             //console.log("received channel list");
             if (is_channel_list_retrieved == true)
             {
-                log("channel_list message received more than once. Server is doing something weird");
+                custom_log("channel_list message received more than once. Server is doing something weird");
                 return;
             }
 
@@ -11144,7 +11188,7 @@ background-color: black;
 
                 console.log(message_object);
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                 websocket_worker_send(data);         
@@ -11158,7 +11202,7 @@ background-color: black;
             {
                 return;
             }
-            log(users[user_index].username + ' renamed to -> ' + msg.message.new_username);
+            custom_log(users[user_index].username + ' renamed to -> ' + msg.message.new_username);
             users[user_index].username = msg.message.new_username;
             
             if (document.querySelector('[data-connected-client-id="' + msg.message.client_id + '"]') != null) {
@@ -11184,7 +11228,7 @@ background-color: black;
 
             if (is_client_list_retrieved == true)
             {
-                log("client_list received more than once. Server is doing something weird");
+                custom_log("client_list received more than once. Server is doing something weird");
                 return;
             }
 
@@ -11296,7 +11340,7 @@ background-color: black;
                         {
                             if (y + 1 == msg.message.clients.length)
                             {
-                                log("chat context with id " + chat_context_array[x].chat_context_id.toString() + " NOT FOUND");
+                                custom_log("chat context with id " + chat_context_array[x].chat_context_id.toString() + " NOT FOUND");
                                 document.getElementByid(chat_context_array[x].chat_context_id).remove();
                             }
                         }
@@ -11337,6 +11381,13 @@ background-color: black;
                 if (!target_element.classList.contains("client-audio-state-not-available")) {
                     document.getElementById("client-audio-state-"+msg.message.client_id).classList.add("client-audio-state-not-available");
                 }
+
+                if (local_client_id == msg.message.client_id)
+                {
+                    document.getElementById("toggle-microphone-label").style.display = "none";
+                    document.getElementById("toggle-microphone-label").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAELklEQVRoQ+2ZWehOXRTGf+hDuJIpmVKUJIUiY9wRMpRMFy58hogoZUgk04WUqQyJEqJMZSgy9hlKXBK5+MgsuVDm0KN9tJ3/Gfbe55z3f2PdvO85Z++1n2fvtddae+0GlC/DgOmAftsDDYHnwDVgL3C9zCEblKisFbAPGJ2j8xTwL/CmjLHLItAFuAh0dQT1PzAc0G8hKYNAC+AG0MsTyX2gH/DBs98fzcsgsA5YHghiPbAisO+vbkUJNAdeAfoNkRdAB+B7QufWwDjgYNYqFSUwFtCmDBGZjjb85YTObc37HuZX7RJNrSiBZYDMwFdcwUd6RTKRRFECm4FFnuh9wUfqZwF74mMVJbAFWOBBIBS8PJYCY53YUUsCAj8GuJRAuI153zPh2wMTM7Th60itCFQCvgw36mJClYGvBYFKwVdNoHLwVRKoCfiqCNQMvCuBf4AdQB9gFXDG8mXxTRzq5+8BI0xepYi7GrgLzAO+ZsUZFzc6BThklCiQyGdHYhMIBS8/ryClpFCiMXQ4kkwFDhcloEgroJHYpCMCoWYjnVuBhZb+H9Z/vdf3VHFZgTwCMwMjbASqXglsBM4HpAf2jFZOYDaw0xpRm/qbeW6Wkqfb+XyWBejbJmCJadQY+Gx1mBsbu44uFxPSqeiE1VPgXmeg8gEvNQIvEpKOwBNL90TgeNE90B+4ZSmRx1CNJ0l8wUuH3Gd0KhsA3LQUDwH+K0qgpZnxRsZcpFQ+Oi4h4LWSOhNHvn4psMEo1jm5XV79yMWEpE8z3tfxDJtn8/Z3ebht1gtV7Qaa5zum7JKpz5WAIqKiZd4B3Af8BWCU5RAEXOYSYXIqubgSSAMWYjbSpUKYUoZ3RrFwaJUHm+cvQLfYhk7EUIRACHgBk8momGW7SxXGVCCLZBcwx2U5QwlkgdcBfD8wCOgMKDV4amb4KPA4BkyuUu9VxZa8BXoDz6oiEHwATwCkUsl2QMFRIrLjfYplviuQNfPxrDJrArUySkMmxxqtBVa6zHzUxodAns3LvmUKB4ArgJ5tUZqgIDgBmAE0jX3XWWOND3i1dSWQBz4+rgLTQxMAZR4yu04JoNXvI7A4L+dJI+ZCIG/D6pJipO/MmfYqcilZfBTYP3cF8sDrlkUnqaHAfEDV6iY5YOQ+laDtBq6ajRuKP5OAK3h7cN0TyM7lBuXHZTYSuU7l/UoPlEe9D0Yc65hmQrpc0OyoPh8X+flo5rNwnLVM65xJG8rC/VtPGgHdImqJQ8GrX70S0EnrtJnpiITrzEft65WAQNgkksDLZ0+yomh8tZTLS4dEVYuXKfYjl3vE1Jy8TSzPjQrANOBk7GCh69Hb3qNld5BObXIvySOQpkwX20odFF3LEEXt7gmJXq7uUAJSHKUF8ZQgd9BYg0/AsYxzdqa+IgR8gVbS/i+BSqbVQ+lPvaMNQOE4cEcAAAAASUVORK5CYII=)";
+                    document.getElementById("play-song-container").style.visibility = "visible";
+                }
             }
             else if (msg.message.peer_connection_state == 3)
             {
@@ -11357,47 +11408,50 @@ background-color: black;
             window.alert("access denied");
         }
 
-        function process_microphone_usage_from_server(msg)
+
+        function process_microphone_usage_in_gui(client)
         {
-            let target_element = document.getElementById("client-audio-state-"+msg.message.client_id);
+            console.log(client);
 
-            users[get_user_index_by_client_id(msg.message.client_id)].microphone_state = msg.message.value;
+            let target_element = document.getElementById("client-audio-state-"+client.client_id);
 
-            if (msg.message.value == 1) //microphone active
-            {                
+            users[get_user_index_by_client_id(client.client_id)].microphone_state = client.microphone_state;
+
+            if (client.microphone_state == 1) //microphone active
+            {            
                 if (target_element.classList.contains("client-audio-state-microphone-enabled")) {
-                    document.getElementById("client-audio-state-"+msg.message.client_id).classList.remove("client-audio-state-microphone-enabled");
+                    document.getElementById("client-audio-state-"+client.client_id).classList.remove("client-audio-state-microphone-enabled");
                 }
 
                 if (target_element.classList.contains("client-audio-state-microphone-disabled")) {
-                    document.getElementById("client-audio-state-"+msg.message.client_id).classList.remove("client-audio-state-microphone-disabled");
+                    document.getElementById("client-audio-state-"+client.client_id).classList.remove("client-audio-state-microphone-disabled");
                 }
 
-                document.getElementById("client-audio-state-"+msg.message.client_id).classList.add("client-audio-state-microphone-active");
+                document.getElementById("client-audio-state-"+client.client_id).classList.add("client-audio-state-microphone-active");
             }
-            else if (msg.message.value == 2) //microphone not active but enabled
+            else if (client.microphone_state == 2) //microphone not active but enabled
             {
                 if (target_element.classList.contains("client-audio-state-microphone-active")) {
-                    document.getElementById("client-audio-state-"+msg.message.client_id).classList.remove("client-audio-state-microphone-active");
+                    document.getElementById("client-audio-state-"+client.client_id).classList.remove("client-audio-state-microphone-active");
                 }
 
                 if (target_element.classList.contains("client-audio-state-microphone-disabled")) {
-                    document.getElementById("client-audio-state-"+msg.message.client_id).classList.remove("client-audio-state-microphone-disabled");
+                    document.getElementById("client-audio-state-"+client.client_id).classList.remove("client-audio-state-microphone-disabled");
                 }
 
-                document.getElementById("client-audio-state-"+msg.message.client_id).classList.add("client-audio-state-microphone-enabled");
+                document.getElementById("client-audio-state-"+client.client_id).classList.add("client-audio-state-microphone-enabled");
             }
-            else if (msg.message.value == 3) // microphone disabled
+            else if (client.microphone_state == 3) // microphone disabled
             {
                 if (target_element.classList.contains("client-audio-state-microphone-active")) {
-                    document.getElementById("client-audio-state-"+msg.message.client_id).classList.remove("client-audio-state-microphone-active");
+                    document.getElementById("client-audio-state-"+client.client_id).classList.remove("client-audio-state-microphone-active");
                 }
 
                 if (target_element.classList.contains("client-audio-state-microphone-enabled")) {
-                    document.getElementById("client-audio-state-"+msg.message.client_id).classList.remove("client-audio-state-microphone-enabled");
+                    document.getElementById("client-audio-state-"+client.client_id).classList.remove("client-audio-state-microphone-enabled");
                 }
 
-                document.getElementById("client-audio-state-"+msg.message.client_id).classList.add("client-audio-state-microphone-disabled");
+                document.getElementById("client-audio-state-"+client.client_id).classList.add("client-audio-state-microphone-disabled");
             }
         }
 
@@ -11968,7 +12022,7 @@ background-color: black;
                 console.log(message_object);
 
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                 websocket_worker.postMessage({
@@ -12056,6 +12110,8 @@ background-color: black;
                 navigator.mediaDevices.getUserMedia({audio : true})
                 .then(function(stream) {
 
+                    window.alert("press Q to speak");
+
                     opus_encoder_worker.postMessage({
                             type : "init",
                             sampleRate: audio_context.sampleRate
@@ -12074,10 +12130,10 @@ background-color: black;
                     const audioTracks = stream.getAudioTracks();
                     console.log(audioTracks);
 
-                    log('Using audio device: ' + audioTracks[0].label);
+                    custom_log('Using audio device: ' + audioTracks[0].label);
                     stream.oninactive = function()
                     {
-                        log('Stream ended');
+                        custom_log('Stream ended');
                     };
 
                     is_microphone_enabled = true;
@@ -12093,14 +12149,12 @@ background-color: black;
                         }
                     };
 
-                    let message_json_string = JSON.stringify(message_object);
+                    let message_json_string = process_message_before_sending(message_object);
                     let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                     websocket_worker_send(data);
 
                     last_sent_value_microphone_usage = 2;             
-
-                    //window.alert("press Q to speak");
                 })
                 .catch(function(error)
                 {
@@ -12121,7 +12175,7 @@ background-color: black;
                     }
                 };
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                 websocket_worker_send(data);
@@ -12205,7 +12259,7 @@ background-color: black;
 
                 if (index == -1)
                 {
-                    window.alert('o');
+                    window.alert('only .wav files are supported');
                     return;
                 }            
 
@@ -12226,7 +12280,7 @@ background-color: black;
 
                     is_playig_music = true;
 
-                    let message_json_string = JSON.stringify(message_object);
+                    let message_json_string = process_message_before_sending(message_object);
                     let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                     websocket_worker_send(data);
@@ -12267,7 +12321,7 @@ background-color: black;
                 }
             };
 
-            let message_json_string = JSON.stringify(message_object);
+            let message_json_string = process_message_before_sending(message_object);
             let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
             websocket_worker_send(data);
             last_sent_value_microphone_usage = 2;    
@@ -12614,6 +12668,13 @@ background-color: black;
             }
         }
 
+        function process_message_before_sending(message_object)
+        {
+            let str = '[S] msg.message.type : ' + message_object.message.type;
+            custom_log(str);
+            return JSON.stringify(message_object);
+        }
+
         function contextmenuitem_onclick(event)
         {
             event.stopPropagation();
@@ -12642,7 +12703,7 @@ background-color: black;
 
                 console.log(message_object);
 
-                let message_json_string = JSON.stringify(message_object);
+                let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                 websocket_worker_send(data);
@@ -12694,7 +12755,7 @@ background-color: black;
 
                     console.log(message_object);
 
-                    let message_json_string = JSON.stringify(message_object);
+                    let message_json_string = process_message_before_sending(message_object);
                     let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                     websocket_worker_send(data);
@@ -12811,7 +12872,7 @@ background-color: black;
 
             console.log(message_object);
 
-            let message_json_string = JSON.stringify(message_object);
+            let message_json_string = process_message_before_sending(message_object);
             let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
             websocket_worker_send(data);
@@ -12854,7 +12915,7 @@ background-color: black;
 
             console.log(message_object);
 
-            let message_json_string = JSON.stringify(message_object);
+            let message_json_string = process_message_before_sending(message_object);
             let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
             websocket_worker_send(data);
@@ -12878,7 +12939,7 @@ background-color: black;
                 }
             };
 
-            let message_json_string = JSON.stringify(message_object);
+            let message_json_string = process_message_before_sending(message_object);
             let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
             websocket_worker_send(data);
@@ -12902,7 +12963,7 @@ background-color: black;
 
             console.log(message_object);
 
-            let message_json_string = JSON.stringify(message_object);
+            let message_json_string = process_message_before_sending(message_object);
             let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
             websocket_worker_send(data);
@@ -12910,6 +12971,7 @@ background-color: black;
 
         function channel_list_onmousedown(event)
         {
+            //console.log("channel_list_onmousedown");
             event.stopPropagation();
 
             switch (event.which)
@@ -12920,13 +12982,15 @@ background-color: black;
                     for (let i = 0; i < elements_count1; i++)
                     {
                         document.getElementsByClassName("channel-list-context-menu")[0].remove();
-                        console.log("channel_list_onmousedown() contextmenu removed");
-                        let elements = document.getElementsByClassName('single-channel');
-                        for (let i = 0; i < elements.length; i++)
-                        {
-                            elements[i].style.backgroundColor = "";
-                        }
+                        //console.log("channel_list_onmousedown() contextmenu removed");
                     }
+
+                    let elements = document.getElementsByClassName('single-channel');
+                    for (let i = 0; i < elements.length; i++)
+                    {
+                            elements[i].style.backgroundColor = "";
+                    }
+
                     break;
             }
         }
