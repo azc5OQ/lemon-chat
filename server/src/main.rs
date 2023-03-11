@@ -251,7 +251,6 @@ fn send_access_denied_to_single_client(websockets: &HashMap<u64, Responder>, cli
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
-
     let current_client_websocket: Option<&Responder> = websockets.get(&client_id);
 
     match current_client_websocket {
@@ -322,6 +321,57 @@ fn send_ice_candidate_to_client(websocket: &Responder, value: String) {
     websocket.send(Message::Text(data_to_send_base64));
 }
 
+
+fn send_active_microphone_usage_for_current_channel_to_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_client_id: u64, current_channel_id: u64) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_clients_array: Vec<serde_json::Map<String, serde_json::Value>> = vec![];
+
+
+    for (_key, client) in clients {
+
+        if client.channel_id != current_channel_id {
+            continue;
+        }
+
+        //have to send even to ourselves
+        //if client.client_id == current_client_id {
+        //    continue;
+        //}
+
+        //only active mics are relevant
+        if client.microphone_state != 1 {
+            continue;
+        }
+
+        let mut single_client_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+        single_client_object.insert(String::from("client_id"), serde_json::Value::from(client.client_id));
+        single_client_object.insert(String::from("microphone_state"), serde_json::Value::from(client.microphone_state));
+
+        json_clients_array.push(single_client_object);
+    }
+
+    if json_clients_array.is_empty() == true
+    {
+        return;
+    }
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("current_channel_active_microphone_usage"));
+    json_message_object.insert(String::from("clients"), serde_json::Value::from(json_clients_array));
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    let test = serde_json::Value::Object(json_root_object);
+    let data_content: String = serde_json::to_string(&test).unwrap();
+
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+
+    responder.send(Message::Text(data_to_send_base64));
+}
+
+
+
+
 fn broadcast_microphone_usage(clients: &mut HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, channel_id: u64, microphone_usage: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -334,9 +384,7 @@ fn broadcast_microphone_usage(clients: &mut HashMap<u64, Client>, websockets: &H
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
-
     for (_key, client) in clients {
-
 
         if client.is_existing == false {
             continue;
@@ -384,7 +432,6 @@ fn is_maintainer_of_channel_leaving_that_channel(channels: &mut HashMap<u64, Cha
             continue;
         }
 
-
         if channel.is_channel_maintainer_present == true {
             if channel.maintainer_id == client_id_to_check{
                 result.0 = true;
@@ -401,7 +448,6 @@ fn find_new_maintainer_for_channel(clients: &mut HashMap<u64, Client>, channels:
     let mut result: (bool, u64) = (false, 0);
 
     //try to find new maintainer
-
 
     if mind_the_client_that_left_disconnected == true {
         for (_key, client) in clients {
@@ -460,7 +506,7 @@ fn send_cross_thread_message_client_disconnect(sender: &std::sync::mpsc::Sender<
     sender.send(data_content).expect("");
 }
 
-fn send_cross_thread_message_new_client_connected(sender: &std::sync::mpsc::Sender<String>, client_id: u64) {
+fn send_cross_thread_message_create_new_client_at_rtc_thread(sender: &std::sync::mpsc::Sender<String>, client_id: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
@@ -632,18 +678,13 @@ fn get_client_ids_in_channel(clients: &HashMap<u64, Client>, channel_id: u64) ->
     return result;
 }
 
-fn broadcast_channel_join(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64,  channel_id: u64) {
+fn broadcast_channel_join(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, new_channel_id: u64) {
 
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let client_that_joins_microphone_state= clients.get(&client_id).unwrap().microphone_state;
 
-    json_message_object.insert(String::from("type"), serde_json::Value::from("channel_join"));
-    json_message_object.insert(String::from("channel_id"),serde_json::Value::from(channel_id));
-    json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
-
-    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
     for (_key, client) in clients {
+
         if client.is_existing == false {
             continue;
         }
@@ -651,6 +692,29 @@ fn broadcast_channel_join(clients: &HashMap<u64, Client>, websockets: &HashMap<u
         if client.is_authenticated == false {
             continue;
         }
+
+        //
+        //if microphone is active, send microphone state as active only for clients of channel that client is joining
+        //
+
+        let mut microphone_state: u64 = client_that_joins_microphone_state;
+
+        if client.channel_id != new_channel_id && microphone_state == 1 {
+            microphone_state = 2;
+        }
+
+
+        let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+        let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+        json_message_object.insert(String::from("type"), serde_json::Value::from("channel_join"));
+        json_message_object.insert(String::from("channel_id"),serde_json::Value::from(new_channel_id));
+        json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
+        json_message_object.insert(String::from("microphone_state"),serde_json::Value::from(microphone_state));
+
+        json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+
 
         let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
 
@@ -901,7 +965,6 @@ fn check_if_username_change_allowed(client_id: u64,  clients: &mut HashMap<u64, 
         return false;
     }
 
-
     if new_desired_username.len() > 50 {
         return false;
     }
@@ -1022,7 +1085,6 @@ fn broadcast_channel_create(clients: &mut HashMap<u64, Client>, created_channel:
     json_message_object.insert(String::from("description"), serde_json::Value::from(created_channel.description.clone()));
     json_message_object.insert(String::from("maintainer_id"), serde_json::Value::from(-1));
     json_message_object.insert(String::from("is_using_password"), serde_json::Value::from(created_channel.is_using_password));
-
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
@@ -1362,6 +1424,15 @@ fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut Has
 
                         result = 2;
                     }
+
+                    //
+                    //clients are moved to root channel when their current channel is deleted (thats why channel id 0 is used)
+                    //after they are moved, what needs to be done is, sending of active state of users microphone in root channel
+
+                    //
+
+                    let websocket: &Responder = websockets.get(&client_id1).unwrap();
+                    send_active_microphone_usage_for_current_channel_to_client(clients, websocket, client_id1, 0);
                 }
             }
 
@@ -1439,7 +1510,6 @@ fn process_channel_join(sender: &std::sync::mpsc::Sender<String>, clients: &mut 
 
     let client_id_clone1 = client_id.clone();
 
-
     if status == true {
 
         let msg_channel_id = message["message"]["channel_id"].as_u64().unwrap();
@@ -1513,6 +1583,8 @@ fn process_channel_join(sender: &std::sync::mpsc::Sender<String>, clients: &mut 
                     broadcast_channel_join(clients, websockets, client_id, msg_channel_id);
                 }
 
+                //following websocket messages are only sent to single client that joined channel, not all clients
+
                 //check if new channel has maintainer
                 //if it does not, we will be the maintainers of the channel.
                 let clients_in_channel: Vec<u64> = get_client_ids_in_channel(clients, msg_channel_id);
@@ -1525,15 +1597,20 @@ fn process_channel_join(sender: &std::sync::mpsc::Sender<String>, clients: &mut 
                     new_joined_channel.is_channel_maintainer_present = true;
                 }
 
-                //whether the new user is the maintainer of new_joined_channel or not,
-                // the information about who is the new maintainer only needs to be sent to him
+                //whether client that joined the channel is the maintainer of new_joined_channel or not,
+                //the information about who is the new maintainer only needs to be sent to him
                 //its assumed other client have "up-to" date info about who is maintainer
                 send_maintainer_id_to_single_client(clients, websockets, msg_channel_id, client_id, new_joined_channel.maintainer_id as u64);
+
 
                 //inform the webrtc thread about clients channel, so it can update its data
                 //so webrtc does not send audio to wrong clients
                 //webrtc thread holds copy of structures used main.rs
                 send_cross_thread_message_channel_join(sender, client_id_clone1, msg_channel_id_clone1);
+
+                let websocket: &Responder = websockets.get(&client_id).unwrap();
+
+                send_active_microphone_usage_for_current_channel_to_client(clients, websocket, client_id, new_joined_channel.channel_id);
             } else {
                 println!("channel password is not valid");
             }
@@ -1875,14 +1952,16 @@ fn change_client_microphone_usage(clients: &mut HashMap<u64, Client>, _websocket
 fn process_microphone_usage_message(clients: &mut HashMap<u64, Client>, _channels: &HashMap<u64, Channel>, websockets: &HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) -> (bool, u64) {
     let mut result: (bool, u64) = (false, 0);
 
+
+
     let status: bool = is_microphone_usage_valid(message);
     if status == true {
 
         let client: &mut Client = clients.get_mut(&client_id).unwrap();
 
         //if datachannel is not active, ignore microphone_usage message
-
         if client.is_webrtc_datachannel_connected == true {
+
             result.1 = client.channel_id;
 
             let new_microphone_usage = message["message"]["value"].as_u64().unwrap();
@@ -2203,9 +2282,12 @@ fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u6
                     send_authentication_status_to_client(websocket);
                     send_channel_list_to_client(channels, websocket);
                     send_client_list_to_client(clients, websocket, current_client_username);
+
+                    send_active_microphone_usage_for_current_channel_to_client(clients, websocket, client_id, 0);
+
                     process_client_connect(clients, channels, websockets, client_id);
 
-                    send_cross_thread_message_new_client_connected(sender, client_id);
+                    send_cross_thread_message_create_new_client_at_rtc_thread(sender, client_id);
                 }
             } else {
                 websockets.get(&client_id).unwrap().close();
@@ -2491,12 +2573,13 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
                 }
                 Some(client) => {
                     if msg_peer_connection_state == 3 {
+                        println!("client.is_webrtc_datachannel_connected = true");
                         client.microphone_state = 3; //microphone disabled, but ready
-                        client.is_webrtc_datachannel_connected = true; //this will allow client to set
+                        client.is_webrtc_datachannel_connected = true;
                     }
                     else if msg_peer_connection_state > 3 {
                         client.microphone_state = 4; //audio disabled
-                        client.is_webrtc_datachannel_connected = false; //this will allow client to set
+                        client.is_webrtc_datachannel_connected = false;
                     }
                     broadcast_peer_connection_state(clients, websockets, msg_client_id, msg_peer_connection_state);
                 }
