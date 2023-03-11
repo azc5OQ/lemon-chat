@@ -213,8 +213,6 @@ async fn send_cross_thread_message_on_ice_candidate(
      json_root_object.insert(String::from("value"), ice_candidate);
 
      let data_content: String = serde_json::to_string(&json_root_object).unwrap();
-
-
      thread_message_channel_sender.send(data_content).expect("send_cross_thread_message_on_ice_candidate except");
 
      Ok(())
