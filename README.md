@@ -15,7 +15,7 @@
 ![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic2.png)
 
 
-![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic.png)
+![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/TEST1.png)
 
 
 ## how to stream music in channel
