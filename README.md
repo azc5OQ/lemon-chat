@@ -15,8 +15,7 @@
 ![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic2.png)
 
 
-![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/TEST1.PNG)
-
+![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/test1.PNG)
 
 ## how to stream music in channel
 First, you need to convert your mp3 to .wav file.
