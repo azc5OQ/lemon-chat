@@ -43,5 +43,8 @@ https://github.com/ricmoo/aes-js
 https://github.com/azc5OQ/libopusjs
 
 
+# video of how it works here:
+https://streamable.com/0urmck
+
 
 
