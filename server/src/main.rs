@@ -18,6 +18,14 @@ use std::io::Write;
 
 type AesCtr = ctr::Ctr128BE<aes::Aes256>;
 
+
+#[derive(Default)]
+struct ChatMessageEntry {
+    message_id: usize,
+    message_type: i8,    //1 channel, 2 private
+    receiver_id: u64
+}
+
 #[derive(Default)]
 struct Client {
     client_id: u64,
@@ -35,7 +43,8 @@ struct Client {
     channel_id: u64,
     microphone_state: u64,
     is_webrtc_datachannel_connected: bool,
-    is_existing: bool
+    is_existing: bool,
+    message_ids: Vec<ChatMessageEntry>
 }
 
 #[derive(Default)]
@@ -71,10 +80,10 @@ lazy_static! {
     static ref ADMIN_PASSWORD: RwLock<String> = RwLock::new(String::new());
 }
 
-static CHAT_PICTURE_ID: AtomicUsize = AtomicUsize::new(0);
+static CHAT_MESSAGE_ID: AtomicUsize = AtomicUsize::new(0);
 
-fn update_chat_picture_id() {
-    CHAT_PICTURE_ID.fetch_add(1, Ordering::SeqCst);
+fn update_chat_message_id() {
+    CHAT_MESSAGE_ID.fetch_add(1, Ordering::SeqCst);
 }
 
 fn send_for_clients_in_channel_maintainer_id(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, channel_id: u64, new_maintainer_id: u64, ) {
@@ -242,6 +251,37 @@ fn send_maintainer_id_to_single_client(clients: &HashMap<u64, Client>, websocket
     }
 }
 
+//
+//client needs to know what message id got assigned to his sent message
+//
+
+fn send_server_chat_message_id_for_local_message_id(websockets: &HashMap<u64, Responder>, client_id: u64, server_chat_message_id: usize, local_message_id: usize) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("server_chat_message_id_for_local_message_id"));
+    json_message_object.insert(String::from("local_message_id"), serde_json::Value::from(local_message_id));
+    json_message_object.insert(String::from("server_chat_message_id"), serde_json::Value::from(server_chat_message_id));
+
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    let current_client_websocket: Option<&Responder> = websockets.get(&client_id);
+
+    match current_client_websocket {
+        None => {}
+        Some(websocket) => {
+
+            let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+            let test = serde_json::Value::Object(json_root_object1);
+            let data_content: String = serde_json::to_string(&test).unwrap();
+            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+            websocket.send(Message::Text(data_to_send_base64));
+        }
+    }
+}
+
 fn send_access_denied_to_single_client(websockets: &HashMap<u64, Responder>, client_id: u64,) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -303,6 +343,8 @@ fn broadcast_peer_connection_state(clients: &HashMap<u64, Client>, websockets: &
     }
 }
 
+
+
 fn send_ice_candidate_to_client(websocket: &Responder, value: String) {
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
@@ -322,7 +364,7 @@ fn send_ice_candidate_to_client(websocket: &Responder, value: String) {
 }
 
 
-fn send_active_microphone_usage_for_current_channel_to_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_client_id: u64, current_channel_id: u64) {
+fn send_active_microphone_usage_for_current_channel_to_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_channel_id: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -592,9 +634,7 @@ fn broadcast_client_disconnect(clients: &mut HashMap<u64, Client>, websockets: &
                 match current_client_websocket {
                     None => {}
                     Some(websocket) => {
-
                         let json_root_object1: Map<String, Value> = json_root_object.clone();
-
                         let test = serde_json::Value::Object(json_root_object1);
                         let data_content: String = serde_json::to_string(&test).unwrap();
                         let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
@@ -682,7 +722,6 @@ fn broadcast_channel_join(clients: &HashMap<u64, Client>, websockets: &HashMap<u
 
     let client_that_joins_microphone_state= clients.get(&client_id).unwrap().microphone_state;
 
-
     for (_key, client) in clients {
 
         if client.is_existing == false {
@@ -713,6 +752,7 @@ fn broadcast_channel_join(clients: &HashMap<u64, Client>, websockets: &HashMap<u
         json_message_object.insert(String::from("microphone_state"),serde_json::Value::from(microphone_state));
 
         json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
 
 
 
@@ -785,6 +825,45 @@ fn broadcast_channel_delete(clients: &HashMap<u64, Client>, websockets: &HashMap
         }
 
         if client.is_authenticated == false {
+            continue;
+        }
+
+        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                websocket.send(Message::Text(data_to_send_base64));
+            }
+        }
+    }
+}
+
+fn send_delete_chat_message_to_selected_clients(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>,client_ids: &Vec<u64>, chat_message_id: usize) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("chat_message_delete"));
+    json_message_object.insert(String::from("chat_message_id"),serde_json::Value::from(chat_message_id));
+
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    for (_key, client) in clients {
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false {
+            continue;
+        }
+
+        if client_ids.contains(&client.client_id) == false {
             continue;
         }
 
@@ -1279,6 +1358,24 @@ fn is_channel_join_message_valid(clients: &mut HashMap<u64, Client>, client_id: 
     return result;
 }
 
+fn is_chat_message_delete_request_valid(message: &serde_json::Value) -> bool {
+
+    let mut result: bool = true;
+
+    if message["message"]["message_id"].is_i64() == false {
+        result = false;
+    }
+
+    if result == true {
+        //if everything is still allright check if user is trying to delete root channel
+        if message["message"]["message_id"].as_i64().unwrap() == 0 {
+            result = false;
+        }
+    }
+
+    return result;
+}
+
 fn is_channel_delete_request_valid(_clients: &HashMap<u64, Client>, message: &serde_json::Value) -> bool {
 
     let mut result: bool = true;
@@ -1307,7 +1404,6 @@ fn is_channel_delete_request_valid(_clients: &HashMap<u64, Client>, message: &se
             result = false;
         }
     }
-
 
     return result;
 }
@@ -1432,7 +1528,7 @@ fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut Has
                     //
 
                     let websocket: &Responder = websockets.get(&client_id1).unwrap();
-                    send_active_microphone_usage_for_current_channel_to_client(clients, websocket, client_id1, 0);
+                    send_active_microphone_usage_for_current_channel_to_client(clients, websocket, 0);
                 }
             }
 
@@ -1450,6 +1546,67 @@ fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut Has
     return result;
 }
 
+fn process_delete_chat_message_request(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) {
+
+    let result: bool = is_chat_message_delete_request_valid(message);
+
+    if result == true {
+
+        let message_id_to_delete: usize = message["message"]["message_id"].as_i64().unwrap() as usize;
+
+        let client_option: Option<&mut Client> = clients.get_mut(&client_id);
+
+        match client_option {
+            None => {}
+            Some(client) => {
+
+                let mut is_client_owner_of_message: bool = false;
+                let mut detected_message_type: i8 = 0;
+                let mut detected_index: usize = 0;
+                let mut detected_receiver_id: u64 = 0;
+
+                for entry in client.message_ids.iter() {
+                    if entry.message_id == message_id_to_delete {
+                        is_client_owner_of_message = true;
+                        detected_message_type = entry.message_type;
+                        detected_receiver_id = entry.receiver_id;
+                        break;
+                    }
+                    detected_index += 1;
+                }
+
+                if is_client_owner_of_message == true {
+                    client.message_ids.remove(detected_index);
+
+                    println!("message deleted from Vec, index: {} ", detected_index);
+
+                    if detected_message_type == 1 {
+                        println!("trying to delete channel chat message");
+                        let mut clients_ids: Vec<u64> = Vec::new();
+
+                        //loop throuh clients, add those that have same channel_id as receiver_id
+                        for entry in clients.iter() {
+                            if entry.1.channel_id == detected_receiver_id {
+                                clients_ids.push(entry.1.client_id);
+                            }
+                        }
+
+                        send_delete_chat_message_to_selected_clients(clients, websockets, &clients_ids, message_id_to_delete);
+
+                    } else if detected_message_type == 2 {
+                        println!("trying to delete private chat message");
+                        let mut clients_ids: Vec<u64> = Vec::new();
+                        clients_ids.push(detected_receiver_id); //append both receiver and sender
+                        clients_ids.push(client.client_id);
+                        send_delete_chat_message_to_selected_clients(clients, websockets, &clients_ids, message_id_to_delete);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 fn process_channel_create(clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, _websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64)  -> (bool, u64) {
 
     let mut result: (bool,  u64) = (false, 0);
@@ -1458,7 +1615,6 @@ fn process_channel_create(clients: &mut HashMap<u64, Client>, channels: &mut Has
 
     let status: bool = is_channel_create_allowed(client_that_creates_channel, channels, message);
     if status == true {
-
 
         //channel_id == key in hashmap
         let unused_channel_id: u64 = (0..u64::MAX)
@@ -1551,7 +1707,6 @@ fn process_channel_join(sender: &std::sync::mpsc::Sender<String>, clients: &mut 
                     //set new channel_id to client that wants to switch channel
                     if status2.0 == true {
 
-
                         let username_new_maintainer = clients.get(&status2.1).unwrap().username.clone();
 
                         println!("found new maintainer for channel {} username: {}", channel_name, username_new_maintainer);
@@ -1610,7 +1765,7 @@ fn process_channel_join(sender: &std::sync::mpsc::Sender<String>, clients: &mut 
 
                 let websocket: &Responder = websockets.get(&client_id).unwrap();
 
-                send_active_microphone_usage_for_current_channel_to_client(clients, websocket, client_id, new_joined_channel.channel_id);
+                send_active_microphone_usage_for_current_channel_to_client(clients, websocket, new_joined_channel.channel_id);
             } else {
                 println!("channel password is not valid");
             }
@@ -1730,7 +1885,6 @@ fn process_channel_edit(clients: &mut HashMap<u64, Client>, channels: &mut HashM
                         channel_to_edit.name = msg_channel_name;
 
                         broadcast_channel_edit(clients, websockets, channel_to_edit);
-
                     }
                 }
             }
@@ -1751,11 +1905,20 @@ fn is_chat_message_format_valid(message: &serde_json::Value) -> bool {
         result = false;
     }
 
+    if message["message"]["local_message_id"] == false {
+        println!("field message.local_message_id does not exist");
+        result = false;
+    }
+
     if message["message"]["value"].is_string() == false {
         result = false;
     }
 
     if message["message"]["receiver_id"].is_i64() == false {
+        result = false;
+    }
+
+    if message["message"]["local_message_id"].is_i64() == false {
         result = false;
     }
 
@@ -1768,10 +1931,10 @@ fn send_channel_chat_picture_metadata(clients: &HashMap<u64, Client>, websockets
 
     let sender_client = clients.get(&sender_id).unwrap();
 
-    update_chat_picture_id();
+    update_chat_message_id();
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("channel_chat_picture_metadata"));
-    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_PICTURE_ID.load(Ordering::SeqCst)));
+    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_MESSAGE_ID.load(Ordering::SeqCst)));
     json_message_object.insert(String::from("username"), serde_json::Value::from(sender_client.username.clone()));
     json_message_object.insert(String::from("channel_id"), serde_json::Value::from(channel_id));
     json_message_object.insert(String::from("size"), serde_json::Value::from(10000000));
@@ -1820,10 +1983,10 @@ fn send_direct_chat_picture_metadata(clients: &HashMap<u64, Client>, websockets:
     let receiver_websocket = websockets.get(&receiver_id).unwrap();
     let sender_client = clients.get(&sender_id).unwrap();
 
-    update_chat_picture_id();
+    update_chat_message_id();
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("direct_chat_picture_metadata"));
-    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_PICTURE_ID.load(Ordering::SeqCst)));
+    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_MESSAGE_ID.load(Ordering::SeqCst)));
     json_message_object.insert(String::from("sender_username"), serde_json::Value::from(sender_client.username.clone()));
     json_message_object.insert(String::from("sender_id"), serde_json::Value::from(sender_id));
 
@@ -1844,7 +2007,7 @@ fn send_direct_chat_picture(clients: &HashMap<u64, Client>, websockets: &HashMap
     let sender_client = clients.get(&sender_id).unwrap();
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("direct_chat_picture"));
-    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_PICTURE_ID.load(Ordering::SeqCst)));
+    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_MESSAGE_ID.load(Ordering::SeqCst)));
     json_message_object.insert(String::from("sender_username"), serde_json::Value::from(sender_client.username.clone()));
     json_message_object.insert(String::from("sender_id"), serde_json::Value::from(sender_id));
     json_message_object.insert(String::from("value"), serde_json::Value::from(message_value));
@@ -1858,7 +2021,7 @@ fn send_direct_chat_picture(clients: &HashMap<u64, Client>, websockets: &HashMap
     receiver_websocket.send(Message::Text(data_to_send_base64));
 }
 
-fn send_direct_chat_message(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, message_value: String, sender_id: u64, receiver_id: u64) {
+fn send_direct_chat_message(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, message_value: String, sender_id: u64, receiver_id: u64, server_chat_message_id: usize) {
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
@@ -1869,6 +2032,8 @@ fn send_direct_chat_message(clients: &HashMap<u64, Client>, websockets: &HashMap
     json_message_object.insert(String::from("value"), serde_json::Value::from(message_value));
     json_message_object.insert(String::from("sender_username"), serde_json::Value::from(sender_client.username.clone()));
     json_message_object.insert(String::from("sender_id"), serde_json::Value::from(sender_id));
+    json_message_object.insert(String::from("server_chat_message_id"), serde_json::Value::from(server_chat_message_id));
+
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
@@ -1886,7 +2051,7 @@ fn send_channel_chat_picture(clients: &HashMap<u64, Client>, websockets: &HashMa
     let sender_client = clients.get(&sender_id).unwrap();
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("channel_chat_picture"));
-    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_PICTURE_ID.load(Ordering::SeqCst)));
+    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_MESSAGE_ID.load(Ordering::SeqCst)));
     json_message_object.insert(String::from("username"), serde_json::Value::from(sender_client.username.clone()));
     json_message_object.insert(String::from("channel_id"), serde_json::Value::from(channel_id));
     json_message_object.insert(String::from("value"), serde_json::Value::from(message_value));
@@ -1931,14 +2096,39 @@ fn send_channel_chat_picture(clients: &HashMap<u64, Client>, websockets: &HashMa
 fn process_direct_chat_message(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, sender_id: u64) {
     let status: bool = is_chat_message_format_valid(message);
     if status == true {
-        let msg_receiver_id = message["message"]["receiver_id"].as_u64().unwrap();
-        let msg_value: String =  String::from(message["message"]["value"].as_str().unwrap());
+        let msg_receiver_id: u64 = message["message"]["receiver_id"].as_u64().unwrap();
+        let msg_value: String = String::from(message["message"]["value"].as_str().unwrap());
+        let msg_local_message_id: usize = message["message"]["local_message_id"].as_u64().unwrap() as usize;
 
-        let client_option: Option<&Client> = clients.get(&msg_receiver_id);
-        match client_option {
+        let client_receiver_option: Option<&Client> = clients.get(&msg_receiver_id);
+
+        match client_receiver_option {
             None => {}
-            Some(_client) => {
-                send_direct_chat_message(clients, websockets, msg_value, sender_id, msg_receiver_id);
+            Some(_client_receiver) => {
+
+                //
+                //client that will receive message exists
+                //
+
+                let client_sender_option: Option<&mut Client> = clients.get_mut(&sender_id); //could unwrap it now
+
+                match client_sender_option {
+                    None => {}
+                    Some(_client_sender) => {
+                        update_chat_message_id();
+                        let chat_message_id: usize = CHAT_MESSAGE_ID.load(Ordering::SeqCst);
+
+                        let chatentry: ChatMessageEntry = ChatMessageEntry {
+                            message_id: chat_message_id,
+                            message_type: 2, //2 private,
+                            receiver_id: msg_receiver_id
+                        };
+
+                        _client_sender.message_ids.push(chatentry);
+                        send_server_chat_message_id_for_local_message_id(websockets, sender_id, chat_message_id, msg_local_message_id);
+                        send_direct_chat_message(clients, websockets, msg_value, sender_id, msg_receiver_id, chat_message_id);
+                    }
+                }
             }
         }
     }
@@ -1951,8 +2141,6 @@ fn change_client_microphone_usage(clients: &mut HashMap<u64, Client>, _websocket
 
 fn process_microphone_usage_message(clients: &mut HashMap<u64, Client>, _channels: &HashMap<u64, Channel>, websockets: &HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) -> (bool, u64) {
     let mut result: (bool, u64) = (false, 0);
-
-
 
     let status: bool = is_microphone_usage_valid(message);
     if status == true {
@@ -1980,19 +2168,34 @@ fn process_channel_chat_message(clients: &mut HashMap<u64, Client>, channels: &H
     let status: bool = is_chat_message_format_valid(message);
     if status == true {
 
-        let msg_channel_id = message["message"]["receiver_id"].as_u64().unwrap();
+        let msg_channel_id: u64 = message["message"]["receiver_id"].as_u64().unwrap();
         let msg_value: String =  String::from(message["message"]["value"].as_str().unwrap());
+        let msg_local_message_id: usize = message["message"]["local_message_id"].as_u64().unwrap() as usize;
 
-        let client_option: Option<&Client> = clients.get(&sender_id);
-        match client_option {
+        let client_sender_option: Option<&mut Client> = clients.get_mut(&sender_id);
+
+        match client_sender_option {
             None => {}
-            Some(client) => {
+            Some(client_sender) => {
 
-                let channel_option: Option<&Channel> = channels.get(&client.channel_id);
+                let channel_option: Option<&Channel> = channels.get(&client_sender.channel_id);
                 match channel_option {
                     None => {}
                     Some(_channel) => {
-                            send_channel_chat_message(clients, websockets, msg_value, client.username.clone(), sender_id, msg_channel_id);
+                        update_chat_message_id();
+
+                        let chat_message_id: usize = CHAT_MESSAGE_ID.load(Ordering::SeqCst);
+
+                        let messageentry: ChatMessageEntry = ChatMessageEntry {
+                            message_id: chat_message_id,
+                            message_type: 1, //1 channel
+                            receiver_id: msg_channel_id
+                        };
+
+                        client_sender.message_ids.push(messageentry);
+
+                        send_server_chat_message_id_for_local_message_id(websockets, sender_id, chat_message_id, msg_local_message_id);
+                        send_channel_chat_message(clients, websockets, msg_value, sender_id, msg_channel_id, chat_message_id);
                     }
                 }
             }
@@ -2008,6 +2211,7 @@ fn process_direct_chat_picture(clients: &mut HashMap<u64, Client>, websockets: &
         let msg_value: String =  String::from(message["message"]["value"].as_str().unwrap());
 
         let client_option: Option<&Client> = clients.get(&msg_receiver_id);
+
         match client_option {
             None => {}
             Some(_client) => {
@@ -2049,14 +2253,18 @@ fn process_channel_chat_picture(clients: &mut HashMap<u64, Client>, channels: &m
     }
 }
 
-fn send_channel_chat_message(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, message_value: String, sender_username: String, sender_id: u64, channel_id: u64) {
+fn send_channel_chat_message(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, message_value: String, sender_id: u64, channel_id: u64, server_chat_message_id: usize) {
+
+    let sender_client: &Client = clients.get(&sender_id).unwrap();
+
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("channel_chat_message"));
     json_message_object.insert(String::from("value"),serde_json::Value::from(message_value));
     json_message_object.insert(String::from("channel_id"),serde_json::Value::from(channel_id));
-    json_message_object.insert(String::from("sender_username"),serde_json::Value::from(sender_username));
+    json_message_object.insert(String::from("server_chat_message_id"),serde_json::Value::from(server_chat_message_id));
+    json_message_object.insert(String::from("sender_username"),serde_json::Value::from(sender_client.username.clone()));
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
@@ -2145,6 +2353,10 @@ fn process_authenticated_message(client_id: u64, websockets: &mut HashMap<u64, R
 
     let message_type: &Value = &message["message"]["type"];
 
+
+    if message_type == "delete_chat_message_request" {
+        process_delete_chat_message_request(clients, websockets, &message, client_id);
+    }
     if message_type == "change_client_username" {
     //let new_desired_username = String::from(&message["message"]["new_username"].clone().to_string());
 
@@ -2269,6 +2481,7 @@ fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u6
                     default_name.push_str(connection_id_string.as_str());
                     current_client.username = default_name;
                     current_client.is_authenticated = true;
+                    current_client.message_ids = Vec::new();
 
                     let datetime: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
                     let timestamp_now: i64 = datetime.timestamp();
@@ -2283,7 +2496,7 @@ fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u6
                     send_channel_list_to_client(channels, websocket);
                     send_client_list_to_client(clients, websocket, current_client_username);
 
-                    send_active_microphone_usage_for_current_channel_to_client(clients, websocket, client_id, 0);
+                    send_active_microphone_usage_for_current_channel_to_client(clients, websocket, 0);
 
                     process_client_connect(clients, channels, websockets, client_id);
 
@@ -2460,8 +2673,8 @@ fn encrypt_string_then_convert_to_base64(input: String) -> String {
     //VI is same for every key
     let iv: [u8; 16] = [90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10];
 
-
     let a: RwLockReadGuard<Vec<String>> = ENCRYPTION_KEYS_CONNECTION.read().unwrap();
+
     for single_key_string in a.clone().into_iter() {
 
         let mut sha256 = Sha256::new();
