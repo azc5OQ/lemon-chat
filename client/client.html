@@ -101,11 +101,12 @@
 
         #space-devider1
         {
-          width: 14%;
-          display: inline-block;
-          vertical-align: top;
-          height: 100%;
-          overflow: auto;
+            width: 14%;
+            display: inline-block;
+            vertical-align: top;
+            height: 100%;
+            overflow: auto;
+            min-width: 100px;
         }
 
         #space-devider2
@@ -117,13 +118,6 @@
             left: -4px;
             scrollbar-width: thin;
             scrollbar-color: #3f3f4d #6b7c9a;
-        }
-
-        #space-devider4
-        {
-          display: inline-block;
-          vertical-align: top;
-          height: 100%;
         }
 
         .text-input-container
@@ -296,13 +290,6 @@
             background-color: #36393f;
         }
 
-        #space-devider4
-        {
-          background-color: inherit;
-          width: 7%;
-          height: 100%;
-        }
-
         #channel-list-container
         {
             background-color: inherit;
@@ -366,7 +353,42 @@
             background-color: #b9d436;
         }
 
-        .single-channel {
+        .chat-message-context-menu-background
+        {
+            background-color: #60656f;
+            width: 130px;
+            height: 48px;
+            opacity: 0.8;
+        }
+        
+        .chat-message-context-menu-items
+        {
+            position: absolute;
+            top: 0px;
+            width: 130px;
+            overflow: hidden;
+            background: linear-gradient(109.6deg, #8361af 11.2%, rgb(36 163 190 / 69%) 91.1%);
+        }
+       
+        .chat-message-context-menu-items p
+        {
+            color: white;
+            top: 0px;
+            width: 130px;
+            font-size: 0.7em;
+            font-family: sans-serif;
+            padding: 5px;
+            cursor: pointer;
+            overflow: hidden;
+        }
+        
+        .chat-message-context-menu-items p:hover
+        {
+            background-color: #b9d436;
+        }
+        
+        .single-channel
+        {
             cursor: pointer;
             padding-left: 15px;
             padding-top: 5px;
@@ -381,6 +403,8 @@
             -ms-user-select: none;
             user-select: none;
             min-width: 141px;
+            white-space: nowrap; //this makes div use available width including width of div past scroll
+
         }
 
         .single-channel-collapse-button 
@@ -421,23 +445,23 @@
             font: 16px sans-serif;
         }
 
-        #chat-input-container
+        #space-devider4
         {
-          display: inline-block;
-          vertical-align: top;
-          height: 25%;
-          width: 75%;
+            display: inline-block;
+            vertical-align: top;
+            height: 25%;
+            width: 73%;
         }
 
         .single-chat-message
         {
-          background-color: inherit;
-          border-radius: 9px;
-          color: white;
-          font-family: sans-serif;
-          width: 94%;
-          min-height: 44px;
-          margin: 0px;
+            background-color: inherit;
+            border-radius: 9px;
+            color: white;
+            font-family: sans-serif;
+            width: 94%;
+            min-height: 44px;
+            margin: 0px;
         }
         
         #space-devider1::-webkit-scrollbar,
@@ -456,6 +480,11 @@
         body::-webkit-scrollbar-track
         {
             background: black;
+        }
+
+        ::-webkit-scrollbar-corner
+        {
+            background-color: transparent;
         }
 
         #space-devider1::-webkit-scrollbar-thumb,
@@ -515,35 +544,35 @@
 
         #space-devider3
         {
-          height: 1px;
-          width: 14%;
-          display: inline-block;
+            height: 1px;
+            width: 14%;
+            display: inline-block;
         }
 
         .single-chat-message-sender-time
         {
-          display: inline-block;
-          font-size: 10px;
-          vertical-align: middle;
-          font-style: italic;
-          font-family: sans-serif;
-          font-size: 10px;
-          color: #898e8c;
-          font-weight: bold;
+            display: inline-block;
+            font-size: 10px;
+            vertical-align: middle;
+            font-style: italic;
+            font-family: sans-serif;
+            font-size: 10px;
+            color: #898e8c;
+            font-weight: bold;
         }
 
         .single-chat-message-sender-username-container
         {
-          display: inline-block;
-          padding-right: 0.3em;
-          color: #a3c0f0;
+            display: inline-block;
+            padding-right: 0.3em;
+            color: #a3c0f0;
         }
 
         .single-chat-message-sender-local-username-container
         {
-          display: inline-block;
-          padding-right: 0.3em;
-          color: #d1e2ff;
+            display: inline-block;
+            padding-right: 0.3em;
+            color: #d1e2ff;
         }
 
         .single-chat-message-content
@@ -552,6 +581,25 @@
             font-size: 12px;
             max-width: 943px;
             word-break: break-all;
+        }
+
+        .single-chat-message-content-p
+        {
+            padding-top: 1px;
+            padding-right: 5px;
+            padding-bottom: 1px;
+            padding-left: 10px;
+            left: -10px;
+        }
+
+        .single-chat-message-content-p-hover
+        {
+            background-image: linear-gradient( 109.6deg,  rgba(15,2,2,1) 11.2%, rgba(36,163,190,1) 91.1%)
+        }
+
+        .local-single-chat-message-content-p:hover
+        {
+            background-image: linear-gradient( 109.6deg,  rgba(15,2,2,1) 11.2%, rgba(36,163,190,1) 91.1%)
         }
 
         .connected-client, .connected-local-client 
@@ -592,14 +640,6 @@
             display: none;
             width: 50%;
             height: 50%;
-        }
-
-        #chat-input-container
-        {
-          display: inline-block;
-          vertical-align: top;
-          height: 25%;
-          width: 75%;
         }
 
         #custom-file-upload-button-image
@@ -8717,9 +8757,6 @@ background-color: black;
             player.connect(audio_player_gain_node);
             audio_player_gain_node.connect(audio_context.destination);
 
-            document.addEventListener("keydown", document_onkeydown);
-            document.addEventListener("keyup", document_onkeyup);
-
             try
             {
                 setup_peer_connection_object_for_use();
@@ -8747,6 +8784,10 @@ background-color: black;
         {
             process_channel_list_from_server(e.data.value);
         }
+        else if (e.data.type == "data_processing_worker__chat_message_delete_from_server")
+        {
+            process_chat_message_delete_from_server(e.data.value);
+        }
         else if (e.data.type == "data_processing_worker__access_denied_from_server")
         {
             process_access_denied_from_server(e.data.value);
@@ -8758,6 +8799,10 @@ background-color: black;
         else if (e.data.type == "data_processing_worker__channel_join_from_server")
         {
             process_channel_join_from_server(e.data.value);
+        }
+        else if (e.data.type == "data_processing_worker__server_chat_message_id_for_local_message_id_from_server")
+        {
+            process_server_chat_message_id_for_local_message_id_from_server(e.data.value);
         }
         else if (e.data.type == "data_processing_worker__client_role_add_from_server")
         {
@@ -8918,490 +8963,99 @@ background-color: black;
 
     function data_processing_worker_onmessage(e)
     {
-            if (e.data.type == "mainthread__metadata_keys")
+        if (e.data.type == "mainthread__metadata_keys")
+        {
+            metadata_keys = e.data.value;
+            global.postMessage({
+                type : "data_processing_worker__metadata_keys_accepted",
+                value : null
+            });
+        }
+        else if (e.data.type == "mainthread__generate_rsa_keypair")
+        {
+
+            custom_log("generating random public/private key pair");
+
+            
+            const randomstring = (length = 8) => {
+                // Declare all characters
+                let chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+                // Pick characers randomly
+                let str = '';
+                for (let i = 0; i < length; i++) {
+                    str += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+
+                return str;
+
+                };
+
+            const str1 = randomstring(100);
+            cryptico_library = cryptico;
+
+            my_rsa_key_object = cryptico_library.generateRSAKey(str1, 2048);
+            rsa_public_key_string = cryptico_library.publicKeyString(my_rsa_key_object);
+
+            global.postMessage({
+                type : "data_processing_worker__generate_rsa_keypair_result",
+                value : rsa_public_key_string
+            });
+
+            custom_log("public key: " + rsa_public_key_string);
+        }
+        else if (e.data.type == "mainthread__process_received_websocket_message")
+        {
+            mainthread__process_received_websocket_message_continue(e);
+        }
+        else if (e.data.type == "mainthread__channel_keys_for_data_processing_worker")
+        {
+            current_channel_keys = e.data.value;
+        }
+        else if (e.data.type == "mainthread__create_websocket_channel_keys_message")
+        {
+            let new_channel_keys = [];
+
+            for (let i = 0; i < 4; i++)
             {
-                metadata_keys = e.data.value;
-                global.postMessage({
-                    type : "data_processing_worker__metadata_keys_accepted",
-                    value : null
-                });
-            }
-            else if (e.data.type == "mainthread__generate_rsa_keypair")
-            {
+                let single_key = {
+                    key_bytes: [],
+                    iv_bytes: []
+                };
 
-                custom_log("generating random public/private key pair");
-
-                
-                const randomstring = (length = 8) => {
-                    // Declare all characters
-                    let chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-
-                    // Pick characers randomly
-                    let str = '';
-                    for (let i = 0; i < length; i++) {
-                        str += chars.charAt(Math.floor(Math.random() * chars.length));
-                    }
-
-                    return str;
-
-                    };
-
-                const str1 = randomstring(100);
-                cryptico_library = cryptico;
-
-                my_rsa_key_object = cryptico_library.generateRSAKey(str1, 2048);
-                rsa_public_key_string = cryptico_library.publicKeyString(my_rsa_key_object);
-
-                global.postMessage({
-                    type : "data_processing_worker__generate_rsa_keypair_result",
-                    value : rsa_public_key_string
-                });
-
-                custom_log("public key: " + rsa_public_key_string);
-            }
-            else if (e.data.type == "mainthread__process_received_websocket_message")
-            {
-                let decrypted_metadata = decrypt_message_metadata(e.data.value);
-
-                //console.log("worker_onmessage" + decrypted_metadata);
-
-                if (decrypted_metadata == "connection_test")
+                for (let ii = 0; ii < 32; ii++)
                 {
-                    return;
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.key_bytes.push(single_byte);
                 }
 
-                let msg = null;
-
-                try
+                for (let ii = 0; ii < 16; ii++)
                 {
-                    msg = JSON.parse(decrypted_metadata);
-                }
-                catch (Exception)
-                {
-                    console.log(Exception);
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.iv_bytes.push(single_byte);
                 }
 
-                //console.log(msg);
-
-                    if (!is_authenticated)
-                    {
-                        if(msg.message.type == "authentication_status")
-                        {
-                            if(msg.message.value == "success")
-                            {
-                                console.log(msg);
-                                //g_connection_check_message_response_received_timestamp = new Date().valueOf();
-                                //cant access global variable, workers has separate variable scope
-                                is_authenticated = true;
-                                global.postMessage({
-                                    type : "data_processing_worker__authentication_status",
-                                    value : "success"
-                                });
-
-                                if(msg.message.is_voice_chat_active == true)
-                                {
-                                    global.postMessage({
-                                        type : "data_processing_worker__audio_enabled",
-                                        value : true,
-                                        stun_port: msg.message.stun_port
-                                    });
-                                }
-                            }
-                        }
-                        else
-                        {
-                            global.postMessage({
-                                type : "data_processing_worker__authentication_status",
-                                value : "fail"
-                            });
-                        }
-                    }
-                    else
-                    {
-                        if (decrypted_metadata == "test")
-                        {
-                            return;
-                        }
-                        //console.log(msg);
-
-                        let str = '[R] msg.message.type : ' + msg.message.type + ' | size in bytes: ' + decrypted_metadata.length;
-
-                        custom_log(str);
-                    
-                    if (msg.message.type == "connection_check_response")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__connection_check_response",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "client_list")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__client_list_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "access_denied")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__access_denied_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "peer_connection_state_of_client")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__peer_connection_state_of_client_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "channel_list")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__channel_list_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "channel_join")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__channel_join_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "client_role_add")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__client_role_add_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "client_connect")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__client_connect_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "client_disconnect")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__client_disconnect_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "client_rename")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__client_rename_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "microphone_usage")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__microphone_usage_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "current_channel_active_microphone_usage")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__current_channel_active_microphone_usage_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "sdp_offer")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__sdp_offer_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "ice_candidate")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__ice_candidate_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "server_info_broadcast")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__server_info_broadcast_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "channel_edit")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__channel_edit_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "channel_delete")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__channel_delete_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "channel_create")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__channel_create_from_server",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "channel_chat_picture_metadata")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__channel_chat_picture_metadata",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "direct_chat_picture_metadata")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__direct_chat_picture_metadata",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "channel_maintainer_id")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__channel_maintainer_id",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "channel_chat_message")
-                    {
-                        if (current_channel_keys != null)
-                        {
-                            let decrypted_value = decrypt_base64_contents_with_aes_keys(current_channel_keys, msg.message.value);
-                            let sanitized_value = sanitize_string(decrypted_value);
-
-                            msg.message.decrypted_value = sanitized_value;
-                            msg.message.value = null;
-
-                            global.postMessage({
-                                type : "data_processing_worker__channel_chat_message",
-                                value : msg
-                            });
-                        }
-                        else
-                        {
-                            custom_log("channel_chat_message decrypt failed");
-                        }
-                    }
-                    else if (msg.message.type == "direct_chat_message")
-                    {
-                        //console.log("%cryptico_library", "color: red");
-                        console.log(cryptico_library);
-
-                        let message_data = JSON.parse(msg.message.value);
-
-                        let decryption_result = cryptico_library.decrypt(message_data.message_keys, my_rsa_key_object);
-
-                        if (decryption_result.status == 'failure')
-                        {
-                            custom_log("failed to decrypt direct chat message");
-                            return;
-                        }
-
-                        let currect_direct_message_keys = JSON.parse(decryption_result.plaintext);
-                        let decrypted_text = decrypt_base64_contents_with_aes_keys(currect_direct_message_keys, message_data.message_value);
-
-                        let some_json = JSON.parse(decrypted_text);
-
-                        if (some_json.type == "direct_chat_message")
-                        {
-                            some_json.value = sanitize_string(some_json.value);
-                        }
-
-                        msg.message.some_json = some_json;
-                        msg.message.value = null;
-
-                        global.postMessage({
-                            type : "data_processing_worker__direct_chat_message",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "direct_chat_picture")
-                    {
-                        let message_data = JSON.parse(msg.message.value);
-                        let decryption_result = cryptico_library.decrypt(message_data.message_keys, my_rsa_key_object);
-
-                        if (decryption_result.status == 'failure')
-                        {
-                            if (decryption_result.status == 'failure')
-                            {             
-                                log("failed to decrypt direct chat picture");
-
-                                return;
-                            }
-                            return;
-                        }
-
-                        let current_message_keys = JSON.parse(decryption_result.plaintext);
-
-                        let decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(current_message_keys, message_data.message_value);
-
-                        let decrypted_base64_picture_sanitized = sanitize_string(decrypted_base64_picture);
-
-                        msg.message.value = null;
-                        msg.message.decrypted_base64_picture = decrypted_base64_picture_sanitized;
-
-                        global.postMessage({
-                            type : "data_processing_worker__direct_chat_picture",
-                            value : msg
-                        });
-                    }
-                    else if (msg.message.type == "channel_chat_picture")
-                    {
-                        if (current_channel_keys != null)
-                        {
-                            msg.message.decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(current_channel_keys, msg.message.value);
-                            msg.message.value = null;
-                            global.postMessage({
-                                type : "data_processing_worker__channel_chat_picture",
-                                value : msg
-                            });
-                        }
-                        else
-                        {
-
-                            custom_log("channel_chat_picture decrypt failed, data_processing_worker thread missing current channel keys");
-                        }
-                    }
-                    else if (msg.message.type == "image_sent_status")
-                    {
-                        global.postMessage({
-                            type : "data_processing_worker__image_sent_status_from_server",
-                            value : msg
-                        });
-                    }
-                }
+                new_channel_keys.push(single_key);
             }
-            else if (e.data.type == "mainthread__channel_keys_for_data_processing_worker")
-            {
-                current_channel_keys = e.data.value;
-            }
-            else if (e.data.type == "mainthread__create_websocket_channel_keys_message")
-            {
-                let new_channel_keys = [];
 
-                for (let i = 0; i < 4; i++)
+            current_channel_keys = new_channel_keys;
+
+            global.postMessage({
+                type : "data_processing_worker__new_channel_keys_from_data_processing_worker",
+                value : new_channel_keys
+            });
+
+            for (let x = 0; x < e.data.clients.length; x++)
+            {
+                if (e.data.clients[x].channel_id != e.data.current_channel_id)
                 {
-                    let single_key = {
-                        key_bytes: [],
-                        iv_bytes: []
-                    };
-
-                    for (let ii = 0; ii < 32; ii++)
-                    {
-                        let single_byte = Math.floor(Math.random() * 254);
-                        single_key.key_bytes.push(single_byte);
-                    }
-
-                    for (let ii = 0; ii < 16; ii++)
-                    {
-                        let single_byte = Math.floor(Math.random() * 254);
-                        single_key.iv_bytes.push(single_byte);
-                    }
-
-                    new_channel_keys.push(single_key);
+                    continue;
+                }
+                if (e.data.clients[x].client_id == e.data.local_client_id)
+                {
+                    continue;
                 }
 
-                current_channel_keys = new_channel_keys;
-
-                global.postMessage({
-                    type : "data_processing_worker__new_channel_keys_from_data_processing_worker",
-                    value : new_channel_keys
-                });
-
-                for (let x = 0; x < e.data.clients.length; x++)
-                {
-                    if (e.data.clients[x].channel_id != e.data.current_channel_id)
-                    {
-                        continue;
-                    }
-                    if (e.data.clients[x].client_id == e.data.local_client_id)
-                    {
-                        continue;
-                    }
-
-                    let current_message_keys = [];
-
-                    for (let i = 0; i < 4; i++)
-                    {
-                        let single_key = {
-                            key_bytes: [],
-                            iv_bytes: []
-                        };
-
-                        for (let ii = 0; ii < 32; ii++)
-                        {
-                            let single_byte = Math.floor(Math.random() * 254);
-                            single_key.key_bytes.push(single_byte);
-                        }
-
-                        for (let ii = 0; ii < 16; ii++)
-                        {
-                            let single_byte = Math.floor(Math.random() * 254);
-                            single_key.iv_bytes.push(single_byte);
-                        }
-
-                        current_message_keys.push(single_key);
-                    }
-
-                    let single_message_aes_keys_string = JSON.stringify(current_message_keys);
-
-                    let encryption_result = cryptico_library.encrypt(single_message_aes_keys_string, e.data.clients[x].public_key);
-
-                    let message_data = {
-                        message_keys: encryption_result.cipher,
-                        message_value: ""
-                    };
-
-                    let message_value_object = {
-                        type: "channel_keys_from_maintainer",
-                        value: JSON.stringify(current_channel_keys)
-                    };
-
-                    message_data.message_value = encrypt_with_aes_keys_and_convert_to_base64(current_message_keys, JSON.stringify(message_value_object));
-
-                    let message_object = {
-                        "message" : {
-                            "type" : null,
-                            "value" : null,
-                            "receiver_type" : null,
-                            "receiver_id" : null
-                        }
-                    };
-
-                    message_object.message.type = "direct_chat_message";
-                    message_object.message.value = JSON.stringify(message_data);
-                    message_object.message.receiver_id = parseInt(e.data.clients[x].client_id);
-
-                    let message_json_string = JSON.stringify(message_object);
-                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
-
-                    //
-                    //channel keys message created, its contents encrypted
-                    //send message data, to be sent over websocket, to main thread
-                    //
-
-                    global.postMessage({
-                        type : "data_processing_worker__create_websocket_channel_keys_message_result",
-                        channel_keys_message_content : data,
-                        username: e.data.clients[x].username
-                    });
-                }
-            }
-            else if (e.data.type == "mainthread__create_direct_chat_message")
-            {
                 let current_message_keys = [];
 
                 for (let i = 0; i < 4; i++)
@@ -9427,7 +9081,8 @@ background-color: black;
                 }
 
                 let single_message_aes_keys_string = JSON.stringify(current_message_keys);
-                let encryption_result = cryptico_library.encrypt(single_message_aes_keys_string, e.data.receiver_public_key);
+
+                let encryption_result = cryptico_library.encrypt(single_message_aes_keys_string, e.data.clients[x].public_key);
 
                 let message_data = {
                     message_keys: encryption_result.cipher,
@@ -9435,137 +9090,549 @@ background-color: black;
                 };
 
                 let message_value_object = {
-                    type: "direct_chat_message",
-                    value: e.data.chat_message_value
+                    type: "channel_keys_from_maintainer",
+                    value: JSON.stringify(current_channel_keys)
                 };
 
                 message_data.message_value = encrypt_with_aes_keys_and_convert_to_base64(current_message_keys, JSON.stringify(message_value_object));
 
                 let message_object = {
-                    "message":
-                    {
-                        "type": null,
-                        "value": null,
-                        "receiver_id": null
+                    message : {
+                        type : null,
+                        value : null,
+                        receiver_type : null,
+                        receiver_id : null,
+                        local_message_id: 1 //local_message_id is not used but still needed because channel keys messages are subform of direct messages, and this is processed the same as direct message, this object property is also needed even if not used
+                                            //because server side processes these type of messages same as direct messages, to prevent server from discarding this as wrong, this field is specified even if not needed
                     }
                 };
 
                 message_object.message.type = "direct_chat_message";
                 message_object.message.value = JSON.stringify(message_data);
-                message_object.message.receiver_id = parseInt(e.data.chat_message_receiver_id);
+                message_object.message.receiver_id = parseInt(e.data.clients[x].client_id);
 
-                let message_json_string = process_message_before_sending(message_object);
-
+                let message_json_string = JSON.stringify(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
+                //
+                //channel keys message created, its contents encrypted
+                //send message data, to be sent over websocket, to main thread
+                //
+
                 global.postMessage({
-                    type : "data_processing_worker__tell_websocket_worker_to_send_data",
-                    data_to_be_sent_over_websocket : data
+                    type : "data_processing_worker__create_websocket_channel_keys_message_result",
+                    channel_keys_message_content : data,
+                    username: e.data.clients[x].username
                 });
-            }
-            else if (e.data.type == "mainthread__create_direct_chat_picture")
-            {
-                let current_message_keys = [];
-
-                for (let i = 0; i < 4; i++)
-                {
-                    let single_key = {
-                        key_bytes: [],
-                        iv_bytes: []
-                    };
-
-                    for (let ii = 0; ii < 32; ii++)
-                    {
-                        let single_byte = Math.floor(Math.random() * 254);
-                        single_key.key_bytes.push(single_byte);
-                    }
-
-                    for (let ii = 0; ii < 16; ii++)
-                    {
-                        let single_byte = Math.floor(Math.random() * 254);
-                        single_key.iv_bytes.push(single_byte);
-                    }
-
-                    current_message_keys.push(single_key);
-                }
-
-                let single_message_aes_keys_string = JSON.stringify(current_message_keys);
-
-                console.log("%c omega lul =>  cryptico_library.encrypt(single_message_a", "color: red");
-                let encryption_result = cryptico_library.encrypt(single_message_aes_keys_string, e.data.receiver_public_key);
-
-                let message_data = {
-                    message_keys: encryption_result.cipher,
-                    message_value: ""
-                };
-
-                console.log("base64_picture_string_to_send => " + e.data.base64_picture_string_to_send);
-
-                message_data.message_value = encrypt_with_aes_keys_and_convert_to_base64(current_message_keys, e.data.base64_picture_string_to_send);
-
-                let message_object = {
-                    "message":
-                    {
-                        "type": null,
-                        "value": null,
-                        "receiver_id": null
-                    }
-                };
-
-                message_object.message.type = "direct_chat_picture";
-                message_object.message.value = JSON.stringify(message_data);
-                message_object.message.receiver_id = parseInt(e.data.chat_message_receiver_id);
-
-                let message_json_string = process_message_before_sending(message_object);
-                let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
-
-                global.postMessage({
-                    type : "data_processing_worker__tell_websocket_worker_to_send_data",
-                    data_to_be_sent_over_websocket : data
-                });
-            }
-            else if (e.data.type == "mainthread__create_channel_chat_picture")
-            {                
-                let message_object = {
-                    "message":
-                    {
-                        "type": "channel_chat_picture",
-                        "value": "",
-                        "receiver_id": parseInt(e.data.current_channel_id)
-                    }
-                };
-
-                message_object.message.value = encrypt_with_aes_keys_and_convert_to_base64(e.data.current_channel_keys, e.data.base64_picture_string_to_send);
-
-                let message_json_string = process_message_before_sending(message_object);
-                let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
-
-                global.postMessage({
-                    type : "data_processing_worker__tell_websocket_worker_to_send_data",
-                    data_to_be_sent_over_websocket : data
-                });            
-            }
-            else if (e.data.type == "mainthread__create_channel_chat_message")
-            {
-                let message_object = {
-                    "message" : {
-                        "type" : "channel_chat_message",
-                        "value" : "",
-                        "receiver_id" : parseInt(e.data.current_channel_id)
-                    }
-                };
-
-                message_object.message.value = encrypt_with_aes_keys_and_convert_to_base64(e.data.current_channel_keys, e.data.chat_message_to_send_value);
-
-                let message_json_string = process_message_before_sending(message_object);
-                let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
-      
-                global.postMessage({
-                    type : "data_processing_worker__tell_websocket_worker_to_send_data",
-                    data_to_be_sent_over_websocket : data
-                });        
             }
         }
+        else if (e.data.type == "mainthread__create_direct_chat_message")
+        {
+            let current_message_keys = [];
+
+            for (let i = 0; i < 4; i++)
+            {
+                let single_key = {
+                    key_bytes: [],
+                    iv_bytes: []
+                };
+
+                for (let ii = 0; ii < 32; ii++)
+                {
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.key_bytes.push(single_byte);
+                }
+
+                for (let ii = 0; ii < 16; ii++)
+                {
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.iv_bytes.push(single_byte);
+                }
+
+                current_message_keys.push(single_key);
+            }
+
+            let single_message_aes_keys_string = JSON.stringify(current_message_keys);
+            let encryption_result = cryptico_library.encrypt(single_message_aes_keys_string, e.data.receiver_public_key);
+
+            let message_data = {
+                message_keys: encryption_result.cipher,
+                message_value: ""
+            };
+
+            let message_value_object = {
+                type: "direct_chat_message",
+                value: e.data.chat_message_value
+            };
+
+            message_data.message_value = encrypt_with_aes_keys_and_convert_to_base64(current_message_keys, JSON.stringify(message_value_object));
+
+            let message_object = {
+                message : {
+                    type: null,
+                    value: null,
+                    receiver_id: null,
+                    local_message_id : e.data.local_message_id
+                }
+            };
+
+            message_object.message.type = "direct_chat_message";
+            message_object.message.value = JSON.stringify(message_data);
+            message_object.message.receiver_id = parseInt(e.data.chat_message_receiver_id);
+
+            let message_json_string = process_message_before_sending(message_object);
+
+            let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+            global.postMessage({
+                type : "data_processing_worker__tell_websocket_worker_to_send_data",
+                data_to_be_sent_over_websocket : data
+            });
+        }
+        else if (e.data.type == "mainthread__create_direct_chat_picture")
+        {
+            let current_message_keys = [];
+
+            for (let i = 0; i < 4; i++)
+            {
+                let single_key = {
+                    key_bytes: [],
+                    iv_bytes: []
+                };
+
+                for (let ii = 0; ii < 32; ii++)
+                {
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.key_bytes.push(single_byte);
+                }
+
+                for (let ii = 0; ii < 16; ii++)
+                {
+                    let single_byte = Math.floor(Math.random() * 254);
+                    single_key.iv_bytes.push(single_byte);
+                }
+
+                current_message_keys.push(single_key);
+            }
+
+            let single_message_aes_keys_string = JSON.stringify(current_message_keys);
+
+            console.log("%c omega lul =>  cryptico_library.encrypt(single_message_a", "color: red");
+            let encryption_result = cryptico_library.encrypt(single_message_aes_keys_string, e.data.receiver_public_key);
+
+            let message_data = {
+                message_keys: encryption_result.cipher,
+                message_value: ""
+            };
+
+            console.log("base64_picture_string_to_send => " + e.data.base64_picture_string_to_send);
+
+            message_data.message_value = encrypt_with_aes_keys_and_convert_to_base64(current_message_keys, e.data.base64_picture_string_to_send);
+
+            let message_object = {
+                message:{
+                    type: null,
+                    value: null,
+                    receiver_id: null,
+                    local_message_id: e.data.local_message_id
+                }
+            };
+
+            message_object.message.type = "direct_chat_picture";
+            message_object.message.value = JSON.stringify(message_data);
+            message_object.message.receiver_id = parseInt(e.data.chat_message_receiver_id);
+
+            let message_json_string = process_message_before_sending(message_object);
+            let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+            global.postMessage({
+                type : "data_processing_worker__tell_websocket_worker_to_send_data",
+                data_to_be_sent_over_websocket : data
+            });
+        }
+        else if (e.data.type == "mainthread__create_channel_chat_picture")
+        {                
+            let message_object = { 
+                message: {
+                    type: "channel_chat_picture",
+                    value: "",
+                    receiver_id: parseInt(e.data.current_channel_id),
+                    local_message_id: e.data.local_message_id
+                }
+            };
+
+            message_object.message.value = encrypt_with_aes_keys_and_convert_to_base64(e.data.current_channel_keys, e.data.base64_picture_string_to_send);
+
+            let message_json_string = process_message_before_sending(message_object);
+            let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+            global.postMessage({
+                type : "data_processing_worker__tell_websocket_worker_to_send_data",
+                data_to_be_sent_over_websocket : data
+            });            
+        }
+        else if (e.data.type == "mainthread__create_channel_chat_message")
+        {
+            let message_object = {
+                message : {
+                    type : "channel_chat_message",
+                    value : "",
+                    receiver_id : parseInt(e.data.current_channel_id),
+                    local_message_id : e.data.local_message_id //server needs this to inform client that message has been received.This is different from message ID stored by server 
+                }
+            };
+
+            message_object.message.value = encrypt_with_aes_keys_and_convert_to_base64(e.data.current_channel_keys, e.data.chat_message_to_send_value);
+
+            let message_json_string = process_message_before_sending(message_object);
+            let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+    
+            global.postMessage({
+                type : "data_processing_worker__tell_websocket_worker_to_send_data",
+                data_to_be_sent_over_websocket : data
+            });        
+        }
+    }
+
+    function mainthread__process_received_websocket_message_continue(e)
+    {
+        let decrypted_metadata = decrypt_message_metadata(e.data.value);
+
+        //console.log("worker_onmessage" + decrypted_metadata);
+
+        if (decrypted_metadata == "connection_test")
+        {
+            return;
+        }
+
+        let msg = null;
+
+        try
+        {
+            msg = JSON.parse(decrypted_metadata);
+        }
+        catch (Exception)
+        {
+            console.log(Exception);
+        }
+
+        //console.log(msg);
+
+        if (!is_authenticated)
+        {
+            if(msg.message.type == "authentication_status")
+            {
+                if(msg.message.value == "success")
+                {
+                    console.log(msg);
+                    //g_connection_check_message_response_received_timestamp = new Date().valueOf();
+                    //cant access global variable, workers has separate variable scope
+                    is_authenticated = true;
+                    global.postMessage({
+                        type : "data_processing_worker__authentication_status",
+                        value : "success"
+                    });
+
+                    if(msg.message.is_voice_chat_active == true)
+                    {
+                        global.postMessage({
+                            type : "data_processing_worker__audio_enabled",
+                            value : true,
+                            stun_port: msg.message.stun_port
+                        });
+                    }
+                }
+            }
+            else
+            {
+                global.postMessage({
+                    type : "data_processing_worker__authentication_status",
+                    value : "fail"
+                });
+            }
+        }
+        else
+        {
+            if (decrypted_metadata == "test")
+            {
+                return;
+            }
+            //console.log(msg);
+
+            let str = '[R] msg.message.type : ' + msg.message.type + ' | size in bytes: ' + decrypted_metadata.length;
+
+            custom_log(str);
+
+            if (msg.message.type == "connection_check_response")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__connection_check_response",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "client_list")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__client_list_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "access_denied")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__access_denied_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "peer_connection_state_of_client")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__peer_connection_state_of_client_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "channel_list")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__channel_list_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "chat_message_delete")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__chat_message_delete_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "server_chat_message_id_for_local_message_id")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__server_chat_message_id_for_local_message_id_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "channel_join")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__channel_join_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "client_role_add")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__client_role_add_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "client_connect")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__client_connect_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "client_disconnect")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__client_disconnect_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "client_rename")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__client_rename_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "microphone_usage")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__microphone_usage_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "current_channel_active_microphone_usage")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__current_channel_active_microphone_usage_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "sdp_offer")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__sdp_offer_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "ice_candidate")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__ice_candidate_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "server_info_broadcast")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__server_info_broadcast_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "channel_edit")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__channel_edit_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "channel_delete")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__channel_delete_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "channel_create")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__channel_create_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "channel_chat_picture_metadata")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__channel_chat_picture_metadata",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "direct_chat_picture_metadata")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__direct_chat_picture_metadata",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "channel_maintainer_id")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__channel_maintainer_id",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "channel_chat_message")
+            {
+                if (current_channel_keys != null)
+                {
+                    let decrypted_value = decrypt_base64_contents_with_aes_keys(current_channel_keys, msg.message.value);
+                    let sanitized_value = sanitize_string(decrypted_value);
+
+                    msg.message.decrypted_value = sanitized_value;
+                    msg.message.value = null;
+
+                    global.postMessage({
+                        type : "data_processing_worker__channel_chat_message",
+                        value : msg
+                    });
+                }
+                else
+                {
+                    custom_log("channel_chat_message decrypt failed");
+                }
+            }
+            else if (msg.message.type == "direct_chat_message")
+            {
+                //console.log("%cryptico_library", "color: red");
+                console.log(cryptico_library);
+
+                let message_data = JSON.parse(msg.message.value);
+
+                let decryption_result = cryptico_library.decrypt(message_data.message_keys, my_rsa_key_object);
+
+                if (decryption_result.status == 'failure')
+                {
+                    custom_log("failed to decrypt direct chat message");
+                    return;
+                }
+
+                let currect_direct_message_keys = JSON.parse(decryption_result.plaintext);
+                let decrypted_text = decrypt_base64_contents_with_aes_keys(currect_direct_message_keys, message_data.message_value);
+
+                let some_json = JSON.parse(decrypted_text);
+
+                if (some_json.type == "direct_chat_message")
+                {
+                    some_json.value = sanitize_string(some_json.value);
+                }
+
+                msg.message.some_json = some_json;
+                msg.message.value = null;
+
+                global.postMessage({
+                    type : "data_processing_worker__direct_chat_message",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "direct_chat_picture")
+            {
+                let message_data = JSON.parse(msg.message.value);
+                let decryption_result = cryptico_library.decrypt(message_data.message_keys, my_rsa_key_object);
+
+                if (decryption_result.status == 'failure')
+                {
+                    if (decryption_result.status == 'failure')
+                    {             
+                        log("failed to decrypt direct chat picture");
+
+                        return;
+                    }
+                    return;
+                }
+
+                let current_message_keys = JSON.parse(decryption_result.plaintext);
+
+                let decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(current_message_keys, message_data.message_value);
+
+                let decrypted_base64_picture_sanitized = sanitize_string(decrypted_base64_picture);
+
+                msg.message.value = null;
+                msg.message.decrypted_base64_picture = decrypted_base64_picture_sanitized;
+
+                global.postMessage({
+                    type : "data_processing_worker__direct_chat_picture",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "channel_chat_picture")
+            {
+                if (current_channel_keys != null)
+                {
+                    msg.message.decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(current_channel_keys, msg.message.value);
+                    msg.message.value = null;
+                    global.postMessage({
+                        type : "data_processing_worker__channel_chat_picture",
+                        value : msg
+                    });
+                }
+                else
+                {
+
+                    custom_log("channel_chat_picture decrypt failed, data_processing_worker thread missing current channel keys");
+                }
+            }
+            else if (msg.message.type == "image_sent_status")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__image_sent_status_from_server",
+                    value : msg
+                });
+            }
+        }
+    }
 
     //here are variables dedicated to websocket_worker thread
     var websocket_worker_WebSocket = null;
@@ -9678,6 +9745,7 @@ background-color: black;
     var websocket = null;
     var local_username = "";
     var local_client_id = 0;
+    var selected_server_chat_message_id = null;
     var is_authenticated = false;
     var is_connection_check_running = false;
     var current_channel_id = 0;
@@ -9692,6 +9760,7 @@ background-color: black;
     var is_channel_list_retrieved = false;
     var clients = [];
     var is_chat_hidden = false;
+    var local_message_id = 0;
 
     //save timestamp of last received connection check response (loss of connectivity is detected this way, websocket api cannot report loss of connection accurately. This value is set first time when client connects to server
     var g_connection_check_message_response_received_timestamp = 0;
@@ -9833,6 +9902,55 @@ background-color: black;
 
             websocket_worker_send(data);
             last_sent_value_microphone_usage = 2;              
+        }
+    }
+
+    function delete_chat_message_contextmenu()
+    {
+        //delete chat message contextmenus
+        let elements_count = document.getElementsByClassName("chat-message-context-menu").length;
+
+        for (let i = 0; i < elements_count; i++)
+        {
+            document.getElementsByClassName("chat-message-context-menu")[0].remove();
+        }
+
+        let elements_count1 = document.getElementsByClassName("local-single-chat-message-content-p").length;
+
+        for (let i = 0; i < elements_count1; i++)
+        {
+            document.getElementsByClassName("local-single-chat-message-content-p")[i].classList.remove("single-chat-message-content-p-hover");
+        }
+    }
+
+    function delete_channellist_contextmenu(setbackgroundColor = false)
+    {
+        //delete channel list contextmenus
+        let elements_count1 = document.getElementsByClassName("channel-list-context-menu").length;
+        for (let i = 0; i < elements_count1; i++)
+        {
+            document.getElementsByClassName("channel-list-context-menu")[0].remove();
+        }
+
+        if (setbackgroundColor == true)
+        {
+            let elements = document.getElementsByClassName('single-channel');
+            for (let i = 0; i < elements.length; i++)
+            {
+                elements[i].style.backgroundColor = "";
+            }
+        }
+    }
+
+    function document_onmousedown(event)
+    {
+        delete_chat_message_contextmenu();
+
+        let is_channel_list_contextmenu_delete_needed = !event.target.classList.contains("context-menu-item");
+
+        if (is_channel_list_contextmenu_delete_needed)
+        {
+            delete_channellist_contextmenu(true);
         }
     }
 
@@ -10427,8 +10545,8 @@ background-color: black;
                                         </div>\n\
                                     </div>";
 
-            document.getElementById(current_chat_context_id).innerHTML += html_to_append;
-            document.getElementById(current_chat_context_id).innerHTML += '<div class=\"chat-spacer\"></div>';
+            document.getElementById(current_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
+            document.getElementById(current_chat_context_id).insertAdjacentHTML("beforeend", '<div class=\"chat-spacer\"></div>');
             document.getElementById('chat-context-container').scrollTop = document.getElementById('chat-context-container').scrollHeight;
 
             document.getElementById("image-upload-preview").style.backgroundImage = "";
@@ -10438,8 +10556,11 @@ background-color: black;
                 type : "mainthread__create_channel_chat_picture",
                 base64_picture_string_to_send : base64_picture_string_to_send,
                 current_channel_keys: current_channel_keys,
-                current_channel_id: current_channel_id
+                current_channel_id: current_channel_id,
+                local_message_id: local_message_id
             });
+
+            local_message_id++;
 
             base64_picture_string_to_send = "";
         }
@@ -10447,9 +10568,9 @@ background-color: black;
         {
             if (chat_context_array[chat_context_index].last_known_message_sender_username == local_username)
             {
-                let chat_message = "<p>" + sanitize_string(chat_message_to_send_value) + "</p>";
+                let chat_message = "<p class='single-chat-message-content-p local-single-chat-message-content-p' data-single-chat-message-local-message-id='"+local_message_id+"' data-single-chat-message-server-message-id='unspecified'>" + sanitize_string(chat_message_to_send_value) + "</p>";
                 let last_child_index = document.getElementById(current_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
-                document.getElementById(current_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].innerHTML += chat_message;
+                document.getElementById(current_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].insertAdjacentHTML("beforeend", chat_message);                      
             }
             else
             {
@@ -10469,25 +10590,31 @@ background-color: black;
                                                     <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                 </div>\n\
                                                 <div class=\"single-chat-message-content\">\n\
-                                                    <p>" + sanitize_string(chat_message_to_send_value) + "</p>\n\
+                                                    <p class='single-chat-message-content-p local-single-chat-message-content-p' data-single-chat-message-local-message-id='"+local_message_id+"' data-single-chat-message-server-message-id='unspecified'>" + sanitize_string(chat_message_to_send_value) + "</p>\n\
                                                 </div>\n\
                                             </div>\n\
                                         </div>";
-
-                document.getElementById(current_chat_context_id).innerHTML += html_to_append;
-                document.getElementById(current_chat_context_id).innerHTML += '<div class=\"chat-spacer\"></div>';
+                                    
+          
+                document.getElementById(current_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);                      
+                document.getElementById(current_chat_context_id).insertAdjacentHTML("beforeend", '<div class=\"chat-spacer\"></div>');                      
             }
 
             document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
 
             chat_context_array[chat_context_index].last_known_message_sender_username = local_username;
 
-            data_processing_worker.postMessage({
+            let object_to_send = {
                 type : "mainthread__create_channel_chat_message",
                 chat_message_to_send_value : chat_message_to_send_value,
                 current_channel_keys: current_channel_keys,
-                current_channel_id: current_channel_id
-            });
+                current_channel_id: current_channel_id,
+                local_message_id: local_message_id
+            }
+
+            data_processing_worker.postMessage(object_to_send);
+
+            local_message_id++;
         }
     }
 
@@ -10528,13 +10655,13 @@ background-color: black;
                                                 <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                 </div>\n\
                                                 <div class=\"single-chat-message-content\">\n\
-                                                <img class='imgnotsentyet' src=" + base64_picture_string_to_send + " style=\"max-width: 500px;\"></img>\n\
+                                                    <img class='imgnotsentyet' src=" + base64_picture_string_to_send + " style=\"max-width: 500px;\"></img>\n\
                                                 </div>\n\
                                             </div>\n\
                                         </div>";
 
-            document.getElementById(current_chat_context_id).innerHTML += html_to_append;
-            document.getElementById(current_chat_context_id).innerHTML += "<div class=\"chat-spacer\"></div>";
+            document.getElementById(current_chat_context_id).insertAdjacentHTML("beforeend" ,html_to_append);
+            document.getElementById(current_chat_context_id).insertAdjacentHTML("beforeend", "<div class=\"chat-spacer\"></div>");
             document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
 
             let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer').length;
@@ -10551,10 +10678,12 @@ background-color: black;
                 type : "mainthread__create_direct_chat_picture",
                 base64_picture_string_to_send : base64_picture_string_to_send,
                 receiver_public_key : receiver_public_key,
-                chat_message_receiver_id : chat_message_receiver_id
+                chat_message_receiver_id : chat_message_receiver_id,
+                local_message_id: local_message_id
             });
 
             base64_picture_string_to_send = "";
+            local_message_id++;
         }
         else if (chat_message_to_send_value.length > 0)
         {
@@ -10564,9 +10693,9 @@ background-color: black;
 
             if (chat_context_array[chat_context_index].last_known_message_sender_username == local_username)
             {
-                let chat_message = "<p>" + sanitize_string(chat_message_to_send_value) + "</p>";
+                let chat_message = "<p class='single-chat-message-content-p local-single-chat-message-content-p' data-single-chat-message-local-message-id='"+local_message_id+"' data-single-chat-message-server-message-id='unspecified'>" + sanitize_string(chat_message_to_send_value) + "</p>";
                 let last_child_index = document.getElementById(current_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
-                document.getElementById(current_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].innerHTML += chat_message;
+                document.getElementById(current_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].insertAdjacentHTML("beforeend", chat_message);
             }
             else
             {
@@ -10579,12 +10708,12 @@ background-color: black;
                                                     <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                 </div>\n\
                                                 <div class=\"single-chat-message-content\">\n\
-                                                    <p>" + sanitize_string(chat_message_to_send_value) + "</p>\n\
+                                                    <p class='single-chat-message-content-p local-single-chat-message-content-p' data-single-chat-message-local-message-id='"+local_message_id+"' data-single-chat-message-server-message-id='unspecified'>" + sanitize_string(chat_message_to_send_value) + "</p>\n\
                                                 </div>\n\
                                             </div>\n\
                                         </div>";
 
-                document.getElementById(current_chat_context_id).innerHTML += html_to_append;
+                document.getElementById(current_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
                 let element_count = document.getElementById(current_chat_context_id).getElementsByClassName('chat-spacer').length;
 
                 for (let i = 0; i < element_count; i++)
@@ -10593,7 +10722,7 @@ background-color: black;
                 }
 
                 html_to_append = "<div class=\"chat-spacer\"></div>";
-                document.getElementById(current_chat_context_id).innerHTML += html_to_append;
+                document.getElementById(current_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
             }
 
             document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
@@ -10604,8 +10733,11 @@ background-color: black;
                 type : "mainthread__create_direct_chat_message",
                 chat_message_value : chat_message_to_send_value,
                 receiver_public_key : receiver_public_key,
-                chat_message_receiver_id : chat_message_receiver_id
+                chat_message_receiver_id : chat_message_receiver_id,
+                local_message_id: local_message_id
             });
+
+            local_message_id++;
         }
     }
 
@@ -10710,35 +10842,34 @@ background-color: black;
 
     function process_client_disconnect_from_server(msg)
     {
-            if (document.querySelector('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]') != null)
-            {
-                document.querySelector('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]').remove();
-            }
+        if (document.querySelector('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]') != null)
+        {
+            document.querySelector('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]').remove();
+        }
 
-            if (document.getElementById('chat-context-pm-' + msg.message.client_id) != null)
-            {
-                document.getElementById('chat-context-pm-' + msg.message.client_id).remove();
-            }
+        if (document.getElementById('chat-context-pm-' + msg.message.client_id) != null)
+        {
+            document.getElementById('chat-context-pm-' + msg.message.client_id).remove();
+        }
 
-            let chat_context_index_to_remove = get_chat_context_index_by_chat_context_id("chat-context-pm-" + msg.message.client_id);
+        let chat_context_index_to_remove = get_chat_context_index_by_chat_context_id("chat-context-pm-" + msg.message.client_id);
 
-            if (chat_context_index_to_remove != -1)
-            {
-                chat_context_array.splice(chat_context_index_to_remove, 1);
-            }
+        if (chat_context_index_to_remove != -1)
+        {
+            chat_context_array.splice(chat_context_index_to_remove, 1);
+        }
 
-            //if used chat context was deleted one, switch to current channel
-            if (current_chat_context_id == "chat-context-pm-" + msg.message.client_id)
-            {
-                console.log("switching to main channel? ");
-                current_chat_context_id = "chat-context-channel-" + current_channel_id;
-                document.getElementById("chat-context-channel-" + current_channel_id).style.display = "block";
-                chat_message_receiver_type = "channel";
-            }
+        //if used chat context was deleted one, switch to current channel
+        if (current_chat_context_id == "chat-context-pm-" + msg.message.client_id)
+        {
+            console.log("switching to main channel? ");
+            current_chat_context_id = "chat-context-channel-" + current_channel_id;
+            document.getElementById("chat-context-channel-" + current_channel_id).style.display = "block";
+            chat_message_receiver_type = "channel";
+        }
 
-            let client_index_to_remove = get_client_index_in_array_by_client_id(parseInt(msg.message.client_id));
-            clients.splice(client_index_to_remove, 1);
-
+        let client_index_to_remove = get_client_index_in_array_by_client_id(parseInt(msg.message.client_id));
+        clients.splice(client_index_to_remove, 1);
     }
 
     function process_client_connect_from_server(msg)
@@ -10952,7 +11083,7 @@ background-color: black;
                                     </div>\n\
                                 </div>";
 
-                document.getElementById("chat-context-selectors-container").innerHTML += to_append;
+                document.getElementById("chat-context-selectors-container").insertAdjacentHTML("beforeend", to_append);
 
                 for (let x = 0; x < document.getElementsByClassName("remove-chat-context-selector").length; x++)
                 {
@@ -11086,6 +11217,23 @@ background-color: black;
         }
     }
 
+    function process_chat_message_delete_from_server(msg)
+    {
+        let element = document.querySelector('.single-chat-message-content-p[data-single-chat-message-server-message-id="' + msg.message.chat_message_id + '"]');
+        if (element != null)
+        {
+            element.removeEventListener("mousedown", single_chat_message_onrightclick);
+            element.innerHTML = "deleted";
+            element.style.fontStyle = "italic";
+            element.style.fontSize = "10px";
+
+            if (element.classList.contains("local-single-chat-message-content-p"))
+            {
+                element.classList.remove("local-single-chat-message-content-p");
+            }
+        }
+    }
+
     function process_channel_list_from_server(msg)
     {
         //console.log("received channel list");
@@ -11149,7 +11297,7 @@ background-color: black;
                                              <p data-channel-name-id=\"" + child_channels[a].channel_id + "\" style=\"display: inline-block;\">" + child_channels[a].name + "</p>\n\
                                           </div>";
                     }
-                    document.getElementById("channel-list-container").innerHTML += html_to_append;
+                    document.getElementById("channel-list-container").insertAdjacentHTML("beforeend", html_to_append);
                 }
 
                 //console.log("child_channels[a].channel_id " + child_channels[a].channel_id);
@@ -11206,13 +11354,18 @@ background-color: black;
         for (let i = 0; i < elements.length; i++)
         {
             elements[i].addEventListener("mousedown", single_channel_onmousedown);
-            //elements[i].addEventListener("dblclick", single_channel_doubleclick_join);
-
             let channel_id_wow = parseInt(elements[i].getAttribute("data-channel-id"));
             console.log("channel_id_wow => " + channel_id_wow)
             elements[i].querySelector('[data-channel-name-id="' + channel_id_wow + '"]').addEventListener("dblclick", single_channel_doubleclick_join);
+            elements[i].querySelector('[data-channel-name-id="' + channel_id_wow + '"]').addEventListener("click", single_channel_onclick);
             elements[i].getElementsByClassName("single-channel-collapse-button")[0].addEventListener("mousedown", collapse_expand_channel);
         }
+    }
+
+    function single_channel_onclick(event)
+    {
+        event.stopPropagation();
+        delete_channellist_contextmenu(true);
     }
 
     function single_channel_doubleclick_join(event)
@@ -11225,17 +11378,9 @@ background-color: black;
 
         let channel_node = event.target.parentNode;
 
-        let target = document.getElementsByClassName("channel-list-context-menu")[0];
-
-        if (target != null)
-        {
-            document.getElementsByClassName("channel-list-context-menu")[0].remove();
-        }
+        delete_channellist_contextmenu(true);
 
         let selected_channel_id = parseInt(channel_node.getAttribute("data-channel-id"));
-
-        console.log(selected_channel_id);
-
 
         if (selected_channel_id == current_channel_id)
         {
@@ -11249,21 +11394,14 @@ background-color: black;
         {
             document.getElementById("channel-password-enter-container").style.display = "block";
             document.getElementById("background-container").style.display = "block";
-
-            let aa = document.getElementsByClassName("channel-list-context-menu")[0];
-            if (aa != null)
-            {
-                document.getElementsByClassName("channel-list-context-menu")[0].remove();
-            }
         }
         else
         {
             let message_object = {
-                "message":
-                {
-                    "type": "join_channel_request",
-                    "channel_id": parseInt(selected_channel_id),
-                    "channel_password": ""
+                message: {
+                    type: "join_channel_request",
+                    channel_id: parseInt(selected_channel_id),
+                    channel_password: ""
                 }
             };
 
@@ -11589,7 +11727,7 @@ background-color: black;
         console.log("process_server_info_broadcast_from_server chat context index -> " + index);
         chat_context_array[index].last_known_message_sender_username = "";
         let html_to_append = "<div class=\"single-server-message\">" + sanitize_string(msg.message.value) + " " + new Date().toLocaleTimeString() + "</div>";
-        document.getElementById("chat-context-channel-0").innerHTML += html_to_append;
+        document.getElementById("chat-context-channel-0").insertAdjacentHTML("beforeend", html_to_append);
         let elements_count = document.getElementsByClassName("chat-spacer").length;
 
         for (let i = 0; i < elements_count; i++)
@@ -11598,8 +11736,19 @@ background-color: black;
         }
 
         let html_to_append1 = "<div class=\"chat-spacer\"></div>";
-        document.getElementById("chat-context-channel-0").innerHTML += html_to_append1;
+        document.getElementById("chat-context-channel-0").insertAdjacentHTML("beforeend", html_to_append1);
         document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
+    }
+
+    function process_server_chat_message_id_for_local_message_id_from_server(msg)
+    {
+        let element = document.querySelector('.local-single-chat-message-content-p[data-single-chat-message-local-message-id="' + msg.message.local_message_id + '"]');
+
+        if (element != null)
+        {
+            element.setAttribute("data-single-chat-message-server-message-id", msg.message.server_chat_message_id);
+            element.addEventListener("mousedown", single_chat_message_onrightclick);
+        }
     }
 
     function process_channel_edit_from_server(msg)
@@ -11696,20 +11845,15 @@ background-color: black;
             target_element.insertAdjacentHTML("afterend", html_to_append);
         }
 
-
         let elements = document.getElementsByClassName('single-channel');
 
         for (let i = 0; i < elements.length; i++)
         {
             elements[i].addEventListener("mousedown", single_channel_onmousedown);
-            //elements[i].addEventListener("dblclick", single_channel_doubleclick_join);
-
             let channel_id_wow = parseInt(elements[i].getAttribute("data-channel-id"));
-
             console.log("channel_id_wow => " + channel_id_wow)
             elements[i].querySelector('[data-channel-name-id="' + channel_id_wow + '"]').addEventListener("dblclick", single_channel_doubleclick_join);
-
-
+            elements[i].querySelector('[data-channel-name-id="' + channel_id_wow + '"]').addEventListener("click", single_channel_onclick);
             elements[i].getElementsByClassName("single-channel-collapse-button")[0].addEventListener("mousedown", collapse_expand_channel);
         }
     }
@@ -11742,8 +11886,8 @@ background-color: black;
                                     </div>\n\
                                 </div>";
 
-        document.getElementById(receiving_chat_context_id).innerHTML += html_to_append;
-        document.getElementById(receiving_chat_context_id).innerHTML += "<div class=\"chat-spacer\"></div>";
+        document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
+        document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", "<div class=\"chat-spacer\"></div>");
     }
 
     function process_direct_chat_picture_metadata_from_server(msg)
@@ -11762,7 +11906,7 @@ background-color: black;
                                         <div class=\"single-server-message\">always verify if other users sees same keys. If they do not match, somebody else is listening. If they match, chat is E2EE </div>\n\
                                     </div>";
 
-            document.getElementById("chat-context-container").innerHTML += html_to_append;
+            document.getElementById("chat-context-container").insertAdjacentHTML("beforeend", html_to_append);
             document.getElementById(received_direct_message_chat_context_id).style.display = "none";
 
             let single_chat_context = {
@@ -11788,7 +11932,7 @@ background-color: black;
                                     </div>\n\
                                 </div>";
 
-        document.getElementById(received_direct_message_chat_context_id).innerHTML += html_to_append;
+        document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
         let elements_count = document.getElementsByClassName("chat-spacer").length;
 
         for (let i = 0; i < elements_count; i++)
@@ -11797,7 +11941,7 @@ background-color: black;
         }
 
         let html_to_append1 = "<div class=\"chat-spacer\"></div>";
-        document.getElementById(received_direct_message_chat_context_id).innerHTML += html_to_append1;
+        document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", html_to_append1);
 
         if (current_chat_context_id != received_direct_message_chat_context_id)
         {
@@ -11863,9 +12007,9 @@ background-color: black;
 
         if (chat_context_array[chat_context_index].last_known_message_sender_username == chat_message_username)
         {
-            let chat_message = "<p>" + sanitized_value + "</p>";
+            let chat_message = "<p class='single-chat-message-content-p' data-single-chat-message-server-message-id='"+msg.message.server_chat_message_id+"'>" + sanitized_value + "</p>";
             let last_child_index = document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
-            document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].innerHTML += chat_message;
+            document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].insertAdjacentHTML("beforeend", chat_message);
         }
         else
         {
@@ -11878,7 +12022,7 @@ background-color: black;
                                                 <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                             </div>\n\
                                             <div class=\"single-chat-message-content\">\n\
-                                                <p>" + sanitized_value + "</p>\n\
+                                                <p class='single-chat-message-content-p' data-single-chat-message-server-message-id='"+msg.message.server_chat_message_id+"'>" + sanitized_value + "</p>\n\
                                             </div>\n\
                                         </div>\n\
                                     </div>";
@@ -11890,8 +12034,8 @@ background-color: black;
                 document.getElementById(receiving_chat_context_id).getElementsByClassName("chat-spacer")[0].remove();
             }
 
-            document.getElementById(receiving_chat_context_id).innerHTML += html_to_append;
-            document.getElementById(receiving_chat_context_id).innerHTML += "<div class=\"chat-spacer\"></div>";;
+            document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
+            document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", "<div class=\"chat-spacer\"></div>");
             document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
         }
 
@@ -11903,7 +12047,6 @@ background-color: black;
         }
 
         chat_context_array[chat_context_index].last_known_message_sender_username = chat_message_username;
-
     }
 
     function process_direct_chat_message_from_server(msg)
@@ -11924,13 +12067,13 @@ background-color: black;
                                             <div class=\"single-server-message\">its good to verify if other user sees your public key and also if you see his public key. To prevent server from manipulating them</div>\n\
                                         </div>"
 
-                document.getElementById('chat-context-container').innerHTML += html_to_append;
+                document.getElementById('chat-context-container').insertAdjacentHTML("beforeend", html_to_append);
                 document.getElementById(received_direct_message_chat_context_id).style.display = "none";
 
                 let single_chat_context = {
-                    "type": "user",
-                    "chat_context_id": received_direct_message_chat_context_id,
-                    "last_known_message_sender_username": ""
+                    type: "user",
+                    chat_context_id: received_direct_message_chat_context_id,
+                    last_known_message_sender_username: ""
                 };
 
                 chat_context_array.push(single_chat_context);
@@ -11940,10 +12083,10 @@ background-color: black;
 
             if (chat_context_array[chat_context_index].last_known_message_sender_username == msg.message.sender_username)
             {
-                let chat_message = "<p>" + decrypted_text + "</p>";
+                let chat_message = "<p class='single-chat-message-content-p' data-single-chat-message-server-message-id='"+msg.message.server_chat_message_id+"'>" + decrypted_text + "</p>";
                 let last_child_index = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
                 let exists = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message") != "undefined";
-                document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].innerHTML += chat_message;
+                document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].insertAdjacentHTML("beforeend", chat_message);
                 document.querySelector('[data-connected-client-id="' + msg.message.sender_id + '"]').getElementsByClassName("connected-client-p-received-messages-number")[0].style.display = "none";
             }
             else
@@ -11956,12 +12099,13 @@ background-color: black;
                                                 <div class=\"single-chat-message-sender-time\">\n\
                                                     <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                 </div>\n\
-                                                <div class=\"single-chat-message-content\"><p>" + decrypted_text + "</p>\n\
+                                                <div class=\"single-chat-message-content\">\n\
+                                                    <p class='single-chat-message-content-p' data-single-chat-message-server-message-id='"+msg.message.server_chat_message_id+"'>" + decrypted_text + "</p>\n\
                                                 </div>\n\
                                             </div>\n\
                                         </div>";
 
-                document.getElementById(received_direct_message_chat_context_id).innerHTML += html_to_append;
+                document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
                 let elements_count = document.getElementsByClassName("chat-spacer").length;
 
                 for (let i = 0; i < elements_count; i++)
@@ -11970,7 +12114,7 @@ background-color: black;
                 }
 
                 let html_to_append1 = "<div class=\"chat-spacer\"></div>";
-                document.getElementById(received_direct_message_chat_context_id).innerHTML += html_to_append1;
+                document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", html_to_append1);
             }
             if (current_chat_context_id != received_direct_message_chat_context_id)
             {
@@ -12103,6 +12247,86 @@ background-color: black;
         });
 
         console.log(metadata_keys);
+    }
+    
+    function single_chat_message_onrightclick(event)
+    {
+        event.stopPropagation();
+
+        if (event.which == 3)
+        {
+
+            let elements_count1 = document.getElementsByClassName("local-single-chat-message-content-p").length;
+
+            for (let i = 0; i < elements_count1; i++)
+            {
+                document.getElementsByClassName("local-single-chat-message-content-p")[i].classList.remove("single-chat-message-content-p-hover");
+            }
+
+            event.target.classList.add("single-chat-message-content-p-hover");
+
+
+            //
+            //delete old contextmenus
+            //
+
+            let elements_count = document.getElementsByClassName("chat-message-context-menu").length;
+
+            for (let i = 0; i < elements_count; i++)
+            {
+                document.getElementsByClassName("chat-message-context-menu")[0].remove();
+            }
+
+            //
+            //append new contextmenus
+            //
+
+            selected_server_chat_message_id = parseInt(event.target.getAttribute("data-single-chat-message-server-message-id"));
+
+            let contextmenu_html = "<div class=\"chat-message-context-menu\" style=\"top: " + event.clientY.toString() + "px; left:" + event.clientX.toString() + "px; \">\n\
+                                            <div class='chat-message-context-menu-background'>\n\
+                                            </div>\n\
+                                            <div class='chat-message-context-menu-items'>\n\
+                                                <p class='chat-message-context-menu-item' data-action='0'>delete</p>\n\
+                                                <p class='chat-message-context-menu-item' data-action='1'>edit</p>\n\
+                                            </div>\n\
+                                        </div>";
+
+            document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend", contextmenu_html);
+            document.getElementById("contextmenus-container").getElementsByClassName("chat-message-context-menu")[0].style.top = event.clientY.toString();
+            document.getElementById("contextmenus-container").getElementsByClassName("chat-message-context-menu")[0].style.left = event.clientX.toString();
+
+            let contextmenu_item_count = document.getElementsByClassName("chat-message-context-menu-item").length;
+
+            for (let i = 0; i < contextmenu_item_count; i++)
+            {
+                document.getElementsByClassName("chat-message-context-menu-item")[i].addEventListener("mousedown", chat_message_contextmenuitem_onclick);
+            }
+        }
+
+    }
+
+    function chat_message_contextmenuitem_onclick(event)
+    {
+        event.stopPropagation();
+        let action = event.target.getAttribute("data-action");
+
+        delete_chat_message_contextmenu();
+
+        if (action == 0)
+        {
+            let message_object = {
+                message: {
+                    type: "delete_chat_message_request",
+                    message_id: selected_server_chat_message_id,
+                }
+            };
+
+            let message_json_string = process_message_before_sending(message_object);
+            let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+            websocket_worker_send(data);
+        }
     }
 
     function connect_button_onclick()
@@ -12422,6 +12646,13 @@ background-color: black;
     function collapse_expand_channel(e)
     {
         event.stopPropagation();
+
+        delete_channellist_contextmenu(true);
+
+        if (event.which != 1)
+        {
+            return;
+        }
 
         let element = e.target.parentNode;
 
@@ -12782,7 +13013,7 @@ background-color: black;
                                         <div class=\"single-server-message\">always verify if other users sees same keys.. If not, somebody else is listening. If they match, chat is E2EE </div>\n\
                                     </div>";
 
-            document.getElementById('chat-context-container').innerHTML += html_to_append;
+            document.getElementById('chat-context-container').insertAdjacentHTML("beforeend",  html_to_append);
 
             let single_chat_context = {
                 "type": "user",
@@ -12821,7 +13052,7 @@ background-color: black;
                                     </div>\n\
                                 </div>";
 
-            document.getElementById("chat-context-selectors-container").innerHTML += to_append;
+            document.getElementById("chat-context-selectors-container").insertAdjacentHTML("beforeend", to_append);
         }
 
         for (let x = 0; x < document.getElementsByClassName("remove-chat-context-selector").length; x++)
@@ -12873,6 +13104,7 @@ background-color: black;
 
             document.querySelector('[data-chat-context-selector-id="channel-' + current_channel_id + '"]').style.backgroundColor = "#36393f";
         }
+
         else if (selector_type == "channel")
         {
             //cannot remove current channel
@@ -12902,6 +13134,10 @@ background-color: black;
             document.getElementById("chat-context-channel-" + current_channel_id).style.display = "block";
             current_chat_context_id = "chat-context-channel-" + current_channel_id;
             document.querySelector('[data-chat-context-selector-id="channel-' + current_channel_id + '"]').style.backgroundColor = "#36393f";
+        
+        
+            enable_inputs();
+
         }
     }
 
@@ -12914,7 +13150,7 @@ background-color: black;
     }
 
     function channel_on_click()
-    {
+    { 
         for (let i = 0; i < document.getElementsByClassName("chat-context").length; i++)
         {
             document.getElementsByClassName("chat-context")[i].style.display = "none";
@@ -12956,9 +13192,10 @@ background-color: black;
 
         let action = event.srcElement.getAttribute("data-action");
 
+        delete_channellist_contextmenu();
+
         if (action == 0)
         {
-            document.getElementsByClassName("channel-list-context-menu")[0].remove();
             document.getElementById("background-container").style.display = "block";
             document.getElementById("channel-properties-edit-container").style.display = "block";
             document.getElementById("create-channel-hidden-parent-id").value = selected_channel_id;
@@ -12969,10 +13206,9 @@ background-color: black;
         else if (action == 1)
         {
             let message_object = {
-                "message":
-                {
-                    "type": "delete_channel_request",
-                    "channel_id": parseInt(selected_channel_id)
+                message: {
+                    type: "delete_channel_request",
+                    channel_id: parseInt(selected_channel_id)
                 }
             };
 
@@ -12983,7 +13219,6 @@ background-color: black;
 
             websocket_worker_send(data);
                 
-            document.getElementsByClassName("channel-list-context-menu")[0].remove();
             document.getElementById("current-channel-description").innerHTML = "";
         }
         else if (action == 2)
@@ -12995,8 +13230,6 @@ background-color: black;
             let index = get_channel_index_in_array_by_channel_id(channel_list, selected_channel_id);
             document.getElementById("channel-properties-input-channel-name").value = sanitize_string(channel_list[index].name);
             document.getElementById("channel-properties-input-channel-description").value = sanitize_string(channel_list[index].description);
-
-            document.getElementsByClassName("channel-list-context-menu")[0].remove();
 
             document.getElementById("create-channel-button").style.display = "none";
             document.getElementById("edit-channel-button").style.display = "";
@@ -13015,7 +13248,6 @@ background-color: black;
             {
                 document.getElementById("channel-password-enter-container").style.display = "block";
                 document.getElementById("background-container").style.display = "block";
-                document.getElementsByClassName("channel-list-context-menu")[0].remove();
             }
             else
             {
@@ -13034,8 +13266,6 @@ background-color: black;
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
                 websocket_worker_send(data);
-                    
-                document.getElementsByClassName("channel-list-context-menu")[0].remove();
             }
         }
     }
@@ -13062,12 +13292,8 @@ background-color: black;
 
             this.style.backgroundColor = "#333030";
             selected_channel_id = parseInt(this.getAttribute("data-channel-id"));
-            let elements_count = document.getElementsByClassName("channel-list-context-menu").length;
 
-            for (let i = 0; i < elements_count; i++)
-            {
-                document.getElementsByClassName("channel-list-context-menu")[0].remove();
-            }
+            delete_channellist_contextmenu();
 
             let contextmenu_html = "<div class=\"channel-list-context-menu\" style=\"top: " + event.clientY.toString() + "px; left:" + event.clientX.toString() + "px; \">\n\
                                             <div class='channel-list-context-menu-background'>\n\
@@ -13080,7 +13306,7 @@ background-color: black;
                                             </div>\n\
                                         </div>";
 
-            document.getElementById("contextmenus-container").innerHTML += contextmenu_html;
+            document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend",  contextmenu_html);
             document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.top = event.clientY.toString();
             document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.left = event.clientX.toString();
 
@@ -13244,53 +13470,64 @@ background-color: black;
         websocket_worker_send(data);
     }
 
-    function channel_list_onmousedown(event)
-    {
-        //console.log("channel_list_onmousedown");
-        event.stopPropagation();
-
-        switch (event.which)
-        {
-            case 3:
-            case 1:
-                let elements_count1 = document.getElementsByClassName("channel-list-context-menu").length;
-                for (let i = 0; i < elements_count1; i++)
-                {
-                    document.getElementsByClassName("channel-list-context-menu")[0].remove();
-                    //console.log("channel_list_onmousedown() contextmenu removed");
-                }
-
-                let elements = document.getElementsByClassName('single-channel');
-                for (let i = 0; i < elements.length; i++)
-                {
-                        elements[i].style.backgroundColor = "";
-                }
-
-                break;
-        }
-    }
-
     //for resizing
     var start_width_space_devider_1 = null;
     var start_width_space_devider_2 = null;
     var startX = null;
     var space_devider1 = null;
     var space_devider2 = null;
+    var space_devider3 = null;
+    var space_devider4 = null;
+
+    var help_var1= null;
 
     function doDrag(e)
     {
-        let width_new1 = start_width_space_devider_2 - e.clientX + startX;
-        if (width_new1 < 300)
+        let difference = help_var1 - parseInt(space_devider1.style.width, 10);
+
+        let width_of_space_devider_1_now = parseInt( document.defaultView.getComputedStyle( space_devider1 ).width, 10);     
+        let width_of_space_devider_2_now = parseInt( document.defaultView.getComputedStyle( space_devider2 ).width, 10);
+
+        let move_difference = e.clientX - startX;
+
+        //
+        //move_difference width in pixels doesnt reflect reality
+        //doesnt matter, what is needed is only finding out if im trying to drag left or right and if that would cause width to go beyond allowed limit
+        //
+
+        if (move_difference < -1)
+        {
+            move_difference = -30;
+        }
+        else if (move_difference > 1)
+        {
+            move_difference = 40;
+        }
+
+        if ((width_of_space_devider_1_now + move_difference) < 150)
         {
             return;
         }
 
-        space_devider1.style.width = (start_width_space_devider_1 + e.clientX - startX) + 'px';
+        if ((width_of_space_devider_2_now - move_difference) < 330)
+        {       
+            return;
+        }
 
-        let difference = start_width_space_devider_1 - parseInt(space_devider1.style.width, 10);
+        //console.log("start_width_space_devider_1 => " + start_width_space_devider_1);
+        //console.log("start_width_space_devider_2 => " + start_width_space_devider_2);
+
+        space_devider1.style.width = (start_width_space_devider_1 + e.clientX - startX) + 'px';
+        space_devider3.style.width = (start_width_space_devider_1 + e.clientX - startX) + 'px';
+
         let width_new = start_width_space_devider_2 - e.clientX + startX;
-        let stringnew = " width: calc(75% + " + difference + "px)";
+
+        //console.log("difference => "+ difference);
+
+        let stringnew = " width: calc(73% + " + difference + "px)";
+
         space_devider2.style.cssText = stringnew;
+        space_devider4.style.cssText = stringnew;
     }
 
     function stopDrag(e)
@@ -13302,11 +13539,18 @@ background-color: black;
     function drag_resize_chat_onclick(e)
     {
         startX = e.clientX;
-        start_width_space_devider_1 = parseInt( document.defaultView.getComputedStyle( space_devider1 ).width, 10);
+     
+        start_width_space_devider_1 = parseInt( document.defaultView.getComputedStyle( space_devider1 ).width, 10);     
         start_width_space_devider_2 = parseInt( document.defaultView.getComputedStyle( space_devider2 ).width, 10);
+        
         space_devider2.style.cssText = "width: " + start_width_space_devider_2 + "px";
         document.documentElement.addEventListener('mousemove', doDrag, false);
         document.documentElement.addEventListener('mouseup', stopDrag, false);
+
+        if (help_var1 == null)
+        {
+            help_var1 = start_width_space_devider_1; //so difference remains same
+        }
     }
 
     function enter_admin_password_button_onclick()
@@ -13330,6 +13574,11 @@ background-color: black;
         }
     }
 
+    function stop_propagation(event)
+    {
+        event.stopPropagation();
+    }
+
     function hide_chat_button_on_click()
     {
         if (is_chat_hidden == false)
@@ -13337,14 +13586,14 @@ background-color: black;
             document.getElementById("space-devider2").style.display = "none";
             document.getElementById("space-devider1").style.width = "89%";
             document.getElementById("communication-system-container").style.height = "90%";
-            document.getElementById("chat-input-container").style.display = "none";
+            document.getElementById("space-devider4").style.display = "none";
             document.getElementById("hide-chat-button").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2RpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozRjA1RkVDNEZDMjIxMUUwQUE3NEQwMjJDRUE1NTVGNyIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozRjA1RkVDM0ZDMjIxMUUwQUE3NEQwMjJDRUE1NTVGNyIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IFdpbmRvd3MiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDoxRjhEQ0Y5MDhFRjNFMDExQTE2NUI2RjQzNUVGQkUzNyIgc3RSZWY6ZG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIvPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PieHf0QAAANvSURBVHja7FbfS1NRHD+7G9PpcAoOJ9Nhom4urg7aY6A4CqHnKIii8D8o6imIpF4SfTSEQhBMXw0mIxwkBD35A6bTKBR/TMTBdOoczk37fE/3rKtOSXSshx343nPO93vO+Xzu98e5V3N0dMRy2SSW45YnkCeQJ5AnkHMCurGxsdx7oKCggFVWVrKioqKsAwosvV7/xwP0sNvt10pLS9sPDw/HZ2ZmgltbW1kBNxqNzOVy2SRJulNeXv45EAiEuAfwRexH1wvDVH19fZtGo8kKAYfDcQMYPwlLq9UOpEOwtLSUUD7LeoPB0FddXa3Pguu1y8vLg5FIhJ+NsTFNYHt7uzMUCqWUtXU1NTXPLRbLhQAofxBKptPpMtpTqZQVYX67sLDgCwaDDEQ61WX4bXFxsQdKsf5NQ0NDB8LB4Kp/Am9ubnZWVFT0ozcLErSXko7m0MfxUi3on8Xj8bswezkBJB4jAcOXSEDf5uYmU3QfcGCv2+02wSOspKRE6E9JVVWVDLCvGD9GCP2yLJsJHMRMyWTSRnPSw95B66xW6y+xV+Pz+dQvYwDbL3jzm2azWejILR+J8cHBwTgRxKEsFotR8vJxNBodaGpqelhcXCz2BGD3zM/P25F4P6D3QyeTgfYh+z8lEokHNNeMjo6e9KgJ0odN92praxnipraFIcQ4SiAUWtIhob6vra35QUJW3SVkvw8ZFuB7e3sEHgS4B9N1TsDr9Z4VWhfkHYjcKisrYyaTiQvKKNPaVyDxPgOJdBPg8GIanF9EFIcz2jTk9s7OjgvSjnELwNtwOC8jcrfqvnhNrkU4PMhwPy4bWU2UQjU3Nxfc398/Bs49MDIycpFq0wt3Kh5Sl0gA+TOBhKsDySllbboK4QE3knwaHjj+MTrHA5laAjKhjCeOHYRSczqdZpTdMCrq5EWmhX6wsbHRMzs7u64mIZ1VWhcRKjkCLywspFKTSbe7u8smJyd5r6xzkh0kLLRe7JUoPpcVm812CpwSDnlxHX3gJAmst4i9EtzFLisrKyvdSDCZxkhYDo55K+Y88YgE6cmOuXN1dbVb7L2SPyIkWBcSLLyxscEQYyq1VuXO4HcHlR7pw+Ew2SPwTFe6CoaGhq7qg0fV8RTyQgWubnS1dkN6lBL/+0NyRY1uvifn2InUo//up/S3AAMAiJlus3so8OYAAAAASUVORK5CYII=)";
             is_chat_hidden = true;
         }
         else
         {
             document.getElementById("space-devider2").style.display = "inline-block";
-            document.getElementById("chat-input-container").style.display = "inline-block";
+            document.getElementById("space-devider4").style.display = "inline-block";
             document.getElementById("space-devider1").style.width = "14%";
             document.getElementById("communication-system-container").style.height = "75%";
             document.getElementById("hide-chat-button").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2RpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDo5MkQ4RDIzRUYzOEUxMUUwOTZDOEQ1RTU1NDQ3N0RBMSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDo5MkQ4RDIzREYzOEUxMUUwOTZDOEQ1RTU1NDQ3N0RBMSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IFdpbmRvd3MiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDo5N0U1MkY5MjhFRjNFMDExQTE2NUI2RjQzNUVGQkUzNyIgc3RSZWY6ZG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIvPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PuSt+6UAAASASURBVHja7FddSFtXHD/xxu9oNBq5Or1Svy0G5joLwsbGoEVxT6W1sD2VwQp9LKwMCn0rfZCWCWMwYaxQkIqZb4JMJx2DjRUigWikLihGo9H4gRqNRqP7/e7OtWmWalc2wqAHfjn3fPw/zv/rnJiOjo5EKpvpjQKpVsA8MjKSUgXSRIqb+Z8SZGZmivT0dL3PyMjQ56LRqNjb2xP7+/t6/68qkJaWJgoLC4XNZtP7rKysM5i2AW8BqtwWBALA2u7u7sz6+rpYW1sT7A8PD19PAbPZLDRNE6qqWvD9EabagA5AO4khFPSXlpYOAkMHBwejwWAwPDc3p1snaRYMDw//bbKiooLC7YqifInhZ4D1ZQKXlpbE5uamKC4u1i2U0DaA72KxWJff7w9SkRMVoF8bGhoUq9X6BYa3AYuxRlPSHfFtenpazM/PP8Tnb8DlxsbGC3a7PdneMHAXinZNTk7G4uPkeJfFYhHNzc0ahD/B8J4hnL4cHx8XqBeRRO1DodAtdNeAHuDi8vJyH+exN0oa0hrsyTM/P/8XysjLy3uuAAsRT+5wOM4hun/H+D3OwWwC2gqPxzMEV3yME8U4Hw/QORPGveyxN0oa0k5MTOj+l3taKaOpqek8Zep7+VNTU6OB4Cd8qxzv7OyIsbGxCPz7KcbtCCwrekuiAtXV1VpOTo7+Dcsxds7INYukaYeVrrhcrg00g06FrB+rqqo0js38yc3N/RZ+0wON/gGBDxa4hKFHWqo+WTplZ2d/A5NewacXYKbcidtXL8u8MxKJuNxu9+OWlhb95AxquPwrrF8ykwCB1MqUk+kXgAnfhdk2DE5gkPGSfD4LTCRbSKCZgeAPwfsPzLF+iEAg8IEerNRydna2OxwO69FLE1VWVr5g7tXV1RnGBNdfBdxLmnge4Gkjb65TFmR+rceAJLg7NTXllQyUoqKi+wUFBccMcZqhxcXF2KsqwL2kMcbkRZ7kzTFkeSjz2AJMGwTJdQSMweQqAqyDqSnX/T6fr2dra+tU4dzDvaQhLXmQF3lynYULsm5QJteVzs7OYyGo3e9A23qWYZPJ1AatnyAWAtI9o8jzDkS3CojEjCBWVlaE1+t143RX4eaDkpISUVtbex4x9QPWs7e3t5naj7DebdCYBgYG4mPHimD5ta6u7qwsFqxgt0DYQ7OisFhQ379H6l2GcvqtyMY8h8+Zvk4ofw0XV7isrEzBvs+xfJ8Jw9SGch7cnO/LEv1XKXY6nYkBrOH0j8vLy1sBWoJzbqAbGASjEMzsYOmFn1WZjrwNnVDaA6F2eWndBByyYrJs0+/t8tZ8fhf09/cnyyKFOQ3/3UZxURhEcc0jaz/bMyPnZd9qCGXjdbywsMDLqhfD69KiL15GfX19J92uZHgHD4823nY0O4PqpMZ4YSwQcM0gprqAn1/3QcKTtsNvKk7yCYHxOVRO/b0gq5pePREbgkGG9hTolQid+iI67cUS9+J5IKEgBt6Wb4Qaue6TgcVYif2nb0IpwCW/R//3r+KUK/Dmr1nKFfhTgAEA1AVXSbHzbjUAAAAASUVORK5CYII=)";
@@ -13362,6 +13611,8 @@ background-color: black;
 
         space_devider1 = document.getElementById("space-devider1");
         space_devider2 = document.getElementById("space-devider2");
+        space_devider3 = document.getElementById("space-devider3");
+        space_devider4 = document.getElementById("space-devider4");
 
         document.getElementById("chat-input-container-send-chat-input").onclick = send_chat_input_on_click;
         document.getElementById("connect-button").onclick = connect_button_onclick;
@@ -13373,7 +13624,6 @@ background-color: black;
         {
             e.preventDefault();
         });
-        document.getElementById("channel-list-container").addEventListener("mousedown", channel_list_onmousedown);
         document.querySelector("[data-chat-context-remove-selector-id='channel-0']").onclick = chat_context_remove_onclick;
         document.getElementById("close-button").onclick = channel_properties_closebutton_onclick;
         document.getElementById("create-channel-button").onclick = create_channel_button_onclick;
@@ -13387,7 +13637,12 @@ background-color: black;
         document.getElementById("hide-chat-button").onclick = hide_chat_button_on_click;
         document.getElementById("show-admin-password-entry").onclick = enter_admin_password_button_onclick;
         document.getElementById("choose_song_input").onchange = choose_song_input;
-        document.getElementById("drag-resize-chat").addEventListener('mousedown', drag_resize_chat_onclick, false);
+        document.getElementById("drag-resize-chat").addEventListener('mousedown', drag_resize_chat_onclick, false);  
+        document.addEventListener("keydown", document_onkeydown);
+        document.addEventListener("mousedown", document_onmousedown);
+        document.addEventListener("keyup", document_onkeyup);
+        document.getElementById("channel-properties-edit").addEventListener("mousedown", stop_propagation);
+        document.getElementById("background-container").addEventListener("mousedown", stop_propagation);
 
         data_processing_worker = create_new_webworker_in_same_file("data_processing_worker");
         websocket_worker = create_new_webworker_in_same_file("websocket_worker");
@@ -13406,15 +13661,15 @@ background-color: black;
         }
     }
 
-        //
-        //needs to be checked so webworkers that this code is shared with do not try to use window object
-        //
+    //
+    //needs to be checked so webworkers that this code is shared with do not try to use window object
+    //
 
-        if(typeof window !== 'undefined')
-        {
-            window.onload = window_onload;
-        }
-    }));
+    if(typeof window !== 'undefined')
+    {
+        window.onload = window_onload;
+    }
+}));
 
 </script>
 
@@ -13445,7 +13700,7 @@ background-color: black;
                             <input type="text" id="input-port-number" class="text-input-pretty" value="1111">
                         </div>
                         <div class="text-input-container">
-                            <input type="text" id="input-key-0" data-id="0" class="text-input-pretty" value="">
+                            <input type="text" id="input-key-0" data-id="0" class="text-input-pretty" value="test">
                         </div>
                     </div>
                     <div></div>
@@ -13507,7 +13762,7 @@ background-color: black;
                 </div>
                 <div id="space-devider3">
                 </div>
-                <div id="chat-input-container">
+                <div id="space-devider4">
                     <div style="height: 10px;">
                     </div>
                     <div id="chat-input-file-input-container">
