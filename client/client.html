@@ -267,16 +267,20 @@
           font-family: sans-serif;
         }
 
-        .role-admin
+        .single-role
         {
             width: 20px;
             height: 20px;           
-	        background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsSAAALEgHS3X78AAACU0lEQVQ4jX2TX0hTYRjGf0eOicqUydEES9L+iHQRnNafu0ASYayrXWiS0S4HFQQhCQMzDEUGQUzIGyOJbrr03LSI/hFY5DBLhyut3CkkN9eZ7sx5bHVx9LgD0nv1vc/3PA/Py/d+AmYJLV3+fC67BsBGLst2bRo5CmszpwPw8fkzAUAAhI5AMF/RcNJGnBn02vobj6MAVJWXAnDlWjsRRXEIHYHg393Eo6Nu8iX1OJ0i0Q+fCfQ84erYe/ZJEmoiQVlpOb2BSxRlM9p/xQDNxw7TP9DG3Ysu1ESCaHzJ4hcVinV1GtklAeB0injdIbzukHUvuyTGw+MATMbmARC3hQDGyyCX+85QWduI1x2i4UIvAF53H+GJIfSsztj9IF+4vpNgXV/D3+mjpeUcajxjG8ff6cPf6bNhajxj8a0ED15NWoTK2kYcVfUAdLsP2MSNTUeB1za+aOR0dHUaR1k5sksiLzjQUinCE0M28eL8AgtzM8guieWv73YMAA41nyB6r52bg11oKylWV5aZWzOXKp02X0ksLqa6uoazrQaPHoao840Rm3phGhw/cpCnW/PHPk2hpdOMDM/aEnT3nLaM1HiGvdovs/+d+GGRlha/AjAyPEvrbcVMkDNXeeiWl/6BNpLJpM24COC7GrcALZ0GQCrbA0BFSQli3gAgXsBbSZrLJADFssezAVA69xaA83fCJPQNAPStDwbwpr8DgGzTKQAiiuIQASOiKAJQIXs8GkDs2zxVNfst8fpqCiO7WigUtk2tQ+FYssfzZxeciKLUAT8LsX+oaO/ttIYBtAAAAABJRU5ErkJggg==);    
             background-repeat: no-repeat;
             background-position: center center;
             background-size: 20px 20px;
 	        display: inline-block;
 	    }
+
+        .admin-role
+        {
+	        background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsSAAALEgHS3X78AAACU0lEQVQ4jX2TX0hTYRjGf0eOicqUydEES9L+iHQRnNafu0ASYayrXWiS0S4HFQQhCQMzDEUGQUzIGyOJbrr03LSI/hFY5DBLhyut3CkkN9eZ7sx5bHVx9LgD0nv1vc/3PA/Py/d+AmYJLV3+fC67BsBGLst2bRo5CmszpwPw8fkzAUAAhI5AMF/RcNJGnBn02vobj6MAVJWXAnDlWjsRRXEIHYHg393Eo6Nu8iX1OJ0i0Q+fCfQ84erYe/ZJEmoiQVlpOb2BSxRlM9p/xQDNxw7TP9DG3Ysu1ESCaHzJ4hcVinV1GtklAeB0injdIbzukHUvuyTGw+MATMbmARC3hQDGyyCX+85QWduI1x2i4UIvAF53H+GJIfSsztj9IF+4vpNgXV/D3+mjpeUcajxjG8ff6cPf6bNhajxj8a0ED15NWoTK2kYcVfUAdLsP2MSNTUeB1za+aOR0dHUaR1k5sksiLzjQUinCE0M28eL8AgtzM8guieWv73YMAA41nyB6r52bg11oKylWV5aZWzOXKp02X0ksLqa6uoazrQaPHoao840Rm3phGhw/cpCnW/PHPk2hpdOMDM/aEnT3nLaM1HiGvdovs/+d+GGRlha/AjAyPEvrbcVMkDNXeeiWl/6BNpLJpM24COC7GrcALZ0GQCrbA0BFSQli3gAgXsBbSZrLJADFssezAVA69xaA83fCJPQNAPStDwbwpr8DgGzTKQAiiuIQASOiKAJQIXs8GkDs2zxVNfst8fpqCiO7WigUtk2tQ+FYssfzZxeciKLUAT8LsX+oaO/ttIYBtAAAAABJRU5ErkJggg==);    
+        }
 
         .padding-div
         {
@@ -5466,7 +5470,10 @@ background-color: black;
             var rng = new SeededRandom();
             var qs = B >> 1;
             this.e = parseInt(E, 16);
+            console.log("this.e -> ", this.e);
             var ee = new BigInteger(E, 16);
+            console.log("ee -> ", ee);
+
             for (;;)
             {
                 for (;;)
@@ -6264,6 +6271,12 @@ background-color: black;
                         signature: "unsigned"
                     };
                 }
+            }
+
+            my.challenge_decrypt = function(ciphertext, key)
+            {
+                let result = key.decrypt(my.b64to16(ciphertext));
+                return result;
             }
 
             return my;
@@ -7851,7 +7864,6 @@ background-color: black;
     var trueModule = Module;
     function receiveInstantiationResult(result) 
     {
-        console.log(result);
         // 'result' is a ResultObject object which has both the module and instance.
         // receiveInstance() will swap in the exports (to Module.asm) so they can be called
         assert(Module === trueModule, 'the Module object should not be replaced during async compilation - perhaps the order of HTML elements is wrong?');
@@ -8898,7 +8910,6 @@ background-color: black;
         }
         else if (e.data.type == "data_processing_worker__create_websocket_channel_keys_message_result")
         {
-            console.log(e.data);
             console.log("sending key data to user -> " + e.data.username);    
             websocket_worker_send(e.data.channel_keys_message_content);           
         }
@@ -8991,7 +9002,10 @@ background-color: black;
 
                 };
 
-            const str1 = randomstring(100);
+            const str1 = randomstring(200); 
+
+            console.log("identity can be re-used by reusing passhprase" + str1);
+
             cryptico_library = cryptico;
 
             my_rsa_key_object = cryptico_library.generateRSAKey(str1, 2048);
@@ -9302,6 +9316,13 @@ background-color: black;
 
         if (decrypted_metadata == "connection_test")
         {
+            console.log("does this even happen");
+            return;
+        }
+
+        if (decrypted_metadata == "test")
+        {
+            console.log("does this even happen");
             return;
         }
 
@@ -9316,11 +9337,37 @@ background-color: black;
             console.log(Exception);
         }
 
+        let str = '[R] msg.message.type : ' + msg.message.type + ' | size in bytes: ' + decrypted_metadata.length;
+
+        custom_log(str);
+
         //console.log(msg);
 
         if (!is_authenticated)
         {
-            if(msg.message.type == "authentication_status")
+            if (msg.message.type == "public_key_challenge")
+            {
+                let decryption_result = cryptico_library.challenge_decrypt(msg.message.value, my_rsa_key_object);
+
+                let message_object = {
+                    message : {
+                        type: "public_key_challenge_response",
+                        value: decryption_result
+                    }
+                };
+
+                let message_json_string = process_message_before_sending(message_object);
+
+                console.log(message_json_string);
+
+                let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+                global.postMessage({
+                    type : "data_processing_worker__tell_websocket_worker_to_send_data",
+                    data_to_be_sent_over_websocket: data
+                });
+            }    
+            else if(msg.message.type == "authentication_status")
             {
                 if(msg.message.value == "success")
                 {
@@ -9353,16 +9400,6 @@ background-color: black;
         }
         else
         {
-            if (decrypted_metadata == "test")
-            {
-                return;
-            }
-            //console.log(msg);
-
-            let str = '[R] msg.message.type : ' + msg.message.type + ' | size in bytes: ' + decrypted_metadata.length;
-
-            custom_log(str);
-
             if (msg.message.type == "connection_check_response")
             {
                 global.postMessage({
@@ -9547,7 +9584,6 @@ background-color: black;
             else if (msg.message.type == "direct_chat_message")
             {
                 //console.log("%cryptico_library", "color: red");
-                console.log(cryptico_library);
 
                 let message_data = JSON.parse(msg.message.value);
 
@@ -10192,7 +10228,7 @@ background-color: black;
         let base64EncryptedData = "";
         let encrypted_data_in_current_iteration = byteArrayToSend;
 
-        console.log(Object.prototype.toString.call(encrypted_data_in_current_iteration));
+        //console.log(Object.prototype.toString.call(encrypted_data_in_current_iteration));
 
 
         for (let i = 0; i < keys.length; i++)
@@ -10968,7 +11004,7 @@ background-color: black;
         if (role == "admin")
         {            
             const node = document.createElement("div");
-            node.className = "role-admin";
+            node.className = "single-role admin-role";
             target_element.appendChild(node);
         }    
     }
@@ -11032,7 +11068,7 @@ background-color: black;
 
         if (is_admin_role_active == true)
         {
-            client_roles_html_string = "<div class='role-admin'></div>";
+            client_roles_html_string = "<div class='single-role admin-role'></div>";
         }
 
         let is_channel_collapsed = "";
@@ -11487,7 +11523,7 @@ background-color: black;
 
             if (is_admin_role_active == true)
             {
-                client_roles_html_string = "<div class='role-admin'></div>";
+                client_roles_html_string = "<div class='single-role admin-role'></div>";
             }
 
             if (username != sanitize_string(msg.message.local_username))
@@ -11757,6 +11793,7 @@ background-color: black;
         document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[2].innerHTML = msg.message.channel_name;
         channel_list[index].description = msg.message.channel_description;
         channel_list[index].is_using_password = msg.message.is_using_password;
+        channel_list[index].name = msg.message.channel_name;
 
         if (msg.message.is_using_password == true)
         {
@@ -12182,11 +12219,10 @@ background-color: black;
         });
 
         //
-        //user's public keys cannot be use in mainthread, because cryptico, the library used for RSA encryption here, is initialized in worker thread and not main thread
+        //user's public keys cannot be used in main javascript UI thread, because cryptico, the library used for RSA encryption here, is initialized in worker thread and not main thread
         //so the each user's public key must be sent to data_processing_worker thread
-        //data_processing_worker thread is then responsible for sending back result to main thread, so it can be sent using websocket
+        //data_processing_worker thread is then responsible for sending back results of encryption to main thread, mainthread decided what to do with it (possibly sent it to websocket worker)
         //
-
     }
 
     function send_chat_input_on_click()
@@ -13405,13 +13441,12 @@ background-color: black;
         let channel_password = document.getElementById("channel-properties-input-channel-password").value;
 
         let message_object = {
-            "message":
-            {
-                "type": "create_channel_request",
-                "channel_name": channel_name,
-                "channel_description": channel_description,
-                "channel_password": channel_password,
-                "parent_channel_id": parent_channel_id
+            message: {
+                type: "create_channel_request",
+                channel_name: channel_name,
+                channel_description: channel_description,
+                channel_password: channel_password,
+                parent_channel_id: parent_channel_id
             }
         };
 
