@@ -1,9 +1,8 @@
 mod audio_channel;
 mod stun_server;
 
-extern crate base64;
-
 use chrono;
+use base64::DecodeError;
 use aes::cipher::{KeyIvInit, StreamCipher};
 use sha2::{Digest, Sha256};
 use serde_json;
@@ -15,7 +14,10 @@ use serde_json::{Map, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use lazy_static::lazy_static;
 use std::io::Write;
+use rsa::{PublicKey, RsaPublicKey, BigUint, Pkcs1v15Encrypt};
+use rand::{distributions::Alphanumeric, Rng};
 
+// 0.8
 type AesCtr = ctr::Ctr128BE<aes::Aes256>;
 
 
@@ -40,6 +42,8 @@ struct Client {
     timestamp_last_channel_created: i64,
     username: String,
     public_key: String,
+    is_public_key_challenge_sent: bool,
+    public_key_challenge_random_string: String,
     channel_id: u64,
     microphone_state: u64,
     is_webrtc_datachannel_connected: bool,
@@ -205,6 +209,38 @@ fn send_image_sent_status_back_to_sender(clients: &HashMap<u64, Client>, websock
                 let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
                 websocket.send(Message::Text(data_to_send_base64));
             }
+        }
+    }
+}
+
+fn send_public_key_challenge_to_single_client(single_client: &mut Client, websockets: &HashMap<u64, Responder>, random_string: String) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("public_key_challenge"));
+    json_message_object.insert(String::from("value"),serde_json::Value::from(random_string));
+
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    if single_client.is_existing == false {
+        return;
+    }
+
+    let current_client_websocket: Option<&Responder> = websockets.get(&single_client.client_id);
+
+    match current_client_websocket {
+        None => {}
+        Some(websocket) => {
+
+            println!("sending public key challenge to client {}", single_client.client_id);
+
+            let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+            let test = serde_json::Value::Object(json_root_object1);
+            let data_content: String = serde_json::to_string(&test).unwrap();
+            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+            websocket.send(Message::Text(data_to_send_base64));
         }
     }
 }
@@ -410,9 +446,6 @@ fn send_active_microphone_usage_for_current_channel_to_client(clients: &mut Hash
 
     responder.send(Message::Text(data_to_send_base64));
 }
-
-
-
 
 fn broadcast_microphone_usage(clients: &mut HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, channel_id: u64, microphone_usage: u64) {
 
@@ -1835,7 +1868,34 @@ fn is_channel_edit_request_valid(message: &serde_json::Value) -> bool{
     return result;
 }
 
-fn is_microphone_usage_valid(message: &serde_json::Value) -> bool{
+fn is_challenge_response_message_valid(message: &serde_json::Value) -> bool{
+    let mut result: bool = true;
+
+    if message["message"]["type"] == false {
+        println!("field message.type does not exist");
+        result = false;
+    }
+
+    if message["message"]["type"].is_string() == false {
+        println!("field message.type is not string");
+        result = false;
+    }
+
+    if message["message"]["value"] == false {
+        println!("field message.value does not exist");
+        result = false;
+    }
+
+    if message["message"]["value"].is_string() == false {
+        println!("field message.value is not string");
+        result = false;
+    }
+
+
+    return result;
+}
+
+fn is_microphone_usage_message_valid(message: &serde_json::Value) -> bool{
     let mut result: bool = true;
 
     if message["message"]["type"] == false {
@@ -2142,7 +2202,7 @@ fn change_client_microphone_usage(clients: &mut HashMap<u64, Client>, _websocket
 fn process_microphone_usage_message(clients: &mut HashMap<u64, Client>, _channels: &HashMap<u64, Channel>, websockets: &HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) -> (bool, u64) {
     let mut result: (bool, u64) = (false, 0);
 
-    let status: bool = is_microphone_usage_valid(message);
+    let status: bool = is_microphone_usage_message_valid(message);
     if status == true {
 
         let client: &mut Client = clients.get_mut(&client_id).unwrap();
@@ -2464,43 +2524,117 @@ fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u6
     if current_client.is_existing == true {
         let message_type = &message["message"]["type"];
 
-        if message_type == "public_key_info" {
+        if message_type == "public_key_challenge_response" {
+
+            //
+            //client sends public key to server at the time of authentication
+            //server generates random string, encrypts the string with clients public key
+            //server then verifies if the client really is the owner of public key
+            //"if the public key is really yours, client, please, decrypt and then send back this randomly generated string that I will send you. you will have no problem telling me what I sent you, if its really your key"
+            //
+
+            if current_client.is_public_key_challenge_sent == true {
+
+                let status: bool = is_challenge_response_message_valid(&message);
+
+                if status == true {
+                    let message_decrypted_public_key_challenge_random_string = message["message"]["value"].as_str().unwrap();
+
+                    if message_decrypted_public_key_challenge_random_string == current_client.public_key_challenge_random_string {
+                        current_client.channel_id = 0; //root channel
+                        current_client.is_admin = false;
+                        let connection_id_string: String = current_client.client_id.to_string();
+                        let mut default_name: String = String::from("anon");
+                        default_name.push_str(connection_id_string.as_str());
+                        current_client.username = default_name;
+                        current_client.is_authenticated = true;
+                        current_client.message_ids = Vec::new();
+
+                        let datetime: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
+                        let timestamp_now: i64 = datetime.timestamp();
+
+                        current_client.timestamp_last_sent_check_connection_message = timestamp_now;
+
+                        let websocket: &Responder = websockets.get(&client_id).unwrap();
+
+                        let current_client_username: String = current_client.username.clone();
+
+                        send_authentication_status_to_client(websocket);
+                        send_channel_list_to_client(channels, websocket);
+                        send_client_list_to_client(clients, websocket, current_client_username);
+
+                        send_active_microphone_usage_for_current_channel_to_client(clients, websocket, 0);
+
+                        process_client_connect(clients, channels, websockets, client_id);
+
+                        send_cross_thread_message_create_new_client_at_rtc_thread(sender, client_id);
+                    }
+                }
+            }
+        }
+        else if message_type == "public_key_info" {
             let message_verification_string = &message["message"]["verification_string"];
 
             if message_verification_string == "welcome"
             {
-                let message_value: &Value = &message["message"]["value"];
+                let public_key_modulus_base64: &Value = &message["message"]["value"];
 
-                if message_value.is_string() {
+                if public_key_modulus_base64.is_string() {
 
-                    current_client.public_key = String::from(message_value.as_str().unwrap());
-                    current_client.channel_id = 0; //root channel
-                    current_client.is_admin = false;
-                    let connection_id_string: String = current_client.client_id.to_string();
-                    let mut default_name: String = String::from("anon");
-                    default_name.push_str(connection_id_string.as_str());
-                    current_client.username = default_name;
-                    current_client.is_authenticated = true;
-                    current_client.message_ids = Vec::new();
+                    current_client.public_key = String::from(public_key_modulus_base64.as_str().unwrap());
 
-                    let datetime: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
-                    let timestamp_now: i64 = datetime.timestamp();
+                    let modulus_decode_result: Result<Vec<u8>, DecodeError> = base64::decode(&public_key_modulus_base64.as_str().unwrap());
+                    let mut rng = rand::thread_rng();
 
-                    current_client.timestamp_last_sent_check_connection_message = timestamp_now;
+                    match modulus_decode_result {
+                        Ok(result) => {
 
-                    let websocket: &Responder = websockets.get(&client_id).unwrap();
+                            //
+                            //create public key from from modulus and exponent (n and e). In this case it is easier approach than creating the public key from PEM or DER
+                            //modulus is sent to server from client as part of public_key_info request
+                            //exponent is same for every lemonchat client, its known and its 3.. because BigUint couldnt do simple BigUintL::from(3), it had to be represented by byte array
+                            //
 
-                    let current_client_username: String = current_client.username.clone();
+                            let exponent_bytes: [u8; 1] = [3]; //BigUint doesnt suppoort simple from anymore
+                            let modulus: BigUint = BigUint::from_bytes_be(&result);
+                            let exponent: BigUint = BigUint::from_bytes_be(&exponent_bytes);
+                            let rsa_pub_key_result: rsa::errors::Result<RsaPublicKey> = rsa::RsaPublicKey::new(modulus, exponent);
 
-                    send_authentication_status_to_client(websocket);
-                    send_channel_list_to_client(channels, websocket);
-                    send_client_list_to_client(clients, websocket, current_client_username);
+                            match rsa_pub_key_result {
+                                Ok(rsa_pub_key) => {
 
-                    send_active_microphone_usage_for_current_channel_to_client(clients, websocket, 0);
+                                    let public_key_challenge_random_string: String = rand::thread_rng()
+                                        .sample_iter(&Alphanumeric)
+                                        .take(100)
+                                        .map(char::from)
+                                        .collect();
 
-                    process_client_connect(clients, channels, websockets, client_id);
+                                    current_client.public_key_challenge_random_string = public_key_challenge_random_string.clone();
+                                    current_client.is_public_key_challenge_sent = true;
 
-                    send_cross_thread_message_create_new_client_at_rtc_thread(sender, client_id);
+                                    let to_encrypt_bytes: &[u8] = public_key_challenge_random_string.as_bytes();
+
+                                    let rsa_encrypt_result: rsa::errors::Result<Vec<u8>> = rsa_pub_key.encrypt(&mut rng, Pkcs1v15Encrypt, to_encrypt_bytes);
+
+                                    match rsa_encrypt_result {
+                                        Ok(bytes_to_work_with) => {
+                                            let base64_result: String = base64::encode(bytes_to_work_with);
+                                            send_public_key_challenge_to_single_client(current_client, websockets,base64_result);
+                                        }
+                                        Err(error) => {
+                                            println!("rsa_encrypt_result error {}", error);
+                                        }
+                                    }
+                                }
+                                Err(error) => {
+                                    println!("[!] error {}", error);
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            println!("[!] error {}", error);
+                        }
+                    }
                 }
             } else {
                 websockets.get(&client_id).unwrap().close();
@@ -3005,6 +3139,7 @@ fn main() {
                 single_client.is_authenticated = false;
                 single_client.client_id = client_id; //datachannnel is identified by client_id, unsigned short, this will cause trouble, find other way to identify datachannels later
                 single_client.is_existing = true;
+                single_client.is_public_key_challenge_sent = false;
                 let datetime: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
                 let timestamp: i64 = datetime.timestamp();
                 single_client.timestamp_connected = timestamp;
