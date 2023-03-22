@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 aes = "0.8.1"
 ctr = "0.9.1"
+rsa = "0.8.2"
+rand = "0.8.5"
 simple-websockets = "0.1.4"
 base64 = "0.13.0"
 sha2 = "0.10.2"
