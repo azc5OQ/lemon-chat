@@ -21,6 +21,7 @@ use webrtc::peer_connection::sdp::sdp_type::RTCSdpType;
 
 use lazy_static::lazy_static;
 use serde_json::Value;
+use webrtc::data_channel::data_channel_state::RTCDataChannelState;
 
 
 struct ClientLite {
@@ -47,7 +48,7 @@ pub async fn webrtc_thread(
     loop {
 
         for thread_channel_message in thread_message_channel_receiver.try_iter() {
-            println!("message received");
+            println!("[i] webrtc_thread received message from websocket thread");
 
             handle_received_thread_message(
                 thread_channel_message,
@@ -65,7 +66,7 @@ async fn handle_received_thread_message(
     peer_connections: &mut HashMap<u64, RTCPeerConnection>,
     thread_message_channel_sender: Arc<SyncSender<String>>) -> anyhow::Result<()> {
 
-    println!("received {}", thread_channel_message);
+    //println!("received {}", thread_channel_message);
 
     let json_string_to_parse: &str = thread_channel_message.as_str().trim_matches(char::from(0));
     let json_message: serde_json::Result<serde_json::Value> = serde_json::from_str(json_string_to_parse);
@@ -151,8 +152,8 @@ async fn handle_received_thread_message(
                 }
 
 
-                let q: Option<RTCPeerConnection> = peer_connections.remove(&client_id);
-                match q {
+                let remove_option: Option<RTCPeerConnection> = peer_connections.remove(&client_id);
+                match remove_option {
                     None => {}
                     Some(_value) => {
                         println!("RTCPeerConnection purged from peer_connections")
@@ -231,9 +232,9 @@ async fn set_sdp_answer(
 
     answer.sdp = String::from(message["value"]["sdp"].as_str().unwrap());
 
-    let a = connection.set_remote_description(answer).await;
+    let set_remote_description_answer_result: webrtc::error::Result<()> = connection.set_remote_description(answer).await;
 
-    match a {
+    match set_remote_description_answer_result {
         Ok(_) => {
             println!("sdp answer set");
 
@@ -262,17 +263,17 @@ async fn set_ice_candidate_from_client(
 
     let client_id: u64 = message["client_id"].as_u64().unwrap();
 
-    let peer_connection = peer_connections.get_mut(&client_id).unwrap();
+    let peer_connection: &mut RTCPeerConnection = peer_connections.get_mut(&client_id).unwrap();
 
-    let mut ice_candidate_init = RTCIceCandidateInit::default();
+    let mut ice_candidate_init: RTCIceCandidateInit = RTCIceCandidateInit::default();
 
     ice_candidate_init.candidate = extracted_candidate;
     ice_candidate_init.sdp_mid = extracted_sdp_mid;
     ice_candidate_init.sdp_mline_index = extracted_sdp_mline_index;
 
-    let a = peer_connection.add_ice_candidate(ice_candidate_init).await;
+    let add_ice_candidate_result: webrtc::error::Result<()> = peer_connection.add_ice_candidate(ice_candidate_init).await;
 
-    match a {
+    match add_ice_candidate_result {
         Ok(_) => {
             println!("iice candidate set");
         }
@@ -352,9 +353,7 @@ async fn create_new_peer(
         }
     }
 
-  // DATACHANNELS.insert(client_id.clone(), data_channel.clone());
-
-    let client_id2 = client_id.clone();
+    let client_id2: u64 = client_id.clone();
 
     peer_connection.on_peer_connection_state_change(Box::new(move |s: RTCPeerConnectionState| {
         let client_id_for_closure = client_id2.clone();
@@ -364,6 +363,7 @@ async fn create_new_peer(
                let peer_connection_state: u64 = s as u64;
 
                println!("Peer Connection State has changed: {}", s);
+               println!("Peer Connection State has changed for client: {}", client_id_for_closure);
 
                send_cross_thread_message_on_peer_connection_state_change(sender_for_closure, client_id_for_closure, peer_connection_state).await.expect("TODO: panic message");
 
@@ -424,7 +424,8 @@ async fn create_new_peer(
                    let clients: &HashMap<u64, ClientLite> = clients_mutexguard.deref();
 
                    //current_client_id = client who sent message
-                   // current_channel_id = id of channel where client currently is
+                   //current_channel_id = id of channel where client currently is
+
                    let current_client_id: u64 = client_id.clone(); //is this only way to identify it
                    let current_channel_id = clients.get(&client_id).unwrap().channel_id.clone();
 
@@ -449,9 +450,12 @@ async fn create_new_peer(
                                    None => {
                                        //println!("no channel");
                                    }
+
                                    Some(single_channel) => {
-                                       let future = single_channel.send(&msg.data);
-                                       futures::executor::block_on(future).expect(" futures::executor::block_on");
+                                      if single_channel.ready_state() == RTCDataChannelState::Open {
+                                          let future = single_channel.send(&msg.data);
+                                          futures::executor::block_on(future).expect(" futures::executor::block_on");
+                                      }
                                    }
                                }
                            }
@@ -478,11 +482,11 @@ async fn create_new_peer(
 
    let offer: RTCSessionDescription = peer_connection.create_offer(Option::from(offer_options)).await?;
 
-   let offer_string = serde_json::to_string(&offer);
+   let offer_string: serde_json::Result<String> = serde_json::to_string(&offer);
 
    match offer_string {
        Ok(value) => {
-           println!("offer_string {}" , value);
+           //println!("offer_string {}" , value);
 
            println!("peer_connection.create_offer done");
 
