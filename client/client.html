@@ -65,6 +65,11 @@
             user-select: none;
         }
 
+        #add-key-button
+        {
+            visibility: hidden;
+        }
+
         .imgnotsentyet
         {
             opacity: 0.3;
@@ -118,6 +123,11 @@
             left: -4px;
             scrollbar-width: thin;
             scrollbar-color: #3f3f4d #6b7c9a;
+        }
+
+        .local-client-chat-picture-img:hover
+        {
+            opacity: 0.5;
         }
 
         .text-input-container
@@ -229,7 +239,8 @@
 
         #connect-form-sub-container-1, #connect-form-sub-container-2
         {
-          display: inline-block;
+            display: inline-block;
+            visibility:hidden;
         }
 
         #image-upload-preview
@@ -551,6 +562,11 @@
             height: 1px;
             width: 14%;
             display: inline-block;
+        }
+
+        #connect-button
+        {
+            visibility: hidden;
         }
 
         .single-chat-message-sender-time
@@ -8763,7 +8779,6 @@ background-color: black;
 
             silence = new Float32Array(audio_config.codec.bufferSize);
             player = audio_context.createScriptProcessor(audio_config.codec.bufferSize, 1, 1);
-            console.log(audio_context);
             player.onaudioprocess = player_onaudioprocess;
             audio_player_gain_node = audio_context.createGain();
             player.connect(audio_player_gain_node);
@@ -8771,7 +8786,7 @@ background-color: black;
 
             try
             {
-                setup_peer_connection_object_for_use();
+                create_new_peer_connection_object_for_use();
             }
             catch (Exception)
             {
@@ -8799,6 +8814,10 @@ background-color: black;
         else if (e.data.type == "data_processing_worker__chat_message_delete_from_server")
         {
             process_chat_message_delete_from_server(e.data.value);
+        }
+        else if (e.data.type == "data_processing_worker__chat_message_edit_from_server")
+        {
+            process_chat_message_edit_from_server(e.data.value);
         }
         else if (e.data.type == "data_processing_worker__access_denied_from_server")
         {
@@ -9239,8 +9258,6 @@ background-color: black;
                 message_value: ""
             };
 
-            console.log("base64_picture_string_to_send => " + e.data.base64_picture_string_to_send);
-
             message_data.message_value = encrypt_with_aes_keys_and_convert_to_base64(current_message_keys, e.data.base64_picture_string_to_send);
 
             let message_object = {
@@ -9371,9 +9388,6 @@ background-color: black;
             {
                 if(msg.message.value == "success")
                 {
-                    console.log(msg);
-                    //g_connection_check_message_response_received_timestamp = new Date().valueOf();
-                    //cant access global variable, workers has separate variable scope
                     is_authenticated = true;
                     global.postMessage({
                         type : "data_processing_worker__authentication_status",
@@ -9439,6 +9453,13 @@ background-color: black;
             {
                 global.postMessage({
                     type : "data_processing_worker__chat_message_delete_from_server",
+                    value : msg
+                });
+            }
+            else if (msg.message.type == "chat_message_edit")
+            {
+                global.postMessage({
+                    type : "data_processing_worker__chat_message_edit_from_server",
                     value : msg
                 });
             }
@@ -9758,15 +9779,18 @@ background-color: black;
         }
     }
 
-
-    var is_autoconnect_active = false;
+    var is_autoconnect_active = true;
+    var is_autoconnect_without_sound_active = false; 
+    //for sound to play, client must click something first, 
+    //if client just connects without clicking anything on website (like connect button for example) 
+    //sound wont play. protection against popup websites playing music
 
     var autoconnect_details = {
-        "host": "127.0.0.1",
-        "port": 1111,
-        "keys": [
-            "test1",
-            "test2"
+        host: "127.0.0.1",
+        port: 1111,
+        keys: [
+            "test",
+           // "test2"
         ]
     };
 
@@ -9807,9 +9831,9 @@ background-color: black;
     var current_channel_keys = null;
     var chat_context_array = [
     {
-        "type": "channel",
-        "chat_context_id": "chat-context-channel-0",
-        "last_known_message_sender_username": ""
+        type: "channel",
+        chat_context_id: "chat-context-channel-0",
+        last_known_message_sender_username: ""
     }];
         
         
@@ -9926,10 +9950,9 @@ background-color: black;
 
             is_microphone_active = false;
             let message_object = {
-                "message":
-                {
-                    "type": "microphone_usage",
-                    "value": 2,
+                message: {
+                    type: "microphone_usage",
+                    value: 2,
                 }
             };
 
@@ -10033,10 +10056,9 @@ background-color: black;
         
             is_microphone_active = true;
             let message_object = {
-                "message":
-                {
-                    "type": "microphone_usage",
-                    "value": 1,
+                message: {
+                    type: "microphone_usage",
+                    value: 1,
                 }
             };
 
@@ -10090,8 +10112,8 @@ background-color: black;
                 g_connection_check_message_response_received_timestamp = timestamp_now;
             }
     
-            console.log("g_connection_check_message_response_received_timestamp -> ", g_connection_check_message_response_received_timestamp);
-            console.log("timestamp_now -> ", timestamp_now);
+            //console.log("g_connection_check_message_response_received_timestamp -> ", g_connection_check_message_response_received_timestamp);
+            //console.log("timestamp_now -> ", timestamp_now);
 
             if ((g_connection_check_message_response_received_timestamp + 120 * 1000) < timestamp_now)
             {       
@@ -10099,7 +10121,7 @@ background-color: black;
                 window.location.reload();
             }
 
-            console.log("check_connection");
+            //console.log("check_connection");
                 
             let message_object = {
                 message : {
@@ -10362,9 +10384,9 @@ background-color: black;
             console.log("send_ice_candidate_to_server");
 
             let message_object = {
-                "message": {
-                    "type": "ice_candidate",
-                    "value": event.candidate
+                message: {
+                    type: "ice_candidate",
+                    value: event.candidate
                 }
             };
 
@@ -10412,10 +10434,9 @@ background-color: black;
     function send_sdp_answer_to_server(value)
     {
         let message_object = {
-            "message":
-            {
-                "type": "sdp_answer",
-                "value": value
+            message: {
+                type: "sdp_answer",
+                value: value
             }
         };
 
@@ -10482,12 +10503,7 @@ background-color: black;
     function handleOnConnectionChangeEvent()
     {
         console.log("peer_connection_with_server connectionState changed to " + peer_connection_with_server.connectionState);
-           
-        if (peer_connection_with_server.connectionState == "disconnected")
-        {
-            document.getElementById("toggle-microphone-label").style.display = "none";
-            document.getElementById("toggle-microphone-label").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAELklEQVRoQ+2ZWehOXRTGf+hDuJIpmVKUJIUiY9wRMpRMFy58hogoZUgk04WUqQyJEqJMZSgy9hlKXBK5+MgsuVDm0KN9tJ3/Gfbe55z3f2PdvO85Z++1n2fvtddae+0GlC/DgOmAftsDDYHnwDVgL3C9zCEblKisFbAPGJ2j8xTwL/CmjLHLItAFuAh0dQT1PzAc0G8hKYNAC+AG0MsTyX2gH/DBs98fzcsgsA5YHghiPbAisO+vbkUJNAdeAfoNkRdAB+B7QufWwDjgYNYqFSUwFtCmDBGZjjb85YTObc37HuZX7RJNrSiBZYDMwFdcwUd6RTKRRFECm4FFnuh9wUfqZwF74mMVJbAFWOBBIBS8PJYCY53YUUsCAj8GuJRAuI153zPh2wMTM7Th60itCFQCvgw36mJClYGvBYFKwVdNoHLwVRKoCfiqCNQMvCuBf4AdQB9gFXDG8mXxTRzq5+8BI0xepYi7GrgLzAO+ZsUZFzc6BThklCiQyGdHYhMIBS8/ryClpFCiMXQ4kkwFDhcloEgroJHYpCMCoWYjnVuBhZb+H9Z/vdf3VHFZgTwCMwMjbASqXglsBM4HpAf2jFZOYDaw0xpRm/qbeW6Wkqfb+XyWBejbJmCJadQY+Gx1mBsbu44uFxPSqeiE1VPgXmeg8gEvNQIvEpKOwBNL90TgeNE90B+4ZSmRx1CNJ0l8wUuH3Gd0KhsA3LQUDwH+K0qgpZnxRsZcpFQ+Oi4h4LWSOhNHvn4psMEo1jm5XV79yMWEpE8z3tfxDJtn8/Z3ebht1gtV7Qaa5zum7JKpz5WAIqKiZd4B3Af8BWCU5RAEXOYSYXIqubgSSAMWYjbSpUKYUoZ3RrFwaJUHm+cvQLfYhk7EUIRACHgBk8momGW7SxXGVCCLZBcwx2U5QwlkgdcBfD8wCOgMKDV4amb4KPA4BkyuUu9VxZa8BXoDz6oiEHwATwCkUsl2QMFRIrLjfYplviuQNfPxrDJrArUySkMmxxqtBVa6zHzUxodAns3LvmUKB4ArgJ5tUZqgIDgBmAE0jX3XWWOND3i1dSWQBz4+rgLTQxMAZR4yu04JoNXvI7A4L+dJI+ZCIG/D6pJipO/MmfYqcilZfBTYP3cF8sDrlkUnqaHAfEDV6iY5YOQ+laDtBq6ajRuKP5OAK3h7cN0TyM7lBuXHZTYSuU7l/UoPlEe9D0Yc65hmQrpc0OyoPh8X+flo5rNwnLVM65xJG8rC/VtPGgHdImqJQ8GrX70S0EnrtJnpiITrzEft65WAQNgkksDLZ0+yomh8tZTLS4dEVYuXKfYjl3vE1Jy8TSzPjQrANOBk7GCh69Hb3qNld5BObXIvySOQpkwX20odFF3LEEXt7gmJXq7uUAJSHKUF8ZQgd9BYg0/AsYxzdqa+IgR8gVbS/i+BSqbVQ+lPvaMNQOE4cEcAAAAASUVORK5CYII=)";
-        }
+        
     }
 
     function peerconnection_on_datachannel_receive(event)
@@ -10499,8 +10515,9 @@ background-color: black;
         event.channel.onmessage = datachannel_onmessage;
     }
 
-    function setup_peer_connection_object_for_use()
+    function create_new_peer_connection_object_for_use()
     {
+        g_datachannel = null;
         peer_connection_with_server = new RTCPeerConnection(iceconfig);
         peer_connection_with_server.onicecandidate = handleICECandidateEvent;
         peer_connection_with_server.onsignalingstatechange = handleSignalingStateChangeEvent;
@@ -10576,7 +10593,7 @@ background-color: black;
                                                 <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                             </div>\n\
                                             <div class=\"single-chat-message-content\">\n\
-                                                <img class='imgnotsentyet' src=" + base64_picture_string_to_send + " style=\"max-width: 500px;\"></img>\n\
+                                                <img class='imgnotsentyet local-client-chat-picture-img chat-picture-img' data-single-chat-message-local-message-id='"+local_message_id+"' data-single-chat-message-server-message-id='unspecified' src=" + base64_picture_string_to_send + " style=\"max-width: 500px;\"></img>\n\
                                             </div>\n\
                                         </div>\n\
                                     </div>";
@@ -10691,7 +10708,7 @@ background-color: black;
                                                 <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                 </div>\n\
                                                 <div class=\"single-chat-message-content\">\n\
-                                                    <img class='imgnotsentyet' src=" + base64_picture_string_to_send + " style=\"max-width: 500px;\"></img>\n\
+                                                    <img class='imgnotsentyet local-client-chat-picture-img chat-picture-img' data-single-chat-message-local-message-id='"+local_message_id+"' data-single-chat-message-server-message-id='unspecified' src=" + base64_picture_string_to_send + " style=\"max-width: 500px;\"></img>\n\
                                                 </div>\n\
                                             </div>\n\
                                         </div>";
@@ -10805,10 +10822,9 @@ background-color: black;
         }
 
         let message_object = {
-            "message":
-            {
-                "type": "change_client_username",
-                "new_username": new_username
+            message: {
+                type: "change_client_username",
+                new_username: new_username
             }
         };
 
@@ -11156,9 +11172,9 @@ background-color: black;
                 document.getElementsByClassName("chat-context")[count - 1].insertAdjacentHTML("afterend", html_to_append3);
 
                 let single_chat_context = {
-                    "type": "channel",
-                    "chat_context_id": "chat-context-channel-" + msg.message.channel_id,
-                    "last_known_message_sender_username": ""
+                    type: "channel",
+                    chat_context_id: "chat-context-channel-" + msg.message.channel_id,
+                    last_known_message_sender_username: ""
                 };
 
                 chat_context_array.push(single_chat_context);
@@ -11255,6 +11271,7 @@ background-color: black;
 
     function process_chat_message_delete_from_server(msg)
     {
+        console.log(msg);
         let element = document.querySelector('.single-chat-message-content-p[data-single-chat-message-server-message-id="' + msg.message.chat_message_id + '"]');
         if (element != null)
         {
@@ -11267,6 +11284,29 @@ background-color: black;
             {
                 element.classList.remove("local-single-chat-message-content-p");
             }
+        }
+        else
+        {
+            let element = document.querySelector('.chat-picture-img[data-single-chat-message-server-message-id="' + msg.message.chat_message_id + '"]');
+            if (element != null)
+            {
+                element.removeEventListener("mousedown", single_chat_message_onrightclick);
+                element.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADF0lEQVRIx71VsU5cRxQ9d98s1UoUISYFJUIgpUDySiloUIqUTmeUwo27lPmCOHWadEhUFBRQOK7sD9hNEcWhoDG4iGQs2ayNFBuZArN7z0lx580+bC/QxCPtvpl5896599xz7gP+52HXObS1tbU2Pz//A0mQhLtrfX39x+3t7cFVz6brAHQ6na+Xl5e/H7nDR47z4ZAkfwEwuFYGm5ubt6anpxcllRv1nCTm5ua+W1xc/NadcLr5yPXw0cPfOp3OwPJZCRAESKCEfq93f2Nj458EAEtLS3e73e4tAKYYUJ5DgiSTJMYcorB2e+0nibFHGSVJhChQsr8fP34NIABUPxiL8fqDXxMg1uWFUHNOQpmdBAC7u7t/npycfLWwsPBNRAsAJXIogrAxOPK+TBTUOPv27cnp88PDv07fnb4oADs7O7+urKz0V1dX/wDqRGTjUsiCYqGmsXENwEDH3t7e8wcPfr99fHz8BgBaANDr9TylNEwpIaWEKiVUVYXhcIiUKqSUkKqE0WgEM4szVYK1WhgOR6hShVRVqKqEqqp0fn7+vt/vswA0R6bCXr16jSdP9s3dCx37+wf28uio0DE4GtjBwYGJrPesIcSPfZD5VkiNBkAkYWYmIERFZqXBSCoX31BUqssBMrehiHhZDWzh5LqgAEXziD48VXvhUwAKjyAHConmdBXVQPJoFcZANFGiO0QZLGc4OQMVJ0oAKdDZ8IhA99B7jqbuTbFGLdcrKJIsdE+Q3qBIRnr9Qqvr5O4Xqb0MIBtJAkDK3KMVtESTIHeClCk4MpIivQhCQs3zJSqqG1dkcGGvkUFuGYR7tAjYuOlNKHL0EdQKIUF3EwW2BAhGJyhGxHEmaIsalFZyVQ2Ui2zurJVhkuT0D3wgRQ1o4+Z7GQBrJQFTU220qhbMrOynlNBuT5V1u91GSiloEUNpkwBUnBxtYGbmS3wxM2NN6m52uyjOlTA7O2s3Zm+gkeXkDBp9P2CUrVNAiwMtT8cfJ8nGBp0AcPjs2dN7936+I6CdG/ZH31dd/PvkvbOzs39JvsfnGv8B0U6eGZr+co0AAAAASUVORK5CYII=";
+            }
+            else
+            {
+                console.log("process_chat_message_delete_from_server unable to find element");
+            }
+        }
+    }
+
+    function process_chat_message_edit_from_server(msg)
+    {
+        let element = document.querySelector('.single-chat-message-content-p[data-single-chat-message-server-message-id="' + msg.message.chat_message_id + '"]');
+        if (element != null)
+        {
+            element.innerHTML = msg.message.new_message_value;
+            element.style.color = "pink";
         }
     }
 
@@ -11643,11 +11683,14 @@ background-color: black;
                 document.getElementById("client-audio-state-"+msg.message.client_id).classList.add("client-audio-state-not-available");
             }
 
+            //just for local client
             if (local_client_id == msg.message.client_id)
             {
+                console.log("running create_new_peer_connection_object_for_use again");
+                create_new_peer_connection_object_for_use();
                 document.getElementById("toggle-microphone-label").style.display = "none";
                 document.getElementById("toggle-microphone-label").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAELklEQVRoQ+2ZWehOXRTGf+hDuJIpmVKUJIUiY9wRMpRMFy58hogoZUgk04WUqQyJEqJMZSgy9hlKXBK5+MgsuVDm0KN9tJ3/Gfbe55z3f2PdvO85Z++1n2fvtddae+0GlC/DgOmAftsDDYHnwDVgL3C9zCEblKisFbAPGJ2j8xTwL/CmjLHLItAFuAh0dQT1PzAc0G8hKYNAC+AG0MsTyX2gH/DBs98fzcsgsA5YHghiPbAisO+vbkUJNAdeAfoNkRdAB+B7QufWwDjgYNYqFSUwFtCmDBGZjjb85YTObc37HuZX7RJNrSiBZYDMwFdcwUd6RTKRRFECm4FFnuh9wUfqZwF74mMVJbAFWOBBIBS8PJYCY53YUUsCAj8GuJRAuI153zPh2wMTM7Th60itCFQCvgw36mJClYGvBYFKwVdNoHLwVRKoCfiqCNQMvCuBf4AdQB9gFXDG8mXxTRzq5+8BI0xepYi7GrgLzAO+ZsUZFzc6BThklCiQyGdHYhMIBS8/ryClpFCiMXQ4kkwFDhcloEgroJHYpCMCoWYjnVuBhZb+H9Z/vdf3VHFZgTwCMwMjbASqXglsBM4HpAf2jFZOYDaw0xpRm/qbeW6Wkqfb+XyWBejbJmCJadQY+Gx1mBsbu44uFxPSqeiE1VPgXmeg8gEvNQIvEpKOwBNL90TgeNE90B+4ZSmRx1CNJ0l8wUuH3Gd0KhsA3LQUDwH+K0qgpZnxRsZcpFQ+Oi4h4LWSOhNHvn4psMEo1jm5XV79yMWEpE8z3tfxDJtn8/Z3ebht1gtV7Qaa5zum7JKpz5WAIqKiZd4B3Af8BWCU5RAEXOYSYXIqubgSSAMWYjbSpUKYUoZ3RrFwaJUHm+cvQLfYhk7EUIRACHgBk8momGW7SxXGVCCLZBcwx2U5QwlkgdcBfD8wCOgMKDV4amb4KPA4BkyuUu9VxZa8BXoDz6oiEHwATwCkUsl2QMFRIrLjfYplviuQNfPxrDJrArUySkMmxxqtBVa6zHzUxodAns3LvmUKB4ArgJ5tUZqgIDgBmAE0jX3XWWOND3i1dSWQBz4+rgLTQxMAZR4yu04JoNXvI7A4L+dJI+ZCIG/D6pJipO/MmfYqcilZfBTYP3cF8sDrlkUnqaHAfEDV6iY5YOQ+laDtBq6ajRuKP5OAK3h7cN0TyM7lBuXHZTYSuU7l/UoPlEe9D0Yc65hmQrpc0OyoPh8X+flo5rNwnLVM65xJG8rC/VtPGgHdImqJQ8GrX70S0EnrtJnpiITrzEft65WAQNgkksDLZ0+yomh8tZTLS4dEVYuXKfYjl3vE1Jy8TSzPjQrANOBk7GCh69Hb3qNld5BObXIvySOQpkwX20odFF3LEEXt7gmJXq7uUAJSHKUF8ZQgd9BYg0/AsYxzdqa+IgR8gVbS/i+BSqbVQ+lPvaMNQOE4cEcAAAAASUVORK5CYII=)";
-                document.getElementById("play-song-container").style.visibility = "visible";
+                document.getElementById("play-song-container").style.visibility = "hidden";
             }
         }
         else if (msg.message.peer_connection_state == 3)
@@ -11785,6 +11828,16 @@ background-color: black;
             element.setAttribute("data-single-chat-message-server-message-id", msg.message.server_chat_message_id);
             element.addEventListener("mousedown", single_chat_message_onrightclick);
         }
+        else
+        {
+            let element = document.querySelector('.local-client-chat-picture-img[data-single-chat-message-local-message-id="' + msg.message.local_message_id + '"]');
+
+            if (element != null)
+            {
+                element.setAttribute("data-single-chat-message-server-message-id", msg.message.server_chat_message_id);
+                element.addEventListener("mousedown", single_chat_message_onrightclick);
+            }
+        }
     }
 
     function process_channel_edit_from_server(msg)
@@ -11897,11 +11950,18 @@ background-color: black;
 
     function process_channel_chat_picture_metadata_from_server(msg)
     {
-        let username_message_sender = sanitize_string(msg.message.username);
+        let client_index = get_client_index_in_array_by_client_id(msg.message.sender_id);
+
+        if (client_index == -1)
+        {
+            return;
+        }
+
+        let sender_username = clients[client_index].username;
         let index = get_chat_context_index_by_chat_context_id("chat-context-channel-" + current_channel_id);
         let receiving_chat_context_id = "chat-context-channel-" + msg.message.channel_id;
 
-        chat_context_array[index].last_known_message_sender_username = username_message_sender;
+        chat_context_array[index].last_known_message_sender_username = sender_username;
 
         let elements_count = document.getElementsByClassName('chat-spacer').length;
 
@@ -11913,13 +11973,13 @@ background-color: black;
         let html_to_append = "<div class=\"single-chat-message\">\n\
                                     <div class=\"single-message-content\">\n\
                                         <div class=\"single-chat-message-sender-username-container\">\n\
-                                            <p>" + username_message_sender + "</p>\n\
+                                            <p>" + sender_username + "</p>\n\
                                         </div>\n\
                                     <div class=\"single-chat-message-sender-time\">\n\
                                         <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                     </div>\n\
                                     <div class=\"single-chat-message-content\">\n\
-                                        <img class=\"chat-picture-img\" id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\" style=\"max-width: 500px;\"></img>\n\
+                                        <img class='chat-picture-img' data-single-chat-message-server-message-id='"+msg.message.picture_id+"' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\" style=\"max-width: 500px;\"></img>\n\
                                     </div>\n\
                                 </div>";
 
@@ -11947,9 +12007,9 @@ background-color: black;
             document.getElementById(received_direct_message_chat_context_id).style.display = "none";
 
             let single_chat_context = {
-                "type": "user",
-                "chat_context_id": received_direct_message_chat_context_id,
-                "last_known_message_sender_username": ""
+                type: "user",
+                chat_context_id: received_direct_message_chat_context_id,
+                last_known_message_sender_username: ""
             };
 
             chat_context_array.push(single_chat_context);
@@ -11964,7 +12024,7 @@ background-color: black;
                                         <div class=\"single-chat-message-sender-time\"><p>" + new Date().toLocaleTimeString() + "</p>\n\
                                         </div>\n\
                                         <div class=\"single-chat-message-content\">\n\
-                                            <img class=\"chat-picture-img\" id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\" style=\"max-width: 500px;\"></img>\n\
+                                            <img class='chat-picture-img' data-single-chat-message-server-message-id='"+msg.message.picture_id+"' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\" style=\"max-width: 500px;\"></img>\n\
                                         </div>\n\
                                     </div>\n\
                                 </div>";
@@ -12237,7 +12297,9 @@ background-color: black;
             for (let i = 0; i < autoconnect_details.keys.length; i++)
             {
                 let key_string_value = autoconnect_details.keys[i];
+                console.log(key_string_value);
                 let hash = _sha256.create();
+
                 hash.update(key_string_value);
                 hash.array();
                 key_bytes = hash.array();
@@ -12259,7 +12321,10 @@ background-color: black;
             for (let i = 0; i < custom_key_count; i++)
             {
                 let key_string_value = document.getElementById('input-key-' + i + '').value;
+                console.log(key_string_value);
+
                 let hash = _sha256.create();
+
                 hash.update(key_string_value);
                 hash.array();
                 key_bytes = hash.array();
@@ -12363,14 +12428,44 @@ background-color: black;
 
             websocket_worker_send(data);
         }
+        else if (action == 1)
+        {
+            let element = document.querySelector('.local-single-chat-message-content-p[data-single-chat-message-server-message-id="' + selected_server_chat_message_id + '"]');
+            if (element != null)
+            {
+                element.setAttribute("contenteditable", "true");
+
+                //forget the logic, just use setTimeout
+                setTimeout(function() {
+                    element.focus();
+                }, 0);
+
+                element.addEventListener("blur", local_chat_message_onblur);
+            }
+        }
+    }
+
+    function local_chat_message_onblur(event)
+    {
+        event.target.setAttribute("contenteditable", "false");
+        event.target.removeEventListener('blur', local_chat_message_onblur);
+
+        let message_object = {
+                message: {
+                    type: "edit_chat_message_request",
+                    message_id: selected_server_chat_message_id,
+                    new_message_value: event.target.innerHTML
+                }
+            };
+
+        let message_json_string = process_message_before_sending(message_object);
+        let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+        websocket_worker_send(data);   
     }
 
     function connect_button_onclick()
     {
-        initializeWebkitAudio();
-        document.getElementById("another-buttons-sub-container").style.display = "none";
-        document.getElementById("another-buttons-sub-loading-container").style.display = "";
-        document.getElementById("another-buttons-loading-container-p").innerHTML = "connecting to server...";
         connect_to_server();
     }
 
@@ -12380,6 +12475,11 @@ background-color: black;
         {
             await sleep(500);
         }
+
+        initializeWebkitAudio();
+        document.getElementById("another-buttons-sub-container").style.display = "none";
+        document.getElementById("another-buttons-sub-loading-container").style.display = "";
+        document.getElementById("another-buttons-loading-container-p").innerHTML = "connecting to server...";
 
         init_keys_object();
 
@@ -12409,11 +12509,10 @@ background-color: black;
             let connection_string = protocol_part_of_connection_string + '' + host + ':' + port + '/';
                 
             let message_object = {
-                "message":
-                {
-                    "type": "public_key_info",
-                    "value": rsa_public_key_string,
-                    "verification_string": verification_message
+                message: {
+                    type: "public_key_info",
+                    value: rsa_public_key_string,
+                    verification_string: verification_message
                 }
             };
 
@@ -12482,6 +12581,8 @@ background-color: black;
         }
     }
 
+    var alert_push_to_talk_key_shown_once = false;
+
     function toggle_microphone_onclick(event)
     {
         //so workers ignore this function
@@ -12498,7 +12599,11 @@ background-color: black;
             navigator.mediaDevices.getUserMedia({audio : true})
             .then(function(stream) {
 
-                window.alert("press Q to speak");
+                if (alert_push_to_talk_key_shown_once == false)
+                {
+                    window.alert("press Q to speak");
+                    alert_push_to_talk_key_shown_once = true;
+                }
 
                 opus_encoder_worker.postMessage({
                         type : "init",
@@ -12506,6 +12611,7 @@ background-color: black;
                 });
 
                 stream.getTracks()[0].enabled = false;
+
                 local_audio_stream = stream;
                 audio_input = audio_context.createMediaStreamSource(stream);
                 audio_recorder_gain_node = audio_context.createGain();
@@ -12530,10 +12636,9 @@ background-color: black;
                 document.getElementById("toggle-microphone-label").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAE30lEQVR4Xu2ae+jfUxjHX2MyImxJ5hKSrLX5T/xpNZeUkcsfiCSstTFrbRTij03mtpFEolzKJffLpqTUUlptjBqR27BFsdxyp3c7nzy/0/f3+5znfM75RPuc/z7f33Oe5znv53p+55lEv+twYB5wOnAEcGgQ/wXwKfAS8DywtS+1JvUk6BDgBuBSYPcWmX8BTwPLAihVVewDgDOBR4B9nCf5AbgQeMG5z0VeG4CrgDuA3Vxa/Ussb7gauCtzf+u2mgDI8nLl3MM3yguEs2p5Qi0AlNy2ZLj9eBZTOBwLfNVqUidBLQAeBC5x6tJG/gBwWRuR9+81AFCp+zgh23t1/TOUTpXMYqsGAFcCa4ppOJbRQuCekrxrALAWOLWkkobXK6GJKsa+BgAfAkcX03Asow9CMizGvgYAytjepif1QD8C+6YSp9DVAODvFMEdaIrqXJRZONQAQAfrpmwtarSizAYP2InAEAIpftyBpqjXFmU2hMAQAkMOGJLgUAV2gTIY1/m4kvTdB7TpM2HFzSmDbQIHADo0OSlb2zzOZVQX8TiNTptCKYfy0LTJc53JRTwAMLrTa7OIx7optG3yXEZ1EQ8e8N/zgMnA75HbuIzqIg6CfgP2MEKnAL+a75r/FP0e2M/IOjh6LpNue6bEUUOTA8B3wP5GyEHA1+Zb/7o+xqOEg/Z9YIahnw28Y76/BaY5+JEDwHvATCPkBOAt893nw4heoJ81st8FBEryygFAAiW4WVcA95tvPV/dnayBj3ABcK/ZshrQDEKzngHO9rDMAeBaYKUR8hRwnvk+DPikwuPoH8CRgH0cfRs4zsheDqyqDcCJwJtGiBLTdOAn85uesjUPVHLdB8w3DBWGcnlrxOOBDR6hOR6giQ9NcenQ44WBhqI0IFHqGUsga0Bim5EpQC433/IMPc27LmM5AEimJr5uMsI1D6DsrDLUrNOAFwuEgkZklHPEq1kqfx8Be5vfrgNWeKwv2lwApgKfRY+g1wC3RApoVuDODnNCOvziEUn1SeBcI0u9h6y/oy8AJOd2YIkRqGZIMbg5UuIM4NGMcJDbXxCGJy1LDVo+F8m4NcwVes+f7QESpGZIh1XWb5amPZUkt0eaHAjIRVXG1L5OtGT1xwBldBvz2jMLeAM4wDD4MvyuBs29ckOgETQXeDUKJYFyyggQtEfTY82orEqaHZVVHnk5jMONmgM6ClgPKP6bpYR3MvCa++RhQ1cAxEYxrji1S4c5B9iUq1i0bw7wOCBPskuybRi6xZUAQLO/DwPnR9J/AW4MANnq4FFyL2BpqDpx6ChMLgY0PZa9SgAg4VJOCtmOsFFK5eq2MC/8c6KmKm8XAddH/Uaz/YmQIDsdXsxKAdCAoDosi40aj9V8jy5KrwMbQzP1Tbi+aqZIOUEXGY3SK7fI+vFSglSrK2DUGndeJQFolFG8ajrcdoqdFQ1Xbrn8uhLMGh41ABBv3cmVnBZl1P/4fOoHdLvU1Lnu+0VXLQAaJdUx6rqquWHbL6Qc4nPgoTAqX/zgtT0gPqCAVpd4EnBzy+l13Vae0K3OdbFJQXWUYjn7uuxpO1Rtrxyje6/CguQBgBb36dUovQobPGAnAkMIDCEwMQK9hmWvwnaVHNAW4116CO0tarSizBItPADQEYGiRivK7P/oAf8Ae0zZQdfLrKYAAAAASUVORK5CYII=)";
 
                 let message_object = {
-                    "message":
-                    {
-                        "type": "microphone_usage",
-                        "value": 2,
+                    message: {
+                        type: "microphone_usage",
+                        value: 2,
                     }
                 };
 
@@ -12556,10 +12661,9 @@ background-color: black;
             document.getElementById("play-song-container").style.visibility = "hidden";
     
             let message_object = {
-                "message":
-                {
-                    "type": "microphone_usage",
-                    "value": 3,
+                message: {
+                    type: "microphone_usage",
+                    value: 3,
                 }
             };
 
@@ -12793,10 +12897,9 @@ background-color: black;
 
                 is_microphone_active = true;
                 let message_object = {
-                    "message":
-                    {
-                        "type": "microphone_usage",
-                        "value": 1,
+                    message: {
+                        type: "microphone_usage",
+                        value: 1,
                     }
                 };
 
@@ -13596,7 +13699,6 @@ background-color: black;
 
     function clear_chat_button_onclick()
     {
-        console.log("clear_chat_button_onclick");
         let chat_context_index = get_chat_context_index_by_chat_context_id(current_chat_context_id);
         chat_context_array[chat_context_index].last_known_message_sender_username = "";
 
@@ -13606,6 +13708,13 @@ background-color: black;
         for (let i = 0; i < elements.length; i++)
         {
             elements[i].remove();
+        }
+
+        let elements1 = document.getElementsByClassName('single-server-message');
+        
+        for (let i = 0; i < elements1.length; i++)
+        {
+            elements1[i].remove();
         }
     }
 
@@ -13685,14 +13794,23 @@ background-color: black;
         opus_decoder_worker = create_new_webworker_in_same_file("opus_decoder_worker");
 
         data_processing_worker.postMessage({type:"mainthread__generate_rsa_keypair"});
+        
+        if (is_autoconnect_active == false)
+        {     
+            document.getElementById("connect-form-sub-container-1").style.visibility = "visible";
+            document.getElementById("connect-form-sub-container-2").style.visibility = "visible";
+            document.getElementById("add-key-button").style.visibility = "visible";
+            document.getElementById("connect-button").style.visibility = "visible";
+        }
 
-        if (is_autoconnect_active == true)
-        {
-            connect_to_server();
-            while(!is_authenticated)
-            {
-                await sleep(1000);
-            }
+        if (is_autoconnect_active == true && is_autoconnect_without_sound_active == false)
+        {     
+            document.getElementById("connect-button").style.visibility = "visible";
+        }
+
+        if (is_autoconnect_active == true && is_autoconnect_without_sound_active == true)
+        {     
+            connect_to_server();  
         }
     }
 
@@ -13809,14 +13927,14 @@ background-color: black;
                         <div id="play-song-container">
                             <div>
                                 <label class="custom-file-upload-button" id="custom-file-upload-button-song">
-                                    <input id="choose_song_input" type="file" style="display: none">
+                                    <input id="choose_song_input" type="file" accept=".wav" style="display: none">
                                 </label>
                             </div>
                         </div>
                         <div id='upload-image-container'>
                             <div>
                                 <label class="custom-file-upload-button" id="custom-file-upload-button-image">
-                                    <input id="choose_image_input" type="file" style="display: none">
+                                    <input id="choose_image_input" type="file" accept=".png,.jpg,.jpeg,.gif,.ico"  style="display: none">
                                 </label>
                             </div>
                         </div>
@@ -13875,7 +13993,8 @@ background-color: black;
                     <div id="close-button-enter-password">
                     </div>
                 </div>
-                <div id="channel-password-input-container">
+                <div id="channel-password-input-container">            console.log(audio_context);
+
                     <div style="display: inline-block;">
                         <div style="display: inline-block;">
                             <div class="text-input-container">
