@@ -385,7 +385,7 @@ async fn create_new_peer(
         Box::pin(async move {
            match ice_candidate_option {
                Some(ice_candidate) => {
-                   println!("on_ice_candidate {:?}", ice_candidate);
+                   //println!("on_ice_candidate {:?}", ice_candidate);
 
                    let candidate= ice_candidate.to_json();
 
