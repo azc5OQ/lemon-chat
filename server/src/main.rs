@@ -48,7 +48,9 @@ struct Client {
     microphone_state: u64,
     is_webrtc_datachannel_connected: bool,
     is_existing: bool,
-    message_ids: Vec<ChatMessageEntry>
+    message_ids: Vec<ChatMessageEntry>,
+    is_streaming_song: bool,
+    song_name: String,
 }
 
 #[derive(Default)]
@@ -423,9 +425,12 @@ fn send_active_microphone_usage_for_current_channel_to_client(clients: &mut Hash
             continue;
         }
 
+
         let mut single_client_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
         single_client_object.insert(String::from("client_id"), serde_json::Value::from(client.client_id));
         single_client_object.insert(String::from("microphone_state"), serde_json::Value::from(client.microphone_state));
+        single_client_object.insert(String::from("is_streaming_song"), serde_json::Value::from(client.is_streaming_song));
+        single_client_object.insert(String::from("song_name"), serde_json::Value::from(client.song_name.clone()));
 
         json_clients_array.push(single_client_object);
     }
@@ -753,7 +758,9 @@ fn get_client_ids_in_channel(clients: &HashMap<u64, Client>, channel_id: u64) ->
 
 fn broadcast_channel_join(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, new_channel_id: u64) {
 
-    let client_that_joins_microphone_state= clients.get(&client_id).unwrap().microphone_state;
+    let client_joining_channel_microphone_state= clients.get(&client_id).unwrap().microphone_state;
+    let client_joining_channel_is_streaming_song: bool = clients.get(&client_id).unwrap().is_streaming_song;
+    let client_joining_channel_song_name: String = clients.get(&client_id).unwrap().song_name.clone();
 
     for (_key, client) in clients {
 
@@ -769,12 +776,22 @@ fn broadcast_channel_join(clients: &HashMap<u64, Client>, websockets: &HashMap<u
         //if microphone is active, send microphone state as active only for clients of channel that client is joining
         //
 
-        let mut microphone_state: u64 = client_that_joins_microphone_state;
+        let mut microphone_state: u64 = client_joining_channel_microphone_state;
+        let mut is_streaming_song: bool = client_joining_channel_is_streaming_song;
+        let mut song_name: String = client_joining_channel_song_name.clone();
 
-        if client.channel_id != new_channel_id && microphone_state == 1 {
-            microphone_state = 2;
+        //
+        //clients that are not in the same channel do not need accurate microphone usage information, for privacy reasons
+        //
+
+        if client.channel_id != new_channel_id
+        {
+            if microphone_state == 1 {
+                microphone_state = 2;
+            }
+            is_streaming_song = false;
+            song_name = String::from("");
         }
-
 
         let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
         let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -783,10 +800,10 @@ fn broadcast_channel_join(clients: &HashMap<u64, Client>, websockets: &HashMap<u
         json_message_object.insert(String::from("channel_id"),serde_json::Value::from(new_channel_id));
         json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
         json_message_object.insert(String::from("microphone_state"),serde_json::Value::from(microphone_state));
+        json_message_object.insert(String::from("is_streaming_song"), serde_json::Value::from(is_streaming_song));
+        json_message_object.insert(String::from("song_name"),serde_json::Value::from(song_name));
 
         json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
-
-
 
 
         let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
@@ -924,6 +941,85 @@ fn send_delete_chat_message_to_selected_clients(clients: &HashMap<u64, Client>, 
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("chat_message_delete"));
     json_message_object.insert(String::from("chat_message_id"),serde_json::Value::from(chat_message_id));
+
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    for (_key, client) in clients {
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false {
+            continue;
+        }
+
+        if client_ids.contains(&client.client_id) == false {
+            continue;
+        }
+
+        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                websocket.send(Message::Text(data_to_send_base64));
+            }
+        }
+    }
+}
+
+fn send_stop_song_stream_message_to_selected_clients(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>,client_ids: &Vec<u64>, client_id: u64) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("stop1_song_stream"));
+    json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
+
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    for (_key, client) in clients {
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false {
+            continue;
+        }
+
+        if client_ids.contains(&client.client_id) == false {
+            continue;
+        }
+
+        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                websocket.send(Message::Text(data_to_send_base64));
+            }
+        }
+    }
+}
+
+fn send_start_song_stream_message_to_selected_clients(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>,client_ids: &Vec<u64>, client_id: u64, song_name: String) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("start_song_stream"));
+    json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
+    json_message_object.insert(String::from("song_name"),serde_json::Value::from(song_name));
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
@@ -1459,6 +1555,23 @@ fn is_edit_chat_message_request_valid(message: &serde_json::Value) -> bool {
     return result;
 }
 
+fn is_start_song_stream_message_valid(message: &serde_json::Value) -> bool {
+
+    let mut result: bool = true;
+
+    if message["message"]["song_name"] == false {
+        println!("field message.song_name does not exist");
+        result = false;
+    }
+
+    if message["message"]["song_name"].is_string() == false {
+        result = false;
+    }
+
+    return result;
+}
+
+
 fn is_delete_chat_message_request_valid(message: &serde_json::Value) -> bool {
 
     let mut result: bool = true;
@@ -1676,8 +1789,6 @@ fn process_edit_chat_message_request(clients: &mut HashMap<u64, Client>, websock
                     }
                 }
 
-                println!("teenage love is scam from the govverment");
-
                 if is_client_owner_of_message == true {
 
                     if detected_message_type == 1 {
@@ -1761,6 +1872,66 @@ fn process_delete_chat_message_request(clients: &mut HashMap<u64, Client>, webso
                         send_delete_chat_message_to_selected_clients(clients, websockets, &clients_ids, message_id_to_delete);
                     }
                 }
+            }
+        }
+    }
+}
+
+
+fn process_stop_song_stream_message(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, _message: &serde_json::Value, client_id: u64) {
+
+    //
+    //this message does not need to be checked for validity
+    //this message is so simple, message object contains to properties besides "type" which and at this point
+    //is assumed to be correct
+    //
+
+    let client_option: Option<&mut Client> = clients.get_mut(&client_id);
+
+    match client_option {
+        None => {}
+        Some(client) => {
+            client.is_streaming_song = false;
+
+            let channel_id = client.channel_id.clone();
+
+            let clients_ids: Vec<u64> = get_client_ids_in_channel(&clients, channel_id);
+
+            send_stop_song_stream_message_to_selected_clients(clients, websockets, &clients_ids, client_id);
+        }
+    }
+
+}
+
+fn process_start_song_stream_message(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) {
+
+
+    println!("process_start_song_stream_message");
+    let result: bool = is_start_song_stream_message_valid(message);
+
+    if result == true {
+
+        println!("is_start_song_stream_message_valid == true");
+
+        //
+        //should playing multiple songs in channel be allowed?
+        //
+
+        let song_name: String = message["message"]["song_name"].as_str().unwrap().to_string();
+
+        let client_option: Option<&mut Client> = clients.get_mut(&client_id);
+
+        match client_option {
+            None => {}
+            Some(client) => {
+                client.song_name = song_name.clone();
+                client.is_streaming_song = true;
+
+                let channel_id = client.channel_id.clone();
+
+                let clients_ids: Vec<u64> = get_client_ids_in_channel(&clients, channel_id);
+
+                send_start_song_stream_message_to_selected_clients(clients, websockets, &clients_ids, client_id, song_name);
             }
         }
     }
@@ -2320,6 +2491,10 @@ fn process_direct_chat_message(clients: &mut HashMap<u64, Client>, websockets: &
 fn change_client_microphone_usage(clients: &mut HashMap<u64, Client>, _websockets: &HashMap<u64, Responder>,client_id: u64, new_microphone_usage: u64) {
     let client: &mut Client = clients.get_mut(&client_id).unwrap();
     client.microphone_state = new_microphone_usage;
+
+    if new_microphone_usage == 2 {
+        client.is_streaming_song = false;
+    }
 }
 
 fn process_microphone_usage_message(clients: &mut HashMap<u64, Client>, _channels: &HashMap<u64, Channel>, websockets: &HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) -> (bool, u64) {
@@ -2328,6 +2503,8 @@ fn process_microphone_usage_message(clients: &mut HashMap<u64, Client>, _channel
     let status: bool = is_microphone_usage_message_valid(message);
     if status == true {
 
+        let new_microphone_usage = message["message"]["value"].as_u64().unwrap();
+
         let client: &mut Client = clients.get_mut(&client_id).unwrap();
 
         //if datachannel is not active, ignore microphone_usage message
@@ -2335,7 +2512,6 @@ fn process_microphone_usage_message(clients: &mut HashMap<u64, Client>, _channel
 
             result.1 = client.channel_id;
 
-            let new_microphone_usage = message["message"]["value"].as_u64().unwrap();
             let old_microphone_usage = client.microphone_state;
 
             if new_microphone_usage != old_microphone_usage {
@@ -2679,6 +2855,12 @@ fn process_authenticated_message(client_id: u64, websockets: &mut HashMap<u64, R
             broadcast_client_role_add(clients, websockets, client_id, String::from("admin"));
         }
     }
+    else if message_type == "start_song_stream" {
+        process_start_song_stream_message(clients, websockets, &message, client_id);
+    }
+    else if message_type == "stop_song_stream" {
+        process_stop_song_stream_message(clients, websockets, &message, client_id);
+    }
 }
 
 fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u64, Responder>, clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, message: serde_json::Value, sender: &std::sync::mpsc::Sender<String>) {
@@ -2728,9 +2910,7 @@ fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u6
                         send_client_list_to_client(clients, websocket, current_client_username);
 
                         send_active_microphone_usage_for_current_channel_to_client(clients, websocket, 0);
-
                         process_client_connect(clients, channels, websockets, client_id);
-
                         send_cross_thread_message_create_new_client_at_rtc_thread(sender, client_id);
                     }
                 }
@@ -3015,7 +3195,7 @@ fn get_data_from_base64_and_decrypt_it(base64_string: String) -> String {
 fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mpsc::Receiver<String>, websockets: &mut HashMap<u64, Responder>, clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, sender: &std::sync::mpsc::Sender<String>) {
 
     for thread_channel_message in receiver.try_iter() {
-        println!("{}" , thread_channel_message);
+        //println!("{}" , thread_channel_message);
 
         let json_message: serde_json::Value = serde_json::from_str(thread_channel_message.as_str()).unwrap();
 
@@ -3023,7 +3203,7 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
             let msg_client_id: u64 = json_message["client_id"].as_u64().unwrap();
             let sdp_offer_value: String = json_message["value"].to_string();
 
-            println!("sdp_offer_value -> {}", sdp_offer_value);
+            //println!("sdp_offer_value -> {}", sdp_offer_value);
 
             //reborrow?
             for (_key, client) in &mut *clients {
@@ -3047,7 +3227,7 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
             let msg_client_id: u64 = json_message["client_id"].as_u64().unwrap();
             let ice_candidate_value: String = json_message["value"].to_string();
 
-            println!("ice_candidate_value -> {}", ice_candidate_value);
+            //println!("ice_candidate_value -> {}", ice_candidate_value);
 
             //reborrow?
             for (_key, client) in &mut *clients {
@@ -3094,6 +3274,7 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
                     else if msg_peer_connection_state > 3 {
                         client.microphone_state = 4; //audio disabled
                         client.is_webrtc_datachannel_connected = false;
+                        client.is_streaming_song = false;
                         send_cross_thread_message_client_disconnect(sender, msg_client_id);
                     }
                     broadcast_peer_connection_state(clients, websockets, msg_client_id, msg_peer_connection_state);
