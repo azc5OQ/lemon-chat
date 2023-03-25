@@ -11769,7 +11769,6 @@
                 //because timing is problem still
                 //
 
-                await Sleep(4000);
                 audio_queue.clear();
             }
 
@@ -13448,7 +13447,7 @@
                             if (alert_streaming_music_shown_once == false)
                             {
                                 custom_alert("when streaming music from file, detach browser tab where chat is to separate window (if using multiple tabs) or stay focused on tab where chat is otherwise music is not sent reliably and it lags");
-                                alert_streaming_music_shown_once = false;
+                                alert_streaming_music_shown_once = true;
                             }
                         };
                     }
