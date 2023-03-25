@@ -978,7 +978,7 @@ fn send_stop_song_stream_message_to_selected_clients(clients: &HashMap<u64, Clie
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
-    json_message_object.insert(String::from("type"), serde_json::Value::from("stop1_song_stream"));
+    json_message_object.insert(String::from("type"), serde_json::Value::from("stop_song_stream"));
     json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
