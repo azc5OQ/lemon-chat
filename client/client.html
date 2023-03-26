@@ -81,24 +81,30 @@
             vertical-align: top;
         }
 
-            .marquee div {
-                padding-left: 100%;
-                display: inline-block;
-                font-family: roboto,sans-serif;
-                font-size: 11px;
-                vertical-align: top;
-                color: #7ee8ff;
-                padding-top: 2px;
-                animation-duration: 40s;
-                animation-timing-function: linear;
-                animation-delay: 0s;
-                animation-iteration-count: infinite;
-                animation-direction: normal;
-                animation-fill-mode: none;
-                animation-play-state: running;
-                animation-name: animate;
-            }
+        .marquee div {
+            padding-left: 100%;
+            display: inline-block;
+            font-family: roboto,sans-serif;
+            font-size: 11px;
+            vertical-align: top;
+            color: #7ee8ff;
+            padding-top: 2px;
+            animation-duration: 40s;
+            animation-timing-function: linear;
+            animation-delay: 0s;
+            animation-iteration-count: infinite;
+            animation-direction: normal;
+            animation-fill-mode: none;
+            animation-play-state: running;
+            animation-name: animate;
+        }
 
+        .chat-controls-container {
+            display: inline-block;
+            vertical-align: top;
+            float: right;
+            white-space: nowrap;
+        }
 
         .p-marquee-song-icon {
             padding-left: 19px;
@@ -143,7 +149,7 @@
         }
 
         .imgnotsentyet {
-            opacity: 0.3;
+            opacity: 0.3 !important;
         }
 
         #drag-resize-chat:hover {
@@ -190,6 +196,9 @@
             scrollbar-color: #3f3f4d #6b7c9a;
         }
 
+        .chat-picture-img {
+            max-width: 100%;
+        }
         .local-client-chat-picture-img:hover {
             opacity: 0.5;
         }
@@ -221,6 +230,7 @@
             height: 75%;
             display: none;
             min-width: 329px;
+            white-space: nowrap;
         }
 
         .client-audio-state {
@@ -293,7 +303,7 @@
             font-weight: bold;
             font-style: italic;
             word-wrap: break-word;
-            width: 32%;
+            width: 80%;
         }
 
         #channel-password-input-container, #admin-password-input-container {
@@ -319,14 +329,15 @@
             background-repeat: no-repeat;
             background-position: center;
             background-size: cover;
-            left: 26px;
         }
 
         #chat-input-file-input-container {
-            width: 65%;
+            width: calc(94% - 223px);
             display: inline-block;
             vertical-align: top;
-            left: 10px;
+            padding: 0.5em;
+            background-color: #202020;
+            border-radius: 6px;
         }
 
         #chat-input-container-text-input {
@@ -339,8 +350,8 @@
             vertical-align: top;
             outline: none;
             border: none;
-            padding: 0.5em;
             font-family: sans-serif;
+            resize: none;
         }
 
         .single-role {
@@ -9194,6 +9205,7 @@
                 }
                 else if (e.data.type == "data_processing_worker__microphone_usage_from_server")
                 {
+                    console.log(e.data.value);
                     let client = {
                         client_id: e.data.value.message.client_id,
                         microphone_state: e.data.value.message.value,
@@ -9301,6 +9313,10 @@
                     let encoder_output_samplerate = 48000; //if unsupported sample rate is used, Encoder wont construct
                     let encoder_original_samplerate = e.data.sampleRate;
                     encoder = new OpusEncoder(encoder_application_use, encoder_frame_duration, encoder_output_samplerate, encoder_original_samplerate, encoder_channels, 0);
+                }
+                else if (e.data.type == "destruct")
+                {
+                    encoder.destroy();
                 }
             }
 
@@ -10956,7 +10972,7 @@
                                                             <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                         </div>\n\
                                                         <div class=\"single-chat-message-content\">\n\
-                                                            <img class='imgnotsentyet local-client-chat-picture-img chat-picture-img' data-single-chat-message-local-message-id='"+ local_message_id + "' data-single-chat-message-server-message-id='unspecified' src=" + base64_picture_string_to_send + " style=\"max-width: 500px;\"></img>\n\
+                                                            <img class='imgnotsentyet local-client-chat-picture-img chat-picture-img' data-single-chat-message-local-message-id='"+ local_message_id + "' data-single-chat-message-server-message-id='unspecified' src=" + base64_picture_string_to_send + "></img>\n\
                                                         </div>\n\
                                                     </div>\n\
                                                 </div>";
@@ -11071,7 +11087,7 @@
                                                             <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                             </div>\n\
                                                             <div class=\"single-chat-message-content\">\n\
-                                                                <img class='imgnotsentyet local-client-chat-picture-img chat-picture-img' data-single-chat-message-local-message-id='"+ local_message_id + "' data-single-chat-message-server-message-id='unspecified' src=" + base64_picture_string_to_send + " style=\"max-width: 500px;\"></img>\n\
+                                                                <img class='imgnotsentyet local-client-chat-picture-img chat-picture-img' data-single-chat-message-local-message-id='"+ local_message_id + "' data-single-chat-message-server-message-id='unspecified' src=" + base64_picture_string_to_send + "></img>\n\
                                                             </div>\n\
                                                         </div>\n\
                                                     </div>";
@@ -11733,6 +11749,11 @@
             async function process_stop_song_stream_from_server(msg)
             {
                 //
+                //start / stop song stream messages server pupose of handling marquee animation where text moves
+                //microphone changes in gui are handles elsewhere
+                //
+
+                //
                 //disable css marquee effect
                 //
 
@@ -11748,28 +11769,14 @@
                 }
 
                 //
-                //update microphone state in channel, so it does not appear anymore as if song is playing
+                //set stop_song_stream_message_received to true, so song is not sent anymore to server, this variable is then read elsewhere
+                //this only applies to local client
                 //
 
-                let client = {
-                    client_id: msg.message.client_id,
-                    microphone_state: 1,
+                if (msg.message.client_id == local_client_id)
+                {
+                    stop_song_stream_message_received = true;
                 }
-
-                process_microphone_usage_in_gui(client);
-
-                //
-                //set stop_song_stream_message_received to true, so song is not sent anymore to server ,basically
-                //
-
-                stop_song_stream_message_received = true;
-
-                //
-                //delete content of audio buffer now, song would stop playing later if this was not done
-                //because timing is problem still
-                //
-
-                audio_queue.clear();
             }
 
 
@@ -12000,8 +12007,6 @@
                     let html_to_append = "";
 
                     let client_microphone_state_html_class = "";
-
-                    console.log(msg.message.clients[i]);
 
                     switch (msg.message.clients[i].microphone_state)
                     {
@@ -12486,7 +12491,7 @@
                                                     <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                 </div>\n\
                                                 <div class=\"single-chat-message-content\">\n\
-                                                    <img class='chat-picture-img' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\" style=\"max-width: 500px;\"></img>\n\
+                                                    <img class='chat-picture-img' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\"></img>\n\
                                                 </div>\n\
                                             </div>";
 
@@ -12531,7 +12536,7 @@
                                                     <div class=\"single-chat-message-sender-time\"><p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                     </div>\n\
                                                     <div class=\"single-chat-message-content\">\n\
-                                                        <img class='chat-picture-img' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\" style=\"max-width: 500px;\"></img>\n\
+                                                        <img class='chat-picture-img' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\"></img>\n\
                                                     </div>\n\
                                                 </div>\n\
                                             </div>";
@@ -13106,19 +13111,23 @@
                 }
                 if (event.currentTarget.checked)
                 {
-                    console.log("toggle_microphone_onclick");
+
 
                     navigator.getUserMedia = (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia);
 
                     navigator.mediaDevices.getUserMedia({ audio: true })
                         .then(function (stream)
                         {
-
                             if (alert_push_to_talk_key_shown_once == false)
                             {
                                 custom_alert("press Q to talk");
                                 alert_push_to_talk_key_shown_once = true;
                             }
+
+                            document.getElementById("play-pause-song-container").style.visibility = "visible";
+                            document.getElementById("stop-song").style.display = "none";
+                            document.getElementById("custom-file-upload-button-song").style.visibility = "visible";
+                            document.getElementById("custom-file-upload-button-song").style.display = "block";
 
                             opus_encoder_worker.postMessage({
                                 type: "init",
@@ -13173,7 +13182,8 @@
                 }
                 else
                 {
-                    document.getElementById("play-pause-song-container").style.visibility = "hidden";
+                    document.getElementById("custom-file-upload-button-song").style.visibility = "hidden";
+                    document.getElementById("stop-song").style.display = "none";
 
                     let message_object = {
                         message: {
@@ -13235,7 +13245,6 @@
                 node3.appendChild(node4);
 
                 document.getElementById('connect-form-sub-container-2').appendChild(node3);
-
                 document.getElementById("verification-system").scrollTop = document.getElementById("verification-system").scrollHeight;
                 custom_key_count++;
             }
@@ -13467,9 +13476,51 @@
 
                     if (stop_song_stream_message_received)
                     {
-                        console.log("[i] stop_song_stream_message_received == true, leaving loop");
                         stop_song_stream_message_received = false;
-                        break;
+                        
+                        //
+                        //three situations exist where song stream end must be handled. 
+                        //1 when clicking on button to pause song, 
+                        //2 when clicking on button that de-activates microphone 
+                        //3 when song stops playing when all bytes are sent. 
+                        //all must be handled slightly differently
+                        //
+
+                        //
+                        //when song is playing and bytes are sent to server using this for loop
+                        //what makes the loop stop in cases 1 and 2 is "stop_song_stream" message from server
+                        //when stop_song_stream message from server is handled, stop_song_stream_message_received is set to true
+                        //loop is async and uses await sleep, while loop is not running, stop_song_stream_message_received can be set and affect loop
+                        //
+
+                        //
+                        //if condition is met only if user clicked "pause song" button located near file image select button
+                        //if user clicks de-activate microphone button, microphone_state is set to 3 (deactivated), not checking microphone_state
+                        //would cause the state go from 3 to 2 again..
+                        //
+
+                        if (clients[get_client_index_in_array_by_client_id(local_client_id)].microphone_state == 1)
+                        {
+                            is_microphone_active = true;
+                            is_playing_music = false;
+                            last_sent_value_microphone_usage = 2;
+
+
+                            let message_object2 = {
+                                message: {
+                                    type: "microphone_usage",
+                                    value: 2,
+                                }
+                            };
+
+
+                            let message_json_string2 = process_message_before_sending(message_object2);
+                            let data2 = encrypt_all_message_data_and_convert_to_base64(message_json_string2);
+
+                            websocket_worker_send(data2);
+                        }
+                        
+                        return;
                     }
 
                     //
@@ -13479,35 +13530,46 @@
                     //but song is still being played in backgroun in other clients devices
                     //
 
-                    await sleep(60);
+                    //also works with 60
+                    //100 - starts lagging
+                    await sleep(80);
                 }
 
                 //
-                //update microphone state for other users
+                //this is case 3 when song ends because it finished playing
+                //update marquee animation and microphone state for other users
                 //
 
-                is_microphone_active = true;
-                let message_object = {
+                let message_object1 = {
                     message:
                     {
+                        type: "stop_song_stream"
+                    }
+                };
+
+                let message_json_string1 = process_message_before_sending(message_object1);
+                let data1 = encrypt_all_message_data_and_convert_to_base64(message_json_string1);
+                websocket_worker_send(data1);
+
+                document.getElementById("custom-file-upload-button-song").style.display = "inline-block";
+                document.getElementById("stop-song").style.display = "none";
+
+                is_microphone_active = true;
+                is_playing_music = false;
+                last_sent_value_microphone_usage = 2;
+
+                let message_object3 = {
+                    message: {
                         type: "microphone_usage",
                         value: 2,
                     }
                 };
 
-                let message_json_string = process_message_before_sending(message_object);
-                let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
-                websocket_worker_send(data);
-                last_sent_value_microphone_usage = 2;
+                let message_json_string3 = process_message_before_sending(message_object3);
+                let data3 = encrypt_all_message_data_and_convert_to_base64(message_json_string3);
 
-                is_playig_music = false;
-
-                document.getElementById("custom-file-upload-button-song").style.display = "inline-block";
-                document.getElementById("stop-song").style.display = "none";
-
+                websocket_worker_send(data3);               
             }
-
-
 
             function chunkBuffers(arrayBuffer, chunkLength)
             {
@@ -14500,12 +14562,13 @@
             <div id="space-devider4">
                 <div style="height: 10px;">
                 </div>
+                <div style="width: 25px;height: 20px; display: inline-block;"></div>
                 <div id="chat-input-file-input-container">
                     <textarea id="chat-input-container-text-input" maxlength="900"></textarea>
                 </div>
                 <div id="image-upload-preview">
                 </div>
-                <div style="display: inline-block; vertical-align: top; float: right; ">
+                <div class="chat-controls-container">
                     <div id="play-pause-song-container">
                         <div>
                             <label class="custom-file-upload-button" id="custom-file-upload-button-song">
