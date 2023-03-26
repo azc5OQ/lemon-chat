@@ -45,7 +45,7 @@ struct Client {
     is_public_key_challenge_sent: bool,
     public_key_challenge_random_string: String,
     channel_id: u64,
-    microphone_state: u64,
+    microphone_state: u64, //1 -> active, 2 -> not active bud enabled, 3 -> disabled audio still active, 4 audio disabled
     is_webrtc_datachannel_connected: bool,
     is_existing: bool,
     message_ids: Vec<ChatMessageEntry>,
@@ -1882,8 +1882,7 @@ fn process_stop_song_stream_message(clients: &mut HashMap<u64, Client>, websocke
 
     //
     //this message does not need to be checked for validity
-    //this message is so simple, message object contains to properties besides "type" which and at this point
-    //is assumed to be correct
+    //json message object only contain "type" property which is already verified as valid if code got to this point
     //
 
     let client_option: Option<&mut Client> = clients.get_mut(&client_id);
@@ -1892,6 +1891,7 @@ fn process_stop_song_stream_message(clients: &mut HashMap<u64, Client>, websocke
         None => {}
         Some(client) => {
             client.is_streaming_song = false;
+            //client.mi
 
             let channel_id = client.channel_id.clone();
 
@@ -2211,6 +2211,16 @@ fn is_microphone_usage_message_valid(message: &serde_json::Value) -> bool{
         result = false;
     }
 
+    //
+    //verify that the value that represents state of microphone is located within the range of allowed values
+    //
+
+    let microphone_usage_value = message["message"]["value"].as_i64().unwrap();
+    if microphone_usage_value < 1 || microphone_usage_value > 3 {
+        println!("microphone_usage_value is wrong {} ", microphone_usage_value);
+        result = false;
+    }
+
     return result;
 }
 
@@ -2497,22 +2507,33 @@ fn change_client_microphone_usage(clients: &mut HashMap<u64, Client>, _websocket
     }
 }
 
-fn process_microphone_usage_message(clients: &mut HashMap<u64, Client>, _channels: &HashMap<u64, Channel>, websockets: &HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) -> (bool, u64) {
-    let mut result: (bool, u64) = (false, 0);
+fn process_microphone_usage_message(clients: &mut HashMap<u64, Client>, _channels: &HashMap<u64, Channel>, websockets: &HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) -> (bool, u64, u64) {
+    let mut result: (bool, u64, u64) = (false, 0, 0);
 
     let status: bool = is_microphone_usage_message_valid(message);
     if status == true {
 
-        let new_microphone_usage = message["message"]["value"].as_u64().unwrap();
+        let new_microphone_usage: u64 = message["message"]["value"].as_u64().unwrap();
 
         let client: &mut Client = clients.get_mut(&client_id).unwrap();
 
         //if datachannel is not active, ignore microphone_usage message
         if client.is_webrtc_datachannel_connected == true {
 
+            //
+            //ignore requests about the change of state of microphone requesting setting it to "not active but enabled"
+            //if client is streaming music from file
+            //this activity stops by stop_song_stream message
+            //
+
+            if client.is_streaming_song == true && client.microphone_state == 1 && new_microphone_usage == 2 {
+                return result;
+            }
+
             result.1 = client.channel_id;
 
             let old_microphone_usage = client.microphone_state;
+            result.2 = old_microphone_usage.clone();
 
             if new_microphone_usage != old_microphone_usage {
                 change_client_microphone_usage(clients, websockets, client_id, new_microphone_usage);
@@ -2831,14 +2852,29 @@ fn process_authenticated_message(client_id: u64, websockets: &mut HashMap<u64, R
         process_ice_candidate_message(sender,client_id, &message);
     }
     else if message_type == "microphone_usage" {
-        let result = process_microphone_usage_message(clients, channels, websockets, &message, client_id);
+        let result: (bool, u64, u64) = process_microphone_usage_message(clients, channels, websockets, &message, client_id);
 
-        let is_microphone_state_change_broadcast_needed = result.0;
+        let is_microphone_state_change_broadcast_needed: bool = result.0;
         let channel_id = result.1;
+        let old_microphone_state = result.2;
 
         if is_microphone_state_change_broadcast_needed == true {
             let new_microphone_usage = message["message"]["value"].as_u64().unwrap();
             broadcast_microphone_usage(clients, websockets, client_id, channel_id, new_microphone_usage);
+
+            if old_microphone_state == 1 {
+                let client: &mut Client = clients.get_mut(&client_id).unwrap();
+
+                //
+                //handle situation where client de-activates microphone while streaming song
+                //
+
+                if client.is_streaming_song == true {
+                    client.is_streaming_song = false;
+                    let clients_ids: Vec<u64> = get_client_ids_in_channel(&clients, channel_id);
+                    send_stop_song_stream_message_to_selected_clients(clients, websockets, &clients_ids, client_id);
+                }
+            }
         }
     }
     else if message_type == "client_connection_check" {
