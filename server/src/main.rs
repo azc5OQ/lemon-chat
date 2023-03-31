@@ -29,6 +29,34 @@ struct ChatMessageEntry {
 }
 
 #[derive(Default)]
+struct Tag {
+    id: u64,
+    icon_id: u64,
+    name: String
+}
+
+#[derive(Default)]
+struct Icon {
+    id: u64,
+    base64_icon: String
+}
+
+//
+//if someone wishes to use just chat without tags make it possible to disable it
+//
+
+//
+//data of clients are linked to public keys..
+//
+
+#[derive(Default)]
+struct ClientStoredData {
+    public_key: String,
+    tag_ids: Vec<u64>
+}
+
+
+#[derive(Default)]
 struct Client {
     client_id: u64,
     is_authenticated: bool,
@@ -49,6 +77,7 @@ struct Client {
     is_webrtc_datachannel_connected: bool,
     is_existing: bool,
     message_ids: Vec<ChatMessageEntry>,
+    tag_ids: Vec<u64>,
     is_streaming_song: bool,
     song_name: String,
 }
@@ -87,9 +116,20 @@ lazy_static! {
 }
 
 static CHAT_MESSAGE_ID: AtomicUsize = AtomicUsize::new(0);
+static ICON_ID: AtomicUsize = AtomicUsize::new(0);
+static TAG_ID: AtomicUsize = AtomicUsize::new(0);
+
 
 fn update_chat_message_id() {
     CHAT_MESSAGE_ID.fetch_add(1, Ordering::SeqCst);
+}
+
+fn update_icon_id() {
+    ICON_ID.fetch_add(1, Ordering::SeqCst);
+}
+
+fn update_tag_id() {
+    TAG_ID.fetch_add(1, Ordering::SeqCst);
 }
 
 fn send_for_clients_in_channel_maintainer_id(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, channel_id: u64, new_maintainer_id: u64, ) {
@@ -134,6 +174,64 @@ fn send_for_clients_in_channel_maintainer_id(clients: &HashMap<u64, Client>, web
     }
 }
 
+fn is_public_key_present_in_client_stored_data(client_stored_data: &mut Vec<ClientStoredData>, clients_public_key: String) -> bool
+{
+    let mut result = false;
+
+    for data in client_stored_data {
+
+        if data.public_key == clients_public_key {
+            result = true;
+            break;
+        }
+    }
+
+    return result;
+}
+
+fn get_client_stored_data_by_public_key(client_stored_data: &mut Vec<ClientStoredData>, clients_public_key: String) -> Option<&mut ClientStoredData> {
+    let mut result: Option<&mut ClientStoredData> = Option::None;
+
+    for data in client_stored_data {
+
+        if data.public_key == clients_public_key {
+            println!("found the public key..");
+            result = Option::Some(data);
+            break;
+        }
+    }
+
+    return result;
+}
+
+fn is_tag_id_present_in_client_stored_data(client_stored_data: &mut Vec<ClientStoredData>, clients_public_key: String, tag_id: u64) -> bool
+{
+    let mut result = false;
+
+    for data in client_stored_data {
+
+        if data.public_key == clients_public_key {
+            if data.tag_ids.contains(&tag_id) == true {
+                result = true;
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+fn get_tag_ids_for_public_key_from_client_stored_data(client_stored_data: &mut Vec<ClientStoredData>, clients_public_key: String) -> Vec<u64>
+{
+    let mut result: Vec<u64> = Vec::new();
+
+    for data in client_stored_data {
+
+        if data.public_key == clients_public_key {
+            result = data.tag_ids.clone();
+        }
+    }
+    return result;
+}
 
 fn send_connection_check_response_to_single_cient(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64) {
 
@@ -383,7 +481,7 @@ fn broadcast_peer_connection_state(clients: &HashMap<u64, Client>, websockets: &
 
 
 
-fn send_ice_candidate_to_client(websocket: &Responder, value: String) {
+fn send_ice_candidate_to_single_client(websocket: &Responder, value: String) {
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -402,7 +500,7 @@ fn send_ice_candidate_to_client(websocket: &Responder, value: String) {
 }
 
 
-fn send_active_microphone_usage_for_current_channel_to_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_channel_id: u64) {
+fn send_active_microphone_usage_for_current_channel_to_single_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_channel_id: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -684,43 +782,6 @@ fn broadcast_client_disconnect(clients: &mut HashMap<u64, Client>, websockets: &
     }
 }
 
-fn broadcast_client_role_add(clients: &mut HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, client_role: String) {
-
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-    json_message_object.insert(String::from("type"), serde_json::Value::from("client_role_add"));
-    json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
-    json_message_object.insert(String::from("value"),serde_json::Value::from(client_role));
-
-    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
-
-    for (_key, client) in clients {
-
-        if client.is_existing == false {
-            continue;
-        }
-
-        if client.is_authenticated == false{
-            continue;
-        }
-
-        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
-
-        match current_client_websocket {
-            None => {}
-            Some(websocket) => {
-
-                let json_root_object1: Map<String, Value> = json_root_object.clone();
-
-                let test = serde_json::Value::Object(json_root_object1);
-                let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-                websocket.send(Message::Text(data_to_send_base64));
-            }
-        }
-    }
-}
 
 fn process_client_connect(clients: &HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, websockets: &HashMap<u64, Responder>, client_id_of_connected: u64) {
 
@@ -754,6 +815,164 @@ fn get_client_ids_in_channel(clients: &HashMap<u64, Client>, channel_id: u64) ->
     }
 
     return result;
+}
+
+
+fn broadcast_tag_add(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, new_tag: &Tag) {
+
+    for (_key, client) in clients {
+
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false {
+            continue;
+        }
+
+        let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+        let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+        let tag_name: String = new_tag.name.clone();
+        let icon_id: u64 = new_tag.icon_id.clone();
+        let tag_id: u64 = new_tag.id.clone();
+
+        json_message_object.insert(String::from("type"), serde_json::Value::from("tag_add"));
+        json_message_object.insert(String::from("tag_id"),serde_json::Value::from(tag_id));
+        json_message_object.insert(String::from("tag_name"),serde_json::Value::from(tag_name));
+        json_message_object.insert(String::from("tag_linked_icon_id"),serde_json::Value::from(icon_id));
+
+        json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                websocket.send(Message::Text(data_to_send_base64));
+            }
+        }
+    }
+}
+
+
+fn broadcast_add_icon(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, new_icon: &Icon) {
+
+    for (_key, client) in clients {
+
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false {
+            continue;
+        }
+
+        let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+        let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+
+        let base64_icon: String = new_icon.base64_icon.clone();
+        let icon_id: u64 = new_icon.id.clone();
+
+        json_message_object.insert(String::from("type"), serde_json::Value::from("icon_add"));
+        json_message_object.insert(String::from("icon_id"),serde_json::Value::from(icon_id));
+        json_message_object.insert(String::from("base64_icon"),serde_json::Value::from(base64_icon));
+
+        json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                websocket.send(Message::Text(data_to_send_base64));
+            }
+        }
+    }
+}
+
+fn broadcast_remove_tag_from_client(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, tag_id: u64) {
+
+    for (_key, client) in clients {
+
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false {
+            continue;
+        }
+
+        let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+        let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+        json_message_object.insert(String::from("type"), serde_json::Value::from("remove_tag_from_client"));
+        json_message_object.insert(String::from("tag_id"),serde_json::Value::from(tag_id));
+        json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
+
+        json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                websocket.send(Message::Text(data_to_send_base64));
+            }
+        }
+    }
+}
+
+
+fn broadcast_add_tag_to_client(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, tag_id: u64) {
+
+    for (_key, client) in clients {
+
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false {
+            continue;
+        }
+
+        let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+        let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+        json_message_object.insert(String::from("type"), serde_json::Value::from("tag_add_to_client"));
+        json_message_object.insert(String::from("tag_id"),serde_json::Value::from(tag_id));
+        json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
+
+        json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                websocket.send(Message::Text(data_to_send_base64));
+            }
+        }
+    }
 }
 
 fn broadcast_channel_join(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, new_channel_id: u64) {
@@ -1068,6 +1287,7 @@ fn broadcast_client_connect(clients: &HashMap<u64, Client>, websockets: &HashMap
             json_message_object.insert(String::from("public_key"),serde_json::Value::from(client_that_connected.public_key.as_str()));
             json_message_object.insert(String::from("channel_id"),serde_json::Value::from(client_that_connected.channel_id));
             json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_that_connected.client_id));
+            json_message_object.insert(String::from("tag_ids"), serde_json::Value::from(client_that_connected.tag_ids.clone()));
 
             json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
@@ -1153,7 +1373,7 @@ fn broadcast_client_username_change(clients: &HashMap<u64, Client>, websockets: 
     }
 }
 
-fn send_client_list_to_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_client_username: String) {
+fn send_client_list_to_single_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_client_username: String) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -1172,14 +1392,7 @@ fn send_client_list_to_client(clients: &mut HashMap<u64, Client>, responder: &Re
         }
         single_client_object.insert(String::from("microphone_state"), serde_json::Value::from(microphone_state));
 
-        //add roles to client
-        let mut single_client_roles: Vec<serde_json::Value> = vec![];
-
-        if client.is_admin {
-            single_client_roles.push(serde_json::Value::from(String::from("admin")));
-        }
-
-        single_client_object.insert(String::from("roles"), serde_json::Value::from(single_client_roles));
+        single_client_object.insert(String::from("tag_ids"), serde_json::Value::from(client.tag_ids.clone()));
         json_clients_array.push(single_client_object);
     }
 
@@ -1418,23 +1631,25 @@ fn is_ice_candidate_message_valid(message: &serde_json::Value) -> bool {
     if message["message"]["type"] == false {
         println!("field message.type does not exist");
         result = false;
+        return result;
     }
 
     if message["message"]["value"] == false {
         println!("field message.value does not exist");
         result = false;
+        return result;
     }
 
     if message["message"]["type"].is_string() == false {
         println!("message[message][type.is_string()");
-
         result = false;
+        return result;
     }
 
     if message["message"]["value"].is_object() == false {
         println!("message[message][value].is_object()");
-
         result = false;
+        return result;
     }
 
     if result == true {
@@ -1489,33 +1704,37 @@ fn is_channel_join_message_valid(clients: &mut HashMap<u64, Client>, client_id: 
     if message["message"]["type"] == false {
         println!("field message.type does not exist");
         result = false;
+        return result;
     }
 
     if message["message"]["channel_id"] == false {
         println!("field message.channel_id does not exist");
         result = false;
+        return result;
     }
 
     if message["message"]["channel_password"] == false {
         println!("field message.channel_password does not exist");
         result = false;
+        return result;
     }
 
     if message["message"]["type"].is_string() == false {
         println!("type ");
-
         result = false;
+        return result;
     }
 
     if message["message"]["channel_id"].is_i64() == false {
         println!("channel_id");
-
         result = false;
+        return result;
     }
 
     if message["message"]["channel_password"].is_string() == false {
         println!("channel_password");
         result = false;
+        return result;
     }
 
     if result == true {
@@ -1532,24 +1751,28 @@ fn is_edit_chat_message_request_valid(message: &serde_json::Value) -> bool {
 
     if message["message"]["message_id"].is_i64() == false {
         result = false;
+        return result;
     }
 
-    if result == true {
-        //if everything is still allright check if user is trying to delete root channel
-        if message["message"]["message_id"].as_i64().unwrap() == 0 {
-            result = false;
-        }
+
+    //if everything is still allright check if user is trying to delete root channel
+    if message["message"]["message_id"].as_i64().unwrap() == 0 {
+        result = false;
+        return result;
     }
+
 
     if message["message"]["new_message_value"] == false {
         println!("field message.new_message_value does not exist");
         result = false;
+        return result;
     }
 
     if message["message"]["new_message_value"].is_string() == false {
         println!("new_message_value isnt string");
 
         result = false;
+        return result;
     }
 
     return result;
@@ -1566,6 +1789,45 @@ fn is_start_song_stream_message_valid(message: &serde_json::Value) -> bool {
 
     if message["message"]["song_name"].is_string() == false {
         result = false;
+    }
+
+    return result;
+}
+
+fn print_out_all_connected_clients(clients: &mut HashMap<u64, Client>)  {
+
+    for (_key, client) in clients {
+
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false{
+            continue;
+        }
+
+        println!("client {} {}", client.client_id, client.public_key);
+    }
+}
+
+fn is_there_a_client_with_same_public_key(clients: &mut HashMap<u64, Client>, public_key: String) -> bool {
+
+    let mut result = false;
+
+    for (_key, client) in clients {
+
+        if client.is_existing == false {
+            continue;
+        }
+
+        if client.is_authenticated == false{
+            continue;
+        }
+
+        if client.public_key == public_key {
+            result = true;
+            break;
+        }
     }
 
     return result;
@@ -1742,7 +2004,7 @@ fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut Has
                     //
 
                     let websocket: &Responder = websockets.get(&client_id1).unwrap();
-                    send_active_microphone_usage_for_current_channel_to_client(clients, websocket, 0);
+                    send_active_microphone_usage_for_current_channel_to_single_client(clients, websocket, 0);
                 }
             }
 
@@ -1874,6 +2136,432 @@ fn process_delete_chat_message_request(clients: &mut HashMap<u64, Client>, webso
                 }
             }
         }
+    }
+}
+
+
+
+fn is_public_key_challenge_response_valid(message: &serde_json::Value) -> bool {
+
+    let mut result: bool = true;
+
+    if message["message"]["value"] == false {
+        println!("is_public_key_challenge_response_valid message.tag_id does not exist");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["value"] == false {
+        println!("is_public_key_challenge_response_valid message.client_id does not exist");
+        result = false;
+        return result;
+    }
+
+    return result;
+}
+
+fn is_public_key_info_message_valid(message: &serde_json::Value) -> bool {
+    let mut result: bool = true;
+
+    if message["message"]["value"] == false {
+        println!("is_public_key_info_message_valid message.tag_id does not exist");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["verification_string"] == false {
+        println!("is_public_key_info_message_valid message.client_id does not exist");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["value"].is_string() == false {
+        println!("is_public_key_info_message_valid message.tag_id is not is_string");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["verification_string"].is_string() == false {
+        println!("is_public_key_info_message_valid  message.client_id is not is_string");
+        result = false;
+        return result;
+    }
+
+    return result;
+}
+
+fn is_add_remove_client_tag_message_valid(message: &serde_json::Value) -> bool {
+    let mut result: bool = true;
+
+    if message["message"]["tag_id"] == false {
+        println!("is_add_remove_client_tag_message_valid field message.tag_id does not exist");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["client_id"] == false {
+        println!("is_add_remove_client_tag_message_valid field message.client_id does not exist");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["tag_id"].is_u64() == false {
+        println!("field message.tag_id is not u64");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["client_id"].is_u64() == false {
+        println!("field message.client_id is not u64");
+        result = false;
+        return result;
+    }
+
+    return result;
+}
+
+fn is_server_settings_add_new_tag_valid(message: &serde_json::Value) -> bool {
+
+    let mut result: bool = true;
+
+    if message["message"]["linked_icon_id"] == false {
+        println!("field message.channel_id does not exist");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["linked_icon_id"].is_i64() == false {
+        println!("field message.linked_icon_id is not i64");
+
+        result = false;
+        return result;
+    }
+
+
+    if message["message"]["tag_name"] == false {
+        println!("field message.tag_name does not exist");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["tag_name"].is_string() == false {
+        println!("tag_name isnt string");
+        result = false;
+        return result;
+    }
+
+    let tag_name: String = message["message"]["tag_name"].as_str().unwrap().to_string();
+
+    if tag_name.len() > 20 || tag_name.len() < 1 {
+        println!("tag_name length is not allowed {} ", tag_name.len());
+        result = false;
+        return result;
+    }
+
+    return result;
+}
+
+fn is_icon_upload_message_valid(message: &serde_json::Value) -> bool {
+
+    let mut result: bool = true;
+
+    if message["message"]["base64_icon_value"] == false {
+        println!("field message.base64_icon_value does not exist");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["base64_icon_value"].is_string() == false {
+        println!("base64_icon_value isnt string");
+        result = false;
+        return result;
+
+    }
+
+    let base64string: String = message["message"]["base64_icon_value"].as_str().unwrap().to_string();
+
+    if base64string.len() > 6650 {
+        println!("base64_icon_value is too big");
+        result = false;
+        return result;
+    }
+
+    return result;
+}
+
+
+fn process_remove_tag_from_client(client_stored_data: &mut Vec<ClientStoredData>, clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, tags: &mut HashMap<u64, Tag>, message: &serde_json::Value, client_id: u64) {
+
+    let is_valid: bool = is_add_remove_client_tag_message_valid(&message);
+
+    if is_valid == false
+    {
+        return;
+    }
+
+    let is_admin: bool = is_client_admin(clients, client_id);
+
+    if is_admin == false {
+        println!("client is not admin");
+        return;
+    }
+
+    let client_id_to_remove_tag_from: u64 = message["message"]["client_id"].as_u64().unwrap();
+    let tag_id: u64 = message["message"]["tag_id"].as_u64().unwrap();
+
+    let client_option: Option<&mut Client> = clients.get_mut(&client_id_to_remove_tag_from);
+
+    match client_option {
+        None => {}
+        Some(client) => {
+            let tag_option: Option<&mut Tag> = tags.get_mut(&tag_id);
+
+            match tag_option {
+                None => {}
+                Some(tag) => {
+
+                    //
+                    //if client under specified clientid exists and tag under specified tag id exists
+                    //add tag id to vec if its not already there
+                    //
+
+                    if client.tag_ids.contains(&tag_id) == false {
+                        println!("no tag to delete");
+                        return;
+                    }
+
+                    client.tag_ids.retain(|&x| x != tag_id);
+
+                    //
+                    //if trying to remove admin tag, the one with ID: 0, set is_admin to false
+                    //
+
+                    if tag_id == 0 {
+                        client.is_admin = false;
+                    }
+
+                    let status: bool = is_public_key_present_in_client_stored_data(client_stored_data, client.public_key.clone());
+
+                    if status == false {
+
+                        println!("public key {} not present, that should not be possible. If its really not present, there is nothing to do" , client.public_key.clone());
+
+                    } else {
+                        println!("public key {} present " , client.public_key.clone());
+
+                        let status1: bool = is_tag_id_present_in_client_stored_data(client_stored_data, client.public_key.clone(), tag_id);
+                        if status1 == true {
+
+                            println!("is_tag_id_present_in_client_stored_data == false");
+
+                            //
+                            //there is ClientStoredData entry with clients public key, but does not contain tag id
+                            //add tag id to it
+                            //
+
+                            let option_clientstoreddata = get_client_stored_data_by_public_key(client_stored_data, client.public_key.clone());
+
+                            match option_clientstoreddata {
+                                None => {}
+                                Some(value) => {
+                                    value.tag_ids.retain(|&x| x != tag_id);
+                                    println!("removed tag {}", tag_id);
+                                }
+                            }
+                        }
+                    }
+                    broadcast_remove_tag_from_client(clients, websockets, client_id_to_remove_tag_from, tag_id);
+                }
+            }
+        }
+    }
+}
+
+
+fn process_add_tag_to_client(client_stored_data: &mut Vec<ClientStoredData>, clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, tags: &mut HashMap<u64, Tag>, message: &serde_json::Value, client_id: u64) {
+
+    let is_valid: bool = is_add_remove_client_tag_message_valid(&message);
+
+    if is_valid == false
+    {
+        return;
+    }
+
+    let is_admin: bool = is_client_admin(clients, client_id);
+
+    if is_admin == false {
+        println!("client is not admin");
+        return;
+    }
+
+    let client_id_to_add_tag_to: u64 = message["message"]["client_id"].as_u64().unwrap();
+    let tag_id: u64 = message["message"]["tag_id"].as_u64().unwrap();
+
+    let client_option: Option<&mut Client> = clients.get_mut(&client_id_to_add_tag_to);
+
+    match client_option {
+        None => {}
+        Some(client) => {
+            let tag_option: Option<&mut Tag> = tags.get_mut(&tag_id);
+
+            match tag_option {
+                None => {}
+                Some(tag) => {
+
+                    //
+                    //if client under specified clientid exists and tag under specified tag id exists
+                    //add tag id to vec if its not already there
+                    //
+
+                    if client.tag_ids.contains(&tag_id) == true {
+                        return;
+                    }
+
+                    client.tag_ids.push(tag_id);
+
+                    //
+                    //if trying to add admin tag, the one with ID: 0, set is_admin to true
+                    //
+
+                    if tag_id == 0 {
+                        client.is_admin = true;
+                    }
+
+                    let status: bool = is_public_key_present_in_client_stored_data(client_stored_data, client.public_key.clone());
+
+                    if status == false {
+
+                        println!("public key {} not present adding public key" , client.public_key.clone());
+
+                        let mut single_client_stored_data: ClientStoredData = ClientStoredData {
+                            public_key: "".to_string(),
+                            tag_ids: vec![],
+                        };
+
+                        single_client_stored_data.public_key = client.public_key.clone();
+                        single_client_stored_data.tag_ids = Vec::new();
+                        single_client_stored_data.tag_ids.push(tag_id);
+
+                        client_stored_data.push(single_client_stored_data);
+
+                        println!("public key added to client_stored_data");
+
+                    } else {
+                        println!("public key {} present " , client.public_key.clone());
+
+                        let status1: bool = is_tag_id_present_in_client_stored_data(client_stored_data, client.public_key.clone(), tag_id);
+                        if status1 == false {
+
+                            println!("is_tag_id_present_in_client_stored_data == false");
+
+                            //
+                            //there is ClientStoredData entry with clients public key, but does not contain tag id
+                            //add tag id to it
+                            //
+
+                            let option_clientstoreddata = get_client_stored_data_by_public_key(client_stored_data, client.public_key.clone());
+
+                            match option_clientstoreddata {
+                                None => {}
+                                Some(value) => {
+                                    value.tag_ids.push(tag_id);
+                                    println!("added tag {}", tag_id);
+                                }
+                            }
+                        }
+                    }
+                    broadcast_add_tag_to_client(clients, websockets, client_id_to_add_tag_to, tag_id);
+
+                }
+            }
+        }
+    }
+}
+
+
+
+fn process_server_settings_add_new_tag_message(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, tags: &mut HashMap<u64, Tag>, message: &serde_json::Value, client_id: u64) {
+
+    let is_valid: bool = is_server_settings_add_new_tag_valid(&message);
+
+    if is_valid == false
+    {
+        return;
+    }
+
+    println!("server_settings_add_new_tag valid");
+
+    let client: &Client = clients.get(&client_id).unwrap();
+
+    if client.is_admin == false
+    {
+        return;
+    }
+
+
+    let tag_id: u64 = TAG_ID.load(Ordering::SeqCst) as u64;
+    let linked_icon_id: u64 = message["message"]["linked_icon_id"].as_u64().unwrap();
+    let tag_name: String = message["message"]["tag_name"].as_str().unwrap().to_string();
+
+
+    for (_key, tag) in tags.iter() {
+        if tag.name == tag_name {
+            return;
+        }
+    }
+
+    let new_tag: Tag = Tag {
+        id: tag_id,
+        icon_id: linked_icon_id,
+        name: tag_name.clone(),
+    };
+
+    tags.insert(tag_id, new_tag);
+
+    let new_tag1: Tag = Tag {
+        id: tag_id.clone(),
+        icon_id: linked_icon_id.clone(),
+        name: tag_name.clone(),
+    };
+
+    broadcast_tag_add(clients, websockets, &new_tag1);
+    update_tag_id();
+}
+
+fn process_server_settings_icon_upload_message(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, icons: &mut HashMap<u64, Icon>, message: &serde_json::Value, client_id: u64) {
+
+    let is_valid: bool = is_icon_upload_message_valid(&message);
+
+    if is_valid == true {
+        println!("icon_upload_message valid");
+
+        let client: &Client = clients.get(&client_id).unwrap();
+
+        if client.is_admin == true {
+
+            let icon_id: u64 = ICON_ID.load(Ordering::SeqCst) as u64;
+            let base64string: String = message["message"]["base64_icon_value"].as_str().unwrap().to_string();
+
+            let new_icon: Icon = Icon {
+                id: icon_id,
+                base64_icon: base64string.clone(),
+            };
+
+            icons.insert(icon_id, new_icon);
+
+            let new_icon1: Icon = Icon {
+                id: icon_id,
+                base64_icon: base64string.clone(),
+            };
+
+            broadcast_add_icon(clients, websockets, &new_icon1);
+
+            update_icon_id();
+        }
+
+
+    } else {
+        println!("message isnt valid");
     }
 }
 
@@ -2096,7 +2784,7 @@ fn process_channel_join(sender: &std::sync::mpsc::Sender<String>, clients: &mut 
 
                 let websocket: &Responder = websockets.get(&client_id).unwrap();
 
-                send_active_microphone_usage_for_current_channel_to_client(clients, websocket, new_joined_channel.channel_id);
+                send_active_microphone_usage_for_current_channel_to_single_client(clients, websocket, new_joined_channel.channel_id);
             } else {
                 println!("channel password is not valid");
             }
@@ -2458,8 +3146,11 @@ fn send_channel_chat_picture(clients: &HashMap<u64, Client>, websockets: &HashMa
 }
 
 fn process_direct_chat_message(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, sender_id: u64) {
+
     let status: bool = is_chat_message_format_valid(message);
+
     if status == true {
+
         let msg_receiver_id: u64 = message["message"]["receiver_id"].as_u64().unwrap();
         let msg_value: String = String::from(message["message"]["value"].as_str().unwrap());
         let msg_local_message_id: usize = message["message"]["local_message_id"].as_u64().unwrap() as usize;
@@ -2767,7 +3458,15 @@ fn is_client_admin(clients: &mut HashMap<u64, Client>, client_id: u64) -> bool {
     return result;
 }
 
-fn process_authenticated_message(client_id: u64, websockets: &mut HashMap<u64, Responder>, clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, message: serde_json::Value, sender: &std::sync::mpsc::Sender<String>) {
+fn process_authenticated_message(client_id: u64,
+                                 websockets: &mut HashMap<u64, Responder>,
+                                 clients: &mut HashMap<u64, Client>,
+                                 channels: &mut HashMap<u64, Channel>,
+                                 icons: &mut HashMap<u64, Icon>,
+                                 tags: &mut HashMap<u64, Tag>,
+                                 client_stored_data: &mut Vec<ClientStoredData>,
+                                 message: serde_json::Value,
+                                 sender: &std::sync::mpsc::Sender<String>) {
 
     let message_type: &Value = &message["message"]["type"];
 
@@ -2886,9 +3585,52 @@ fn process_authenticated_message(client_id: u64, websockets: &mut HashMap<u64, R
         let current_admin_password: &RwLockReadGuard<String> = &ADMIN_PASSWORD.read().unwrap();
 
         if msg_admin_password == current_admin_password.as_str() {
-            println!("set to true");
-            clients.get_mut(&client_id).unwrap().is_admin = true;
-            broadcast_client_role_add(clients, websockets, client_id, String::from("admin"));
+
+            let current_client = clients.get_mut(&client_id).unwrap();
+
+            current_client.is_admin = true;
+
+            if current_client.tag_ids.contains(&0) == false {
+                current_client.tag_ids.push(0);
+            }
+
+            let public_key: String = current_client.public_key.clone();
+
+            let status: bool = is_public_key_present_in_client_stored_data(client_stored_data, public_key.clone());
+
+            if status == false {
+                let mut single_client_stored_data: ClientStoredData = ClientStoredData {
+                    public_key,
+                    tag_ids: vec![],
+                };
+
+                single_client_stored_data.tag_ids = Vec::new();
+                single_client_stored_data.tag_ids.push(0);
+
+                client_stored_data.push(single_client_stored_data);
+
+                println!("public key added to client_stored_data");
+            } else {
+                let status1: bool = is_tag_id_present_in_client_stored_data(client_stored_data, public_key.clone(), 0);
+                if status1 == false {
+
+                    //
+                    //there is ClientStoredData entry with clients public key, but does not contain tag id
+                    //add tag id to it
+                    //
+
+                    let option_clientstoreddata = get_client_stored_data_by_public_key(client_stored_data, public_key.clone());
+
+                    match option_clientstoreddata {
+                        None => {}
+                        Some(value) => {
+                            value.tag_ids.push(0);
+                        }
+                    }
+                }
+            }
+
+            broadcast_add_tag_to_client(clients, websockets, client_id, 0);
         }
     }
     else if message_type == "start_song_stream" {
@@ -2897,16 +3639,47 @@ fn process_authenticated_message(client_id: u64, websockets: &mut HashMap<u64, R
     else if message_type == "stop_song_stream" {
         process_stop_song_stream_message(clients, websockets, &message, client_id);
     }
+    else if message_type == "server_settings_icon_upload" {
+
+        process_server_settings_icon_upload_message(clients, websockets, icons, &message, client_id);
+    }
+    else if message_type == "server_settings_add_new_tag" {
+        process_server_settings_add_new_tag_message(clients, websockets, tags, &message, client_id);
+    }
+    else if message_type == "add_tag_to_client" {
+        process_add_tag_to_client(client_stored_data, clients, websockets, tags, &message, client_id);
+    }
+    else if message_type == "remove_tag_from_client" {
+        process_remove_tag_from_client(client_stored_data, clients, websockets, tags, &message, client_id);
+    }
 }
 
-fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u64, Responder>, clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, message: serde_json::Value, sender: &std::sync::mpsc::Sender<String>) {
+fn process_not_authenticated_message(client_id: u64,
+                                     websockets: &mut HashMap<u64, Responder>,
+                                     clients: &mut HashMap<u64, Client>,
+                                     channels: &mut HashMap<u64, Channel>,
+                                     icons: &mut HashMap<u64, Icon>,
+                                     tags: &mut HashMap<u64, Tag>,
+                                     client_stored_data: &mut Vec<ClientStoredData>,
+                                     message: serde_json::Value,
+                                     sender: &std::sync::mpsc::Sender<String>) {
 
-    let current_client: &mut Client = clients.get_mut(&client_id).unwrap();
+    let message_type = &message["message"]["type"];
 
-    if current_client.is_existing == true {
-        let message_type = &message["message"]["type"];
+    if message_type == "public_key_challenge_response" {
 
-        if message_type == "public_key_challenge_response" {
+        let is_messsage_valid: bool = is_public_key_challenge_response_valid(&message);
+
+        if is_messsage_valid == false {
+            websockets.get(&client_id).unwrap().close();
+            websockets.remove(&client_id);
+            clients.remove(&client_id);
+            return;
+        }
+
+        let current_client: &mut Client = clients.get_mut(&client_id).unwrap();
+
+        if current_client.is_existing == true {
 
             //
             //client sends public key to server at the time of authentication
@@ -2923,6 +3696,9 @@ fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u6
                     let message_decrypted_public_key_challenge_random_string = message["message"]["value"].as_str().unwrap();
 
                     if message_decrypted_public_key_challenge_random_string == current_client.public_key_challenge_random_string {
+
+                        let public_key: String = current_client.public_key.clone();
+
                         current_client.channel_id = 0; //root channel
                         current_client.is_admin = false;
                         let connection_id_string: String = current_client.client_id.to_string();
@@ -2931,6 +3707,18 @@ fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u6
                         current_client.username = default_name;
                         current_client.is_authenticated = true;
                         current_client.message_ids = Vec::new();
+
+                        current_client.tag_ids = Vec::new();
+
+                        let status123: bool = is_public_key_present_in_client_stored_data(client_stored_data, public_key.clone());
+
+                        if status123 == true {
+                            current_client.tag_ids = get_tag_ids_for_public_key_from_client_stored_data(client_stored_data, public_key.clone()).clone();
+                            let admin_tag_id: u64 = 0;
+                            if current_client.tag_ids.contains(&admin_tag_id)  {
+                                current_client.is_admin = true;
+                            }
+                        }
 
                         let datetime: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
                         let timestamp_now: i64 = datetime.timestamp();
@@ -2941,73 +3729,105 @@ fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u6
 
                         let current_client_username: String = current_client.username.clone();
 
-                        send_authentication_status_to_client(websocket);
-                        send_channel_list_to_client(channels, websocket);
-                        send_client_list_to_client(clients, websocket, current_client_username);
-
-                        send_active_microphone_usage_for_current_channel_to_client(clients, websocket, 0);
+                        send_authentication_status_to_single_client(websocket);
+                        send_channel_list_to_single_client(channels, websocket);
+                        send_client_list_to_single_client(clients, websocket, current_client_username);
+                        send_icon_list_to_single_client(icons, websocket);
+                        send_tag_list_to_single_client(tags, websocket);
+                        send_active_microphone_usage_for_current_channel_to_single_client(clients, websocket, 0);
                         process_client_connect(clients, channels, websockets, client_id);
                         send_cross_thread_message_create_new_client_at_rtc_thread(sender, client_id);
                     }
                 }
             }
         }
-        else if message_type == "public_key_info" {
-            let message_verification_string = &message["message"]["verification_string"];
+    }
+    else if message_type == "public_key_info" {
 
-            if message_verification_string == "welcome"
-            {
-                let public_key_modulus_base64: &Value = &message["message"]["value"];
+        let is_messsage_valid: bool = is_public_key_info_message_valid(&message);
 
-                if public_key_modulus_base64.is_string() {
+        if is_messsage_valid == false {
+            websockets.get(&client_id).unwrap().close();
+            websockets.remove(&client_id);
+            clients.remove(&client_id);
+            return;
+        }
 
-                    current_client.public_key = String::from(public_key_modulus_base64.as_str().unwrap());
+        //
+        //message is valid, safe to unwrap values
+        //
 
-                    let modulus_decode_result: Result<Vec<u8>, DecodeError> = base64::decode(&public_key_modulus_base64.as_str().unwrap());
-                    let mut rng = rand::thread_rng();
+        let message_verification_string: String = String::from(message["message"]["verification_string"].as_str().unwrap());
+        let public_key_modulus_base64: String = String::from(message["message"]["value"].as_str().unwrap());
 
-                    match modulus_decode_result {
-                        Ok(result) => {
+        let status1: bool = is_there_a_client_with_same_public_key(clients, public_key_modulus_base64.clone());
 
-                            //
-                            //create public key from from modulus and exponent (n and e). In this case it is easier approach than creating the public key from PEM or DER
-                            //modulus is sent to server from client as part of public_key_info request
-                            //exponent is same for every lemonchat client, its known and its 3.. because BigUint couldnt do simple BigUintL::from(3), it had to be represented by byte array
-                            //
+        if status1 == true {
+            println!("cannot connect, there is still client that has same public key...");
+            print_out_all_connected_clients(clients);
+            websockets.get(&client_id).unwrap().close();
+            websockets.remove(&client_id);
+            clients.remove(&client_id);
+            return;
+        }
 
-                            let exponent_bytes: [u8; 1] = [3]; //BigUint doesnt suppoort simple from anymore
-                            let modulus: BigUint = BigUint::from_bytes_be(&result);
-                            let exponent: BigUint = BigUint::from_bytes_be(&exponent_bytes);
-                            let rsa_pub_key_result: rsa::errors::Result<RsaPublicKey> = rsa::RsaPublicKey::new(modulus, exponent);
+        let current_client: &mut Client = clients.get_mut(&client_id).unwrap();
 
-                            match rsa_pub_key_result {
-                                Ok(rsa_pub_key) => {
+        if current_client.is_existing == false {
+            println!("public_key_info == current_client.is_existing == false ");
+            //sometimes situation needs to also remove the client, return and stopping of code execution is not enough
+            return;
+        }
 
-                                    let public_key_challenge_random_string: String = rand::thread_rng()
-                                        .sample_iter(&Alphanumeric)
-                                        .take(100)
-                                        .map(char::from)
-                                        .collect();
+        if message_verification_string == "welcome"  {
 
-                                    current_client.public_key_challenge_random_string = public_key_challenge_random_string.clone();
-                                    current_client.is_public_key_challenge_sent = true;
+            //
+            //public key is assigned to client struct at the time client connects even if client is not authenticated
+            //keep that in mind
+            //
 
-                                    let to_encrypt_bytes: &[u8] = public_key_challenge_random_string.as_bytes();
+            current_client.public_key = public_key_modulus_base64.clone();
 
-                                    let rsa_encrypt_result: rsa::errors::Result<Vec<u8>> = rsa_pub_key.encrypt(&mut rng, Pkcs1v15Encrypt, to_encrypt_bytes);
+            let modulus_decode_result: Result<Vec<u8>, DecodeError> = base64::decode(public_key_modulus_base64.clone());
+            let mut rng = rand::thread_rng();
 
-                                    match rsa_encrypt_result {
-                                        Ok(bytes_to_work_with) => {
-                                            let base64_result: String = base64::encode(bytes_to_work_with);
-                                            send_public_key_challenge_to_single_client(current_client, websockets,base64_result);
-                                        }
-                                        Err(error) => {
-                                            println!("rsa_encrypt_result error {}", error);
-                                        }
-                                    }
+            match modulus_decode_result {
+                Ok(result) => {
+
+                    //
+                    //create public key from from modulus and exponent (n and e). In this case it is easier approach than creating the public key from PEM or DER
+                    //modulus is sent to server from client as part of public_key_info request
+                    //exponent is same for every lemonchat client, its known and its 3.. because rusts BigUint couldnt do simple BigUint::from(3), exponent had to be constructed from byte array
+                    //
+
+                    let exponent_bytes: [u8; 1] = [3]; //BigUint doesnt suppoort simple from anymore
+                    let modulus: BigUint = BigUint::from_bytes_be(&result);
+                    let exponent: BigUint = BigUint::from_bytes_be(&exponent_bytes);
+                    let rsa_pub_key_result: rsa::errors::Result<RsaPublicKey> = rsa::RsaPublicKey::new(modulus, exponent);
+
+                    match rsa_pub_key_result {
+                        Ok(rsa_pub_key) => {
+
+                            let public_key_challenge_random_string: String = rand::thread_rng()
+                                .sample_iter(&Alphanumeric)
+                                .take(100)
+                                .map(char::from)
+                                .collect();
+
+                            current_client.public_key_challenge_random_string = public_key_challenge_random_string.clone();
+                            current_client.is_public_key_challenge_sent = true;
+
+                            let to_encrypt_bytes: &[u8] = public_key_challenge_random_string.as_bytes();
+
+                            let rsa_encrypt_result: rsa::errors::Result<Vec<u8>> = rsa_pub_key.encrypt(&mut rng, Pkcs1v15Encrypt, to_encrypt_bytes);
+
+                            match rsa_encrypt_result {
+                                Ok(bytes_to_work_with) => {
+                                    let base64_result: String = base64::encode(bytes_to_work_with);
+                                    send_public_key_challenge_to_single_client(current_client, websockets,base64_result);
                                 }
                                 Err(error) => {
-                                    println!("[!] error {}", error);
+                                    println!("rsa_encrypt_result error {}", error);
                                 }
                             }
                         }
@@ -3016,19 +3836,33 @@ fn process_not_authenticated_message(client_id: u64, websockets: &mut HashMap<u6
                         }
                     }
                 }
-            } else {
-                websockets.get(&client_id).unwrap().close();
-                websockets.remove(&client_id);
-                clients.remove(&client_id);
+                Err(error) => {
+                    println!("[!] error {}", error);
+                }
             }
+
+        } else {
+            websockets.get(&client_id).unwrap().close();
+            websockets.remove(&client_id);
+            clients.remove(&client_id);
         }
+
     } else {
         println!("client  does not exist");
     }
 }
 
-fn process_received_message(client_id: u64, websockets: &mut HashMap<u64, Responder>, clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, message_text: String, sender: &std::sync::mpsc::Sender<String>) {
-   let decrypted_message: String = get_data_from_base64_and_decrypt_it(message_text);
+fn process_received_message(client_id: u64,
+                            websockets: &mut HashMap<u64, Responder>,
+                            clients: &mut HashMap<u64, Client>,
+                            channels: &mut HashMap<u64, Channel>,
+                            icons: &mut HashMap<u64, Icon>,
+                            tags: &mut HashMap<u64, Tag>,
+                            client_stored_data: &mut Vec<ClientStoredData>,
+                            message_text: String,
+                            sender: &std::sync::mpsc::Sender<String>) {
+
+    let decrypted_message: String = get_data_from_base64_and_decrypt_it(message_text);
 
     //received decrypted metadata content needs to be trimmed
 
@@ -3045,9 +3879,25 @@ fn process_received_message(client_id: u64, websockets: &mut HashMap<u64, Respon
                 Some(client) => {
                     if client.is_existing {
                         if client.is_authenticated {
-                            process_authenticated_message(client_id, websockets, clients, channels, value, sender);
+                            process_authenticated_message(client_id,
+                                                          websockets,
+                                                          clients,
+                                                          channels,
+                                                          icons,
+                                                          tags,
+                                                          client_stored_data,
+                                                          value,
+                                                          sender);
                         } else {
-                            process_not_authenticated_message(client_id, websockets, clients, channels, value, sender);
+                            process_not_authenticated_message(client_id,
+                                                              websockets,
+                                                              clients,
+                                                              channels,
+                                                              icons,
+                                                              tags,
+                                                              client_stored_data,
+                                                              value,
+                                                              sender);
                         }
                     }
                 }
@@ -3064,7 +3914,62 @@ fn process_received_message(client_id: u64, websockets: &mut HashMap<u64, Respon
     };
 }
 
-fn send_channel_list_to_client(channels: &HashMap<u64, Channel>, responder: &Responder) {
+fn send_tag_list_to_single_client(tags: &HashMap<u64, Tag>, responder: &Responder) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_tags_array: Vec<serde_json::Map<String, serde_json::Value>> = vec![];
+
+    for (_key, tag) in tags.iter() {
+
+        let tag_name: String = tag.name.clone();
+
+        let mut single_icon_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+        single_icon_object.insert(String::from("tag_id"), serde_json::Value::from(tag.id));
+        single_icon_object.insert(String::from("tag_name"), serde_json::Value::from(tag_name));
+        single_icon_object.insert(String::from("tag_linked_icon_id"), serde_json::Value::from(tag.icon_id));
+
+        json_tags_array.push(single_icon_object);
+    }
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("tag_list"));
+    json_message_object.insert(String::from("tags"), serde_json::Value::from(json_tags_array));
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    let test = serde_json::Value::Object(json_root_object);
+    let data_content: String = serde_json::to_string(&test).unwrap();
+
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    responder.send(Message::Text(data_to_send_base64));
+}
+
+fn send_icon_list_to_single_client(icons: &HashMap<u64, Icon>, responder: &Responder) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_icons_array: Vec<serde_json::Map<String, serde_json::Value>> = vec![];
+
+    for (_key, icon) in icons.iter() {
+
+        let base64_icon: String = icon.base64_icon.clone();
+        let mut single_icon_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+        single_icon_object.insert(String::from("icon_id"), serde_json::Value::from(icon.id));
+        single_icon_object.insert(String::from("base64_icon"), serde_json::Value::from(base64_icon));
+        json_icons_array.push(single_icon_object);
+    }
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("icon_list"));
+    json_message_object.insert(String::from("icons"), serde_json::Value::from(json_icons_array));
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    let test = serde_json::Value::Object(json_root_object);
+    let data_content: String = serde_json::to_string(&test).unwrap();
+
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    responder.send(Message::Text(data_to_send_base64));
+}
+
+fn send_channel_list_to_single_client(channels: &HashMap<u64, Channel>, responder: &Responder) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -3093,7 +3998,7 @@ fn send_channel_list_to_client(channels: &HashMap<u64, Channel>, responder: &Res
     responder.send(Message::Text(data_to_send_base64));
 }
 
-fn send_webrtc_sdp_offer_to_client(responder: &Responder, sdp_offer_value: String) {
+fn send_webrtc_sdp_offer_to_single_client(responder: &Responder, sdp_offer_value: String) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
@@ -3112,7 +4017,7 @@ fn send_webrtc_sdp_offer_to_client(responder: &Responder, sdp_offer_value: Strin
     responder.send(Message::Text(data_to_send_base64));
 }
 
-fn send_authentication_status_to_client(responder: &Responder) {
+fn send_authentication_status_to_single_client(responder: &Responder) {
 
     let message_to_send: serde_json::Value = serde_json::json!({
         "message" : {
@@ -3254,7 +4159,7 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
 
                 if client.client_id == msg_client_id {
                     let websocket: &Responder = websockets.get(&msg_client_id).unwrap();
-                    send_webrtc_sdp_offer_to_client(websocket, sdp_offer_value.clone());
+                    send_webrtc_sdp_offer_to_single_client(websocket, sdp_offer_value.clone());
                 }
             }
             println!("new client connected");
@@ -3278,7 +4183,7 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
 
                 if client.client_id == msg_client_id {
                     let websocket: &Responder = websockets.get(&msg_client_id).unwrap();
-                    send_ice_candidate_to_client(websocket, ice_candidate_value.clone());
+                    send_ice_candidate_to_single_client(websocket, ice_candidate_value.clone());
                 }
             }
             println!("ice_candidate sent");
@@ -3302,6 +4207,9 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
                     println!("clients.get_mut(&msg_client_id) {} -> return == None weird", msg_client_id);
                 }
                 Some(client) => {
+
+                    let client_channel_id: u64 = client.channel_id.clone();
+
                     if msg_peer_connection_state == 3 {
                         println!("client.is_webrtc_datachannel_connected = true");
                         client.microphone_state = 3; //microphone disabled, but ready
@@ -3320,8 +4228,18 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
                     //
 
                     if msg_peer_connection_state > 3 {
-                        //attempt reconnect
-                        send_cross_thread_message_create_new_client_at_rtc_thread(sender, msg_client_id);
+
+                        //
+                        //webrtc connection is re-established by removing old connection entry from audio_channel.rs and creating new
+                        //
+
+                        send_cross_thread_message_create_new_client_at_rtc_thread(sender, msg_client_id.clone());
+
+                        //
+                        //send up-to date channel info about client, after creating the client, so client does not appear to be in root channel when he nessecarily does not have to be there
+                        //
+
+                        send_cross_thread_message_channel_join(sender, msg_client_id.clone(), client_channel_id);
                     }
                 }
             }
@@ -3497,6 +4415,11 @@ fn main() {
     let mut clients: HashMap<u64, Client> = HashMap::new();
     let mut channels: HashMap<u64, Channel> = HashMap::new();
 
+    let mut icons: HashMap<u64, Icon> = HashMap::new();
+    let mut tags: HashMap<u64, Tag> = HashMap::new();
+
+    let mut client_stored_data: Vec<ClientStoredData> = Vec::new();
+
     let root_channel: Channel = Channel {
         is_channel: true,
         channel_id: 0, //0 is root channel id
@@ -3511,6 +4434,25 @@ fn main() {
 
     //insert root channel to channels
     channels.insert(0, root_channel);
+
+    let admin_tag: Tag = Tag {
+        id: 0,
+        icon_id: 0,
+        name: "admin".to_string(),
+    };
+
+    //insert root channel to channels
+    tags.insert(0, admin_tag);
+    update_tag_id();
+
+    let admin_icon: Icon = Icon {
+        id: 0,
+        base64_icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsSAAALEgHS3X78AAACU0lEQVQ4jX2TX0hTYRjGf0eOicqUydEES9L+iHQRnNafu0ASYayrXWiS0S4HFQQhCQMzDEUGQUzIGyOJbrr03LSI/hFY5DBLhyut3CkkN9eZ7sx5bHVx9LgD0nv1vc/3PA/Py/d+AmYJLV3+fC67BsBGLst2bRo5CmszpwPw8fkzAUAAhI5AMF/RcNJGnBn02vobj6MAVJWXAnDlWjsRRXEIHYHg393Eo6Nu8iX1OJ0i0Q+fCfQ84erYe/ZJEmoiQVlpOb2BSxRlM9p/xQDNxw7TP9DG3Ysu1ESCaHzJ4hcVinV1GtklAeB0injdIbzukHUvuyTGw+MATMbmARC3hQDGyyCX+85QWduI1x2i4UIvAF53H+GJIfSsztj9IF+4vpNgXV/D3+mjpeUcajxjG8ff6cPf6bNhajxj8a0ED15NWoTK2kYcVfUAdLsP2MSNTUeB1za+aOR0dHUaR1k5sksiLzjQUinCE0M28eL8AgtzM8guieWv73YMAA41nyB6r52bg11oKylWV5aZWzOXKp02X0ksLqa6uoazrQaPHoao840Rm3phGhw/cpCnW/PHPk2hpdOMDM/aEnT3nLaM1HiGvdovs/+d+GGRlha/AjAyPEvrbcVMkDNXeeiWl/6BNpLJpM24COC7GrcALZ0GQCrbA0BFSQli3gAgXsBbSZrLJADFssezAVA69xaA83fCJPQNAPStDwbwpr8DgGzTKQAiiuIQASOiKAJQIXs8GkDs2zxVNfst8fpqCiO7WigUtk2tQ+FYssfzZxeciKLUAT8LsX+oaO/ttIYBtAAAAABJRU5ErkJggg==".to_string(),
+    };
+
+    icons.insert(0, admin_icon);
+    update_icon_id();
+
 
     let websocket_port: u16 = get_websocket_port_number();
     let event_hub = simple_websockets::launch(websocket_port).expect("failed to listen on port 8080");
@@ -3543,14 +4485,26 @@ fn main() {
 
             Event::Disconnect(client_id_of_disconnected) => {
                 println!("Client #{} disconnected.", client_id_of_disconnected);
-                process_client_disconnect(&mut clients, &mut channels, &mut websockets, client_id_of_disconnected, &thread_messaging_channel.0);
+                process_client_disconnect(&mut clients,
+                                          &mut channels,
+                                          &mut websockets,
+                                          client_id_of_disconnected,
+                                          &thread_messaging_channel.0);
             },
 
             Event::Message(client_id, message) => {
                 //println!("Received a message from client #{}: {:?}", client_id, message);
                 match message {
-                    Message::Text(value) => {
-                        process_received_message(client_id, &mut websockets, &mut clients, &mut channels, value, &thread_messaging_channel.0);
+                    Message::Text(websocket_message) => {
+                        process_received_message(client_id,
+                             &mut websockets,
+                             &mut clients,
+                             &mut channels,
+                             &mut icons,
+                             &mut tags,
+                             &mut client_stored_data,
+                             websocket_message,
+                             &thread_messaging_channel.0);
                     }
                     _ => {}
                 }
