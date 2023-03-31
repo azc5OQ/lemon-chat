@@ -49,7 +49,7 @@
             position: fixed;
             left: 50%;
             transform: translate(-50%, -50%);
-            z-index: 10000;
+            z-index: 100;
             top: 40%;
             background-color: #FFF;
             min-width: 200px;
@@ -113,6 +113,41 @@
             background-size: 13px 15px;
         }
 
+        .tag-head-p {
+            display: inline-block;
+            vertical-align: top;
+            padding: 20px;
+            color: azure;
+            width: 100px;
+        }
+
+        .tag-head-p-container {
+            background-color: blue;
+            white-space: nowrap;
+        }
+
+        .tag-settings-entry-p {
+            display: inline-block;
+            vertical-align: top;
+            padding-top: 6px;
+            padding-right: 20px;
+            padding-left: 20px;
+            color: azure;
+            width: 100px;
+        }
+
+        .tag-settings-entry-img {
+            display: inline-block;
+            vertical-align: top;
+            padding-top: 6px;
+            margin-left: 19px;
+            color: azure;
+            width: 25px;
+            height: 25px;
+            background-repeat: no-repeat;
+            background-size: 30px 30px;
+        }
+
 
         @keyframes animate {
             100% {
@@ -120,12 +155,11 @@
             }
         }
 
-
-
         #space-devider-42 {
             display: inline-block;
             width: 8%;
             height: 50px;
+            white-space: normal;
         }
 
         #drag-resize-chat {
@@ -196,11 +230,23 @@
             scrollbar-color: #3f3f4d #6b7c9a;
         }
 
-        .chat-picture-img {
-            max-width: 100%;
+        .chat-picture-img 
+        {
+            width: 100%;
+            max-width: 600px;
+            background: inherit !important;
         }
+
+        
+        .chat-picture-img-default
+        {
+            width: 32px !important;
+            height: 32px !important;     
+        }
+
+
         .local-client-chat-picture-img:hover {
-            opacity: 0.5;
+            opacity: 0.8;
         }
 
         .text-input-container {
@@ -222,9 +268,43 @@
             cursor: pointer;
         }
 
-            #stop-song:hover {
-                background-color: #7d8799;
-            }
+        #stop-song:hover {
+            background-color: #7d8799;
+        }
+
+        .server-settings-tab-ul {
+
+        }
+
+        .server-settings-tab-li {
+            cursor: pointer;
+        }
+
+        .server-settings-tab-li:hover {
+            background-color: pink;
+        }
+
+        #server-settings-tab-icons {
+            height: 100%;
+            display: block;
+        }
+
+        #server-settings-tab-upload-icon-file-input-container, #server-settings-tab-add-tag-details-container {
+            height: 46px;
+            background-color: #403636;
+            text-align: right;
+        }
+
+        #server-settings-tab-tags {
+            display: none;
+            height: 100%;
+        }
+
+        #add-new-tag-to-server-button {
+            height: 30px;
+            width: 150px;
+            background-color: blue;
+        }
 
         #communication-system-container {
             height: 75%;
@@ -259,9 +339,9 @@
             background-size: 16px 16px;
         }
 
-        .client-roles {
+        .client-tags {
             display: inline-block;
-            float: right;
+            margin-left: 50px;
         }
 
         .connected-client-p {
@@ -306,7 +386,11 @@
             width: 80%;
         }
 
-        #channel-password-input-container, #admin-password-input-container {
+        #admin-password-input-container {
+            text-align: center;
+        }
+
+        #channel-password-input-container {
             height: 120px;
             text-align: center;
         }
@@ -322,17 +406,17 @@
         }
 
         #image-upload-preview {
-            width: 15%;
-            min-height: 60px;
-            max-width: 70px;
-            display: inline-block;
+            height: 70px;
+            width: 85px;
+            border-radius: 11px;
+            display: none;
             background-repeat: no-repeat;
             background-position: center;
-            background-size: cover;
+            background-size: 100% 100%;
         }
 
         #chat-input-file-input-container {
-            width: calc(94% - 223px);
+            width: calc(100% - 175px);
             display: inline-block;
             vertical-align: top;
             padding: 0.5em;
@@ -342,7 +426,7 @@
 
         #chat-input-container-text-input {
             width: 100%;
-            min-height: 49px;
+            min-height: 77px;
             background-color: #202020;
             color: white;
             border-radius: 5px;
@@ -354,17 +438,15 @@
             resize: none;
         }
 
-        .single-role {
+        .single-tag {
             width: 20px;
             height: 20px;
             background-repeat: no-repeat;
             background-position: center center;
             background-size: 20px 20px;
             display: inline-block;
-        }
-
-        .admin-role {
-            background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsSAAALEgHS3X78AAACU0lEQVQ4jX2TX0hTYRjGf0eOicqUydEES9L+iHQRnNafu0ASYayrXWiS0S4HFQQhCQMzDEUGQUzIGyOJbrr03LSI/hFY5DBLhyut3CkkN9eZ7sx5bHVx9LgD0nv1vc/3PA/Py/d+AmYJLV3+fC67BsBGLst2bRo5CmszpwPw8fkzAUAAhI5AMF/RcNJGnBn02vobj6MAVJWXAnDlWjsRRXEIHYHg393Eo6Nu8iX1OJ0i0Q+fCfQ84erYe/ZJEmoiQVlpOb2BSxRlM9p/xQDNxw7TP9DG3Ysu1ESCaHzJ4hcVinV1GtklAeB0injdIbzukHUvuyTGw+MATMbmARC3hQDGyyCX+85QWduI1x2i4UIvAF53H+GJIfSsztj9IF+4vpNgXV/D3+mjpeUcajxjG8ff6cPf6bNhajxj8a0ED15NWoTK2kYcVfUAdLsP2MSNTUeB1za+aOR0dHUaR1k5sksiLzjQUinCE0M28eL8AgtzM8guieWv73YMAA41nyB6r52bg11oKylWV5aZWzOXKp02X0ksLqa6uoazrQaPHoao840Rm3phGhw/cpCnW/PHPk2hpdOMDM/aEnT3nLaM1HiGvdovs/+d+GGRlha/AjAyPEvrbcVMkDNXeeiWl/6BNpLJpM24COC7GrcALZ0GQCrbA0BFSQli3gAgXsBbSZrLJADFssezAVA69xaA83fCJPQNAPStDwbwpr8DgGzTKQAiiuIQASOiKAJQIXs8GkDs2zxVNfst8fpqCiO7WigUtk2tQ+FYssfzZxeciKLUAT8LsX+oaO/ttIYBtAAAAABJRU5ErkJggg==);
+            padding-left: 2px;
+            padding-right: 2px;
         }
 
         .padding-div {
@@ -396,49 +478,126 @@
             height: 0px;
         }
 
+        .channel-list-context-menu {
+            position: absolute;
+        }
+
+        .add-tag-context-menu {
+            display: none;
+            position: absolute;
+            max-height: 285px;
+            overflow-y: hidden;
+        }
+
         .channel-list-context-menu-background {
             background-color: #60656f;
             width: 130px;
-            height: 150px;
+            height: 159px;
             border-radius: 10px;
             opacity: 0.8;
+        }
+
+        .add-tag-context-menu-background {
+            background-color: #60656f;
+            width: 130px;
+            height: 100%;
+            border-radius: 10px;
+            opacity: 0.8;
+            position: absolute;
         }
 
         .channel-list-context-menu-items {
             position: absolute;
             top: 0px;
             width: 130px;
+            border-radius: 8px;
             overflow: hidden;
             border-top-left-radius: 10px;
             border-top-right-radius: 10px;
         }
 
-            .channel-list-context-menu-items p {
-                color: white;
-                top: 0px;
-                width: 130px;
-                font-size: 1em;
-                font-family: sans-serif;
-                padding: 5px;
-                cursor: pointer;
-            }
+        .context-menu-item-disabled
+        {
+            opacity: 0.7 !important;
+            cursor: default !important;
+        }
 
-                .channel-list-context-menu-items p:hover {
-                    color: white;
-                    top: 0px;
-                    width: 130px;
-                    font-size: 1em;
-                    font-family: sans-serif;
-                    padding: 5px;
-                    cursor: pointer;
-                    background-color: #b9d436;
-                }
+        .channel-list-context-menu-items p {
+            color: white;
+            top: 0px;
+            width: 130px;
+            font-size: 1em;
+            font-family: sans-serif;
+            padding: 5px;
+            cursor: pointer;
+        }
+
+        .channel-list-context-menu-items p:hover {
+            background-color: #b9d436;
+        }
+
+        .add-tag-context-menu-items {
+            width: 136px;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+            overflow-y: scroll;
+            height: 280px;
+            overflow-x: hidden;
+        }
+
+        .add-tag-context-menu-items p {
+            color: white;
+            display: block;
+            background-repeat: no-repeat;
+            background-size: 22px 22px;
+            background-position: right center;
+            background-position-x: 102px;
+            font-size: 15px;
+            font-family: sans-serif;
+            padding-top: 5px;
+            padding-bottom: 5px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .add-tag-context-menu-items p:hover {
+            background-color: #b9d436;
+        }
+
+        .add-tag-context-menu-item {
+            color: white;
+            top: 0px;
+            width: 130px;
+            font-size: 1em;
+            font-family: sans-serif;
+            padding: 5px;
+            cursor: pointer;
+        }
+
+        .add-tag-context-menu-item:hover {
+            background-color: #b9d436;
+        }
 
         .chat-message-context-menu-background {
             background-color: #60656f;
             width: 130px;
             height: 48px;
             opacity: 0.8;
+        }
+
+        .img-uploaded-icon {
+            width: 32px;
+            height: 32px;
+            margin: 10px;
+            vertical-align: top;
+            display: inline-block;
+            cursor: pointer;
+            transition: 0.3s ease;
+            border-radius: 5px;
+        }
+
+        .img-uploaded-icon:hover {
+            background-color: #ffffff;
         }
 
         .chat-message-context-menu-items {
@@ -449,20 +608,20 @@
             background: linear-gradient(109.6deg, #8361af 11.2%, rgb(36 163 190 / 69%) 91.1%);
         }
 
-            .chat-message-context-menu-items p {
-                color: white;
-                top: 0px;
-                width: 130px;
-                font-size: 0.7em;
-                font-family: sans-serif;
-                padding: 5px;
-                cursor: pointer;
-                overflow: hidden;
-            }
+        .chat-message-context-menu-items p {
+            color: white;
+            top: 0px;
+            width: 130px;
+            font-size: 0.7em;
+            font-family: sans-serif;
+            padding: 5px;
+            cursor: pointer;
+            overflow: hidden;
+        }
 
-                .chat-message-context-menu-items p:hover {
-                    background-color: #b9d436;
-                }
+        .chat-message-context-menu-items p:hover {
+            background-color: #b9d436;
+        }
 
         .single-channel {
             cursor: pointer;
@@ -533,7 +692,7 @@
             margin: 0px;
         }
 
-        #space-devider1::-webkit-scrollbar,
+        .add-tag-context-menu-items::-webkit-scrollbar, #space-devider1::-webkit-scrollbar,
         #channel-list-container::-webkit-scrollbar,
         #chat-context-container::-webkit-scrollbar,
         #chat-input-container-text-input::-webkit-scrollbar,
@@ -541,7 +700,7 @@
             width: 6px;
         }
 
-        #space-devider1:-webkit-scrollbar-track,
+        .add-tag-context-menu-items::-webkit-scrollbar-track, #space-devider1:-webkit-scrollbar-track,
         #channel-list-container::-webkit-scrollbar-track,
         #chat-context-container::-webkit-scrollbar-track,
         #chat-input-container-text-input::-webkit-scrollbar-track,
@@ -553,7 +712,7 @@
             background-color: transparent;
         }
 
-        #space-devider1::-webkit-scrollbar-thumb,
+        .add-tag-context-menu-items::-webkit-scrollbar-thumb, #space-devider1::-webkit-scrollbar-thumb,
         #channel-list-container::-webkit-scrollbar-thumb,
         #chat-context-container::-webkit-scrollbar-thumb,
         #chat-input-container-text-input::-webkit-scrollbar-thumb,
@@ -652,7 +811,18 @@
             padding-bottom: 1px;
             padding-left: 10px;
             left: -10px;
+            width: 84%;
+            max-width: 527px;
+            white-space: normal;
         }
+
+        #server-settings-tab-icons-container, #server-settings-tab-tags-container {
+            height: calc(100% - 46px);
+            height: 90%;
+            background-color: #414f53;
+            overflow: scroll;
+        }
+
 
         .single-chat-message-content-p-hover {
             background-image: linear-gradient( 109.6deg, rgba(15,2,2,1) 11.2%, rgba(36,163,190,1) 91.1%)
@@ -677,12 +847,12 @@
         }
 
         .connected-local-client {
-            cursor: text !important;
+            cursor: pointer;
         }
 
-            .connected-local-client:hover {
-                background-color: inherit !important;
-            }
+        .connected-local-client:hover {
+            background-color: #333030;
+        }
 
         .connected-client:hover {
             background-color: #333030;
@@ -690,11 +860,40 @@
 
         #textarea-log {
             position: absolute;
-            z-index: 1;
+            z-index: 5;
             opacity: 0.5;
             display: none;
             width: 50%;
             height: 50%;
+        }
+
+
+        #server-settings-tab {
+            position: absolute;
+            z-index: 2;
+            display: none;
+            width: 50%;
+            min-width: 750px;
+            min-height: 400px;
+            height: 50%;
+            background-color: #36393f;
+        }
+
+        #server-settings-tab-subcontainer
+        {
+            display: inline-block;
+            background: salmon;
+            width: 172px;
+            height: 100%;
+            vertical-align: top;
+        }
+
+        #server-settings-tab-subcontainer2
+        {
+            display: inline-block;
+            background: beige;
+            width: calc(100% - 187px);
+            height: 100%;
         }
 
         #custom-file-upload-button-image {
@@ -755,6 +954,20 @@
             visibility: hidden;
         }
 
+        #identity-string-use-textarea {
+            width: 90%;
+            height: 138px;
+            resize: none;
+            border: 0px;
+            border-radius: 5px;
+            padding: 6px;
+            color: #8e1ed2;
+            font-family: sans-serif;
+            border: 0px;
+            font-size: 16px;
+            background: #ffffff;
+        }
+
         #custom-file-upload-button-song {
             background-image: url(data:application/octet-stream;base64,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)
         }
@@ -774,19 +987,27 @@
             color: white;
         }
 
-            .text-input-pretty[disabled] {
-                padding: 5px;
-                font-family: sans-serif;
-                background-color: #202020;
-                border-style: solid;
-                color: wheat;
-                width: 50px;
-                border-bottom-color: #202020;
-            }
+        #import-identity-button {
+            width: 29px !important;
+            background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAsTAAALEwEAmpwYAAABMklEQVR4nO3WPy9DURjH8epYErqREIlEIk0oMZGYbSRGqdVgsGJikNjE2ndgt2FRYqDdjN6Dxf6RxhmaOkX/3Xa4v+TJzX2ec+7zvefc59wnk0mValiECexhv89WzzEeA6jgOAGAEzzEAGoJLXY8F6oJAvzMJQXQ/RZgBde4xwGyiW0B5vGCxVDSlzjtCgCFSBnttHjoGbYa7rOtKutPACyF61MEoH5eFCLzL7DdBPDWNoDvNyn/siplrEb8C/XxKCKPK5wnCZDHHT7wjk9stA3QyRZgDM/YbfDN4RGbjWP78hHiCIcR/xReMdIRwH+FW0y2iN1gtsmXHsXV4fwbYibYOkZDTS8jF3y9ikcBaiE4jbUwqRgsF3y9ikcbkkpolwbWko2jlABAKdqUpkqVGZC+AFCLxWUHjpzIAAAAAElFTkSuQmCC);
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-size: 24px 24px;
+        }
 
-            .text-input-pretty:focus {
-                outline: none;
-            }
+        .text-input-pretty[disabled] {
+            padding: 5px;
+            font-family: sans-serif;
+            background-color: #202020;
+            border-style: solid;
+            color: wheat;
+            width: 50px;
+            border-bottom-color: #202020;
+        }
+
+        .text-input-pretty:focus {
+            outline: none;
+        }
 
         .text-input-not-pretty {
             padding: 5px;
@@ -803,19 +1024,19 @@
             color: white;
         }
 
-            .text-input-not-pretty[disabled] {
-                padding: 5px;
-                font-family: sans-serif;
-                background-color: #36393f;
-                border-style: solid;
-                color: white;
-                width: 67px;
-                border-bottom-color: #36393f;
-            }
+        .text-input-not-pretty[disabled] {
+            padding: 5px;
+            font-family: sans-serif;
+            background-color: #36393f;
+            border-style: solid;
+            color: white;
+            width: 67px;
+            border-bottom-color: #36393f;
+        }
 
-            .text-input-not-pretty:focus {
-                outline: none;
-            }
+        .text-input-not-pretty:focus {
+            outline: none;
+        }
 
         #show-hide-log-button {
             position: absolute;
@@ -868,9 +1089,46 @@
             background-size: 16px 16px;
         }
 
-            #hide-chat-button:hover, #show-admin-password-entry:hover, #show-hide-log-button:hover, #clear-chat-button:hover {
-                background-color: #36393f;
-            }
+        #show-secret-identity-string {
+            position: absolute;
+            z-index: 1;
+            top: 0;
+            right: 87px;
+            width: 25px;
+            height: 99%;
+            border: 0px;
+            transition: 0.3s ease;
+            border-radius: 3px;
+            cursor: pointer;
+            background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAsTAAALEwEAmpwYAAABMklEQVR4nO3WPy9DURjH8epYErqREIlEIk0oMZGYbSRGqdVgsGJikNjE2ndgt2FRYqDdjN6Dxf6RxhmaOkX/3Xa4v+TJzX2ec+7zvefc59wnk0mValiECexhv89WzzEeA6jgOAGAEzzEAGoJLXY8F6oJAvzMJQXQ/RZgBde4xwGyiW0B5vGCxVDSlzjtCgCFSBnttHjoGbYa7rOtKutPACyF61MEoH5eFCLzL7DdBPDWNoDvNyn/siplrEb8C/XxKCKPK5wnCZDHHT7wjk9stA3QyRZgDM/YbfDN4RGbjWP78hHiCIcR/xReMdIRwH+FW0y2iN1gtsmXHsXV4fwbYibYOkZDTS8jF3y9ikcBaiE4jbUwqRgsF3y9ikcbkkpolwbWko2jlABAKdqUpkqVGZC+AFCLxWUHjpzIAAAAAElFTkSuQmCC);
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-color: #000000;
+            background-size: 24px 24px;
+        }
+
+        #enter-server-settings {
+            display: none;
+            position: absolute;
+            z-index: 1;
+            top: 0;
+            right: 117px;
+            width: 25px;
+            height: 99%;
+            border: 0px;
+            transition: 0.3s ease;
+            border-radius: 3px;
+            cursor: pointer;
+            background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAeCAYAAAA7MK6iAAAACXBIWXMAAAsTAAALEwEAmpwYAAABUklEQVR4nO2WzUoDMRSFg7uWtlKFWvBBfIUWN4VS9+rTdcSXcHAl1DqtP+tWV9VX8JPAUa5jOzM4k4XYA4Hh5iQnObm5Gee2+HcAjoFnqsMS6BcR9sSqsSgiHARuK5wGEAdw+uqH0BbAdQCr41xnCQQXUPgduAHugFOgoXbmY6GEX4CjUonK79DT2AOgru8LINJ3HehUeY/9Y9IDdjQ2AR6BqeFMFUtKOZKx4ENglbHIledUKdgFZsCbBBbAEGiqDYAn9b3KlW6Zezw35/dgRPfWzNlWn8f9Zx6kSUVxbsbcKjbMcGYkzmQToSga4l+aWDPl3FfFAlqGF1UhPN4gHNtXCdg1vHGZXx9r9USxQYbVJ3lW9wuKz8SvmeTy2dteM+e+mdMnV82VhapVoquCsnekM21pp8vc6/RnCoj7Lu5344tJumTOg5VMCXfMIxFlPRIf+muKYJ88+2QAAAAASUVORK5CYII=);
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-color: #000000;
+            background-size: 16px 16px;
+        }
+
+        #hide-chat-button:hover, #show-secret-identity-string:hover, #show-admin-password-entry:hover, #show-hide-log-button:hover, #clear-chat-button:hover, #enter-server-settings:hover {
+            background-color: #36393f;
+        }
 
         #clear-chat-button {
             position: absolute;
@@ -902,18 +1160,27 @@
             cursor: pointer;
         }
 
-            .chat-context-selector:hover {
-                background-color: #202020;
-            }
+        .chat-context-selector:hover {
+            background-color: #202020;
+        }
 
-                .chat-context-selector:hover .remove-chat-context-selector {
-                    visibility: visible;
-                }
+        .chat-context-selector:hover .remove-chat-context-selector {
+            visibility: visible;
+        }
 
         .remove-chat-context-selector:hover {
             background-image: url(data:application/octet-stream;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAIW0lEQVRYw8WWe1SVVRqHn3MOkhzgcIADHDiHiwoIhKijZthFEVvZdaasWZmDU3aZmtYqp5xqGptqTTNmJZqXSS27B2p4CZUUvFGSoAhe4o4hWHljcLyRk+Vv/jgb1hnLGeev2Wv91vd+374977v3fveHJP6fwmaxARAKjAHuBp4CZgPvAquAMuBTC5RbYL0FioAlwFoLFFtgjQU2W3xtSoHNwI7gQBaB41lgMpALhOMrwQGBBNv6EGQL+DHARGAqsPveh9R63wPdy4ENwKdcAoBpuxGoyxmzvWH6X/U0hOYBYy8FYDRwBzAdutTUoR+2blURtJQA5ZcIsB74AIoPTpum7z/fradBd0Fkzn8DCAFGgXUkaEFahiRJ30nb01NVCF9vMRAXA+ipL4Sy0sszpd2NUmO7ll83XleAroZk508BWLEA0AcCXKA/DxkmvVskzV4szX5DKi7T9iFZKoKzW42HPwIw674c9pVnDpKWrpHmvCm9/DepoFgFN9+mKFAQJAME2QKx2/pgt/XBv+i+9Axp1mJp6nSd+c1UnXrgMZ17/FmpYJVqskdqGXSX+AMAxUZLobpi6DBp/ls698SfdPqhJ3T64celR/8g5S9W/nU3ChAQEWCxEWQN6AUIvMIR1z3j5onStOelO6foxITJ6ro9z6cJeeqe+ID0Yr4qMwZqKTQvA97E5/lqn/3xpuRU6akX9O2kB9V1x2R1TfD1Pz5hsn745RRp6h/1/IjRSrGECEgItNgItvWBoc7Y+bWvr5KOn5PueUTHBl+pw1eO1aHssTqUnWueY3Vi9Hhp8sOq6h+vt6HxdWCt08kiWFGS2F+a9KBOjrlJh0aNM/18Opw9Vp3Z46RR46RfP6K1T87SPcNGV/bGvb8lMGqs1dWQ5k7SkTsmSYkp+iohWR0D0tWenNGrtgHpOpY6SOfH3aidiXEqDr5s0/IA2+KNbreUc4M6UwfrwAV9OpIz1DEgXef7p0nZozXUGaksW9ipmyKThvcCpAeGYgUHsMt6WV+dvv5WKTJKzXa7WhxOtYSF96opLFztfYN1Nj1L31ZU68S6Tep2e9URGqomv3a9coTpdHCIlJKhTGekgKMhkPVvO29QkJMQn+kA6lPsdh0blaMzFrQb9MUFqgW1gJR3v3TTbWrip9vtAx0BnXW5dFVYuICTwGDAnDtTsuxOwowdB0keaLsmxKGu5FS1gTaANhltNs8yUA1op7F76nrqN5r6Lnuo7gp1Khq+6we5AWYemz9Elt2Jw9jxwHBwZcGu20NCdahfij4DLQWtAK00WgH6yOjC78tApaD9wQ49FOpUJhwdCSPTfLnmxwDpQU76GtsN/Mx3cYTkwK5HQ8PUFp+kEtC7oOWgoovoIwNaDKqzh+ipkDDlQud4uPwaIA3oiYDVfwmig5y9dl8gFbgG+Dn0nQjlS6KidfKWX6imT6AKQIVmoh4tN14XmvA3OyO1MNShe2H/nTDwRl+KZwAXKQ1x8XwGLAM+BN4CFgHPAPcDb/dLljq/lcbfokLQmyYaPXrHfHsD1HBZX514bqYKh4/SVMh8HsgBBgGuiwGUu72sBBYYvQbkA78DnoTCDXEetcd6tQ6UD5oLWuin10HzQK+CloD2RLtV5o3XM7D798BcYDHwvu+uoMhkz1XARwAb3B6WAnPMT8irwAzflbx6bVy8aiNcegO0APQ26H1QwQX60ERjoYHYFxWtVXEeTYemGcAsYD6w0Gix0SKA9W4PhWbyfDP5c/BxqTdBjS63CkHvmU22EvSx0Sqz6/3fiwzgUlBzdKxKPR69AM1/MWPPNZrvp16AWcBM4CXYucXjVYsrWivNxGtAJeZ4lRl7J6jB73upsdf6Hc+mGLc2e72aCadmGifnmInnGfFJjIcPzeSzYV9VQoIaI1y9npWCtoI+BVWAykG7QBp5tXT3PWox9dtMmy2mzxqjZle0Kr0ezYGzrxiIef4A6yJjeMcX+k0VcbFqCo9QCWidyWzbQJWgHUZ7QYqI1OkpU9Q17UkpMV6toCpTX2n6bDFjlIBawl2qiIvTK3BkponC3B6A1cEO1roi1jVcPVr1QXZ9AlpvvNlhcv9eoxaQ4jw6kuRRQyB7m8LsG9vC7VJqig6aO2GPScNVZoz1Jp03hDu1OzlFywIDvnzZD4JPEpJfOnfgsDRngcpMhwpQtblQGkCNoA6QEhJ0NDlBVXC40Ya3zeVgB1QedIdLgzJ11LStN8DVZqyefXM4bbCOz5ij0hHZn/UsBZ9fO35whcet2qRE7QmP0DazxnXG4y9Bx0BKTNTfB/ZXNXTugMubA620x4RTC/Zq2NXmjpKGDFU3qM30rTNjbQPVRESqxh2lqphIbfLGT8zvBbhqHCWQWQBnamKi9FWcV3WgVlA76BRIKanqHNhPX8DRfZBZa4EaoMMdwR5gr4XQvbCrNTJcGjZc/zQRazUQ38R6VeeJ00rfXXH7IrME8wC2X3s964EVMKIU1OqJ0vHYWLWDToOU1E9feeNUB983WhhZb4VaC9T6AeyzQpMFVx20tUY4pBHD1W0c+EeMR20J8SrznYq8D8z/5Gs9AJVjxrPapMfNMK4CdMDl0PmsYdINt+pEWpL2w8lmK7nNVqi3XQTACi02khqh/mBMhJSRofOuaH0dH6ttvuP72xJz3yzxPwX+AOVAJYzYC2e+e+89/VBZrW/gWBsM3W+DZtt/ALBBawDst+JogZrOq0bo+6enq8F3IvIqgBILFFwCAK2QeSw3R8d/lad2GNIG7A+4RAAbtEPokexhB048+pha4M5q4KIAVf4AFqjyAXB0QFLu4QTP9QeAA5b/DaAD+CYiJP1IcuKkeqAaqLD8NMC/AA9UhrRtIxRWAAAAAElFTkSuQmCC);
             background-repeat: no-repeat;
             background-size: 14px 14px;
+        }
+
+        #p-secret-identity-string {
+            font-family: sans-serif;
+            font-size: 13px;
+            padding: 8px;
+            color: #cddc39;
+            width: 302px;
+            word-break: break-word;
         }
 
         .chat-context {
@@ -937,9 +1204,9 @@
             visibility: hidden;
         }
 
-            .remove-chat-context-selector:hover {
-                background-color: black;
-            }
+        .remove-chat-context-selector:hover {
+            background-color: black;
+        }
 
         #chat-context-selectors-container {
             padding-left: 25px;
@@ -958,7 +1225,7 @@
             text-align: center;
         }
 
-        #channel-properties-edit-container, #channel-password-enter-container, #admin-password-enter-container {
+        #identity-string-use-container {
             position: absolute;
             width: 100%;
             height: 100%;
@@ -968,7 +1235,32 @@
             z-index: 5;
         }
 
-        #channel-properties-edit, #channel-password-enter, #admin-password-enter {
+        #identity-string-use-container-enter {
+            top: 25%;
+            width: 380px;
+            height: 281px;
+            background-color: #36393f;
+            margin: 0 auto;
+            border-radius: 13px;
+            overflow: hidden;
+        }
+
+        #channel-properties-edit-container, #channel-password-enter-container, #admin-password-enter-container, #secret-identity-string-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            top: 0px;
+            display: none;
+            z-index: 5;
+        }
+
+        #secret-identity-string-container-enter {
+            color: white;
+            height: 274px !important;
+        }
+
+        #channel-properties-edit, #channel-password-enter, #admin-password-enter, #secret-identity-string-container-enter {
             top: 25%;
             width: 322px;
             height: 219px;
@@ -983,7 +1275,7 @@
             text-align: right;
         }
 
-        #close-button, #close-button-enter-password, #close-button-admin-password {
+        .close-button {
             width: 29px;
             height: 25px;
             border: 2px solid #9e8232;
@@ -993,9 +1285,9 @@
             cursor: pointer;
         }
 
-            #close-button:hover, #close-button-enter-password:hover, #close-button-admin-password:hover {
-                border-color: #d8d22b;
-            }
+        .close-button:hover {
+            border-color: #d8d22b;
+        }
 
         #toggle-microphone-label {
             display: none;
@@ -1014,9 +1306,9 @@
             background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAELklEQVRoQ+2ZWehOXRTGf+hDuJIpmVKUJIUiY9wRMpRMFy58hogoZUgk04WUqQyJEqJMZSgy9hlKXBK5+MgsuVDm0KN9tJ3/Gfbe55z3f2PdvO85Z++1n2fvtddae+0GlC/DgOmAftsDDYHnwDVgL3C9zCEblKisFbAPGJ2j8xTwL/CmjLHLItAFuAh0dQT1PzAc0G8hKYNAC+AG0MsTyX2gH/DBs98fzcsgsA5YHghiPbAisO+vbkUJNAdeAfoNkRdAB+B7QufWwDjgYNYqFSUwFtCmDBGZjjb85YTObc37HuZX7RJNrSiBZYDMwFdcwUd6RTKRRFECm4FFnuh9wUfqZwF74mMVJbAFWOBBIBS8PJYCY53YUUsCAj8GuJRAuI153zPh2wMTM7Th60itCFQCvgw36mJClYGvBYFKwVdNoHLwVRKoCfiqCNQMvCuBf4AdQB9gFXDG8mXxTRzq5+8BI0xepYi7GrgLzAO+ZsUZFzc6BThklCiQyGdHYhMIBS8/ryClpFCiMXQ4kkwFDhcloEgroJHYpCMCoWYjnVuBhZb+H9Z/vdf3VHFZgTwCMwMjbASqXglsBM4HpAf2jFZOYDaw0xpRm/qbeW6Wkqfb+XyWBejbJmCJadQY+Gx1mBsbu44uFxPSqeiE1VPgXmeg8gEvNQIvEpKOwBNL90TgeNE90B+4ZSmRx1CNJ0l8wUuH3Gd0KhsA3LQUDwH+K0qgpZnxRsZcpFQ+Oi4h4LWSOhNHvn4psMEo1jm5XV79yMWEpE8z3tfxDJtn8/Z3ebht1gtV7Qaa5zum7JKpz5WAIqKiZd4B3Af8BWCU5RAEXOYSYXIqubgSSAMWYjbSpUKYUoZ3RrFwaJUHm+cvQLfYhk7EUIRACHgBk8momGW7SxXGVCCLZBcwx2U5QwlkgdcBfD8wCOgMKDV4amb4KPA4BkyuUu9VxZa8BXoDz6oiEHwATwCkUsl2QMFRIrLjfYplviuQNfPxrDJrArUySkMmxxqtBVa6zHzUxodAns3LvmUKB4ArgJ5tUZqgIDgBmAE0jX3XWWOND3i1dSWQBz4+rgLTQxMAZR4yu04JoNXvI7A4L+dJI+ZCIG/D6pJipO/MmfYqcilZfBTYP3cF8sDrlkUnqaHAfEDV6iY5YOQ+laDtBq6ajRuKP5OAK3h7cN0TyM7lBuXHZTYSuU7l/UoPlEe9D0Yc65hmQrpc0OyoPh8X+flo5rNwnLVM65xJG8rC/VtPGgHdImqJQ8GrX70S0EnrtJnpiITrzEft65WAQNgkksDLZ0+yomh8tZTLS4dEVYuXKfYjl3vE1Jy8TSzPjQrANOBk7GCh69Hb3qNld5BObXIvySOQpkwX20odFF3LEEXt7gmJXq7uUAJSHKUF8ZQgd9BYg0/AsYxzdqa+IgR8gVbS/i+BSqbVQ+lPvaMNQOE4cEcAAAAASUVORK5CYII=);
         }
 
-            #toggle-microphone-label:hover {
-                background-color: #7d8799;
-            }
+        #toggle-microphone-label:hover {
+            background-color: #7d8799;
+        }
 
         #toggle-microphone:checked + #toggle-microphone-label {
             background-color: #7d8799;
@@ -8013,8 +8305,7 @@
             {
                 return getBinaryPromise(binaryFile).then(function (binary)
                 {
-                    console.log("instantiateArrayBuffer");
-                    console.log(imports);
+
                     return WebAssembly.instantiate(binary, imports);
                 }).then(function (instance)
                 {
@@ -9067,6 +9358,7 @@
                     is_rsa_key_generated = true;
                     document.getElementById("another-buttons-sub-loading-container").style.display = "none";
                     document.getElementById("another-buttons-sub-container").style.display = "";
+                    identity_string = e.data.identity_string;
                 }
                 else if (e.data.type == "data_processing_worker__authentication_status")
                 {
@@ -9155,6 +9447,30 @@
                 {
                     process_channel_list_from_server(e.data.value);
                 }
+                else if (e.data.type == "data_processing_worker__tag_list_from_server")
+                {
+                    process_tag_list_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__icon_list_from_server")
+                {
+                    process_icon_list_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__icon_add_from_server")
+                {
+                    process_icon_add_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__tag_add_to_client_from_server")
+                {
+                    process_add_tag_to_client_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__remove_tag_from_client_from_server")
+                {
+                    process_remove_tag_from_client_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__tag_add_from_server")
+                {
+                    process_tag_add_from_server(e.data.value);
+                }
                 else if (e.data.type == "data_processing_worker__start_song_stream_from_server")
                 {
                     process_start_song_stream_from_server(e.data.value);
@@ -9187,10 +9503,6 @@
                 {
                     process_server_chat_message_id_for_local_message_id_from_server(e.data.value);
                 }
-                else if (e.data.type == "data_processing_worker__client_role_add_from_server")
-                {
-                    process_client_role_add_from_server(e.data.value);
-                }
                 else if (e.data.type == "data_processing_worker__client_connect_from_server")
                 {
                     process_client_connect_from_server(e.data.value);
@@ -9205,7 +9517,6 @@
                 }
                 else if (e.data.type == "data_processing_worker__microphone_usage_from_server")
                 {
-                    console.log(e.data.value);
                     let client = {
                         client_id: e.data.value.message.client_id,
                         microphone_state: e.data.value.message.value,
@@ -9278,7 +9589,7 @@
                 }
                 else if (e.data.type == "data_processing_worker__create_websocket_channel_keys_message_result")
                 {
-                    console.log("sending key data to user -> " + e.data.username);
+                    console.log("sending channel keys to user -> " + e.data.username);
                     websocket_worker_send(e.data.channel_keys_message_content);
                 }
                 else if (e.data.type == "data_processing_worker__new_channel_keys_from_data_processing_worker")
@@ -9349,9 +9660,7 @@
                 }
                 else if (e.data.type == "mainthread__generate_rsa_keypair")
                 {
-
                     custom_log("generating random public/private key pair");
-
 
                     const randomstring = (length = 8) =>
                     {
@@ -9369,21 +9678,32 @@
 
                     };
 
-                    const str1 = randomstring(200);
+                    let identity_passphrase_string = "";
 
-                    console.log("identity can be re-used by reusing passhprase" + str1);
+                    if (e.data.from_identity_string == true && e.data.identity_passphrase_string != null && e.data.identity_passphrase_string.length > 0)
+                    {
+                        identity_passphrase_string = e.data.identity_passphrase_string; //also known as passphrase
+                    }
+                    else
+                    {
+                        identity_passphrase_string = randomstring(200); //also known as passphrase
+                    }
 
                     cryptico_library = cryptico;
 
-                    my_rsa_key_object = cryptico_library.generateRSAKey(str1, 2048);
+                    my_rsa_key_object = cryptico_library.generateRSAKey(identity_passphrase_string, 2048);
                     rsa_public_key_string = cryptico_library.publicKeyString(my_rsa_key_object);
+
+                    custom_log("identity_passphrase_string now in use -> " + identity_passphrase_string);
 
                     global.postMessage({
                         type: "data_processing_worker__generate_rsa_keypair_result",
-                        value: rsa_public_key_string
+                        value: rsa_public_key_string,
+                        identity_string: identity_passphrase_string
                     });
 
-                    custom_log("public key: " + rsa_public_key_string);
+                    custom_log("public key now in use: " + rsa_public_key_string);
+
                 }
                 else if (e.data.type == "mainthread__process_received_websocket_message")
                 {
@@ -9677,20 +9997,6 @@
             {
                 let decrypted_metadata = decrypt_message_metadata(e.data.value);
 
-                //console.log("worker_onmessage" + decrypted_metadata);
-
-                if (decrypted_metadata == "connection_test")
-                {
-                    console.log("does this even happen");
-                    return;
-                }
-
-                if (decrypted_metadata == "test")
-                {
-                    console.log("does this even happen");
-                    return;
-                }
-
                 let msg = null;
 
                 try
@@ -9794,6 +10100,48 @@
                     {
                         global.postMessage({
                             type: "data_processing_worker__channel_list_from_server",
+                            value: msg
+                        });
+                    }
+                    else if (msg.message.type == "icon_list")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__icon_list_from_server",
+                            value: msg
+                        });
+                    }
+                    else if (msg.message.type == "tag_list")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__tag_list_from_server",
+                            value: msg
+                        });
+                    }
+                    else if (msg.message.type == "icon_add")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__icon_add_from_server",
+                            value: msg
+                        });
+                    }
+                    else if (msg.message.type == "tag_add_to_client")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__tag_add_to_client_from_server",
+                            value: msg
+                        });
+                    }
+                    else if (msg.message.type == "remove_tag_from_client")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__remove_tag_from_client_from_server",
+                            value: msg
+                        });
+                    }
+                    else if (msg.message.type == "tag_add")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__tag_add_from_server",
                             value: msg
                         });
                     }
@@ -10181,10 +10529,14 @@
             var textarea_log = null;
             var my_rsa_key_object = null;
             var rsa_public_key_string = "";
+            var identity_string = "";
             var is_rsa_key_generated = false;
             var is_client_list_retrieved = false;
             var is_channel_list_retrieved = false;
             var clients = [];
+            var icons = [];
+            var tags = [];
+            var channel_list = [];
             var is_chat_hidden = false;
             var local_message_id = 0;
 
@@ -10192,8 +10544,8 @@
             var g_connection_check_message_response_received_timestamp = 0;
 
             var loading_gif = "data:image/gif;base64,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";
-            var channel_list = [];
             var selected_channel_id;
+            var selected_client_id;
             var current_channel_keys = null;
             var chat_context_array = [
                 {
@@ -10348,13 +10700,28 @@
                 }
             }
 
-            function delete_channellist_contextmenu(setbackgroundColor = false)
+            function delete_contextmenus(setbackgroundColor = false, handle_tag_contextmenu_click = true)
             {
-                //delete channel list contextmenus
+                //quick fix
+                if (handle_tag_contextmenu_click)
+                {
+                    if (event.target.classList.contains("add-tag-context-menu-item"))
+                    {
+                        return;
+                    }
+                }
+
+
                 let elements_count1 = document.getElementsByClassName("channel-list-context-menu").length;
                 for (let i = 0; i < elements_count1; i++)
                 {
                     document.getElementsByClassName("channel-list-context-menu")[0].remove();
+                }
+
+                let elements_count2 = document.getElementsByClassName("add-tag-context-menu").length;
+                for (let i = 0; i < elements_count2; i++)
+                {
+                    document.getElementsByClassName("add-tag-context-menu")[0].remove();
                 }
 
                 if (setbackgroundColor == true)
@@ -10363,6 +10730,12 @@
                     for (let i = 0; i < elements.length; i++)
                     {
                         elements[i].style.backgroundColor = "";
+                    }
+
+                    let elements1 = document.getElementsByClassName('connected-client');
+                    for (let i = 0; i < elements1.length; i++)
+                    {
+                        elements1[i].style.backgroundColor = "";
                     }
                 }
             }
@@ -10375,7 +10748,7 @@
 
                 if (is_channel_list_contextmenu_delete_needed)
                 {
-                    delete_channellist_contextmenu(true);
+                    delete_contextmenus(true);
                 }
             }
 
@@ -10538,6 +10911,30 @@
                 return -1;
             }
 
+            function get_icon_by_icon_id(icon_id)
+            {
+                for (var i = 0; i < icons.length; i++)
+                {
+                    if (icons[i].id == icon_id)
+                    {
+                        return icons[i];
+                    }
+                }
+                return null;
+            }
+
+            function get_tag_by_tag_id(tag_id)
+            {
+                for (var i = 0; i < tags.length; i++)
+                {
+                    if (tags[i].tag_id == tag_id)
+                    {
+                        return tags[i];
+                    }
+                }
+                return null;
+            }
+
             function get_channels_by_channel_parent_id(channels, parent_channel_id)
             {
                 let result = [];
@@ -10626,16 +11023,10 @@
                 let base64EncryptedData = "";
                 let encrypted_data_in_current_iteration = byteArrayToSend;
 
-                //console.log(Object.prototype.toString.call(encrypted_data_in_current_iteration));
-
-
                 for (let i = 0; i < keys.length; i++)
                 {
                     let aesCtrCustom = new aesjs.ModeOfOperation.ctr(keys[i].key_bytes, new aesjs.Counter(keys[i].iv_bytes));
                     encrypted_data_in_current_iteration = aesCtrCustom.encrypt(encrypted_data_in_current_iteration);
-
-                    //log("direct message encryption: encrypting data with key : " + keys[i].key_bytes.toString());
-                    //log("direct message encryption: using initialization vector : " + keys[i].iv_bytes.toString());
 
                     if (i + 1 == keys.length) //if end has been reached, convert encrypted bytes to base64string
                     {
@@ -11219,19 +11610,32 @@
                 websocket_worker_send(data);
             }
 
-            function is_client_role_active(user, role)
+            function is_local_client_admin()
             {
                 let result = false;
-                for (let i = 0; i < user.roles.length; i++)
+                let client = get_client_by_client_id(local_client_id);
+                if (client.tag_ids.includes(0))
                 {
-                    if (user.roles[i] == role)
+                    result = true;
+                }
+                return result;
+            }
+
+
+            function get_client_by_client_id(client_id)
+            {
+                let result = null;
+                for (let i = 0; i < clients.length; i++)
+                {
+                    if (clients[i].client_id == client_id)
                     {
-                        result = true;
-                        break;
+                        result = clients[i];
+                        return result;
                     }
                 }
                 return result;
             }
+
 
             function get_client_index_in_array_by_client_id(client_id)
             {
@@ -11306,6 +11710,7 @@
 
             function process_client_connect_from_server(msg)
             {
+                console.log(msg);
                 let username = sanitize_string(msg.message.username);
                 let client_id = msg.message.client_id;
                 let indend_level = get_indend_level(msg.message.channel_id, channel_list) + 1;
@@ -11324,39 +11729,40 @@
                                                         </div>\n\
                                                         <p>]</p>\n\
                                                     </div>\n\
-                                                    <div class='client-roles' id=\"client-roles-" + client_id + "\">\n\
+                                                    <div class='client-tags' id=\"client-tags-" + client_id + "\">\n\
                                                     </div>\n\
                                             </div>";
 
                 document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').insertAdjacentHTML("afterend", html_to_append);
 
-                let single_user = {
+                let single_client = {
                     client_id: null,
                     username: null,
                     public_key: null,
                     channel_id: null,
-                    microphone_state: 3,
-                    roles: []
+                    tag_ids: [],
+                    microphone_state: 3        
                 };
 
-                single_user.client_id = parseInt(client_id);
-                single_user.username = username;
-                single_user.public_key = msg.message.public_key;
-                single_user.channel_id = msg.message.channel_id;
+                single_client.client_id = parseInt(client_id);
+                single_client.username = username;
+                single_client.public_key = msg.message.public_key;
+                single_client.channel_id = msg.message.channel_id;
+                single_client.tag_ids = msg.message.tag_ids;
 
-                clients.push(single_user);
+                clients.push(single_client);
 
                 let elements = document.getElementsByClassName('connected-client');
 
                 for (let i = 0; i < elements.length; i++)
                 {
                     //dont want to use this handler when local client is clicked
-                    let status = elements[i].classList.contains("connected-local-client");
-                    if (status)
-                    {
-                        continue;
-                    }
-                    elements[i].onclick = connected_user_onclick;
+                    //let status = elements[i].classList.contains("connected-local-client");
+                    //if (status)
+                    //{
+                    //   continue;
+                    //}
+                    elements[i].addEventListener("mousedown", connected_user_onmousedown);
                     //elements[i].style.backgroundColor = "";
                 }
 
@@ -11393,23 +11799,87 @@
                 {
                     console.log("waiting for keys from maintainer");
                 }
-            }
 
-            function process_client_role_add_from_server(msg)
-            {
-                let role = msg.message.value;
-                clients[get_client_index_in_array_by_client_id(msg.message.client_id)].roles.push(role);
 
-                let target_element = document.getElementById("client-roles-" + msg.message.client_id);
+                //add tag ids
 
-                if (role == "admin")
+                console.log("process_tag_list_from_server | processing client: " +  single_client.username);
+                for (let y = 0; y < single_client.tag_ids.length; y++)
                 {
+                    console.log("process_tag_list_from_server | processing tag id : " + single_client.tag_ids[y]);
+
+                    let tag = get_tag_by_tag_id(single_client.tag_ids[y]);
+
+                    if (tag == null)
+                    {
+                        console.log("tag is null");
+                        continue;
+                    }
+
+                    let target_element = document.getElementById("client-tags-" + single_client.client_id);
+
                     const node = document.createElement("div");
-                    node.className = "single-role admin-role";
+                    node.className = "single-tag";
+                    node.setAttribute("tag-id", tag.tag_id);
+
+                    let icon = get_icon_by_icon_id(tag.tag_linked_icon_id);
+
+                    if (icon != null)
+                    {
+                        node.style.backgroundImage = "url("+icon.base64_icon+")";
+                    }
+
                     target_element.appendChild(node);
                 }
             }
 
+
+            var is_server_settings_tab_visible = false;
+
+            function enter_server_settings_onclick(event)
+            {
+                event.stopPropagation();
+
+                console.log("enter_server_settings_onclick");
+
+                if (is_server_settings_tab_visible == false)
+                {
+                    document.getElementById("server-settings-tab").style.display = "block";
+                    is_server_settings_tab_visible = true;
+                }
+                else
+                {
+                    document.getElementById("server-settings-tab").style.display = "none";
+                    is_server_settings_tab_visible = false;
+                }
+            }
+
+
+            function show_secret_identity_string_onclick(event)
+            {
+                event.stopPropagation();
+                document.getElementById("secret-identity-string-container").style.display = "block";
+                document.getElementById("background-container").style.display = "block";
+                document.getElementById("p-secret-identity-string").innerHTML = identity_string;
+            }
+
+            function enter_server_settings_onclick(event)
+            {
+                event.stopPropagation();
+
+                console.log("enter_server_settings_onclick");
+
+                if (is_server_settings_tab_visible == false)
+                {
+                    document.getElementById("server-settings-tab").style.display = "block";
+                    is_server_settings_tab_visible = true;
+                }
+                else
+                {
+                    document.getElementById("server-settings-tab").style.display = "none";
+                    is_server_settings_tab_visible = false;
+                }
+            }
 
             function is_channel_or_his_parent_collapsed(channel_id)
             {
@@ -11463,14 +11933,6 @@
                         break;
                 }
 
-                let client_roles_html_string = "";
-
-                let is_admin_role_active = is_client_role_active(client_that_joined, "admin");
-
-                if (is_admin_role_active == true)
-                {
-                    client_roles_html_string = "<div class='single-role admin-role'></div>";
-                }
 
                 let is_channel_collapsed = "";
 
@@ -11495,23 +11957,22 @@
 
                     let indend_level = get_indend_level(msg.message.channel_id, channel_list) + 1;
 
-                    let html_to_append = "<div class=\"connected-local-client connected-client " + is_channel_collapsed + " \" data-connected-client-id=\"" + msg.message.client_id + "\">\n\
-                                                <div style=\"width: " + indend_level * 20 + "px; height: 1px; display: inline-block;\">\n\
-                                                </div>\n\
-                                                <div class='client-audio-state "+ client_microphone_state_html_class + "' id=\"client-audio-state-" + msg.message.client_id + "\">\n\
-                                                </div>\n\
-                                                <input maxlength=\"40\" id=\"connected-local-client-input\" value=\"" + client_that_joined.username + "\">\n\
-                                                    <div class=\"marquee-music-playing-container\" data-marquee-music-playing-container-id='"+ msg.message.client_id + "'\>\n\
-                                                  <p class='p-marquee-song-icon'>[</p>\n\
-                                                  <div class=\"marquee\">\n\
+                   let html_to_append = "<div class=\"connected-local-client connected-client " + is_channel_collapsed + " \" data-connected-client-id=\"" + msg.message.client_id + "\">\n\
+                                            <div style=\"width: " + indend_level * 20 + "px; height: 1px; display: inline-block;\">\n\
+                                            </div>\n\
+                                            <div class='client-audio-state "+ client_microphone_state_html_class + "' id=\"client-audio-state-" + msg.message.client_id + "\">\n\
+                                            </div>\n\
+                                            <input maxlength=\"40\" id=\"connected-local-client-input\" value=\"" + client_that_joined.username + "\">\n\
+                                            <div class=\"marquee-music-playing-container\" data-marquee-music-playing-container-id='"+ msg.message.client_id + "'\>\n\
+                                                <p class='p-marquee-song-icon'>[</p>\n\
+                                                <div class=\"marquee\">\n\
                                                     <div id='marquee-song-name-client-id-"+ msg.message.client_id + "'></div>\n\
-                                                  </div>\n\
-                                                  <p>]</p>\n\
-                                                  </div>\n\
-                                                  <div class='client-roles' id =\"client-roles-" + msg.message.client_id + "\">\n\
-                                                                      "+ client_roles_html_string + "\n\
-                                                  </div>\n\
-                                              </div>";
+                                                </div>\n\
+                                                <p>]</p>\n\
+                                            </div>\n\
+                                            <div class='client-tags' id =\"client-tags-" + msg.message.client_id + "\">\n\
+                                            </div>\n\
+                                        </div>";
 
 
                     document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').insertAdjacentHTML("afterend", html_to_append);
@@ -11528,12 +11989,12 @@
                     {
                         let channel_name = document.querySelector('[data-channel-name-id="' + msg.message.channel_id + '"]').innerHTML;
                         let to_append = "<div class=\"chat-context-selector\" data-chat-context-selector-type=\"channel\" data-chat-context-selector-id=\"channel-" + msg.message.channel_id + "\">\n\
-                                                <div class=\"p-container\">\n\
-                                                   <p>" + channel_name + "</p>\n\
-                                                </div>\n\
-                                                <div class=\"remove-chat-context-selector\" data-chat-context-remove-selector-type=\"channel\" data-chat-context-remove-selector-id=\"channel-" + msg.message.channel_id + "\">\n\
-                                                </div>\n\
-                                            </div>";
+                                            <div class=\"p-container\">\n\
+                                                <p>" + channel_name + "</p>\n\
+                                            </div>\n\
+                                            <div class=\"remove-chat-context-selector\" data-chat-context-remove-selector-type=\"channel\" data-chat-context-remove-selector-id=\"channel-" + msg.message.channel_id + "\">\n\
+                                            </div>\n\
+                                        </div>";
 
                         document.getElementById("chat-context-selectors-container").insertAdjacentHTML("beforeend", to_append);
 
@@ -11551,6 +12012,12 @@
                     for (let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
                     {
                         document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
+                    }
+            
+                    let elements1 = document.getElementsByClassName('connected-client');
+                    for (let i = 0; i < elements1.length; i++)
+                    {
+                        elements1[i].style.backgroundColor = "";
                     }
 
                     document.querySelector('[data-chat-context-selector-id="channel-' + msg.message.channel_id + '"]').style.backgroundColor = "#36393f";
@@ -11622,7 +12089,7 @@
                     document.querySelector('[data-connected-client-id="' + msg.message.client_id + '"]').remove();
                     let indend_level = get_indend_level(msg.message.channel_id, channel_list) + 1;
 
-                    let html_to_append = "<div class=\"connected-client " + is_channel_collapsed + "\" data-connected-client-id=\"" + msg.message.client_id + "\">\n\
+                    let html_to_append =   "<div class=\"connected-client " + is_channel_collapsed + "\" data-connected-client-id=\"" + msg.message.client_id + "\">\n\
                                                 <div style=\"width:" + indend_level * 20 + "px; height: 1px; display: inline-block;\">\n\
                                                 </div>\n\
                                                 <div class='client-audio-state "+ client_microphone_state_html_class + "' id=\"client-audio-state-" + msg.message.client_id + "\">\n\
@@ -11630,16 +12097,15 @@
                                                 <p class=\"connected-client-p\">" + client_that_joined.username + "</p>\n\
                                                 <p class=\"connected-client-p-received-messages-number\">0</p>\n\
                                                 <div class=\"marquee-music-playing-container\" data-marquee-music-playing-container-id='"+ msg.message.client_id + "'\>\n\
-                                                      <p class='p-marquee-song-icon'>[</p>\n\
-                                                      <div class=\"marquee\">\n\
+                                                    <p class='p-marquee-song-icon'>[</p>\n\
+                                                    <div class=\"marquee\">\n\
                                                         <div id='marquee-song-name-client-id-"+ msg.message.client_id + "'></div>\n\
-                                                      </div>\n\
-                                                      <p>]</p>\n\
-                                                      </div>\n\
-                                                      <div class='client-roles' id =\"client-roles-" + msg.message.client_id + "\">\n\
-                                                                          "+ client_roles_html_string + "\n\
-                                                      </div>\n\
-                                                  </div>";
+                                                    </div>\n\
+                                                    <p>]</p>\n\
+                                                </div>\n\
+                                                <div class='client-tags' id =\"client-tags-" + msg.message.client_id + "\">\n\
+                                                </div>\n\
+                                            </div>";
 
 
 
@@ -11662,17 +12128,47 @@
                     }
                 }
 
+
+                //
+                //html element that represents client is now appended to newly joined channel at this point
+                //now append client tags to client again
+                //
+
+                for (let y = 0; y < client_that_joined.tag_ids.length; y++)
+                {
+                    let tag = get_tag_by_tag_id(client_that_joined.tag_ids[y]);
+                    if (tag == null)
+                    {
+                        console.log("tag is null");
+                        continue;
+                    }
+                    let target_element = document.getElementById("client-tags-" + client_that_joined.client_id);
+                    const node = document.createElement("div");
+                    node.className = "single-tag";
+                    node.setAttribute("tag-id", tag.tag_id);
+
+
+                    let icon = get_icon_by_icon_id(tag.tag_linked_icon_id);
+                    if (icon != null)
+                    {
+                        node.style.backgroundImage = "url("+icon.base64_icon+")";
+                    }
+                    target_element.appendChild(node);
+                }
+
+
                 let elements = document.getElementsByClassName('connected-client');
 
                 for (let i = 0; i < elements.length; i++)
                 {
                     //dont want to use this handler when local client is clicked
-                    let status = elements[i].classList.contains("connected-local-client");
-                    if (status)
-                    {
-                        continue;
-                    }
-                    elements[i].onclick = connected_user_onclick;
+                    //let status = elements[i].classList.contains("connected-local-client");
+                    //if (status)
+                    //{
+                    //    continue;
+                    //}
+                    elements[i].addEventListener("mousedown", connected_user_onmousedown);
+
                 }
 
                 if (msg.message.is_streaming_song)
@@ -11692,7 +12188,10 @@
 
             function process_chat_message_delete_from_server(msg)
             {
-                console.log(msg);
+                //
+                //first try to find chat message under chat_message id, if not found try to find picture
+                //
+
                 let element = document.querySelector('.single-chat-message-content-p[data-single-chat-message-server-message-id="' + msg.message.chat_message_id + '"]');
                 if (element != null)
                 {
@@ -11713,6 +12212,7 @@
                     {
                         element.removeEventListener("mousedown", single_chat_message_onrightclick);
                         element.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADF0lEQVRIx71VsU5cRxQ9d98s1UoUISYFJUIgpUDySiloUIqUTmeUwo27lPmCOHWadEhUFBRQOK7sD9hNEcWhoDG4iGQs2ayNFBuZArN7z0lx580+bC/QxCPtvpl5896599xz7gP+52HXObS1tbU2Pz//A0mQhLtrfX39x+3t7cFVz6brAHQ6na+Xl5e/H7nDR47z4ZAkfwEwuFYGm5ubt6anpxcllRv1nCTm5ua+W1xc/NadcLr5yPXw0cPfOp3OwPJZCRAESKCEfq93f2Nj458EAEtLS3e73e4tAKYYUJ5DgiSTJMYcorB2e+0nibFHGSVJhChQsr8fP34NIABUPxiL8fqDXxMg1uWFUHNOQpmdBAC7u7t/npycfLWwsPBNRAsAJXIogrAxOPK+TBTUOPv27cnp88PDv07fnb4oADs7O7+urKz0V1dX/wDqRGTjUsiCYqGmsXENwEDH3t7e8wcPfr99fHz8BgBaANDr9TylNEwpIaWEKiVUVYXhcIiUKqSUkKqE0WgEM4szVYK1WhgOR6hShVRVqKqEqqp0fn7+vt/vswA0R6bCXr16jSdP9s3dCx37+wf28uio0DE4GtjBwYGJrPesIcSPfZD5VkiNBkAkYWYmIERFZqXBSCoX31BUqssBMrehiHhZDWzh5LqgAEXziD48VXvhUwAKjyAHConmdBXVQPJoFcZANFGiO0QZLGc4OQMVJ0oAKdDZ8IhA99B7jqbuTbFGLdcrKJIsdE+Q3qBIRnr9Qqvr5O4Xqb0MIBtJAkDK3KMVtESTIHeClCk4MpIivQhCQs3zJSqqG1dkcGGvkUFuGYR7tAjYuOlNKHL0EdQKIUF3EwW2BAhGJyhGxHEmaIsalFZyVQ2Ui2zurJVhkuT0D3wgRQ1o4+Z7GQBrJQFTU220qhbMrOynlNBuT5V1u91GSiloEUNpkwBUnBxtYGbmS3wxM2NN6m52uyjOlTA7O2s3Zm+gkeXkDBp9P2CUrVNAiwMtT8cfJ8nGBp0AcPjs2dN7936+I6CdG/ZH31dd/PvkvbOzs39JvsfnGv8B0U6eGZr+co0AAAAASUVORK5CYII=";
+                        element.classList.add("chat-picture-img-default");
                     }
                     else
                     {
@@ -11729,6 +12229,131 @@
                     element.innerHTML = msg.message.new_message_value;
                     element.style.color = "pink";
                 }
+            }
+
+            function process_icon_add_from_server(msg)
+            {
+                let icon = {
+                    id: msg.message.icon_id,
+                    base64_icon: msg.message.base64_icon
+                }
+
+                icons.push(icon);
+
+                let html_to_append = "<img class='img-uploaded-icon' src="+icon.base64_icon+" data-icon-id="+icon.id+"></img>";
+
+                document.getElementById("server-settings-tab-icons-container").insertAdjacentHTML("beforeend", html_to_append);
+            }
+
+            function process_remove_tag_from_client_from_server(msg)
+            {
+                console.log(msg);
+                let client = get_client_by_client_id(msg.message.client_id);
+            
+                if (client == null)
+                {
+                    return;
+                }
+
+                //
+                //do not add duplicate tag ids to client object
+                //
+
+                if (client.tag_ids.includes(msg.message.tag_id))
+                {
+                    client.tag_ids.splice(client.tag_ids.indexOf(msg.message.tag_id), 1);  //deleting
+                }
+
+
+                //double selector..first find client tags element
+                let client_tags = document.getElementById("client-tags-"+msg.message.client_id);
+                let target_element = client_tags.querySelector('.single-tag[tag-id="'+msg.message.tag_id+'"]');
+                if (target_element != null)
+                {
+                    target_element.remove();
+                }
+                else
+                {
+                    console.log("process_remove_tag_from_client_from_server failed to find tag-id:" + msg.message.tag_id);
+                }
+            }
+
+            function process_add_tag_to_client_from_server(msg)
+            {
+                let client = get_client_by_client_id(msg.message.client_id);
+            
+                if (client == null)
+                {
+                    return;
+                }
+
+                //
+                //do not add duplicate tag ids to client object
+                //
+
+                if (!client.tag_ids.includes(msg.message.tag_id))
+                {
+                    client.tag_ids.push(msg.message.tag_id);
+                }
+
+
+                let target_element = document.getElementById("client-tags-" + msg.message.client_id);
+
+                const node = document.createElement("div");
+                node.className = "single-tag";
+
+                let tag = get_tag_by_tag_id(msg.message.tag_id);
+
+                node.setAttribute("tag-id", tag.tag_id);
+
+
+                if (tag == null)
+                {
+                    console.log("tag is null");
+                    return;
+                }
+
+                let icon = get_icon_by_icon_id(tag.tag_linked_icon_id);
+
+                if (icon != null)
+                {
+                    node.style.backgroundImage = "url("+icon.base64_icon+")";
+                }
+
+                target_element.appendChild(node);
+
+                if (msg.message.client_id == local_client_id && msg.message.tag_id == 0) //admin tag id
+                {
+                    document.getElementById("enter-server-settings").style.display = "block";
+                    document.getElementById("enter-server-settings").onclick = enter_server_settings_onclick;
+                }
+            }
+
+
+            function process_tag_add_from_server(msg)
+            {
+                let tag = msg.message;
+
+                tags.push(tag);
+
+                let icon = get_icon_by_icon_id(tag.tag_linked_icon_id);
+                
+                let base64_icon = "";
+
+                if (icon != null)
+                {
+                    base64_icon = icon.base64_icon;
+                }
+                
+
+                let html_to_append = "<div class=\"server-settings-tag-entry\">\n\
+                                        <p class=\"tag-settings-entry-p\">"+tag.tag_id+"</p>\n\
+                                        <p class=\"tag-settings-entry-p\">"+tag.tag_name+"</p>\n\
+                                        <p class=\"tag-settings-entry-p\">"+tag.tag_linked_icon_id+"</p>\n\
+                                        <div class=\"tag-settings-entry-img\" style=\"background-image: url("+base64_icon+");\"></div>\n\
+                                    </div>";
+                
+                document.getElementById("server-settings-tab-tags-container").insertAdjacentHTML("beforeend", html_to_append);
             }
 
 
@@ -11779,6 +12404,87 @@
                 }
             }
 
+            function process_tag_list_from_server(msg)
+            {
+                for (let i = 0; i < msg.message.tags.length; i++)
+                {
+                    let tag = msg.message.tags[i];
+                    tags.push(tag);
+                    
+                    let icon = get_icon_by_icon_id(tag.tag_linked_icon_id);
+                    
+                    let base64_icon = "";
+
+                    if (icon != null)
+                    {
+                        base64_icon = icon.base64_icon;
+                    }
+
+                    let html_to_append = "<div class=\"server-settings-tag-entry\">\n\
+                                            <p class=\"tag-settings-entry-p\">"+tag.tag_id+"</p>\n\
+                                            <p class=\"tag-settings-entry-p\">"+tag.tag_name+"</p>\n\
+                                            <p class=\"tag-settings-entry-p\">"+tag.tag_linked_icon_id+"</p>\n\
+                                            <div class=\"tag-settings-entry-img\" style=\"background-image: url("+base64_icon+");\"></div>\n\
+                                        </div>";
+                    
+                    document.getElementById("server-settings-tab-tags-container").insertAdjacentHTML("beforeend", html_to_append);
+                } 
+                
+            
+
+                //
+                //add tags for clients in UI
+                //
+
+                for (let i = 0; i < clients.length; i++)
+                {
+                    console.log("process_tag_list_from_server | processing client: " + clients[i].username);
+                    for (let y = 0; y < clients[i].tag_ids.length; y++)
+                    {
+                        console.log("process_tag_list_from_server | processing tag id : " + clients[i].tag_ids[y]);
+
+                        let tag = get_tag_by_tag_id(clients[i].tag_ids[y]);
+
+                        if (tag == null)
+                        {
+                            console.log("tag is null");
+                            continue;
+                        }
+
+                        let target_element = document.getElementById("client-tags-" + clients[i].client_id);
+
+                        const node = document.createElement("div");
+                        node.className = "single-tag";
+                        node.setAttribute("tag-id", tag.tag_id);
+
+                        let icon = get_icon_by_icon_id(tag.tag_linked_icon_id);
+
+                        if (icon != null)
+                        {
+                            node.style.backgroundImage = "url("+icon.base64_icon+")";
+                        }
+
+                        target_element.appendChild(node);
+                    }
+                }
+            }
+
+            function process_icon_list_from_server(msg)
+            {                
+                for (let i = 0; i < msg.message.icons.length; i++)
+                {
+                    let icon = {
+                        id: msg.message.icons[i].icon_id,
+                        base64_icon: msg.message.icons[i].base64_icon
+                    }
+
+                    icons.push(icon);
+
+                    let html_to_append = "<img class='img-uploaded-icon' src="+icon.base64_icon+" data-icon-id="+icon.id+"></img>";
+
+                    document.getElementById("server-settings-tab-icons-container").insertAdjacentHTML("beforeend", html_to_append);
+                }
+            }
 
             function process_channel_list_from_server(msg)
             {
@@ -11911,7 +12617,7 @@
             function single_channel_onclick(event)
             {
                 event.stopPropagation();
-                delete_channellist_contextmenu(true);
+                delete_contextmenus(true);
             }
 
             function single_channel_doubleclick_join(event)
@@ -11924,7 +12630,7 @@
 
                 let channel_node = event.target.parentNode;
 
-                delete_channellist_contextmenu(true);
+                delete_contextmenus(true);
 
                 let selected_channel_id = parseInt(channel_node.getAttribute("data-channel-id"));
 
@@ -12025,15 +12731,6 @@
                     }
 
 
-                    let client_roles_html_string = "";
-
-                    let is_admin_role_active = is_client_role_active(msg.message.clients[i], "admin");
-
-                    if (is_admin_role_active == true)
-                    {
-                        client_roles_html_string = "<div class='single-role admin-role'></div>";
-                    }
-
                     if (username != sanitize_string(msg.message.local_username))
                     {
                         html_to_append = "<div class=\"connected-client\" data-connected-client-id=\"" + client_id + "\">\n\
@@ -12050,8 +12747,7 @@
                                                   </div>\n\
                                                   <p>]</p>\n\
                                                   </div>\n\
-                                                  <div class='client-roles' id =\"client-roles-" + client_id + "\">\n\
-                                                                      "+ client_roles_html_string + "\n\
+                                                  <div class='client-tags' id =\"client-tags-" + client_id + "\">\n\
                                                   </div>\n\
                                               </div>";
                     }
@@ -12072,33 +12768,36 @@
                                                         </div>\n\
                                                         <p>]</p>\n\
                                                         </div>\n\
-                                                        <div class='client-roles' id =\"client-roles-" + client_id + "\">\n\
-                                                                            "+ client_roles_html_string + "\n\
+                                                        <div class='client-tags' id =\"client-tags-" + client_id + "\">\n\
                                                         </div>\n\
                                                     </div>";
                     }
 
                     document.querySelector('[data-channel-id="' + msg.message.clients[i].channel_id + '"]').insertAdjacentHTML("afterend", html_to_append);
 
-                    let single_user = {
+
+                    let single_client = {
                         client_id: null,
                         username: null,
                         public_key: null,
                         channel_id: null,
                         microphone_state: msg.message.clients[i].microphone_state,
-                        roles: msg.message.clients[i].roles
+                        tag_ids: msg.message.clients[i].tag_ids
                     };
 
                     //
                     //they killed the subcultures they cancelled the future and for what, for you to not be offended
                     //
 
-                    single_user.client_id = parseInt(client_id);
-                    single_user.username = username;
-                    single_user.public_key = msg.message.clients[i].public_key;
-                    single_user.channel_id = msg.message.clients[i].channel_id;
+                    single_client.client_id = parseInt(client_id);
+                    single_client.username = username;
+                    single_client.public_key = msg.message.clients[i].public_key;
+                    single_client.channel_id = msg.message.clients[i].channel_id;
 
-                    clients.push(single_user);
+
+                    console.log(single_client);
+
+                    clients.push(single_client);
                 }
 
                 for (let x = 0; x < chat_context_array.length; x++)
@@ -12127,13 +12826,13 @@
                 for (let i = 0; i < elements.length; i++)
                 {
                     //dont want to use this handler when local client is clicked
-                    let status = elements[i].classList.contains("connected-local-client");
-                    if (status)
-                    {
-                        continue;
-                    }
+                    //let status = elements[i].classList.contains("connected-local-client");
+                    //if (status)
+                    //{
+                    //    continue;
+                    //}
 
-                    elements[i].onclick = connected_user_onclick;
+                    elements[i].addEventListener("mousedown", connected_user_onmousedown);
                     elements[i].style.backgroundColor = "";
                 }
                 document.getElementById('connected-local-client-input').addEventListener("focusout", connected_local_user_input_on_focusout);
@@ -12491,7 +13190,7 @@
                                                     <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                 </div>\n\
                                                 <div class=\"single-chat-message-content\">\n\
-                                                    <img class='chat-picture-img' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\"></img>\n\
+                                                    <img class='chat-picture-img chat-picture-img-default' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\"></img>\n\
                                                 </div>\n\
                                             </div>";
 
@@ -12529,17 +13228,17 @@
 
                 let chat_context_index = get_chat_context_index_by_chat_context_id(received_direct_message_chat_context_id);
                 let html_to_append = "<div class=\"single-chat-message\">\n\
-                                                <div class=\"single-message-content\">\n\
-                                                    <div class=\"single-chat-message-sender-username-container\">\n\
-                                                        <p>" + msg.message.sender_username + "</p>\n\
-                                                    </div>\n\
-                                                    <div class=\"single-chat-message-sender-time\"><p>" + new Date().toLocaleTimeString() + "</p>\n\
-                                                    </div>\n\
-                                                    <div class=\"single-chat-message-content\">\n\
-                                                        <img class='chat-picture-img' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\"></img>\n\
-                                                    </div>\n\
+                                            <div class=\"single-message-content\">\n\
+                                                <div class=\"single-chat-message-sender-username-container\">\n\
+                                                    <p>" + msg.message.sender_username + "</p>\n\
                                                 </div>\n\
-                                            </div>";
+                                                <div class=\"single-chat-message-sender-time\"><p>" + new Date().toLocaleTimeString() + "</p>\n\
+                                                </div>\n\
+                                                <div class=\"single-chat-message-content\">\n\
+                                                    <img class='chat-picture-img-default chat-picture-img' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\"></img>\n\
+                                                </div>\n\
+                                            </div>\n\
+                                        </div>";
 
                 document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
                 let elements_count = document.getElementsByClassName("chat-spacer").length;
@@ -12671,11 +13370,11 @@
                     if (is_found == null)
                     {
                         let html_to_append = "<div class=\"chat-context\" id=\"" + received_direct_message_chat_context_id + "\">\n\
-                                                        <div class=\"single-server-message\">now talking to user:  " + msg.message.sender_username + "</div>\n\
-                                                        <div class=\"single-server-message\">your public key: " + rsa_public_key_string + "</div>\n\
-                                                        <div class=\"single-server-message\">his public key: " + get_public_key_by_client_id(msg.message.sender_id) + "</div>\n\
-                                                        <div class=\"single-server-message\">its good to verify if other user sees your public key and also if you see his public key. To prevent server from manipulating them</div>\n\
-                                                    </div>"
+                                                 <div class=\"single-server-message\">now talking to user:  " + msg.message.sender_username + "</div>\n\
+                                                 <div class=\"single-server-message\">your public key: " + rsa_public_key_string + "</div>\n\
+                                                 <div class=\"single-server-message\">his public key: " + get_public_key_by_client_id(msg.message.sender_id) + "</div>\n\
+                                                 <div class=\"single-server-message\">its good to verify if other user sees your public key and also if you see his public key. To prevent server from manipulating them</div>\n\
+                                            </div>"
 
                         document.getElementById('chat-context-container').insertAdjacentHTML("beforeend", html_to_append);
                         document.getElementById(received_direct_message_chat_context_id).style.display = "none";
@@ -12765,11 +13464,13 @@
                 console.log(msg);
                 document.getElementById("chat-picture-img-" + msg.message.picture_id).src = msg.message.decrypted_base64_picture;
                 document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
+                document.getElementById("chat-picture-img-" + msg.message.picture_id).classList.remove("chat-picture-img-default");
             }
 
             function process_channel_chat_picture_from_server(msg)
             {
                 document.getElementById("chat-picture-img-" + msg.message.picture_id).src = msg.message.decrypted_base64_picture;
+                document.getElementById("chat-picture-img-" + msg.message.picture_id).classList.remove("chat-picture-img-default");
                 document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
             }
 
@@ -12801,6 +13502,8 @@
             function send_chat_input_on_click()
             {
                 send_chat_message();
+                document.getElementById("chat-input-container-text-input").style.width = "100%";
+                document.getElementById("image-upload-preview").style.display = "none";
             }
 
             function init_keys_object()
@@ -13312,7 +14015,7 @@
             {
                 event.stopPropagation();
 
-                delete_channellist_contextmenu(true);
+                delete_contextmenus(true);
 
                 if (event.which != 1)
                 {
@@ -13384,6 +14087,53 @@
                 }
             }
 
+
+
+            function choose_icon_input_onchange()
+            {
+                console.log("choose_icon_input_onchange");
+
+                if (typeof window === 'undefined')
+                {
+                    return;
+                }
+
+                let fileInput = document.getElementById('choose_icon_input');
+
+                let file = fileInput.files[0];
+
+                if (file.size > 5000)
+                {
+                    custom_alert("icon is too large. Max size: 5000 bytes");
+                    return;
+                }
+
+                var fileReader = new FileReader();
+
+                if (fileReader && fileInput.files && fileInput.files.length)
+                {
+                    fileReader.onload = function (event)
+                    {            
+                        let message_object = {
+                            message:{
+                                type: "server_settings_icon_upload",
+                                base64_icon_value: event.target.result
+                            }
+                        };
+
+                        let message_json_string = process_message_before_sending(message_object);
+                        let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                        websocket_worker_send(data);
+                    };
+
+                    fileReader.readAsDataURL(file); //invokes onload
+                }         
+            }
+
+
+
+
+
             selected_song_name = null;
 
             function choose_song_input_onchange()
@@ -13398,7 +14148,6 @@
                     let fileInput = document.getElementById('choose_song_input');
 
                     let file = fileInput.files[0];
-                    let extension = file.name.split('.').pop().toLowerCase();
                     let max_size = 40 * 1024 * 1024;
 
                     if (file.size > max_size)
@@ -13602,12 +14351,10 @@
                 }
                 let fileInput = document.getElementById('choose_image_input');
                 let files = fileInput.files;
-                let allowedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'jfif'];
 
                 for (let x = 0; x < files.length; x++)
                 {
                     let file = files[x];
-                    let extension = file.name.split('.').pop().toLowerCase();
                     let max_size = 2 * 1024 * 1024;
 
                     if (file.size > max_size)
@@ -13616,17 +14363,12 @@
                         return;
                     }
 
-                    let index = allowedExtensions.indexOf(extension);
-
-                    if (index == -1)
-                    {
-                        custom_alert('file extension : ' + extension + ' is not supported');
-                        return;
-                    }
-
                     let reader = new FileReader();
                     reader.onload = function (event)
-                    {
+                    {                  
+                        document.getElementById("chat-input-container-text-input").style.width = "calc(100% - 90px)";
+                        document.getElementById("image-upload-preview").style.display = "inline-block";
+
                         document.getElementById('image-upload-preview').style.backgroundImage = 'url(' + event.target.result + ')';
                         base64_picture_string_to_send = event.target.result;
                     }
@@ -13644,6 +14386,13 @@
                 for (let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
                 {
                     document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
+                }
+
+                
+                let elements1 = document.getElementsByClassName('connected-client');
+                for (let i = 0; i < elements1.length; i++)
+                {
+                    elements1[i].style.backgroundColor = "";
                 }
 
                 this.style.backgroundColor = "#36393f";
@@ -13726,100 +14475,298 @@
                 document.getElementById("choose_image_input").disabled = true;
             }
 
-            function connected_user_onclick(event)
+
+
+            function connected_user_onmousedown(event)
             {
                 event.stopPropagation();
 
-
-                document.getElementById("current-channel-description").innerHTML = "";
-                for (let i = 0; i < document.getElementsByClassName('connected-client').length; i++)
+                if (event.which == 1)
                 {
-                    document.getElementsByClassName('connected-client')[i].style.backgroundColor = "";
-                }
+                    delete_contextmenus();
+                    //
+                    //remove color highlight from other clients
+                    //
 
-                for (let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
-                {
-                    document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
-                }
-
-                chat_message_receiver_type = "user";
-                chat_message_receiver_id = this.getAttribute("data-connected-client-id");
-
-                let client_id = this.getAttribute("data-connected-client-id");
-                let data_username = get_username_by_client_id(chat_message_receiver_id);
-                let id_to_find = "chat-context-pm-" + chat_message_receiver_id;
-                current_chat_context_id = id_to_find;
-                let is_found = document.getElementById(id_to_find);
-
-                if (is_found == null)
-                {
-                    //make all elements invisible
-                    for (let i = 0; i < document.getElementsByClassName("chat-context").length; i++)
+                    document.getElementById("current-channel-description").innerHTML = "";
+                    for (let i = 0; i < document.getElementsByClassName('connected-client').length; i++)
                     {
-                        document.getElementsByClassName("chat-context")[i].style.display = "none";
+                        document.getElementsByClassName('connected-client')[i].style.backgroundColor = "";
                     }
 
-                    let html_to_append = "<div class=\"chat-context\" id=\"" + id_to_find + "\">\n\
-                                                    <div class=\"single-server-message\">now talking to user: " + data_username + "</div>\n\
-                                                    <div class=\"single-server-message\">your public key: " + rsa_public_key_string + "</div>\n\
-                                                    <div class=\"single-server-message\">his public key: " + get_public_key_by_client_id(chat_message_receiver_id) + "</div>\n\
-                                                    <div class=\"single-server-message\">always verify if other users sees same keys.. If not, somebody else is listening. If they match, chat is E2EE </div>\n\
-                                                </div>";
+                    chat_message_receiver_id = this.getAttribute("data-connected-client-id");
 
-                    document.getElementById('chat-context-container').insertAdjacentHTML("beforeend", html_to_append);
-
-                    let single_chat_context = {
-                        "type": "user",
-                        "chat_context_id": current_chat_context_id,
-                        "last_known_message_sender_username": ""
-                    };
-
-                    chat_context_array.push(single_chat_context);
-                }
-                else
-                {
-                    for (let i = 0; i < document.getElementsByClassName("chat-context").length; i++)
+                    if (chat_message_receiver_id != local_client_id)
                     {
-                        document.getElementsByClassName("chat-context")[i].style.display = "none";
+                        //
+                        //change color of chat context selector only if client that is not local client is selected
+                        //
+
+                        for (let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
+                        {
+                            document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
+                        }
+
+
+                        chat_message_receiver_type = "user";
+
+                        let data_username = get_username_by_client_id(chat_message_receiver_id);
+                        let id_to_find = "chat-context-pm-" + chat_message_receiver_id;
+                        current_chat_context_id = id_to_find;
+                        let is_found = document.getElementById(id_to_find);
+
+                        if (is_found == null)
+                        {
+                            //make all elements invisible
+                            for (let i = 0; i < document.getElementsByClassName("chat-context").length; i++)
+                            {
+                                document.getElementsByClassName("chat-context")[i].style.display = "none";
+                            }
+
+                            let html_to_append = "<div class=\"chat-context\" id=\"" + id_to_find + "\">\n\
+                                                            <div class=\"single-server-message\">now talking to user: " + data_username + "</div>\n\
+                                                            <div class=\"single-server-message\">your public key: " + rsa_public_key_string + "</div>\n\
+                                                            <div class=\"single-server-message\">his public key: " + get_public_key_by_client_id(chat_message_receiver_id) + "</div>\n\
+                                                            <div class=\"single-server-message\">always verify if other users sees same keys.. If not, somebody else is listening. If they match, chat is E2EE </div>\n\
+                                                        </div>";
+
+                            document.getElementById('chat-context-container').insertAdjacentHTML("beforeend", html_to_append);
+
+                            let single_chat_context = {
+                                type: "user",
+                                chat_context_id: current_chat_context_id,
+                                last_known_message_sender_username: ""
+                            };
+
+                            chat_context_array.push(single_chat_context);
+                        }
+                        else
+                        {
+                            for (let i = 0; i < document.getElementsByClassName("chat-context").length; i++)
+                            {
+                                document.getElementsByClassName("chat-context")[i].style.display = "none";
+                            }
+
+                            document.getElementById(id_to_find).style.display = "block";
+
+                            let target_element = document.querySelector('[data-connected-client-id="' + chat_message_receiver_id + '"]');
+
+                            if (target_element != null)
+                            {
+                                document.querySelector('[data-connected-client-id="' + chat_message_receiver_id + '"]').getElementsByClassName('connected-client-p-received-messages-number')[0].style.display = "none";
+                                document.querySelector('[data-connected-client-id="' + chat_message_receiver_id + '"]').getElementsByClassName('connected-client-p-received-messages-number')[0].innerHTML = '0';
+                            }
+                        }
+                        is_found = document.querySelector('[data-chat-context-selector-id="user-' + chat_message_receiver_id + '"]');
+
+                        if (is_found == null)
+                        {
+                            let to_append = "<div class=\"chat-context-selector\" data-chat-context-selector-type=\"user\" data-chat-context-selector-id=\"user-" + chat_message_receiver_id + "\">\n\
+                                                        <div class=\"p-container\">\n\
+                                                            <p>" + data_username + "</p>\n\
+                                                        </div>\n\
+                                                        <div class=\"remove-chat-context-selector\" data-chat-context-remove-selector-type=\"user\" data-chat-context-remove-selector-id=\"user-" + chat_message_receiver_id + "\">\n\
+                                                        </div>\n\
+                                                    </div>";
+
+                            document.getElementById("chat-context-selectors-container").insertAdjacentHTML("beforeend", to_append);
+                        }
+
+                        for (let x = 0; x < document.getElementsByClassName("remove-chat-context-selector").length; x++)
+                        {
+                            document.getElementsByClassName("remove-chat-context-selector")[x].onclick = chat_context_remove_onclick;
+                        }
+
+                        for (let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
+                        {
+                            document.getElementsByClassName("chat-context-selector")[x].onclick = chat_context_selector_onclick;
+                        }
+
+                        document.querySelector('[data-chat-context-selector-id="user-' + chat_message_receiver_id + '"]').style.backgroundColor = "#36393f";
+                    }
+                }
+                else if (event.which == 3)
+                {
+                    event.stopPropagation();
+
+                    selected_client_id = this.getAttribute("data-connected-client-id");
+                    console.log("selected_client_id : " + selected_client_id);
+
+
+                    let elements = document.getElementsByClassName('connected-client');
+
+                    for (let i = 0; i < elements.length; i++)
+                    {
+                        elements[i].style.backgroundColor = "";
                     }
 
-                    document.getElementById(id_to_find).style.display = "block";
-
-                    let target_element = document.querySelector('[data-connected-client-id="' + client_id + '"]');
-
-                    if (target_element != null)
+                    let elements1 = document.getElementsByClassName('single-channel');
+                    for (let i = 0; i < elements1.length; i++)
                     {
-                        document.querySelector('[data-connected-client-id="' + client_id + '"]').getElementsByClassName('connected-client-p-received-messages-number')[0].style.display = "none";
-                        document.querySelector('[data-connected-client-id="' + client_id + '"]').getElementsByClassName('connected-client-p-received-messages-number')[0].innerHTML = '0';
+                        elements1[i].style.backgroundColor = "";
                     }
-                }
-                is_found = document.querySelector('[data-chat-context-selector-id="user-' + client_id + '"]');
 
-                if (is_found == null)
-                {
-                    let to_append = "<div class=\"chat-context-selector\" data-chat-context-selector-type=\"user\" data-chat-context-selector-id=\"user-" + client_id + "\">\n\
-                                                <div class=\"p-container\">\n\
-                                                    <p>" + data_username + "</p>\n\
+                    this.style.backgroundColor = "#333030";
+
+                    delete_contextmenus();
+
+
+                    //
+                    //create two divs one visible, second invisible, becomes visible after hover on "add tag". tags will be shown in it
+                    //
+
+                    let add_tag_html_class = "";
+                    if (is_local_client_admin() == false)
+                    {
+                        add_tag_html_class = " context-menu-item-disabled";
+                    }
+
+                    let contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + event.clientY.toString() + "px; left:" + event.clientX.toString() + "px; \">\n\
+                                                        <div class='channel-list-context-menu-background'>\n\
+                                                        </div>\n\
+                                                        <div class='channel-list-context-menu-items'>\n\
+                                                            <p class='context-menu-item' data-action='4'>ignore</p>\n\
+                                                            <p class='context-menu-item' data-action='5'>mute</p>\n\
+                                                            <p class='context-menu-item"+add_tag_html_class+"' data-action='6'>add tag</p>\n\
+                                                            <p class='context-menu-item' data-action='7'>info</p>\n\
+                                                            <p class='context-menu-item' data-action='8'>poke client</p>\n\
+                                                        </div>\n\
+                                                    </div>";
+
+                    document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend", contextmenu_useronclick);
+                    document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.top = event.clientY.toString();
+                    document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.left = event.clientX.toString();
+
+                    let event_x = event.clientX + 130;
+                    let event_y = event.clientY + 40;
+
+                    let contextmenu_tags = "<div class=\"add-tag-context-menu\" style=\"top: " + event_y.toString() + "px; left:" + event_x.toString() + "px; \">\n\
+                                                <div class='add-tag-context-menu-background'>\n\
                                                 </div>\n\
-                                                <div class=\"remove-chat-context-selector\" data-chat-context-remove-selector-type=\"user\" data-chat-context-remove-selector-id=\"user-" + client_id + "\">\n\
+                                                <div class='add-tag-context-menu-items'>\n\
                                                 </div>\n\
                                             </div>";
 
-                    document.getElementById("chat-context-selectors-container").insertAdjacentHTML("beforeend", to_append);
-                }
+                    document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend", contextmenu_tags);
 
-                for (let x = 0; x < document.getElementsByClassName("remove-chat-context-selector").length; x++)
+                    for (let i = 0; i < tags.length; i++)
+                    {
+                        let icon = get_icon_by_icon_id(tags[i].tag_linked_icon_id);             
+                        let base64_icon = "";
+                        if (icon != null)
+                        {
+                            base64_icon = icon.base64_icon;
+                        }
+                        let is_tag_active_for_client = get_client_by_client_id(selected_client_id).tag_ids.includes(tags[i].tag_id);
+                        let char_to_append = "☐";
+                        let html_class_to_append = "";
+                        if (is_tag_active_for_client)
+                        {
+                            html_class_to_append = "context-menu-item-tag-active";
+                            char_to_append = "☒";
+                        }
+                        let html_to_append = "<p class='add-tag-context-menu-item"+add_tag_html_class+" "+html_class_to_append+"'' data-tag-id='"+tags[i].tag_id+"' style=\"background-image: url("+base64_icon+");\">"+char_to_append+" "+tags[i].tag_name+"</p>"
+                        document.getElementsByClassName("add-tag-context-menu-items")[0].insertAdjacentHTML("beforeend", html_to_append);
+                    }      
+
+
+                    let contextmenu_item_count = document.getElementsByClassName("context-menu-item").length;
+
+                    for (let i = 0; i < contextmenu_item_count; i++)
+                    {
+                        document.getElementsByClassName("context-menu-item")[i].addEventListener("click", contextmenuitem_onclick);
+                    }
+
+
+                    let addtagcontextmenuitem_count = document.getElementsByClassName("add-tag-context-menu-item").length;
+
+                    for (let i = 0; i < addtagcontextmenuitem_count; i++)
+                    {
+                        document.getElementsByClassName("add-tag-context-menu-item")[i].onclick = add_tag_contextmenu_onclick;
+                    }
+
+                    let element = document.querySelector('.context-menu-item[data-action="6"]');
+
+                    if (element != null)
+                    {
+                        element.addEventListener("mouseenter", add_tag_onmouseenter);
+                        element.addEventListener("mouseleave", add_tag_onmouseleave);
+                    }
+                }
+            }
+
+            function add_tag_contextmenu_onclick(event)
+            {
+                event.stopPropagation();
+
+                let tag_id = parseInt(event.srcElement.getAttribute("data-tag-id"));
+                let is_tag_active_right_now = event.srcElement.classList.contains("context-menu-item-tag-active");
+
+                if (is_tag_active_right_now)
                 {
-                    document.getElementsByClassName("remove-chat-context-selector")[x].onclick = chat_context_remove_onclick;
-                }
+                    let message_object = {
+                        message: {
+                            type: "remove_tag_from_client",
+                            tag_id: tag_id,
+                            client_id: parseInt(selected_client_id)
+                        }
+                    };
 
-                for (let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
+                    let message_json_string = process_message_before_sending(message_object);
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+                    websocket_worker_send(data);
+
+                    delete_contextmenus(false, false);
+                }
+                else
                 {
-                    document.getElementsByClassName("chat-context-selector")[x].onclick = chat_context_selector_onclick;
+                    let message_object = {
+                        message: {
+                            type: "add_tag_to_client",
+                            tag_id: tag_id,
+                            client_id: parseInt(selected_client_id)
+                        }
+                    };
+
+                    let message_json_string = process_message_before_sending(message_object);
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+                    websocket_worker_send(data);
+
+                    delete_contextmenus(false, false);
                 }
+            }
 
-                document.querySelector('[data-chat-context-selector-id="user-' + client_id + '"]').style.backgroundColor = "#36393f";
+            function add_tag_onmouseenter(event)
+            {
+                event.stopPropagation();
+                event.target.style.backgroundColor = "#b9d436";
+                let element = document.getElementsByClassName('add-tag-context-menu');
+                if (element != null)
+                {
+                    element[0].style.display = "block";
+                }
+            }
 
+            function add_tag_onmouseleave(event)
+            {
+                event.stopPropagation();
+                
+                if(event.relatedTarget != null && event.relatedTarget.classList.contains("context-menu-item"))
+                {
+                    let element = document.getElementsByClassName('add-tag-context-menu');
+                    if (element != null)
+                    {
+                        element[0].style.display = "none";
+                    }
+                        
+                    let element1 = document.querySelector('.context-menu-item[data-action="6"]');
+                    if (element1 != null)
+                    {
+                        element1.style.backgroundColor = "";
+                    }
+                }
             }
 
             function chat_context_remove_onclick(event)
@@ -13854,7 +14801,13 @@
                     {
                         document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
                     }
-
+        
+                    let elements1 = document.getElementsByClassName('connected-client');
+                    for (let i = 0; i < elements1.length; i++)
+                    {
+                        elements1[i].style.backgroundColor = "";
+                    }
+                
                     document.querySelector('[data-chat-context-selector-id="channel-' + current_channel_id + '"]').style.backgroundColor = "#36393f";
                 }
                 else if (selector_type == "channel")
@@ -13942,7 +14895,7 @@
 
                 let action = event.srcElement.getAttribute("data-action");
 
-                delete_channellist_contextmenu();
+                delete_contextmenus();
 
                 if (action == 0)
                 {
@@ -14002,11 +14955,10 @@
                     else
                     {
                         let message_object = {
-                            "message":
-                            {
-                                "type": "join_channel_request",
-                                "channel_id": parseInt(selected_channel_id),
-                                "channel_password": ""
+                            message: {
+                                type: "join_channel_request",
+                                channel_id: parseInt(selected_channel_id),
+                                channel_password: ""
                             }
                         };
 
@@ -14040,10 +14992,18 @@
                         elements[i].style.backgroundColor = "";
                     }
 
+                    let elements1 = document.getElementsByClassName('connected-client');
+
+                    for (let i = 0; i < elements1.length; i++)
+                    {
+                        elements1[i].style.backgroundColor = "";
+                    }
+
+
                     this.style.backgroundColor = "#333030";
                     selected_channel_id = parseInt(this.getAttribute("data-channel-id"));
 
-                    delete_channellist_contextmenu();
+                    delete_contextmenus();
 
                     let contextmenu_html = "<div class=\"channel-list-context-menu\" style=\"top: " + event.clientY.toString() + "px; left:" + event.clientX.toString() + "px; \">\n\
                                                         <div class='channel-list-context-menu-background'>\n\
@@ -14111,17 +15071,14 @@
                 let channel_password = document.getElementById("channel-properties-input-channel-password").value;
 
                 let message_object = {
-                    "message":
-                    {
-                        "type": "edit_channel_request",
-                        "channel_id": parseInt(selected_channel_id),
-                        "channel_name": channel_name,
-                        "channel_description": channel_description,
-                        "channel_password": channel_password
+                    message: {
+                        type: "edit_channel_request",
+                        channel_id: parseInt(selected_channel_id),
+                        channel_name: channel_name,
+                        channel_description: channel_description,
+                        channel_password: channel_password
                     }
                 };
-
-                console.log(message_object);
 
                 let message_json_string = process_message_before_sending(message_object);
                 let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
@@ -14176,15 +15133,29 @@
                 document.getElementById("channel-properties-input-channel-password").value = "";
             }
 
+            function server_settings_tab_li_onclick()
+            {
+                let action = event.target.getAttribute("data-action");
+                if (action == 0)
+                {
+                    document.getElementById("server-settings-tab-tags").style.display = "none";
+                    document.getElementById("server-settings-tab-icons").style.display = "block";
+                }
+                else if (action == 1)
+                {
+                    document.getElementById("server-settings-tab-tags").style.display = "block";
+                    document.getElementById("server-settings-tab-icons").style.display = "none";
+                }
+            }
+
             function admin_password_send_button_onclick()
             {
                 let admin_password = document.getElementById("input-admin-password").value;
 
                 let message_object = {
-                    "message":
-                    {
-                        "type": "admin_password",
-                        "value": admin_password,
+                    message: {
+                        type: "admin_password",
+                        value: admin_password,
                     }
                 };
 
@@ -14300,10 +15271,46 @@
                 }
             }
 
+            function import_identity_button_onclick()
+            {
+                document.getElementById("identity-string-use-container").style.display = "block";
+                document.getElementById("background-container").style.display = "block";
+            }
+
             function enter_admin_password_button_onclick()
             {
                 document.getElementById("admin-password-enter-container").style.display = "block";
                 document.getElementById("background-container").style.display = "block";
+            }
+
+            function add_new_tag_to_server(event) 
+            {
+                event.stopPropagation();
+                
+                let tag_name = document.getElementById("server-settings-tab-add-tag-details-input-tag-name").value;
+                let tag_linked_icon_id = document.getElementById("server-settings-tab-add-tag-details-input-tag-associated-icon-id").value;
+
+                let message_object = {
+                    message: {
+                        type: "server_settings_add_new_tag",
+                        tag_name: tag_name,
+                        linked_icon_id: parseInt(tag_linked_icon_id)
+                    }
+                };
+
+                console.log(message_object);
+
+                let message_json_string = process_message_before_sending(message_object);
+                let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+                websocket_worker_send(data);
+            }
+
+            function close_button_secret_identity_string_onclick()
+            {
+                document.getElementById("secret-identity-string-container").style.display = "none";
+                document.getElementById("background-container").style.display = "none";
+                document.getElementById("p-secret-identity-string").innerHTML = "";
             }
 
             function clear_chat_button_onclick()
@@ -14327,9 +15334,44 @@
                 }
             }
 
+            function identity_string_use_confirm_button()
+            {
+                let textarea = document.getElementById("identity-string-use-textarea");
+                let identity_passphrase_string = textarea.value;
+
+                if (identity_passphrase_string != null && identity_passphrase_string.length > 0)
+                {
+
+                    if (identity_passphrase_string.length < 199)
+                    {
+                        custom_alert("[error] Cannot import identity. This is not identity passphrase. Identity passphrase is 200 characters long. For your own protection public/private keypair from this 'passphrase' will not be created");
+                        return;
+                    }
+
+                    textarea.value = "";
+
+                    data_processing_worker.postMessage({
+                        type: "mainthread__generate_rsa_keypair",
+                        from_identity_string: true,
+                        identity_passphrase_string: identity_passphrase_string
+                    });
+
+                    document.getElementById("identity-string-use-container").style.display = "none";
+                    document.getElementById("background-container").style.display = "none";
+                    document.getElementById("another-buttons-sub-loading-container").style.display = "block";
+                    document.getElementById("another-buttons-sub-container").style.display = "none";
+                }
+            }
+
             function stop_propagation(event)
             {
                 event.stopPropagation();
+            }
+
+            function close_button_identity_string_use(event)
+            {
+                document.getElementById("identity-string-use-container").style.display = "none";
+                document.getElementById("background-container").style.display = "none";
             }
 
             function stop_song_onclick(event)
@@ -14409,6 +15451,8 @@
                 document.getElementById("edit-channel-button").onclick = edit_channel_button_onclick;
                 document.getElementById("close-button-enter-password").onclick = enter_channel_password_closebutton_onclick;
                 document.getElementById("close-button-admin-password").onclick = close_admin_password_context_button;
+                document.getElementById("close-button-secret-identity-string").onclick = close_button_secret_identity_string_onclick;
+                document.getElementById("close-button-identity-string-use").onclick = close_button_identity_string_use;
                 document.getElementById("join-passworded-channel-button").onclick = channel_join_button_onclick;
                 document.getElementById("admin-password-send-button").onclick = admin_password_send_button_onclick;
                 document.getElementById("toggle-microphone").addEventListener("change", toggle_microphone_onclick);
@@ -14416,6 +15460,7 @@
                 document.getElementById("hide-chat-button").onclick = hide_chat_button_on_click;
                 document.getElementById("show-admin-password-entry").onclick = enter_admin_password_button_onclick;
                 document.getElementById("choose_song_input").onchange = choose_song_input_onchange;
+                document.getElementById("choose_icon_input").onchange = choose_icon_input_onchange;
                 document.getElementById("drag-resize-chat").addEventListener('mousedown', drag_resize_chat_onclick, false);
                 document.addEventListener("keydown", document_onkeydown);
                 document.addEventListener("mousedown", document_onmousedown);
@@ -14423,15 +15468,29 @@
                 document.getElementById("channel-properties-edit").addEventListener("mousedown", stop_propagation);
                 document.getElementById("background-container").addEventListener("mousedown", stop_propagation);
                 document.getElementById("stop-song").onclick = stop_song_onclick;
+                document.getElementById("add-new-tag-to-server-button").onclick = add_new_tag_to_server;
+                document.getElementById("enter-server-settings").onclick = enter_server_settings_onclick;
+                document.getElementById("show-secret-identity-string").onclick = show_secret_identity_string_onclick;
+                document.getElementById("import-identity-button").onclick = import_identity_button_onclick;
+                document.getElementById("identity-string-use-confirm-button").onclick = identity_string_use_confirm_button;
 
                 document.querySelector("a-toast").onclick = a_toast_onclick;
+
+                for (let i = 0; i < document.getElementsByClassName("server-settings-tab-li").length; i++)
+                {
+                    document.getElementsByClassName("server-settings-tab-li")[i].onclick = server_settings_tab_li_onclick;
+                }
 
                 data_processing_worker = create_new_webworker_in_same_file("data_processing_worker");
                 websocket_worker = create_new_webworker_in_same_file("websocket_worker");
                 opus_encoder_worker = create_new_webworker_in_same_file("opus_encoder_worker");
                 opus_decoder_worker = create_new_webworker_in_same_file("opus_decoder_worker");
 
-                data_processing_worker.postMessage({ type: "mainthread__generate_rsa_keypair" });
+                data_processing_worker.postMessage({
+                    type: "mainthread__generate_rsa_keypair",
+                    from_identity_string: false,
+                    identity_passphrase_string: null
+                });
 
                 if (is_autoconnect_active == false)
                 {
@@ -14470,8 +15529,44 @@
     <textarea id="textarea-log" style="display: none;">
      </textarea>
 
-    <a-toast style="visibility:hidden"></a-toast>
 
+    <div id="server-settings-tab">
+        <div id="server-settings-tab-subcontainer">
+            <ul class="server-settings-tab-ul">
+                <li class="server-settings-tab-li" data-action="0">icons</li>
+                <li class="server-settings-tab-li" data-action="1">tags</li>
+            </ul>
+            </div>
+            <div id="server-settings-tab-subcontainer2">
+                <div id="server-settings-tab-icons">             
+                    <div id="server-settings-tab-icons-container">                   
+                    </div>
+                    <div id="server-settings-tab-upload-icon-file-input-container">
+                        <label class="custom-file-upload-button" id="custom-file-upload-button-icon">
+                            <input id="choose_icon_input" type="file" accept=".png,.jpeg,.jpg" style="display: none">
+                        </label>
+                    </div>       
+                </div>
+                <div id="server-settings-tab-tags">
+                    <div id="server-settings-tab-tags-container">
+                        <div class="tag-head-p-container">                  
+                            <p class="tag-head-p">tag id</p>
+                            <p class="tag-head-p">name</p>
+                            <p class="tag-head-p">icon id</p>
+                            <p class="tag-head-p">icon</p>
+                        </div>
+                    </div>
+                    <div id="server-settings-tab-add-tag-details-container">
+                        <input type="text" placeholder="name" id="server-settings-tab-add-tag-details-input-tag-name">
+                        <input type="text" placeholder="icon id" id="server-settings-tab-add-tag-details-input-tag-associated-icon-id">
+                        <input type="button" value="send tag" id="add-new-tag-to-server-button">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <a-toast style="visibility:hidden"></a-toast>
 
     <div id="body-container">
         <div id="verification-system">
@@ -14505,8 +15600,11 @@
                         <div style="display: inline-block;text-align: left;vertical-align: top;width: 63px;">
                             <input type="button" class="button-1" id="add-key-button" value="add">
                         </div>
-                        <div style="display: inline-block;text-align: left; width: 214px;">
+                        <div style="display: inline-block;text-align: left; width: 177px;">
                             <input type="button" class="button-1" id="connect-button" value="connect">
+                        </div>
+                        <div style="display: inline-block;text-align: left;">
+                            <input type="button" class="button-1" id="import-identity-button" value="">
                         </div>
                     </div>
                     <div id="another-buttons-sub-loading-container">
@@ -14526,6 +15624,8 @@
                 <input type="button" id="hide-chat-button">
                 <input type="button" id="clear-chat-button">
                 <input type="button" id="show-admin-password-entry">
+                <input type="button" id="enter-server-settings">
+                <input type="button" id="show-secret-identity-string">
             </div>
             <div id="space-devider1">
                 <div id="channel-list-container">
@@ -14565,8 +15665,8 @@
                 <div style="width: 25px;height: 20px; display: inline-block;"></div>
                 <div id="chat-input-file-input-container">
                     <textarea id="chat-input-container-text-input" maxlength="900"></textarea>
-                </div>
-                <div id="image-upload-preview">
+                    <div id="image-upload-preview">
+                    </div>
                 </div>
                 <div class="chat-controls-container">
                     <div id="play-pause-song-container">
@@ -14598,7 +15698,7 @@
         <div id="channel-properties-edit-container">
             <div id="channel-properties-edit">
                 <div id="menu-bar-container">
-                    <div id="close-button">
+                    <div class="close-button" id="close-button">
                     </div>
                 </div>
                 <div id="channel-properties-input-container">
@@ -14635,7 +15735,7 @@
         <div id="channel-password-enter-container">
             <div id="channel-password-enter">
                 <div id="menu-bar-container">
-                    <div id="close-button-enter-password">
+                    <div class="close-button" id="close-button-enter-password">
                     </div>
                 </div>
                 <div id="channel-password-input-container">
@@ -14660,7 +15760,7 @@
         <div id="admin-password-enter-container">
             <div id="admin-password-enter">
                 <div id="menu-bar-container">
-                    <div id="close-button-admin-password">
+                    <div class="close-button" id="close-button-admin-password">
                     </div>
                 </div>
                 <div id="admin-password-input-container">
@@ -14682,5 +15782,43 @@
                 </div>
             </div>
         </div>
-</body>
+
+        <div id="identity-string-use-container">
+            <div id="identity-string-use-container-enter">
+                <div id="menu-bar-container">
+                    <div class="close-button" id="close-button-identity-string-use">
+                    </div>
+                </div>
+                <div id="admin-password-input-container">
+                    <div>
+                        <div>
+                            <div class="text-input-container" style="padding-top: 0px;">
+                                <input type="text" disabled="" style="width: 164px" class="text-input-not-pretty" value="enter identity passphrase">
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-input-container">
+                                <textarea id="identity-string-use-textarea" placeholder="passphrase entered here is used to re-create desired identity. In other words to re-create the desired public and private RSA key (2048bit). If you just want to join server and chat, you can ignore this completely. Entering of identity passphrase is needed if you want to preserve some things like tags. Tags or other settings are linked to clients public key. Public key (and private key) is always random at every start of the client.html, because the passphrase is always random at every start of client.html. Public/private RSA key is generated from this random passphrase and so, normally, every time client connects to a server, he has different public key. But in case you want to use the same public/private key as before, so server knows its really you and can assign you saved tags or permissions, it can be re-generated by entering this string passphrase here. Note that, it can be a bit time consuming to generate RSA keypair. Depends on size of key and processor. Server does not know what clients passphrase is" value="confirm"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <input type="button" id="identity-string-use-confirm-button" class="button-1" value="generate" style="right: 20px;">
+                </div>
+            </div>
+        </div>
+
+        <div id="secret-identity-string-container">
+            <div id="secret-identity-string-container-enter">
+                <div id="menu-bar-container">
+                    <div class="close-button" id="close-button-secret-identity-string">
+                    </div>
+                </div>
+                <p style="font-family: sans-serif; font-size: 11px; padding: 8px; color: #21bccb;">
+                    This is your identity passphrase used to generate your current public private RSA keys. Never to be shared with others. Server or other clients must never have access to it. This is only for you, to re-generate same identity after next start of client, if needed, to preserve settings or permissions on some server after reconnect.</p>
+                <p id="p-secret-identity-string"></p>
+            </div>
+        </div>
+    </body>
 </html>
