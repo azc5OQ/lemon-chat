@@ -109,6 +109,7 @@ async fn handle_received_thread_message(
 
             } else if message_type == "client_disconnect" {
 
+
                 let client_id: u64 = json_message["client_id"].as_u64().unwrap();
 
                 let datachannels_write_lock_result: &mut LockResult<RwLockWriteGuard<HashMap<u64, Arc<RTCDataChannel>>>> = &mut DATA_CHANNELS.write();
