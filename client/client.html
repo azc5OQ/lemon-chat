@@ -13182,17 +13182,17 @@
                 }
 
                 let html_to_append = "<div class=\"single-chat-message\">\n\
-                                                <div class=\"single-message-content\">\n\
-                                                    <div class=\"single-chat-message-sender-username-container\">\n\
-                                                        <p>" + sender_username + "</p>\n\
-                                                    </div>\n\
-                                                <div class=\"single-chat-message-sender-time\">\n\
-                                                    <p>" + new Date().toLocaleTimeString() + "</p>\n\
+                                            <div class=\"single-message-content\">\n\
+                                                <div class=\"single-chat-message-sender-username-container\">\n\
+                                                    <p>" + sender_username + "</p>\n\
                                                 </div>\n\
-                                                <div class=\"single-chat-message-content\">\n\
-                                                    <img class='chat-picture-img chat-picture-img-default' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\"></img>\n\
-                                                </div>\n\
-                                            </div>";
+                                            <div class=\"single-chat-message-sender-time\">\n\
+                                                <p>" + new Date().toLocaleTimeString() + "</p>\n\
+                                            </div>\n\
+                                            <div class=\"single-chat-message-content\">\n\
+                                                <img class='chat-picture-img chat-picture-img-default' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + loading_gif + "\"></img>\n\
+                                            </div>\n\
+                                        </div>";
 
                 document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
                 document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", "<div class=\"chat-spacer\"></div>");
@@ -14461,7 +14461,7 @@
 
             function enable_inputs()
             {
-                console.log("function disable_inputs()");
+                console.log("function enable inputs()");
                 document.getElementById("chat-input-container-text-input").disabled = false;
                 document.getElementById("chat-input-container-send-chat-input").disabled = false;
                 document.getElementById("choose_image_input").disabled = false;
@@ -14469,7 +14469,7 @@
 
             function disable_inputs()
             {
-                console.log("function enable_inputs()");
+                console.log("function disable_inputs()");
                 document.getElementById("chat-input-container-text-input").disabled = true;
                 document.getElementById("chat-input-container-send-chat-input").disabled = true;
                 document.getElementById("choose_image_input").disabled = true;
@@ -14498,6 +14498,8 @@
 
                     if (chat_message_receiver_id != local_client_id)
                     {
+                        console.log("enable_inputs() lol");
+
                         //
                         //change color of chat context selector only if client that is not local client is selected
                         //
@@ -14583,6 +14585,8 @@
                         }
 
                         document.querySelector('[data-chat-context-selector-id="user-' + chat_message_receiver_id + '"]').style.backgroundColor = "#36393f";
+                    
+                        enable_inputs();
                     }
                 }
                 else if (event.which == 3)
