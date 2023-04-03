@@ -64,7 +64,7 @@ struct Client {
     timestamp_connected: i64,
     //timestamp_last_sent_chat_message: i64,
     timestamp_username_changed: i64,
-    timestamp_last_sent_check_connection_message: i64,
+    timestamp_last_sent_check_connection_message: i64,  //todo use differnt type of spam prevention, overall number of websocket messages received over certain period of time instead of monitoring cooldown for every time of message
     timestamp_last_sent_join_channel_request: i64,
     //timestamp_last_sent_delete_channel_request: i64,
     timestamp_last_channel_created: i64,
@@ -345,7 +345,36 @@ fn send_public_key_challenge_to_single_client(single_client: &mut Client, websoc
     }
 }
 
-fn send_maintainer_id_to_single_client(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>,  channel_id: u64,  client_id: u64, maintainer_id_to_send: u64, ) {
+
+fn send_poke_message_to_single_client(websockets: &HashMap<u64, Responder>, client_id: u64, client_id_to_poke: u64, poke_message: String) {
+
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("poke"));
+    json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
+    json_message_object.insert(String::from("poke_message"),serde_json::Value::from(poke_message));
+
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    let current_client_websocket: Option<&Responder> = websockets.get(&client_id_to_poke);
+
+    match current_client_websocket {
+        None => {}
+        Some(websocket) => {
+
+            let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+            let test = serde_json::Value::Object(json_root_object1);
+            let data_content: String = serde_json::to_string(&test).unwrap();
+            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+            websocket.send(Message::Text(data_to_send_base64));
+        }
+    }
+}
+
+
+fn send_maintainer_id_to_single_client(websockets: &HashMap<u64, Responder>,  channel_id: u64,  client_id: u64, maintainer_id_to_send: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -356,33 +385,19 @@ fn send_maintainer_id_to_single_client(clients: &HashMap<u64, Client>, websocket
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
-    for (_key, client) in clients {
 
-        if client.is_existing == false {
-            continue;
-        }
+    let current_client_websocket: Option<&Responder> = websockets.get(&client_id);
 
-        if client.is_authenticated == false{
-            continue;
-        }
+    match current_client_websocket {
+        None => {}
+        Some(websocket) => {
 
-        if client.client_id != client_id {
-            continue;
-        }
+            let json_root_object1: Map<String, Value> = json_root_object.clone();
 
-        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
-
-        match current_client_websocket {
-            None => {}
-            Some(websocket) => {
-
-                let json_root_object1: Map<String, Value> = json_root_object.clone();
-
-                let test = serde_json::Value::Object(json_root_object1);
-                let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-                websocket.send(Message::Text(data_to_send_base64));
-            }
+            let test = serde_json::Value::Object(json_root_object1);
+            let data_content: String = serde_json::to_string(&test).unwrap();
+            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+            websocket.send(Message::Text(data_to_send_base64));
         }
     }
 }
@@ -794,11 +809,11 @@ fn process_client_connect(clients: &HashMap<u64, Client>, channels: &mut HashMap
         let mut root_channel = channels.get_mut(&root_channel_id).unwrap();
         root_channel.maintainer_id = client_id_of_connected;
         root_channel.is_channel_maintainer_present = true;
-        send_maintainer_id_to_single_client(clients, websockets, root_channel_id, client_id_of_connected, client_id_of_connected);
+        send_maintainer_id_to_single_client(websockets, root_channel_id, client_id_of_connected, client_id_of_connected);
 
     } else {
         let root_channel: &Channel = channels.get(&root_channel_id).unwrap();
-        send_maintainer_id_to_single_client(clients, websockets, root_channel_id, client_id_of_connected, root_channel.maintainer_id as u64);
+        send_maintainer_id_to_single_client(websockets, root_channel_id, client_id_of_connected, root_channel.maintainer_id as u64);
     }
 }
 
@@ -1745,6 +1760,35 @@ fn is_channel_join_message_valid(clients: &mut HashMap<u64, Client>, client_id: 
     return result;
 }
 
+fn is_poke_client_request_valid(message: &serde_json::Value) -> bool {
+    let mut result: bool = true;
+
+    if message["message"]["client_id"] == false {
+        println!("field message.client_id does not exist");
+        result = false;
+        return result;
+    }
+
+
+    if message["message"]["client_id"].is_u64() == false {
+        result = false;
+        return result;
+    }
+
+    if message["message"]["poke_message"] == false {
+        result = false;
+        return result;
+    }
+
+    if message["message"]["poke_message"].is_string() == false {
+        println!("field message.poke_message does not exist");
+        result = false;
+        return result;
+    }
+
+    return result;
+}
+
 fn is_edit_chat_message_request_valid(message: &serde_json::Value) -> bool {
 
     let mut result: bool = true;
@@ -1992,7 +2036,7 @@ fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut Has
                         let root_channel_id: u64 = 0;
                         let maintainer_of_root = channels.get(&root_channel_id).unwrap().maintainer_id;
 
-                        send_maintainer_id_to_single_client(clients, websockets, 0, client_id1, maintainer_of_root);
+                        send_maintainer_id_to_single_client( websockets, 0, client_id1, maintainer_of_root);
 
                         result = 2;
                     }
@@ -2021,6 +2065,40 @@ fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut Has
     }
     return result;
 }
+
+fn process_poke_client_request(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) {
+
+    let result: bool = is_poke_client_request_valid(message);
+
+    if result == false {
+        println!("is_poke_client_request_valid == false");
+        return;
+    }
+
+    let message_client_id: u64 = message["message"]["client_id"].as_u64().unwrap();
+    let poke_message: String = message["message"]["poke_message"].as_str().unwrap().to_string();
+
+    //
+    //cannot poke ourselves
+    //
+
+    if message_client_id == client_id {
+        println!("cant send poke to ourselves");
+        return;
+    }
+
+
+    let client_option: Option<&mut Client> = clients.get_mut(&message_client_id);
+
+    match client_option {
+        None => {}
+        Some(_client) => {
+            println!("send_poke_message_to_single_client");
+            send_poke_message_to_single_client(websockets, client_id.clone(), message_client_id, poke_message);
+        }
+    }
+}
+
 
 fn process_edit_chat_message_request(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) {
 
@@ -2318,7 +2396,7 @@ fn process_remove_tag_from_client(client_stored_data: &mut Vec<ClientStoredData>
 
             match tag_option {
                 None => {}
-                Some(tag) => {
+                Some(_tag) => {
 
                     //
                     //if client under specified clientid exists and tag under specified tag id exists
@@ -2406,7 +2484,7 @@ fn process_add_tag_to_client(client_stored_data: &mut Vec<ClientStoredData>, cli
 
             match tag_option {
                 None => {}
-                Some(tag) => {
+                Some(_tag) => {
 
                     //
                     //if client under specified clientid exists and tag under specified tag id exists
@@ -2774,7 +2852,7 @@ fn process_channel_join(sender: &std::sync::mpsc::Sender<String>, clients: &mut 
                 //whether client that joined the channel is the maintainer of new_joined_channel or not,
                 //the information about who is the new maintainer only needs to be sent to him
                 //its assumed other client have "up-to" date info about who is maintainer
-                send_maintainer_id_to_single_client(clients, websockets, msg_channel_id, client_id, new_joined_channel.maintainer_id as u64);
+                send_maintainer_id_to_single_client(websockets, msg_channel_id, client_id, new_joined_channel.maintainer_id as u64);
 
 
                 //inform the webrtc thread about clients channel, so it can update its data
@@ -3476,6 +3554,9 @@ fn process_authenticated_message(client_id: u64,
     }
     else if message_type == "edit_chat_message_request" {
         process_edit_chat_message_request(clients, websockets, &message, client_id);
+    }
+    else if message_type == "poke_client" {
+        process_poke_client_request(clients, websockets, &message, client_id);
     }
     else if message_type == "change_client_username" {
     //let new_desired_username = String::from(&message["message"]["new_username"].clone().to_string());
