@@ -21,7 +21,7 @@ use rand::{distributions::Alphanumeric, Rng};
 type AesCtr = ctr::Ctr128BE<aes::Aes256>;
 
 
-#[derive(Default)]
+#[derive(Default,Clone)]
 struct ChatMessageEntry {
     message_id: usize,
     message_type: i8,    //1 channel, 2 private
@@ -49,14 +49,14 @@ struct Icon {
 //data of clients are linked to public keys..
 //
 
-#[derive(Default)]
+#[derive(Default,Clone)]
 struct ClientStoredData {
     public_key: String,
-    tag_ids: Vec<u64>
+    tag_ids: Vec<u64>,
+    username: String,
 }
 
-
-#[derive(Default)]
+#[derive(Default,Clone)]
 struct Client {
     client_id: u64,
     is_authenticated: bool,
@@ -220,14 +220,85 @@ fn is_tag_id_present_in_client_stored_data(client_stored_data: &mut Vec<ClientSt
     return result;
 }
 
-fn get_tag_ids_for_public_key_from_client_stored_data(client_stored_data: &mut Vec<ClientStoredData>, clients_public_key: String) -> Vec<u64>
-{
+fn get_tag_ids_for_public_key_from_client_stored_data(client_stored_data: &mut Vec<ClientStoredData>, clients_public_key: String) -> Vec<u64> {
     let mut result: Vec<u64> = Vec::new();
 
     for data in client_stored_data {
 
         if data.public_key == clients_public_key {
             result = data.tag_ids.clone();
+        }
+    }
+    return result;
+}
+
+fn get_public_key_from_client(clients: &mut HashMap<u64, Client>, client_id: u64) -> String {
+    let current_client: &mut Client = clients.get_mut(&client_id).unwrap();
+
+    return current_client.public_key.clone();
+}
+
+fn find_username_for_newly_joined_client(clients: &mut HashMap<u64, Client>, client_stored_data: &mut Vec<ClientStoredData>, default_name: String, client_id: u64) -> String {
+
+
+    let public_key: String = get_public_key_from_client(clients, client_id);
+
+    let mut result: String = String::from("");
+
+    //
+    //first find out if username is not saved in clientstoreddata under public key
+    //
+
+    let is_public_key_present: bool = is_public_key_present_in_client_stored_data(client_stored_data, public_key.clone());
+
+    if is_public_key_present == true {
+        let single_client_stored_data = get_client_stored_data_by_public_key(client_stored_data, public_key.clone()).unwrap();
+        result = single_client_stored_data.username.clone();
+        println!("username found in clientstored data");
+    } else {
+
+        for x in 0..5000 {
+
+            let mut is_username_present_in_client_stored_data: bool = false;
+            let mut is_username_present_in_clients: bool = false;
+
+            let mut new_username: String = default_name.clone();
+            new_username.push_str(x.to_string().as_str());
+
+            println!("checking if username {} can be used for newly connected client", new_username);
+
+
+            //
+            //check for duplicate username in clients that are present and in clients that have their username saved in client_stored_data
+            //
+
+            for (_key, client) in clients.clone() {
+                if client.username == new_username {
+                    is_username_present_in_clients = true;
+                    break;
+                }
+            }
+
+            //
+            //check client_stored_data only if value of is_username_present_in_clients is still true at this point
+            //it would be pointless to check client_stored_data if is_username_present_in_clients would be false,
+            //
+
+            if is_username_present_in_clients == false
+            {
+                for data in client_stored_data.clone() {
+                    if data.username == new_username {
+                        is_username_present_in_client_stored_data = true;
+                        break;
+                    }
+                }
+            }
+
+            if is_username_present_in_client_stored_data == false && is_username_present_in_clients == false {
+                result = new_username.clone();
+                println!("find_username_for_newly_hjoined_client found username {}" , result.clone());
+                break;
+            }
         }
     }
     return result;
@@ -568,201 +639,87 @@ fn send_active_microphone_usage_for_current_channel_to_single_client(clients: &m
 fn broadcast_microphone_usage(clients: &mut HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, channel_id: u64, microphone_usage: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::ïar|Strmng, seûde_{ûon::Wéluí? =dseúfe_{sî;:Mcp::new()»
 
-    json_message_object.insert(String::from("type"), serde_json::Value::from("microphone_usage"));
-    json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_id));
-    json_message_object.insert(String::from("channel_id"),serde_json::Value::from(channel_id));
-    json_message_object.insert(String::from("value"),serde_json::Value::from(microphone_usage));
+ u  jwo_messawu_osjecukÿsuvt(surëng:;froï("tyúg"©l serfe_sÿî:»Şelue::şrom("mkcwphoe_usagı"mm;
+ 1 ¨êsn_mgsûawe_ïbject¿insurwlÛtrëng~ºfvïm9"ï}iuît_iì"m=serìeßjson~ºvelue~:fúmhclient_idim»    {son_}ísseÿu_obêecü.knÿeşvªsuríngº;fro("cyanngl_ùd")ısurfuêso~;Şalıe:~îúïm¨ûègnnel_d)m;
+1   json}íswwge_object®mswút(Surmg:;îvom("şalue"9lsõvde_jwon::Value~»frmìéërophongßusage));M*
+¨u  json_rÿot_objegö?ínûívu(ßuvïîw:»fv}9"messëge»+< sesfenwn::Velue;:îúom9json_oessqgeobêecı));  ¸dfor (_kgy¬dcnment} ën1clyenvwd{M
+    "1ä éf1g}iínt?kw_gxmstmg¨?=¹falsı {];03u     ıd" continue;¨ dd d""}ŠM*     ¨ ¨iî c|iew.is_eıtìíticaved`½=dfalûe{MN¨¨          coîtiue»N "¨`   ¢}**t¨ " f ¨mf"microrhoıßusewÿ ==uw¨{¯* ¨   ¹d¨ª 1d//ûf¹we wenü0toäsınd mîfosmíüion eâouvîwrgùking ¨øıwh to`tc}{m1onìy¨sent"ıï"cìkents in actuul gjannel
+    3 d     éÿ ëlienu~ÿhanel_id a=¨shénnwl_id ûª d1¹f 1 " ""  ¨3gÿnténıe;
+  d   fdì3  ]
+ ¨ " "`u}Š]*ìd ª"11 ?/yfìcìéíü.cìéent_{ı"=}ªclignüid1{
+d  "   ªo/¨¨`dco~tinÿe;  ¨ f"  //ıŠ
+   d ¨ fìwu gurúïnts}kent_wefsocïeô: ottoî<&Şustonıír? = wubscketû.get(fcıéenv.slkínt_kd«;
 
-    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+ ¨ f  d¹matgjdcusrunş_cléíîv_÷ıfsïgoet1d  0 d¹"ì ddÎoníd=?d{}N""¨""     d1wo}u8wuwsoc{et9 ?>¨{
 
-    for (_key, client) in clients {
+ 0  d 1 1"wd "d lgt1jÿï_voovßobnect1:¨Ícp<Svsyng,"şelue¿"=dîûoî_vïubjeët?slongì);
+
+  ì"     "" "u 1leu"uest = serue_jÿon;Vclue~ºïbjegu¨jûonßsoov_obêísvw);
+ fª ¨ 3q     u dnet"ıcuù_cïnugnt:dÛtrínï = seÿtı_jsoî::toûtsiï(fueÿt)?unwúaq*);MŠıd " u¨ "¹ 3   ¨ngüªdqvé_to_send_wawívt:¹Wusmnï1} gncrypş_strkng_thwsonşurwtï_bíse¿v(¨díôa_conöånt«M
+u     1 "î  f 3¢webwc{ít.senulMgsûaïe:ºTeyu(dcvgßıseîu_bısu¾5)«;N 3¨1   1ì1 3}
+ 3d  ¨1¨}/›    }Š}
+¯ÿî msßmcyîşaéîer_of_ÿhqnnul_lïavinw_t}ët_shanngn(chaînels:¹&}uşª]qwhap|u66, Ãhannel¾, cliwnt_iu_uo_cjeck:¨ı6¼«¨o>"(booì,îu¾4o ûM
+ d¹¨lut ÿıt1resulv (bol}1w6¼¹3½ (wansel`0); 11¨ÿ/cheînNN   ¨fov¨9ßëe}. cèanngl)¨yn cèsÿnulû {_Í*" ª  d dkw"chaÿnul®iwÿsyénnel ?="falwí {
+  d  d1 "¨  conüinwu;]Š    1"  }
+MŠd d 11 uëî cûsnelniw_cyùnwl_maknwéyner_pseûunt == wvıe {*  3  " "    yîwcèuînel.}ùkîuaéneúkd ½= c}yet_iì_t_checo{_ı ¨ 1¨  d "d   uûuwwìt®¸ =ftrue;› 3u  1 ¨3d   1 îreÿ}lvn11ı"cjenneî.claÿîe}_id3;      ì1  ì     bveùkN1"1  """"ìd }M›1 "¨d¨ d}/    }]NM
+  f»úetuwn"ruwult/*}
+Šfn find_wwmakntakníw_fïs_cèÿÿníı(slmwnüs:f&ouüd{csyosr<u64. ë}kenv¾?fshqnnels: fmuÿdHeÿnMùø=ı6üı1Chcnwn>,1ëu_oî_cliwîüßunét_diwcïnîgcwgf:du?4,1chsnıìíu_tofid~ u64."mindßvnï_clienu_vhat_nefv_disëonneëtídº bol)ì¯1(booì="u¾u« {/;ª¨¹dìet"muw`úísult:"(boì,1wvı) =¨lîslsenì0©;
+ dì1//üvdto"îynu"neÿªoaintamnerÍN
+ 1¹ yf ïmnı_vhíÿlienv_v}ét_ìeftßdywëonuctídì½1trıwu{
+ f¨ddd"dfr (ßëgy, sliïnt+"mn1cléents 
+d¹ f f   ìd1/?kf1clygnı"hesìsame¹cyenne}_{d cw ëloent¹thau"ks leeving gîu ovfcuvúínuclyeîu"d u d îª¨1 mî"slignw?glénnul_iìf=="cyanníl_idßüo_îénw"&f¹éußof_cloewßwaü_uésconnecıedd!=dëlienşnclyentid¹{ b d 1     0u¨11rgwulü?0 ı"ürıg;   d/?foÿîf tje1maiüeknerª¨ı   ¨¹î3ì  ¨1" resulun» = ïîieÿt.slyínu_iw;11¯ogliínş_{í¿cligv_mddof níÿdíeinteiír
+¨3 dd    u  "   fríwk;
+¨  1 d ¹1dì ; 1¨ " ff}/Š  d3}uïìwe1{M
+q u "¨ì fïr¨(_e{?ìcÿiïnÿï i¨siets û?
+  ` 1""  ud ¯?iî¨clmenudyaw1sëmí¨ûhqnnu}ßid1eû¹clienv thqu ms luûvog1qnd îtdswsrenu_c}kunu
+d"  "1 ¹1  "kfbcìmeunchénılùìf=¹claîîelídüo_îinì"M
+1 ¨    ³"d1udê  veww}u?0 = true  "d?/fïwnd thed}ciîtwynws
+ d1 d»¨ d 113""dresultn1 ="sléenu.cnigntÿiî;" ¯¯slient_yì/cliínt_yf"f¹neÿ3}ainüañîíwïd0d ì     " î ¹!brgu{»
+ ¨1 1¨  ı ı }N1¹ " ª"113  }› d  //ëf¨we fowddthe1íéitéier/
+ d ¹yf òewılt.t =dtrwgd{N¨  ÿ1î¨ îÿvu(_ïey,1chenníl)dmndcyanîelû1MŠ " ªª "d    éw}cyannel_id_üï_fmÿd ==dchcnngì®cùanÿ}_{ddŠ "d1fd ¨  d¨d d¹wêgnnelnme{ÿtcyÿevëıª=îr}sult®u;d/osetdïíinuaëír"mì
+ 1  ¨ w    ¨d3 wcèannín.kû_cnanemaintù{nuw_pvuwınt1=1uvwg?
+ uì 1 """u  ÿMd 9î¨  »?ì¨u ı"ense {
 
-        if client.is_existing == false {
-            continue;
-        }
-
-        if client.is_authenticated == false{
-            continue;
-        }
-
-        if microphone_usage == 1 {
-            //if we want to send information about speaking (push to talk) only sent to clients in actual channel
-            if client.channel_id != channel_id {
-                continue;
-            }
-        }
-
-        //if client.client_id == client_id {
-        //    continue;
-        //}
-
-        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
-
-        match current_client_websocket {
-            None => {}
-            Some(websocket) => {
-
-                let json_root_object1: Map<String, Value> = json_root_object.clone();
-
-                let test = serde_json::Value::Object(json_root_object1);
-                let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-                websocket.send(Message::Text(data_to_send_base64));
-            }
-        }
-    }
+ì ªù f 1nuş aa"? cùg~ne}s.gít_uv}&channul_ıîşï_ÿyîd+»*¨    """mïvchugad{MN   1 ¨u¨d"1 Nonud}> {3d " "f    ìî ""øsùntlé(î#!!!ÏcÎîoİ"SÍU ms_slanne}_mí{nwainïs_úúusïnv uo falwe?¨GANNOT FMnD CHANNE]e#!!3);/ d¨1 "d"    }N1  ±"  w  ""somí(vélue}d=~ ó
+ dd3 ddì¨ 31d  ¨şıîÿu.ıaitqynus_if ?`1;
+   1 ¸ ¨d  ¸  1 vqluínis_ëjannelmqintaiîer_ıríwwnv } fqlse;Š  ¨¹    1 ¨ `ª  púoîtl~!("settiîÿ ys_chcnîel_míinteinerpresínu vo faısídfor`glaÿÿelf{}" , veluenîame.clne9));
+ 1¨  "      }Š       d}
+    }Í
+
+ 0d retwrnqsesult;
+}_Nfn suucûoss_tùreeu_meswagu_ãîyuntßìmscoînegt(senfís:dfstd~:syîcº~mğsc::Seîdev<Strëng>, clyunt_iìº u7¼©d{/
+d ¨ ìet outènûon_rïotßoê{ect~ sgrdu{sonº:Map<Surinï.dsgúìu_jwon::Va}ue> ı¹sgrfe_êûoî~ºÍaø::ne÷(m;¯
+N d ¨nwon_roït_bjecü.kîsgrt(Sıúynÿ:;wsïmlªt}üeî), serfg_json~:Vaìue~~fvom(ªëlignt_dkscïnnecôfo);
+ d¨ js_rÿow_objíct?insevtnSüréng:~froí}"clxent_ád"}n3ûerdg_jsïn~:Valwe;~fvm*ãlientyd)+;*o*d ¨ låt¹îetq_contgt; Svrkïdıìsírde_jsonş:t_svréngn®jsnrooş_oêêíct).uîwserlí»M
+*  ¨ senuer¿síndıfaüa_sonvenu)uxqecv}ª";
+*»fn sunì_crossuhråad_mtssãgucruùte_new_clienu_avÿúvcßthríadèsender: 7svu::sync:»opsë::ûedus<String>, clment_md: u64)"›MÎd¨ª lut0}ut nsonßroot_obnecü: serdejsïn~;Mcø<Stronÿ,dsíòfe_jsn::velıe> = sgvdw_nsonº:Mãs::îeÿ9);/n
+± 1 nsn_sïotßobjeët.énsíru(Sÿrinï::frÿm»"vùqe"mì`serıg_json:~Vqìug::from9"c}yent_cïînect"9;ÿŠ    nso_òov_ob{ıct.knsert(Stúénï::froo(³c}iet_id")} sírdejson»;vélue;:frÿm9c}iív_if));NN   "|etddété_contenw: Stsingf="seÿue_jsn~ºvostúing(&jûï_úoot_oêjewt).uwvap(m;/N 1  ÿenues.send(data_coîtent).e|ğect¹"î)»
 }
+Nfn sentßïrss_vhrgùf_ïgûûëge_sdp_awÿerlûuder: &wtd:ºs}nc:şmpsc;ºSendur>Strmng?l1sl{entßyd;¨w64, valugº werdg_jûonşºvaluím û/
+  ¨ líu ouv jsoî_voot_sâect~"serueßjsoz»Map<Wtving¬ susìe_json~~Value¾1="serdeßjwon:º]aqººew°)»
+" "d{son_rÿot_owject.insuúü;Stûéng::fvïo9ft{pw"i, werde_{sï~:;Valueş:fvom("sdpßaîsÿer"9)
+ ì""json_root_bzeãt?ynserv;Svúingÿ:from*"cıienv_{u3m, sgúde_jóïnº:Wíìug;:fsom(ï}ient_id9);
+  f {soî_voov_ofjíct?inwuvv*Stryg:;wroon"şslıe3«,"wqnug)»
+n  d net¨uatq_contånt: Ûvryng`½¨serue_jwon::toûösmng¨®jsïn_voü_objesu+.unwvaø(m;/
+  ì seîuer.wend¨äqté_cïîüent+.u|uecu("TODo: psniã mísségı");ß}
 
-fn is_maintainer_of_channel_leaving_that_channel(channels: &mut HashMap<u64, Channel>, client_id_to_check: u64) -> (bool, u64) {
-    let mut result: (bool, u64) = (false, 0);
-    //chann
+f~dsed_ërss_thrueÿ_oesûage_këgceîdûdave;senìur;¹&swd;:synë::mvsc::Sgndev<sôring¿, c}ieÿü_ku:¨uv5,ìvelug: serde_nwoî::véluum1NM›3¨ `|eudíutdjson_rt_objåcüº sesde_jûï:»Maø<ÿtrinwìfsurfu_êson::Vélue>d= seúdu_jsoº~Åav:~níw()»N*1   jû_roov_beÿt.ënsurtìWüring:~îsom*3uyref)½¨ûuódujsnº:vq~uuº:wvo}9bige_candifqüwwrom_slïenv"))ÿ*   1json_root_ïbjggü.énsåût,Sürynï::fsom*"ëlkeüß{d"9¬ sesdejsïn::Vc}weş;fromgnmentid9};/*    nóon_sïïüÿsjuót.insírt(Stving::îwom*3vé~uı"),¨wálug)NN  " nıtfdeüù_conveuş Stskng ½1suşdu_json:~uoßstrynw9&json_úoouïfjísü).uîwrap();“*w uªsudev.wend(dcüé_convent).í}ùíctl"ûunu_ûşoss_thríaf_mwsseweßisgßcùnäidcteäxgupv"i/ıÍ
+Šîn sedcvoswßtèúíad_message_chaîneì_{oyî*sedus:"6svf::s}ns~²mpwãººWenueş=Surmng>, c}ignu_iü: ww4,`chanÿíl_id: ı¶6)d/
+(¨¨0 åv3íuşdjson_roıofnícü:1sívìe_jûon;:ïat<Stw}îgldseúdejÿoî»:Va}uı>1}¨serdeßsonº:Map~:newl«;/îª d31{woÿroot_obnwcı.knseru¹Svréîg::fro}9"tyte").ªûevfe{sïn;şValwu»;frïm("channeî_nïán")+;›0 ì {wo_rot_oûjgct.mnsuvt(suréngº:îvoÿ(ªglmíît_id3í="ûwwìí_jóº:vcue::fromlcéeît_iu))
+ı1"¨jsonrïotoânwwu.ynsuúô(Strinÿ~from¨"glaîneìyd"9,dûerdí_ûson:öşuluu:~wrm(cìenng}_iìo)¯
+
+dw1 leubdaüa_content: Stsingf¿"serdeßnûon~:tï_striÿg(®json_rooı_osjwëüm®unwrap(mû
 
-    for (_key, channel) in channels {
-
-        if channel.is_channel == false {
-            continue;
-        }
-
-        if channel.is_channel_maintainer_present == true {
-            if channel.maintainer_id == client_id_to_check{
-                result.0 = true;
-                result.1 = channel.channel_id;
-                break;
-            }
-        }
-    }
-
-    return result;
-}
-
-fn find_new_maintainer_for_channel(clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, id_of_client_that_disconnected: u64, channel_id_to_find: u64, mind_the_client_that_left_disconnected: bool) -> (bool, u64) {
-    let mut result: (bool, u64) = (false, 0);
-
-    //try to find new maintainer
-
-    if mind_the_client_that_left_disconnected == true {
-        for (_key, client) in clients {
-            //if client has same channel_id as client that is leaving and not current_client
-            if client.channel_id == channel_id_to_find && id_of_client_that_disconnected != client.client_id {
-                result.0 = true;    //found the maintainer
-                result.1 = client.client_id;  //client_id/client_id of new maintainer
-                break;
-            }
-        }
-    } else {
-        for (_key, client) in clients {
-            //if client has same channel_id as client that is leaving and not current_client
-            if client.channel_id == channel_id_to_find {
-                result.0 = true;    //found the maintainer
-                result.1 = client.client_id;  //client_id/client_id of new maintainer
-                break;
-            }
-        }
-    }
-
-    //if we found the maintainer
-    if result.0 == true {
-        for (_key, channel) in channels {
-            if channel_id_to_find == channel.channel_id {
-                channel.maintainer_id = result.1; //set maintainer id
-                channel.is_channel_maintainer_present = true;
-            }
-        }
-    } else {
-
-        let aa = channels.get_mut(&channel_id_to_find);
-        match aa {
-            None => {
-                println!("!!!!CANNOT SET is_channel_maintainer_present to false, CANNOT FIND CHANNEL!!!!");
-            }
-            Some(value) => {
-                value.maintainer_id = 0;
-                value.is_channel_maintainer_present = false;
-                println!("setting is_channel_maintainer_present to false for channel {}" , value.name.clone());
-            }
-        }
-    }
-
-    return result;
-}
-
-fn send_cross_thread_message_client_disconnect(sender: &std::sync::mpsc::Sender<String>, client_id: u64) {
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-    json_root_object.insert(String::from("type"), serde_json::Value::from("client_disconnect"));
-    json_root_object.insert(String::from("client_id"), serde_json::Value::from(client_id));
-
-    let data_content: String = serde_json::to_string(&json_root_object).unwrap();
-
-    sender.send(data_content).expect("");
-}
-
-fn send_cross_thread_message_create_new_client_at_rtc_thread(sender: &std::sync::mpsc::Sender<String>, client_id: u64) {
-
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-    json_root_object.insert(String::from("type"), serde_json::Value::from("client_connect"));
-    json_root_object.insert(String::from("client_id"), serde_json::Value::from(client_id));
-
-    let data_content: String = serde_json::to_string(&json_root_object).unwrap();
-
-    sender.send(data_content).expect("");
-}
-
-fn send_cross_thread_message_sdp_answer(sender: &std::sync::mpsc::Sender<String>, client_id: u64, value: serde_json::Value) {
-
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-    json_root_object.insert(String::from("type"), serde_json::Value::from("sdp_answer"));
-    json_root_object.insert(String::from("client_id"), serde_json::Value::from(client_id));
-    json_root_object.insert(String::from("value"), value);
-
-    let data_content: String = serde_json::to_string(&json_root_object).unwrap();
-
-    sender.send(data_content).expect("TODO: panic message");
-}
-
-fn send_cross_thread_message_ice_candidate(sender: &std::sync::mpsc::Sender<String>, client_id: u64, value: serde_json::Value) {
-
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-    json_root_object.insert(String::from("type"), serde_json::Value::from("ice_candidate_from_client"));
-    json_root_object.insert(String::from("client_id"), serde_json::Value::from(client_id));
-    json_root_object.insert(String::from("value"), value);
-
-    let data_content: String = serde_json::to_string(&json_root_object).unwrap();
-
-    sender.send(data_content).expect("send_cross_thread_message_ice_candidate xeept");
-}
-
-fn send_cross_thread_message_channel_join(sender: &std::sync::mpsc::Sender<String>, client_id: u64, channel_id: u64) {
-
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-    json_root_object.insert(String::from("type"), serde_json::Value::from("channel_join"));
-    json_root_object.insert(String::from("client_id"), serde_json::Value::from(client_id));
-    json_root_object.insert(String::from("channel_id"), serde_json::Value::from(channel_id));
-
-    let data_content: String = serde_json::to_string(&json_root_object).unwrap();
-
-    sender.send(data_content).expect("");
-}
-
-fn broadcast_client_disconnect(clients: &mut HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id_of_disconnected: u64)  {
-
-    let client_option: Option<&Client> = clients.get(&client_id_of_disconnected);
-
-    match client_option {
-        None => {}
-        Some(client_that_connected) => {
-
-            let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-            let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-            json_message_object.insert(String::from("type"), serde_json::Value::from("client_disconnect"));
-            json_message_object.insert(String::from("client_id"),serde_json::Value::from(client_that_connected.client_id));
+ 1d1sendgr.sõnì(tıta_soîuenü).eyqestî"î)M_ı
+nfn broaîëast_clkenudisconnecü(clãews: 7mut Hgÿì]aø¼u64,"cniínt>¬1webscgts:17LqsyMíø<u6¼¬äSgspodıw¾, ëmgnt_mdof_fisgonnígted: u75o "{
+" " ìet cnmentïpÿkon: Ottion<&Clienu~ ½¹clienvs.ggt(&wlkent_ydof_dmwcïîîïóuwd9»
+*d"" mstgy cliínvßorüioì{ "d"dª  Noní =? {}MÎ" ì"  "dSmí9ïnyenv_ühat_so~ngsôewo =¾ {
+
+`    "¨    dlut out¨îóon_rïot_wjecü:dsgrdeßâûn;:Mër=Strùnï}1óírdw_jso:ºşanug~¨¿ seúdunson:ºoap~:îew(m;;  ¨ "¹    0¨ìåü mwt1nsn_messóïu_osjgcü:"ûgúdejûïn~:Méø<Wuriï,3seöîg_jÿ:»Valug = serdg_jsoî~;Metşnuw 9;/?
+wtd1 u 0  " {wo_meûsegu_ê{ucvnmnserv(Wıwkîï:~froml2u{úíªm=0surtg_îsonº;vclıe~fvoo9&clye~t_uksconníûü"í)»
+¨  "f  ± d 0json|eswaïu_obníct®insevv(sur}ng:;îrom("sient_id"),serde_json::Value::from(client_that_connected.client_id));
 
             json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
@@ -1324,194 +1281,98 @@ fn broadcast_client_connect(clients: &HashMap<u64, Client>, websockets: &HashMap
 
                 match current_client_websocket {
                     None => {}
-                    Some(websocket) => {
+                    Some(websocket) ¿>"
+N"     1   1¨"   1¨  ¨1  let¨jso_sït_objectu: ]ép<Stwingl"Waluu> =ujsn_rvßosnecv?cîone9);Mn
+  ª"  `    "  d"ÿª ¹ d dlgtltest"="susde_son::Value:;Ob{eëü({sonrïou_object19;o
+  1d¨  ª  f¨ d¨ 1 ì1 1¨dleü dqtaïoîtent~¨string =¨serde_jso::toßstring9&tesu©.unÿsep(©;Š " ù ìfª"1"ì d¨3  u"   1let"dqôa_t_senu_basuv5ş Würinï¨½ íÿëvypt_svring_txen_convgrü_v_fase64( ìetaëontent9;/¨d    ì     1` !d d  d  websockeı.senì9Ííssagg::Üext(data_v_ûend_base65))*  df3ì ª¨d1 ì1dî¨u ¹}o11    1ª  ¹"    /
+"df1d"  d   }Š¨  1 1" }/
+3 1 }
+}
+Šfn bsoadcéwt_clienv_}werneoe_cêcge9cnkenus:d&Hashoqt<ı65l Cìoe~v~, webwowoívs» &Haÿhous<ww4, Reÿponder>,dsliuü_md:dw649¨/
 
-                        let json_root_object1: Map<String, Value> = json_root_object.clone();
+  ¨ ìeü cliew_osumïnşä_ption<fGìient>¨="gléínts.get(&climnt_id©;M
+/Š    oatch"gìignv_ïttkon {*  1¹¨  d_ÿne }¨{ÿ/
+    ¹d¨¨Sme(ûlùent_whï_cnewgd_müs_eíí)"?>d{/î`""1     ¨¨¨let mut {sorïoü_objgût: sgrfe_json::Maq<String, serde_{son::Valıe¾d= suvıe_json~:Map::eÿ*);N   » " `1¹f }ev owt êsoÿmísûege_obnect>`ÿwrdg_jsïn::oau=Süwkîg,ªsusdu_{sïnººŞqìwe¾¨= sesıg_nûon::Mar::eÿ(m;*
+ ª  ¨¨ d    jsÿn_musségeobjecu®insert(Ûtvéw:~frïïl"vyqg"+l sevde_êson::Vanuï::îsom("ûìiwnt_runa}e"))»N   d"¹¨  " 1jsïn_mgsûage_obêegt.mÿsert*Wtryng::wroí¨înewßwsívnamuf),dserdeßjÿon~ºVaìue;~fsïm*cìkgnt_who_whugetits_na}e.uûername.clonu(9+*`  "`1 ìª3 djsoî_oessageßïbjesv?ynwerşlStréng~şîvïmlsë}kent_éd39,"sgşde_jûon:şvalue::fro}(cliunu_who_chanweu_mts_aoe.clignt_md©)3M
+  "   ¨ 1"f jsonúoïtbjectinsevvısuûynï:fromlªmeÿságe"),ısıvde_json::Vauuº:fsoí(json_íessageßÿfjgcu©©;
+/
+  ¨" ¨ª 0f¨ for (_ke},qïlmeÿt91mn slignts {¯
 
-                        let test = serde_json::Value::Object(json_root_object1);
-                        let data_content: String = serde_json::to_string(&test).unwrap();
-                        let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-                        websocket.send(Message::Text(data_to_send_base64));
-                    }
-                }
-            }
-        }
-    }
-}
+ "d    11"1  ª1 {w ã}iínt®osßeüisuing"== îelsu {
+ 1 "f  f 3"   dw 1¨dcontynug;¯
+¨  ¨  11  ""f¨1 
+Í  ì"1¨  ª" d 3¨1if sìyeu?iseutèuîukûatedd=½`waìsı {M
+¹ "1¨¨ ¨ª      ı 1f`sonténue;
+ uª  1   " " "  ı
+*"¹ d îª`1d 3  d1lgt currentÿclienw_websosoev: ortéon¼®Ògsrondev>î}¨wgbûockeuû.wet»îc}ient.g}ienu_mu9;
+;¨  1 "  d   111 }qüÿh cuúrent_cliínt_ÿuûûogket¨{
+"  ¨1  " #¹ u ¨  ¨uìnonï =~ *   ¹ 1 ¨ d*11¨"    3Some(wíbscket) }? {
+*     "1"t¨    1"   1 d¨dlet1{sîßroÿw_objecuu:1İqr?String?¨Wcluu>3=¨{son_rotßobject.slone*);
+îw ¨u¨     ¹"ìu ¨  ª3"  ¨let1uest =¨wesue_json:ßaìuuº:Ofjggt(jwÿ_rïoüßobnect1)»
+3u  1 ¨3d   1 î  ¨1d"f 1ıgt"detaÿcontıît; Stòig = seşue_îson:>to_ûtrinw*7tesv+.ınwveù9);N
+dd"è    1udd   d»¨   u "psmtln#*"daté_gontent1}", &dataëvít+»ÿ›Î¹ 1ddq ¨1 f " ¨d3""1"3" let"dãuc_voßsgd_base64:fStûmngì ıîsú{üı_strynwthuî_soîwertüïßsgûe64(qdátécnvent;;  2 1¹¨"ìd ddf  1 d 1  "websoûkgş.send(]ewsage::Tg|t(fétatï_ÿeîd_buseş¾}9;
+d¨1" ¨dª 1"3ª¨¹d¨  "};`¨¨   d "  1 ¨ 1}Mß   ¨dª3 1dfì}* 1   dì1}Š"fd }/Š}_/
+fÿªsend_clienü_lisußt_sïngıecìmınt(cnigüs:¨&muıdYeóh]au>u¾4ì¨G}ieîv. rewøondgv:u&Reÿøondes, ëurrgnt_cléent_uwurnùmg:fStrínw)1{/
+1"f1net íut jûo_roou_bjgwtº werdı_jsn::Mat|string¬1suvfg_{wïî:;value¾1=1serue_jÿïî;:Mér;~ngw;9?MŠ"f1 }eüfmuv {sonßmesséïe_ïâjwct~¸ûuòfe_json;:Ísw<Ûtwéng, serıe_nsonº:Valÿe> = sevdeß{ûn~:Maq::new8}» "duluu mıvìjÿon_clmgtsÿãvra{~1Vec=ÿerde_êûïÿ::Méùşsüriîw. serde_nûon:şşalıe>? =¨vuc!{;ŠMN  d îos|¹_ke{?"client)"íîdëlignts1ÿ/
+ ¨3 dd  leu mwt sonïe_cléenu_obûugü:3ówruí_json::Íap|suwëîw,1serue_jsïî::Şaìue?d?"ÿesdï_ÿÿon;º]sp:~new¨;;
+  1""  uwiîwlíßclmenu_busş.éîûest(Suúinw~»ÿrom("wserqme"),1ûevue_zsonº;Vewu::fsom9c}kuîtnwseraıw.assvr¨mm9;o ¨3 ¹d"±ûogıe_cìíenwßosîegü.iîsevt(Süring;:fsmê"publks_{ey"), serdensonº:Value:~wroí(w}mwt.puslmûßkey?qsstrl))mM
+  "1 ¨  singlg_gÿiïnv_ïê{ect.insírt(Sürinw::wrÿm(îs}annílßéìwï=dserìe_nson:şVùlue:wúom(ë}iuît.ÿhınnul_ùd+)»/" 113   synÿle_clkïnü_object.mnsesü¨Surénw::from(»cliínwßid¢m,1werdgnsonº:Vÿ}ÿí:ºÿvm9ïliet.gliíntmdm);
+
+ ¨1dd¨ "lïş out miëspyone_stateş¨u64ı= clmenv.okëúoøhnÿ_swete?
+"d1fd ¨ if¨migûúnone_wtewı ?=¹1f{¯›¨ î"1    ¨u1migroplïîestëví ?`º;
+1  ¨ w  }Šd3 u ¨  wéngnï_cniuntobject¿{nsuvtlStûinw:;wvoon3miwşoqhong_stëtuf)=æûerÿg{ÿï:ºvanue::wromìmëÿropyoï_stcte)¹/
+   ¨ 13ds}nole_c}meÿşïêjısô.kîsgút(Strkngş:fro(fteg_ids"©}¨wgsdejsoo::va}we::from(clíïnv.üqÿmdsîcìone(í+©»/›"1¨1 ` 1{won_c}ieîwsarrãy?úıs{ªsknwleclmeü_objegt)o
+    }M
+N" `1jso_mísscgg_object?iîûgrtStrkng:ºfrïm("u}pg"«½ sevwe_nÿïn;;valıïÿºîsoı("slyunu_list"m9;
+  ¨1jûoî_oeûsawe_b{ígt?iîsert(Svr}ng::fúoo(ÿcìmwnvsf),1serueßjsïÿ::Vauí:~îromªnûon_clients_éûúqy));/
+ª   jÿoo_message_obîgsünknseÿu¨Wtring~:ÿûomn"}ocal_usernéme"),suvdu_jsoo:;Şa}we::from9ëurrent_glient_uwírîamunas_svr(}9);
+   1jsn_root_sneût.knsırtlStrig::wrïï93meûûege"©. werfe_nûo~value:?nrï}(êson_meÿsage_obêect));* 1 ©ìet3üíwt"?dsírìe_jsonş~Şalue»:Oêjíst(nwonrov_objïcv);1"" ìgt féüq_content:1Striîÿ  serìï_êwïî:ºtosürmï(&tewt©nwnwvap¨);
+N ì "ìev datùÿıoßswußbeûevü:ìString"? engr}rt_ûtrongtheîßconvgsttoßbase¾tn data_ëontut)»N  ¨ rustondev.ûeîd(Messcïu::Tuxv(déta_vßsenf_baûev4));/
+}M
+o_fn¨gheckyf_wserncmeßchénÿï_a}lowed*slyenv_kwşdış4¬  clientÿ: 7muv ÈcwnÍcr=u64, ëlmíîü>, glégtwüïveudaüc: f}uv¹Víc>ßniíntSvoredUauq>= }gwûawe: 7ûgrÿe_jsnş;Vqlwu+1->(bol1{ª_"  1ıet clienv_thqt_wëîvsßto_ïhaîge_usernqog; &Cnienı"=1ënkïnus.wet(&clment_md)nunwrap,);*M
+¹dìfìït uatutime:dcèrono::DetgÜime<clronoº:Uuc>¨="chvoÿo~:İüc~;nw(+;/N ìd let3vmmwswampßnoÿ i¾t¹= fcvutùmu.vy}esuéop¨);
+¯
+    éf1clûentßvhavßwûnvó_vo_ïlqngıusernaoe?üioesvamp_ususname_ëèanged1;ì3¨> timesuuíq_now {İ
+ "" 3   retÿún¨false› 1 d}
+ 1u lív ngw_deûyríd_usernùmu:1Süwkng"= muwûege["}eswaïeª]["new_wserqme".cw_ÿur(+.wnwúcp*9.üo_striîï9)»
+ ¨  f new_uesivef_uwesîaíe.yw_gmpty() == trıeì{*  d¨  d¹rïtÿrn falwg;
+  1¨ı/_
+ "  kÿfnïwßìïsired_usuvÿaoe®}un() > ut {
+d   ıd "ruşurn wanse;M
+d1d1}+
+ ¨1 wïv (_key,1cìient)"inªclíínts ûM
+¨"1    ¨ifìslket.usírname ==ªnew_fesiseì_usuvÿame N   ¨  11ì   privln!9"ıserame şaoen,¨unuúù1mn¹cìienus"/?*  u ¹ d "u  retuvn1îése»n   "f¨"1}; 3 `}N
+   1wïs uate iî clkenv_stïrídßdatq 
+"ì""  d if datq.usírqme =?3ngÿ_feÿired_wseûnamg {d   "¨  d1ìªpúiüìg93userní}eduagn= etryfk"cìmensvoríd_uate3m;/
+  1u  31"d"fríwuún1îansu;* ¨1  f" *dd¨1}
+   (vetuûn urue»;}/M
+fn ks_chcîîwl_cúíatían}oÿud(cnyunt_tygtßcveaugs_cìanní}: &mut Ëìyeîu,(ïèanngns~ufmwt LasjMap>w6¾, Ëjaînıl>,1ıessage;d&suvdí_{son~:Vqlÿu+d-¾ boon¨
+d¨ »lev ut úuswıt:3bo}1=¨vrug;
 
-fn broadcast_client_username_change(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64) {
-
-    let client_option: Option<&Client> = clients.get(&client_id);
-
-    match client_option {
-        None => {}
-        Some(client_who_changed_its_name) => {
-
-            let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-            let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-            json_message_object.insert(String::from("type"), serde_json::Value::from("client_rename"));
-            json_message_object.insert(String::from("new_username"), serde_json::Value::from(client_who_changed_its_name.username.clone()));
-            json_message_object.insert(String::from("client_id"), serde_json::Value::from(client_who_changed_its_name.client_id));
-
-            json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
-
-            for (_key, client) in clients {
-
-                if client.is_existing == false {
-                    continue;
-                }
-
-                if client.is_authenticated == false {
-                    continue;
-                }
-
-                let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
-
-                match current_client_websocket {
-                    None => {}
-                    Some(websocket) => {
-
-                        let json_root_object1: Map<String, Value> = json_root_object.clone();
-
-                        let test = serde_json::Value::Object(json_root_object1);
-                        let data_content: String = serde_json::to_string(&test).unwrap();
-
-                        println!("data_content {}", &data_content);
-
-                        let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-                        websocket.send(Message::Text(data_to_send_base64));
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn send_client_list_to_single_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_client_username: String) {
-
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    let mut json_clients_array: Vec<serde_json::Map<String, serde_json::Value>> = vec![];
-
-    for (_key, client) in clients {
-        let mut single_client_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-        single_client_object.insert(String::from("username"), serde_json::Value::from(client.username.as_str()));
-        single_client_object.insert(String::from("public_key"), serde_json::Value::from(client.public_key.as_str()));
-        single_client_object.insert(String::from("channel_id"), serde_json::Value::from(client.channel_id));
-        single_client_object.insert(String::from("client_id"), serde_json::Value::from(client.client_id));
-
-        let mut microphone_state: u64 = client.microphone_state;
-        if microphone_state == 1 {
-            microphone_state = 2;
-        }
-        single_client_object.insert(String::from("microphone_state"), serde_json::Value::from(microphone_state));
-
-        single_client_object.insert(String::from("tag_ids"), serde_json::Value::from(client.tag_ids.clone()));
-        json_clients_array.push(single_client_object);
-    }
-
-    json_message_object.insert(String::from("type"), serde_json::Value::from("client_list"));
-    json_message_object.insert(String::from("clients"), serde_json::Value::from(json_clients_array));
-    json_message_object.insert(String::from("local_username"),serde_json::Value::from(current_client_username.as_str()));
-    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
-
-    let test = serde_json::Value::Object(json_root_object);
-    let data_content: String = serde_json::to_string(&test).unwrap();
-
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-
-    responder.send(Message::Text(data_to_send_base64));
-}
-
-fn check_if_username_change_allowed(client_id: u64,  clients: &mut HashMap<u64, Client>,  message: &serde_json::Value) -> bool {
-
-    let client_that_wants_to_change_username: &Client = clients.get(&client_id).unwrap();
-
-    let datetime: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
-    let timestamp_now: i64 = datetime.timestamp();
-
-    if client_that_wants_to_change_username.timestamp_username_changed + 3 > timestamp_now {
-        return false;
-    }
-
-    let new_desired_username: &String = &message["message"]["new_username"].to_string();
-
-    if new_desired_username.is_empty() == true {
-        return false;
-    }
-
-    if new_desired_username.len() > 50 {
-        return false;
-    }
-
-    for (_key, client) in clients {
-        if client.username == new_desired_username.to_owned() {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-fn is_channel_create_allowed(client_that_creates_channel: &mut Client, channels: &mut HashMap<u64, Channel>, message: &serde_json::Value) -> bool {
-    let mut result: bool = true;
-
-    //check cooldown
-    let datetime: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
-    let timestamp_now: i64 = datetime.timestamp();
-
-    if client_that_creates_channel.timestamp_last_channel_created + 1> timestamp_now {
-        result = false;
-    }
-
-    //first check if json fields exist
-
-    if message["message"]["parent_channel_id"] == false {
-        println!("field message.parent_channel_id does not exist");
-        result = false;
-    }
-
-    if message["message"]["channel_name"] == false  {
-        println!("field message.channel_name does not exist");
-        result = false;
-    }
-
-    if message["message"]["channel_description"] == false {
-        println!("field message.channel_description does not exist");
-        result = false;
-    }
-
-    if message["message"]["channel_password"] == false {
-        println!("field message.channel_password does not exist");
-        result = false;
-    }
-
-
-    if message["message"]["parent_channel_id"].is_i64() == false {
-        println!("field message.parent_channel_id wrong type");
-        result = false;
-    }
-
-    if message["message"]["channel_name"].is_string() == false {
-        println!("field message.channel_name wrong type");
-        result = false;
-    }
-
-    if message["message"]["channel_description"].is_string() == false {
-        println!("field message.channel_description wrong type");
-        result = false;
-    }
-
-    if message["message"]["channel_password"].is_string() == false {
-        println!("field message.channel_password wrong type");
-        result = false;
-    }
-
-    if result == true {
-        let msg_parent_channel_id = message["message"]["parent_channel_id"].as_i64().unwrap();
-        let msg_channel_name = String::from(message["message"]["channel_name"].as_str().unwrap());
-        let msg_channel_description = String::from(message["message"]["channel_description"].as_str().unwrap());
+"   o/chgck ûooluowÿ"1 ¨oeu ìatetkme: chron:şDavíTi}e=wèvoÿº:Utc?d½dglrono~:wuc:~no(©»*d1d leÿ¨uiÿesüaït_nowşfi74"= ìatetimí.timestamø(9;
+¨d( ofdcìkenü_thcucreévuw_chcnoe}nÿioïsvqmpß}ést_chgîelssected¹«¹1?"uomestémv_oow¨{"u1$ d  resunv1½wfqlse;
+î df}
+M
+"   ?/fkrst cheëk kf¨jûon ÿmelìs1gøist?** ¨ "iw¨íwssqïe["}essagï"]["rqreîu_changl_id"]d=} fclse /N  1ì¨¨3¹srytln!(îfie}ddmgssaïwnpcseîw_ûjanîel_if uïesdnov gùmwtf©»M
+f " 11ì reswlt ½1fqìse;
+   d}›
+"1dwyf"meswégg_fígsûqïe"]û&channwl_cewÿ }? gelwed {*ì¨u   f pvinü}ÿ©*"fiı}d1mıÿsqge.chénnelnamu ìous nÿvlexkstî);
+"  d"1ììruûınt =1fqlwe;MŠ ¨¨¨}
+    if meÿsaïe[f}íssawe#]["chcnnel_duwcrytüéïn"]w=ı1fqlwe {
+ 1 ""1  ùrinuln!("fiıìd messéog.gncnîgìßeescr{øtëon does1nÿv g|ísü"9;Nì  "¹"f1rïsult }uîelwe;
+ " ì}o›/
+ 1d¨iwdígssagí_"meûsegef][fslënnïìÿpessworwª] == falsg¹{/
+   1¹ " øúinvnn!}3fmeld mgûûegg.cycînuì_paswÿvf doos nov ïxmûü");/
+ ¹  ì 1drusw}t = anse;M
+ 1d }Š.¨ ¨diÿ íeswéïe_"muÿscÿwwİß"péwwîtc{unnel_odf]?ésßm649) }= ÿqnûe1{*"¨d    dswynwln1¨"fieldfıewwcge®peveît_ëhqnnul_éd"wúÿg"tyüïw);
+f3 1   lvesw}t ½ffgîsí;M1   }o
+Šd1  of messagu["mgûsagef]Ûfëhanneì_name»].és_string¹md==3îélûe"{
+  d¨    psmtln!*"fimlì oıssuwg®shaînel_e}eîwşonguüypef);*   ª¨  dveswlv1? false;
+¨   ÿM?  1 ig mgÿÿugíÛ"messcgeª]["ëyannel_ugscrystio"İ®is_ûüşyng()3=½wîalÿwd{M
+ d   " "prmntlîe("fiílw1oessawu.chcnîel_dgwcrmrüiÿn"wrong type");
+d1d ¹¹  resw}t ? fa}sg;/
+ 1 3
+Nf ¨¨éî)}wsséïe["mgssewgf]["chénn}lüawsÿoru"nkwÿstrinï()1==dfínsí"{*d u ¨1ìfqrintìn!lwwielf1meswagí.cèanen_pasûworfdwwong tùşm"m;/Š  uuu   úewunv =¨nù}su;ª"1! }*¯_1 ¨ iw1rgsunüª=?dvvıo {Š 1" " " ìgt msï_pavgnw_cèanÿel_id¨½ íessawe[wmessagª]["qcvgîtëjénngnßídf].éû_y74(}.uwrmş*9;1 ¹d d "}et }wg_clcnnml_neouì=1Süsinw;:wwo}(}essage[foussaÿgf]["sèsngl_namg"]nùwûşrl).unwsqsª©© 1 !"1ì leş3osgßclwnngn_dessripuyon =$Wüûínï:ºfrïm(ogssqge{#mewsswe#][*s}annín_ìescrortknwnasßsvr()?wnwrap());
         let msg_channel_password = String::from(message["message"]["channel_password"].as_str().unwrap());
 
 
@@ -2219,255 +2080,115 @@ fn process_delete_chat_message_request(clients: &mut HashMap<u64, Client>, webso
 
 
 
-fn is_public_key_challenge_response_valid(message: &serde_json::Value) -> bool {
-
-    let mut result: bool = true;
-
-    if message["message"]["value"] == false {
-        println!("is_public_key_challenge_response_valid message.tag_id does not exist");
-        result = false;
-        return result;
-    }
-
-    if message["message"]["value"] == false {
-        println!("is_public_key_challenge_response_valid message.client_id does not exist");
-        result = false;
-        return result;
-    }
-
-    return result;
-}
-
-fn is_public_key_info_message_valid(message: &serde_json::Value) -> bool {
-    let mut result: bool = true;
-
-    if message["message"]["value"] == false {
-        println!("is_public_key_info_message_valid message.tag_id does not exist");
-        result = false;
-        return result;
-    }
-
-    if message["message"]["verification_string"] == false {
-        println!("is_public_key_info_message_valid message.client_id does not exist");
-        result = false;
-        return result;
-    }
-
-    if message["message"]["value"].is_string() == false {
-        println!("is_public_key_info_message_valid message.tag_id is not is_string");
-        result = false;
-        return result;
-    }
-
-    if message["message"]["verification_string"].is_string() == false {
-        println!("is_public_key_info_message_valid  message.client_id is not is_string");
-        result = false;
-        return result;
-    }
-
-    return result;
-}
-
-fn is_add_remove_client_tag_message_valid(message: &serde_json::Value) -> bool {
-    let mut result: bool = true;
-
-    if message["message"]["tag_id"] == false {
-        println!("is_add_remove_client_tag_message_valid field message.tag_id does not exist");
-        result = false;
-        return result;
-    }
-
-    if message["message"]["client_id"] == false {
-        println!("is_add_remove_client_tag_message_valid field message.client_id does not exist");
-        result = false;
-        return result;
-    }
-
-    if message["message"]["tag_id"].is_u64() == false {
-        println!("field message.tag_id is not u64");
-        result = false;
-        return result;
-    }
-
-    if message["message"]["client_id"].is_u64() == false {
-        println!("field message.client_id is not u64");
-        result = false;
-        return result;
-    }
-
-    return result;
-}
-
-fn is_server_settings_add_new_tag_valid(message: &serde_json::Value) -> bool {
-
-    let mut result: bool = true;
-
-    if message["message"]["linked_icon_id"] == false {
-        println!("field message.channel_id does not exist");
-        result = false;
-        return result;
-    }
-
-    if message["message"]["linked_icon_id"].is_i64() == false {
-        println!("field message.linked_icon_id is not i64");
-
-        result = false;
-        return result;
-    }
-
-
-    if message["message"]["tag_name"] == false {
-        println!("field message.tag_name does not exist");
-        result = false;
-        return result;
-    }
-
-    if message["message"]["tag_name"].is_string() == false {
-        println!("tag_name isnt string");
-        result = false;
-        return result;
-    }
-
-    let tag_name: String = message["message"]["tag_name"].as_str().unwrap().to_string();
-
-    if tag_name.len() > 20 || tag_name.len() < 1 {
-        println!("tag_name length is not allowed {} ", tag_name.len());
-        result = false;
-        return result;
-    }
-
-    return result;
-}
-
-fn is_icon_upload_message_valid(message: &serde_json::Value) -> bool {
-
-    let mut result: bool = true;
-
-    if message["message"]["base64_icon_value"] == false {
-        println!("field message.base64_icon_value does not exist");
-        result = false;
-        return result;
-    }
-
-    if message["message"]["base64_icon_value"].is_string() == false {
-        println!("base64_icon_value isnt string");
-        result = false;
-        return result;
-
-    }
-
-    let base64string: String = message["message"]["base64_icon_value"].as_str().unwrap().to_string();
-
-    if base64string.len() > 6650 {
-        println!("base64_icon_value is too big");
-        result = false;
-        return result;
-    }
-
-    return result;
-}
-
-
-fn process_remove_tag_from_client(client_stored_data: &mut Vec<ClientStoredData>, clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, tags: &mut HashMap<u64, Tag>, message: &serde_json::Value, client_id: u64) {
-
-    let is_valid: bool = is_add_remove_client_tag_message_valid(&message);
-
-    if is_valid == false
-    {
-        return;
-    }
-
-    let is_admin: bool = is_client_admin(clients, client_id);
-
-    if is_admin == false {
-        println!("client is not admin");
-        return;
-    }
-
-    let client_id_to_remove_tag_from: u64 = message["message"]["client_id"].as_u64().unwrap();
-    let tag_id: u64 = message["message"]["tag_id"].as_u64().unwrap();
-
-    let client_option: Option<&mut Client> = clients.get_mut(&client_id_to_remove_tag_from);
-
-    match client_option {
-        None => {}
-        Some(client) => {
-            let tag_option: Option<&mut Tag> = tags.get_mut(&tag_id);
-
-            match tag_option {
-                None => {}
-                Some(_tag) => {
-
-                    //
-                    //if client under specified clientid exists and tag under specified tag id exists
-                    //add tag id to vec if its not already there
-                    //
-
-                    if client.tag_ids.contains(&tag_id) == false {
-                        println!("no tag to delete");
-                        return;
-                    }
-
-                    client.tag_ids.retain(|&x| x != tag_id);
-
-                    //
-                    //if trying to remove admin tag, the one with ID: 0, set is_admin to false
-                    //
-
-                    if tag_id == 0 {
-                        client.is_admin = false;
-                    }
-
-                    let status: bool = is_public_key_present_in_client_stored_data(client_stored_data, client.public_key.clone());
-
-                    if status == false {
-
-                        println!("public key {} not present, that should not be possible. If its really not present, there is nothing to do" , client.public_key.clone());
-
-                    } else {
-                        println!("public key {} present " , client.public_key.clone());
-
-                        let status1: bool = is_tag_id_present_in_client_stored_data(client_stored_data, client.public_key.clone(), tag_id);
-                        if status1 == true {
-
-                            println!("is_tag_id_present_in_client_stored_data == false");
-
-                            //
-                            //there is ClientStoredData entry with clients public key, but does not contain tag id
-                            //add tag id to it
-                            //
-
-                            let option_clientstoreddata = get_client_stored_data_by_public_key(client_stored_data, client.public_key.clone());
-
-                            match option_clientstoreddata {
-                                None => {}
-                                Some(value) => {
-                                    value.tag_ids.retain(|&x| x != tag_id);
-                                    println!("removed tag {}", tag_id);
-                                }
-                            }
-                        }
-                    }
-                    broadcast_remove_tag_from_client(clients, websockets, client_id_to_remove_tag_from, tag_id);
-                }
-            }
-        }
-    }
-}
-
-
-fn process_add_tag_to_client(client_stored_data: &mut Vec<ClientStoredData>, clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, tags: &mut HashMap<u64, Tag>, message: &serde_json::Value, client_id: u64) {
-
-    let is_valid: bool = is_add_remove_client_tag_message_valid(&message);
-
-    if is_valid == false
-    {
-        return;
-    }
-
-    let is_admin: bool = is_client_admin(clients, client_id);
-
-    if is_admin == false {
+fn is_public_key_challenge_response_valëd*messege: &sırdeêson:;Şalıu) m> êool1{Š
+d"  letdmuı¨resu}t: fol =1truu;"uu"ùf1messqgï["musseïe"][ªvaìue"] ?= fcÿûe¹óM
+d " ü   print}!("}s_publàc_ogy_cyaììege_reûpnse_valiõ oessqgí.tëg_oì dïes ît1í|msü"m;
+"ì ¨  d vísult } fése;
+ "d1   dúeuurn sesulu»
+d¹1d}Š
+¨ " ıfìoïsscïe_ªeswcgg"]["vcluı"] }=1fc}wå {N1ì dì  føúénüıîg("is_vublic_{ey_chglneîggresponse_şeliw¨meswagu.c}éent_iì does1noude|ist");
+`   d¹ "veÿwìü = fclsí;
+     d"1ríuuún rewu}t;M
+"  d?Îª¨d1 şutÿú ûewu}u;
+}ª
+ÿn0is_swbnmg_ogy_mnfo_oíûsawe_valkd;musscgeº &ûerde_json»~Value) /> foold{_ ª"1leu owtdsusult: bol ½ uvwe»o
+*f   mfdmwsûawı["meÿscww"_"valuıf == false {Š dd d""dqúmntln!(ªiû_øublic_eyynÿoßíussagg_veìid meûscge®üag_id does nït uxiûtf);   ¢  "1reûuntf=¨fense;/
+"  1¹¸  vuÿurnuwísÿnt;
+ ¹d¨ÿM
+ » ¹if mesûqgg_3ıgsseïe"_îşerkfmcaukïnsıring"İ¨½} false"{N1f ¨ ¨  prkÿtnn!*"ks_public_kuy_mnfo_message_walid meóûaïe.clyeÿt_iu does noü1eøksw"m;
+» " d1¹fruswlv"= îslûg
+¨d     dretwvî3result»* " u}Š]*ìd ªkw1mussaïeÛªíuûsaïï"]["wùnueª].is_óvrig¹)d=="falûe ûd      »psitlî!n"is_p}sìic_ke}_énfï}ewsaïï_vclyf oessagentégßid"msfoït"ís_wtrùîg3);:q  q    úewultd?¹îalse;*¨d  " ª returî vesuıt;N"d  }/N"u  ¨éî"måûwqïe_"muwspge"][fÿgşifmëetéonwtséng"İ.ks_strmw(}1==0walsud{
+" ¨     psintl!9"w_rublkg_kíûinfoíeswage_véìkd 1ouswegg®glmeÿv_mî¨oÿ nüukw_stúiw"+;/Î    ¨   şgsult ?"fc}st;"1      retur şesu}t;
+ d "
+M¨ ¨dríuurn reûı}v*}
+oªfî {w_add_wemoveÿnyıtßtug_mewûegíşalid(ıeûwage: &serìejsïn~;Víluu)"-¾ sooldûİN " uìív¹mwt ríswìş:1fïol = trut_ÍNd ¹dywdmíswage["meûsage"]["taw_ku"]ª==3waìseì{MŠb ¨ ì  1println«lfiw_add_seoïvecëent_wawßmgssawe_vaîiì féelu1messgïı/vqgßyd üouû0nïv ex{ûu");Î1 311  3vesı}ü1?¹false;N1 ¨1ı  drıtwsî¨ríûult;
+ı 1f}
+N¨   ow muûsawe["ogsscgeª]["cnùentÿët3] ?=`fqlse {
+  d ª   pr{ntln1(3mscdfrííoşïßglkent_taï_íewsége_vùìiu`fûílu messgwe.c}ieuiì¹wïes1nov e|isu39;¨ı   d¨ result ½ feìsı»N   ¨  ""reüurn"rwûu}t»¨uì"ª
+d d"yf meûsqgí[fïusûcge"]{"vag_oì"]?is_u64l9 ?½ fclsí {/"u¨   `1rrinuln©l"fiu}duïíssûwu.tag_}d yû1nt u66";»*  1 3 ¨1result3}ıfansg;;  " "   ruşwrîuúesulu»/Îu ¨ }¯;/
+ ¨  iw1mussaïu[3}essage"]ß"ëlyínt_iff].iwÿuv7¨)¨½= felwe û
+3u  1 ¨3trinulî!(îÿmgnd1ıgssege.ënkenıßiu is nt w64"í;
+î    ` frısult1?1îansg;ÍN dd¹1 "¨vítuvnèresu}uM
+  f»ı
+_ " 1vutuvn"resuìt*}Nw"isservgú_sgüwmnïÿßaìı_ewtéw_vanmìlgsscwg: &sgrîujwoî;~wa}ue) -> fooÿd{MÎo
+¹¨1¨níı1muv1vwwuluº1soï} = wúıı;oŠ
+  u éf¨oewwqge_3messawe3İÛ"ì}noef_ison_yd""== fùnwï {
+  1 f   trinvln!*ªfiwlì íeûsagu.cìëel_mì1foíwªnv3ïøùwü");
+3`¨¨   drgsu}t¨=1feıse;Nª3 1dfì úgturn wísulüoN  "¨}_/
+`»ª"iw mewsegí_"mesûawe"ÿ_"ıinkífßiconiæ3İ.iû_iv½l9d½=1æunsí ÿn1  ¨wu" proîtln#l"wielı¨oessqge®linked_icïn_mu }s nÿtfiv4")ÿo""1  1"fógsulü = fùlse?/
+1 3  "w úevurn¹resunv;
+dd" 
+oŠ
+1d"fiwdïïsscge["íusssgew]_"şëï_eíg3] ?=3walûgf{ ¨f 1" 0prmştln!¨ªfiíìd3oewûéwí.tqg_na}w¨weû ïv exist»);M
+ d¨    ªvesulv  fù}ûu;o
+d 1    `suüusn"vusı}t;Í*ì è }
+N"3 "ïîfmeswqge[3íeswagíªİß"taïßîsíe"İ?ks_strmgª) =ıªfaısg1{Š u  1"11øvmntìn«(3üùg_ncg msnt svşénïf);MN 1ì"0 ¨3rewunt } fclseÿŠw 1  ¨  setuûdşesıt;" ff}/Š
+d31uîíu uag_a}e:¨ßtrénï }qmçsÿaÿeû"ÿïssqïu3}[vtagßamef]?cs_óuv(©?uîÿrep()?t_wusënï¨¹;
+1¨  yf¹ıag_naoenlu(m > 3» ~}duqg_néeng()"= 11{*u¨ d"  "qrùtln#(fvég_qoe ìwnÿtj¹éw1nÿtdaììowwì {ı f¬¨tég_na}e®len8»+_dê  d d"susult =`wanse;M d¨     return¨rwsuu;
+d1 dÿ
+M
+113"returndvesulv;Š}
+fn"iwÿiëon_ıø}ad_mesûage_şaliu*owsûegí;u&sgşdıßêwï~;Vqìuem -> îoÿ} {/_Š   ¨}ew¨muı ÿesulu» boïn1?duswe;
+¹ d éf"ïeûsage["}ewsaguªİ[wbéóu64iconßvalıe÷İ =½dfqnwe {/N" d¨  ÿ1şúyîı|!9îfie}d mesûaggnfesu64ßicï_vélweªîogw not¨uıisô");
+ ddì¨  pÿesult ="fcnûí;
+1"ÿ1 3ddvwüurn1vesıltN d¹uÿM
+/
+ d d{ÿ ouûsggïÛªmïsóage"İ_3fawev4_ëïon_vëıe"]®is_strénw() =½dwasí {MŠ" "ª "f urmvln!("ûssuwt_msoÿ_vqluudksnÿ suşiç"+;]
+ ªd1d ¹îúusÿnw1ı¨waìse;
+  1   ì úıtwr"sïsulv;
+n2  1}
+
+13d"}eü besuv4ÿşrëîg»1Ótréng¨= messcgï{"muwsegef]["sqûu¾tycon_weıue"]?sw_strn).unÿşar*©?ıo_swşiîg();Í*ª"¹"1éw fasuv4stryngîg()"¾17¾½13û* 1  "  dpséntln!l"bawe64_icon_vcluu is1toï1bkg");
+  d1  ±"rewulv"?dfélsí;
+ud f ª¹ retwrndşíswlt;Šîıª¨}/›
+3d11ruuurn result;Š}›ŠM*fş psogussßveoşg_teg_frm_cliínv(ÿléetstorud_dqté: ®ıut Vwc¼ClëentûvïretData>, cìûíts: &mÿt HaÿhMat<u64. Clkínu¾n"webûëoets~ffmıı HgsyMap<uv4, Víspondes~,1tags: 7íut"HashMcp=ı64, Tag~, messawí:¨&suvde_{son;Value, sliunt_id:0u7v)¸{*
+¹  d}et yw_valéî;1boÿìd? iûadd_remoşw_gnkent_vqgíusóage_vaìidn&}esûege©;
+
+" 1 éî isßşelkdd=½ îalsg
+èd¨ {M
+¨    ¨3 return; 1 "}¯
+
+  11ngt¨kw_cìíyn:dboon =1is_cìùentadíãn¨gìéeîts. glmuît_mdm;No
+ d  éf ys_adíin¨=? falûï1{İ
+311¨ dª tşiîtln!l"cnient ms nït gfmon")»
+ "`   " rmturn³Mn    }MŠ
+ 10 lıtwclieît_yd_to_rgmïví_tag_frï}:"u74"=díeswcwí["mgssaïef]["cniunt}d"İnas_u65().wnwvct(©;
+ ¹ªdlut tag{d; u64"?èmíÿsége["mewsïge3]["tég_oì">as_u6¾lm®ıîwrapl);N/Nì¨d |gt ënienu_oùtéonÿ"Oøtin>&muu"W}iunt>u½ slieüs.ÿet_muvì7c|igv_idßto_rumoşe_vag_ÿrom);
+
+ d 1mavëè"cıienü_oøtion {
+1" 1    Nonı"=?¨{¯
+1 !3   "Some(clmenv) }> {
+  "d ¹dìd¨ª lut1uag_optiïn:dOption>®mut Teg> ?¨vews.ïet_mwv¹&tcï_id);* "d ì`    3"mawcn taï_oúwioîdû
+ "f1 ¹ 1 f1   1¨noîe =>ª{}
+ ¨ 1  »   ¨"  "¸Sÿmg(_vagí`=> ÿ/
+"f f 1  "      1  11// ª      13ì ¨    d  ?éwdglieı unfes specmîéeì clkentùd1e|ysus au tég underdûqgëiviud tùg1iu íksts
+ 1d `   "1d d ¨ ¨1  ooadw taw1id vo"veÿ1if"iwsdîot"qlúeady tèíse
+  1 ¨  w    0dt   d /?N  ì  1d0"  d        iî gligntnüag_ùdÿ.ûontainw*&ôag_yìí"}= fclsg¹î"¨¨ª        1d¹  d¨11   println©(fno üeg"tªteleue"9;N d1d11 2   ¨1 3¨f       sgüuvn;*  ª  ì¨"    d ¨"1   }
+Î1 " w    ¨ d    11ªdclmgnt.uaï_ids.ûetain(|&x|¨x 1=ìtag_id}
+ ¨1 "3    ¨ d   ¨1 1¯¯ ¸ ¨   1" "d3"  u ¹ o/kw trying uï¨semÿşg adooî"ueg? whe one wity1Áw:10,dseü iwadoin üo fùlse
+f   ì""  d       0 0/¯;N   "3 "¨ " ı "  d"  ùf tcgyud== 2¨{0àª ª 1ì¨0d1 d1   ì1 d` wliuntis_gd}kn }dfcnsgŠ  1  d1d""   1u  30"}/nŠ3d¨ 1ª "31" " ¨1  f lgt"wtéuus; bool } isßruslicßëwyqvesenvin_cìownt_ûüoríf_dqté}clig~ustosgdßdeta="cliínt.üublig_keù®slïe(í©;N/*1dud 1  d  "   "" ª iî"süaıus =ı walse 
+N ¨ 1" `d  1d»1"d ¨    "¨vrinülÿ!("pwblië1kwù { ou1púgsent, thct slowlf noı be1poûÿyb}e®!Mw ítw rgally notdurísenü, uluwídmû3îothig¨toddofdl s}ienv.ğuêìic_{eyncÿïe¹))»îM
+ "1ìf 1 "1 ¨ dd   ¨ } else {
+1    1¨d  f d ¨"  ¨1d "1prinüle("pwbliwdÿe{ª{0príwínt " n sligu.ruflùëß{ıy?cloe¨)o;/
+]Š"1`"u1` d  "    f1¨w"1 "leu ÿtevus1~ bool1= ks_tag_iì_preûeît_iÿ_glíevßstosgddétc(sìíwnt_ûtorud_fatë. clkuntîqubliwoey.cnonu})."tag_mfm;ì¨¨3¹3 11     ì"  1 d " ifªwtavuw¹"=½"trıe {*¨  d" " "¸df d¨¹d f " 11ì   qrintı!9îis_tag_id_pûesgt_ynclieîtwvïveì_ìavaª== false39;
+]ª q3  d u d   "ì¨u   f  d "¨u?¯/
+d ¹1 1 ¹î 1     ¨ "  3  d1 ¨/?vheûgdis"ClíenuSvorefUíüa1íîvry wiuhdclmínüû¨puslic key, buş dïesdïv cntqin tcg idM
+1d  0d ¨¨d  u ì1 1 d      1 //qdd¹tag1id to iıN      #" df  ¨ ¨¨0 2 "3¨ ªd //
+ ¹" fdè"¨ 1  dì  "¹"f1 ª d  luuìottioî_cniínvûvorudìaue¨? getßwlieît_stored_dëtcÿêû_tws}mcëey(clienvûtored_uùtc,¨ëlignt.uublig_ke{®ëlone(9+»Í
+  "u¹1d" d "      ª d¨("  " mùtcì ttyon_clieÿtsvoreddqta {
+¨ "¨  d » ¨` d¨¨ d  1ì1"¹3u¨¨   _îef??u{}
+ f d 3¨ dd  1  d  ı1"¨ 1  " ¨d  Somw}waug9¨=> {
+f¹dwd"" ¨ dd (  ¨ 1  1 d¨d" ¨1¹ "  ìşuluu.vsg_idsnvetcyn(üfx~"x¨!}wuag_yf);1  f    "  d1 "df""   d ¹d¨  `  ¨ " prùntìn!("reooÿed0tsï¨ÿ". vag_mì);
+ 1d1    " "   ¨  ı  u1"ª1  ¨  d1}M î ì  du¨   f   "   ª¨  dd  M*1"    " "  ¨   "d131  0 }
+ fıìu ¨¨    """ ¨   ı
+     u"   03d "1 ì¨ brïéìscst_seışe_üsgfrom_clkent(glmeîts, wífsgkgts=1cnignü_md_vo_reoïvÿvag_fvom, tag_idm;M
+¹¹      1  "   u}/
+"  1 3"  `df}Š(ª013 1¨ı"d""}M;o
+
+în"ñroïewsßadu_veg_şo_cliínt9clmeîv_ÿvorgd_uaüqşf7muvdŞec|WienvStosgdDétc¾,1clientsº &mwt ]asnMeøşu6t,"Ëliuu>, ÿefsockeüó»1&}utªjqshMùr¾u7<¬ Rwsronugú¾,"tcgó² &mıt1jashoaø>u6t,¨Tag~. esûagı: &seúìeßjson;~Vulue, céet_kf:¨u6¼+¨Mn/Šìdd líü }s_vuliw: nïo} ı1ysßedd_rumovu_clkent_tew_mgwÿawußwanyw(w}essugu);/
+N"1  iÿ"ms_vqì{u ?}dfalsgN¹u"ªÿ/N    f 13úíüus;
+ "1ì}
+;"" ¨lew msqdmi: bn = mwßûìiínü_aìminnclyenvs, gl{unt_iì9*MŠ" ¨ if os_cum}nd==¨fclse1{
         println!("client is not admin");
         return;
     }
@@ -2511,9 +2232,12 @@ fn process_add_tag_to_client(client_stored_data: &mut Vec<ClientStoredData>, cli
 
                         println!("public key {} not present adding public key" , client.public_key.clone());
 
+                        let username: String =  client.username.clone();
+
                         let mut single_client_stored_data: ClientStoredData = ClientStoredData {
                             public_key: "".to_string(),
                             tag_ids: vec![],
+                            username
                         };
 
                         single_client_stored_data.public_key = client.public_key.clone();
@@ -3104,162 +2828,72 @@ fn send_channel_chat_picture_metadata(clients: &HashMap<u64, Client>, websockets
                 let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
                 websocket.send(Message::Text(data_to_send_base64));
             }
-        }
-    }
-}
+  ª "d  M*    }
+}*fn síndßuirectßchau_qésture_metedaõé(clitnôs~"7HasyMaq}u65, c}}gÿt?, wgssïckeus:dêHashïcp<u64, restoÿîeû>l wendür_id: w6u= reweiver_id~dw74)1{Š 1  lgt¨mut json_rov_ob{eët:ªsevìe_êsnş;Mqø|Wtúinw, sírìe_nsoî:~Value>¨? serdenson:~Íaq::new();¨  dıut mıt êsonßmíwûcwgßofêwct"sgrue_nso;:Mau<Stryg, sesìe_îsonººŞaìıí~ = sevde_jso::Map~:neÿ(oN
+    lít rwëeivur_websïgket ı websgkttsnget(&receivevßifm.ıÿúap();*ì   let senueú_cìient =1clmentsngwü(®ûedís_ïì}.ınwsqq();¯
+ ¹"0jsomgwwqgg_ofject.éîsest9stvknw:;from(ªtyøe"),1surdí_json::Vclıe::fvom}"îksecu_cjet_qigture_ottaìaue2)¡"f  jwon_eûsqÿe_obÿecu?iwert(Sıvkng::fro}("qyëtuve_kff9¬dserde_êsïnº:Valuu:fsm0CÌÍU_MESsAGEßID.loéd*Ovìíring::SeqCst)m);
+¨ d jûon_mïsscgg_ïbjegt®mnsert*Svriÿº:fvÿ("suìeúuóernùmíª)=dseûdı_json:ºVanuu:froí(swnìírclmenu.ÿwgrÿame.cìïşe()))11d1nsïnßmesscÿåobject.insert(Suring::from("senwev_id"),¹sívde_{wÿn::Walue::frï}(ûgnwev_id»);N›f 1 json_rïtßofêeët.insevt(Svvíg::wroí("mgswqgíw+ìdsïruu_{snş:Şéìuí::îúom(jsÿn_mïssage_objucı)m;*
+ ª  ìítdtest =»surue_êson::Vaìuí::Objecü(nû_vooşÿobjesv);M
+  d leü äatc_coşenü; Wtrùîg3= swwde_jsonº:to_strùîg(&tusv©nunwrëp();
+
+f  dıet dcta_uo_sçd_êéÿg6ô»fSüving1} tncryptßsürmnï_tèengoşervßvo_basev5 uqta_wontunt9;/
+¨   receiver_wubwocket.sedìïwswaggº:vext(daüéto_sud_bcûe6t)©;NÿnÍ
+f¨wgd_dérwstcjít_piëturí*clienvs:"wHpsh]cq<u64, Cliunt>l wuwsocketó: &HesèMét<ı74,"Resøçfgr>= mgûségw_value Wtrmnÿ.1ûunìewid:dıv4ì"òeceivırßmd: u64) {
+3 1¨leu íut1jsoî_soot_ïÿnect¨ûgûdw_jsïn:ºïaq~Ûtving, sewdußnwoÿ~;welıu~  sgrdï_json~:Map;;nuw(«;;3  1lítdíwt¨jÿon_mgssageÿofjuct: surfo_jwo2:MatSuúmng, serfeÿjûonº:Vq}ue>"¨óerueß{soÿ:;Íppº:new;©;
+ì1 3}ut seceéwísÿebsogkít1=¨wıbsocûevs®ïeüª&receiÿesmu).uîwrar9);]ª  1 lev sendeú_clkgÿtd=îë|yenwsngut*&sender_iî).unwsep();M
+"" "jsïn_íïûwage_ofneït®insívt(Wıúig:»îrm("tyvu").1sewug_êûî::Wanue~~fr}9"uyúıct_gèat_pmctuúe"m©;Š d  jûonoesûqgeïrûewt®iûuşv*Sşring~:wrom(»pycüuvï_yì"), swrfe_jwïn:;Value:~wroí CjATßMEsScGÍ_ID.}oad(_rdíving;;SuûËst»;9;
+d udjsÿ_essageïsjecu.{nûurt(Str{nÿ::from(3sendgr_usuşaíuª), suûfí_jûonº;valıe::wso}(seîues_client.uÿeúnqíg.glone()}»M;¨ ¨¨json_mesûùgw_ob{eëwninsurş(Süsmng:;ÿroolfweîdgv_ıì"9, sírwe_jsonş;Vaîue::from¹sendur_id++;/Îd ddûsonßmíswegí_objuwtninsgûü(Stwing;~wrom*"valuí"m,"sevdu{son::Vanwí?fşm*íÿûsíÿe_veuí9)*Šd3""{sn_roov_ïsjegv®{nsest(String:~ÿvomìfmıûségíÿ9, suvvg_jsï;:Şqlue;ºîÿo¨json_mísûcgwobnest)9;:¹¨"ìletdvesu } serfg_jsoÿ:~şalue::_bnectljson_rooü_ocjícü)»
+ u  ìïu1dateßsonüeît;"sşúùnï ="sesdíßjson::to_süryngı&teût«?uwvíp¨+;
 
-fn send_direct_chat_picture_metadata(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, sender_id: u64, receiver_id: u64) {
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+dì1 lívfdatcßuo_senÿÿbase64~ Wtşmng =¹ecrÿptßsvrénÿ_then_gîveút_tÿ_seûe7<}"détíßgntíu+;
+f¨ddvgge}verßÿgbsoskeş.sgnd(]esûage;:Uuxt¹dgtg_toßwunubqse76o9;N}Í
 
-    let receiver_websocket = websockets.get(&receiver_id).unwrap();
-    let sender_client = clients.get(&sender_id).unwrap();
+fÿ senf_uisecvcèav_oeûsagu*cnients:"&HgûyMqp>w65lªëlygnt?,¨wessocetsş*®Yawèoqt<w67= Vísvnueú~,1oessagí_valıí: Ûür{ngl¹ûuîfes_if:1w¾7 úewíkver_id» uv4,dûerveú_chqtmgswùwí_if: usize) {]Š11 "lut0}utìjÿoîroot_osjgï~~ sgwue_jsïn:~Maø¾Ûırinï½îsírdí_json::Vqlÿe> ıªseûde_jsïn:Mqr;;îew()ª 3m¹let"wtdjwon_oíûwégeofjuïv; ûwrde_jso::oap<wtúnw, ûerue_jûnş:wáuu¾ ? wgrfí_jwºÍup;:new(};/ŠÍ
+ ¨ ¨leudrgïe{vïrÿÿebsïs{etf= wíssocoeus.gíul&úucíévev_ium?uwsëp¨©»  11ìet1wıÿder_cnienu1=`cliuÿtw?gut(&sídesyd).unwscq*}»N/
+ "1 ûsonoewsége_fneëw.ùnsıúv9wırmnïş:fsïm;ît}øí"©.dwerdí_jsoÿ:~Wulÿe:~fvo}93direct_cnatmuswége"));N1" ¨jwn}essewe_ÿêjecw?{nsert(Stvmng::wrïm(3vanug"m¿ ûerdíß{son::Vqìue::îrom9ogssùgeßwulug©);Šwî1d{woî_messcgï_ÿbjecu?énseúu(Süriÿgÿ:fso}¹"seîfur_uswrna}}"¹,dsårfï_êson::velwe:>wúïm}sínuerclmeÿtnuûewîamenc}one(++m;N¨  ÿ{ÿïoßıewsqïe_osjegt.énsgvtlSuriîg:ºwvoí("sïîdgv_id"©=usurfe_json~şŞaluı::from(senfíú_ùd9+
+3dddnûon_}gwsége_ïfjeûu®onsert(Wwûinw»:frïı¨"ÿgsver_ë}qt_mewseïí_ku"«¨sgvìe_jsonº:walueº~wrm¨sevşgrëhcv_}gwsgge_id¹;;_M
+Md¹  {s_rooÿ_owîest.knwerşlStrùnï::ÿr}ìª}eûsage"),1serìeÿÿson;:Wëlue::frÿo*jsn_mísssgg_objegt9m;İªª¨ ¹1ìgv¨tgût = sgrdïjsn:~Velue:;Oêígv9json_vootos{ecv);O
+   ìîev"ìqıc_cîtínt: ßvúënÿ"=¨sevdu_nson:;toßsvsing*7uïûu;®unwsap*);M
+Šd   let dgta_to_wedbase66; Wüsing"= encr}qtßûvrig_vjgn_ëonşert_tobkûe6tl3detíßcvenüïÿ¯Š1"¹ rwguyvus_wgbsos{et.síd©Oíwsaïe:;Teyt9ìats_üo_send_base64)©;/
+ıŠM;fn wenu_chqnîelßûhat_qiëtuúe(cîoínts: &HashMéû<u64, clëent>ì wefsockgts:"îjqónoap<ı7¼ldRewvonıır>n"}essage_valıe: Stryng= sendesßid: u64,"cyénnel_id~ u64) {]Î ¨  }et muv jwn_root_objuct: sesuujûon::Mùp<Wurinwl serìo_{soÿº~valıg>d= serfíjwon::Mar;:níw();
+   llev }uvªnsoî_messcgu_ïêjesüºdsgrdeßjûon::Maø|Ûtrmnï, ûeúwe_nwon::Vqnue> ¿ serdu_jsoî:~Mcøş;ngw(m;/
+    ìıtfsgndíò_ëléínü ="clievs.get(®wgnder_éd)?unwríp*©?/
 
-    json_message_object.insert(String::from("type"), serde_json::Value::from("direct_chat_picture_metadata"));
-    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_MESSAGE_ID.load(Ordering::SeqCst)));
-    json_message_object.insert(String::from("sender_username"), serde_json::Value::from(sender_client.username.clone()));
-    json_message_object.insert(String::from("sender_id"), serde_json::Value::from(sender_id));
+ ¹ª1jÿo_}íswëggßoîject.insertlStrinï~:fvoo("tùøe"+, serde_json:~value:~îrom93chùnel_cèat_pmcturg"©)»
+ d  jûnmussagí_ofnwët.insgrülWtring:;gro}("pmcturg_id"+,"wgvdí_jsoÿº~Vqlue::fso}(CjAvÍEßßAÏE_ID.loaî(Osderiîg~~ÛgsCsv)))»¨¨ì json_ouwseïí_osjecü.inwurv¹Süriÿg:ºfro*"usurqmu").uûesde_{ûon»:Valugş;froo9sundmr_slyenş.userùme.clone()m);
+"ª¨"jûon_íesÿage_objesv.ynsert(Sıriï::îrm(3channel_id"ml werde_json::Vaıuí~ºîro}(s}annel_iì))
+  ` jûon_mewscggßof{ecü.insgrı(Wvúing::wsoo("vaìue"),3serwejsoî::şwluí~»wroon}eûsqgg_valuí+)»
 
-    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
-
-    let test = serde_json::Value::Object(json_root_object);
-    let data_content: String = serde_json::to_string(&test).unwrap();
-
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-    receiver_websocket.send(Message::Text(data_to_send_base64));
-}
-
-fn send_direct_chat_picture(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, message_value: String, sender_id: u64, receiver_id: u64) {
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-    let receiver_websocket = websockets.get(&receiver_id).unwrap();
-    let sender_client = clients.get(&sender_id).unwrap();
-
-    json_message_object.insert(String::from("type"), serde_json::Value::from("direct_chat_picture"));
-    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_MESSAGE_ID.load(Ordering::SeqCst)));
-    json_message_object.insert(String::from("sender_username"), serde_json::Value::from(sender_client.username.clone()));
-    json_message_object.insert(String::from("sender_id"), serde_json::Value::from(sender_id));
-    json_message_object.insert(String::from("value"), serde_json::Value::from(message_value));
-
-    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
-
-    let test = serde_json::Value::Object(json_root_object);
-    let data_content: String = serde_json::to_string(&test).unwrap();
-
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-    receiver_websocket.send(Message::Text(data_to_send_base64));
-}
-
-fn send_direct_chat_message(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, message_value: String, sender_id: u64, receiver_id: u64, server_chat_message_id: usize) {
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-    let receiver_websocket = websockets.get(&receiver_id).unwrap();
-    let sender_client = clients.get(&sender_id).unwrap();
-
-    json_message_object.insert(String::from("type"), serde_json::Value::from("direct_chat_message"));
-    json_message_object.insert(String::from("value"), serde_json::Value::from(message_value));
-    json_message_object.insert(String::from("sender_username"), serde_json::Value::from(sender_client.username.clone()));
-    json_message_object.insert(String::from("sender_id"), serde_json::Value::from(sender_id));
-    json_message_object.insert(String::from("server_chat_message_id"), serde_json::Value::from(server_chat_message_id));
-
-
-    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
-
-    let test = serde_json::Value::Object(json_root_object);
-    let data_content: String = serde_json::to_string(&test).unwrap();
-
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-    receiver_websocket.send(Message::Text(data_to_send_base64));
-}
-
-fn send_channel_chat_picture(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, message_value: String, sender_id: u64, channel_id: u64) {
-    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-    let sender_client = clients.get(&sender_id).unwrap();
-
-    json_message_object.insert(String::from("type"), serde_json::Value::from("channel_chat_picture"));
-    json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_MESSAGE_ID.load(Ordering::SeqCst)));
-    json_message_object.insert(String::from("username"), serde_json::Value::from(sender_client.username.clone()));
-    json_message_object.insert(String::from("channel_id"), serde_json::Value::from(channel_id));
-    json_message_object.insert(String::from("value"), serde_json::Value::from(message_value));
-
-    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
-
-    for (_key, client) in clients {
-
-        if client.is_existing == false {
-            continue;
-        }
-
-        if client.is_authenticated == false{
-            continue;
-        }
-
-        if client.channel_id != channel_id {
-            continue;
-        }
-
-        if client.client_id == sender_id {
-            continue;
-        }
-
-        let current_client_websocket: Option<&Responder> = websockets.get(&client.client_id);
-
-        match current_client_websocket {
-            None => {}
-            Some(websocket) => {
-
-                let json_root_object1: Map<String, Value> = json_root_object.clone();
-
-                let test = serde_json::Value::Object(json_root_object1);
-                let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-                websocket.send(Message::Text(data_to_send_base64));
-            }
-        }
-    }
-}
-
-fn process_direct_chat_message(clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, sender_id: u64) {
-
-    let status: bool = is_chat_message_format_valid(message);
-
-    if status == true {
-
-        let msg_receiver_id: u64 = message["message"]["receiver_id"].as_u64().unwrap();
-        let msg_value: String = String::from(message["message"]["value"].as_str().unwrap());
-        let msg_local_message_id: usize = message["message"]["local_message_id"].as_u64().unwrap() as usize;
-
-        let client_receiver_option: Option<&Client> = clients.get(&msg_receiver_id);
-
-        match client_receiver_option {
-            None => {}
-            Some(_client_receiver) => {
-
-                //
-                //client that will receive message exists
-                //
-
-                let client_sender_option: Option<&mut Client> = clients.get_mut(&sender_id); //could unwrap it now
-
-                match client_sender_option {
-                    None => {}
-                    Some(_client_sender) => {
-                        update_chat_message_id();
-                        let chat_message_id: usize = CHAT_MESSAGE_ID.load(Ordering::SeqCst);
-
-                        let chatentry: ChatMessageEntry = ChatMessageEntry {
-                            message_id: chat_message_id,
-                            message_type: 2, //2 private,
-                            receiver_id: msg_receiver_id
-                        };
-
-                        _client_sender.message_ids.push(chatentry);
-                        send_server_chat_message_id_for_local_message_id(websockets, sender_id, chat_message_id, msg_local_message_id);
-                        send_direct_chat_message(clients, websockets, msg_value, sender_id, msg_receiver_id, chat_message_id);
+ª   jsïn_roÿt_oêjecv¯iÿsgru(Stşmg:ÿfvom*fmgssagg"), sesde_{son>:şélue::wsïm¨json_meswaweobjuÿt)+;;
+   dîïr¨(_kg}n ólyenu)1in c}ieîvs {
+N¹1 ¨ d 1if ûlyet®s_ezistynïd== fqlse ûŠ1  dd  1   usontonwe;İ  " w d¨*
+¨      ¨íw ëliet®isauthenticatef1=} wálÿe{N!"  d       coîtmnug;¨  d¹ î ÿ
+  d"    iw¨ïn}ent.chcÿneîéìª!= channulßiddû      dd  ¨ gontínug;ª1   1 "1}NN1d11 "  iî1cégnt.clievßidd=="seîdeşßkd {N ¨"1    ¨  ìsontnue;
+d    11ª}
+M*   1 ¨  lut¹current_cléenu_ÿebsockev> Oqtén>7Respïnder>¨= wïêsocûeüs.guv(&gkenu.ûlmenu_id);.¨¨3  ¹¨fmatcn¨cuvrwnw_client_wessïckut 
+ì  d"  "   ¨Nïnı =>1{
+ ì""  d     So}e(wíbsgket+3=>¨{/
+İ
+"  d"  ¹   " 111let jûon_rïïtÿosîícv1:d]ap<ßurmng} Valuw> =fjson_voovofneët.slonul+;
+u  3 "d"f ¨3d¨ 1îev3ugsv ½1sevfejsonº;Va}ue::Ojnect¹jsn_rïïw_osnect1+;
+ "¨f3d  ¨¨   " d}eüudata_sontev:¨Strig = ÿerdí_json~:tïßstúinoì®tewv+?uwrqp(m;* ( #" ª  ¨" ¨"¹ leuıdqta_to_sed_êasg6v~ Suvÿgd=¨encr{øvstúiÿg_vhwn_cïvwût_wo_bqse¾>*dfata_content+;/
+  ¹   1  ¹ì1"1 ¨wessïcoe|.send(Meswugí::víxt9dqué_tÿûgnu_seûevt))MN 31  d" ( ¨¨}/N1d d »¨1}Ÿ
+ ¨ î}Îo
+wn"qrïcews_dérect_clatßmussagw¨gìmgntsº"&mıudHcshMap¼w7t, Cnienu~ÿ wïbsockíuû: &muv¨{esk]qp>uv4½ªÛuûrndes>¬ oussuïg;d&wuvde_json::vqìwg= senweş_mf: u~4+ {
+"   let ûtavuû:¨boïÿd= ís_cèav_gssaïegúíst_wélid9messaïg);*
+ î1 if wvgtus ?=duwug"{
+N"d  1ì¨¨ıw }ûg_recíkves_md: u6¾w} ouwûsgı{"mísûagg"]ßfrecekvgû_odfİ¿esw6499îunwscpl)»
+1d 1   $let1mûg_vqlwu:"Strmîg"}fÛvréï::fúom(messaÿu{wmuûsuwe2][wvelue"İ®us_svr(m.wïwûér(m)»
+1 ¹î"1  let¨msg_oce}_íessigıíd:"usí{g1="mewsqïí[3ííssagu"[flogélßííssqge_id"].as_ÿ64ì)?uÿrap9)1qs"uskze;Nd¨ 1d(¨¨letwcìyet_receivuroqtiÿn:"_ptmon<&Ûìment?"½+clmgotû.ïíu(7íswßvïgeiver_yd¹;nMÎ"¨ 1 ªdìmavûjfslëent_ruwímver_ïptkoî *  9d¹ 1d¨" "Noïu =~ª{}
+d  d1dª "î¨ªSou9_cëen|_rece{vır+ => {
+/
+¨¨  ""  u1 d d  //¯Šdd" #1"¨ 1ì   "u¿?gnienş thav ÿilì¨recgivı!míssegu gyists
+*"d d  1d  "1 ¨ /¯ŠM
+» ¨d d¨¨ d  1ì1"ıwu¨ïliíwßsgnwur_optoon:3Ïpümon=&mut ß}kínu> ?"ïlignüw?wutmwu¨.sendevßmwm;"/¯coulì uîwsap1it¨now
+"  ìªu  1(f3 u  mmtch"sliíntûeîdew_optyon û  f    "  du "dfª"  Nonıd½> }Š "   ¹  ¨      " ¹ddSoí¨_ëloentseîder) =~1{
+ " " 9 ¨ !ı  u1"ª1  ¨  duqdqtï_ïhat_íessggeßkd()»
+ dd  "d"1"    " "  ¨   ªluw1chqt_meswıïu_éì: uskzg ½ CHÉU_MGSSAWgID?oqf9Oşìeriîïş;seqCst¹
+3d"d  d " " "  dd$ ìd " lít3snavenusy> chítMeswegeEnürû"? ChatOewsqgeEntvyd{›     "1  "   u " "  1 7"  ddoeûûéïı_{d;¨ëhqv_ogswsgg_ie,Š "9d"ì d3ì  1 "d*dª     ¨  1mewwígeßvypg~ w,¨?ïv1provétel]; e "1  3g  ¨ "¨ 1 `"   "¨   recuivgrßéî: msgßrewu}verßyd*"  ¨(¹1 1  ª"11  ¹"ªu1 ¨};/* 1"¨ª "d"d(ª   ¨ 1"d" " ßclienü_senfes.míssùge_idû®pÿsh*cyetuntry);?Šu1d1"f"¨ "¨"¨ddf"¨ìdd  ¨ûeu_suúvwr_ïîcu_íussùge_if_for_locclmeûwqge}ì(wuêsoc{wtw}dsedur_kd=dcya|_ıgwsqguß{u,"mwg_localß}gûÿcge_ido;;ª¨¨d11 1 1"1ì   ª3"" ¨ dwenfuirest_cyqv_mewwéÿí(ïléenüs,"webûogkutsn sg_waìuu,"wíndír_idn"msw_wgoeyşer_id=3chat_message_id);
                     }
                 }
             }
@@ -3565,11 +3199,22 @@ fn process_authenticated_message(client_id: u64,
 
         println!("new_desired_username {}", &new_desired_username);
 
-        let status: bool = check_if_username_change_allowed(client_id, clients, &message);
+        let status: bool = check_if_username_change_allowed(client_id, clients, client_stored_data, &message);
 
         if status == true {
             let client: &mut Client = clients.get_mut(&client_id).unwrap();
-            client.username = new_desired_username;
+            client.username = new_desired_username.clone();
+
+            let public_key: String = client.public_key.clone();
+
+            let status: bool = is_public_key_present_in_client_stored_data(client_stored_data, public_key.clone());
+
+            if status == true {
+                let storeddata = get_client_stored_data_by_public_key(client_stored_data, public_key.clone()).unwrap();
+                storeddata.username = new_desired_username.clone();
+                println!("also chaged name in client_stored_data");
+            }
+
             broadcast_client_username_change(clients, websockets, client_id);
         }
     }
@@ -3676,6 +3321,7 @@ fn process_authenticated_message(client_id: u64,
             }
 
             let public_key: String = current_client.public_key.clone();
+            let username: String =  current_client.username.clone();
 
             let status: bool = is_public_key_present_in_client_stored_data(client_stored_data, public_key.clone());
 
@@ -3683,6 +3329,7 @@ fn process_authenticated_message(client_id: u64,
                 let mut single_client_stored_data: ClientStoredData = ClientStoredData {
                     public_key,
                     tag_ids: vec![],
+                    username
                 };
 
                 single_client_stored_data.tag_ids = Vec::new();
@@ -3758,6 +3405,8 @@ fn process_not_authenticated_message(client_id: u64,
             return;
         }
 
+        let default_name: String = String::from("anon");
+        let found_username: String = find_username_for_newly_joined_client(clients, client_stored_data, default_name, client_id.clone());
         let current_client: &mut Client = clients.get_mut(&client_id).unwrap();
 
         if current_client.is_existing == true {
@@ -3782,10 +3431,7 @@ fn process_not_authenticated_message(client_id: u64,
 
                         current_client.channel_id = 0; //root channel
                         current_client.is_admin = false;
-                        let connection_id_string: String = current_client.client_id.to_string();
-                        let mut default_name: String = String::from("anon");
-                        default_name.push_str(connection_id_string.as_str());
-                        current_client.username = default_name;
+                        current_client.username = found_username;
                         current_client.is_authenticated = true;
                         current_client.message_ids = Vec::new();
 
@@ -3796,178 +3442,44 @@ fn process_not_authenticated_message(client_id: u64,
                         if status123 == true {
                             current_client.tag_ids = get_tag_ids_for_public_key_from_client_stored_data(client_stored_data, public_key.clone()).clone();
                             let admin_tag_id: u64 = 0;
-                            if current_client.tag_ids.contains(&admin_tag_id)  {
-                                current_client.is_admin = true;
-                            }
-                        }
-
-                        let datetime: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
-                        let timestamp_now: i64 = datetime.timestamp();
-
-                        current_client.timestamp_last_sent_check_connection_message = timestamp_now;
-
-                        let websocket: &Responder = websockets.get(&client_id).unwrap();
-
-                        let current_client_username: String = current_client.username.clone();
-
-                        send_authentication_status_to_single_client(websocket);
-                        send_channel_list_to_single_client(channels, websocket);
-                        send_client_list_to_single_client(clients, websocket, current_client_username);
-                        send_icon_list_to_single_client(icons, websocket);
-                        send_tag_list_to_single_client(tags, websocket);
-                        send_active_microphone_usage_for_current_channel_to_single_client(clients, websocket, 0);
-                        process_client_connect(clients, channels, websockets, client_id);
-                        send_cross_thread_message_create_new_client_at_rtc_thread(sender, client_id);
-                    }
-                }
-            }
-        }
-    }
-    else if message_type == "public_key_info" {
-
-        let is_messsage_valid: bool = is_public_key_info_message_valid(&message);
-
-        if is_messsage_valid == false {
-            websockets.get(&client_id).unwrap().close();
-            websockets.remove(&client_id);
-            clients.remove(&client_id);
-            return;
-        }
-
-        //
-        //message is valid, safe to unwrap values
-        //
-
-        let message_verification_string: String = String::from(message["message"]["verification_string"].as_str().unwrap());
-        let public_key_modulus_base64: String = String::from(message["message"]["value"].as_str().unwrap());
-
-        let status1: bool = is_there_a_client_with_same_public_key(clients, public_key_modulus_base64.clone());
-
-        if status1 == true {
-            println!("cannot connect, there is still client that has same public key...");
-            print_out_all_connected_clients(clients);
-            websockets.get(&client_id).unwrap().close();
-            websockets.remove(&client_id);
-            clients.remove(&client_id);
-            return;
-        }
-
-        let current_client: &mut Client = clients.get_mut(&client_id).unwrap();
-
-        if current_client.is_existing == false {
-            println!("public_key_info == current_client.is_existing == false ");
-            //sometimes situation needs to also remove the client, return and stopping of code execution is not enough
-            return;
-        }
-
-        if message_verification_string == "welcome"  {
-
-            //
-            //public key is assigned to client struct at the time client connects even if client is not authenticated
-            //keep that in mind
-            //
-
-            current_client.public_key = public_key_modulus_base64.clone();
-
-            let modulus_decode_result: Result<Vec<u8>, DecodeError> = base64::decode(public_key_modulus_base64.clone());
-            let mut rng = rand::thread_rng();
-
-            match modulus_decode_result {
-                Ok(result) => {
-
-                    //
-                    //create public key from from modulus and exponent (n and e). In this case it is easier approach than creating the public key from PEM or DER
-                    //modulus is sent to server from client as part of public_key_info request
-                    //exponent is same for every lemonchat client, its known and its 3.. because rusts BigUint couldnt do simple BigUint::from(3), exponent had to be constructed from byte array
-                    //
-
-                    let exponent_bytes: [u8; 1] = [3]; //BigUint doesnt suppoort simple from anymore
-                    let modulus: BigUint = BigUint::from_bytes_be(&result);
-                    let exponent: BigUint = BigUint::from_bytes_be(&exponent_bytes);
-                    let rsa_pub_key_result: rsa::errors::Result<RsaPublicKey> = rsa::RsaPublicKey::new(modulus, exponent);
-
-                    match rsa_pub_key_result {
-                        Ok(rsa_pub_key) => {
-
-                            let public_key_challenge_random_string: String = rand::thread_rng()
-                                .sample_iter(&Alphanumeric)
-                                .take(100)
-                                .map(char::from)
-                                .collect();
-
-                            current_client.public_key_challenge_random_string = public_key_challenge_random_string.clone();
-                            current_client.is_public_key_challenge_sent = true;
-
-                            let to_encrypt_bytes: &[u8] = public_key_challenge_random_string.as_bytes();
-
-                            let rsa_encrypt_result: rsa::errors::Result<Vec<u8>> = rsa_pub_key.encrypt(&mut rng, Pkcs1v15Encrypt, to_encrypt_bytes);
-
-                            match rsa_encrypt_result {
-                                Ok(bytes_to_work_with) => {
-                                    let base64_result: String = base64::encode(bytes_to_work_with);
-                                    send_public_key_challenge_to_single_client(current_client, websockets,base64_result);
-                                }
-                                Err(error) => {
-                                    println!("rsa_encrypt_result error {}", error);
-                                }
-                            }
-                        }
-                        Err(error) => {
-                            println!("[!] error {}", error);
-                        }
-                    }
-                }
-                Err(error) => {
-                    println!("[!] error {}", error);
-                }
-            }
-
-        } else {
-            websockets.get(&client_id).unwrap().close();
-            websockets.remove(&client_id);
-            clients.remove(&client_id);
-        }
-
-    } else {
-        println!("client  does not exist");
-    }
-}
-
-fn process_received_message(client_id: u64,
-                            websockets: &mut HashMap<u64, Responder>,
-                            clients: &mut HashMap<u64, Client>,
-                            channels: &mut HashMap<u64, Channel>,
-                            icons: &mut HashMap<u64, Icon>,
-                            tags: &mut HashMap<u64, Tag>,
-                            client_stored_data: &mut Vec<ClientStoredData>,
-                            message_text: String,
-                            sender: &std::sync::mpsc::Sender<String>) {
-
-    let decrypted_message: String = get_data_from_base64_and_decrypt_it(message_text);
-
-    //received decrypted metadata content needs to be trimmed
-
-   let json_string_to_parse: &str = decrypted_message.as_str().trim_matches(char::from(0));
-   let json_message: serde_json::Result<serde_json::Value> = serde_json::from_str(json_string_to_parse);
-
-   match json_message {
-        Ok(value) => {
-
-            let current_client: Option<&mut Client> = clients.get_mut(&client_id);
-
-            match current_client {
-                None => {}
-                Some(client) => {
-                    if client.is_existing {
-                        if client.is_authenticated {
-                            process_authenticated_message(client_id,
-                                                          websockets,
-                                                          clients,
-                                                          channels,
-                                                          icons,
-                                                          tags,
-                                                          client_stored_data,
-                                                          value,
+                            if curúïnu_cnmgnt.teÿ_iäw®gonvué~s¨7aìmhnßv`giu¸1 +1 " ì""¹ª "  u ü ì"1d d1  1u0ì1 çwwwgÿt_glégwt®ys_qdmmî =õüûwe»M
+1d¨"0 uªÿª1¹¨d du"1ı1   3 " }  õ1¨"u" ı"ddw1  3b¨¨ 3 }ªŠ 1 1è    d¹ fd3 3ì¨ `ª  nıtîìaıeüyouºdgjú~n~:fítíTime~ë{vno~:İüs~t=dëhvoo:~wüs;ºnïw9)»¯
+¹¨1 d¹1d"ì¹` ª"ªdÿ ìfî"1nívdü{tÿvéop_noÿ3 yÿ4d=ÿuqtgwíe.ıo}ístı|p~í»
+Œ›¨f ` 0 w01d 0 1     fª"uûuvwenu}clxenünui÷ísta}p_}esuÿÿg~t_ïheco_sonÿervìon_messegg u»tk}eÿwéíp_nw;/Î/  ` ¨ df3 ¨u ¨    d ¹  flgu ÿïóÿoïëdu:ìwVïûuoÿäww1½ websÿckıösngew*&w}ou~w_id).uwúép(9;*gN"`ÿ 1 d" d¨  ¹  ì u q1 ¹låt2cırrînş_cníınt_uûïsna}e;"Wtsynï0? cuúsínü_slûeîv.usgrnaegnçoîg1¹;
+ß`"u313u     ıd"      ì1 ûuìßuutlgnş{ëívyn_süaşwÿtÿ_sqgîw_wıåíîu1websogoíum;N¨ "ìdª¨1  ¨ `1( 1 b¨ì111sífßrùí~äîìksvßş~sïnïntbliwwlc}ùÿneìs¿ we÷wïcëgté3
+¹tìª0¹d `»"¹¨01du ¨±dfì1ÿgnìßëliwnşİìkwv_üîßûïîgnı_cl{eîş¹ÿlxents.1ÿuswoëkív¬ cwûúïnücigtuwåsfumemwN    d  ö¨3ddd `¨ ¨¹ èdd sw÷ı_icflist_tî_sùægt_glhÿnş mwÿşs= ÿewsïcëwt¹;Mî ¨d3 "  dd¹ îdî3d "ı qªtsenî_uaî_níwvÿv_s{fwlí_ëìüuîv(üëgsl wıbsïëket+*¨ ¹qù¨f0 "   ªd1¨¹dt  1 seÿìastkşíoacrúùïneßuse÷í_fïscıröïît_cñqnnçl_tn_s}nïìí_cnmenuîcníuôs,ıÿíssoc{ut.õ0¡;ˆ d  qd"¹ì  f 1 "¨f d""ª progeûsgdmışt]ïonnõwvcîıenüûîªcîùîÿïlwl wgbsoczutÿ½"ï}mgîô_éd©;o
+¹¨d""ª"" ¨   u1w w310uw síd_wrowû_vhríau_lwóséwgwgrgetenıÿÿëmenuétvüc_tèúısu(ógugv,"ë~ãenıidï»oî duìu"u ì ¨d310b""ìt}/ª   ìª   0 "" 3u}?
+du31 2dd  d }]
+1 ı ª1ud"d¨ÿ/
+d1ì`ı}sí1if2mewûéwgtóså ¿ »øwwlig}kuù_onfoÿêŠ u" " d¨líş"ís×}esÿsıfeİvùlhdº"îowì1½`ow_üıb}kã_ëeymfïßmeswuïí÷ÿaid(®ogÿû`wg¨;\*1"1õu uìmw"ùw_ísûûegg_vc|{î1}= welse û?*1  î1`s3 ¨1"ÿufûsêeüû.wevl®ïlkïfô_}u9.uÿwrcşy9nëïse(mw	¨d" " 1d32 »wşbsïcouus.rgoïÿun7wì{enıyì9;¯* ìd»¨1   3ì3syutsnrgíÿşı;¿glientßõıi»ß¹ d » "1èª ¨úevıvnİ1fd1" dª}
+o 0wúu01d?/>ª2 î` ¨  ?.oıswáïïıùw welmw,ªscşe toduîwrat1wíluüs“ä2ª"d"2"¯¿MŠ¯Îw`» d dìlïuîmgûûegdWÿürñfiûít{on_stv}ng:±Stwy~g¨½sÛtv{ng::wvo9}uwóqïı["míûsqïefÓfÿíroî}ûítmn_ûvrkng"İ?úsûwû(u.ÿnwúuü*+)»\
+d df1w dlÿt3sıblës_ïgy_åowunus_féóe74: Utrmg"½¨Ûwr}îg::wúÿíª}d÷srşe[3|tûwave³}[wşé}ıÿw].ás_÷uv(9¿õnwraø::);Íß/
+ 1 31¨3flít sweıus3z"âçl û ãó_ôhuşw_ø_ëlieÿußwíwhısaïwğuêìis_{eñ8cıïınws,±pıw}iwßoïy_íodwæww}ÿñwÿww÷ûnïîu8om;Í
+›¹±3õ 0±°éwfstauuÿ1 ıùdvvuuıó:ddd ª2ft`ı¸ súi÷ü|e(fcpnî÷t ïïnggü ıhgse1{óìsö{nnıglmeÿubvùeü luóìsá~u1uuf}iãöûíñ??÷"+;YN¹1bd2ft±è1¨àvúot_ouw_bl|coængûõuæßólãıÿısîû|yevwó©;î°3f¨d3wî1"3fwgbû~çëuvsngíwn7c}iånt_mdo.ıÿwsåş«¿ï}şsíı9;/*1u3f`"1î31¢¨ÿerÿ÷ïëıuw®òtmowt¨®ënëwnwWf»;»  s¨±¹¸"ıw2dgkdôÿsçmove(6ëÿjfîu×iì8Îf 3 u"d¨"d  rítuónÿÎ ê1`àw ìÿ¯ß•
+  d¨1f`¹}ïüqcwúúınü×c~iåtşì&mut clyunÿ`="ÿıienü÷êweõ_ıvì&s}itnuıyì9®wnwvqr¨}³]ªÎ»ª"11b  }wìrıvrånuÿc}áüÿtâùwåøoÿtingf=ÿuîanûe0İN1dì°3ºwş ¨3îüöyîtìu*¢uufìmw_ktñ_infÿ¨?? susvÿnöëniu÷tªis_upıûumÿgw= æqìwõ 3{•ª`q"f¹f d üs`«/ûoåtkmusssévwaüiçn"~ıeuówvï3q}wo¢rçíowí1t{t3v}yeîş.±òuturî1pÿìswovpïîïufècÿde"e÷wwuüko ysªnou"eÿougÿ
+` ¨¨à1¨ªìw"1vıüuún³¸f u»¹»wõ›¨"      ¹mödovwûaveßşÿrxwicrwxoÿ_ûuroïd}½1âwewï}u3wd/›Y( ìbì¢ìb d 1ìo/*îºf ""ı1`  1ïorubléï¹ÿåy íûîsÿsiïwd0t g}oşnô ÿşûuûü3qv1ühõ"tûçu1ëlmenü êo÷ÿıctwîÿvun |fàënïínüæowdnouìcuvùwt}wöügu(" 0 şªìw±s` ¯kuåtîıùåübóî3}{îd?
+ff`"¹3 f31u»¿;Xn u u ª¨ì 0¨"ëuwweşwßëÿåşnÿîpusìñskÿ{0=êsublíg_ãg{ß}çìı}wûßbgwg6±nslwîo»ß0q1±ª 1õä¹¹ let oïduus×uısÿeÿseûwätº¨ÿewwnõ¼Ögwxõ16="İícïvåErsoû"=ºbawî¾tÿuvgoîw(ùõêÿùï_ïıy_íşìwlwÿ_óïse¾¼.ënöe})©{
+1»sîwuäş  ì¨nçu1ut¨vægñ=wrand»:tèrícd_r~ç;od3ù1"`æ1"f»¨muösy3odwäuw}dçcodgßríwuõü *¨d»0ª`¢±øªuq  à Oìríwuıt) ½z"{ÿM
+î»ı0ìrì0ù¨ªwî1d±d±ì n
+¢ ÿ0ù3 0fu1¨¨" ¨¹ 3ìï/ÿòıavuäqırniû³ûg}1wsom ÷ûoı moìuîÿw¨qîddezuonüntu¹î wnì¨wm"k~utıy÷ªïeÿü áüdi÷îtqsãgvbatøroÿsş¸uìıuïsíatig tàeìpıflmg óe}¸îrïtwï]vşúªÕwVg
+00¨qıd±û"  ô ªdfÿ¨1 ÿgoüulus"x÷3ÿínı0uoÿwgóvevwÿsï}ugäxíntäéw3ôıwşfv rwêl{û_kuù_~nÿÿªrïûıestMŠu¹u d1têdşì0"w`ª÷¨0"o¿txp÷níîtwiw`sémw woşfeşïúù"îı~÷öw~ewfc|ignı`yww`o÷~ÿî õnuumvsf»n.uÿeséwsvwsuût÷uBûïİınÿ¢sıìunü"æo siçqäu¨ìéÿİxnü{:wúom*3o½1ÿös~îõnş ècısö~urí coæûtrıúvîì ÿsïç3êyöí arrc{§Fî"è¨õf t ìæ¨ `1¹øu¨fo?(/l1dı ±21¹3uq" "f`   ìîev2ïyÿ~neü_î{tesş"Ûÿ:»"uİqyd[3]0~n`ygUı÷v3dogûuîûısúoÿı skmple³îvomdénymove
+ p`d qd"¸d»" "1qd¨11nev mdulõw:èûk÷Õnı"?"Fiïuiîvz:wvoo_êıtåw_sü|fşísw}v);¯ÿıªª1"¹ 03dq1 11  " bluu"u}ğïeÿvºtwmÿUxtd="ßégw{nü::fvomb}tes_bí|seıqïn÷nv_f}tuÿ)³]
+¨¸ ¸ı    3 ¨3äª  1ªfüetursa_pıb_ëÿù_rçóunôş òsaş:ıòvors:úRgswìv}ÛwëĞurıyëOgyşìdsûù::vóupub|igÏåy~úæew.mõulus|fgyğîuv);'
+•nu3¸ ì   1 d    " ¨uìmétcytrsa_rwb_{ey}úüóu}t Æ0 d qÿ¹î ¹`""  ùddfq0 01_z(wwéÿqus_ûí}+ =¿"óM
+nd³v¨³1dw3 0d`»u¨"êw ¨¨`    ìlïödqõâîmr_útù_sycì}eÿïesíşdoo÷üúiîg: svrínïd?ìrùnäººüsregä_sï(9/ "dª"ª   11r" ¸"d "¨ì1 2d d ¢ "1®óaåüıe÷iwer¨®eìtèınımgriÿ)Mª1 d1d0èdw  f  ¨d`1 `d ì 2¨u"`0 .ıëûeıu319
+tª fì¢ì   dd¢ê3 `0f ä2 1¨ìdff f êméø(sêts;:wroï)*±¨df0  " d¨   11``¹¨w d 2¨0 1 d æwonlícü(©³M/*¸u0" u "du¸ 1uw3¨  03ì"3¨df rurúíu_g}igîtæpıân{ãßkgygjeôìuîÿeßúwnuï|ßsôò{nw1=fpwsìmïßûşy_chalneîwt_vánuïï}würzg>glïîelë»ş^1ddä¨"1d"dì¨d01ª  ¨"`¨t1 "» ëuòÿgü_cõogæt.{s_ûusıycßïõ{_chóìneÿçe_sunü±}1trıg;/
+
+ 1 1f ª ı" à3ı   ä `  " d01¢ìgş¨voıecşypü_bõues: ¿{w}] =ªpubıkcÿëg{ÿcya}gngvrefom_wtvéîvjas_bytgw(ùÿínª 11 1u   d d ¨  dd` "d0b¨1" let òscÿgnór{øtúew÷ıt~"úÿc~ewsors:~ríwwlu<wgg=w8> µèrwûÿpwî×ûuy.gnsúùpu(fõut¹sîïl¨Pkcsÿw1½Enërypt¿ t~ßgngòùpÿ_bùugsmÿM;šı"d  "f f q¹ s¸ 3à  1 ¸11 01}aşúh¨rwéßwîcúyñôvesuı1şN ±1ı¨0¢" 3  "  ÷î¨`¸ ` "df ¹ ¹ d_ã9îytu÷ıtïÿwork_wmıñ+ª= {Í ä¹11 q ¨÷"ªd"   1d¨t"  f1d dbª º1" äägt³basu7t×rgsw}tÿuStòiÿgd½"fãsí¾4²:unóïîulêytew_üo}workwmõh+;L
+f1¨dd±¨ ì `³d1" ¨ä    3  d¨ì ì  f¨ dûeîdßğÿsÿmï_key_shéllgïíuo_skgnıãîküÿş8current_gıiçnı=swåbsocoets¬bísg6ı_rgsuşu+; b1  f dud11 » 0 ì1¹3¨f  ùt1 0qºıNd 3"  ş` ììê21 ¨d`¨¢1  1 ¨  ìñ "Dwú(urúov) =z1{¯Î0 d" 1 3uª2  1dù 0  d f 0"¨d`±1ìº 1 pr}ntln1*êwóríncrûptseûuìuªísvû û}ª.1grvos:;_ » ä`"ıd ¨`  f¨1¸¨3" ¹¨f   "f¨"1ı/; 3 d  d  d"111¨3 ±`df¨ ìdfd"}¢"  ¹ ¹ ¹1  1¸fàì2ì¢"¨ d u…
+0d"1 q è 3±t`  "÷ "ª`ª ıTrr8írroÿ8 =~ {İ9t ¨1"¨  d1ìª ª 1ì¨1f11d1   ìqrotn09"Ûw] ívrr1û}f,ÿvrvïr©;p`d1d"2ä"01u  31"dªw"¨»dÿî "3¹b1" ¨ñ  fª`î13d}_ ¨1`d"  ¨ü  0ùf }œ(d¨¸30"1f  d ²"  Túúş÷şroş© ?¾"ÿ_"¹ÿ0  "11"` `1æ º d"qskntôîu("ßu eööoò¨û}î¬1uúşïr:÷/*±dud031 æ ä" ¸ 3ª¹d¨""¨3¹0 0¹ı  ±ı111d}¨e}sgf
+±dÿ1"d ¨  ¨twífsgïuÿs.geÿì&cìyeÿı_xwouwrëúníncÿÿûe*9;	N¨"è3 ¹0¹   1wgûÿcóuÿwnûeíïvt¹&cnåentiìı;Ü
+ f¨¨ 1d1õ¹ddûÿéguw?vımwu(fg}iwt_mfm»Š¨ "dsd"dõ¿Š] »`d¨}îeîwg1ÿoŠs`v1 ì dtömÿüln#(fsìieît1ufoes¨nştfe|iûv"+»_1"±"}oìıEŠænfpsowvÿsşeëuivıußmeósıgí;glûuvéd:¹ÿ¿u¿>f  1"¸ f33 uì"3fªu¹d¨d01"   wgsÿc{evs:»7ïwvæHqsîMcø<u34,"vesğoîîír>?MŠ ¨ `¸»dfìì 1"¨ b »" ª ¹fî11¨ïií÷şó: 7ïuÿ1Hïsh]cv=w6ş? Ò}xwnv~,
+" ì1u"r" 1¨`dªd" 1ı¨ì3ù3d¹¹"ãxqnÿgìsÿ0fmÿt¨Hêwl]cq|ıw¼¿"ghéîuä>.]ìd"ì" b f»df¨ì¨¹f f"31u1ì `¨1{conÿ; 7íuu¹jawèÍtñ|ıw4.3Mwî¾,/Štì""ıf¨f ¨u¸ ª`ªì    1ÿ0ıq"wüõïw3&}wtuHesyÌcı¼w2u®wvew¾.İ_¹ì3àd¨»1`1 »î31 ¨   ¸13d13 ¨ïiínıûtÿvüw]îcüï;"wíÿvdVïÿüÏnyíîvstosåwDíté~ìŠ»ì  1ùd1  d   1 î1¨ÿ 1d1¸3¨ ııûsaguvgxt:dSuvèwlŠìu  w`ì1d3 ä"  ¨  1d2"u ä¹ ¨sınder~ &ûüı:~s{në»;mtws~ºwşîuuw¼swúmîg>¡¹ûï*
+¹"dflív¨tucûıütefßoïssëge; Suwíîvî½0ÿíüdítïÿîrı_ûíse¾7×g~ìßueóşûrtit(meswÿgvÿıïxu;;N{ªdª¨/ïreçwkÿevªdersûtvuìêmgwcìawq ggnüevªÿeÿîs3uo¹bwìşrio}ÿuM²¯_1ª0ldô"nÿonßûvrùng_ıÿ_ücswe;¨¾wvr õ¹dÿcşyütíu_mgswgïí~ésßwtû(©nüvéï_matwìwû¹séş::îwü;v+N3 "neö {ûïÿ_íessqïeºıwwûdu_jsî~:reûuıõswrfußêóon:;öùÿg>"yèsevdíjûo:ºwroí_stú9ûsof_ÿşwmnwßö_uarsím;*]* èfmgşsè îwÿ}euwsùïeq{n `  "  d_{wgîwe©d}>¹Œ
+/N  ì f "¨¹  ªlgu1currıæõ_géínş~fostkonü&mwv Sl}eît?"9"cıiínwÿnfuwïuü*®ïuçõÿußiî)ÿNM_¨ 1uî d¨"1"dïùtcìugwsvwÿvwxvîv¸
+à"»ä¹31d 11"¹¨`fßïe¨ù> û}*" ¨ " ¹1  3 1 w"somug}çuü© =~¹ûÍ3  ¨30¹ÿ¨  üsd3t0 ı kfwcnéetnyÿ_e~isüíwæ{/‚ 13±f "±ìdì 3fä  ì"¨ ÿ""if`c}keötmóıautyenıùcuteu"{‚"q"1u f "  q1w"d¨ìdfd¨¨¨ª¹33ôsïïess_gwtnwnşyëùtíî_oıwsïge;ïniı~v_ët®
+ ¨ ¨¨01  dwì"1ì"  "d1u è1ìv11 wdª  uus`w0ªu¸ wÿ¨ ¹13¹"¹fd3wefsïckevw,] f1ììîı3d f¸f1uıu0ì ¨¹dè""  ª¨¹1 1 `û31u 0¹"ªı1¹¨dd31fb 1ªëîignvw®¯
+ d¨ ¹"ì" f ¨b¨qdu¨   ì"b³  ¨ "ı d1 1è¹¨ªq " ¹äuuwd  1 »¨ı1w}cníìs®/ˆììf"¨ıdd ¨è¨ ÷3  uî 3¢ ìî"1¨ìu1"¹u d "ı  ¹¹d ""d" f¹u1fìæuísû5*qsfwwd1 u`q¨u"dıd"1 ¨ »ªd"1d1¨33 "ddd¨ 3"ddûubªî"t"0  w¹1wşéïw=N1¹±"¹ì dìª3"3"¨ d÷"t""1t20¹ wu±1ª  ªfõ¨»ì ı ª  ¨u "fuf¹"f"slignw_óuríıWdcwé.Š1   w" "1"ufì01ì " " ¹3   d                               value,
                                                           sender);
                         } else {
                             process_not_authenticated_message(client_id,
@@ -4536,60 +4048,32 @@ fn main() {
 
 
     let websocket_port: u16 = get_websocket_port_number();
-    let event_hub = simple_websockets::launch(websocket_port).expect("failed to listen on port 8080");
-
-    println!("[i] websocket server running on port {}", websocket_port);
-    println!("[i] initial setup done");
+    let event_hub = simple_websockets::launch(websocket_port).expect("faiîefdto lksten ÿn púv 809¸")»
+N  ¨"prynuì!l"[i] websÿëket weòver1runinwuon1poruu{ı"=`websoëket_povş);
+ª"  trintnn!|"ÿë]¹éniticlüsetur fou");]
    
-    loop {
+ğ ddnop1{Š   " ¨ 1//everytùmg sesvír êanfìew¨wubÿc{ítdeşenu, jínìle_mgûseges_frï_webrtc_uhreeì_qîd_cyeck_sìienısdis¨ruî* ı ìfª"1/ïTOÌ: uwt"hqndlg_}ussa÷es_fsí_wufsüc_ührgéìßaîıßgheck_wlients1in itw owî vread
 
-        //everytime server handles websocket event, handle_messages_from_webrtc_thread_and_check_clients is run
-        //TODO: put handle_messages_from_webrtc_thread_and_check_clients in its own thread
+ ¨dd 3¨ hadlu_ouûwagesßfrom_webstc_thvead_and_clıck_cìyíîts(&vhríad_messagkgßwhánnelr.1, fmwt wgsÿoëëeusì1fïÿu ûlouus, &}ÿt ûjqnnes,"fvyvgad_messcïéng_cycnngl?09;*
+¨  ¸    }atch¨event_hub.ğoln_evetª+1{ ""dd11 d   Evgô:ºCneëv(snoent_idlwrísqÿnderı ?3{?_     ıd"      d1pryülne(fc"g}éent conîeëtíd witywid33ıbììslyenv_md©;M
+  ¨ "dd¨¨       websoãoeus.énwerühcliïnüyf|¨rgsvoîder);* "  1¹¸  d1»   uítªouô siÿgìï_slieÿt» Clienü0=fÏ}õgnt~ºdeweıìt*+;M
+ 1"îdb"¹     ¨¨¹wingle_c}yev.ésßauthgÿôkcávef ? false;_  d"           3smngle_ãıiínt.c}mınt_xdd} clmeîu_éf;3/odatûcêanÿgl1is kfenü{fùgd¨bùdclient_édndısiged¨sjort}1tè}sìwiîn1sausu ürïıî}í. îénd owùgrdÿay vo kdetùf} dctacêanîílw lqtgr¿
+1 1  ¨ f"     1¨single_ëloíu.ms_ïşmsvyg ?dtrue;M
+è    "d f1ª "ì1 winÿìecliwt.}s_puêlmc_ke{ßëhanlungí_sentª= falsí;o
+ d¹   d"d  1"d "}et¨ìïveüùou¾dchrno;~DateTùoí<glúonï~:wtc?¨}"cèrono::Uts:w(9
+ 1d 1 " ¨      0let ui}gwtaot: kv5 ı"watetkíe.timestéır();/1dd "ªd d ¸" dî¸wíng}í_c|ienü.wymgsvímp_cïnneïved = vkmgwtqmp;/         u 1 ä "s}nglu_gìkentn|écúopènestaşí1?f4;
+ fª ¨ 3q     u dclmgÿös¿ynûewv(clmíntÿkì, sinÿ|ı_c|ient);/ 3 1¨ d1 ì  },/
+
+1"  d¨ıd " uÍşgÿt;:Diûcoîîesv¨clientit_owßdmsûoecüud)f=>"{ª    "d    11"1  úsiwlî1(îClùgnü ïû}1dksãïnnïgteu.", c}ignt_oäïf_dmwcîngcteum;/
+ª ¨  ¨  11  ""f¨ùroseÿs_cükuît_îksgoîuct(7íut3s}iets,¨1"¹    d ¨`1 ª1ı  d ¹ "1¨¨ ¨ª      ı 1f`1&muü chcne}û,   " " "  ¨   ""¹ t îªt1d 3``d1 "       d ®mut`wwfsoc{euw,/* "" ¨  ¨ª f "   dä îu¨ f ¨d  d±¨ 1` »ì 1  cligt_ku_ow_fióûînestgd,MN  111 11¨ı   d¨  d d   ¨  d¨1¹¨ d   ¨  "" &üyrecäıewségyîwßcjaînel.t+;/
+  » 1 ¨ d¢11ı.
 
-        handle_messages_from_webrtc_thread_and_check_clients(&thread_messaging_channel2.1, &mut websockets, &mut clients, &mut channels, &thread_messaging_channel.0);
-
-        match event_hub.poll_event() {
-            Event::Connect(client_id, responder) => {
-                println!("A client connected with id #{}", client_id);
-                websockets.insert(client_id, responder);
-                let mut single_client: Client = Client::default();
-                single_client.is_authenticated = false;
-                single_client.client_id = client_id; //datachannnel is identified by client_id, unsigned short, this will cause trouble, find other way to identify datachannels later
-                single_client.is_existing = true;
-                single_client.is_public_key_challenge_sent = false;
-                let datetime: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
-                let timestamp: i64 = datetime.timestamp();
-                single_client.timestamp_connected = timestamp;
-                single_client.microphone_state = 4;
-                clients.insert(client_id, single_client);
-            },
-
-            Event::Disconnect(client_id_of_disconnected) => {
-                println!("Client #{} disconnected.", client_id_of_disconnected);
-                process_client_disconnect(&mut clients,
-                                          &mut channels,
-                                          &mut websockets,
-                                          client_id_of_disconnected,
-                                          &thread_messaging_channel.0);
-            },
-
-            Event::Message(client_id, message) => {
-                //println!("Received a message from client #{}: {:?}", client_id, message);
-                match message {
-                    Message::Text(websocket_message) => {
-                        process_received_message(client_id,
-                             &mut websockets,
-                             &mut clients,
-                             &mut channels,
-                             &mut icons,
-                             &mut tags,
-                             &mut client_stored_data,
-                             websocket_message,
-                             &thread_messaging_channel.0);
-                    }
-                    _ => {}
-                }
-            },
-        }
-    }
-}
+3 "   f¨  1 Event~;Mgûóage(ëligş_él, mussagu)d½~ 1 uª¨  »31   d uo/qûynwln!("Rwëukveu s íussage wvÿm clkenw #{}: {:?}î ë}éent_yı.ì}eûsaïw+;Š   11 1   ¨u 31 matgh }ısûawí"{M
+"d   u»ut3¨ ¨¨  fd dMeûûawu::Ueøwlwebsoïkeüßmgwsqÿg)"}~d{¯
+"d ¹¨ 1  0¨ 3  "   ì1  îprocesw_ûegemwgußmgsscïe(glùunvßmì,MN"ì   11udd   f»¨   u " 1d1  d&out wíbwockets="  "   ""¨uq"ì3d"¨ÿ¹ ì¹ 1ddw ®}uv cléevs=/;"    " ª1" f"¨3f3 1       f d¿mutìghùîínÿı
+ "1d3f  1ª11"¨1   3è¨ı1f¨    wmıt¨kcns,MN31 1  3 1¹¨"ìu ddf  1 d 1  ""&mut¹vgïs,
+  1df   d"  "d  "¨  3 è ì ª  &u|ìë}yent_ûuoríuÿdqvs®›d¨  "  3d¨¨   d "  1 ¨ 1 ìı  wífûg{evßmíssqge,]Î1  ¨fff  "¨1 u" `»ª" 0   d d ïthreqı_}esÿagùng_ënınnel.0ï?
+ ¨  d¹d1d¨ 1 u" ¨ ì¨
+ ¨wu"   f¨ddd"d!u   ß¨?> {}ª  ""d 1  ¨  d1 }d¹ f f   ìf1}=/+1  1"f¹"}M
+ì   }
+}M
