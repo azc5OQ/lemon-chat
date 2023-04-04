@@ -14775,7 +14775,11 @@
                         add_tag_html_class = " context-menu-item-disabled";
                     }
 
-                    let contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + event.clientY.toString() + "px; left:" + event.clientX.toString() + "px; \">\n\
+                    let contextmenu_useronclick = "";
+
+                    if (selected_client_id != local_client_id)
+                    {
+                        contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + event.clientY.toString() + "px; left:" + event.clientX.toString() + "px; \">\n\
                                                         <div class='channel-list-context-menu-background'>\n\
                                                         </div>\n\
                                                         <div class='channel-list-context-menu-items'>\n\
@@ -14785,7 +14789,21 @@
                                                             <p class='context-menu-item' data-action='7'>info</p>\n\
                                                             <p class='context-menu-item' data-action='8'>poke client</p>\n\
                                                         </div>\n\
-                                                    </div>";
+                                                    </div>";                        
+                    }
+                    else
+                    {
+                        contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + event.clientY.toString() + "px; left:" + event.clientX.toString() + "px; \">\n\
+                                                        <div class='channel-list-context-menu-background'>\n\
+                                                        </div>\n\
+                                                        <div class='channel-list-context-menu-items'>\n\
+                                                            <p class='context-menu-item' data-action='9'>set username</p>\n\
+                                                            <p class='context-menu-item' data-action='10'>set avatar</p>\n\
+                                                            <p class='context-menu-item"+add_tag_html_class+"' data-action='6'>add tag</p>\n\
+                                                            <p class='context-menu-item' data-action='7'>info</p>\n\
+                                                        </div>\n\
+                                                    </div>";  
+                    }
 
                     document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend", contextmenu_useronclick);
                     document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.top = event.clientY.toString();
