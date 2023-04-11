@@ -14,8 +14,11 @@ use serde_json::{Map, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use lazy_static::lazy_static;
 use std::io::Write;
+use std::ops::Deref;
+use std::str::FromStr;
 use rsa::{PublicKey, RsaPublicKey, BigUint, Pkcs1v15Encrypt};
 use rand::{distributions::Alphanumeric, Rng};
+use rand::prelude::ThreadRng;
 
 // 0.8
 type AesCtr = ctr::Ctr128BE<aes::Aes256>;
@@ -54,6 +57,7 @@ struct ClientStoredData {
     public_key: String,
     tag_ids: Vec<u64>,
     username: String,
+    base64_avatar: String
 }
 
 #[derive(Default,Clone)]
@@ -62,11 +66,9 @@ struct Client {
     is_authenticated: bool,
     is_admin: bool,
     timestamp_connected: i64,
-    //timestamp_last_sent_chat_message: i64,
     timestamp_username_changed: i64,
     timestamp_last_sent_check_connection_message: i64,  //todo use differnt type of spam prevention, overall number of websocket messages received over certain period of time instead of monitoring cooldown for every time of message
     timestamp_last_sent_join_channel_request: i64,
-    //timestamp_last_sent_delete_channel_request: i64,
     timestamp_last_channel_created: i64,
     username: String,
     public_key: String,
@@ -80,6 +82,9 @@ struct Client {
     tag_ids: Vec<u64>,
     is_streaming_song: bool,
     song_name: String,
+    is_dh_shared_secret_agreed_upon: bool,
+    dh_shared_secret_key: String,
+    base64_avatar: String
 }
 
 #[derive(Default)]
@@ -167,7 +172,7 @@ fn send_for_clients_in_channel_maintainer_id(clients: &HashMap<u64, Client>, web
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -227,6 +232,18 @@ fn get_tag_ids_for_public_key_from_client_stored_data(client_stored_data: &mut V
 
         if data.public_key == clients_public_key {
             result = data.tag_ids.clone();
+        }
+    }
+    return result;
+}
+
+fn get_avatar_for_public_key_from_client_stored_data(client_stored_data: &mut Vec<ClientStoredData>, clients_public_key: String) -> String {
+    let mut result: String = "".to_string();
+
+    for data in client_stored_data {
+
+        if data.public_key == clients_public_key {
+            result = data.base64_avatar.clone();
         }
     }
     return result;
@@ -336,7 +353,7 @@ fn send_connection_check_response_to_single_cient(clients: &HashMap<u64, Client>
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -377,20 +394,21 @@ fn send_image_sent_status_back_to_sender(clients: &HashMap<u64, Client>, websock
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
     }
 }
 
-fn send_public_key_challenge_to_single_client(single_client: &mut Client, websockets: &HashMap<u64, Responder>, random_string: String) {
+fn send_public_key_challenge_to_single_client(single_client: &mut Client, websockets: &HashMap<u64, Responder>, random_string: String, dh_public_mix: String) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("public_key_challenge"));
     json_message_object.insert(String::from("value"),serde_json::Value::from(random_string));
+    json_message_object.insert(String::from("dh_public_mix"),serde_json::Value::from(dh_public_mix)); //bigint values are sent as string
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
@@ -410,14 +428,14 @@ fn send_public_key_challenge_to_single_client(single_client: &mut Client, websoc
 
             let test = serde_json::Value::Object(json_root_object1);
             let data_content: String = serde_json::to_string(&test).unwrap();
-            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, String::from(""));
             websocket.send(Message::Text(data_to_send_base64));
         }
     }
 }
 
 
-fn send_poke_message_to_single_client(websockets: &HashMap<u64, Responder>, client_id: u64, client_id_to_poke: u64, poke_message: String) {
+fn send_poke_message_to_single_client(websockets: &HashMap<u64, Responder>, client_id: u64, client_id_to_poke: u64, poke_message: String, dh_shared_secret_key: String) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -438,14 +456,14 @@ fn send_poke_message_to_single_client(websockets: &HashMap<u64, Responder>, clie
 
             let test = serde_json::Value::Object(json_root_object1);
             let data_content: String = serde_json::to_string(&test).unwrap();
-            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, dh_shared_secret_key.clone());
             websocket.send(Message::Text(data_to_send_base64));
         }
     }
 }
 
 
-fn send_maintainer_id_to_single_client(websockets: &HashMap<u64, Responder>,  channel_id: u64,  client_id: u64, maintainer_id_to_send: u64) {
+fn send_maintainer_id_to_single_client(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>,  channel_id: u64,  client_id: u64, maintainer_id_to_send: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -459,16 +477,31 @@ fn send_maintainer_id_to_single_client(websockets: &HashMap<u64, Responder>,  ch
 
     let current_client_websocket: Option<&Responder> = websockets.get(&client_id);
 
-    match current_client_websocket {
-        None => {}
-        Some(websocket) => {
+    for (_key, client) in clients {
 
-            let json_root_object1: Map<String, Value> = json_root_object.clone();
+        if client.is_existing == false {
+            continue;
+        }
 
-            let test = serde_json::Value::Object(json_root_object1);
-            let data_content: String = serde_json::to_string(&test).unwrap();
-            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-            websocket.send(Message::Text(data_to_send_base64));
+        if client.is_authenticated == false{
+            continue;
+        }
+
+        if client.client_id != client_id {
+            continue;
+        }
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
+                websocket.send(Message::Text(data_to_send_base64));
+            }
         }
     }
 }
@@ -477,7 +510,7 @@ fn send_maintainer_id_to_single_client(websockets: &HashMap<u64, Responder>,  ch
 //client needs to know what message id got assigned to his sent message
 //
 
-fn send_server_chat_message_id_for_local_message_id(websockets: &HashMap<u64, Responder>, client_id: u64, server_chat_message_id: usize, local_message_id: usize) {
+fn send_server_chat_message_id_for_local_message_id(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64, server_chat_message_id: usize, local_message_id: usize) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -488,23 +521,38 @@ fn send_server_chat_message_id_for_local_message_id(websockets: &HashMap<u64, Re
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
-    let current_client_websocket: Option<&Responder> = websockets.get(&client_id);
+    for (_key, client) in clients {
 
-    match current_client_websocket {
-        None => {}
-        Some(websocket) => {
+        if client.is_existing == false {
+            continue;
+        }
 
-            let json_root_object1: Map<String, Value> = json_root_object.clone();
+        if client.is_authenticated == false{
+            continue;
+        }
 
-            let test = serde_json::Value::Object(json_root_object1);
-            let data_content: String = serde_json::to_string(&test).unwrap();
-            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-            websocket.send(Message::Text(data_to_send_base64));
+        if client.client_id != client_id {
+            continue;
+        }
+
+        let current_client_websocket: Option<&Responder> = websockets.get(&client_id);
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
+                websocket.send(Message::Text(data_to_send_base64));
+            }
         }
     }
 }
 
-fn send_access_denied_to_single_client(websockets: &HashMap<u64, Responder>, client_id: u64,) {
+fn send_access_denied_to_single_client(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, client_id: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -515,16 +563,31 @@ fn send_access_denied_to_single_client(websockets: &HashMap<u64, Responder>, cli
 
     let current_client_websocket: Option<&Responder> = websockets.get(&client_id);
 
-    match current_client_websocket {
-        None => {}
-        Some(websocket) => {
+    for (_key, client) in clients {
 
-            let json_root_object1: Map<String, Value> = json_root_object.clone();
+        if client.is_existing == false {
+            continue;
+        }
 
-            let test = serde_json::Value::Object(json_root_object1);
-            let data_content: String = serde_json::to_string(&test).unwrap();
-            let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
-            websocket.send(Message::Text(data_to_send_base64));
+        if client.is_authenticated == false{
+            continue;
+        }
+
+        if client.client_id != client_id {
+            continue;
+        }
+
+        match current_client_websocket {
+            None => {}
+            Some(websocket) => {
+
+                let json_root_object1: Map<String, Value> = json_root_object.clone();
+
+                let test = serde_json::Value::Object(json_root_object1);
+                let data_content: String = serde_json::to_string(&test).unwrap();
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
+                websocket.send(Message::Text(data_to_send_base64));
+            }
         }
     }
 }
@@ -558,7 +621,7 @@ fn broadcast_peer_connection_state(clients: &HashMap<u64, Client>, websockets: &
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -566,8 +629,26 @@ fn broadcast_peer_connection_state(clients: &HashMap<u64, Client>, websockets: &
 }
 
 
+fn send_avatar_to_single_client(websocket: &Responder, id_of_client_to_retrieve_avatar_from: u64, base64_avatar: String, dh_shared_secret_key: String ) {
 
-fn send_ice_candidate_to_single_client(websocket: &Responder, value: String) {
+    let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    json_message_object.insert(String::from("type"), serde_json::Value::from("client_avatar"));
+    json_message_object.insert(String::from("base64_avatar"), serde_json::Value::from(base64_avatar));
+    json_message_object.insert(String::from("id_of_client_to_retrieve_avatar_from"), serde_json::Value::from(id_of_client_to_retrieve_avatar_from));
+
+    json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
+
+    let test = serde_json::Value::Object(json_root_object);
+    let data_content: String = serde_json::to_string(&test).unwrap();
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, dh_shared_secret_key);
+
+    websocket.send(Message::Text(data_to_send_base64));
+}
+
+
+fn send_ice_candidate_to_single_client(client: &Client, websocket: &Responder, value: String) {
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -580,17 +661,21 @@ fn send_ice_candidate_to_single_client(websocket: &Responder, value: String) {
 
     let test = serde_json::Value::Object(json_root_object);
     let data_content: String = serde_json::to_string(&test).unwrap();
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
 
     websocket.send(Message::Text(data_to_send_base64));
 }
 
 
-fn send_active_microphone_usage_for_current_channel_to_single_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_channel_id: u64) {
+fn send_active_microphone_usage_for_current_channel_to_single_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_channel_id: u64, client_id: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_clients_array: Vec<serde_json::Map<String, serde_json::Value>> = vec![];
+
+
+    let mut blablaclients: HashMap<u64, Client> = clients.clone();
+    let dh_shared_secret: String = blablaclients.get_mut(&client_id).unwrap().dh_shared_secret_key.clone();
 
 
     for (_key, client) in clients {
@@ -631,7 +716,7 @@ fn send_active_microphone_usage_for_current_channel_to_single_client(clients: &m
     let test = serde_json::Value::Object(json_root_object);
     let data_content: String = serde_json::to_string(&test).unwrap();
 
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, dh_shared_secret);
 
     responder.send(Message::Text(data_to_send_base64));
 }
@@ -679,7 +764,7 @@ fn broadcast_microphone_usage(clients: &mut HashMap<u64, Client>, websockets: &H
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -859,7 +944,7 @@ fn broadcast_client_disconnect(clients: &mut HashMap<u64, Client>, websockets: &
                         let json_root_object1: Map<String, Value> = json_root_object.clone();
                         let test = serde_json::Value::Object(json_root_object1);
                         let data_content: String = serde_json::to_string(&test).unwrap();
-                        let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                        let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
                         websocket.send(Message::Text(data_to_send_base64));
                     }
                 }
@@ -880,11 +965,11 @@ fn process_client_connect(clients: &HashMap<u64, Client>, channels: &mut HashMap
         let mut root_channel = channels.get_mut(&root_channel_id).unwrap();
         root_channel.maintainer_id = client_id_of_connected;
         root_channel.is_channel_maintainer_present = true;
-        send_maintainer_id_to_single_client(websockets, root_channel_id, client_id_of_connected, client_id_of_connected);
+        send_maintainer_id_to_single_client(clients,websockets, root_channel_id, client_id_of_connected, client_id_of_connected);
 
     } else {
         let root_channel: &Channel = channels.get(&root_channel_id).unwrap();
-        send_maintainer_id_to_single_client(websockets, root_channel_id, client_id_of_connected, root_channel.maintainer_id as u64);
+        send_maintainer_id_to_single_client(clients,websockets, root_channel_id, client_id_of_connected, root_channel.maintainer_id as u64);
     }
 }
 
@@ -938,7 +1023,7 @@ fn broadcast_tag_add(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, R
                 let json_root_object1: Map<String, Value> = json_root_object.clone();
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -979,7 +1064,7 @@ fn broadcast_add_icon(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, 
                 let json_root_object1: Map<String, Value> = json_root_object.clone();
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -1016,7 +1101,7 @@ fn broadcast_remove_tag_from_client(clients: &HashMap<u64, Client>, websockets: 
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -1054,7 +1139,7 @@ fn broadcast_add_tag_to_client(clients: &HashMap<u64, Client>, websockets: &Hash
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -1120,14 +1205,14 @@ fn broadcast_channel_join(clients: &HashMap<u64, Client>, websockets: &HashMap<u
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
     }
 }
 
-fn broadcast_channel_edit(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, channel: &Channel) {
+fn broadcast_channel_edit(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, channel: &Channel, channel_editor_id: u64) {
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
@@ -1136,6 +1221,7 @@ fn broadcast_channel_edit(clients: &HashMap<u64, Client>, websockets: &HashMap<u
     json_message_object.insert(String::from("channel_name"),serde_json::Value::from(channel.name.clone()));
     json_message_object.insert(String::from("channel_description"),serde_json::Value::from(channel.description.clone()));
     json_message_object.insert(String::from("is_using_password"),serde_json::Value::from(channel.is_using_password.clone()));
+    json_message_object.insert(String::from("channel_editor_id"),serde_json::Value::from(channel_editor_id));
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
@@ -1157,20 +1243,21 @@ fn broadcast_channel_edit(clients: &HashMap<u64, Client>, websockets: &HashMap<u
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
     }
 }
 
-fn broadcast_channel_delete(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, channel_id: u64) {
+fn broadcast_channel_delete(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, channel_id: u64, channel_deletor_id: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("channel_delete"));
     json_message_object.insert(String::from("channel_id"),serde_json::Value::from(channel_id));
+    json_message_object.insert(String::from("channel_deletor_id"),serde_json::Value::from(channel_deletor_id));
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
@@ -1192,7 +1279,7 @@ fn broadcast_channel_delete(clients: &HashMap<u64, Client>, websockets: &HashMap
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -1232,7 +1319,7 @@ fn send_edit_chat_message_to_selected_clients(clients: &HashMap<u64, Client>, we
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -1271,7 +1358,7 @@ fn send_delete_chat_message_to_selected_clients(clients: &HashMap<u64, Client>, 
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -1310,7 +1397,7 @@ fn send_stop_song_stream_message_to_selected_clients(clients: &HashMap<u64, Clie
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -1350,7 +1437,7 @@ fn send_start_song_stream_message_to_selected_clients(clients: &HashMap<u64, Cli
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64(data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -1401,7 +1488,7 @@ fn broadcast_client_connect(clients: &HashMap<u64, Client>, websockets: &HashMap
 
                         let test = serde_json::Value::Object(json_root_object1);
                         let data_content: String = serde_json::to_string(&test).unwrap();
-                        let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                        let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
                         websocket.send(Message::Text(data_to_send_base64));
                     }
                 }
@@ -1450,7 +1537,7 @@ fn broadcast_client_username_change(clients: &HashMap<u64, Client>, websockets: 
 
                         println!("data_content {}", &data_content);
 
-                        let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                        let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
                         websocket.send(Message::Text(data_to_send_base64));
                     }
                 }
@@ -1459,7 +1546,7 @@ fn broadcast_client_username_change(clients: &HashMap<u64, Client>, websockets: 
     }
 }
 
-fn send_client_list_to_single_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_client_username: String) {
+fn send_client_list_to_single_client(clients: &mut HashMap<u64, Client>, responder: &Responder, current_client_username: String, dh_shared_secret_key: String) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -1490,7 +1577,7 @@ fn send_client_list_to_single_client(clients: &mut HashMap<u64, Client>, respond
     let test = serde_json::Value::Object(json_root_object);
     let data_content: String = serde_json::to_string(&test).unwrap();
 
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, dh_shared_secret_key);
 
     responder.send(Message::Text(data_to_send_base64));
 }
@@ -1628,7 +1715,7 @@ fn is_channel_create_allowed(client_that_creates_channel: &mut Client, channels:
     return result;
 }
 
-fn broadcast_channel_create(clients: &mut HashMap<u64, Client>, created_channel: &Channel, websockets: &mut HashMap<u64, Responder>) {
+fn broadcast_channel_create(clients: &mut HashMap<u64, Client>, created_channel: &Channel, websockets: &mut HashMap<u64, Responder>, channel_creator_id: u64) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -1640,6 +1727,7 @@ fn broadcast_channel_create(clients: &mut HashMap<u64, Client>, created_channel:
     json_message_object.insert(String::from("description"), serde_json::Value::from(created_channel.description.clone()));
     json_message_object.insert(String::from("maintainer_id"), serde_json::Value::from(-1));
     json_message_object.insert(String::from("is_using_password"), serde_json::Value::from(created_channel.is_using_password));
+    json_message_object.insert(String::from("channel_creator_id"), serde_json::Value::from(channel_creator_id));
 
     json_root_object.insert(String::from("message"), serde_json::Value::from(json_message_object));
 
@@ -1663,7 +1751,7 @@ fn broadcast_channel_create(clients: &mut HashMap<u64, Client>, created_channel:
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
 
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -2064,7 +2152,7 @@ fn process_channel_delete_continue(clients: &mut HashMap<u64, Client>, channels:
     }
 }
 
-fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value) -> i32 {
+fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, channel_deletor_id: u64) -> i32 {
 
     let mut result: i32 = 0;    //result = need_to_find_maintainer_for_root
     let status: bool = is_channel_delete_request_valid(clients, message);
@@ -2115,7 +2203,7 @@ fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut Has
                         let root_channel_id: u64 = 0;
                         let maintainer_of_root = channels.get(&root_channel_id).unwrap().maintainer_id;
 
-                        send_maintainer_id_to_single_client( websockets, 0, client_id1, maintainer_of_root);
+                        send_maintainer_id_to_single_client(clients, websockets, 0, client_id1, maintainer_of_root);
 
                         result = 2;
                     }
@@ -2127,7 +2215,7 @@ fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut Has
                     //
 
                     let websocket: &Responder = websockets.get(&client_id1).unwrap();
-                    send_active_microphone_usage_for_current_channel_to_single_client(clients, websocket, 0);
+                    send_active_microphone_usage_for_current_channel_to_single_client(clients, websocket, 0, client_id1.clone());
                 }
             }
 
@@ -2136,7 +2224,7 @@ fn process_channel_delete(clients: &mut HashMap<u64, Client>, channels: &mut Has
             delete_channels_by_their_ids(channels, &channels_to_delete);
 
             for channel_id in channels_to_delete {
-                broadcast_channel_delete(clients, websockets, channel_id);
+                broadcast_channel_delete(clients, websockets, channel_id, channel_deletor_id);
             }
         } else {
             println!("channel id not found");
@@ -2171,9 +2259,8 @@ fn process_poke_client_request(clients: &mut HashMap<u64, Client>, websockets: &
 
     match client_option {
         None => {}
-        Some(_client) => {
-            println!("send_poke_message_to_single_client");
-            send_poke_message_to_single_client(websockets, client_id.clone(), message_client_id, poke_message);
+        Some(client) => {
+            send_poke_message_to_single_client(websockets, client_id.clone(), message_client_id, poke_message, client.dh_shared_secret_key.clone());
         }
     }
 }
@@ -2332,6 +2419,14 @@ fn is_public_key_info_message_valid(message: &serde_json::Value) -> bool {
         return result;
     }
 
+
+    if message["message"]["dh_public_mix"] == false {
+        println!("is_public_key_info_message_valid message.dh_public_mix does not exist");
+        result = false;
+        return result;
+    }
+
+
     if message["message"]["value"].is_string() == false {
         println!("is_public_key_info_message_valid message.tag_id is not is_string");
         result = false;
@@ -2344,8 +2439,61 @@ fn is_public_key_info_message_valid(message: &serde_json::Value) -> bool {
         return result;
     }
 
+    if message["message"]["dh_public_mix"].is_string() == false {
+        println!("is_public_key_info_message_valid message.dh_public_mix is not is_string");
+        result = false;
+        return result;
+    }
+
+
+
     return result;
 }
+
+
+fn is_request_avatar_for_message_valid(message: &serde_json::Value) -> bool {
+
+    let mut result: bool = true;
+
+    if message["message"]["client_id"] == false {
+        println!("is_request_avatar_for_message_valid field message.client_id does not exist");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["client_id"].is_u64() == false {
+        println!("is_request_avatar_for_message_valid field message.client_id is not u64");
+        result = false;
+        return result;
+    }
+
+    return result;
+}
+
+fn is_avatar_upload_message_valid(message: &serde_json::Value) -> bool {
+
+    let mut result: bool = true;
+
+    if message["message"]["base64_avatar"] == false {
+        println!("is_avatar_upload_message_valid field message.base64_avatar does not exist");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["base64_avatar"].is_string() == false {
+        println!("is_avatar_upload_message_valid field message.base64_avatar is not string");
+        result = false;
+        return result;
+    }
+
+    if message["message"]["base64_avatar"].as_str().unwrap().len() > 680960 {
+        println!("is_avatar_upload_message_valid field message.base64_avatar is too big", );
+        result = false;
+        return result;
+    }
+    return result;
+}
+
 
 fn is_add_remove_client_tag_message_valid(message: &serde_json::Value) -> bool {
     let mut result: bool = true;
@@ -2446,6 +2594,111 @@ fn is_icon_upload_message_valid(message: &serde_json::Value) -> bool {
     return result;
 }
 
+
+fn process_request_avatar_for_client(_client_stored_data: &mut Vec<ClientStoredData>, clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, _tags: &mut HashMap<u64, Tag>, message: &serde_json::Value, client_id: u64) {
+
+    let is_valid: bool = is_request_avatar_for_message_valid(&message);
+
+    if is_valid == false
+    {
+        println!("process_request_avatar_for_client == false");
+        return;
+    }
+
+    let clients_another: HashMap<u64, Client> = clients.clone();
+    let my_client = clients_another.get(&client_id).unwrap();
+    let dh_shared_secret_to_use = my_client.dh_shared_secret_key.clone();
+
+    let id_of_client_to_retrieve_avatar_from: u64 = message["message"]["client_id"].as_u64().unwrap();
+
+    let client_option: Option<&mut Client> = clients.get_mut(&id_of_client_to_retrieve_avatar_from);
+
+    match client_option {
+        None => {
+            println!("process_request_avatar_for_client no such client {} ", id_of_client_to_retrieve_avatar_from)
+        }
+        Some(client) => {
+
+            let base64_avatar = client.base64_avatar.clone();
+
+            if base64_avatar.len() > 0 {
+                let single_websocket_to_send_data_to = websockets.get(&client_id).unwrap();
+                send_avatar_to_single_client(single_websocket_to_send_data_to, id_of_client_to_retrieve_avatar_from, base64_avatar, dh_shared_secret_to_use);
+            }
+        }
+    }
+}
+
+
+fn process_avatar_upload_from_client(client_stored_data: &mut Vec<ClientStoredData>, clients: &mut HashMap<u64, Client>, _websockets: &mut HashMap<u64, Responder>, _tags: &mut HashMap<u64, Tag>, message: &serde_json::Value, client_id: u64) {
+
+    let is_valid: bool = is_avatar_upload_message_valid(&message);
+
+    if is_valid == false
+    {
+        return;
+    }
+
+    let is_admin: bool = is_client_admin(clients, client_id);
+
+    if is_admin == false {
+        println!("process_avatar_upload_from_client client is not admin");
+    }
+
+    let base64_avatar: String = message["message"]["base64_avatar"].as_str().unwrap().to_string();
+
+    let client: &mut Client = clients.get_mut(&client_id).unwrap();
+
+    let status: bool = is_public_key_present_in_client_stored_data(client_stored_data, client.public_key.clone());
+
+    if status == false {
+
+        println!("public key {} not present adding public key" , client.public_key.clone());
+
+        let username: String =  client.username.clone();
+
+        let mut single_client_stored_data: ClientStoredData = ClientStoredData {
+            public_key: "".to_string(),
+            tag_ids: vec![],
+            username,
+            base64_avatar: "".to_string()
+        };
+
+        single_client_stored_data.public_key = client.public_key.clone();
+        single_client_stored_data.tag_ids = Vec::new();
+        single_client_stored_data.base64_avatar = base64_avatar.clone();
+
+        client_stored_data.push(single_client_stored_data);
+
+        println!("public key added to client_stored_data along with avatar");
+
+    } else {
+        println!("public key {} present " , client.public_key.clone());
+
+        //
+        //there is ClientStoredData entry with clients public key, update avatar for it
+        //
+
+        let option_clientstoreddata = get_client_stored_data_by_public_key(client_stored_data, client.public_key.clone());
+
+        match option_clientstoreddata {
+            None => {}
+            Some(value) => {
+                value.base64_avatar = base64_avatar.clone();
+                println!("updated avatar for client {}", client.client_id.clone());
+            }
+        }
+    }
+
+    //
+    // client stored data will be added later
+    //
+
+
+    client.base64_avatar = base64_avatar.clone();
+    println!("avatar added");
+
+}
 
 fn process_remove_tag_from_client(client_stored_data: &mut Vec<ClientStoredData>, clients: &mut HashMap<u64, Client>, websockets: &mut HashMap<u64, Responder>, tags: &mut HashMap<u64, Tag>, message: &serde_json::Value, client_id: u64) {
 
@@ -2595,7 +2848,8 @@ fn process_add_tag_to_client(client_stored_data: &mut Vec<ClientStoredData>, cli
                         let mut single_client_stored_data: ClientStoredData = ClientStoredData {
                             public_key: "".to_string(),
                             tag_ids: vec![],
-                            username
+                            username,
+                            base64_avatar: "".to_string()
                         };
 
                         single_client_stored_data.public_key = client.public_key.clone();
@@ -2934,7 +3188,7 @@ fn process_channel_join(sender: &std::sync::mpsc::Sender<String>, clients: &mut 
                 //whether client that joined the channel is the maintainer of new_joined_channel or not,
                 //the information about who is the new maintainer only needs to be sent to him
                 //its assumed other client have "up-to" date info about who is maintainer
-                send_maintainer_id_to_single_client(websockets, msg_channel_id, client_id, new_joined_channel.maintainer_id as u64);
+                send_maintainer_id_to_single_client(clients, websockets, msg_channel_id, client_id, new_joined_channel.maintainer_id as u64);
 
 
                 //inform the webrtc thread about clients channel, so it can update its data
@@ -2944,7 +3198,7 @@ fn process_channel_join(sender: &std::sync::mpsc::Sender<String>, clients: &mut 
 
                 let websocket: &Responder = websockets.get(&client_id).unwrap();
 
-                send_active_microphone_usage_for_current_channel_to_single_client(clients, websocket, new_joined_channel.channel_id);
+                send_active_microphone_usage_for_current_channel_to_single_client(clients, websocket, new_joined_channel.channel_id, client_id.clone());
             } else {
                 println!("channel password is not valid");
             }
@@ -3072,7 +3326,7 @@ fn is_microphone_usage_message_valid(message: &serde_json::Value) -> bool{
     return result;
 }
 
-fn process_channel_edit(clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, _client_id: u64) {
+fn process_channel_edit(clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, websockets: &mut HashMap<u64, Responder>, message: &serde_json::Value, client_id: u64) {
     let status: bool = is_channel_edit_request_valid(message);
 
     if status == true {
@@ -3100,7 +3354,7 @@ fn process_channel_edit(clients: &mut HashMap<u64, Client>, channels: &mut HashM
                         channel_to_edit.description = msg_channel_description;
                         channel_to_edit.name = msg_channel_name;
 
-                        broadcast_channel_edit(clients, websockets, channel_to_edit);
+                        broadcast_channel_edit(clients, websockets, channel_to_edit, client_id);
                     }
                 }
             }
@@ -3183,18 +3437,20 @@ fn send_channel_chat_picture_metadata(clients: &HashMap<u64, Client>, websockets
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
     }
 }
 
-fn send_direct_chat_picture_metadata(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, sender_id: u64, receiver_id: u64) {
+fn send_direct_chat_picture_metadata(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, sender_id: u64, receiver_id: u64,) {
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
     let receiver_websocket = websockets.get(&receiver_id).unwrap();
+    let receiver_client = clients.get(&receiver_id).unwrap();
+
     let sender_client = clients.get(&sender_id).unwrap();
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("direct_chat_picture_metadata"));
@@ -3207,16 +3463,18 @@ fn send_direct_chat_picture_metadata(clients: &HashMap<u64, Client>, websockets:
     let test = serde_json::Value::Object(json_root_object);
     let data_content: String = serde_json::to_string(&test).unwrap();
 
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, receiver_client.dh_shared_secret_key.clone());
     receiver_websocket.send(Message::Text(data_to_send_base64));
 }
 
 fn send_direct_chat_picture(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, message_value: String, sender_id: u64, receiver_id: u64) {
+
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
     let receiver_websocket = websockets.get(&receiver_id).unwrap();
     let sender_client = clients.get(&sender_id).unwrap();
+    let receiver_client = clients.get(&receiver_id).unwrap();
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("direct_chat_picture"));
     json_message_object.insert(String::from("picture_id"), serde_json::Value::from(CHAT_MESSAGE_ID.load(Ordering::SeqCst)));
@@ -3229,15 +3487,18 @@ fn send_direct_chat_picture(clients: &HashMap<u64, Client>, websockets: &HashMap
     let test = serde_json::Value::Object(json_root_object);
     let data_content: String = serde_json::to_string(&test).unwrap();
 
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, receiver_client.dh_shared_secret_key.clone());
     receiver_websocket.send(Message::Text(data_to_send_base64));
 }
 
 fn send_direct_chat_message(clients: &HashMap<u64, Client>, websockets: &HashMap<u64, Responder>, message_value: String, sender_id: u64, receiver_id: u64, server_chat_message_id: usize) {
+
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
     let receiver_websocket = websockets.get(&receiver_id).unwrap();
+    let receiver_client = clients.get(&receiver_id).unwrap();
+
     let sender_client = clients.get(&sender_id).unwrap();
 
     json_message_object.insert(String::from("type"), serde_json::Value::from("direct_chat_message"));
@@ -3252,7 +3513,7 @@ fn send_direct_chat_message(clients: &HashMap<u64, Client>, websockets: &HashMap
     let test = serde_json::Value::Object(json_root_object);
     let data_content: String = serde_json::to_string(&test).unwrap();
 
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, receiver_client.dh_shared_secret_key.clone());
     receiver_websocket.send(Message::Text(data_to_send_base64));
 }
 
@@ -3298,7 +3559,7 @@ fn send_channel_chat_picture(clients: &HashMap<u64, Client>, websockets: &HashMa
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -3340,7 +3601,7 @@ fn process_direct_chat_message(clients: &mut HashMap<u64, Client>, websockets: &
                         };
 
                         _client_sender.message_ids.push(chatentry);
-                        send_server_chat_message_id_for_local_message_id(websockets, sender_id, chat_message_id, msg_local_message_id);
+                        send_server_chat_message_id_for_local_message_id(clients, websockets, sender_id, chat_message_id, msg_local_message_id);
                         send_direct_chat_message(clients, websockets, msg_value, sender_id, msg_receiver_id, chat_message_id);
                     }
                 }
@@ -3425,7 +3686,7 @@ fn process_channel_chat_message(clients: &mut HashMap<u64, Client>, channels: &H
 
                         client_sender.message_ids.push(messageentry);
 
-                        send_server_chat_message_id_for_local_message_id(websockets, sender_id, chat_message_id, msg_local_message_id);
+                        send_server_chat_message_id_for_local_message_id(clients, websockets, sender_id, chat_message_id, msg_local_message_id);
                         send_channel_chat_message(clients, websockets, msg_value, sender_id, msg_channel_id, chat_message_id);
                     }
                 }
@@ -3469,7 +3730,7 @@ fn process_direct_chat_picture(clients: &mut HashMap<u64, Client>, websockets: &
                         send_direct_chat_picture_metadata(clients, websockets,  sender_id, msg_receiver_id);
                         send_direct_chat_picture(clients, websockets, msg_value, sender_id, msg_receiver_id);
                         send_image_sent_status_back_to_sender(clients, websockets, sender_id,"success".to_string());
-                        send_server_chat_message_id_for_local_message_id(websockets, sender_id, server_chat_message_id, msg_local_message_id);
+                        send_server_chat_message_id_for_local_message_id(clients,websockets, sender_id, server_chat_message_id, msg_local_message_id);
                     }
                 }
             }
@@ -3512,7 +3773,7 @@ fn process_channel_chat_picture(clients: &mut HashMap<u64, Client>, channels: &m
                         send_channel_chat_picture_metadata(clients, websockets, sender_id, msg_channel_id);
                         send_channel_chat_picture(clients, websockets, msg_value, sender_id, msg_channel_id);
                         send_image_sent_status_back_to_sender(clients, websockets, sender_id, "success".to_string());
-                        send_server_chat_message_id_for_local_message_id(websockets, sender_id, server_chat_message_id, msg_local_message_id);
+                        send_server_chat_message_id_for_local_message_id(clients, websockets, sender_id, server_chat_message_id, msg_local_message_id);
                     }
                 }
             }
@@ -3565,7 +3826,7 @@ fn send_channel_chat_message(clients: &HashMap<u64, Client>, websockets: &HashMa
 
                 let test = serde_json::Value::Object(json_root_object1);
                 let data_content: String = serde_json::to_string(&test).unwrap();
-                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+                let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, client.dh_shared_secret_key.clone());
                 websocket.send(Message::Text(data_to_send_base64));
             }
         }
@@ -3675,10 +3936,10 @@ fn process_authenticated_message(client_id: u64,
             if status.0 == true {
                 let created_channel: &Channel = channels.get(&status.1).unwrap();
 
-                broadcast_channel_create(clients, created_channel, websockets);
+                broadcast_channel_create(clients, created_channel, websockets, client_id);
             }
         } else {
-            send_access_denied_to_single_client(websockets, client_id);
+            send_access_denied_to_single_client(clients, websockets, client_id);
         }
     }
     else if message_type == "delete_channel_request" {
@@ -3686,13 +3947,13 @@ fn process_authenticated_message(client_id: u64,
         let is_admin: bool = is_client_admin(clients, client_id);
 
         if is_admin == true || is_admin == false {
-            let status: i32 = process_channel_delete(clients, channels, websockets, &message);
+            let status: i32 = process_channel_delete(clients, channels, websockets, &message, client_id);
             if status == 1 {
                 println!("clients were moved to root, there is no maintainer for root, trying to find new maintainer for root channel");
                 process_channel_delete_continue(clients, channels, websockets);
             }
         } else {
-            send_access_denied_to_single_client(websockets, client_id);
+            send_access_denied_to_single_client(clients, websockets, client_id);
         }
     }
     else if message_type == "join_channel_request" {
@@ -3703,7 +3964,7 @@ fn process_authenticated_message(client_id: u64,
         if is_admin == true || is_admin == false {
             process_channel_edit(clients, channels, websockets, &message, client_id);
         } else {
-            send_access_denied_to_single_client(websockets, client_id);
+            send_access_denied_to_single_client(clients, websockets, client_id);
         }
     }
     else if message_type == "direct_chat_message" {
@@ -3777,7 +4038,8 @@ fn process_authenticated_message(client_id: u64,
                 let mut single_client_stored_data: ClientStoredData = ClientStoredData {
                     public_key,
                     tag_ids: vec![],
-                    username
+                    username,
+                    base64_avatar: "".to_string()
                 };
 
                 single_client_stored_data.tag_ids = Vec::new();
@@ -3827,6 +4089,12 @@ fn process_authenticated_message(client_id: u64,
     }
     else if message_type == "remove_tag_from_client" {
         process_remove_tag_from_client(client_stored_data, clients, websockets, tags, &message, client_id);
+    }
+    else if message_type == "avatar_upload" {
+        process_avatar_upload_from_client(client_stored_data, clients, websockets, tags, &message, client_id);
+    }
+    else if message_type == "request_avatar_for_client" {
+        process_request_avatar_for_client(client_stored_data, clients, websockets, tags, &message, client_id);
     }
 }
 
@@ -3893,6 +4161,8 @@ fn process_not_authenticated_message(client_id: u64,
                             if current_client.tag_ids.contains(&admin_tag_id)  {
                                 current_client.is_admin = true;
                             }
+
+                            current_client.base64_avatar = get_avatar_for_public_key_from_client_stored_data(client_stored_data, public_key.clone()).clone();
                         }
 
                         let datetime: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
@@ -3904,12 +4174,15 @@ fn process_not_authenticated_message(client_id: u64,
 
                         let current_client_username: String = current_client.username.clone();
 
-                        send_authentication_status_to_single_client(websocket);
-                        send_channel_list_to_single_client(channels, websocket);
-                        send_client_list_to_single_client(clients, websocket, current_client_username);
-                        send_icon_list_to_single_client(icons, websocket);
-                        send_tag_list_to_single_client(tags, websocket);
-                        send_active_microphone_usage_for_current_channel_to_single_client(clients, websocket, 0);
+                        let dh_shared_secret_key = current_client.dh_shared_secret_key.clone();
+                        let aaa = current_client.client_id.clone();
+
+                        send_authentication_status_to_single_client(websocket, dh_shared_secret_key.clone());
+                        send_channel_list_to_single_client(channels, websocket, dh_shared_secret_key.clone());
+                        send_client_list_to_single_client(clients, websocket, current_client_username, dh_shared_secret_key.clone());
+                        send_icon_list_to_single_client(icons, websocket, dh_shared_secret_key.clone());
+                        send_tag_list_to_single_client(tags, websocket, dh_shared_secret_key.clone());
+                        send_active_microphone_usage_for_current_channel_to_single_client(clients, websocket, 0, aaa);
                         process_client_connect(clients, channels, websockets, client_id);
                         send_cross_thread_message_create_new_client_at_rtc_thread(sender, client_id);
                     }
@@ -3934,12 +4207,59 @@ fn process_not_authenticated_message(client_id: u64,
 
         let message_verification_string: String = String::from(message["message"]["verification_string"].as_str().unwrap());
         let public_key_modulus_base64: String = String::from(message["message"]["value"].as_str().unwrap());
+        let dh_public_mix_from_client: String = String::from(message["message"]["dh_public_mix"].as_str().unwrap());
+
+
+        let mut dh_secret_random_binary_exponent_string: String = String::from("");
+
+        let mut rng: ThreadRng = rand::thread_rng();
+
+        for x in 0..11 {
+            if x == 0 {
+                let a = "1";
+                dh_secret_random_binary_exponent_string.push_str(a);
+            }
+            else if x == 1 || x == 2 || x == 3 {
+                let a = "0";
+                dh_secret_random_binary_exponent_string.push_str(a);
+            } else {
+                let a: String = rng.gen_range(0..2).to_string();
+                println!("dh_secret_random_binary_exponent_string {}", a);
+                dh_secret_random_binary_exponent_string.push_str(a.as_str());
+            }
+        }
+
+        println!("dh_secret_random_binary_exponent_string {}", dh_secret_random_binary_exponent_string);
+
+        let dh_secret_random_exponent_int: usize = usize::from_str_radix(dh_secret_random_binary_exponent_string.as_str(), 2).unwrap();
+        let dh_secret_random_exponent_string: String = dh_secret_random_exponent_int.to_string();
+
+        //2048bit prime
+        //let dh_known_modulus_str = "32317006071311007300338913926423828248817941241140239112842009751400741706634354222619689417363569347117901737909704191754605873209195028853758986185622153212175412514901774520270235796078236248884246189477587641105928646099411723245426622522193230540919037680524235519125679715870117001058055877651038861847280257976054903569732561526167081339361799541336476559160368317896729073178384589680639671900977202194168647225871031411336429319536193471636533209717077448227988588565369208645296636077250268955505928362751121174096972998068410554359584866583291642136218231078990999448652468262416972035911852507045361090559";
+
+        //1536bit prime
+        //let dh_known_modulus_str = "2410312426921032588552076022197566074856950548502459942654116941958108831682612228890093858261341614673227141477904012196503648957050582631942730706805009223062734745341073406696246014589361659774041027169249453200378729434170325843778659198143763193776859869524088940195577346119843545301547043747207749969763750084308926339295559968882457872412993810129130294592999947926365264059284647209730384947211681434464714438488520940127459844288859336526896320919633919";
+
+        //512bit prime
+        let dh_known_modulus_str = "13232376895198612407547930718267435757728527029623408872245156039757713029036368719146452186041204237350521785240337048752071462798273003935646236777459223";
+
+        let dh_known_modulus: BigUint = BigUint::from_str(dh_known_modulus_str).unwrap();
+        let dh_known_generator_bytes: [u8; 1] = [2];
+        let dh_known_generator: BigUint = BigUint::from_bytes_be(&dh_known_generator_bytes);
+        let dh_public_mix: BigUint = BigUint::from_str(dh_public_mix_from_client.as_str()).unwrap();
+        let dh_secret_random_exponent: BigUint = BigUint::from_str(dh_secret_random_exponent_string.as_str()).unwrap();
+        let dh_shared_secret: BigUint = dh_public_mix.modpow(&dh_secret_random_exponent, &dh_known_modulus);
+        let dh_public_mix_for_client: BigUint = dh_known_generator.modpow(&dh_secret_random_exponent, &dh_known_modulus);
+
+        println!("dh_shared_secret {} ", dh_shared_secret);
+
+        let dh_shared_secret_key: String = dh_shared_secret.to_string();
 
         let status1: bool = is_there_a_client_with_same_public_key(clients, public_key_modulus_base64.clone());
 
         if status1 == true {
-            println!("cannot connect, there is still client that has same public key...");
-            print_out_all_connected_clients(clients);
+            println!("cannot connect, there is a client present that has the same public key...");
+            //print_out_all_connected_clients(clients);
             websockets.get(&client_id).unwrap().close();
             websockets.remove(&client_id);
             clients.remove(&client_id);
@@ -3991,6 +4311,8 @@ fn process_not_authenticated_message(client_id: u64,
 
                             current_client.public_key_challenge_random_string = public_key_challenge_random_string.clone();
                             current_client.is_public_key_challenge_sent = true;
+                            current_client.dh_shared_secret_key = dh_shared_secret_key;
+                            current_client.is_dh_shared_secret_agreed_upon = true;
 
                             let to_encrypt_bytes: &[u8] = public_key_challenge_random_string.as_bytes();
 
@@ -3999,7 +4321,7 @@ fn process_not_authenticated_message(client_id: u64,
                             match rsa_encrypt_result {
                                 Ok(bytes_to_work_with) => {
                                     let base64_result: String = base64::encode(bytes_to_work_with);
-                                    send_public_key_challenge_to_single_client(current_client, websockets,base64_result);
+                                    send_public_key_challenge_to_single_client(current_client, websockets,base64_result, dh_public_mix_for_client.to_string());
                                 }
                                 Err(error) => {
                                     println!("rsa_encrypt_result error {}", error);
@@ -4037,17 +4359,17 @@ fn process_received_message(client_id: u64,
                             message_text: String,
                             sender: &std::sync::mpsc::Sender<String>) {
 
-    let decrypted_message: String = get_data_from_base64_and_decrypt_it(message_text);
+        let decrypted_message: String = get_data_from_base64_and_decrypt_it(message_text, clients, client_id);
 
-    //received decrypted metadata content needs to be trimmed
+        //received decrypted metadata content needs to be trimmed
 
-   let json_string_to_parse: &str = decrypted_message.as_str().trim_matches(char::from(0));
-   let json_message: serde_json::Result<serde_json::Value> = serde_json::from_str(json_string_to_parse);
+       let json_string_to_parse: &str = decrypted_message.as_str().trim_matches(char::from(0));
+       let json_message: serde_json::Result<serde_json::Value> = serde_json::from_str(json_string_to_parse);
 
-   match json_message {
-        Ok(value) => {
+       match json_message {
+           Ok(value) => {
 
-            let current_client: Option<&mut Client> = clients.get_mut(&client_id);
+               let current_client: Option<&mut Client> = clients.get_mut(&client_id);
 
             match current_client {
                 None => {}
@@ -4089,7 +4411,7 @@ fn process_received_message(client_id: u64,
     };
 }
 
-fn send_tag_list_to_single_client(tags: &HashMap<u64, Tag>, responder: &Responder) {
+fn send_tag_list_to_single_client(tags: &HashMap<u64, Tag>, responder: &Responder, dh_shared_secret_key: String) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -4114,11 +4436,11 @@ fn send_tag_list_to_single_client(tags: &HashMap<u64, Tag>, responder: &Responde
     let test = serde_json::Value::Object(json_root_object);
     let data_content: String = serde_json::to_string(&test).unwrap();
 
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, dh_shared_secret_key);
     responder.send(Message::Text(data_to_send_base64));
 }
 
-fn send_icon_list_to_single_client(icons: &HashMap<u64, Icon>, responder: &Responder) {
+fn send_icon_list_to_single_client(icons: &HashMap<u64, Icon>, responder: &Responder, dh_shared_secret_key: String) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -4140,11 +4462,11 @@ fn send_icon_list_to_single_client(icons: &HashMap<u64, Icon>, responder: &Respo
     let test = serde_json::Value::Object(json_root_object);
     let data_content: String = serde_json::to_string(&test).unwrap();
 
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, dh_shared_secret_key);
     responder.send(Message::Text(data_to_send_base64));
 }
 
-fn send_channel_list_to_single_client(channels: &HashMap<u64, Channel>, responder: &Responder) {
+fn send_channel_list_to_single_client(channels: &HashMap<u64, Channel>, responder: &Responder, dh_shared_secret_key: String) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut json_message_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
@@ -4169,11 +4491,11 @@ fn send_channel_list_to_single_client(channels: &HashMap<u64, Channel>, responde
     let test = serde_json::Value::Object(json_root_object);
     let data_content: String = serde_json::to_string(&test).unwrap();
 
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, dh_shared_secret_key);
     responder.send(Message::Text(data_to_send_base64));
 }
 
-fn send_webrtc_sdp_offer_to_single_client(responder: &Responder, sdp_offer_value: String) {
+fn send_webrtc_sdp_offer_to_single_client(responder: &Responder, sdp_offer_value: String, dh_shared_secret_key: String) {
 
     let mut json_root_object: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
@@ -4187,12 +4509,12 @@ fn send_webrtc_sdp_offer_to_single_client(responder: &Responder, sdp_offer_value
 
     let test = serde_json::Value::Object(json_root_object);
     let data_content: String = serde_json::to_string(&test).unwrap();
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, dh_shared_secret_key);
 
     responder.send(Message::Text(data_to_send_base64));
 }
 
-fn send_authentication_status_to_single_client(responder: &Responder) {
+fn send_authentication_status_to_single_client(responder: &Responder, dh_shared_secret_key: String) {
 
     let message_to_send: serde_json::Value = serde_json::json!({
         "message" : {
@@ -4205,7 +4527,7 @@ fn send_authentication_status_to_single_client(responder: &Responder) {
 
     let data_content: String = serde_json::to_string(&message_to_send).unwrap();
 
-    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content);
+    let data_to_send_base64: String = encrypt_string_then_convert_to_base64( data_content, dh_shared_secret_key);
 
     responder.send(Message::Text(data_to_send_base64));
 }
@@ -4260,9 +4582,10 @@ fn process_client_disconnect(clients: &mut HashMap<u64, Client>, channels: &mut 
     send_cross_thread_message_client_disconnect(sender, client_id_of_disconnected);
 }
 
-fn encrypt_string_then_convert_to_base64(input: String) -> String {
+fn encrypt_string_then_convert_to_base64(input: String, dh_shared_secret_key: String) -> String {
 
     let mut bytes_to_work_with: Vec<u8> = input.into_bytes();
+
 
     //VI is same for every key
     let iv: [u8; 16] = [90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10];
@@ -4279,33 +4602,97 @@ fn encrypt_string_then_convert_to_base64(input: String) -> String {
         cipher.apply_keystream(&mut bytes_to_work_with);
     }
 
+    if dh_shared_secret_key.is_empty() == false {
+        let mut t_sha256 = Sha256::new();
+        t_sha256.update(dh_shared_secret_key.clone().into_bytes());
+        let key = t_sha256.finalize();
+        let mut cipher = AesCtr::new(&key.into(), &iv.into());
+        cipher.apply_keystream(&mut bytes_to_work_with);
+    }
+
     let base64_result: String = base64::encode(bytes_to_work_with);
 
     return base64_result;
 }
 
-fn get_data_from_base64_and_decrypt_it(base64_string: String) -> String {
-    //println!("get_data_from_base64_and_decrypt_it");
 
-    let iv: [u8; 16] = [90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10];
+fn get_data_from_base64_and_decrypt_it(base64_string: String, clients: &mut HashMap<u64, Client>, client_id: u64) -> String {
 
-    let mut encrypted_data: Vec<u8> = base64::decode(&base64_string).unwrap();
+    let result: String;
 
-    let aa: RwLockReadGuard<Vec<String>> = ENCRYPTION_KEYS_CONNECTION.read().unwrap();
+    let client_option: Option<&mut Client> = clients.get_mut(&client_id);
 
-    for single_key_string in aa.clone().into_iter().rev() {
+    match client_option {
 
-        let mut sha256 = Sha256::new();
-        sha256.update(single_key_string.into_bytes());
-        let key = sha256.finalize();
+        None => {
+            let iv: [u8; 16] = [90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10];
 
-        let mut cipher = AesCtr::new(&key.into(), &iv.into());
-        cipher.apply_keystream(&mut encrypted_data);
+            let mut encrypted_data: Vec<u8> = base64::decode(&base64_string).unwrap();
+
+            let aa: RwLockReadGuard<Vec<String>> = ENCRYPTION_KEYS_CONNECTION.read().unwrap();
+
+            for single_key_string in aa.clone().into_iter().rev() {
+
+                let mut sha256 = Sha256::new();
+                sha256.update(single_key_string.into_bytes());
+                let key = sha256.finalize();
+
+                let mut cipher = AesCtr::new(&key.into(), &iv.into());
+                cipher.apply_keystream(&mut encrypted_data);
+            }
+
+            let s = String::from_utf8_lossy(&encrypted_data);
+            result = String::from(s);
+
+        }
+        Some(client) => {
+            if client.is_dh_shared_secret_agreed_upon == true {
+
+                let iv: [u8; 16] = [90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10];
+                let mut encrypted_data: Vec<u8> = base64::decode(&base64_string).unwrap();
+
+                let aa: RwLockReadGuard<Vec<String>> = ENCRYPTION_KEYS_CONNECTION.read().unwrap();
+
+                for single_key_string in aa.clone().into_iter().rev() {
+                    let mut sha256 = Sha256::new();
+                    sha256.update(single_key_string.clone().into_bytes());
+                    let key = sha256.finalize();
+                    let mut cipher = AesCtr::new(&key.into(), &iv.into());
+                    cipher.apply_keystream(&mut encrypted_data);
+                }
+
+                //
+                //use shared key now
+                //
+
+                let mut t_sha256 = Sha256::new();
+                t_sha256.update(client.dh_shared_secret_key.clone().into_bytes());
+                let key = t_sha256.finalize();
+                let mut cipher = AesCtr::new(&key.into(), &iv.into());
+                cipher.apply_keystream(&mut encrypted_data);
+
+                let s = String::from_utf8_lossy(&encrypted_data);
+
+                result = String::from(s);
+
+            } else {
+                let iv: [u8; 16] = [90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10];
+                let mut encrypted_data: Vec<u8> = base64::decode(&base64_string).unwrap();
+                let aa: RwLockReadGuard<Vec<String>> = ENCRYPTION_KEYS_CONNECTION.read().unwrap();
+                for single_key_string in aa.clone().into_iter().rev() {
+                    let mut sha256 = Sha256::new();
+                    sha256.update(single_key_string.into_bytes());
+                    let key = sha256.finalize();
+                    let mut cipher = AesCtr::new(&key.into(), &iv.into());
+                    cipher.apply_keystream(&mut encrypted_data);
+                }
+                let s = String::from_utf8_lossy(&encrypted_data);
+                result = String::from(s);
+            }
+        }
     }
 
-    let s = String::from_utf8_lossy(&encrypted_data);
-
-    return String::from(s);
+    return result;
 }
 
 fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mpsc::Receiver<String>, websockets: &mut HashMap<u64, Responder>, clients: &mut HashMap<u64, Client>, channels: &mut HashMap<u64, Channel>, sender: &std::sync::mpsc::Sender<String>) {
@@ -4334,7 +4721,7 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
 
                 if client.client_id == msg_client_id {
                     let websocket: &Responder = websockets.get(&msg_client_id).unwrap();
-                    send_webrtc_sdp_offer_to_single_client(websocket, sdp_offer_value.clone());
+                    send_webrtc_sdp_offer_to_single_client(websocket, sdp_offer_value.clone(), client.dh_shared_secret_key.clone());
                 }
             }
             println!("new client connected");
@@ -4358,7 +4745,8 @@ fn handle_messages_from_webrtc_thread_and_check_clients(receiver: &std::sync::mp
 
                 if client.client_id == msg_client_id {
                     let websocket: &Responder = websockets.get(&msg_client_id).unwrap();
-                    send_ice_candidate_to_single_client(websocket, ice_candidate_value.clone());
+
+                    send_ice_candidate_to_single_client(client.deref(), websocket, ice_candidate_value.clone());
                 }
             }
             println!("ice_candidate sent");
