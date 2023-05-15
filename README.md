@@ -17,18 +17,6 @@
 
 ![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/test1.PNG)
 
-## how to stream music in channel
-First, you need to convert your mp3 to .wav file.
-<br>
-use https://convertio.co/ or simillar to convert to .wav
-<br>
-for output .wav, select these desired parameters:
-- codec: PCM_S16LE (uncompressed)
-- audiochannels: mono
-- frequency: 48000 hz
-
-after its done, activate mic, select .wav file, it will play
-<br>
 
 
 <br>
@@ -46,7 +34,6 @@ https://github.com/azc5OQ/libopusjs
 # video of how it works here:
 https://streamable.com/0urmck
 
-<br>
 <br>
 
 
