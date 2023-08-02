@@ -111,10 +111,9 @@ There is also webassembly-free version of client, client_noaudio.html.
 
 # Question: why rust for server?
 I got asked why I did not use rust. <br />
-I wanted server to be easy to build into binary on most systems. There are pros and cons to everything. <br />
-I used C before for server side code. There are some forks of it here. <br />
-I must say I find rust syntax unnecessary complicated. So when I was coding the server in rust, I tried to made the server code readable even if the code was not following "rust standards" <br />
-On the other hand, rust programs are very easy to build. By using rust, this server can be build by anyone. <br />
+I thought about it. I wanted server to be easy to build into binary and rust made that possible. There are pros and cons to everything. <br />
+I used C before for server side code and it worked. There are some forks of it here. <br />
+I must say I find rust syntax unnecessary complicated. While writing code in rust, I tried to made the server code readable at all costs even if the code was not following "rust standards" <br />
 
 
 in case you have any feature request open new issue or just fork it and add what you want
