@@ -20,7 +20,7 @@
 
 
 <br>
-Used libraries:
+source code of other people used in this project:
 
 client
 <br>
@@ -29,7 +29,8 @@ https://github.com/wwwtyro/cryptico
 https://github.com/ricmoo/aes-js
 <br>
 https://github.com/azc5OQ/libopusjs
-
+<br>
+https://github.com/bashi/minimp3-wasm
 
 # video of how it works here:
 https://streamable.com/0urmck
