@@ -39,7 +39,7 @@ https://streamable.com/0urmck
 # Question: how is this different from IRC?
 
 <b>A</b>
-I made this to be similar to teamspeak, not IRC. So unlike IRC this also contains voice chat. But I actually got asked this question.</br>
+I made this to be similar to teamspeak, not IRC. So unlike IRC this also contains voice chat.</br>
 The messages send in this chat, text messages, images and voice data are all end to end encrypted for both direct and channel communication. This chat does not rely on TLS/SSL and encrypts stuff on its own. <br>
 It was made to be hard as possible, even for admin hosting this, to see messages of others that do not belong to him. </br>
 This tool is my contribution to free software on internet that no one asked for </br>
