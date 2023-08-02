@@ -90,8 +90,8 @@ key = /etc/letsencrypt/live/justsometestchat.com/privkey.pem<br />
 
 # Is the client.html using any webassembly files (.wasm) ?
 Yes, the client.html has two webassembly files embedded directly in it as base64 string.  <br />
-- first webassembly for encoding/decoding pcm to/from opus <br />
-- second webassembly for encoding mp3 to pcm (supports streaming music from mp3 file) <br />
+- first webassembly (libopusjs) for encoding/decoding pcm to/from opus <br />
+- second webassembly for encoding mp3 to pcm (supports streaming music from mp3 file) taken from here https://github.com/bashi/minimp3-wasm <br />
 
 There are two options on how to build and reproduce these exact webasemblies: <br />
 - clone it from my repository and setup build enviroment yourself
