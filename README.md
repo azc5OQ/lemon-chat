@@ -29,7 +29,7 @@ https://github.com/wwwtyro/cryptico
 https://github.com/ricmoo/aes-js
 <br>
 https://github.com/bashi/minimp3-wasm
-<br
+<br>
 https://github.com/Ivan-Feofanov/ws-audio-api
 
 # video of how it works here:
