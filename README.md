@@ -91,23 +91,29 @@ key = /etc/letsencrypt/live/justsometestchat.com/privkey.pem<br />
 # Is the client.html using any webassembly files (.wasm) ?
 Yes, the client.html has two webassembly files embedded directly in it as base64 string.  <br />
 - first webassembly (libopusjs) for encoding/decoding pcm to/from opus <br />
-- second webassembly for encoding mp3 to pcm (supports streaming music from mp3 file) taken from here https://github.com/bashi/minimp3-wasm <br />
+https://github.com/azc5OQ/libopusjs-wasm--build-steps <br />
+- second webassembly for encoding mp3 to pcm <br />
+https://github.com/azc5OQ/minimp3-wasm-build-steps <br />
+
+<br>
 
 There are two options on how to build and reproduce these exact webasemblies: <br />
 - clone it from my repository and setup build enviroment yourself
 - download .ova file (exported virtual machine) that contains build enviroment with everything already setup
 
-I provided virtual machine for building the webassemblies, because the enviroment needed to build from scratch it was just too complicated to setup.
-the pcm to mp3 encoder webassembly is easy to build but the opus encoder is not easy to build
+I provided virtual machine for building these webassemblies because the enviroment needed to build them from scratch was just too complicated to setup.
+
+There is also webassembly-free version of client, client_noaudio.html.
 
 <br />
 <br />
 
 # Question: why rust for server?
-I wanted server to be easy to build into binary. There are pros and cons to everything.
-I used C before for server side code. It was complicated to build and only could run on linux. There are some forks of it here.
-I dont like rust syntax but I tried to made the server code readable for anyone.
-if someone wants to maintain C version of it I dont mind, there are some forks of it here
+I got asked why I did not use rust. <br />
+I wanted server to be easy to build into binary on most systems. There are pros and cons to everything. <br />
+I used C before for server side code. There are some forks of it here. <br />
+I must say I find rust syntax unnecessary complicated. So when I was coding the server in rust, I tried to made the server code readable even if the code was not following "rust standards" <br />
+On the other hand, rust programs are very easy to build. By using rust, this server can be build by anyone. <br />
 
 
 in case you have any feature request open new issue or just fork it and add what you want
