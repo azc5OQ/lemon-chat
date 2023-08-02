@@ -28,9 +28,9 @@ https://github.com/wwwtyro/cryptico
 <br>
 https://github.com/ricmoo/aes-js
 <br>
-https://github.com/azc5OQ/libopusjs
-<br>
 https://github.com/bashi/minimp3-wasm
+<br
+https://github.com/Ivan-Feofanov/ws-audio-api
 
 # video of how it works here:
 https://streamable.com/0urmck
