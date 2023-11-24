@@ -117,3 +117,18 @@ I must say I find rust syntax unnecessary complicated. While writing code in rus
 
 
 in case you have any feature request open new issue or just fork it and add what you want
+
+<br />
+
+# remote port forwarding setup
+posible solution to problem of making server visible (hosting server on windows behind router etc)
+ - buy cheap VPS (1 cpu core and 500mb ram more than enough, vps will be access point / router for traffic)
+ - ssh -i some_generated_private_key -p 2245 -w 0:0 -R 1234:localhost:1234 -R 3478:localhost:3478 -v root@XXX.XXX.XXX.XXX
+
+some explanation: (its assumed reader knows how this ssh command works)
+<br />
+1234 is a websocket port that admin chooses when he starts server
+<br />
+3478 is a stun port used for creating a NON-peer-to-peer webrtc datachannel. Similar to websocket, just UDP. If voice chatting is not needed, this can be ignored.
+<br />
+todo: add fallback to websocket if webrtc channel fails to create
