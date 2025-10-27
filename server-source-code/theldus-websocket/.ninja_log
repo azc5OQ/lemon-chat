@@ -1,0 +1,7 @@
+# ninja log v5
+3	61	7833087703674426	CMakeFiles/ws.dir/src/utf8.c.obj	a75f3193112f5408
+2	72	7833087703830673	CMakeFiles/ws.dir/src/handshake.c.obj	cfd8ea57686e23a7
+1	82	7833087703986921	CMakeFiles/ws.dir/src/base64.c.obj	959865169fb3d5a0
+3	91	7833087703986921	CMakeFiles/ws.dir/src/sha1.c.obj	77dafcd37d8b1a6c
+0	803	7833087711174305	CMakeFiles/ws.dir/src/ws.c.obj	3839356cf4012890
+804	827	7833087711330552	libws.a	bdb9d35091215900

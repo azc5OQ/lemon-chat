@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\9ed720a4a0ad94e18f8e2a6534586d04\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{3ECB2D4F-D490-3896-9DB1-03713BFCC0E4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

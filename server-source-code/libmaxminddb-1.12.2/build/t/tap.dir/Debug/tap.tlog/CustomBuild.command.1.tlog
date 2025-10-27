@@ -1,0 +1,10 @@
+^C:\USERS\RETUR\DESKTOP\PROJECT\SERVER-SOURCE-CODE\LIBMAXMINDDB-1.12.2\T\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2 -BC:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/build --check-stamp-file C:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/build/t/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

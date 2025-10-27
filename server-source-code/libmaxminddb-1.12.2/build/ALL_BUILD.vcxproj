@@ -1,0 +1,248 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ResolveNugetPackages>false</ResolveNugetPackages>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|x64">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{FFBF8217-ADBC-366A-ADF1-6DBA438A4373}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>
+    <Platform>x64</Platform>
+    <ProjectName>ALL_BUILD</ProjectName>
+    <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2 -BC:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/build --check-stamp-file C:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckIncludeFile.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckIncludeFileCXX.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckTypeSize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\GNUInstallDirs.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\WindowsPaths.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\TestBigEndian.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeCCompiler.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeRCCompiler.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeSystem.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\cmake_uninstall.cmake.in;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\include\maxminddb_config.h.cmake.in;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\src\libmaxminddb.pc.in;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2 -BC:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/build --check-stamp-file C:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckIncludeFile.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckIncludeFileCXX.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckTypeSize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\GNUInstallDirs.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\WindowsPaths.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\TestBigEndian.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeCCompiler.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeRCCompiler.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeSystem.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\cmake_uninstall.cmake.in;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\include\maxminddb_config.h.cmake.in;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\src\libmaxminddb.pc.in;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Building Custom Rule C:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2 -BC:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/build --check-stamp-file C:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckIncludeFile.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckIncludeFileCXX.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckTypeSize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\GNUInstallDirs.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\WindowsPaths.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\TestBigEndian.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeCCompiler.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeRCCompiler.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeSystem.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\cmake_uninstall.cmake.in;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\include\maxminddb_config.h.cmake.in;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\src\libmaxminddb.pc.in;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Building Custom Rule C:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2 -BC:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/build --check-stamp-file C:/Users/retur/Desktop/project/server-source-code/libmaxminddb-1.12.2/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckIncludeFile.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckIncludeFileCXX.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\CheckTypeSize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\GNUInstallDirs.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\Platform\WindowsPaths.cmake;C:\Program Files\CMake\share\cmake-3.28\Modules\TestBigEndian.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeCCompiler.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeRCCompiler.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\3.28.0-rc5\CMakeSystem.cmake;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\cmake_uninstall.cmake.in;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\include\maxminddb_config.h.cmake.in;C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\src\libmaxminddb.pc.in;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\ZERO_CHECK.vcxproj">
+      <Project>{97BB20CA-5108-3B06-AB79-C236D70073F2}</Project>
+      <Name>ZERO_CHECK</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\bad_pointers_t.vcxproj">
+      <Project>{47E32D4D-DBF7-322C-8978-5336882FA090}</Project>
+      <Name>bad_pointers_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\basic_lookup_t.vcxproj">
+      <Project>{AEE31398-4B86-3B4C-BC56-DD5E4D072EBB}</Project>
+      <Name>basic_lookup_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\data-pool-t.vcxproj">
+      <Project>{143C711D-E136-301C-8526-305B2FF7F044}</Project>
+      <Name>data-pool-t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\data_entry_list_t.vcxproj">
+      <Project>{F1E927E0-390E-3FBD-86D5-57B0C7086219}</Project>
+      <Name>data_entry_list_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\data_types_t.vcxproj">
+      <Project>{D58E7275-8FFF-3555-BE44-9669AF6F9E73}</Project>
+      <Name>data_types_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\dump_t.vcxproj">
+      <Project>{D2FBFA44-67C2-3C93-B830-EBBF49A485CC}</Project>
+      <Name>dump_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\get_value_pointer_bug_t.vcxproj">
+      <Project>{42419F6A-64BC-379A-9E87-BFCC8C3223D8}</Project>
+      <Name>get_value_pointer_bug_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\get_value_t.vcxproj">
+      <Project>{DC4F9EDA-9DC7-30E8-B3F3-A5F854686499}</Project>
+      <Name>get_value_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\ipv4_start_cache_t.vcxproj">
+      <Project>{2BC74286-38FD-3E58-8E57-B83B39ADAD3F}</Project>
+      <Name>ipv4_start_cache_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\ipv6_lookup_in_ipv4_t.vcxproj">
+      <Project>{1F2DF95C-FDD8-3A23-ABA5-4A9F6290C170}</Project>
+      <Name>ipv6_lookup_in_ipv4_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\maxminddb.vcxproj">
+      <Project>{AE11A3BC-BECF-3FC4-9D9C-BDCABCF9AA44}</Project>
+      <Name>maxminddb</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\metadata_pointers_t.vcxproj">
+      <Project>{D24EFE12-6CAA-3BD0-B628-A470291BF4DC}</Project>
+      <Name>metadata_pointers_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\metadata_t.vcxproj">
+      <Project>{18C9748E-898F-30C4-8D8A-069BD7E13B3C}</Project>
+      <Name>metadata_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\no_map_get_value_t.vcxproj">
+      <Project>{0124C357-BB5A-3B54-AE14-214C3695861B}</Project>
+      <Name>no_map_get_value_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\read_node_t.vcxproj">
+      <Project>{3C0E6B2D-99EB-3A27-A59C-3E1459BF75F9}</Project>
+      <Name>read_node_t</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\tap.vcxproj">
+      <Project>{350834F2-7D8F-38DA-81D6-E11E4947A57E}</Project>
+      <Name>tap</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\retur\Desktop\project\server-source-code\libmaxminddb-1.12.2\build\t\version_t.vcxproj">
+      <Project>{DB68C5EA-B48F-3AB7-A7B2-924478D2B625}</Project>
+      <Name>version_t</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

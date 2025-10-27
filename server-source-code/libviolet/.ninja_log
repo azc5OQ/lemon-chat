@@ -1,0 +1,20 @@
+# ninja log v5
+2	83	7833087716343671	CMakeFiles/violet.dir/src/utils.c.obj	71190204e2057104
+5	112	7833087716656167	CMakeFiles/violet.dir/deps/libjuice/src/crc32.c.obj	89f10d9fdf0be6df
+6	115	7833087716656167	CMakeFiles/violet.dir/deps/libjuice/src/const_time.c.obj	a4f2b54138137d6b
+2	121	7833087716812414	CMakeFiles/violet.dir/deps/libjuice/src/base64.c.obj	97e7153f70bc9e14
+1	188	7833087717437412	CMakeFiles/violet.dir/src/options.c.obj	644641c1ddf7bb7e
+10	511	7833087720718598	CMakeFiles/violet.dir/deps/libjuice/src/hmac.c.obj	80322c7adf740c4
+5	575	7833087721343589	CMakeFiles/violet.dir/deps/libjuice/src/hash.c.obj	57be9ff2f5555469
+16	942	7833087724937283	CMakeFiles/violet.dir/deps/libjuice/src/timestamp.c.obj	1b42f09ccaa26043
+13	982	7833087725406030	CMakeFiles/violet.dir/deps/libjuice/src/random.c.obj	40c9cb97160a8022
+12	989	7833087725406030	CMakeFiles/violet.dir/deps/libjuice/src/log.c.obj	6175867267f84b0f
+7	1154	7833087727124751	CMakeFiles/violet.dir/deps/libjuice/src/juice.c.obj	bcf8adb5667820f9
+16	1204	7833087727593494	CMakeFiles/violet.dir/deps/libjuice/src/udp.c.obj	d5ebd794c981e04f
+4	1289	7833087728530920	CMakeFiles/violet.dir/deps/libjuice/src/addr.c.obj	ff16a9e79e7d9f44
+11	1305	7833087728687168	CMakeFiles/violet.dir/deps/libjuice/src/ice.c.obj	4165f28fbfd48cca
+17	1340	7833087728999725	CMakeFiles/violet.dir/deps/libjuice/src/turn.c.obj	a6494d0bd728deaf
+12	1374	7833087729312219	CMakeFiles/violet.dir/deps/libjuice/src/server.c.obj	d5e97ed4b43dd319
+9	1378	7833087729312219	CMakeFiles/violet.dir/deps/libjuice/src/stun.c.obj	83c4c3468fe50a8f
+3	1576	7833087731343438	CMakeFiles/violet.dir/deps/libjuice/src/agent.c.obj	5caefdefbf153ed7
+1576	1610	7833087731702337	libviolet.a	66e80abe99fb1baa

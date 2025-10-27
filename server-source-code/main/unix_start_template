@@ -1,0 +1,38 @@
+#!/bin/bash
+
+#check if symlink libdatachannel.so.0.23 exists and points to correct target
+
+TARGET="libdatachannel.so"
+LINK="libdatachannel.so.0.23"
+
+
+if [ -L "$LINK" ]; then
+    CURRENT_TARGET=$(readlink "$LINK")
+    if [ "$CURRENT_TARGET" == "$TARGET" ]; then
+        echo "Symlink $LINK already exists and is correct."
+    else
+        echo "Symlink $LINK exists but points to $CURRENT_TARGET. Updating..."
+        rm "$LINK"
+        ln -s "$TARGET" "$LINK"
+        echo "Symlink $LINK -> $TARGET created."
+    fi
+elif [ -e "$LINK" ]; then
+    echo "File $LINK exists but is not a symlink. Exiting."
+    exit 1
+fi
+
+
+
+#check if server executable exists
+
+FILE="$PWD"/chat-server.bin
+
+#check if file that is about to be started exists
+if test -f "$FILE"; then
+
+   #LD_LIBRARY_PATH is enviroment variable, equivalent to %PATH% in windows, it is a string variable where multiple paths to various directories are separated by semicolon ;
+   #update LD_LIBRARY_PATH for .so files, include current directory in it, so chat-server.bin also checks current directory for existence of libdatachannel.so
+   export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD
+   
+   ./chat-server.bin
+fi

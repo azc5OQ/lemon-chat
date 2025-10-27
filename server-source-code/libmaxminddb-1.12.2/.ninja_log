@@ -1,0 +1,4 @@
+# ninja log v5
+2	621	7833087772689898	CMakeFiles/maxminddb.dir/src/data-pool.c.obj	aa65a6ecd8c58b5d
+1	899	7833087775468179	CMakeFiles/maxminddb.dir/src/maxminddb.c.obj	ce332c9aafe10f5
+899	921	7833087775624428	libmaxminddb.a	d74ee249e1e8a7b0

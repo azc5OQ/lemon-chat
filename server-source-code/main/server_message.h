@@ -1,0 +1,47 @@
+//
+// Created by user on 4/1/2024.
+//
+
+#ifndef TEST0S_SOLUTION_SERVER_MESSAGE_H
+#define TEST0S_SOLUTION_SERVER_MESSAGE_H
+
+void server_msg__send_public_key_challenge_to_single_client(ws_cli_conn_t *websocket, char *random_value_challenge_string, char *dh_public_mix_for_client);
+void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t *websocket, char *ws_connection_dh_shared_secret);
+void server_msg__send_channel_list_to_single_client(ws_cli_conn_t *websocket, char *ws_connection_dh_shared_secret);
+void server_msg__send_client_list_to_single_client(ws_cli_conn_t *websocket, char *ws_connection_dh_shared_secret, char *local_clients_username, int client_receiver_id);
+void server_msg__send_icon_list_to_single_client(ws_cli_conn_t *websocket, char *ws_connection_dh_shared_secret);
+void server_msg__send_tag_list_to_single_client(ws_cli_conn_t *websocket, char *ws_connection_dh_shared_secret);
+void server_msg__send_active_microphone_usage_for_current_channel_to_single_client(ws_cli_conn_t *websocket, char *ws_connection_dh_shared_secret, int current_channel_id);
+void server_msg__send_client_connect_message_to_all_clients(int client_id_of_connected_client);
+void server_msg__send_maintainer_id_to_single_client(client_t *client, int channel_id, int id_of_client_that_is_maintainer_of_channel);
+void server_msg__send_connection_check_response_to_single_client(client_t *client);
+void server_msg__send_client_rename_message_to_all_clients(int id_of_client_that_changed_his_username, char *new_username);
+void server_msg__send_access_denied_to_single_client(client_t *client);
+void server_msg__send_channel_create_message_to_all_clients(int created_channel_index, int channel_creator_client_index);
+void server_msg__send_channel_edit_message_to_all_clients(int edited_channel_index, int channel_editor_id);
+void server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(int client_index, int chat_message_id, int local_message_id);
+void server_msg__send_chat_message_to_single_client(int client_sender_id, int client_receiver_id, int server_chat_message_id, char *chat_message_value);
+void server_msg__send_chat_message_to_clients_in_same_channel(int client_sender_id, int receiving_channel_id, int server_chat_message_id, char *chat_message_value);
+void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(int client_sender_id, int receiving_channel_id, int server_chat_message_id);
+void server_msg__send_channel_chat_picture_to_clients_in_same_channel(int client_sender_id, int receiving_channel_id, int server_chat_message_id, char *chat_message_value);
+void server_msg__send_image_status_to_single_client(client_t *client, char *status);
+void server_msg__send_chat_picture_metadata_to_single_client(int client_sender_id, int client_receiver_id, int server_chat_message_id);
+void server_msg__send_chat_picture_to_single_client(int client_sender_id, int client_receiver_id, int server_chat_message_id, char *chat_message_value);
+void server_msg__send_channel_join_message_to_all_clients(client_t *client_that_switched_channel, channel_t *new_channel);
+void server_msg__send_channel_join_message_to_single_client(client_t *client_that_switched_channel, channel_t *new_channel, client_t *receiving_client);
+void server_msg__send_maintainer_id_to_clients_in_same_channel(int channel_id, int maintainer_id);
+void server_msg__send_channel_delete_message_to_all_clients(int deleted_channel_id, int channel_deletor_id);
+void server_msg__send_client_disconnect_message_to_all_clients(int client_index);
+void server_msg__send_poke_to_single_client(client_t *client, int sender_index, char *poke_message);
+void server_msg__send_audio_state_of_client_to_all_clients(int client_index, int audio_state);
+void server_msg__send_start_song_stream_message_to_clients_in_same_channel(client_t *client_that_streams);
+void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client_t *client_that_streams);
+void server_msg__send_add_tag_to_client_event_to_all_clients(int client_id_of_client_that_got_the_new_tag, int tag_id);
+void server_msg__send_remove_tag_from_client_event_to_all_clients(int client_id_of_client_that_got_tag_removed, int tag_id);
+void server_msg__send_add_new_icon_event_to_all_clients(int new_icon_id, char *icon_base64_value);
+void server_msg__send_create_new_tag_event_to_all_clients(int tag_id, char *tag_name, int tag_linked_icon_id);
+
+//audio related
+void server_msg__send_webrtc_sdp_offer_to_single_client(const char *cand, const char *mid, client_t *client);
+
+#endif //TEST0S_SOLUTION_CLIENT_MESSAGE_H

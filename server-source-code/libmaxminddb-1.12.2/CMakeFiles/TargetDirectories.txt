@@ -1,0 +1,4 @@
+C:/Users/retur/Desktop/final/server-source-code/libmaxminddb-1.12.2/CMakeFiles/maxminddb.dir
+C:/Users/retur/Desktop/final/server-source-code/libmaxminddb-1.12.2/CMakeFiles/uninstall.dir
+C:/Users/retur/Desktop/final/server-source-code/libmaxminddb-1.12.2/CMakeFiles/edit_cache.dir
+C:/Users/retur/Desktop/final/server-source-code/libmaxminddb-1.12.2/CMakeFiles/rebuild_cache.dir

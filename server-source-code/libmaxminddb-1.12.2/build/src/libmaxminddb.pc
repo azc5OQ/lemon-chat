@@ -1,0 +1,11 @@
+prefix=C:/Program Files (x86)/maxminddb
+exec_prefix=C:/Program Files (x86)/maxminddb
+libdir=lib
+includedir=include
+
+Name: libmaxminddb
+Description: C library for the MaxMind DB file format
+URL: https://maxmind.github.io/libmaxminddb/
+Version: 1.12.2
+Libs: -L${libdir} -lmaxminddb
+Cflags: -I${includedir}
