@@ -119,6 +119,9 @@ IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
 set BUILD_CONFIG=Release
 ::set BUILD_CONFIG=Debug
 
+mkdir "%ROOT_DIRECTORY%\main\linkage-files\windows\"
+
+cd "%ROOT_DIRECTORY%\main\"
 
 
 set "CMAKE_CXX_COMPILER=%MINGWPATH%/g++.exe"

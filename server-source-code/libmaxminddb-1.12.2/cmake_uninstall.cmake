@@ -1,8 +1,8 @@
-if(NOT EXISTS "C:/Users/retur/Desktop/final/server-source-code/libmaxminddb-1.12.2/install_manifest.txt")
-  message(FATAL_ERROR "Cannot find install manifest: C:/Users/retur/Desktop/final/server-source-code/libmaxminddb-1.12.2/install_manifest.txt")
+if(NOT EXISTS "C:/Users/user/Desktop/melon/lemon-chat/server-source-code/libmaxminddb-1.12.2/install_manifest.txt")
+  message(FATAL_ERROR "Cannot find install manifest: C:/Users/user/Desktop/melon/lemon-chat/server-source-code/libmaxminddb-1.12.2/install_manifest.txt")
 endif()
 
-file(READ "C:/Users/retur/Desktop/final/server-source-code/libmaxminddb-1.12.2/install_manifest.txt" files)
+file(READ "C:/Users/user/Desktop/melon/lemon-chat/server-source-code/libmaxminddb-1.12.2/install_manifest.txt" files)
 string(REGEX REPLACE "\n" ";" files "${files}")
 foreach(file ${files})
   message(STATUS "Uninstalling $ENV{DESTDIR}${file}")

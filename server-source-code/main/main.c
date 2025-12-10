@@ -1664,12 +1664,10 @@ void base__set_server_settings(void)
 	printf("%s", "enter admin password (50 chars max length): ");
 	fgets(input, sizeof(input), stdin);
 	clib__sanitize_stdin(input);
-	//clib__copy_memory(input, &g_server_settings.admin_password[0], clib__utf8_string_length(input) ,50);
+	clib__copy_memory(input, &g_server_settings.admin_password[0], clib__utf8_string_length(input) ,50);
 	clib__null_memory(input, sizeof(input));
 
-	char actualadminpassword[] = "bmwi8coupe";
 
-	clib__copy_memory(actualadminpassword, &g_server_settings.admin_password[0], clib__utf8_string_length(actualadminpassword), 50);
 
 	printf("%s", "disable voice chat? (y/n) ");
 	fgets(input, sizeof(input), stdin);
