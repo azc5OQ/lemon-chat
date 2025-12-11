@@ -120,6 +120,7 @@ set BUILD_CONFIG=Release
 ::set BUILD_CONFIG=Debug
 
 mkdir "%ROOT_DIRECTORY%\main\linkage-files\windows\"
+mkdir "%ROOT_DIRECTORY%\..\buildresult\"
 
 cd "%ROOT_DIRECTORY%\main\"
 
