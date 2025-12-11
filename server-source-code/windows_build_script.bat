@@ -208,8 +208,9 @@ cd ../../
 
 cd libtom/libtomcrypt
 
-::libtomcrypt nema cmakelists.txt, a teda sa neda sa nan pouzit cmake. Preco nema? Pretoze nikto ho zatial nevytvoril, ale je na githube je na to pull request
-::s mojej skusenosti ale nefunguje s clion toolchainom, treba stiahnut kompletny mingw toolchain
+:: libtomcrypt does not have a CMakeLists.txt, so it cannot be built using CMake.
+:: Why doesn’t it have one? Because nobody has created it yet, but there is a pull request for it on GitHub.
+:: From my experience, it does not work with the CLion toolchain; you need to download the full MinGW toolchain.
 
 make -f makefile.mingw -j32
 

@@ -28,6 +28,8 @@ build.ninja
 rules.ninja
 .ninja_log
 .ninja_deps
+# Ninja temporary files
+*.tmp*
 
 # ---- Makefile generator ----
 Makefile
