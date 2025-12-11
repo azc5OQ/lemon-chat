@@ -1,10 +1,28 @@
-### chat system that can be self hosted
+# chat system that can be self hosted
+
+## features:
+- lightweight C server ! run on any OS and any CPU
+- single .html file client ! <br>
+  run it from desktop like if you had .exe or embed it to website <br>
+- user management system! (change username, kick, ban)
+- channel management system! (create , delete, edit channels)
+- direct messages (text and pictures)
+- channel messages (text and pictures)
+- audio in channel
+- end to end encryption
+
+<br>
+
+## other fun features
+- select .mp3 file from disk and play in channel
+- set different theme
+- change font size and color of message
+- add groups/tags to other users
 
 ## how to start server:
-- install rust -> https://www.rust-lang.org/tools/install
-- cargo run
-
-![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic3.png)
+- clone repository and run windows_build_script.bat or linux_build_script.sh
+- or use prebuild release
+- watch how-to-build-and-use-video.mkv included in repository
 
 
 
@@ -12,53 +30,41 @@
 - open "client.html" file in browser
 
 
-![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/pic2.png)
+
+<br>
+<br>
+
+## example pictures
+![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/example/pic2.png)
 
 
-![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/client/other/test1.PNG)
+![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/example/test1.PNG)
+
+<br>\
+<br>
+<br>
+
+## More technical notes
+
+I made this communication system to be similar to tools such as Teamspeak or Mumble, which is evident from its interface.<br>
+It supports optional voice chat if the admin enables audio in individual channel settings, and all messages—including text, images, and audio data—are end-to-end encrypted for both direct and channel communication.<br>
+This chat does not rely solely on TLS/SSL and applies its own encryption on top if TLS/SSL is used, making it extremely difficult—even for the hosting admin—to view messages that do not belong to them.<br>
+WebSocket is used for text and images, while WebRTC data channels are used for audio (only the data channel part is used; communication is client → server like WebSocket, so clients cannot leak IP addresses).<br>
+The `client.html` contains everything embedded. It can be used like a regular `.exe` by clicking it, entering the IP address and port, and connecting to a server, or it can be packaged into an actual `.exe` using a tool like Electron if needed. <br>
+Server should be easy to built, (if system has correct build tools installed) every dependency for building server is already in this repository, there are no extra C/C++ libraries to download.
+There is .bat file that can be launched to build it.
 
 
 
 <br>
-source code of other people used in this project:
+<br>
 
-client
-<br>
-https://github.com/wwwtyro/cryptico
-<br>
-https://github.com/ricmoo/aes-js
-<br>
-https://github.com/bashi/minimp3-wasm
-<br>
-https://github.com/Ivan-Feofanov/ws-audio-api
-
-# video of how it works is in repository:
-how-to-build-and-use-video.mkv
 
 <br>
 
-# Question: how is this different from IRC?
-
-<b>A</b>
-I made this to be similar to teamspeak, not IRC. So unlike IRC this also contains voice chat.</br>
-The messages send in this chat, text messages, images and voice data are all end to end encrypted for both direct and channel communication. This chat does not rely on TLS/SSL and encrypts stuff on its own. <br>
-It was made to be hard as possible, even for admin hosting this, to see messages of others that do not belong to him. </br>
-This tool is my contribution to free software on internet that no one asked for </br>
-<br>
-
-# Question: Isnt like matrix better?
-<b>A</b> what do you think?
-<br>
-<br>
-
-# Question: Can the client.html file be embedded into website?
-<b>A</b>
-To answer this, it is important to know that the client.html is ment to be run from desktop. This was done to make chat client accessible without the need to run .exe.
-It works fine. If really needed, the client.html can be packed to .exe with something like electron. <br>
-That being said, yes, the client.html can also be embedded to website so people can connect directly from it. <br />
-<br />
-
-with these assumptions: <br />
+## Can the client.html file be embedded into website?
+# Yes. <br />
+with following assumptions : <br />
 - apache2 running on ubuntu <br />
 - websocket port of choice: 1111 <br />
 - stunnel used<br />
@@ -89,46 +95,89 @@ key = /etc/letsencrypt/live/justsometestchat.com/privkey.pem<br />
 <br />
 <br />
 
-# Is the client.html using any webassembly files (.wasm) ?
-Yes, the client.html has two webassembly files embedded directly in it as base64 string.  <br />
-- first webassembly (libopusjs) for encoding/decoding pcm to/from opus <br />
-https://github.com/azc5OQ/libopusjs-wasm--build-steps <br />
-- second webassembly for encoding mp3 to pcm <br />
-https://github.com/azc5OQ/minimp3-wasm-build-steps <br />
 
+## Remote Port Forwarding Setup
+
+This guide shows how to make a local Windows server accessible from the public internet, even if it’s behind a router or firewall. The method uses a cheap VPS as a relay.
+
+---
+
+## Requirements
+
+- A VPS (1 CPU core, 500 MB RAM is enough)
+- SSH client (OpenSSH)
+- SSH key pair for authentication
+
+The VPS will act as a public access point for your local server traffic.
+
+---
+
+## Step 1: Connect via SSH with Remote Port Forwarding
+
+Run this command from your local Windows server:
+
+```bash
+ssh -i /path/to/private_key -p 2245 -w 0:0 \
+    -R 1234:localhost:1234 \
+    -R 3478:localhost:3478 \
+    -v root@VPS_IP_ADDRESS
+```
+### Explanation of flags:
+
+- `-i /path/to/private_key` → SSH private key for authentication  
+- `-p 2245` → SSH port on the VPS  
+- `-w 0:0` → Creates a TUN/TAP interface (required for some setups)  
+- `-R 1234:localhost:1234` → Forward local WebSocket port 1234 to the VPS  
+- `-R 3478:localhost:3478` → Forward STUN/UDP port 3478 (used for WebRTC data channels)  
+- `-v` → Verbose mode for debugging  
+
+`root@VPS_IP_ADDRESS` → Replace with your VPS root user and IP  
+
+---
+
+### Notes
+
+**WebSocket Port (1234):**  
+- Chosen by the admin when starting the server  
+- Used for WebSocket connections  
+
+**STUN/UDP Port (3478):**  
+- Used for creating a non-peer-to-peer WebRTC data channel (UDP-based)  
+- Optional if voice chat or WebRTC isn’t needed  
+
+---
+
+✅ With this setup, your local server becomes accessible through the VPS without needing to configure router port forwarding.
+
+
+# Thanks to these projects and people for providing some of the source code this project uses:
+
+### client:
+cryptico -> https://github.com/wwwtyro/cryptico
 <br>
-
-There are two options on how to build and reproduce these exact webasemblies: <br />
-- clone it from my repository and setup build enviroment yourself
-- download .ova file (exported virtual machine) that contains build enviroment with everything already setup
-
-I provided virtual machine for building these webassemblies because the enviroment needed to build them from scratch was just too complicated to setup.
-
-There is also webassembly-free version of client, client_noaudio.html.
-
-<br />
-<br />
-
-# Question: why rust for server?
-I got asked why I did not use rust. <br />
-I thought about it. I wanted server to be easy to build into binary and rust made that possible. There are pros and cons to everything. <br />
-I used C before for server side code and it worked. There are some forks of it here. <br />
-I must say I find rust syntax unnecessary complicated. While writing code in rust, I tried to made the server code readable at all costs even if the code was not following "rust standards" <br />
+aes-js -> https://github.com/ricmoo/aes-js
+<br>
+minimp3-wasm -> https://github.com/bashi/minimp3-wasm
+<br>
+ws-audio-api -> https://github.com/Ivan-Feofanov/ws-audio-api
 
 
-in case you have any feature request open new issue or just fork it and add what you want
+### server:
+wsServer -> https://github.com/Theldus/wsServer
+<br>
+cJSON -> https://github.com/DaveGamble/cJSON
+<br>
+libdatachannel -> https://github.com/paullouisageneau/libdatachannel
+<br>
+libviolet -> https://github.com/paullouisageneau/violet
+<br>
+mbedtls -> https://github.com/Mbed-TLS/mbedtls
+<br>
+libtom -> https://github.com/libtom/libtomcrypt
 
-<br />
 
-# remote port forwarding setup
-posible solution to problem of making server visible (hosting server on windows behind router etc)
- - buy cheap VPS (1 cpu core and 500mb ram more than enough, vps will be access point / router for traffic)
- - ssh -i some_generated_private_key -p 2245 -w 0:0 -R 1234:localhost:1234 -R 3478:localhost:3478 -v root@XXX.XXX.XXX.XXX
+Its worth noting that there is also a rust version that is older and not in development
+https://github.com/azc5OQ/lemon-chat-rust-version
 
-some explanation: (its assumed reader knows how this ssh command works)
-<br />
-1234 is a websocket port that admin chooses when he starts server
-<br />
-3478 is a stun port used for creating a NON-peer-to-peer webrtc datachannel. Similar to websocket, just UDP. If voice chatting is not needed, this can be ignored.
-<br />
-todo: add fallback to websocket if webrtc channel fails to create
+
+
