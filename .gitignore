@@ -28,6 +28,7 @@ build.ninja
 rules.ninja
 .ninja_log
 .ninja_deps
+.ninja_lock
 # Ninja temporary files
 *.tmp*
 
