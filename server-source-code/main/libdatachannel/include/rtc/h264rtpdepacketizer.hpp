@@ -18,17 +18,19 @@
 #include "rtp.hpp"
 #include "rtpdepacketizer.hpp"
 
-namespace rtc {
+namespace rtc
+{
 
 /// RTP depacketization for H264
-class RTC_CPP_EXPORT H264RtpDepacketizer final : public VideoRtpDepacketizer {
-public:
+class RTC_CPP_EXPORT H264RtpDepacketizer final : public VideoRtpDepacketizer
+{
+    public:
 	using Separator = NalUnit::Separator;
 
 	H264RtpDepacketizer(Separator separator = Separator::StartSequence);
 	~H264RtpDepacketizer();
 
-private:
+    private:
 	message_ptr reassemble(message_buffer &buffer) override;
 	void addSeparator(binary &frame);
 

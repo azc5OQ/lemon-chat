@@ -17,17 +17,19 @@
 #include <atomic>
 #include <queue>
 
-namespace rtc {
+namespace rtc
+{
 
 // Paced sending of RTP packets. It takes a stream of RTP packets that can have an uneven bitrate
 // and delivers them in a smoother manner by sending a fixed size of them on an interval
-class RTC_CPP_EXPORT PacingHandler : public MediaHandler {
-public:
+class RTC_CPP_EXPORT PacingHandler : public MediaHandler
+{
+    public:
 	PacingHandler(double bitsPerSecond, std::chrono::milliseconds sendInterval);
 
 	void outgoing(message_vector &messages, const message_callback &send) override;
 
-private:
+    private:
 	std::atomic<bool> mHaveScheduled = false;
 
 	double mBytesPerSecond;

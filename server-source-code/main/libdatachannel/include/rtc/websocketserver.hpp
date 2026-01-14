@@ -15,16 +15,19 @@
 #include "configuration.hpp"
 #include "websocket.hpp"
 
-namespace rtc {
+namespace rtc
+{
 
-namespace impl {
+namespace impl
+{
 
 struct WebSocketServer;
 
 }
 
-class RTC_CPP_EXPORT WebSocketServer final : private CheshireCat<impl::WebSocketServer> {
-public:
+class RTC_CPP_EXPORT WebSocketServer final : private CheshireCat<impl::WebSocketServer>
+{
+    public:
 	using Configuration = WebSocketServerConfiguration;
 
 	WebSocketServer();
@@ -37,7 +40,7 @@ public:
 
 	void onClient(std::function<void(shared_ptr<WebSocket>)> callback);
 
-private:
+    private:
 	using CheshireCat<impl::WebSocketServer>::impl;
 };
 

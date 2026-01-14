@@ -15,16 +15,19 @@
 #include "nalunit.hpp"
 #include "rtppacketizer.hpp"
 
-namespace rtc {
+namespace rtc
+{
 
 // RTP packetization of AV1 payload
-class RTC_CPP_EXPORT AV1RtpPacketizer final : public RtpPacketizer {
-public:
+class RTC_CPP_EXPORT AV1RtpPacketizer final : public RtpPacketizer
+{
+    public:
 	inline static const uint32_t ClockRate = VideoClockRate;
 	[[deprecated("Use ClockRate")]] inline static const uint32_t defaultClockRate = ClockRate;
 
 	// Define how OBUs are seperated in a AV1 Sample
-	enum class Packetization {
+	enum class Packetization
+	{
 		Obu = RTC_OBU_PACKETIZED_OBU,
 		TemporalUnit = RTC_OBU_PACKETIZED_TEMPORAL_UNIT,
 	};
@@ -32,10 +35,9 @@ public:
 	// Constructs AV1 payload packetizer with given RTP configuration.
 	// @note RTP configuration is used in packetization process which may change some configuration
 	// properties such as sequence number.
-	AV1RtpPacketizer(Packetization packetization, shared_ptr<RtpPacketizationConfig> rtpConfig,
-	                 size_t maxFragmentSize = DefaultMaxFragmentSize);
+	AV1RtpPacketizer(Packetization packetization, shared_ptr<RtpPacketizationConfig> rtpConfig, size_t maxFragmentSize = DefaultMaxFragmentSize);
 
-private:
+    private:
 	static std::vector<binary> extractTemporalUnitObus(const binary &data);
 
 	std::vector<binary> fragment(binary data) override;

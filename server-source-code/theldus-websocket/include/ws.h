@@ -210,7 +210,8 @@ extern "C" {
 	 * @brief Debug
 	 */
 
-	//#define DEBUG_THELDUS_WEBSOCKET if (1) ->activated debug
+	
+	//#define DEBUG_THELDUS_WEBSOCKET if (1) //->activated debug
 	#define DEBUG_THELDUS_WEBSOCKET if (0) //-> deactivates debug
 
 	/**@}*/

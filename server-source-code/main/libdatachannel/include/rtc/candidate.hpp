@@ -13,13 +13,35 @@
 
 #include <string>
 
-namespace rtc {
+namespace rtc
+{
 
-class RTC_CPP_EXPORT Candidate {
-public:
-	enum class Family { Unresolved, Ipv4, Ipv6 };
-	enum class Type { Unknown, Host, ServerReflexive, PeerReflexive, Relayed };
-	enum class TransportType { Unknown, Udp, TcpActive, TcpPassive, TcpSo, TcpUnknown };
+class RTC_CPP_EXPORT Candidate
+{
+    public:
+	enum class Family
+	{
+		Unresolved,
+		Ipv4,
+		Ipv6
+	};
+	enum class Type
+	{
+		Unknown,
+		Host,
+		ServerReflexive,
+		PeerReflexive,
+		Relayed
+	};
+	enum class TransportType
+	{
+		Unknown,
+		Udp,
+		TcpActive,
+		TcpPassive,
+		TcpSo,
+		TcpUnknown
+	};
 
 	Candidate();
 	Candidate(string candidate);
@@ -30,7 +52,11 @@ public:
 	void changeAddress(string addr, uint16_t port);
 	void changeAddress(string addr, string service);
 
-	enum class ResolveMode { Simple, Lookup };
+	enum class ResolveMode
+	{
+		Simple,
+		Lookup
+	};
 	bool resolve(ResolveMode mode = ResolveMode::Simple);
 
 	Type type() const;
@@ -48,7 +74,7 @@ public:
 	optional<string> address() const;
 	optional<uint16_t> port() const;
 
-private:
+    private:
 	void parse(string candidate);
 
 	string mFoundation;
@@ -69,8 +95,7 @@ private:
 
 RTC_CPP_EXPORT std::ostream &operator<<(std::ostream &out, const Candidate &candidate);
 RTC_CPP_EXPORT std::ostream &operator<<(std::ostream &out, const Candidate::Type &type);
-RTC_CPP_EXPORT std::ostream &operator<<(std::ostream &out,
-                                        const Candidate::TransportType &transportType);
+RTC_CPP_EXPORT std::ostream &operator<<(std::ostream &out, const Candidate::TransportType &transportType);
 
 } // namespace rtc
 

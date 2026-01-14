@@ -19,6 +19,10 @@ static boole _client_msg_internal__is_add_tag_to_client_valid(cJSON *json_root);
 static boole _client_msg_internal__is_remove_tag_from_client_valid(cJSON *json_root);
 static boole _client_msg_internal__is_process_server_settings_icon_upload_message_valid(cJSON *json_root);
 static boole _client_msg_internal__is_process_server_settings_add_new_tag_message_valid(cJSON *json_root);
+static boole _client_msg_internal__is_call_idle_client_message_valid(cJSON *json_root);
+static boole _client_msg_internal__is_process_come_back_from_idle_mode_request_valid(cJSON *json_root);
+static boole _client_msg_internal__is_go_to_idle_mode_request_valid(cJSON *json_root);
+static boole _client_msg_internal__is_kick_ban_request_valid(cJSON *json_root);
 
 /**
  * @brief self explanatory
@@ -199,6 +203,99 @@ static boole _client_msg_internal__is_process_server_settings_add_new_tag_messag
 	}
 
 	return TRUE;
+}
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @note this is just first glance check
+ * *
+ * @return boole
+ */
+static boole _client_msg_internal__is_call_idle_client_message_valid(cJSON *json_root)
+{
+	cJSON *json_message_object;
+	cJSON *json_client_id;
+	nuint new_tag_name_length;
+
+	json_message_object = 0;
+	json_client_id = 0;
+
+	json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+	json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
+	if (!cJSON_IsNumber(json_client_id))
+	{
+		DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_process_server_settings_add_new_tag_message_valid cJSON_IsNumber(json_client_id)");
+		return FALSE;
+	}
+
+	if (json_client_id->valueint < 0 || json_client_id->valueint >= MAX_CLIENTS)
+	{
+		DBG_CLIENT_MESSAGE log_info("%s", "icon id is invalid");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static boole _client_msg_internal__is_process_come_back_from_idle_mode_request_valid(cJSON *json_root)
+{
+	cJSON *json_message_object;
+	cJSON *json_channel_id;
+	nuint new_tag_name_length;
+
+	json_message_object = 0;
+	json_channel_id = 0;
+
+	json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+	json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+	if (!cJSON_IsNumber(json_channel_id))
+	{
+		DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_process_come_back_from_idle_mode_request_valid cJSON_IsNumber(json_channel_id)");
+		return FALSE;
+	}
+
+	if (json_channel_id->valueint < 0 || json_channel_id->valueint >= MAX_CLIENTS)
+	{
+		DBG_CLIENT_MESSAGE log_info("%s", "icon id is invalid");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static boole _client_msg_internal__is_go_to_idle_mode_request_valid(cJSON *json_root)
+{
+	return TRUE;
+}
+
+static boole _client_msg_internal__is_kick_ban_request_valid(cJSON *json_root)
+{
+    cJSON *json_message_object;
+    cJSON *json_client_id;
+
+    json_message_object = 0;
+    json_client_id = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+    json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
+    if (!cJSON_IsNumber(json_client_id))
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_kick_ban_request_valid cJSON_IsNumber(json_client_id)");
+        return FALSE;
+    }
+
+    if (json_client_id->valueint < 0 || json_client_id->valueint >= MAX_CLIENTS)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_client_id is invalid");
+        return FALSE;
+    }
+
+    return TRUE;
 }
 
 /**
@@ -1597,8 +1694,6 @@ void client_msg__process_public_key_challenge_response(cJSON *json_root, int sen
 			server_msg__send_maintainer_id_to_single_client(current_client, ROOT_CHANNEL_ID, root_channel->maintainer_id);
 		}
 
-		audio_channel__initialize_webrtc_datachannel_connection(current_client);
-
 		pthread_rwlock_unlock(&clients_global_rwlock_guard);
 		pthread_rwlock_unlock(&channels_global_rwlock_guard);
 		pthread_rwlock_unlock(&tags_global_rwlock_guard);
@@ -2036,6 +2131,7 @@ void client_msg__process_direct_chat_message(cJSON *json_root, int sender_client
 {
 	boole is_message_valid = FALSE;
 	boole is_receiver_existing = FALSE;
+	boole is_receiver_idle = FALSE;
 	cJSON *json_receiver_id = 0;
 	cJSON *json_local_message_id = 0;
 	cJSON *json_chat_message_value = 0;
@@ -2066,17 +2162,20 @@ void client_msg__process_direct_chat_message(cJSON *json_root, int sender_client
 
 	if (json_receiver_id->valueint < 0 || json_receiver_id->valueint >= MAX_CLIENTS)
 	{
-		DBG_CLIENT_MESSAGE log_info("%s %d %s", "client : ", sender_client_index, " json_receiver_id->valueint < 0 || json_receiver_id->valueint >= MAX_CLIENTS \n");
+		DBG_CLIENT_MESSAGE log_info("%s %d %s", "client_msg__process_direct_chat_message client : ", sender_client_index, " json_receiver_id->valueint < 0 || json_receiver_id->valueint >= MAX_CLIENTS \n");
 		return;
 	}
 
 	pthread_rwlock_rdlock(&clients_global_rwlock_guard);
 
-	is_receiver_existing = clients_array[json_receiver_id->valueint].is_authenticated;
+	//if sender has idle mode active, stop it
 
-	if (is_receiver_existing)
+	is_receiver_existing = clients_array[json_receiver_id->valueint].is_authenticated;
+	is_receiver_idle = clients_array[json_receiver_id->valueint].is_idle;
+
+	if (is_receiver_existing == TRUE && is_receiver_idle == FALSE)
 	{
-		DBG_CLIENT_MESSAGE log_info("%s %d %s", "receiver is_existing: ", json_receiver_id->valueint, "\n");
+		DBG_CLIENT_MESSAGE log_info("%s %d %s", "client_msg__process_direct_chat_message receiver is_existing: ", json_receiver_id->valueint, "\n");
 
 		server_chat_message_id = (int)base___get_chat_message_id();
 		base___increment_chat_message_id();
@@ -2085,7 +2184,7 @@ void client_msg__process_direct_chat_message(cJSON *json_root, int sender_client
 	}
 	else
 	{
-		DBG_CLIENT_MESSAGE log_info("%s %d %s", "receiver is_existing not is_existing", json_receiver_id->valueint, "\n");
+		DBG_CLIENT_MESSAGE log_info("%s %d %s", "client_msg__process_direct_chat_message receiver is_existing not is_existing or is in idle mode", json_receiver_id->valueint, "\n");
 	}
 
 	pthread_rwlock_unlock(&clients_global_rwlock_guard);
@@ -2236,6 +2335,7 @@ void client_msg__process_channel_chat_picture(cJSON *json_root, int sender_clien
 void client_msg__process_direct_chat_picture(cJSON *json_root, int sender_client_index)
 {
 	boole is_receiver_existing = FALSE;
+	boole is_receiver_idle = FALSE;
 	cJSON *json_receiver_id = 0;
 	cJSON *json_local_message_id = 0;
 	cJSON *json_chat_message_value = 0;
@@ -2273,8 +2373,9 @@ void client_msg__process_direct_chat_picture(cJSON *json_root, int sender_client
 	pthread_rwlock_rdlock(&clients_global_rwlock_guard);
 
 	is_receiver_existing = clients_array[json_receiver_id->valueint].is_authenticated;
+	is_receiver_idle = clients_array[json_receiver_id->valueint].is_idle;
 
-	if (is_receiver_existing)
+	if (is_receiver_existing == TRUE && is_receiver_idle == FALSE)
 	{
 		DBG_CLIENT_MESSAGE log_info("%s %d %s", "receiver is_existing: ", json_receiver_id->valueint, "\n");
 
@@ -2892,38 +2993,42 @@ void client_msg__process_microphone_usage(cJSON *json_root, int sender_client_in
 
 	received_microphone_usage = json_value->valueint;
 
-	if (received_microphone_usage == MICROPHONE_USAGE__KEEP_PUSH_TO_TALK_READY_BUT_DONT_SEND_AUDIO)
+	//only allow changing audio state if audio is not completely disabled
+	if (client->audio_state != AUDIO_STATE__AUDIO_COMPLETELY_DISABLED)
 	{
-		if (client->audio_state != AUDIO_STATE__PUSH_TO_TALK_ENABLED)
+		if (received_microphone_usage == MICROPHONE_USAGE__KEEP_PUSH_TO_TALK_READY_BUT_DONT_SEND_AUDIO)
 		{
-			client->audio_state = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
-			audio_channel__set_is_client_sending_audio(client->client_id, FALSE);
-			server_msg__send_audio_state_of_client_to_all_clients(sender_client_index, client->audio_state);
-		}
-	}
-	else if (received_microphone_usage == MICROPHONE_USAGE__DISABLE_PUSH_TO_TALk)
-	{
-		if (client->audio_state != AUDIO_STATE__PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS)
-		{
-			client->audio_state = AUDIO_STATE__PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS;
-
-			if (client->is_streaming_song == TRUE)
+			if (client->audio_state != AUDIO_STATE__PUSH_TO_TALK_ENABLED)
 			{
-				client->is_streaming_song = FALSE;
-				server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client);
+				client->audio_state = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
+				audio_channel__set_is_client_sending_audio(client->client_id, FALSE);
+				server_msg__send_audio_state_of_client_to_all_clients(sender_client_index, client->audio_state);
 			}
-
-			audio_channel__set_is_client_sending_audio(client->client_id, FALSE);
-			server_msg__send_audio_state_of_client_to_all_clients(sender_client_index, client->audio_state);
 		}
-	}
-	else if (received_microphone_usage == MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
-	{
-		if (client->audio_state != MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
+		else if (received_microphone_usage == MICROPHONE_USAGE__DISABLE_PUSH_TO_TALk)
 		{
-			client->audio_state = MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO;
-			audio_channel__set_is_client_sending_audio(client->client_id, TRUE);
-			server_msg__send_audio_state_of_client_to_all_clients(sender_client_index, client->audio_state);
+			if (client->audio_state != AUDIO_STATE__PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS)
+			{
+				client->audio_state = AUDIO_STATE__PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS;
+
+				if (client->is_streaming_song == TRUE)
+				{
+					client->is_streaming_song = FALSE;
+					server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client);
+				}
+
+				audio_channel__set_is_client_sending_audio(client->client_id, FALSE);
+				server_msg__send_audio_state_of_client_to_all_clients(sender_client_index, client->audio_state);
+			}
+		}
+		else if (received_microphone_usage == MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
+		{
+			if (client->audio_state != MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
+			{
+				client->audio_state = MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO;
+				audio_channel__set_is_client_sending_audio(client->client_id, TRUE);
+				server_msg__send_audio_state_of_client_to_all_clients(sender_client_index, client->audio_state);
+			}
 		}
 	}
 
@@ -3576,3 +3681,342 @@ void client_msg__process_set_server_settings_add_new_tag(cJSON *json_root, int s
 label_client_msg__process_server_settings_add_new_tag_end:
 	pthread_rwlock_unlock(&clients_global_rwlock_guard);
 }
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @param int sender_client_index
+ * *
+ * @return void
+ */
+void client_msg__process_call_idle_client_message(cJSON *json_root, int sender_client_index)
+{
+	boole status;
+	client_t *caller;
+	client_t *callee;
+
+	cJSON *json_message_object;
+	cJSON *json_callee_client_id;
+
+	status = FALSE;
+	caller = NULL_POINTER;
+	callee = NULL_POINTER;
+	json_message_object = NULL_POINTER;
+
+	status = _client_msg_internal__is_call_idle_client_message_valid(json_root);
+	if (!status)
+	{
+		DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_call_idle_client_message is not valid");
+		return;
+	}
+
+	json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+	json_callee_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
+
+	pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+
+	//
+	//check if client that sent the message is valid. If he is connected and he exists.
+	//this was checked before but not within write lock like here
+	//
+
+	caller = &clients_array[sender_client_index];
+
+	if (caller->is_authenticated == FALSE || caller->is_existing == FALSE)
+	{
+		goto label_client_msg__process_call_idle_client_message_end;
+	}
+
+	//check if he is idle too later
+
+	callee = &clients_array[json_callee_client_id->valueint];
+
+	if (callee->is_authenticated == FALSE || callee->is_existing == FALSE)
+	{
+		goto label_client_msg__process_call_idle_client_message_end;
+	}
+
+	server_msg__send_call_event_to_idle_client(caller, callee);
+
+label_client_msg__process_call_idle_client_message_end:
+	pthread_rwlock_unlock(&clients_global_rwlock_guard);
+}
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @param int sender_client_index
+ * *
+ * @return void
+ */
+void client_msg__process_go_to_idle_mode_request(cJSON *json_root, int sender_client_index)
+{
+	boole status;
+	client_t *client;
+
+	status = FALSE;
+
+	status = _client_msg_internal__is_go_to_idle_mode_request_valid(json_root);
+	if (!status)
+	{
+		DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_call_idle_client_message is not valid");
+		return;
+	}
+
+	pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+
+	//
+	//check if client that sent the message is valid. If he is connected and he exists.
+	//this was checked before but not within write lock like here
+	//
+
+	client = &clients_array[sender_client_index];
+
+	if (client->is_authenticated == FALSE || client->is_existing == FALSE)
+	{
+		goto label_go_to_idle_mode_request_end;
+	}
+
+	client->is_idle = TRUE;
+	client->channel_id = -2;
+
+	server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_index);
+
+label_go_to_idle_mode_request_end:
+	pthread_rwlock_unlock(&clients_global_rwlock_guard);
+}
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @param int sender_client_index
+ * *
+ * @return void
+ */
+void client_msg__process_come_back_from_idle_mode_request(cJSON *json_root, int sender_client_index)
+{
+	boole status;
+
+	cJSON *json_message_object;
+	cJSON *json_channel_id;
+	client_t *client;
+	channel_t *channel_to_join = FALSE;
+
+	status = FALSE;
+	json_message_object = NULL_POINTER;
+
+	status = _client_msg_internal__is_process_come_back_from_idle_mode_request_valid(json_root);
+	if (!status)
+	{
+		DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_call_idle_client_message is not valid");
+		return;
+	}
+
+	json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+	json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+
+	pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+	pthread_rwlock_wrlock(&channels_global_rwlock_guard);
+
+	//
+	//check if client that sent the message is valid. If he is connected and he exists.
+	//this was checked before but not within write lock like here
+	//
+
+	client = &clients_array[sender_client_index];
+
+	if (client->is_authenticated == FALSE || client->is_existing == FALSE)
+	{
+		goto label_client_msg__process_come_back_from_idle_mode_request_end;
+	}
+
+	channel_to_join = &channel_array[json_channel_id->valueint];
+
+	if (!channel_to_join->is_existing)
+	{
+		DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_come_back_from_idle_mode_request channel not is_existing \n");
+		goto label_client_msg__process_come_back_from_idle_mode_request_end;
+	}
+
+	client->is_idle = FALSE;
+	client->channel_id = channel_to_join->channel_id;
+
+	server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(sender_client_index, channel_to_join->channel_id);
+
+label_client_msg__process_come_back_from_idle_mode_request_end:
+	pthread_rwlock_unlock(&clients_global_rwlock_guard);
+	pthread_rwlock_unlock(&channels_global_rwlock_guard);
+}
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @param int sender_client_index
+ * *
+ * @return void
+ */
+void client_msg__process_create_new_webrtc_datachannel_connection(cJSON *json_root, int sender_client_index)
+{
+	boole status;
+
+	cJSON *json_message_object;
+	cJSON *json_channel_id;
+	client_t *client;
+	channel_t *channel_to_join = FALSE;
+	webrtc_peer_t *peer;
+
+	status = FALSE;
+	json_message_object = NULL_POINTER;
+
+	pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+	pthread_rwlock_wrlock(&channels_global_rwlock_guard);
+
+	//
+	//check if client that sent the message is valid. If he is connected and he exists.
+	//this was checked before but not within write lock like here
+	//
+
+    //log_info("%s", "client_msg__process_create_new_webrtc_datachannel_connection");
+
+	client = &clients_array[sender_client_index];
+
+	if (client->is_authenticated == FALSE || client->is_existing == FALSE)
+	{
+		goto label_process_create_new_webrtc_datachannel_connection_end;
+	}
+
+    //server will ignore the request only if these 3 are off
+	peer = &webrtc_muggles_array[sender_client_index];
+
+	if (peer->is_existing == TRUE && peer->connected == TRUE && client->audio_state != AUDIO_STATE__AUDIO_COMPLETELY_DISABLED)
+	{
+		goto label_process_create_new_webrtc_datachannel_connection_end;
+	}
+
+	//log_info("%s", "attempting reconnect");
+
+	audio_channel__initialize_webrtc_datachannel_connection(client);
+
+label_process_create_new_webrtc_datachannel_connection_end:
+	pthread_rwlock_unlock(&clients_global_rwlock_guard);
+	pthread_rwlock_unlock(&channels_global_rwlock_guard);
+}
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @param int sender_client_index
+ * *
+ * @return void
+ */
+void client_msg__process_kick_request(cJSON *json_root, int sender_client_index)
+{
+    boole status;
+
+    cJSON *json_message_object;
+    cJSON *json_client_id;
+    client_t *admin;
+    client_t *receiver;
+
+    status = FALSE;
+    json_message_object = NULL_POINTER;
+
+    status = _client_msg_internal__is_kick_ban_request_valid(json_root);
+    if (!status)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_kick_request is not valid");
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
+
+    pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+
+    //
+    //check if client that sent the message is valid. If he is connected and he exists.
+    //this was checked before but not within write lock like here
+    //
+
+    admin = &clients_array[sender_client_index];
+
+    if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
+    {
+        goto label_client_msg__process_kick_request_end;
+    }
+
+    receiver = &clients_array[json_client_id->valueint];
+    if (receiver->is_authenticated == FALSE || receiver->is_existing == FALSE)
+    {
+        goto label_client_msg__process_kick_request_end;
+    }
+
+    ws_close_client(receiver->p_ws_connection);
+
+
+label_client_msg__process_kick_request_end:
+    pthread_rwlock_unlock(&clients_global_rwlock_guard);
+}
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @param int sender_client_index
+ * *
+ * @return void
+ */
+void client_msg__process_ban_request(cJSON *json_root, int sender_client_index)
+{
+    boole status;
+
+    cJSON *json_message_object;
+    cJSON *json_client_id;
+    client_t *admin;
+    client_t *receiver;
+
+    status = FALSE;
+    json_message_object = NULL_POINTER;
+
+    status = _client_msg_internal__is_kick_ban_request_valid(json_root);
+    if (!status)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_ban_request is not valid");
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
+
+    pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+
+    //
+    //check if client that sent the message is valid. If he is connected and he exists.
+    //this was checked before but not within write lock like here
+    //
+
+    admin = &clients_array[sender_client_index];
+
+    if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
+    {
+        goto label_client_msg__process_ban_request_end;
+    }
+
+    receiver = &clients_array[json_client_id->valueint];
+    if (receiver->is_authenticated == FALSE || receiver->is_existing == FALSE)
+    {
+        goto label_client_msg__process_ban_request_end;
+    }
+
+    ws_close_client(receiver->p_ws_connection);
+
+
+    label_client_msg__process_ban_request_end:
+    pthread_rwlock_unlock(&clients_global_rwlock_guard);
+}
+

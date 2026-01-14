@@ -16,53 +16,60 @@
 
 #include <set>
 
-namespace rtc {
+namespace rtc
+{
 
 // Base RTP depacketizer class
-class RTC_CPP_EXPORT RtpDepacketizer : public MediaHandler {
-public:
+class RTC_CPP_EXPORT RtpDepacketizer : public MediaHandler
+{
+    public:
 	RtpDepacketizer();
 	RtpDepacketizer(uint32_t clockRate);
 	virtual ~RtpDepacketizer();
 
 	virtual void incoming(message_vector &messages, const message_callback &send) override;
 
-protected:
+    protected:
 	shared_ptr<FrameInfo> createFrameInfo(uint32_t timestamp, uint8_t payloadType) const;
 
-private:
+    private:
 	const uint32_t mClockRate;
 };
 
 // Base class for video RTP depacketizer
-class RTC_CPP_EXPORT VideoRtpDepacketizer : public RtpDepacketizer {
-public:
+class RTC_CPP_EXPORT VideoRtpDepacketizer : public RtpDepacketizer
+{
+    public:
 	inline static const uint32_t ClockRate = 90000;
 
 	VideoRtpDepacketizer();
 	virtual ~VideoRtpDepacketizer();
 
-protected:
-	struct sequence_cmp {
+    protected:
+	struct sequence_cmp
+	{
 		bool operator()(message_ptr a, message_ptr b) const;
 	};
 	using message_buffer = std::set<message_ptr, sequence_cmp>;
 
 	virtual message_ptr reassemble(message_buffer &messages) = 0;
 
-private:
+    private:
 	void incoming(message_vector &messages, const message_callback &send) override;
 
 	message_buffer mBuffer;
 };
 
 // Generic audio RTP depacketizer
-template <uint32_t DEFAULT_CLOCK_RATE>
-class RTC_CPP_EXPORT AudioRtpDepacketizer final : public RtpDepacketizer {
-public:
+template <uint32_t DEFAULT_CLOCK_RATE> class RTC_CPP_EXPORT AudioRtpDepacketizer final : public RtpDepacketizer
+{
+    public:
 	inline static const uint32_t DefaultClockRate = DEFAULT_CLOCK_RATE;
 
-	AudioRtpDepacketizer(uint32_t clockRate = DefaultClockRate) : RtpDepacketizer(clockRate) {}
+	AudioRtpDepacketizer(uint32_t clockRate = DefaultClockRate)
+		: RtpDepacketizer(clockRate)
+	{
+	}
 };
 
 // Audio RTP depacketizers

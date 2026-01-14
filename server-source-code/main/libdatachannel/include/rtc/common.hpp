@@ -54,7 +54,8 @@
 #include <variant>
 #include <vector>
 
-namespace rtc {
+namespace rtc
+{
 
 using std::byte;
 using std::nullopt;

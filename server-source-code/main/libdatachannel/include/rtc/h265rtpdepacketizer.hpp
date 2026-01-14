@@ -21,17 +21,19 @@
 
 #include <set>
 
-namespace rtc {
+namespace rtc
+{
 
 /// RTP depacketization for H265
-class RTC_CPP_EXPORT H265RtpDepacketizer final : public VideoRtpDepacketizer {
-public:
+class RTC_CPP_EXPORT H265RtpDepacketizer final : public VideoRtpDepacketizer
+{
+    public:
 	using Separator = NalUnit::Separator;
 
 	H265RtpDepacketizer(Separator separator = Separator::StartSequence);
 	~H265RtpDepacketizer();
 
-private:
+    private:
 	message_ptr reassemble(message_buffer &buffer);
 	void addSeparator(binary &frame);
 

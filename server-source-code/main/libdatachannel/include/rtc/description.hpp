@@ -17,19 +17,26 @@
 #include <map>
 #include <vector>
 
-namespace rtc {
+namespace rtc
+{
 
-const string DEFAULT_OPUS_AUDIO_PROFILE =
-    "minptime=10;maxaveragebitrate=96000;stereo=1;sprop-stereo=1;useinbandfec=1";
+const string DEFAULT_OPUS_AUDIO_PROFILE = "minptime=10;maxaveragebitrate=96000;stereo=1;sprop-stereo=1;useinbandfec=1";
 
 // Use Constrained Baseline profile Level 3.1 (necessary for Firefox)
 // https://developer.mozilla.org/en-US/docs/Web/Media/Formats/WebRTC_codecs#Supported_video_codecs
 // TODO: Should be 42E0 but 42C0 appears to be more compatible. Investigate this.
-const string DEFAULT_H264_VIDEO_PROFILE =
-    "profile-level-id=42e01f;packetization-mode=1;level-asymmetry-allowed=1";
+const string DEFAULT_H264_VIDEO_PROFILE = "profile-level-id=42e01f;packetization-mode=1;level-asymmetry-allowed=1";
 
-struct CertificateFingerprint {
-	enum class Algorithm { Sha1, Sha224, Sha256, Sha384, Sha512 };
+struct CertificateFingerprint
+{
+	enum class Algorithm
+	{
+		Sha1,
+		Sha224,
+		Sha256,
+		Sha384,
+		Sha512
+	};
 	static string AlgorithmIdentifier(Algorithm algorithm);
 	static size_t AlgorithmSize(Algorithm algorithm);
 
@@ -39,12 +46,26 @@ struct CertificateFingerprint {
 	string value;
 };
 
-class RTC_CPP_EXPORT Description {
-public:
-	enum class Type { Unspec, Offer, Answer, Pranswer, Rollback };
-	enum class Role { ActPass, Passive, Active };
+class RTC_CPP_EXPORT Description
+{
+    public:
+	enum class Type
+	{
+		Unspec,
+		Offer,
+		Answer,
+		Pranswer,
+		Rollback
+	};
+	enum class Role
+	{
+		ActPass,
+		Passive,
+		Active
+	};
 
-	enum class Direction {
+	enum class Direction
+	{
 		SendOnly = RTC_DIRECTION_SENDONLY,
 		RecvOnly = RTC_DIRECTION_RECVONLY,
 		SendRecv = RTC_DIRECTION_SENDRECV,
@@ -86,8 +107,9 @@ public:
 	string generateSdp(string_view eol = "\r\n") const;
 	string generateApplicationSdp(string_view eol = "\r\n") const;
 
-	class RTC_CPP_EXPORT Entry {
-	public:
+	class RTC_CPP_EXPORT Entry
+	{
+	    public:
 		virtual ~Entry() = default;
 
 		virtual string type() const;
@@ -106,7 +128,8 @@ public:
 		void removeAttribute(const string &attr);
 		void addRid(string rid);
 
-		struct RTC_CPP_EXPORT ExtMap {
+		struct RTC_CPP_EXPORT ExtMap
+		{
 			static int parseId(string_view description);
 
 			ExtMap(int id, string uri, Direction direction = Direction::Unknown);
@@ -127,12 +150,11 @@ public:
 		void removeExtMap(int id);
 
 		operator string() const;
-		string generateSdp(string_view eol = "\r\n", string_view addr = "0.0.0.0",
-		                   uint16_t port = 9) const;
+		string generateSdp(string_view eol = "\r\n", string_view addr = "0.0.0.0", uint16_t port = 9) const;
 
 		virtual void parseSdpLine(string_view line);
 
-	protected:
+	    protected:
 		Entry(const string &mline, string mid, Direction dir = Direction::Unknown);
 
 		virtual string generateSdpLines(string_view eol) const;
@@ -140,7 +162,7 @@ public:
 		std::vector<string> mAttributes;
 		std::map<int, ExtMap> mExtMaps;
 
-	private:
+	    private:
 		string mType;
 		string mProtocol;
 		string mDescription;
@@ -150,8 +172,9 @@ public:
 		bool mIsRemoved;
 	};
 
-	struct RTC_CPP_EXPORT Application : public Entry {
-	public:
+	struct RTC_CPP_EXPORT Application : public Entry
+	{
+	    public:
 		Application(string mid = "data");
 		Application(const string &mline, string mid);
 		virtual ~Application() = default;
@@ -167,7 +190,7 @@ public:
 
 		virtual void parseSdpLine(string_view line) override;
 
-	private:
+	    private:
 		virtual string generateSdpLines(string_view eol) const override;
 
 		optional<uint16_t> mSctpPort;
@@ -175,8 +198,9 @@ public:
 	};
 
 	// Media (non-data)
-	class RTC_CPP_EXPORT Media : public Entry {
-	public:
+	class RTC_CPP_EXPORT Media : public Entry
+	{
+	    public:
 		Media(const string &mline, string mid, Direction dir = Direction::SendOnly);
 		Media(const string &sdp);
 		virtual ~Media() = default;
@@ -184,11 +208,9 @@ public:
 		string description() const override;
 		Media reciprocate() const;
 
-		void addSSRC(uint32_t ssrc, optional<string> name, optional<string> msid = nullopt,
-		             optional<string> trackId = nullopt);
+		void addSSRC(uint32_t ssrc, optional<string> name, optional<string> msid = nullopt, optional<string> trackId = nullopt);
 		void removeSSRC(uint32_t ssrc);
-		void replaceSSRC(uint32_t old, uint32_t ssrc, optional<string> name,
-		                 optional<string> msid = nullopt, optional<string> trackID = nullopt);
+		void replaceSSRC(uint32_t old, uint32_t ssrc, optional<string> name, optional<string> msid = nullopt, optional<string> trackID = nullopt);
 		bool hasSSRC(uint32_t ssrc) const;
 		void clearSSRCs();
 		std::vector<uint32_t> getSSRCs() const;
@@ -197,7 +219,8 @@ public:
 		int bitrate() const;
 		void setBitrate(int bitrate);
 
-		struct RTC_CPP_EXPORT RtpMap {
+		struct RTC_CPP_EXPORT RtpMap
+		{
 			static int parsePayloadType(string_view description);
 
 			explicit RtpMap(int payloadType);
@@ -231,7 +254,7 @@ public:
 
 		virtual void parseSdpLine(string_view line) override;
 
-	private:
+	    private:
 		virtual string generateSdpLines(string_view eol) const override;
 
 		int mBas = -1;
@@ -242,8 +265,9 @@ public:
 		std::map<uint32_t, string> mCNameMap;
 	};
 
-	class RTC_CPP_EXPORT Audio : public Media {
-	public:
+	class RTC_CPP_EXPORT Audio : public Media
+	{
+	    public:
 		Audio(string mid = "audio", Direction dir = Direction::SendOnly);
 
 		void addAudioCodec(int payloadType, string codec, optional<string> profile = std::nullopt);
@@ -253,14 +277,15 @@ public:
 		void addAACCodec(int payloadType, optional<string> profile = std::nullopt);
 		void addG722Codec(int payloadType, optional<string> profile = std::nullopt);
 
-		[[deprecated("Use addAACCodec")]] inline void
-		addAacCodec(int payloadType, optional<string> profile = std::nullopt) {
+		[[deprecated("Use addAACCodec")]] inline void addAacCodec(int payloadType, optional<string> profile = std::nullopt)
+		{
 			addAACCodec(payloadType, std::move(profile));
 		};
 	};
 
-	class RTC_CPP_EXPORT Video : public Media {
-	public:
+	class RTC_CPP_EXPORT Video : public Media
+	{
+	    public:
 		Video(string mid = "video", Direction dir = Direction::SendOnly);
 
 		void addVideoCodec(int payloadType, string codec, optional<string> profile = std::nullopt);
@@ -293,7 +318,7 @@ public:
 	static Type stringToType(const string &typeString);
 	static string typeToString(Type type);
 
-private:
+    private:
 	optional<Candidate> defaultCandidate() const;
 	shared_ptr<Entry> createEntry(string mline, string mid, Direction dir);
 	void removeApplication();
@@ -310,7 +335,7 @@ private:
 	std::vector<string> mAttributes; // other attributes
 
 	// Entries
-	std::vector<shared_ptr<Entry>> mEntries;
+	std::vector<shared_ptr<Entry> > mEntries;
 	shared_ptr<Application> mApplication;
 
 	// Candidates

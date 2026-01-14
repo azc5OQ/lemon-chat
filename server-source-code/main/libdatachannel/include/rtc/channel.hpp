@@ -14,14 +14,17 @@
 #include <atomic>
 #include <functional>
 
-namespace rtc {
+namespace rtc
+{
 
-namespace impl {
+namespace impl
+{
 struct Channel;
 }
 
-class RTC_CPP_EXPORT Channel : private CheshireCat<impl::Channel> {
-public:
+class RTC_CPP_EXPORT Channel : private CheshireCat<impl::Channel>
+{
+    public:
 	virtual ~Channel();
 
 	virtual void close() = 0;
@@ -38,8 +41,7 @@ public:
 	void onError(std::function<void(string error)> callback);
 
 	void onMessage(std::function<void(message_variant data)> callback);
-	void onMessage(std::function<void(binary data)> binaryCallback,
-	               std::function<void(string data)> stringCallback);
+	void onMessage(std::function<void(binary data)> binaryCallback, std::function<void(string data)> stringCallback);
 
 	void onBufferedAmountLow(std::function<void()> callback);
 	void setBufferedAmountLowThreshold(size_t amount);
@@ -48,11 +50,11 @@ public:
 
 	// Extended API
 	optional<message_variant> receive(); // only if onMessage unset
-	optional<message_variant> peek();    // only if onMessage unset
-	size_t availableAmount() const;      // total size available to receive
+	optional<message_variant> peek(); // only if onMessage unset
+	size_t availableAmount() const; // total size available to receive
 	void onAvailable(std::function<void()> callback);
 
-protected:
+    protected:
 	Channel(impl_ptr<impl::Channel> impl);
 };
 

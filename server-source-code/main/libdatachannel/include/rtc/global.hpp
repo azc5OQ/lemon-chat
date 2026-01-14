@@ -15,9 +15,11 @@
 #include <future>
 #include <iostream>
 
-namespace rtc {
+namespace rtc
+{
 
-enum class LogLevel { // Don't change, it must match plog severity
+enum class LogLevel
+{ // Don't change, it must match plog severity
 	None = 0,
 	Fatal = 1,
 	Error = 2,
@@ -34,13 +36,14 @@ RTC_CPP_EXPORT void InitLogger(LogLevel level, LogCallback callback = nullptr);
 RTC_CPP_EXPORT void Preload();
 RTC_CPP_EXPORT std::shared_future<void> Cleanup();
 
-struct SctpSettings {
+struct SctpSettings
+{
 	// For the following settings, not set means optimized default
-	optional<size_t> recvBufferSize;                // in bytes
-	optional<size_t> sendBufferSize;                // in bytes
-	optional<size_t> maxChunksOnQueue;              // in chunks
-	optional<size_t> initialCongestionWindow;       // in MTUs
-	optional<size_t> maxBurst;                      // in MTUs
+	optional<size_t> recvBufferSize; // in bytes
+	optional<size_t> sendBufferSize; // in bytes
+	optional<size_t> maxChunksOnQueue; // in chunks
+	optional<size_t> initialCongestionWindow; // in MTUs
+	optional<size_t> maxBurst; // in MTUs
 	optional<unsigned int> congestionControlModule; // 0: RFC2581, 1: HSTCP, 2: H-TCP, 3: RTCC
 	optional<std::chrono::milliseconds> delayedSackTime;
 	optional<std::chrono::milliseconds> minRetransmitTimeout;

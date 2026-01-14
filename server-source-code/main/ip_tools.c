@@ -14,6 +14,8 @@
 #include "clib/clib_memory.h"
 #include "dave-g-json/cJSON.h"
 
+#include "log/log.h"
+
 /* @brief self explanatory
  *
  * @param StringBuffer* sb
@@ -101,14 +103,21 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *memory_to
 
 	char mmdb_file[] = "dbip-country-lite-2025-06.mmdb";
 
-	DBG_IP_TOOLS printf("ip_tools_load_iso_country_code \n");
+	if (ip_address_to_resolve == NULL_POINTER)
+	{
+		DBG_IP_TOOLS log_info("%s", "ip_tools_load_iso_country_code char *ip_address_to_resolve is null pointer \n");
+
+		goto label_ip_tools_load_iso_country_code_end;
+	}
+
+	DBG_IP_TOOLS log_info("%s %s %s", "ip_tools_load_iso_country_code ip_address_to_resolve -> ", ip_address_to_resolve, "\n");
 
 	MMDB_s mmdb;
 	int status = MMDB_open(mmdb_file, MMDB_MODE_MMAP, &mmdb);
 
 	if (MMDB_SUCCESS != status)
 	{
-		DBG_IP_TOOLS printf("_ip_tools__open_or_die__internal failed \n");
+		DBG_IP_TOOLS log_info("%s", "_ip_tools__open_or_die__internal failed \n");
 		goto label_ip_tools_load_iso_country_code_end;
 	}
 
@@ -124,12 +133,12 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *memory_to
 	// Check for errors in the lookup process
 	if (gai_error != 0)
 	{
-		DBG_IP_TOOLS printf("gai_error != 0 \n");
+		DBG_IP_TOOLS log_info("%s", "gai_error != 0 \n");
 		goto label_ip_tools_load_iso_country_code_end;
 	}
 	if (mmdb_error != MMDB_SUCCESS)
 	{
-		DBG_IP_TOOLS printf("mmdb_error != MMDB_SUCCESS \n");
+		DBG_IP_TOOLS log_info("%s", "mmdb_error != MMDB_SUCCESS \n");
 		goto label_ip_tools_load_iso_country_code_end;
 	}
 
@@ -139,7 +148,7 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *memory_to
 	// If no entry is found, return
 	if (!gresult.found_entry)
 	{
-		DBG_IP_TOOLS printf("!gresult.found_entry \n");
+		DBG_IP_TOOLS log_info("%s", "!gresult.found_entry \n");
 		goto label_ip_tools_load_iso_country_code_end;
 	}
 
@@ -147,7 +156,7 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *memory_to
 	int gstatus = MMDB_get_entry_data_list(&gresult.entry, &gdata);
 	if (gstatus != MMDB_SUCCESS)
 	{
-		DBG_IP_TOOLS printf("gstatus != MMDB_SUCCESS \n");
+		DBG_IP_TOOLS log_info("%s", "gstatus != MMDB_SUCCESS \n");
 		MMDB_free_entry_data_list(gdata); // Clean up if getting the data fails
 		goto label_ip_tools_load_iso_country_code_end;
 	}
@@ -161,7 +170,7 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *memory_to
 
 	// Dump the entry data list to stdout (for debugging)
 	char *json_mmdb_entry_data_list = MMDB_dump_entry_data_list(&sb, gdata, 0);
-	DBG_IP_TOOLS printf("%s %s %s", "json is", json_mmdb_entry_data_list, "\n");
+	DBG_IP_TOOLS log_info("%s %s %s", "json is", json_mmdb_entry_data_list, "\n");
 
 	// Clean up the entry data list
 	MMDB_free_entry_data_list(gdata);
@@ -170,7 +179,7 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *memory_to
 
 	if (json_mmdb_entry_data_list == NULL_POINTER)
 	{
-		DBG_IP_TOOLS printf("json_mmdb_entry_data_list == NULL_POINTER \n");
+		DBG_IP_TOOLS log_info("%s", "json_mmdb_entry_data_list == NULL_POINTER \n");
 		goto label_ip_tools_load_iso_country_code_end;
 	}
 
@@ -178,37 +187,37 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *memory_to
 
 	if (json_root_object1 == 0)
 	{
-		DBG_IP_TOOLS printf("json_root_object1 == 0 \n");
+		DBG_IP_TOOLS log_info("%s", "json_root_object1 == 0 \n");
 		goto label_ip_tools_load_iso_country_code_end;
 	}
 
 	json_message_object = cJSON_GetObjectItemCaseSensitive(json_root_object1, "country");
 	if (json_message_object == 0)
 	{
-		DBG_IP_TOOLS printf("json_message_object == 0 \n");
+		DBG_IP_TOOLS log_info("%s", "json_message_object == 0 \n");
 		goto label_ip_tools_load_iso_country_code_end;
 	}
 
 	if (!cJSON_IsObject(json_message_object))
 	{
-		DBG_IP_TOOLS printf("cJSON_IsObject(json_message_object) \n");
+		DBG_IP_TOOLS log_info("%s", "cJSON_IsObject(json_message_object) \n");
 		goto label_ip_tools_load_iso_country_code_end;
 	}
 
 	json_country_iso_code = cJSON_GetObjectItemCaseSensitive(json_message_object, "iso_code");
 	if (!cJSON_IsString(json_country_iso_code))
 	{
-		DBG_IP_TOOLS printf("cJSON_IsString(json_country_iso_code) \n");
+		DBG_IP_TOOLS log_info("%s", "cJSON_IsString(json_country_iso_code) \n");
 		goto label_ip_tools_load_iso_country_code_end;
 	}
 
 	if (json_country_iso_code->valuestring == NULL)
 	{
-		DBG_IP_TOOLS printf("json_country_iso_code->valuestring == NULL \n");
+		DBG_IP_TOOLS log_info("%s", "json_country_iso_code->valuestring == NULL \n");
 		goto label_ip_tools_load_iso_country_code_end;
 	}
 
-	DBG_IP_TOOLS printf("%s %s %s", "json_country_iso_code->valuestring", json_country_iso_code->valuestring, "\n");
+	DBG_IP_TOOLS log_info("%s %s %s %s", "json_country_iso_code->valuestring", json_country_iso_code->valuestring, "\n");
 
 	clib__copy_memory((void *)&json_country_iso_code->valuestring[0], (void *)memory_to_write_country_code_to, 2, 2);
 

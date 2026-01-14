@@ -86,7 +86,8 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t *webs
 
 	cJSON_AddStringToObject(json_message_object1, "type", "authentication_status");
 	cJSON_AddStringToObject(json_message_object1, "value", "success");
-	cJSON_AddBoolToObject(json_message_object1, "is_voice_chat_active", true);
+	cJSON_AddBoolToObject(json_message_object1, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
+	cJSON_AddBoolToObject(json_message_object1, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
 	cJSON_AddNumberToObject(json_message_object1, "stun_port", 3478);
 	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
@@ -276,6 +277,8 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t *websocket, cha
 			json_tag_ids_array = cJSON_CreateArray();
 			cJSON_AddItemToObject(single_client, "tag_ids", json_tag_ids_array);
 		}
+
+		cJSON_AddBoolToObject(single_client, "is_idle", client_in_loop->is_idle);
 
 		//
 		//property country_iso_code will always be part of response
@@ -1099,7 +1102,8 @@ void server_msg__send_chat_message_to_clients_in_same_channel(int client_sender_
 	cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_message");
 	cJSON_AddStringToObject(json_message_object1, "value", chat_message_value);
 	cJSON_AddStringToObject(json_message_object1, "sender_username", client_sender->username);
-	cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
+    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
 	cJSON_AddNumberToObject(json_message_object1, "server_chat_message_id", server_chat_message_id);
 
 	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -1276,7 +1280,8 @@ void server_msg__send_channel_chat_picture_to_clients_in_same_channel(int client
 	cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_picture");
 	cJSON_AddStringToObject(json_message_object1, "value", chat_message_value);
 	cJSON_AddStringToObject(json_message_object1, "username", client_sender->username);
-	cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
+    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
 	cJSON_AddNumberToObject(json_message_object1, "picture_id", server_chat_message_id);
 
 	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -2447,7 +2452,6 @@ void server_msg__send_add_new_icon_event_to_all_clients(int new_icon_id, char *i
  *
  * @return void
  */
-
 void server_msg__send_create_new_tag_event_to_all_clients(int tag_id, char *tag_name, int tag_linked_icon_id)
 {
 	char *json_root_object1_string = 0;
@@ -2501,6 +2505,179 @@ void server_msg__send_create_new_tag_event_to_all_clients(int tag_id, char *tag_
 		}
 
 		DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_create_new_tag_event_to_all_clients: msg_text ", msg_text, "\n");
+
+		ws_sendframe_txt(client->p_ws_connection, msg_text);
+		memorymanager__free((nuint)msg_text);
+	}
+
+	base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief self explanatory
+ *
+ * @param caller_client_id int
+ * @param callee_client_id int
+ *
+ * @return void
+ */
+void server_msg__send_call_event_to_idle_client(client_t *caller, client_t *callee)
+{
+	char *json_root_object1_string = 0;
+	int size_of_allocated_message_buffer = 0;
+	char *msg_text = 0;
+	int i = 0;
+	cJSON *json_root_object1 = 0;
+	cJSON *json_message_object1 = 0;
+
+	DBG_SERVER_MESSAGE log_info("%s", "server_msg__send_call_event_to_idle_client \n");
+
+	json_root_object1 = cJSON_CreateObject();
+	json_message_object1 = cJSON_CreateObject();
+
+	cJSON_AddStringToObject(json_message_object1, "type", "call");
+	cJSON_AddNumberToObject(json_message_object1, "caller_client_id", caller->client_id);
+
+	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+	json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+	DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_call_event_to_idle_client", json_root_object1_string, "\n");
+
+	size_of_allocated_message_buffer = 0;
+	msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, callee->dh_shared_secret);
+
+	base__free_json_message(json_root_object1, json_root_object1_string);
+
+	if (msg_text == NULL_POINTER)
+	{
+		return;
+	}
+
+	ws_sendframe_txt(callee->p_ws_connection, msg_text);
+
+	memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief This function sends client_going_to_idle_mode to all authenticated clients
+ *
+ * @param id_of_client_that_changed_his_username self explanatory
+ * @param new_username self explanatory
+ *
+ * @attention
+ *
+ * @return void
+ */
+void server_msg__send_client_going_to_idle_mode_info_to_all_clients(int client_that_goes_idle)
+{
+	cJSON *json_root_object1 = 0;
+	cJSON *json_message_object1 = 0;
+	int x = 0;
+	char *json_root_object1_string = 0;
+	int size_of_allocated_message_buffer = 0;
+	char *msg_text = 0;
+	client_t *client = 0;
+
+	json_root_object1 = cJSON_CreateObject();
+	json_message_object1 = cJSON_CreateObject();
+
+	cJSON_AddStringToObject(json_message_object1, "type", "client_going_to_idle_mode");
+	cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client_that_goes_idle);
+
+	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+	json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+	DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_client_going_to_idle_mode_info_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
+
+	for (x = 0; x < MAX_CLIENTS; x++)
+	{
+		client = &clients_array[x];
+
+		if (client->is_existing == FALSE)
+		{
+			continue;
+		}
+
+		if (client->is_authenticated == FALSE)
+		{
+			continue;
+		}
+
+		size_of_allocated_message_buffer = 0;
+		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+		if (msg_text == NULL_POINTER)
+		{
+			return;
+		}
+
+		DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
+
+		ws_sendframe_txt(client->p_ws_connection, msg_text);
+		memorymanager__free((nuint)msg_text);
+	}
+
+	base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief This function sends client_coming_back_from_idle_mode to all authenticated clients
+ *
+ * @param id_of_client_that_changed_his_username self explanatory
+ * @param new_username self explanatory
+ *
+ * @attention
+ *
+ * @return void
+ */
+void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(int client_that_comes_from_idle, int channel_the_client_joins)
+{
+	cJSON *json_root_object1 = 0;
+	cJSON *json_message_object1 = 0;
+	int x = 0;
+	char *json_root_object1_string = 0;
+	int size_of_allocated_message_buffer = 0;
+	char *msg_text = 0;
+	client_t *client = 0;
+
+	json_root_object1 = cJSON_CreateObject();
+	json_message_object1 = cJSON_CreateObject();
+
+	cJSON_AddStringToObject(json_message_object1, "type", "client_coming_back_from_idle_mode");
+	cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client_that_comes_from_idle);
+	cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)channel_the_client_joins);
+
+	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+	json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+	DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
+
+	for (x = 0; x < MAX_CLIENTS; x++)
+	{
+		client = &clients_array[x];
+
+		if (client->is_existing == FALSE)
+		{
+			continue;
+		}
+
+		if (client->is_authenticated == FALSE)
+		{
+			continue;
+		}
+
+		size_of_allocated_message_buffer = 0;
+		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+		if (msg_text == NULL_POINTER)
+		{
+			return;
+		}
+
+		DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
 
 		ws_sendframe_txt(client->p_ws_connection, msg_text);
 		memorymanager__free((nuint)msg_text);

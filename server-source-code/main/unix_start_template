@@ -1,15 +1,21 @@
+
 #!/bin/bash
 
-#check if symlink libdatachannel.so.0.23 exists and points to correct target
-
+# Check if the symlink libdatachannel.so.0.23 exists and points to the correct target
 TARGET="libdatachannel.so"
 LINK="libdatachannel.so.0.23"
 
+# Ensure the target file exists
+if [ ! -e "$TARGET" ]; then
+    echo "Target file $TARGET does not exist. Exiting."
+    exit 1
+fi
 
 if [ -L "$LINK" ]; then
     CURRENT_TARGET=$(readlink "$LINK")
-    if [ "$CURRENT_TARGET" == "$TARGET" ]; then
-        echo "Symlink $LINK already exists and is correct."
+
+    if [ "$CURRENT_TARGET" = "$TARGET" ]; then
+        echo "Symlink $LINK already exists and points to $TARGET."
     else
         echo "Symlink $LINK exists but points to $CURRENT_TARGET. Updating..."
         rm "$LINK"
@@ -19,20 +25,22 @@ if [ -L "$LINK" ]; then
 elif [ -e "$LINK" ]; then
     echo "File $LINK exists but is not a symlink. Exiting."
     exit 1
+else
+    # If the symlink doesn't exist, create it
+    ln -s "$TARGET" "$LINK"
+    echo "Symlink $LINK -> $TARGET created."
 fi
 
+#make binary runnable
+chmod +x chat-server.bin 
 
+#increase max allowed number of file descriptors to higher value
+#1024 by default on some systems, makes system unable to accept new websocket connections
+ulimit -n 65535 
 
-#check if server executable exists
+#LD_LIBRARY_PATH is environment variable, equivalent to %PATH% in windows,it is a string variable where multiple paths to various director
+#update LD_LIBRARY_PATH for .so files, include current directory in it, so chat-server.bin also checks current directory for existence of
 
-FILE="$PWD"/chat-server.bin
+export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$PWD"
+./chat-server.bin
 
-#check if file that is about to be started exists
-if test -f "$FILE"; then
-
-   #LD_LIBRARY_PATH is enviroment variable, equivalent to %PATH% in windows, it is a string variable where multiple paths to various directories are separated by semicolon ;
-   #update LD_LIBRARY_PATH for .so files, include current directory in it, so chat-server.bin also checks current directory for existence of libdatachannel.so
-   export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD
-   
-   ./chat-server.bin
-fi

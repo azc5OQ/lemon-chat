@@ -16,10 +16,12 @@
 #include <queue>
 #include <unordered_map>
 
-namespace rtc {
+namespace rtc
+{
 
-class RTC_CPP_EXPORT RtcpNackResponder final : public MediaHandler {
-public:
+class RTC_CPP_EXPORT RtcpNackResponder final : public MediaHandler
+{
+    public:
 	static const size_t DefaultMaxSize = 512;
 
 	RtcpNackResponder(size_t maxSize = DefaultMaxSize);
@@ -27,12 +29,13 @@ public:
 	void incoming(message_vector &messages, const message_callback &send) override;
 	void outgoing(message_vector &messages, const message_callback &send) override;
 
-private:
+    private:
 	// Packet storage
-	class RTC_CPP_EXPORT Storage {
-
+	class RTC_CPP_EXPORT Storage
+	{
 		/// Packet storage element
-		struct RTC_CPP_EXPORT Element {
+		struct RTC_CPP_EXPORT Element
+		{
 			Element(message_ptr packet, uint16_t sequenceNumber, shared_ptr<Element> next = nullptr);
 			const message_ptr packet;
 			const uint16_t sequenceNumber;
@@ -40,13 +43,13 @@ private:
 			shared_ptr<Element> next = nullptr;
 		};
 
-	private:
+	    private:
 		/// Oldest packet in storage
 		shared_ptr<Element> oldest = nullptr;
 		/// Newest packet in storage
 		shared_ptr<Element> newest = nullptr;
 		/// Inner storage
-		std::unordered_map<uint16_t, shared_ptr<Element>> storage{};
+		std::unordered_map<uint16_t, shared_ptr<Element> > storage{};
 		std::mutex mutex;
 
 		/// Maximum storage size
@@ -55,7 +58,7 @@ private:
 		/// Returns current size
 		size_t size();
 
-	public:
+	    public:
 		Storage(size_t _maxSize);
 
 		/// Returns packet with given sequence number

@@ -14,11 +14,13 @@
 #include "dependencydescriptor.hpp"
 #include "rtp.hpp"
 
-namespace rtc {
+namespace rtc
+{
 
 // RTP configuration used in packetization process
-class RTC_CPP_EXPORT RtpPacketizationConfig {
-public:
+class RTC_CPP_EXPORT RtpPacketizationConfig
+{
+    public:
 	SSRC ssrc;
 	std::string cname;
 	uint8_t payloadType;
@@ -81,8 +83,7 @@ public:
 	/// @param clockRate Clock rate of source used in timestamps
 	/// nullopt)
 	/// @param videoOrientationId Video orientation (see above)
-	RtpPacketizationConfig(SSRC ssrc, std::string cname, uint8_t payloadType, uint32_t clockRate,
-	                       uint8_t videoOrientationId = 0);
+	RtpPacketizationConfig(SSRC ssrc, std::string cname, uint8_t payloadType, uint32_t clockRate, uint8_t videoOrientationId = 0);
 
 	RtpPacketizationConfig(const RtpPacketizationConfig &) = delete;
 

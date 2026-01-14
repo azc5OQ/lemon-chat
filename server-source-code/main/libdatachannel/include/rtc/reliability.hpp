@@ -13,9 +13,11 @@
 
 #include <chrono>
 
-namespace rtc {
+namespace rtc
+{
 
-struct Reliability {
+struct Reliability
+{
 	// It true, the channel does not enforce message ordering and out-of-order delivery is allowed
 	bool unordered = false;
 
@@ -30,8 +32,14 @@ struct Reliability {
 	optional<unsigned int> maxRetransmits;
 
 	// For backward compatibility, do not use
-	enum class Type { Reliable = 0, Rexmit, Timed };
-	union {
+	enum class Type
+	{
+		Reliable = 0,
+		Rexmit,
+		Timed
+	};
+	union
+	{
 		Type typeDeprecated = Type::Reliable;
 		[[deprecated("Use maxPacketLifeTime or maxRetransmits")]] Type type;
 	};

@@ -13,11 +13,22 @@
 
 #include <vector>
 
-namespace rtc {
+namespace rtc
+{
 
-struct RTC_CPP_EXPORT IceServer {
-	enum class Type { Stun, Turn };
-	enum class RelayType { TurnUdp, TurnTcp, TurnTls };
+struct RTC_CPP_EXPORT IceServer
+{
+	enum class Type
+	{
+		Stun,
+		Turn
+	};
+	enum class RelayType
+	{
+		TurnUdp,
+		TurnTcp,
+		TurnTls
+	};
 
 	// Any type
 	IceServer(const string &url);
@@ -27,10 +38,8 @@ struct RTC_CPP_EXPORT IceServer {
 	IceServer(string hostname_, string service_);
 
 	// TURN
-	IceServer(string hostname_, uint16_t port, string username_, string password_,
-	          RelayType relayType_ = RelayType::TurnUdp);
-	IceServer(string hostname_, string service_, string username_, string password_,
-	          RelayType relayType_ = RelayType::TurnUdp);
+	IceServer(string hostname_, uint16_t port, string username_, string password_, RelayType relayType_ = RelayType::TurnUdp);
+	IceServer(string hostname_, string service_, string username_, string password_, RelayType relayType_ = RelayType::TurnUdp);
 
 	string hostname;
 	uint16_t port;
@@ -40,8 +49,13 @@ struct RTC_CPP_EXPORT IceServer {
 	RelayType relayType;
 };
 
-struct RTC_CPP_EXPORT ProxyServer {
-	enum class Type { Http, Socks5 };
+struct RTC_CPP_EXPORT ProxyServer
+{
+	enum class Type
+	{
+		Http,
+		Socks5
+	};
 
 	ProxyServer(const string &url);
 
@@ -55,24 +69,30 @@ struct RTC_CPP_EXPORT ProxyServer {
 	optional<string> password;
 };
 
-enum class CertificateType {
+enum class CertificateType
+{
 	Default = RTC_CERTIFICATE_DEFAULT, // ECDSA
 	Ecdsa = RTC_CERTIFICATE_ECDSA,
 	Rsa = RTC_CERTIFICATE_RSA
 };
 
-enum class TransportPolicy { All = RTC_TRANSPORT_POLICY_ALL, Relay = RTC_TRANSPORT_POLICY_RELAY };
+enum class TransportPolicy
+{
+	All = RTC_TRANSPORT_POLICY_ALL,
+	Relay = RTC_TRANSPORT_POLICY_RELAY
+};
 
-struct RTC_CPP_EXPORT Configuration {
+struct RTC_CPP_EXPORT Configuration
+{
 	// ICE settings
 	std::vector<IceServer> iceServers;
 	optional<ProxyServer> proxyServer; // libnice only
-	optional<string> bindAddress;      // libjuice only, default any
+	optional<string> bindAddress; // libjuice only, default any
 
 	// Options
 	CertificateType certificateType = CertificateType::Default;
 	TransportPolicy iceTransportPolicy = TransportPolicy::All;
-	bool enableIceTcp = false;    // libnice only
+	bool enableIceTcp = false; // libnice only
 	bool enableIceUdpMux = false; // libjuice only
 	bool disableAutoNegotiation = false;
 	bool disableAutoGathering = false;
@@ -97,12 +117,13 @@ struct RTC_CPP_EXPORT Configuration {
 
 #ifdef RTC_ENABLE_WEBSOCKET
 
-struct WebSocketConfiguration {
+struct WebSocketConfiguration
+{
 	bool disableTlsVerification = false; // if true, don't verify the TLS certificate
-	optional<ProxyServer> proxyServer;   // only non-authenticated http supported for now
+	optional<ProxyServer> proxyServer; // only non-authenticated http supported for now
 	std::vector<string> protocols;
 	optional<std::chrono::milliseconds> connectionTimeout; // zero to disable
-	optional<std::chrono::milliseconds> pingInterval;      // zero to disable
+	optional<std::chrono::milliseconds> pingInterval; // zero to disable
 	optional<int> maxOutstandingPings;
 	optional<string> caCertificatePemFile;
 	optional<string> certificatePemFile;
@@ -111,7 +132,8 @@ struct WebSocketConfiguration {
 	optional<size_t> maxMessageSize;
 };
 
-struct WebSocketServerConfiguration {
+struct WebSocketServerConfiguration
+{
 	uint16_t port = 8080;
 	bool enableTls = false;
 	optional<string> certificatePemFile;

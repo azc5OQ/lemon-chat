@@ -19,11 +19,13 @@
 
 #include <atomic>
 
-namespace rtc {
+namespace rtc
+{
 
 // An RtcpSession can be plugged into a Track to handle the whole RTCP session
-class RTC_CPP_EXPORT RtcpReceivingSession : public MediaHandler {
-public:
+class RTC_CPP_EXPORT RtcpReceivingSession : public MediaHandler
+{
+    public:
 	RtcpReceivingSession() = default;
 	virtual ~RtcpReceivingSession() = default;
 
@@ -32,12 +34,15 @@ public:
 	bool requestBitrate(unsigned int bitrate, const message_callback &send) override;
 
 	// For backward compatibility
-	[[deprecated("Use Track::requestKeyframe()")]] inline bool requestKeyframe() { return false; };
+	[[deprecated("Use Track::requestKeyframe()")]] inline bool requestKeyframe()
+	{
+		return false;
+	};
 	[[deprecated("Use Track::requestBitrate()")]] inline void requestBitrate(unsigned int) {};
 
-protected:
+    protected:
 	void pushREMB(const message_callback &send, unsigned int bitrate);
-	void pushRR(const message_callback &send,unsigned int lastSrDelay);
+	void pushRR(const message_callback &send, unsigned int lastSrDelay);
 	void pushPLI(const message_callback &send);
 
 	SSRC mSsrc = 0;

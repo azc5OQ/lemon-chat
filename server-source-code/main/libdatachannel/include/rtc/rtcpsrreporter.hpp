@@ -17,10 +17,12 @@
 
 #include <chrono>
 
-namespace rtc {
+namespace rtc
+{
 
-class RTC_CPP_EXPORT RtcpSrReporter final : public MediaHandler {
-public:
+class RTC_CPP_EXPORT RtcpSrReporter final : public MediaHandler
+{
+    public:
 	RtcpSrReporter(shared_ptr<RtpPacketizationConfig> rtpConfig);
 	~RtcpSrReporter();
 
@@ -32,7 +34,7 @@ public:
 	// TODO: remove this
 	const shared_ptr<RtpPacketizationConfig> rtpConfig;
 
-private:
+    private:
 	void addToReport(RtpHeader *header, size_t size);
 	message_ptr getSenderReport(uint32_t timestamp);
 

@@ -14,16 +14,18 @@
 #include "mediahandler.hpp"
 #include "utils.hpp"
 
-namespace rtc {
+namespace rtc
+{
 
 /// Responds to REMB messages sent by the receiver.
-class RTC_CPP_EXPORT RembHandler final : public MediaHandler {
-    rtc::synchronized_callback<unsigned int> mOnRemb;
+class RTC_CPP_EXPORT RembHandler final : public MediaHandler
+{
+	rtc::synchronized_callback<unsigned int> mOnRemb;
 
-public:
+    public:
 	/// Constructs the RembResponder object to notify whenever a bitrate
 	/// @param onRemb The callback that gets called whenever a bitrate by the receiver
-    RembHandler(std::function<void(unsigned int)> onRemb);
+	RembHandler(std::function<void(unsigned int)> onRemb);
 
 	void incoming(message_vector &messages, const message_callback &send) override;
 };

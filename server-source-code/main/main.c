@@ -153,7 +153,7 @@ void base___increment_chat_message_id(void)
  */
 boole base__is_tag_id_real(int tag_id)
 {
-        boole result;
+	boole result;
 	int i;
 
 	result = FALSE;
@@ -1021,8 +1021,6 @@ void onopen(ws_cli_conn_t *client)
 
 	DBG_AUTHENTICATION log_info("%s%d", "[i] onopen : new client id: ", index);
 
-	DBG_AUTHENTICATION log_info("%s%s", "[i] onopen : ip address: ", ip_address);
-
 	clients_array[index].is_authenticated = FALSE;
 	clients_array[index].timestamp_connected = base__get_timestamp_ms();
 	clients_array[index].p_ws_connection = client;
@@ -1229,6 +1227,8 @@ void base__process_authenticated_client_message(ws_cli_conn_t *websocket, int cl
 	char *message_type = 0;
 	client_t *client;
 
+	boole is_sender_idle = FALSE;
+
 	DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %s %s", "base__process_authenticated_client_message message : ", decrypted_metadata_cstring, "\n");
 
 	json_root = cJSON_Parse(decrypted_metadata_cstring);
@@ -1255,89 +1255,142 @@ void base__process_authenticated_client_message(ws_cli_conn_t *websocket, int cl
 
 	DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %d %s %s %s", "client : ", client_index, " detected message type is ", message_type, "\n");
 
+	pthread_rwlock_rdlock(&clients_global_rwlock_guard);
+	is_sender_idle = clients_array[client_index].is_idle;
+	pthread_rwlock_unlock(&clients_global_rwlock_guard);
+
+    //todo , ignore audio related messages if audio is completely disabled by server
+
+	//first two messages are the ones where it doesnt matter if client is in idle state or not
 	if (clib__is_string_equal(message_type, "client_connection_check"))
 	{
 		client_msg__process_client_connection_check(json_root, client_index);
 	}
-	else if (clib__is_string_equal(message_type, "change_client_username"))
+	else if (clib__is_string_equal(message_type, "create_new_webrtc_datachannel_connection"))
 	{
-		client_msg__process_change_client_username(json_root, client_index);
+		client_msg__process_create_new_webrtc_datachannel_connection(json_root, client_index);
 	}
-	else if (clib__is_string_equal(message_type, "create_channel_request"))
+	else
 	{
-		client_msg__process_create_channel_request(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "edit_channel_request"))
-	{
-		client_msg__process_edit_channel_request(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "direct_chat_message"))
-	{
-		client_msg__process_direct_chat_message(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "channel_chat_message"))
-	{
-		client_msg__process_channel_chat_message(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "channel_chat_picture"))
-	{
-		client_msg__process_channel_chat_picture(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "direct_chat_picture"))
-	{
-		client_msg__process_direct_chat_picture(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "join_channel_request"))
-	{
-		client_msg__process_join_channel_request(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "delete_channel_request"))
-	{
-		client_msg__process_delete_channel_request(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "poke_client"))
-	{
-		client_msg__process_poke_client_request(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "sdp_answer"))
-	{
-		client_msg__process_sdp_answer(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "ice_candidate"))
-	{
-		client_msg__process_ice_candidate(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "microphone_usage"))
-	{
-		client_msg__process_microphone_usage(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "start_song_stream"))
-	{
-		client_msg__process_start_song_stream_message(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "stop_song_stream"))
-	{
-		client_msg__process_stop_song_stream_message(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "admin_password"))
-	{
-		client_msg__process_admin_password_message(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "add_tag_to_client"))
-	{
-		client_msg__process_add_tag_to_client_message(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "remove_tag_from_client"))
-	{
-		client_msg__process_remove_tag_from_client_message(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "server_settings_icon_upload"))
-	{
-		client_msg__process_set_server_settings_icon_upload(json_root, client_index);
-	}
-	else if (clib__is_string_equal(message_type, "server_settings_add_new_tag"))
-	{
-		client_msg__process_set_server_settings_add_new_tag(json_root, client_index);
+		//else block checks messages where it matters if client is in idle state or not
+
+		if (is_sender_idle == FALSE)
+		{
+			if (clib__is_string_equal(message_type, "change_client_username"))
+			{
+				client_msg__process_change_client_username(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "create_channel_request"))
+			{
+				client_msg__process_create_channel_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "edit_channel_request"))
+			{
+				client_msg__process_edit_channel_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "direct_chat_message"))
+			{
+				client_msg__process_direct_chat_message(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "channel_chat_message"))
+			{
+				client_msg__process_channel_chat_message(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "channel_chat_picture"))
+			{
+				client_msg__process_channel_chat_picture(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "direct_chat_picture"))
+			{
+				client_msg__process_direct_chat_picture(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "join_channel_request"))
+			{
+				client_msg__process_join_channel_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "delete_channel_request"))
+			{
+				client_msg__process_delete_channel_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "poke_client"))
+			{
+				client_msg__process_poke_client_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "sdp_answer"))
+			{
+				client_msg__process_sdp_answer(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "ice_candidate"))
+			{
+				client_msg__process_ice_candidate(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "microphone_usage"))
+			{
+				client_msg__process_microphone_usage(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "start_song_stream"))
+			{
+				client_msg__process_start_song_stream_message(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "stop_song_stream"))
+			{
+				client_msg__process_stop_song_stream_message(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "admin_password"))
+			{
+				client_msg__process_admin_password_message(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "add_tag_to_client"))
+			{
+				client_msg__process_add_tag_to_client_message(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "remove_tag_from_client"))
+			{
+				client_msg__process_remove_tag_from_client_message(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "server_settings_icon_upload"))
+			{
+				client_msg__process_set_server_settings_icon_upload(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "server_settings_add_new_tag"))
+			{
+				client_msg__process_set_server_settings_add_new_tag(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "call_idle_client_request"))
+			{
+				if (g_server_settings.is_idle_mode_allowed == TRUE)
+				{
+					client_msg__process_call_idle_client_message(json_root, client_index);
+				}
+			}
+			else if (clib__is_string_equal(message_type, "go_to_idle_mode_request"))
+			{
+				if (g_server_settings.is_idle_mode_allowed == TRUE)
+				{
+					client_msg__process_go_to_idle_mode_request(json_root, client_index);
+				}
+			}
+            else if (clib__is_string_equal(message_type, "kick"))
+            {
+                client_msg__process_kick_request(json_root, client_index);
+            }
+
+            else if (clib__is_string_equal(message_type, "ban"))
+            {
+                client_msg__process_ban_request(json_root, client_index);
+            }
+		}
+
+		if (is_sender_idle == TRUE)
+		{
+			if (clib__is_string_equal(message_type, "come_back_from_idle_mode_request"))
+			{
+				if (g_server_settings.is_idle_mode_allowed == TRUE)
+				{
+					client_msg__process_come_back_from_idle_mode_request(json_root, client_index);
+				}
+			}
+		}
 	}
 
 	DBG_DBG_MEMORY_ALLOCATIONS memorymanager__print_allocations_count();
@@ -1536,7 +1589,7 @@ void base__init_channel_list(void)
 	root_channel->parent_channel_id = -1;
 	root_channel->is_existing = TRUE;
 	root_channel->max_clients = MAX_CLIENTS;
-	root_channel->is_audio_enabled = FALSE;
+	root_channel->is_audio_enabled = TRUE;
 
 	clib__copy_memory((void *)&channel_name, (void *)&root_channel->name, strlen(channel_name), CHANNEL_NAME_MAX_LENGTH);
 	clib__copy_memory((void *)&description, (void *)&root_channel->description, strlen(description), CHANNEL_DESCRIPTION_MAX_LENGTH);
@@ -1600,6 +1653,7 @@ void base__set_server_settings(void)
 	g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active = FALSE;
 	g_server_settings.is_display_country_flags_active = FALSE;
 	g_server_settings.is_display_admin_tag_active = TRUE;
+	g_server_settings.is_idle_mode_allowed = TRUE;
 
 	clib__copy_memory(default_client_name, g_server_settings.default_client_name, strlen(default_client_name), 100);
 
@@ -1664,10 +1718,8 @@ void base__set_server_settings(void)
 	printf("%s", "enter admin password (50 chars max length): ");
 	fgets(input, sizeof(input), stdin);
 	clib__sanitize_stdin(input);
-	clib__copy_memory(input, &g_server_settings.admin_password[0], clib__utf8_string_length(input) ,50);
+	clib__copy_memory(input, &g_server_settings.admin_password[0], clib__utf8_string_length(input), 50);
 	clib__null_memory(input, sizeof(input));
-
-
 
 	printf("%s", "disable voice chat? (y/n) ");
 	fgets(input, sizeof(input), stdin);
@@ -1675,6 +1727,7 @@ void base__set_server_settings(void)
 	if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
 	{
 		g_server_settings.is_voice_chat_active = FALSE;
+		printf("audio data (webrtc datachannels) disabled \n");
 	}
 	clib__null_memory(input, sizeof(input));
 
@@ -1700,6 +1753,16 @@ void base__set_server_settings(void)
 
 	printf("%s", "Prevent clients with vpns, proxies, tor exit nodes from connecting? (y/n) \n");
 	printf("%s", "Prevent clients from specific countries from connecting? (y/n) \n");
+
+	printf("%s", "disable idle clients? (y/n) ");
+	fgets(input, sizeof(input), stdin);
+	clib__sanitize_stdin(input);
+	if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+	{
+		g_server_settings.is_idle_mode_allowed = FALSE;
+		printf("server will not allow clients to go idle \n");
+	}
+	clib__null_memory(input, sizeof(input));
 }
 
 /**

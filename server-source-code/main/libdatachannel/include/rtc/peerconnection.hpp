@@ -20,29 +20,35 @@
 #include <chrono>
 #include <functional>
 
-namespace rtc {
+namespace rtc
+{
 
-namespace impl {
+namespace impl
+{
 
 struct PeerConnection;
 
 }
 
-struct RTC_CPP_EXPORT DataChannelInit {
+struct RTC_CPP_EXPORT DataChannelInit
+{
 	Reliability reliability = {};
 	bool negotiated = false;
 	optional<uint16_t> id = nullopt;
 	string protocol = "";
 };
 
-struct RTC_CPP_EXPORT LocalDescriptionInit {
-    optional<string> iceUfrag;
-    optional<string> icePwd;
+struct RTC_CPP_EXPORT LocalDescriptionInit
+{
+	optional<string> iceUfrag;
+	optional<string> icePwd;
 };
 
-class RTC_CPP_EXPORT PeerConnection final : CheshireCat<impl::PeerConnection> {
-public:
-	enum class State : int {
+class RTC_CPP_EXPORT PeerConnection final : CheshireCat<impl::PeerConnection>
+{
+    public:
+	enum class State : int
+	{
 		New = RTC_NEW,
 		Connecting = RTC_CONNECTING,
 		Connected = RTC_CONNECTED,
@@ -51,7 +57,8 @@ public:
 		Closed = RTC_CLOSED
 	};
 
-	enum class IceState : int {
+	enum class IceState : int
+	{
 		New = RTC_ICE_NEW,
 		Checking = RTC_ICE_CHECKING,
 		Connected = RTC_ICE_CONNECTED,
@@ -61,13 +68,15 @@ public:
 		Closed = RTC_ICE_CLOSED
 	};
 
-	enum class GatheringState : int {
+	enum class GatheringState : int
+	{
 		New = RTC_GATHERING_NEW,
 		InProgress = RTC_GATHERING_INPROGRESS,
 		Complete = RTC_GATHERING_COMPLETE
 	};
 
-	enum class SignalingState : int {
+	enum class SignalingState : int
+	{
 		Stable = RTC_SIGNALING_STABLE,
 		HaveLocalOffer = RTC_SIGNALING_HAVE_LOCAL_OFFER,
 		HaveRemoteOffer = RTC_SIGNALING_HAVE_REMOTE_OFFER,
@@ -108,8 +117,7 @@ public:
 	void setMediaHandler(shared_ptr<MediaHandler> handler);
 	shared_ptr<MediaHandler> getMediaHandler();
 
-	[[nodiscard]] shared_ptr<DataChannel> createDataChannel(string label,
-	                                                        DataChannelInit init = {});
+	[[nodiscard]] shared_ptr<DataChannel> createDataChannel(string label, DataChannelInit init = {});
 	void onDataChannel(std::function<void(std::shared_ptr<DataChannel> dataChannel)> callback);
 
 	[[nodiscard]] shared_ptr<Track> addTrack(Description::Media description);

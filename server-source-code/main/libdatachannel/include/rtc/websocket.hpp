@@ -15,17 +15,21 @@
 #include "common.hpp"
 #include "configuration.hpp"
 
-namespace rtc {
+namespace rtc
+{
 
-namespace impl {
+namespace impl
+{
 
 struct WebSocket;
 
 }
 
-class RTC_CPP_EXPORT WebSocket final : private CheshireCat<impl::WebSocket>, public Channel {
-public:
-	enum class State : int {
+class RTC_CPP_EXPORT WebSocket final : private CheshireCat<impl::WebSocket>, public Channel
+{
+    public:
+	enum class State : int
+	{
 		Connecting = 0,
 		Open = 1,
 		Closing = 2,
@@ -54,7 +58,7 @@ public:
 	optional<string> remoteAddress() const;
 	optional<string> path() const;
 
-private:
+    private:
 	using CheshireCat<impl::WebSocket>::impl;
 };
 

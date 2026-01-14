@@ -40,6 +40,9 @@ void server_msg__send_add_tag_to_client_event_to_all_clients(int client_id_of_cl
 void server_msg__send_remove_tag_from_client_event_to_all_clients(int client_id_of_client_that_got_tag_removed, int tag_id);
 void server_msg__send_add_new_icon_event_to_all_clients(int new_icon_id, char *icon_base64_value);
 void server_msg__send_create_new_tag_event_to_all_clients(int tag_id, char *tag_name, int tag_linked_icon_id);
+void server_msg__send_call_event_to_idle_client(client_t *caller, client_t *callee);
+void server_msg__send_client_going_to_idle_mode_info_to_all_clients(int client_that_goes_idle);
+void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(int client_that_comes_from_idle, int channel_the_client_joins);
 
 //audio related
 void server_msg__send_webrtc_sdp_offer_to_single_client(const char *cand, const char *mid, client_t *client);

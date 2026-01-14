@@ -13,9 +13,11 @@
 
 #include <bitset>
 
-namespace rtc {
+namespace rtc
+{
 
-struct BitWriter {
+struct BitWriter
+{
 	static BitWriter fromSizeBits(byte *buf, size_t offsetBits, size_t sizeBits);
 	static BitWriter fromNull();
 
@@ -26,29 +28,32 @@ struct BitWriter {
 	// ref: https://aomediacodec.github.io/av1-rtp-spec/#a82-syntax
 	bool writeNonSymmetric(uint64_t v, uint64_t n);
 
-private:
+    private:
 	size_t writePartialByte(uint8_t *p, size_t offset, uint64_t v, size_t bits);
 
-private:
+    private:
 	byte *mBuf = nullptr;
 	size_t mInitialOffset = 0;
 	size_t mOffset = 0;
 	size_t mSize = 0;
 };
 
-enum class DecodeTargetIndication {
+enum class DecodeTargetIndication
+{
 	NotPresent = 0,
 	Discardable = 1,
 	Switch = 2,
 	Required = 3,
 };
 
-struct RenderResolution {
+struct RenderResolution
+{
 	int width = 0;
 	int height = 0;
 };
 
-struct FrameDependencyTemplate {
+struct FrameDependencyTemplate
+{
 	int spatialId = 0;
 	int temporalId = 0;
 	std::vector<DecodeTargetIndication> decodeTargetIndications;
@@ -56,7 +61,8 @@ struct FrameDependencyTemplate {
 	std::vector<int> chainDiffs;
 };
 
-struct FrameDependencyStructure {
+struct FrameDependencyStructure
+{
 	int templateIdOffset = 0;
 	int decodeTargetCount = 0;
 	int chainCount = 0;
@@ -65,7 +71,8 @@ struct FrameDependencyStructure {
 	std::vector<FrameDependencyTemplate> templates;
 };
 
-struct DependencyDescriptor {
+struct DependencyDescriptor
+{
 	bool startOfFrame = true;
 	bool endOfFrame = true;
 	int frameNumber = 0;
@@ -75,7 +82,8 @@ struct DependencyDescriptor {
 	bool structureAttached;
 };
 
-struct DependencyDescriptorContext {
+struct DependencyDescriptorContext
+{
 	DependencyDescriptor descriptor;
 	std::bitset<32> activeChains;
 	FrameDependencyStructure structure;
@@ -84,19 +92,20 @@ struct DependencyDescriptorContext {
 // Write dependency descriptor to RTP Header Extension
 // Dependency descriptor specification is here:
 // https://aomediacodec.github.io/av1-rtp-spec/#dependency-descriptor-rtp-header-extension
-class DependencyDescriptorWriter {
-public:
-	explicit DependencyDescriptorWriter(const DependencyDescriptorContext& context);
+class DependencyDescriptorWriter
+{
+    public:
+	explicit DependencyDescriptorWriter(const DependencyDescriptorContext &context);
 	size_t getSizeBits() const;
 	size_t getSize() const;
 	void writeTo(byte *buf, size_t sizeBytes) const;
 
-private:
+    private:
 	void doWriteTo(BitWriter &writer) const;
 	void writeBits(BitWriter &writer, uint64_t v, size_t bits) const;
 	void writeNonSymmetric(BitWriter &writer, uint64_t v, uint64_t n) const;
 
-private:
+    private:
 	const FrameDependencyStructure &mStructure;
 	std::bitset<32> mActiveChains;
 	const DependencyDescriptor &mDescriptor;

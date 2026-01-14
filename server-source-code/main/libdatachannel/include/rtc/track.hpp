@@ -14,16 +14,19 @@
 #include "description.hpp"
 #include "mediahandler.hpp"
 
-namespace rtc {
+namespace rtc
+{
 
-namespace impl {
+namespace impl
+{
 
 class Track;
 
 } // namespace impl
 
-class RTC_CPP_EXPORT Track final : private CheshireCat<impl::Track>, public Channel {
-public:
+class RTC_CPP_EXPORT Track final : private CheshireCat<impl::Track>, public Channel
+{
+    public:
 	Track(impl_ptr<impl::Track> impl);
 	~Track() override;
 
@@ -53,10 +56,16 @@ public:
 	shared_ptr<MediaHandler> getMediaHandler();
 
 	// Deprecated, use setMediaHandler() and getMediaHandler()
-	inline void setRtcpHandler(shared_ptr<MediaHandler> handler) { setMediaHandler(handler); }
-	inline shared_ptr<MediaHandler> getRtcpHandler() { return getMediaHandler(); }
+	inline void setRtcpHandler(shared_ptr<MediaHandler> handler)
+	{
+		setMediaHandler(handler);
+	}
+	inline shared_ptr<MediaHandler> getRtcpHandler()
+	{
+		return getMediaHandler();
+	}
 
-private:
+    private:
 	using CheshireCat<impl::Track>::impl;
 };
 

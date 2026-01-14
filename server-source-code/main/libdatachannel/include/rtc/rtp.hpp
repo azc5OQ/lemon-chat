@@ -15,7 +15,8 @@
 
 #include <vector>
 
-namespace rtc {
+namespace rtc
+{
 
 typedef uint32_t SSRC;
 
@@ -23,7 +24,8 @@ RTC_CPP_EXPORT bool IsRtcp(const binary &data);
 
 #pragma pack(push, 1)
 
-struct RTC_CPP_EXPORT RtpExtensionHeader {
+struct RTC_CPP_EXPORT RtpExtensionHeader
+{
 	uint16_t _profileSpecificId;
 	uint16_t _headerLength;
 
@@ -38,15 +40,14 @@ struct RTC_CPP_EXPORT RtpExtensionHeader {
 	void setHeaderLength(uint16_t headerLength);
 
 	void clearBody();
-	size_t writeCurrentVideoOrientation(bool twoByteHeader, size_t offset, uint8_t id,
-	                                    uint8_t value);
+	size_t writeCurrentVideoOrientation(bool twoByteHeader, size_t offset, uint8_t id, uint8_t value);
 	size_t writeOneByteHeader(size_t offset, uint8_t id, const byte *value, size_t size);
 	size_t writeTwoByteHeader(size_t offset, uint8_t id, const byte *value, size_t size);
-	size_t writeHeader(bool twoByteHeader, size_t offset, uint8_t id, const byte *value,
-	                   size_t size);
+	size_t writeHeader(bool twoByteHeader, size_t offset, uint8_t id, const byte *value, size_t size);
 };
 
-struct RTC_CPP_EXPORT RtpHeader {
+struct RTC_CPP_EXPORT RtpHeader
+{
 	uint8_t _first;
 	uint8_t _payloadType;
 	uint16_t _seqNumber;
@@ -82,7 +83,8 @@ struct RTC_CPP_EXPORT RtpHeader {
 	void setExtension(bool extension);
 };
 
-struct RTC_CPP_EXPORT RtcpReportBlock {
+struct RTC_CPP_EXPORT RtcpReportBlock
+{
 	SSRC _ssrc;
 	uint32_t _fractionLostAndPacketsLost; // fraction lost is 8-bit, packets lost is 24-bit
 	uint16_t _seqNoCycles;
@@ -102,9 +104,7 @@ struct RTC_CPP_EXPORT RtcpReportBlock {
 	[[nodiscard]] uint8_t getFractionLost() const;
 	[[nodiscard]] unsigned int getPacketsLostCount() const;
 
-	void preparePacket(SSRC in_ssrc, unsigned int packetsLost, unsigned int totalPackets,
-	                   uint16_t highestSeqNo, uint16_t seqNoCycles, uint32_t jitter,
-	                   uint64_t lastSR_NTP, uint64_t lastSR_DELAY);
+	void preparePacket(SSRC in_ssrc, unsigned int packetsLost, unsigned int totalPackets, uint16_t highestSeqNo, uint16_t seqNoCycles, uint32_t jitter, uint64_t lastSR_NTP, uint64_t lastSR_DELAY);
 	void setSSRC(SSRC in_ssrc);
 	void setPacketsLost(uint8_t fractionLost, unsigned int packetsLostCount);
 	void setSeqNo(uint16_t highestSeqNo, uint16_t seqNoCycles);
@@ -115,7 +115,8 @@ struct RTC_CPP_EXPORT RtcpReportBlock {
 	void log() const;
 };
 
-struct RTC_CPP_EXPORT RtcpHeader {
+struct RTC_CPP_EXPORT RtcpHeader
+{
 	uint8_t _first;
 	uint8_t _payloadType;
 	uint16_t _length;
@@ -135,7 +136,8 @@ struct RTC_CPP_EXPORT RtcpHeader {
 	void log() const;
 };
 
-struct RTC_CPP_EXPORT RtcpFbHeader {
+struct RTC_CPP_EXPORT RtcpFbHeader
+{
 	RtcpHeader header;
 
 	SSRC _packetSender;
@@ -150,7 +152,8 @@ struct RTC_CPP_EXPORT RtcpFbHeader {
 	void log() const;
 };
 
-struct RTC_CPP_EXPORT RtcpSr {
+struct RTC_CPP_EXPORT RtcpSr
+{
 	RtcpHeader header;
 
 	SSRC _senderSSRC;
@@ -183,7 +186,8 @@ struct RTC_CPP_EXPORT RtcpSr {
 	void log() const;
 };
 
-struct RTC_CPP_EXPORT RtcpSdesItem {
+struct RTC_CPP_EXPORT RtcpSdesItem
+{
 	uint8_t type;
 
 	uint8_t _length;
@@ -197,7 +201,8 @@ struct RTC_CPP_EXPORT RtcpSdesItem {
 	void setText(string text);
 };
 
-struct RTC_CPP_EXPORT RtcpSdesChunk {
+struct RTC_CPP_EXPORT RtcpSdesChunk
+{
 	SSRC _ssrc;
 	RtcpSdesItem _items;
 
@@ -221,11 +226,12 @@ struct RTC_CPP_EXPORT RtcpSdesChunk {
 	long safelyCountChunkSize(size_t maxChunkSize) const;
 };
 
-struct RTC_CPP_EXPORT RtcpSdes {
+struct RTC_CPP_EXPORT RtcpSdes
+{
 	RtcpHeader header;
 	RtcpSdesChunk _chunks;
 
-	[[nodiscard]] static unsigned int Size(const std::vector<std::vector<uint8_t>> lengths);
+	[[nodiscard]] static unsigned int Size(const std::vector<std::vector<uint8_t> > lengths);
 
 	bool isValid() const;
 
@@ -242,7 +248,8 @@ struct RTC_CPP_EXPORT RtcpSdes {
 	void preparePacket(uint8_t chunkCount);
 };
 
-struct RTC_CPP_EXPORT RtcpRr {
+struct RTC_CPP_EXPORT RtcpRr
+{
 	RtcpHeader header;
 
 	SSRC _senderSSRC;
@@ -264,10 +271,11 @@ struct RTC_CPP_EXPORT RtcpRr {
 	void log() const;
 };
 
-struct RTC_CPP_EXPORT RtcpRemb {
+struct RTC_CPP_EXPORT RtcpRemb
+{
 	RtcpFbHeader header;
 
-	char _id[4];       // Unique identifier ('R' 'E' 'M' 'B')
+	char _id[4]; // Unique identifier ('R' 'E' 'M' 'B')
 	uint32_t _bitrate; // Num SSRC, Br Exp, Br Mantissa (bit mask)
 	SSRC _ssrc[1];
 
@@ -282,7 +290,8 @@ struct RTC_CPP_EXPORT RtcpRemb {
 	unsigned int getBitrate();
 };
 
-struct RTC_CPP_EXPORT RtcpPli {
+struct RTC_CPP_EXPORT RtcpPli
+{
 	RtcpFbHeader header;
 
 	[[nodiscard]] static unsigned int Size();
@@ -292,14 +301,16 @@ struct RTC_CPP_EXPORT RtcpPli {
 	void log() const;
 };
 
-struct RTC_CPP_EXPORT RtcpFirPart {
+struct RTC_CPP_EXPORT RtcpFirPart
+{
 	uint32_t ssrc;
 	uint8_t seqNo;
 	uint8_t dummy1;
 	uint16_t dummy2;
 };
 
-struct RTC_CPP_EXPORT RtcpFir {
+struct RTC_CPP_EXPORT RtcpFir
+{
 	RtcpFbHeader header;
 	RtcpFirPart parts[1];
 
@@ -310,7 +321,8 @@ struct RTC_CPP_EXPORT RtcpFir {
 	void log() const;
 };
 
-struct RTC_CPP_EXPORT RtcpNackPart {
+struct RTC_CPP_EXPORT RtcpNackPart
+{
 	uint16_t _pid;
 	uint16_t _blp;
 
@@ -323,7 +335,8 @@ struct RTC_CPP_EXPORT RtcpNackPart {
 	std::vector<uint16_t> getSequenceNumbers();
 };
 
-struct RTC_CPP_EXPORT RtcpNack {
+struct RTC_CPP_EXPORT RtcpNack
+{
 	RtcpFbHeader header;
 	RtcpNackPart parts[1];
 
@@ -345,7 +358,8 @@ struct RTC_CPP_EXPORT RtcpNack {
 	bool addMissingPacket(unsigned int *fciCount, uint16_t *fciPID, uint16_t missingPacket);
 };
 
-struct RTC_CPP_EXPORT RtpRtx {
+struct RTC_CPP_EXPORT RtpRtx
+{
 	RtpHeader header;
 
 	[[nodiscard]] const char *getBody() const;

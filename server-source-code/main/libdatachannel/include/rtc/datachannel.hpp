@@ -15,17 +15,20 @@
 
 #include <type_traits>
 
-namespace rtc {
+namespace rtc
+{
 
-namespace impl {
+namespace impl
+{
 
 struct DataChannel;
 struct PeerConnection;
 
 } // namespace impl
 
-class RTC_CPP_EXPORT DataChannel final : private CheshireCat<impl::DataChannel>, public Channel {
-public:
+class RTC_CPP_EXPORT DataChannel final : private CheshireCat<impl::DataChannel>, public Channel
+{
+    public:
 	DataChannel(impl_ptr<impl::DataChannel> impl);
 	~DataChannel() override;
 
@@ -45,30 +48,35 @@ public:
 	template <typename Buffer> bool sendBuffer(const Buffer &buf);
 	template <typename Iterator> bool sendBuffer(Iterator first, Iterator last);
 
-private:
+    private:
 	using CheshireCat<impl::DataChannel>::impl;
 };
 
-template <typename Buffer> std::pair<const byte *, size_t> to_bytes(const Buffer &buf) {
+template <typename Buffer> std::pair<const byte *, size_t> to_bytes(const Buffer &buf)
+{
 	using T = typename std::remove_pointer<decltype(buf.data())>::type;
 	using E = typename std::conditional<std::is_void<T>::value, byte, T>::type;
-	return std::make_pair(static_cast<const byte *>(static_cast<const void *>(buf.data())),
-	                      buf.size() * sizeof(E));
+	return std::make_pair(static_cast<const byte *>(static_cast<const void *>(buf.data())), buf.size() * sizeof(E));
 }
 
-template <typename Buffer> bool DataChannel::sendBuffer(const Buffer &buf) {
+template <typename Buffer> bool DataChannel::sendBuffer(const Buffer &buf)
+{
 	auto [bytes, size] = to_bytes(buf);
 	return send(bytes, size);
 }
 
-template <typename Iterator> bool DataChannel::sendBuffer(Iterator first, Iterator last) {
+template <typename Iterator> bool DataChannel::sendBuffer(Iterator first, Iterator last)
+{
 	size_t size = 0;
 	for (Iterator it = first; it != last; ++it)
+	{
 		size += it->size();
+	}
 
 	binary buffer(size);
 	byte *pos = buffer.data();
-	for (Iterator it = first; it != last; ++it) {
+	for (Iterator it = first; it != last; ++it)
+	{
 		auto [bytes, len] = to_bytes(*it);
 		pos = std::copy(bytes, bytes + len, pos);
 	}

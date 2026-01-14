@@ -15,11 +15,13 @@
 #include "message.hpp"
 #include "rtppacketizationconfig.hpp"
 
-namespace rtc {
+namespace rtc
+{
 
 /// RTP packetizer
-class RTC_CPP_EXPORT RtpPacketizer : public MediaHandler {
-public:
+class RTC_CPP_EXPORT RtpPacketizer : public MediaHandler
+{
+    public:
 	/// Default maximum fragment size (for video packetizers)
 	inline static const size_t DefaultMaxFragmentSize = RTC_DEFAULT_MAX_FRAGMENT_SIZE;
 
@@ -39,7 +41,7 @@ public:
 	/// RTP packetization config
 	const shared_ptr<RtpPacketizationConfig> rtpConfig;
 
-protected:
+    protected:
 	/// Fragment data into payloads
 	/// Default implementation returns data as a single payload
 	/// @param message Input data
@@ -54,21 +56,22 @@ protected:
 	// For backward compatibility, do not use
 	[[deprecated]] virtual message_ptr packetize(shared_ptr<binary> payload, bool mark);
 
-private:
+    private:
 	static const auto RtpHeaderSize = 12;
 	static const auto RtpExtHeaderCvoSize = 8;
 };
 
 // Generic audio RTP packetizer
-template <uint32_t DEFAULT_CLOCK_RATE>
-class RTC_CPP_EXPORT AudioRtpPacketizer final : public RtpPacketizer {
-public:
+template <uint32_t DEFAULT_CLOCK_RATE> class RTC_CPP_EXPORT AudioRtpPacketizer final : public RtpPacketizer
+{
+    public:
 	inline static const uint32_t DefaultClockRate = DEFAULT_CLOCK_RATE;
-	inline static const uint32_t defaultClockRate [[deprecated("Use DefaultClockRate")]] =
-	    DEFAULT_CLOCK_RATE; // for backward compatibility
+	inline static const uint32_t defaultClockRate [[deprecated("Use DefaultClockRate")]] = DEFAULT_CLOCK_RATE; // for backward compatibility
 
 	AudioRtpPacketizer(shared_ptr<RtpPacketizationConfig> rtpConfig)
-	    : RtpPacketizer(std::move(rtpConfig)) {}
+		: RtpPacketizer(std::move(rtpConfig))
+	{
+	}
 };
 
 // Audio RTP packetizers
@@ -79,24 +82,26 @@ using PCMURtpPacketizer = AudioRtpPacketizer<8000>;
 using G722RtpPacketizer = AudioRtpPacketizer<8000>;
 
 // Dummy wrapper for backward compatibility, do not use
-class RTC_CPP_EXPORT PacketizationHandler final : public MediaHandler {
-public:
+class RTC_CPP_EXPORT PacketizationHandler final : public MediaHandler
+{
+    public:
 	PacketizationHandler(shared_ptr<RtpPacketizer> packetizer)
-	    : mPacketizer(std::move(packetizer)) {}
+		: mPacketizer(std::move(packetizer))
+	{
+	}
 
-	inline void outgoing(message_vector &messages, const message_callback &send) {
+	inline void outgoing(message_vector &messages, const message_callback &send)
+	{
 		return mPacketizer->outgoing(messages, send);
 	}
 
-private:
+    private:
 	shared_ptr<RtpPacketizer> mPacketizer;
 };
 
 // Audio packetization handlers for backward compatibility, do not use
-using OpusPacketizationHandler [[deprecated("Add OpusRtpPacketizer directly")]] =
-    PacketizationHandler;
-using AACPacketizationHandler [[deprecated("Add AACRtpPacketizer directly")]] =
-    PacketizationHandler;
+using OpusPacketizationHandler [[deprecated("Add OpusRtpPacketizer directly")]] = PacketizationHandler;
+using AACPacketizationHandler [[deprecated("Add AACRtpPacketizer directly")]] = PacketizationHandler;
 
 } // namespace rtc
 

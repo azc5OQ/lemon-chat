@@ -12,23 +12,27 @@
 
 #include "common.hpp"
 
-namespace rtc {
+namespace rtc
+{
 
-namespace impl {
+namespace impl
+{
 
 struct IceUdpMuxListener;
 
 } // namespace impl
 
-struct IceUdpMuxRequest { // TODO change name
+struct IceUdpMuxRequest
+{ // TODO change name
 	string localUfrag;
 	string remoteUfrag;
 	string remoteAddress;
 	uint16_t remotePort;
 };
 
-class RTC_CPP_EXPORT IceUdpMuxListener final : private CheshireCat<impl::IceUdpMuxListener> {
-public:
+class RTC_CPP_EXPORT IceUdpMuxListener final : private CheshireCat<impl::IceUdpMuxListener>
+{
+    public:
 	IceUdpMuxListener(uint16_t port, optional<string> bindAddress = nullopt);
 	~IceUdpMuxListener();
 
@@ -38,7 +42,7 @@ public:
 
 	void OnUnhandledStunRequest(std::function<void(IceUdpMuxRequest)> callback);
 
-private:
+    private:
 	using CheshireCat<impl::IceUdpMuxListener>::impl;
 };
 

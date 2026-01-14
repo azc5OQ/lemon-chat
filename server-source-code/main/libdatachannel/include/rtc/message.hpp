@@ -15,23 +15,42 @@
 
 #include <functional>
 
-namespace rtc {
+namespace rtc
+{
 
-struct RTC_CPP_EXPORT Message : binary {
-	enum Type { Binary, String, Control, Reset };
+struct RTC_CPP_EXPORT Message : binary
+{
+	enum Type
+	{
+		Binary,
+		String,
+		Control,
+		Reset
+	};
 
 	Message(const Message &message) = default;
-	Message(size_t size, Type type_ = Binary) : binary(size), type(type_) {}
+	Message(size_t size, Type type_ = Binary)
+		: binary(size)
+		, type(type_)
+	{
+	}
 
 	template <typename Iterator>
 	Message(Iterator begin_, Iterator end_, Type type_ = Binary)
-	    : binary(begin_, end_), type(type_) {}
+		: binary(begin_, end_)
+		, type(type_)
+	{
+	}
 
-	Message(binary &&data, Type type_ = Binary) : binary(std::move(data)), type(type_) {}
+	Message(binary &&data, Type type_ = Binary)
+		: binary(std::move(data))
+		, type(type_)
+	{
+	}
 
 	Type type;
 	unsigned int stream = 0; // Stream id (SCTP stream or SSRC)
-	unsigned int dscp = 0;   // Differentiated Services Code Point
+	unsigned int dscp = 0; // Differentiated Services Code Point
 	shared_ptr<Reliability> reliability;
 	shared_ptr<FrameInfo> frameInfo;
 };
@@ -40,43 +59,38 @@ using message_ptr = shared_ptr<Message>;
 using message_callback = std::function<void(message_ptr message)>;
 using message_vector = std::vector<message_ptr>;
 
-inline size_t message_size_func(const message_ptr &m) {
+inline size_t message_size_func(const message_ptr &m)
+{
 	return m->type == Message::Binary || m->type == Message::String ? m->size() : 0;
 }
 
-template <typename Iterator>
-message_ptr make_message(Iterator begin, Iterator end, Message::Type type = Message::Binary,
-                         unsigned int stream = 0, shared_ptr<Reliability> reliability = nullptr) {
+template <typename Iterator> message_ptr make_message(Iterator begin, Iterator end, Message::Type type = Message::Binary, unsigned int stream = 0, shared_ptr<Reliability> reliability = nullptr)
+{
 	auto message = std::make_shared<Message>(begin, end, type);
 	message->stream = stream;
 	message->reliability = reliability;
 	return message;
 }
 
-template <typename Iterator>
-message_ptr make_message(Iterator begin, Iterator end, shared_ptr<FrameInfo> frameInfo) {
+template <typename Iterator> message_ptr make_message(Iterator begin, Iterator end, shared_ptr<FrameInfo> frameInfo)
+{
 	auto message = std::make_shared<Message>(begin, end);
 	message->frameInfo = frameInfo;
 	return message;
 }
 
 // For backward compatibiity, do not use
-template <typename Iterator>
-[[deprecated]] message_ptr make_message(Iterator begin, Iterator end, Message::Type type,
-                         unsigned int stream, shared_ptr<FrameInfo> frameInfo) {
+template <typename Iterator> [[deprecated]] message_ptr make_message(Iterator begin, Iterator end, Message::Type type, unsigned int stream, shared_ptr<FrameInfo> frameInfo)
+{
 	auto message = std::make_shared<Message>(begin, end, type);
 	message->stream = stream;
 	message->frameInfo = frameInfo;
 	return message;
 }
 
-RTC_CPP_EXPORT message_ptr make_message(size_t size, Message::Type type = Message::Binary,
-                                        unsigned int stream = 0,
-                                        shared_ptr<Reliability> reliability = nullptr);
+RTC_CPP_EXPORT message_ptr make_message(size_t size, Message::Type type = Message::Binary, unsigned int stream = 0, shared_ptr<Reliability> reliability = nullptr);
 
-RTC_CPP_EXPORT message_ptr make_message(binary &&data, Message::Type type = Message::Binary,
-                                        unsigned int stream = 0,
-                                        shared_ptr<Reliability> reliability = nullptr);
+RTC_CPP_EXPORT message_ptr make_message(binary &&data, Message::Type type = Message::Binary, unsigned int stream = 0, shared_ptr<Reliability> reliability = nullptr);
 
 RTC_CPP_EXPORT message_ptr make_message(binary &&data, shared_ptr<FrameInfo> frameInfo);
 

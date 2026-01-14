@@ -50,16 +50,20 @@
 int get_handshake_accept(char *wsKey, unsigned char **dest)
 {
 	unsigned char hash[SHA1HashSize]; /* SHA-1 Hash.                   */
-	SHA1Context ctx;                  /* SHA-1 Context.                */
-	char *str;                        /* WebSocket key + magic string. */
+	SHA1Context ctx; /* SHA-1 Context.                */
+	char *str; /* WebSocket key + magic string. */
 
 	/* Invalid key. */
 	if (!wsKey)
+	{
 		return (-1);
+	}
 
 	str = calloc(1, sizeof(char) * (WS_KEY_LEN + WS_MS_LEN + 1));
 	if (!str)
+	{
 		return (-1);
+	}
 
 	strncpy(str, wsKey, WS_KEY_LEN);
 	strcat(str, MAGIC_STRING);
@@ -88,8 +92,12 @@ static char *strstricase(const char *haystack, const char *needle)
 {
 	size_t length;
 	for (length = strlen(needle); *haystack; haystack++)
+	{
 		if (!strncasecmp(haystack, needle, length))
-			return (char*)haystack;
+		{
+			return (char *)haystack;
+		}
+	}
 	return (NULL);
 }
 
@@ -107,8 +115,6 @@ static char *strstricase(const char *haystack, const char *needle)
  * for completeness.
  */
 
-
-
 /**
  * @brief Gets the complete response to accomplish a succesfully
  * handshake.
@@ -125,33 +131,40 @@ static char *strstricase(const char *haystack, const char *needle)
 int get_handshake_response(char *hsrequest, char **hsresponse)
 {
 	unsigned char *accept; /* Accept message.     */
-	char *saveptr;         /* strtok_r() pointer. */
-	char *s;               /* Current string.     */
-	int ret;               /* Return value.       */
+	char *saveptr; /* strtok_r() pointer. */
+	char *s; /* Current string.     */
+	int ret; /* Return value.       */
 
 	saveptr = NULL;
-	for (s = strtok_r(hsrequest, "\r\n", &saveptr); s != NULL;
-		 s = strtok_r(NULL, "\r\n", &saveptr))
+	for (s = strtok_r(hsrequest, "\r\n", &saveptr); s != NULL; s = strtok_r(NULL, "\r\n", &saveptr))
 	{
 		if (strstricase(s, WS_HS_REQ) != NULL)
+		{
 			break;
+		}
 	}
 
 	/* Ensure that we have a valid pointer. */
 	if (s == NULL)
+	{
 		return (-1);
+	}
 
 	saveptr = NULL;
-	s       = strtok_r(s, " ", &saveptr);
-	s       = strtok_r(NULL, " ", &saveptr);
+	s = strtok_r(s, " ", &saveptr);
+	s = strtok_r(NULL, " ", &saveptr);
 
 	ret = get_handshake_accept(s, &accept);
 	if (ret < 0)
+	{
 		return (ret);
+	}
 
-	*hsresponse = malloc(sizeof(char) * WS_HS_ACCLEN);
+	*hsresponse = calloc(sizeof(char) * WS_HS_ACCLEN, 1);
 	if (*hsresponse == NULL)
+	{
 		return (-1);
+	}
 
 	strcpy(*hsresponse, WS_HS_ACCEPT);
 	strcat(*hsresponse, (const char *)accept);
@@ -161,83 +174,82 @@ int get_handshake_response(char *hsrequest, char **hsresponse)
 	return (0);
 }
 
-
-int is_valid_ipv4_char(char c) {
-    return (isdigit((unsigned char)c) || c == '.');
+int is_valid_ipv4_char(char c)
+{
+	return (isdigit((unsigned char)c) || c == '.');
 }
 
-char* find_header_value(char* http_response_headers, char* header_name)
+char *find_header_value(char *http_response_headers, char *header_name)
 {
-    char* position = http_response_headers;
-    size_t header_name_length = strlen(header_name);
+	char *position = http_response_headers;
+	size_t header_name_length = strlen(header_name);
 
-    while (*position != '\0')
-    {
-        if (strncmp(position, header_name, header_name_length) == 0 && position[header_name_length] == ':')
-        {
-            char* value_start = position + header_name_length + 1;
+	while (*position != '\0')
+	{
+		if (strncmp(position, header_name, header_name_length) == 0 && position[header_name_length] == ':')
+		{
+			char *value_start = position + header_name_length + 1;
 
-            // Skip leading spaces or tabs
-            while (*value_start == ' ' || *value_start == '\t')
-            {
-                value_start++;
-            }
+			// Skip leading spaces or tabs
+			while (*value_start == ' ' || *value_start == '\t')
+			{
+				value_start++;
+			}
 
-            // Find end of line or string
-            char* line_end = strchr(value_start, '\n');
-            if (line_end == NULL)
-            {
-                line_end = value_start + strlen(value_start);
-            }
+			// Find end of line or string
+			char *line_end = strchr(value_start, '\n');
+			if (line_end == NULL)
+			{
+				line_end = value_start + strlen(value_start);
+			}
 
-            // Trim trailing whitespace (space, tab, \r, \n)
-            char* value_end = line_end;
-            while (value_end > value_start && 
-                  (*(value_end - 1) == ' ' || *(value_end - 1) == '\t' || *(value_end - 1) == '\r' || *(value_end - 1) == '\n'))
-            {
-                value_end--;
-            }
+			// Trim trailing whitespace (space, tab, \r, \n)
+			char *value_end = line_end;
+			while (value_end > value_start && (*(value_end - 1) == ' ' || *(value_end - 1) == '\t' || *(value_end - 1) == '\r' || *(value_end - 1) == '\n'))
+			{
+				value_end--;
+			}
 
-            size_t value_length = value_end - value_start;
+			size_t value_length = value_end - value_start;
 
-            // Allocate buffer and copy value
-            char* value_copy = (char*)malloc(value_length + 1);
-            if (value_copy == NULL)
-            {
-                return NULL;
-            }
+			// Allocate buffer and copy value
+			char *value_copy = (char *)calloc(value_length + 1, 1);
+			if (value_copy == NULL)
+			{
+				return NULL;
+			}
 
-            memcpy(value_copy, value_start, value_length);
-            value_copy[value_length] = '\0';
+			memcpy(value_copy, value_start, value_length);
+			value_copy[value_length] = '\0';
 
-            return value_copy;
-        }
+			return value_copy;
+		}
 
-        char* next_line = strchr(position, '\n');
-        if (next_line == NULL)
-        {
-            break;
-        }
+		char *next_line = strchr(position, '\n');
+		if (next_line == NULL)
+		{
+			break;
+		}
 
-        position = next_line + 1;
-    }
+		position = next_line + 1;
+	}
 
-    return NULL;
+	return NULL;
 }
 
-char* get_forwarded_ip_address(char *hsrequest)
+char *get_forwarded_ip_address(char *hsrequest)
 {
-    char* ip_str = find_header_value(hsrequest, "X-Forwarded-For");
-    if (ip_str == NULL)
-    {
-     	DEBUG_THELDUS_WEBSOCKET printf("%s","failed to find header \n");
-     	return NULL;
-    }
-    else
-    {
-		DEBUG_THELDUS_WEBSOCKET printf("%s %d %s", "ip_str length is -> ", strlen(ip_str), "\n");
-		DEBUG_THELDUS_WEBSOCKET printf("%s%s%s","header found[", ip_str, "] \n");	
-    }
-	
-    return ip_str;
+	char *ip_str = find_header_value(hsrequest, "X-Forwarded-For");
+	if (ip_str == NULL)
+	{
+		DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] failed to find header \n");
+		return NULL;
+	}
+	else
+	{
+		DEBUG_THELDUS_WEBSOCKET printf("%s %d %s", "[theldus-websocket] ip_str length is -> ", strlen(ip_str), "\n");
+		DEBUG_THELDUS_WEBSOCKET printf("%s %s %s", "[theldus-websocket] header found[", ip_str, "] \n");
+	}
+
+	return ip_str;
 }

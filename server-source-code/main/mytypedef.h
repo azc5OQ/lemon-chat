@@ -24,7 +24,6 @@
 
 #define MATH_PI 3.141592f
 
-
 typedef union safe_byte_t
 {
 	signed char safe1;
@@ -52,21 +51,21 @@ typedef const char *cstring;
 //typedef wchar_t*                    wstring;
 
 #ifdef DEBUG_ACTIVE
-#define DBG_DLLMAIN if (1)
-#define DBG_CLIENT_MESSAGE if (1)
-#define DBG_CLIENT_MESSAGE_MAIN_FUNCTION if (1)
-#define DBG_AUTHENTICATION if (1)
+#define DBG_DLLMAIN if (0)
+#define DBG_CLIENT_MESSAGE if (0)
+#define DBG_CLIENT_MESSAGE_MAIN_FUNCTION if (0)
+#define DBG_AUTHENTICATION if (0)
 #define DBG_ENCRYPTION if (0)
-#define DBG_SERVER_MESSAGE if (1)
+#define DBG_SERVER_MESSAGE if (0)
 #define DBG_CLOSE_CONNECTION if (0)
-#define DBG_ONMESSAGE if (1)
+#define DBG_ONMESSAGE if (0)
 #define DBG_MEMORY_MANAGER if (0)
-#define DBG_CONNECTION_CHECK_THREAD if (1)
-#define DBG_CLIENT_DISCONNECT if (1)
+#define DBG_CONNECTION_CHECK_THREAD if (0)
+#define DBG_CLIENT_DISCONNECT if (0)
 #define DBG_AUDIOCHANNEL_WEBRTC if (0)
 #define DBG_VIOLET if (0)
 #define DBG_DBG_MEMORY_ALLOCATIONS if (0)
-#define DBG_IP_TOOLS if (1)
+#define DBG_IP_TOOLS if (0)
 #endif
 
 #ifndef DEBUG_ACTIVE

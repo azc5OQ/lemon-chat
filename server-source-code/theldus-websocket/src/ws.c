@@ -50,7 +50,6 @@ typedef int socklen_t;
 #include "../include/utf8.h"
 #include "../include/ws.h"
 
-
 /**
  * @dir src/
  * @brief wsServer source code
@@ -64,7 +63,6 @@ typedef int socklen_t;
  */
 static struct ws_events cli_events;
 
-
 #ifndef INET6_ADDRSTRLEN
 #define INET6_ADDRSTRLEN 1025
 #endif
@@ -75,7 +73,7 @@ static struct ws_events cli_events;
 struct ws_connection
 {
 	int client_sock; /**< Client socket FD.        */
-	int state;       /**< WebSocket current state. */
+	int state; /**< WebSocket current state. */
 
 	/* Timeout thread and locks. */
 	pthread_mutex_t mtx_state;
@@ -85,7 +83,6 @@ struct ws_connection
 
 	/* Send lock. */
 	pthread_mutex_t mtx_snd;
-
 
 	/* IP address. */
 	char ip[INET6_ADDRSTRLEN];
@@ -113,10 +110,7 @@ static uint32_t timeout;
 /**
  * @brief Client validity macro
  */
-#define CLIENT_VALID(cli)                          \
-	((cli) != NULL && (cli) >= &client_socks[0] && \
-		(cli) <= &client_socks[MAX_CLIENTS - 1] && \
-		(cli)->client_sock > -1)
+#define CLIENT_VALID(cli) ((cli) != NULL && (cli) >= &client_socks[0] && (cli) <= &client_socks[MAX_CLIENTS - 1] && (cli)->client_sock > -1)
 
 /**
  * @brief WebSocket frame data
@@ -171,9 +165,9 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
  *
  * @param s Error message.
  */
-#define panic(s)   \
-	do             \
-	{              \
+#define panic(s)           \
+	do                 \
+	{                  \
 		perror(s); \
 		exit(-1);  \
 	} while (0);
@@ -212,7 +206,9 @@ static int get_client_state(ws_cli_conn_t *client)
 	int state;
 
 	if (!CLIENT_VALID(client))
+	{
 		return (-1);
+	}
 
 	pthread_mutex_lock(&client->mtx_state);
 	state = client->state;
@@ -235,10 +231,14 @@ static int get_client_state(ws_cli_conn_t *client)
 static int set_client_state(ws_cli_conn_t *client, int state)
 {
 	if (!CLIENT_VALID(client))
+	{
 		return (-1);
+	}
 
 	if (state < 0 || state > 3)
+	{
 		return (-1);
+	}
 
 	pthread_mutex_lock(&client->mtx_state);
 	client->state = state;
@@ -262,8 +262,7 @@ static int set_client_state(ws_cli_conn_t *client, int state)
  * However, it was reported (issue #22 on GitHub) that this was
  * happening, so just to be cautious, I will keep using this routine.
  */
-static ssize_t send_all(
-	ws_cli_conn_t *client, const void *buf, size_t len, int flags)
+static ssize_t send_all(ws_cli_conn_t *client, const void *buf, size_t len, int flags)
 {
 	const char *p;
 	ssize_t ret;
@@ -273,7 +272,9 @@ static ssize_t send_all(
 
 	/* Sanity check. */
 	if (!CLIENT_VALID(client))
+	{
 		return (-1);
+	}
 
 	p = buf;
 	/* clang-format off */
@@ -308,7 +309,9 @@ static ssize_t send_all(
 static void close_client(ws_cli_conn_t *client, int lock)
 {
 	if (!CLIENT_VALID(client))
+	{
 		return;
+	}
 
 	set_client_state(client, WS_STATE_CLOSED);
 
@@ -360,9 +363,7 @@ static void *close_timeout(void *p)
 		ts.tv_nsec -= 1000000000;
 	}
 
-	while (conn->state != WS_STATE_CLOSED &&
-		   pthread_cond_timedwait(&conn->cnd_state_close, &conn->mtx_state, &ts) !=
-			   ETIMEDOUT)
+	while (conn->state != WS_STATE_CLOSED && pthread_cond_timedwait(&conn->cnd_state_close, &conn->mtx_state, &ts) != ETIMEDOUT)
 		;
 
 	state = conn->state;
@@ -370,9 +371,11 @@ static void *close_timeout(void *p)
 
 	/* If already closed. */
 	if (state == WS_STATE_CLOSED)
+	{
 		goto quit;
+	}
 
-	DEBUG_THELDUS_WEBSOCKET printf("%s", "Timer expired, closing client \n");
+	DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] Timer expired, closing client \n");
 
 	close_client(conn, 1);
 quit:
@@ -394,12 +397,16 @@ quit:
 static int start_close_timeout(ws_cli_conn_t *client)
 {
 	if (!CLIENT_VALID(client))
+	{
 		return (-1);
+	}
 
 	pthread_mutex_lock(&client->mtx_state);
 
 	if (client->state != WS_STATE_OPEN)
+	{
 		goto out;
+	}
 
 	client->state = WS_STATE_CLOSING;
 
@@ -426,15 +433,24 @@ static void set_client_address(ws_cli_conn_t *client)
 	socklen_t addr_size;
 
 	if (!CLIENT_VALID(client))
+	{
 		return;
+	}
 
 	addr_size = sizeof(struct sockaddr_in);
 
 	if (getpeername(client->client_sock, (struct sockaddr *)&addr, &addr_size) < 0)
+	{
 		return;
+	}
+
+
 
 	memset(client->ip, 0, sizeof(client->ip));
 	inet_ntop(AF_INET, &addr.sin_addr, client->ip, INET_ADDRSTRLEN);
+
+	DEBUG_THELDUS_WEBSOCKET printf("%s %s %s", "[theldus-websocket] set_client_address (not forwarded)", client->ip, "\n");
+
 }
 
 /**
@@ -451,15 +467,19 @@ char *ws_getaddress(ws_cli_conn_t *client)
 {
 	if (!CLIENT_VALID(client))
 	{
+		DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] ws_getaddress!CLIENT_VALID \n");
+
 		return (NULL);
 	}
 
 	if (client->is_using_forwarded_ip_address)
 	{
+		DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] ws_getaddress returning forwarded address \n");
 		return client->forwarded_ip_address;
 	}
 	else
 	{
+		DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] ws_getaddress returning real address \n");
 		return client->ip;
 	}
 }
@@ -486,12 +506,12 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 	unsigned char *response; /* Response data.     */
 	unsigned char frame[10]; /* Frame.             */
 	uint8_t idx_first_rData; /* Index data.        */
-	uint64_t length;         /* Message length.    */
-	int idx_response;        /* Index response.    */
-	ssize_t output;          /* Bytes sent.        */
-	ssize_t send_ret;        /* Ret send function  */
-	uint64_t i;              /* Loop index.        */
-	ws_cli_conn_t *cli;      /* Client.            */
+	uint64_t length; /* Message length.    */
+	int idx_response; /* Index response.    */
+	ssize_t output; /* Bytes sent.        */
+	ssize_t send_ret; /* Ret send function  */
+	uint64_t i; /* Loop index.        */
+	ws_cli_conn_t *cli; /* Client.            */
 
 	frame[0] = (WS_FIN | type);
 	length = (uint64_t)size;
@@ -529,9 +549,11 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 
 	/* Add frame bytes. */
 	idx_response = 0;
-	response = malloc(sizeof(unsigned char) * (idx_first_rData + length + 1));
+	response = calloc(sizeof(unsigned char) * (idx_first_rData + length + 1), 1);
 	if (!response)
+	{
 		return (-1);
+	}
 
 	for (i = 0; i < idx_first_rData; i++)
 	{
@@ -551,7 +573,9 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 	/* Send to the client if there is one. */
 	output = 0;
 	if (client)
+	{
 		output = SEND(client, response, idx_response);
+	}
 
 	/* If no client specified, broadcast to everyone. */
 	if (!client)
@@ -564,7 +588,9 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 			if ((cli->client_sock > -1) && get_client_state(cli) == WS_STATE_OPEN)
 			{
 				if ((send_ret = SEND(cli, response, idx_response)) != -1)
+				{
 					output += send_ret;
+				}
 				else
 				{
 					output = -1;
@@ -608,8 +634,8 @@ static inline void int32_to_ping_msg(int32_t ping_id, uint8_t *msg)
 	/* Encodes as big-endian. */
 	msg[0] = (ping_id >> 24);
 	msg[1] = (ping_id >> 16);
-	msg[2] = (ping_id >>  8);
-	msg[3] = (ping_id >>  0);
+	msg[2] = (ping_id >> 8);
+	msg[3] = (ping_id >> 0);
 }
 
 /**
@@ -628,7 +654,9 @@ static void send_ping_close(ws_cli_conn_t *cli, int threshold, int lock)
 	uint8_t ping_msg[4];
 
 	if (!CLIENT_VALID(cli) || get_client_state(cli) != WS_STATE_OPEN)
+	{
 		return;
+	}
 
 	/* clang-format off */
 	pthread_mutex_lock(&cli->mtx_ping);
@@ -679,11 +707,15 @@ void ws_ping(ws_cli_conn_t *cli, int threshold)
 
 	/* Sanity check. */
 	if (threshold <= 0)
+	{
 		return;
+	}
 
 	/* PING a single client. */
 	if (cli)
+	{
 		send_ping_close(cli, threshold, 1);
+	}
 
 	/* PING broadcast. */
 	else
@@ -743,7 +775,6 @@ int ws_get_state(ws_cli_conn_t *client)
 	return (get_client_state(client));
 }
 
-
 /**
  * @brief Close the client connection for the given @p
  * client with normal close code (1000) and no reason
@@ -764,7 +795,9 @@ int ws_close_client(ws_cli_conn_t *client)
 
 	/* Check if client is a valid and connected client. */
 	if (!CLIENT_VALID(client) || client->client_sock == -1)
+	{
 		return (-1);
+	}
 
 	/*
 	 * Instead of using do_close(), we use this to avoid using
@@ -774,10 +807,9 @@ int ws_close_client(ws_cli_conn_t *client)
 	cc = WS_CLSE_NORMAL;
 	clse_code[0] = (cc >> 8);
 	clse_code[1] = (cc & 0xFF);
-	if (ws_sendframe(
-			client, (const char *)clse_code, sizeof(char) * 2, WS_FR_OP_CLSE) < 0)
+	if (ws_sendframe(client, (const char *)clse_code, sizeof(char) * 2, WS_FR_OP_CLSE) < 0)
 	{
-		DEBUG_THELDUS_WEBSOCKET printf("An error has occurred while sending closing frame!\n");
+		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] An error has occurred while sending closing frame!\n");
 		return (-1);
 	}
 
@@ -803,71 +835,69 @@ int ws_close_client(ws_cli_conn_t *client)
  */
 static inline int is_control_frame(int frame)
 {
-	return (
-		frame == WS_FR_OP_CLSE || frame == WS_FR_OP_PING || frame == WS_FR_OP_PONG);
+	return (frame == WS_FR_OP_CLSE || frame == WS_FR_OP_PING || frame == WS_FR_OP_PONG);
 }
 
 static int do_handshake(struct ws_frame_data *wfd)
 {
 	char *response; /* Handshake response message. */
-	char *p;        /* Last request line pointer.  */
-	ssize_t n;      /* Read/Write bytes.           */
+	char *p; /* Last request line pointer.  */
+	ssize_t n; /* Read/Write bytes.           */
 
 	/* Read the very first client message. */
 	if ((n = RECV(wfd->client, wfd->frm, sizeof(wfd->frm) - 1)) < 0)
+	{
 		return (-1);
+	}
 
 	/* Advance our pointers before the first next_byte(). */
 	p = strstr((const char *)wfd->frm, "\r\n\r\n");
 	if (p == NULL)
 	{
-		DEBUG_THELDUS_WEBSOCKET printf("An empty line with \\r\\n was expected!\n");
+		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] An empty line with \\r\\n was expected!\n");
 		return (-1);
 	}
 	wfd->amt_read = n;
 	wfd->cur_pos = (size_t)((ptrdiff_t)(p - (char *)wfd->frm)) + 4;
 
+	char *forwarded_ip_address = 0;
+	//get forwarded ip address that stunnel sent
+	forwarded_ip_address = get_forwarded_ip_address((char *)wfd->frm);
 
-
-    char* forwarded_ip_address = 0;
-    forwarded_ip_address = get_forwarded_ip_address((char*)wfd->frm);
-
-    if (forwarded_ip_address != 0)
+	if (forwarded_ip_address != 0)
 	{
-        wfd->client->is_using_forwarded_ip_address = true;
-        memset((void*)&wfd->client->forwarded_ip_address[0], 0, INET6_ADDRSTRLEN);
-        memcpy((void*)&wfd->client->forwarded_ip_address[0], forwarded_ip_address, strlen(forwarded_ip_address));
+		wfd->client->is_using_forwarded_ip_address = true;
+		memset((void *)&wfd->client->forwarded_ip_address[0], 0, INET6_ADDRSTRLEN);
+		memcpy((void *)&wfd->client->forwarded_ip_address[0], forwarded_ip_address, strlen(forwarded_ip_address));
 
-        DEBUG_THELDUS_WEBSOCKET printf("%s %s %s","forwarded_ip_address is", wfd->client->forwarded_ip_address ,"\n");
-        free(forwarded_ip_address);
-    }
-    else
-    {
-        DEBUG_THELDUS_WEBSOCKET printf("failed to get forwarded ip address");
- 	}
-
-
-
+		DEBUG_THELDUS_WEBSOCKET printf("%s %s %s", "[theldus-websocket] forwarded_ip_address is", wfd->client->forwarded_ip_address, "\n");
+		free(forwarded_ip_address);
+	}
+	else
+	{
+		wfd->client->is_using_forwarded_ip_address = false;
+		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] failed to get forwarded ip address \n");
+	}
 
 	/* Get response. */
 	if (get_handshake_response((char *)wfd->frm, &response) < 0)
 	{
-		DEBUG_THELDUS_WEBSOCKET printf("Cannot get handshake response, request was: %s\n", wfd->frm);
+		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Cannot get handshake response, request was: %s\n", wfd->frm);
 		return (-1);
 	}
 
 	/* Valid request. */
-	DEBUG_THELDUS_WEBSOCKET printf("Handshaked, response: \n"
-		  "------------------------------------\n"
-		  "%s"
-		  "------------------------------------\n",
-		response);
+	DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Handshaked, response: \n"
+				       "------------------------------------\n"
+				       "%s"
+				       "------------------------------------\n",
+				       response);
 
 	/* Send handshake. */
 	if (SEND(wfd->client, response, strlen(response)) < 0)
 	{
 		free(response);
-		DEBUG_THELDUS_WEBSOCKET printf("As error has occurred while handshaking!\n");
+		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] As error has occurred while handshaking!\n");
 		return (-1);
 	}
 
@@ -879,77 +909,6 @@ static int do_handshake(struct ws_frame_data *wfd)
 	free(response);
 	return (0);
 }
-
-// static int do_handshake(struct ws_frame_data *wfd)
-// {
-// 	char *response; /* Handshake response message. */
-// 	char *p;        /* Last request line pointer.  */
-// 	ssize_t n;      /* Read/Write bytes.           */
-
-// 	/* Read the very first client message. */
-// 	if ((n = RECV(wfd->client, wfd->frm, sizeof(wfd->frm) - 1)) < 0)
-// 		return (-1);
-
-// 	/* Advance our pointers before the first next_byte(). */
-// 	p = strstr((const char *)wfd->frm, "\r\n\r\n");
-// 	if (p == NULL)
-// 	{
-// 		DEBUG_THELDUS_WEBSOCKET printf("An empty line with \\r\\n was expected!\n");
-// 		return (-1);
-// 	}
-// 	wfd->amt_read = n;
-// 	wfd->cur_pos = (size_t)((ptrdiff_t)(p - (char *)wfd->frm)) + 4;
-
-//         char* forwarded_ip_address = 0;
-//         forwarded_ip_address = get_forwarded_ip_address((char*)wfd->frm);
-
-//         if (forwarded_ip_address != 0)
-//         {
-//                 wfd->client->is_using_forwarded_ip_address = true;
-//                 memset((void*)&wfd->client->forwarded_ip_address[0], 0, INET6_ADDRSTRLEN);
-//                 memcpy((void*)&wfd->client->forwarded_ip_address[0], forwarded_ip_address, strlen(forwarded_ip_address));
-
-//                 DEBUG_THELDUS_WEBSOCKET printf("%s %s %s","forwarded_ip_address is", wfd->client->forwarded_ip_address ,"\n");
-//                 free(forwarded_ip_address);
-//         }
-//         else
-//         {
-//                 DEBUG_THELDUS_WEBSOCKET printf("failed to get forwarded ip address");
-//         }
-
-
-
-// 	/* Get response. */
-// 	if (get_handshake_response((char *)wfd->frm, &response) < 0)
-// 	{
-// 		DEBUG_THELDUS_WEBSOCKET("%s %s %s", "Cannot get handshake response, request was: %s\n", wfd->frm, "\n");
-// 		return (-1);
-// 	}
-
-
-// 	/* Valid request. */
-// 	DEBUG_THELDUS_WEBSOCKET printf("Handshaked, response: \n"
-// 		  "------------------------------------\n"
-// 		  "%s"
-// 		  "------------------------------------\n",
-// 		response);
-
-// 	/* Send handshake. */
-// 	if (SEND(wfd->client, response, strlen(response)) < 0)
-// 	{
-// 		free(response);
-// 		DEBUG_THELDUS_WEBSOCKET printf("As error has occurred while handshaking!\n");
-// 		return (-1);
-// 	}
-
-// 	/* Change state. */
-// 	set_client_state(wfd->client, WS_STATE_OPEN);
-
-// 	/* Trigger events and clean up buffers. */
-// 	wfd->client->ws_srv.evs.onopen(wfd->client->client_id);
-// 	free(response);
-// 	return (0);
-// }
 
 /**
  * @brief Sends a close frame, accordingly with the @p close_code
@@ -976,29 +935,33 @@ static int do_close(struct ws_frame_data *wfd, int close_code)
 
 	/* If empty or have a close reason, just re-send. */
 	if (wfd->frame_size == 0 || wfd->frame_size > 2)
+	{
 		goto send;
+	}
 
 	/* Parse close code and check if valid, if not, we issue an protocol error.
 	 */
 	if (wfd->frame_size == 1)
+	{
 		cc = wfd->msg_ctrl[0];
+	}
 	else
+	{
 		cc = ((int)wfd->msg_ctrl[0]) << 8 | wfd->msg_ctrl[1];
+	}
 
 	/* Check if it's not valid, if so, we send a protocol error (1002). */
-	if ((cc < 1000 || cc > 1003) && (cc < 1007 || cc > 1011) &&
-		(cc < 3000 || cc > 4999))
+	if ((cc < 1000 || cc > 1003) && (cc < 1007 || cc > 1011) && (cc < 3000 || cc > 4999))
 	{
 		cc = WS_CLSE_PROTERR;
 
-	custom_close:
+custom_close:
 		wfd->msg_ctrl[0] = (cc >> 8);
 		wfd->msg_ctrl[1] = (cc & 0xFF);
 
-		if (ws_sendframe(wfd->client, (const char *)wfd->msg_ctrl, sizeof(char) * 2,
-				WS_FR_OP_CLSE) < 0)
+		if (ws_sendframe(wfd->client, (const char *)wfd->msg_ctrl, sizeof(char) * 2, WS_FR_OP_CLSE) < 0)
 		{
-			DEBUG_THELDUS_WEBSOCKET printf("An error has occurred while sending closing frame!\n");
+			DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] An error has occurred while sending closing frame!\n");
 			return (-1);
 		}
 		return (0);
@@ -1006,10 +969,9 @@ static int do_close(struct ws_frame_data *wfd, int close_code)
 
 	/* Send the data inside wfd->msg_ctrl. */
 send:
-	if (ws_sendframe(wfd->client, (const char *)wfd->msg_ctrl, wfd->frame_size,
-			WS_FR_OP_CLSE) < 0)
+	if (ws_sendframe(wfd->client, (const char *)wfd->msg_ctrl, wfd->frame_size, WS_FR_OP_CLSE) < 0)
 	{
-		DEBUG_THELDUS_WEBSOCKET printf("An error has occurred while sending closing frame!\n");
+		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] An error has occurred while sending closing frame!\n");
 		return (-1);
 	}
 	return (0);
@@ -1034,11 +996,10 @@ send:
  */
 static int do_pong(struct ws_frame_data *wfd, uint64_t frame_size)
 {
-	if (ws_sendframe(
-			wfd->client, (const char *)wfd->msg_ctrl, frame_size, WS_FR_OP_PONG) < 0)
+	if (ws_sendframe(wfd->client, (const char *)wfd->msg_ctrl, frame_size, WS_FR_OP_PONG) < 0)
 	{
 		wfd->error = 1;
-		DEBUG_THELDUS_WEBSOCKET printf("An error has occurred while ponging!\n");
+		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] An error has occurred while ponging!\n");
 		return (-1);
 	}
 	return (0);
@@ -1065,7 +1026,7 @@ static inline int next_byte(struct ws_frame_data *wfd)
 		if ((n = RECV(wfd->client, wfd->frm, sizeof(wfd->frm))) <= 0)
 		{
 			wfd->error = 1;
-			DEBUG_THELDUS_WEBSOCKET printf("An error has occurred while trying to read next byte\n");
+			DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] An error has occurred while trying to read next byte\n");
 			return (-1);
 		}
 		wfd->amt_read = (size_t)n;
@@ -1119,36 +1080,27 @@ static int skip_frame(struct ws_frame_data *wfd, uint64_t frame_size)
  * @attention This is part of the internal API and is documented just
  * for completeness.
  */
-static int read_frame(struct ws_frame_data *wfd,
-	int opcode,
-	unsigned char **buf,
-	uint64_t *frame_length,
-	uint64_t *frame_size,
-	uint64_t *msg_idx,
-	uint8_t *masks,
-	int is_fin)
+static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf, uint64_t *frame_length, uint64_t *frame_size, uint64_t *msg_idx, uint8_t *masks, int is_fin)
 {
 	unsigned char *tmp; /* Tmp message.     */
 	unsigned char *msg; /* Current message. */
-	int cur_byte;       /* Curr byte read.  */
-	uint64_t i;         /* Loop index.      */
+	int cur_byte; /* Curr byte read.  */
+	uint64_t i; /* Loop index.      */
 
 	msg = *buf;
 
 	/* Decode masks and length for 16-bit messages. */
 	if (*frame_length == 126)
+	{
 		*frame_length = (((uint64_t)next_byte(wfd)) << 8) | next_byte(wfd);
+	}
 
 	/* 64-bit messages. */
 	else if (*frame_length == 127)
 	{
-		*frame_length =
-			(((uint64_t)next_byte(wfd)) << 56) | /* frame[2]. */
-			(((uint64_t)next_byte(wfd)) << 48) | /* frame[3]. */
-			(((uint64_t)next_byte(wfd)) << 40) | (((uint64_t)next_byte(wfd)) << 32) |
-			(((uint64_t)next_byte(wfd)) << 24) | (((uint64_t)next_byte(wfd)) << 16) |
-			(((uint64_t)next_byte(wfd)) << 8) |
-			(((uint64_t)next_byte(wfd))); /* frame[9]. */
+		*frame_length = (((uint64_t)next_byte(wfd)) << 56) | /* frame[2]. */
+				(((uint64_t)next_byte(wfd)) << 48) | /* frame[3]. */
+				(((uint64_t)next_byte(wfd)) << 40) | (((uint64_t)next_byte(wfd)) << 32) | (((uint64_t)next_byte(wfd)) << 24) | (((uint64_t)next_byte(wfd)) << 16) | (((uint64_t)next_byte(wfd)) << 8) | (((uint64_t)next_byte(wfd))); /* frame[9]. */
 	}
 
 	*frame_size += *frame_length;
@@ -1163,9 +1115,9 @@ static int read_frame(struct ws_frame_data *wfd,
 	 */
 	if (*frame_size > MAX_FRAME_LENGTH)
 	{
-		DEBUG_THELDUS_WEBSOCKET printf("Current frame from client %d, exceeds the maximum\n"
-			  "amount of bytes allowed (%" PRId64 "/%d)!",
-			wfd->client->client_sock, *frame_size + *frame_length, MAX_FRAME_LENGTH);
+		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Current frame from client %d, exceeds the maximum\n"
+					       "amount of bytes allowed (%" PRId64 "/%d)!",
+					       wfd->client->client_sock, *frame_size + *frame_length, MAX_FRAME_LENGTH);
 
 		wfd->error = 1;
 		return (-1);
@@ -1187,7 +1139,9 @@ static int read_frame(struct ws_frame_data *wfd,
 	 * we do here.
 	 */
 	if (wfd->error)
+	{
 		return (-1);
+	}
 
 	/*
 	 * Allocate memory.
@@ -1202,12 +1156,10 @@ static int read_frame(struct ws_frame_data *wfd,
 	{
 		if (!is_control_frame(opcode))
 		{
-			tmp = realloc(
-				msg, sizeof(unsigned char) * (*msg_idx + *frame_length + is_fin));
+			tmp = realloc(msg, sizeof(unsigned char) * (*msg_idx + *frame_length + is_fin));
 			if (!tmp)
 			{
-				DEBUG_THELDUS_WEBSOCKET printf("Cannot allocate memory, requested: % " PRId64 "\n",
-					(*msg_idx + *frame_length + is_fin));
+				DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Cannot allocate memory, requested: % " PRId64 "\n", (*msg_idx + *frame_length + is_fin));
 
 				wfd->error = 1;
 				return (-1);
@@ -1222,7 +1174,9 @@ static int read_frame(struct ws_frame_data *wfd,
 			/* We were able to read? .*/
 			cur_byte = next_byte(wfd);
 			if (cur_byte == -1)
+			{
 				return (-1);
+			}
 
 			msg[*msg_idx] = cur_byte ^ masks[i % 4];
 		}
@@ -1237,8 +1191,7 @@ static int read_frame(struct ws_frame_data *wfd,
 			tmp = realloc(msg, sizeof(unsigned char) * (*msg_idx + 1));
 			if (!tmp)
 			{
-				DEBUG_THELDUS_WEBSOCKET printf("Cannot allocate memory, requested: %" PRId64 "\n",
-					(*msg_idx + 1));
+				DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Cannot allocate memory, requested: %" PRId64 "\n", (*msg_idx + 1));
 
 				wfd->error = 1;
 				return (-1);
@@ -1267,20 +1220,20 @@ static int next_frame(struct ws_frame_data *wfd)
 {
 	unsigned char *msg_data; /* Data frame.                */
 	unsigned char *msg_ctrl; /* Control frame.             */
-	uint8_t masks_data[4];   /* Masks data frame array.    */
-	uint8_t masks_ctrl[4];   /* Masks control frame array. */
-	uint64_t msg_idx_data;   /* Current msg index.         */
-	uint64_t msg_idx_ctrl;   /* Current msg index.         */
-	uint64_t frame_length;   /* Frame length.              */
-	uint64_t frame_size;     /* Current frame size.        */
-    #ifdef VALIDATE_UTF8
-	uint32_t utf8_state;     /* Current UTF-8 state.       */
-    #endif
-	int32_t pong_id;         /* Current PONG id.           */
-	uint8_t opcode;          /* Frame opcode.              */
-	uint8_t is_fin;          /* Is FIN frame flag.         */
-	uint8_t mask;            /* Mask.                      */
-	int cur_byte;            /* Current frame byte.        */
+	uint8_t masks_data[4]; /* Masks data frame array.    */
+	uint8_t masks_ctrl[4]; /* Masks control frame array. */
+	uint64_t msg_idx_data; /* Current msg index.         */
+	uint64_t msg_idx_ctrl; /* Current msg index.         */
+	uint64_t frame_length; /* Frame length.              */
+	uint64_t frame_size; /* Current frame size.        */
+#ifdef VALIDATE_UTF8
+	uint32_t utf8_state; /* Current UTF-8 state.       */
+#endif
+	int32_t pong_id; /* Current PONG id.           */
+	uint8_t opcode; /* Frame opcode.              */
+	uint8_t is_fin; /* Is FIN frame flag.         */
+	uint8_t mask; /* Mask.                      */
+	int cur_byte; /* Current frame byte.        */
 
 	msg_data = NULL;
 	msg_ctrl = wfd->msg_ctrl;
@@ -1292,9 +1245,9 @@ static int next_frame(struct ws_frame_data *wfd)
 	wfd->frame_size = 0;
 	wfd->frame_type = -1;
 	wfd->msg = NULL;
-    #ifdef VALIDATE_UTF8
+#ifdef VALIDATE_UTF8
 	utf8_state = UTF8_ACCEPT;
-    #endif
+#endif
 
 	/* Read until find a FIN or a unsupported frame. */
 	do
@@ -1311,7 +1264,9 @@ static int next_frame(struct ws_frame_data *wfd)
 		 */
 		cur_byte = next_byte(wfd);
 		if (cur_byte == -1)
+		{
 			return (-1);
+		}
 
 		is_fin = (cur_byte & 0xFF) >> WS_FIN_SHIFT;
 		opcode = (cur_byte & 0xF);
@@ -1324,7 +1279,7 @@ static int next_frame(struct ws_frame_data *wfd)
 		 */
 		if (cur_byte & 0x70)
 		{
-			DEBUG_THELDUS_WEBSOCKET printf("RSV is set while wsServer do not negotiate extensions!\n");
+			DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] RSV is set while wsServer do not negotiate extensions!\n");
 			wfd->error = 1;
 			break;
 		}
@@ -1343,20 +1298,15 @@ static int next_frame(struct ws_frame_data *wfd)
 		 * so the only possibility here is a previous non-FIN data
 		 * frame, ;-).
 		 */
-		if ((wfd->frame_type == -1 && opcode == WS_FR_OP_CONT) ||
-			(wfd->frame_type != -1 && !is_control_frame(opcode) &&
-				opcode != WS_FR_OP_CONT))
+		if ((wfd->frame_type == -1 && opcode == WS_FR_OP_CONT) || (wfd->frame_type != -1 && !is_control_frame(opcode) && opcode != WS_FR_OP_CONT))
 		{
-			DEBUG_THELDUS_WEBSOCKET printf("Unexpected frame was received!, opcode: %d, previous: %d\n",
-				opcode, wfd->frame_type);
+			DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Unexpected frame was received!, opcode: %d, previous: %d\n", opcode, wfd->frame_type);
 			wfd->error = 1;
 			break;
 		}
 
 		/* Check if one of the valid opcodes. */
-		if (opcode == WS_FR_OP_TXT || opcode == WS_FR_OP_BIN ||
-			opcode == WS_FR_OP_CONT || opcode == WS_FR_OP_PING ||
-			opcode == WS_FR_OP_PONG || opcode == WS_FR_OP_CLSE)
+		if (opcode == WS_FR_OP_TXT || opcode == WS_FR_OP_BIN || opcode == WS_FR_OP_CONT || opcode == WS_FR_OP_PING || opcode == WS_FR_OP_PONG || opcode == WS_FR_OP_CLSE)
 		{
 			/*
 			 * Check our current state: if CLOSING, we only accept close
@@ -1366,18 +1316,20 @@ static int next_frame(struct ws_frame_data *wfd)
 			 * to close the client connection, we should terminate
 			 * immediately.
 			 */
-			if (get_client_state(wfd->client) == WS_STATE_CLOSING &&
-				opcode != WS_FR_OP_CLSE)
+			if (get_client_state(wfd->client) == WS_STATE_CLOSING && opcode != WS_FR_OP_CLSE)
 			{
-				DEBUG_THELDUS_WEBSOCKET printf("Unexpected frame received, expected CLOSE (%d), ""received: (%d)",
-					WS_FR_OP_CLSE, opcode);
+				DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Unexpected frame received, expected CLOSE (%d), "
+							       "received: (%d)",
+							       WS_FR_OP_CLSE, opcode);
 				wfd->error = 1;
 				break;
 			}
 
 			/* Only change frame type if not a CONT frame. */
 			if (opcode != WS_FR_OP_CONT && !is_control_frame(opcode))
+			{
 				wfd->frame_type = opcode;
+			}
 
 			mask = next_byte(wfd);
 			frame_length = mask & 0x7F;
@@ -1390,18 +1342,18 @@ static int next_frame(struct ws_frame_data *wfd)
 			 */
 			if (is_control_frame(opcode) && (!is_fin || frame_length > 125))
 			{
-				DEBUG_THELDUS_WEBSOCKET printf("%s","Control frame bigger than 125 octets or not a FIN frame!\n");
+				DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] Control frame bigger than 125 octets or not a FIN frame!\n");
 				wfd->error = 1;
 				break;
 			}
 
 			/* Normal data frames. */
-			if (opcode == WS_FR_OP_TXT || opcode == WS_FR_OP_BIN ||
-				opcode == WS_FR_OP_CONT)
+			if (opcode == WS_FR_OP_TXT || opcode == WS_FR_OP_BIN || opcode == WS_FR_OP_CONT)
 			{
-				if (read_frame(wfd, opcode, &msg_data, &frame_length,
-						&wfd->frame_size, &msg_idx_data, masks_data, is_fin) < 0)
+				if (read_frame(wfd, opcode, &msg_data, &frame_length, &wfd->frame_size, &msg_idx_data, masks_data, is_fin) < 0)
+				{
 					break;
+				}
 
 #ifdef VALIDATE_UTF8
 				/* UTF-8 Validate partial (or not) frame. */
@@ -1409,11 +1361,9 @@ static int next_frame(struct ws_frame_data *wfd)
 				{
 					if (is_fin)
 					{
-						if (is_utf8_len_state(
-								msg_data + (msg_idx_data - frame_length),
-								frame_length, utf8_state) != UTF8_ACCEPT)
+						if (is_utf8_len_state(msg_data + (msg_idx_data - frame_length), frame_length, utf8_state) != UTF8_ACCEPT)
 						{
-							DEBUG_THELDUS_WEBSOCKET printf("%s","Dropping invalid complete message!\n");
+							DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] Dropping invalid complete message!\n");
 							wfd->error = 1;
 							do_close(wfd, WS_CLSE_INVUTF8);
 						}
@@ -1422,14 +1372,12 @@ static int next_frame(struct ws_frame_data *wfd)
 					/* Check current state for a CONT or initial TXT frame. */
 					else
 					{
-						utf8_state = is_utf8_len_state(
-							msg_data + (msg_idx_data - frame_length), frame_length,
-							utf8_state);
+						utf8_state = is_utf8_len_state(msg_data + (msg_idx_data - frame_length), frame_length, utf8_state);
 
 						/* We can be in any state, except reject. */
 						if (utf8_state == UTF8_REJECT)
 						{
-							DEBUG_THELDUS_WEBSOCKET printf("%s","Dropping invalid cont/initial frame!\n");
+							DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] Dropping invalid cont/initial frame!\n");
 							wfd->error = 1;
 							do_close(wfd, WS_CLSE_INVUTF8);
 						}
@@ -1446,15 +1394,18 @@ static int next_frame(struct ws_frame_data *wfd)
 			 */
 			else if (opcode == WS_FR_OP_PONG)
 			{
-				if (read_frame(wfd, opcode, &msg_ctrl, &frame_length, &frame_size,
-						&msg_idx_ctrl, masks_ctrl, is_fin) < 0)
+				if (read_frame(wfd, opcode, &msg_ctrl, &frame_length, &frame_size, &msg_idx_ctrl, masks_ctrl, is_fin) < 0)
+				{
 					break;
+				}
 
 				is_fin = 0;
 
 				/* If there is no content and/or differs the size, ignore it. */
 				if (frame_size != sizeof(wfd->client->last_pong_id))
+				{
 					continue;
+				}
 
 				/*
 				 * Our PONG id should be positive and smaller than our
@@ -1479,12 +1430,15 @@ static int next_frame(struct ws_frame_data *wfd)
 			/* We should answer to a PING frame as soon as possible. */
 			else if (opcode == WS_FR_OP_PING)
 			{
-				if (read_frame(wfd, opcode, &msg_ctrl, &frame_length, &frame_size,
-						&msg_idx_ctrl, masks_ctrl, is_fin) < 0)
+				if (read_frame(wfd, opcode, &msg_ctrl, &frame_length, &frame_size, &msg_idx_ctrl, masks_ctrl, is_fin) < 0)
+				{
 					break;
+				}
 
 				if (do_pong(wfd, frame_size) < 0)
+				{
 					break;
+				}
 
 				/* Quick hack to keep our loop. */
 				is_fin = 0;
@@ -1493,15 +1447,16 @@ static int next_frame(struct ws_frame_data *wfd)
 			/* We interrupt the loop as soon as we find a CLOSE frame. */
 			else
 			{
-				if (read_frame(wfd, opcode, &msg_ctrl, &frame_length, &frame_size,
-						&msg_idx_ctrl, masks_ctrl, is_fin) < 0)
+				if (read_frame(wfd, opcode, &msg_ctrl, &frame_length, &frame_size, &msg_idx_ctrl, masks_ctrl, is_fin) < 0)
+				{
 					break;
+				}
 
 #ifdef VALIDATE_UTF8
 				/* If there is a close reason, check if it is UTF-8 valid. */
 				if (frame_size > 2 && !is_utf8_len(msg_ctrl + 2, frame_size - 2))
 				{
-					DEBUG_THELDUS_WEBSOCKET printf("%s","Invalid close frame payload reason! (not UTF-8)\n");
+					DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] Invalid close frame payload reason! (not UTF-8)\n");
 					wfd->error = 1;
 					break;
 				}
@@ -1519,7 +1474,7 @@ static int next_frame(struct ws_frame_data *wfd)
 		/* Anything else (unsupported frames). */
 		else
 		{
-			DEBUG_THELDUS_WEBSOCKET printf("Unsupported frame opcode: %d\n", opcode);
+			DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Unsupported frame opcode: %d\n", opcode);
 			/* We should consider as error receive an unknown frame. */
 			wfd->frame_type = opcode;
 			wfd->error = 1;
@@ -1555,8 +1510,8 @@ static int next_frame(struct ws_frame_data *wfd)
 static void *ws_establishconnection(void *vclient)
 {
 	struct ws_frame_data wfd; /* WebSocket frame data.   */
-	ws_cli_conn_t *client;    /* Client structure.       */
-	int clse_thrd;            /* Time-out close thread.  */
+	ws_cli_conn_t *client; /* Client structure.       */
+	int clse_thrd; /* Time-out close thread.  */
 
 	client = vclient;
 
@@ -1566,14 +1521,15 @@ static void *ws_establishconnection(void *vclient)
 
 	/* Do handshake. */
 	if (do_handshake(&wfd) < 0)
+	{
 		goto closed;
+	}
 
 	/* Read next frame until client disconnects or an error occur. */
 	while (next_frame(&wfd) >= 0)
 	{
 		/* Text/binary event. */
-		if ((wfd.frame_type == WS_FR_OP_TXT || wfd.frame_type == WS_FR_OP_BIN) &&
-			!wfd.error)
+		if ((wfd.frame_type == WS_FR_OP_TXT || wfd.frame_type == WS_FR_OP_BIN) && !wfd.error)
 		{
 			cli_events.onmessage(client, wfd.msg, wfd.frame_size, wfd.frame_type);
 		}
@@ -1619,7 +1575,9 @@ closed:
 
 	/* Close connectin properly. */
 	if (get_client_state(client) != WS_STATE_CLOSED)
+	{
 		close_client(client, 1);
+	}
 
 	return (vclient);
 }
@@ -1639,23 +1597,25 @@ closed:
 static void *ws_accept(void *data)
 {
 	struct sockaddr_in client; /* Client.                */
-	pthread_t client_thread;   /* Client thread.         */
-	struct timeval time;       /* Client socket timeout. */
-	int new_sock;              /* New opened connection. */
-	int sock;                  /* Server sock.           */
-	int len;                   /* Length of sockaddr.    */
-	int i;                     /* Loop index.            */
+	pthread_t client_thread; /* Client thread.         */
+	struct timeval time; /* Client socket timeout. */
+	int new_sock; /* New opened connection. */
+	int sock; /* Server sock.           */
+	int len; /* Length of sockaddr.    */
+	int i; /* Loop index.            */
 
 	sock = *(int *)data;
 	len = sizeof(struct sockaddr_in);
 
 	while (1)
 	{
-		DEBUG_THELDUS_WEBSOCKET printf("%s", "ws_accept \n");
+		DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] ws_accept \n");
 		/* Accept. */
 		new_sock = accept(sock, (struct sockaddr *)&client, (socklen_t *)&len);
 		if (new_sock < 0)
-			panic("Error on accepting connections..");
+		{
+			panic("[theldus-websocket] Error on accepting connections..");
+		}
 
 		if (timeout)
 		{
@@ -1670,7 +1630,7 @@ static void *ws_accept(void *data)
 			 * See:
 			 *   https://linux.die.net/man/3/setsockopt
 			 */
-			setsockopt(new_sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&time,sizeof(struct timeval));
+			setsockopt(new_sock, SOL_SOCKET, SO_SNDTIMEO, (const char *)&time, sizeof(struct timeval));
 		}
 
 		/* Adds client socket to socks list. */
@@ -1687,13 +1647,21 @@ static void *ws_accept(void *data)
 				set_client_address(&client_socks[i]);
 
 				if (pthread_mutex_init(&client_socks[i].mtx_state, NULL))
+				{
 					panic("Error on allocating close mutex");
+				}
 				if (pthread_cond_init(&client_socks[i].cnd_state_close, NULL))
+				{
 					panic("Error on allocating condition var\n");
+				}
 				if (pthread_mutex_init(&client_socks[i].mtx_snd, NULL))
+				{
 					panic("Error on allocating send mutex");
+				}
 				if (pthread_mutex_init(&client_socks[i].mtx_ping, NULL))
+				{
 					panic("Error on allocating ping/pong mutex");
+				}
 				break;
 			}
 		}
@@ -1702,14 +1670,17 @@ static void *ws_accept(void *data)
 		/* Client socket added to socks list ? */
 		if (i != MAX_CLIENTS)
 		{
-			if (pthread_create(
-					&client_thread, NULL, ws_establishconnection, &client_socks[i]))
+			if (pthread_create(&client_thread, NULL, ws_establishconnection, &client_socks[i]))
+			{
 				panic("Could not create the client thread!");
+			}
 
 			pthread_detach(client_thread);
 		}
 		else
+		{
 			close_socket(new_sock);
+		}
 	}
 	free(data);
 	return (data);
@@ -1731,13 +1702,12 @@ static void *ws_accept(void *data)
  * @return If @p thread_loop != 0, returns 0. Otherwise, never
  * returns.
  */
-int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop,
-	uint32_t timeout_ms)
+int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop, uint32_t timeout_ms)
 {
 	struct sockaddr_in server; /* Server.                */
-	pthread_t accept_thread;   /* Accept thread.         */
-	int reuse;                 /* Socket option.         */
-	int *sock;                 /* Client sock.           */
+	pthread_t accept_thread; /* Accept thread.         */
+	int reuse; /* Socket option.         */
+	int *sock; /* Client sock.           */
 
 	timeout = timeout_ms;
 
@@ -1746,12 +1716,16 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop,
 
 	/* Checks if the event list is a valid pointer. */
 	if (evs == NULL)
+	{
 		panic("Invalid event list!");
+	}
 
 	/* Allocates our sock data. */
-	sock = malloc(sizeof(*sock));
+	sock = calloc(sizeof(*sock), 1);
 	if (!sock)
+	{
 		panic("Unable to allocate sock, out of memory!\n");
+	}
 
 	/* Copy events. */
 	memcpy(&cli_events, evs, sizeof(struct ws_events));
@@ -1759,7 +1733,9 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop,
 #ifdef _WIN32
 	WSADATA wsaData;
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+	{
 		panic("WSAStartup failed!");
+	}
 
 	/**
 	 * Sets stdout to be non-buffered.
@@ -1777,14 +1753,15 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop,
 	/* Create socket. */
 	*sock = socket(AF_INET, SOCK_STREAM, 0);
 	if (*sock < 0)
-		panic("Could not create socket");
+	{
+		panic("[theldus-websocket] Could not create socket");
+	}
 
 	/* Reuse previous address. */
 	reuse = 1;
-	if (setsockopt(*sock, SOL_SOCKET, SO_REUSEADDR, (const char *)&reuse,
-			sizeof(reuse)) < 0)
+	if (setsockopt(*sock, SOL_SOCKET, SO_REUSEADDR, (const char *)&reuse, sizeof(reuse)) < 0)
 	{
-		panic("setsockopt(SO_REUSEADDR) failed");
+		panic("[theldus-websocket] setsockopt(SO_REUSEADDR) failed");
 	}
 
 	/* Prepare the sockaddr_in structure. */
@@ -1794,26 +1771,32 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop,
 
 	/* Bind. */
 	if (bind(*sock, (struct sockaddr *)&server, sizeof(server)) < 0)
-		panic("Bind failed");
+	{
+		panic("[theldus-websocket] Bind failed");
+	}
 
 	/* Listen. */
 	listen(*sock, MAX_CLIENTS);
 
 	/* Wait for incoming connections. */
-	DEBUG_THELDUS_WEBSOCKET printf("Waiting for incoming connections..!.\n");
+	DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Waiting for incoming connections..!.\n");
 	memset(client_socks, -1, sizeof(client_socks));
 
 	/* Accept connections. */
 	if (!thread_loop)
+	{
 		ws_accept((void *)sock);
+	}
 	else
 	{
 		if (pthread_create(&accept_thread, NULL, ws_accept, (void *)sock))
-			panic("Could not create the client thread!");
+		{
+			panic("[theldus-websocket] Could not create the client thread!");
+		}
 		pthread_detach(accept_thread);
 	}
 
-	DEBUG_THELDUS_WEBSOCKET printf("websocket started \n");
+	DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] websocket started \n");
 
 	return (0);
 }
@@ -1842,7 +1825,9 @@ int ws_file(struct ws_events *evs, const char *file)
 	int sock;
 	sock = open(file, O_RDONLY);
 	if (sock < 0)
+	{
 		panic("Invalid file\n");
+	}
 
 	/* Copy events. */
 	memcpy(&cli_events, evs, sizeof(struct ws_events));
@@ -1857,13 +1842,21 @@ int ws_file(struct ws_events *evs, const char *file)
 
 	/* Initialize mutexes. */
 	if (pthread_mutex_init(&client_socks[0].mtx_state, NULL))
+	{
 		panic("Error on allocating close mutex");
+	}
 	if (pthread_cond_init(&client_socks[0].cnd_state_close, NULL))
+	{
 		panic("Error on allocating condition var\n");
+	}
 	if (pthread_mutex_init(&client_socks[0].mtx_snd, NULL))
+	{
 		panic("Error on allocating send mutex");
+	}
 	if (pthread_mutex_init(&client_socks[0].mtx_ping, NULL))
+	{
 		panic("Error on allocating ping/pong mutex");
+	}
 
 	ws_establishconnection(&client_socks[0]);
 	return (0);

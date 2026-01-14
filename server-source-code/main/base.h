@@ -62,6 +62,7 @@ typedef struct server_settings
 	boole is_restrict_channel_deletion_creation_editing_to_admin_active;
 	boole is_display_country_flags_active;
 	boole is_display_admin_tag_active;
+	boole is_idle_mode_allowed;
 } server_settings_t;
 
 typedef enum audio_state_e
@@ -113,6 +114,7 @@ typedef struct client_t
 	char country_iso_code[3];
 	int *tag_ids; //must be int because function of other library depends on this being int
 	//int tag_ids_count;
+	boole is_idle;
 } client_t;
 
 //channel id is same as channels index in array

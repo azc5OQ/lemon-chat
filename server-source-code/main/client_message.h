@@ -30,5 +30,11 @@ void client_msg__process_add_tag_to_client_message(cJSON *json_root, int sender_
 void client_msg__process_remove_tag_from_client_message(cJSON *json_root, int sender_client_index);
 void client_msg__process_set_server_settings_icon_upload(cJSON *json_root, int sender_client_index);
 void client_msg__process_set_server_settings_add_new_tag(cJSON *json_root, int sender_client_index);
+void client_msg__process_call_idle_client_message(cJSON *json_root, int sender_client_index);
+void client_msg__process_go_to_idle_mode_request(cJSON *json_root, int sender_client_index);
+void client_msg__process_come_back_from_idle_mode_request(cJSON *json_root, int sender_client_index);
+void client_msg__process_create_new_webrtc_datachannel_connection(cJSON *json_root, int sender_client_index);
+void client_msg__process_kick_request(cJSON *json_root, int sender_client_index);
+void client_msg__process_ban_request(cJSON *json_root, int sender_client_index);
 
 #endif //TEST0S_SOLUTION_CLIENT_MESSAGE_H

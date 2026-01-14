@@ -35,10 +35,12 @@ command ()
 echo $build_directory
 
 
+
 #QUESTION = "do you wish to delete any files?
 
+
 ROOT_DIRECTORY="$PWD"
- 
+
 
 rm -f -v -r $ROOT_DIRECTORY/../buildresult/
 

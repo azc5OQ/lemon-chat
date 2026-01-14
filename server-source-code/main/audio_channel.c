@@ -36,6 +36,12 @@ char *rtcGatheringState_print(rtcGatheringState state);
 
 //bol som nuteny odstranit z audio_channel.c rwlocky, pretoze, sposobovali zamrzanie.
 
+
+//helper function
+
+
+
+
 /**
  * @brief error callback
  *
@@ -164,7 +170,7 @@ void RTC_API peerconnection_on_datachannel_callback(int pc, int dc, void *ptr)
 
 		if (rtcGetDataChannelLabel(dc, buffer, 256) >= 0)
 		{
-			DBG_AUDIOCHANNEL_WEBRTC log_info("DataChannel %s: Received with label \"%s\"\n", "answerer", buffer);
+			DBG_AUDIOCHANNEL_WEBRTC log_info("peerconnection_on_datachannel_callback DataChannel %s: Received with label \"%s\"\n", "answerer", buffer);
 		}
 	}
 
@@ -355,18 +361,20 @@ void RTC_API datachannel_on_open_callback(int id, void *ptr)
  */
 void RTC_API datachannel_on_closed_callback(int id, void *ptr)
 {
+	webrtc_peer_t *peer;
+	int client_id;
+
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s %s", "datachannel_on_closed_callback", "\n");
 
 	//toremove--pthread_rwlock_wrlock(&webrtc_muggles_rwlock_guard);
 
-	webrtc_peer_t *peer = (webrtc_peer_t *)ptr;
+	peer = (webrtc_peer_t *)ptr;
 
 	if (peer != NULL_POINTER)
 	{
-		peer->is_existing = false;
-		peer->connected = false;
 		clib__null_memory(peer, sizeof(webrtc_peer_t));
 	}
+
 	//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
 }
 
@@ -428,7 +436,7 @@ void RTC_API datachannel_on_message_callback(int id, const char *message, int si
 					continue;
 				}
 
-				DBG_AUDIOCHANNEL_WEBRTC log_info("%s %s %s", "sending data to ", clients_array[i].username, "\n");
+				//DBG_AUDIOCHANNEL_WEBRTC log_info("%s %s %s", "sending data to ", clients_array[i].username, "\n");
 
 				void *message1 = (void *)memorymanager__allocate(size + 5, MEMALLOC_AUDIOCHANNEL_ONMESSAGE);
 				((int *)message1)[0] = peer_sender->client_id;
@@ -738,6 +746,12 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client)
 		goto label_audio_channel__initialize_webrtc_datachannel_connection_end;
 	}
 
+	if (client->is_existing == FALSE || client->is_authenticated == FALSE)
+	{
+		result = FALSE;
+		goto label_audio_channel__initialize_webrtc_datachannel_connection_end;
+	}
+
 	//rtcInitLogger(RTC_LOG_VERBOSE, NULL);
 
 	rtcConfiguration config;
@@ -758,6 +772,12 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client)
 	peer->peer_connection_handle = rtcCreatePeerConnection(&config);
 	peer->p_ws_connection = client->p_ws_connection;
 	peer->client_id = client->client_id;
+	peer->channel_id = 0;
+	peer->is_sending_audio_right_now = FALSE;
+	peer->data_channel_handle = 0;
+	peer->last_sent_audio_state = 0;
+
+	clib__null_memory(peer->dh_shared_secret, 1000);
 	clib__copy_memory(client->dh_shared_secret, peer->dh_shared_secret, clib__utf8_string_length(client->dh_shared_secret), 1000);
 
 	if (peer->peer_connection_handle == NULL_POINTER)
@@ -787,7 +807,8 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client)
 
 	clib__null_memory(&init, sizeof(rtcDataChannelInit));
 	init.reliability.unreliable = true;
-	//init.reliability.unordered = true;
+	init.reliability.unordered = true;
+	init.reliability.maxRetransmits = 0;
 
 	//
 	// name of datachannel is testQQQ
