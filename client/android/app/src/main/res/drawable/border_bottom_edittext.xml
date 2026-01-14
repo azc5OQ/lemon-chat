@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+
+<!--    Edit text doesnt support border customization by default apparently-->
+<!--    so i created this .xml file to achieve it-->
+
+<!--    background color-->
+    <solid android:color="#ffffff" />
+
+<!--    border color-->
+    <stroke android:width="1dp" android:color="#000000" />
+
+<!--    border radius-->
+    <corners android:radius="0dp" />
+
+</shape>

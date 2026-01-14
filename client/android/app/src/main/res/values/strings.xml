@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Lemon Chat</string>
+    <string name="caller_avatar_desc">Caller Avatar</string>
+    <string name="swipe_to_answer_desc">Swipe to Answer Button</string>
+    <string name="decline_call_desc">Decline Call</string>
+    <string name="accept_call_desc">Accept Call</string>
+</resources>

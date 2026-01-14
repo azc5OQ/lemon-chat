@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <FrameLayout
+        android:id="@+id/root_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        >
+
+        <!-- 3️⃣ Native settings panel -->
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:fillViewport="true">
+
+
+            <LinearLayout
+                android:id="@+id/settings_panel"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+
+                android:orientation="vertical"
+                android:background="@android:color/white"
+                android:padding="16dp">
+
+                <TextView
+                    android:textColor="#36393f"
+                    android:text="Settings"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+                <EditText
+                    android:id="@+id/ip_address"
+                    android:textColorHint="#36393f"
+                    android:textColor="#000000"
+                    android:hint="ip address / domain"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <EditText
+                    android:id="@+id/websocket_port"
+                    android:hint="websocket port"
+                    android:textColorHint="#36393f"
+                    android:inputType="number"
+                    android:textColor="#000000"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <EditText
+                    android:id="@+id/default_username"
+                    android:hint="default username"
+                    android:textColorHint="#36393f"
+                    android:textColor="#000000"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <Switch
+                    android:textColor="@color/black"
+                    android:id="@+id/audio_enabled"
+                    android:text="Keep microphone always on"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+
+                <Switch
+                    android:textColor="@color/black"
+                    android:id="@+id/settings_autoconnect_enabled"
+                    android:text="Enable autoconnect"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <Switch
+                    android:textColor="@color/black"
+                    android:id="@+id/settings_sound_effects_enabled"
+                    android:text="Enable sound effects"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <!-- Keys section -->
+                <TextView
+                    android:text="Server Keys"
+                    android:textStyle="bold"
+                    android:textColor="#36393f"
+                    android:layout_marginTop="12dp"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+                <LinearLayout
+                    android:id="@+id/keys_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <!-- Add a key -->
+                <Button
+                    android:id="@+id/add_key"
+                    android:text="Add Key"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+
+                <Button
+                    android:id="@+id/save_settings"
+                    android:text="Save"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:onClick="saveSettings"
+                    />
+            </LinearLayout>
+
+
+        </ScrollView>
+
+
+
+    </FrameLayout>
+
+</RelativeLayout>
