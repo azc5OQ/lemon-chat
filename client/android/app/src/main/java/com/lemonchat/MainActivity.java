@@ -424,7 +424,11 @@ public class MainActivity extends AppCompatActivity
 				autoConnectSwitch.setChecked(isAutoconnectEnabled);
 				soundEffectsSwitch.setChecked(isAudioEffectDisabled);
 
-				JSONArray keys = settingsJson.getJSONArray("metadata_keys");
+                //clear out keys first
+                LinearLayout keysContainer = findViewById(R.id.keys_container);
+                keysContainer.removeAllViews();
+
+                JSONArray keys = settingsJson.getJSONArray("metadata_keys");
 
 				for (int i = 0; i < keys.length(); i++)
 				{
