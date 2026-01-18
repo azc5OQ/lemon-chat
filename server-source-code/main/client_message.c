@@ -23,6 +23,8 @@ static boole _client_msg_internal__is_call_idle_client_message_valid(cJSON *json
 static boole _client_msg_internal__is_process_come_back_from_idle_mode_request_valid(cJSON *json_root);
 static boole _client_msg_internal__is_go_to_idle_mode_request_valid(cJSON *json_root);
 static boole _client_msg_internal__is_kick_ban_request_valid(cJSON *json_root);
+static boole _client_msg_internal__is_client_msg__process_create_music_bot_request_valid(cJSON *json_root);
+static boole _client_msg_internal__is_client_msg__process_delete_music_bot_request_valid(cJSON *json_root);
 
 /**
  * @brief self explanatory
@@ -272,6 +274,14 @@ static boole _client_msg_internal__is_go_to_idle_mode_request_valid(cJSON *json_
 	return TRUE;
 }
 
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @note this is just first glance check
+ * *
+ * @return boole
+ */
 static boole _client_msg_internal__is_kick_ban_request_valid(cJSON *json_root)
 {
     cJSON *json_message_object;
@@ -294,6 +304,125 @@ static boole _client_msg_internal__is_kick_ban_request_valid(cJSON *json_root)
         DBG_CLIENT_MESSAGE log_info("%s", "json_client_id is invalid");
         return FALSE;
     }
+
+    return TRUE;
+}
+
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @note this is just first glance check
+ * *
+ * @return boole
+ */
+static boole _client_msg_internal__is_client_msg__process_create_music_bot_request_valid(cJSON *json_root)
+{
+    cJSON *json_message_object;
+    cJSON *json_channel_id;
+    cJSON *json_music_bot_username;
+    int64 json_music_bot_username_length;
+
+    json_message_object = 0;
+    json_channel_id = 0;
+    json_music_bot_username = 0;
+    json_music_bot_username_length = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+    json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+
+    if (json_channel_id == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_music_bot_username == NULL_POINTER \n");
+        return FALSE;
+    }
+
+    if (!cJSON_IsNumber(json_channel_id))
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_client_msg__process_create_music_bot_request_valid cJSON_IsNumber(json_channel_id)");
+        return FALSE;
+    }
+
+
+    if (json_channel_id->valueint < 0 || json_channel_id->valueint >= MAX_CHANNELS)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_client_id is invalid");
+        return FALSE;
+    }
+
+    json_music_bot_username = cJSON_GetObjectItemCaseSensitive(json_message_object, "music_bot_username");
+
+    if (json_music_bot_username == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_music_bot_username == NULL_POINTER \n");
+        return FALSE;
+    }
+
+    if (json_music_bot_username->valuestring == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_client_msg__process_create_music_bot_request_valid json_music_bot_username->valuestring == NULL_POINTER \n");
+        return FALSE;
+    }
+
+    if (!cJSON_IsString(json_music_bot_username))
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_client_msg__process_create_music_bot_request_valid cJSON_IsString(json_music_bot_username)");
+        return FALSE;
+    }
+
+    json_music_bot_username_length = clib__utf8_string_length(json_music_bot_username->valuestring);
+
+    if (json_music_bot_username_length == 0 || json_music_bot_username_length > USERNAME_MAX_LENGTH)
+    {
+        return FALSE;
+    }
+
+
+    return TRUE;
+}
+
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @note this is just first glance check
+ * *
+ * @return boole
+ */
+static boole _client_msg_internal__is_client_msg__process_delete_music_bot_request_valid(cJSON *json_root)
+{
+    cJSON *json_message_object;
+    cJSON *json_channel_id;
+
+    json_message_object = 0;
+    json_channel_id = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+    json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+
+
+    if (json_channel_id == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_client_msg__process_delete_music_bot_request_valid json_music_bot_username == NULL_POINTER \n");
+        return FALSE;
+    }
+
+    if (!cJSON_IsNumber(json_channel_id))
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_client_msg__process_delete_music_bot_request_valid cJSON_IsNumber(json_channel_id)");
+        return FALSE;
+    }
+
+    if (json_channel_id->valueint < 0 || json_channel_id->valueint >= MAX_CHANNELS)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_client_id is invalid");
+        return FALSE;
+    }
+
 
     return TRUE;
 }
@@ -364,7 +493,7 @@ static boole _client_msg_internal__is_admin_password_message_valid(cJSON *json_r
 		return FALSE;
 	}
 
-	song_name_length = clib__utf8_string_length_check_max_length(json_admin_password->valuestring, 50);
+	song_name_length = clib__utf8_string_length_check_max_length(json_admin_password->valuestring, ADMIN_PASSWORD_MAX_LENGTH);
 	if (song_name_length == -1 || song_name_length == 0)
 	{
 		DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_admin_password_message_valid json_admin_password length is wrong \n");
@@ -695,9 +824,7 @@ boole client_msg__is_message_correct_at_first_sight_and_get_message_type(cJSON *
  *
  * @param cJSON* json_root
  * @param int client_index
- *
- * @note this function is used for processing four different kinds of client messages, direct chat message, channel chat message, direct chat picture, channel chat picture
- *
+ * *
  * @return boole
  */
 static boole client_msg__is_json_poke_client_request_format_valid(cJSON *json_root, int client_index)
@@ -1997,7 +2124,7 @@ void client_msg__process_create_channel_request(cJSON *json_root, int sender_cli
 }
 
 /**
- * @brief This function processes create edit request message
+ * @brief This function processes edit channel request message
  *
  * @param cJSON* json_root
  * @param int sender_client_index
@@ -2055,10 +2182,6 @@ void client_msg__process_edit_channel_request(cJSON *json_root, int sender_clien
 
 	if (is_channel_edit_allowed)
 	{
-		//what is done here:
-		// checking if parent channel exists,
-		// creating the child channel
-		//both need to be wrapper within same write lock because they are tied to one another,
 
 		pthread_rwlock_wrlock(&channels_global_rwlock_guard);
 		json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -2132,6 +2255,7 @@ void client_msg__process_direct_chat_message(cJSON *json_root, int sender_client
 	boole is_message_valid = FALSE;
 	boole is_receiver_existing = FALSE;
 	boole is_receiver_idle = FALSE;
+    boole is_receiver_music_bot = FALSE;
 	cJSON *json_receiver_id = 0;
 	cJSON *json_local_message_id = 0;
 	cJSON *json_chat_message_value = 0;
@@ -2172,8 +2296,9 @@ void client_msg__process_direct_chat_message(cJSON *json_root, int sender_client
 
 	is_receiver_existing = clients_array[json_receiver_id->valueint].is_authenticated;
 	is_receiver_idle = clients_array[json_receiver_id->valueint].is_idle;
+    is_receiver_music_bot = clients_array[json_receiver_id->valueint].is_music_bot;
 
-	if (is_receiver_existing == TRUE && is_receiver_idle == FALSE)
+	if (is_receiver_existing == TRUE && is_receiver_idle == FALSE && is_receiver_music_bot == FALSE)
 	{
 		DBG_CLIENT_MESSAGE log_info("%s %d %s", "client_msg__process_direct_chat_message receiver is_existing: ", json_receiver_id->valueint, "\n");
 
@@ -2226,7 +2351,7 @@ void client_msg__process_channel_chat_message(cJSON *json_root, int sender_clien
 		return;
 	}
 
-	DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_direct_chat_message got here \n");
+	DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_channel_chat_message got here \n");
 	json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
 	json_chat_message_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
@@ -2336,6 +2461,7 @@ void client_msg__process_direct_chat_picture(cJSON *json_root, int sender_client
 {
 	boole is_receiver_existing = FALSE;
 	boole is_receiver_idle = FALSE;
+    boole is_receiver_music_bot = FALSE;
 	cJSON *json_receiver_id = 0;
 	cJSON *json_local_message_id = 0;
 	cJSON *json_chat_message_value = 0;
@@ -2364,7 +2490,8 @@ void client_msg__process_direct_chat_picture(cJSON *json_root, int sender_client
 	json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "receiver_id");
 	json_local_message_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "local_message_id");
 
-	if (json_receiver_id->valueint < 0 || json_receiver_id->valueint >= MAX_CLIENTS)
+
+    if (json_receiver_id->valueint < 0 || json_receiver_id->valueint >= MAX_CLIENTS)
 	{
 		DBG_CLIENT_MESSAGE log_info("%s %d %s", "client : ", sender_client_index, " json_receiver_id->valueint < 0 || json_receiver_id->valueint >= MAX_CLIENTS \n");
 		return;
@@ -2374,8 +2501,9 @@ void client_msg__process_direct_chat_picture(cJSON *json_root, int sender_client
 
 	is_receiver_existing = clients_array[json_receiver_id->valueint].is_authenticated;
 	is_receiver_idle = clients_array[json_receiver_id->valueint].is_idle;
+    is_receiver_music_bot = clients_array[json_receiver_id->valueint].is_music_bot;
 
-	if (is_receiver_existing == TRUE && is_receiver_idle == FALSE)
+	if (is_receiver_existing == TRUE && is_receiver_idle == FALSE && is_receiver_music_bot == FALSE)
 	{
 		DBG_CLIENT_MESSAGE log_info("%s %d %s", "receiver is_existing: ", json_receiver_id->valueint, "\n");
 
@@ -2530,6 +2658,7 @@ client_msg__process_join_channel_request_continue:
 			//client is joining channel that was hidden and clients in it were not visible to him
 			//send clients to him using client_join_channel message
 			//
+
 			if (g_server_settings.is_hide_clients_in_password_protected_channels_active && new_channel->is_using_password)
 			{
 				for (x = 0; x < MAX_CLIENTS; x++)
@@ -2545,6 +2674,11 @@ client_msg__process_join_channel_request_continue:
 					{
 						continue;
 					}
+
+                    if (client_in_some_loop->is_music_bot == TRUE)
+                    {
+                        continue;
+                    }
 
 					if (client_in_some_loop->channel_id != new_channel->channel_id)
 					{
@@ -2584,6 +2718,11 @@ client_msg__process_join_channel_request_continue:
 						continue;
 					}
 
+                    if (client_in_some_loop->is_music_bot == TRUE)
+                    {
+                        continue;
+                    }
+
 					if (client_in_some_loop->channel_id != new_channel->channel_id)
 					{
 						continue;
@@ -2618,6 +2757,11 @@ client_msg__process_join_channel_request_continue:
 				{
 					continue;
 				}
+
+                if (client_in_some_loop->is_music_bot == TRUE)
+                {
+                    continue;
+                }
 
 				if (client_in_some_loop->channel_id != new_channel->channel_id)
 				{
@@ -3743,50 +3887,177 @@ label_client_msg__process_call_idle_client_message_end:
 	pthread_rwlock_unlock(&clients_global_rwlock_guard);
 }
 
+///**
+// * @brief self explanatory
+// *
+// * @param cJSON* json_root
+// * @param int sender_client_index
+// * *
+// * @return void
+// */
+//void client_msg__process_go_to_idle_mode_request1(cJSON *json_root, int sender_client_index)
+//{
+//	boole status;
+//	client_t *client;
+//
+//	status = FALSE;
+//
+//	status = _client_msg_internal__is_go_to_idle_mode_request_valid(json_root);
+//	if (!status)
+//	{
+//		DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_call_idle_client_message is not valid");
+//		return;
+//	}
+//
+//	pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+//
+//	//
+//	//check if client that sent the message is valid. If he is connected and he exists.
+//	//this was checked before but not within write lock like here
+//	//
+//
+//	client = &clients_array[sender_client_index];
+//
+//	if (client->is_authenticated == FALSE || client->is_existing == FALSE)
+//	{
+//		goto label_go_to_idle_mode_request_end;
+//	}
+//
+//	client->is_idle = TRUE;
+//	client->channel_id = -2;
+//
+//	server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_index);
+//
+//label_go_to_idle_mode_request_end:
+//	pthread_rwlock_unlock(&clients_global_rwlock_guard);
+//}
+//
+
+
+
+
 /**
- * @brief self explanatory
+ * @brief This function processes go to idle more request, its modified version of join channel request
  *
  * @param cJSON* json_root
  * @param int sender_client_index
- * *
+ *
+ * @note hmmm
+ *
  * @return void
  */
 void client_msg__process_go_to_idle_mode_request(cJSON *json_root, int sender_client_index)
 {
-	boole status;
-	client_t *client;
+    boole status;
+    boole is_client_that_is_leaving_channel_maintainer_of_that_channel = FALSE;
+    channel_t *new_channel = 0;
+    channel_t *old_channel = 0;
+    client_t *client;
+    int new_maintainer_index = 0;
+    boole is_maintainer_found = FALSE;
+    boole is_authenticated;
+    boole is_existing;
+    boole is_idle;
+    client_t *client_in_some_loop;
+    int x;
 
-	status = FALSE;
 
-	status = _client_msg_internal__is_go_to_idle_mode_request_valid(json_root);
-	if (!status)
-	{
-		DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_call_idle_client_message is not valid");
-		return;
-	}
+    //this is modified version of join channel request
+    //no password verification, no checking if idle channel has maintainer (its not a channel really)
 
-	pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+    status = base__is_request_allowed_based_on_spam_protection(sender_client_index);
+    if (!status)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_go_to_idle_mode_request base__is_request_allowed_based_on_spam_protection == FALSE \n");
+        return;
+    }
 
-	//
-	//check if client that sent the message is valid. If he is connected and he exists.
-	//this was checked before but not within write lock like here
-	//
+    status = _client_msg_internal__is_go_to_idle_mode_request_valid(json_root);
+    if (!status)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_go_to_idle_mode_request is not valid");
+        return;
+    }
 
-	client = &clients_array[sender_client_index];
+    pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+    pthread_rwlock_wrlock(&channels_global_rwlock_guard);
 
-	if (client->is_authenticated == FALSE || client->is_existing == FALSE)
-	{
-		goto label_go_to_idle_mode_request_end;
-	}
+    client = &clients_array[sender_client_index];
 
-	client->is_idle = TRUE;
-	client->channel_id = -2;
+    is_authenticated = client->is_authenticated;
+    is_existing = client->is_existing;
+    is_idle = client->is_idle;
 
-	server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_index);
+    if (is_existing == FALSE || is_authenticated == FALSE || is_idle == TRUE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_go_to_idle_mode_request is_existing == FALSE || is_authenticated == FALSE || is_idle == TRUE \n");
+        goto label_go_to_idle_mode_request_end;
+    }
 
-label_go_to_idle_mode_request_end:
-	pthread_rwlock_unlock(&clients_global_rwlock_guard);
+    DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_go_to_idle_mode_request got here \n");
+
+    old_channel = &channel_array[client->channel_id];
+
+
+    //change channel id and idle state at thois
+
+    client->is_idle = TRUE;
+    client->channel_id = -2;
+
+    if (old_channel->is_channel_maintainer_present)
+    {
+        is_client_that_is_leaving_channel_maintainer_of_that_channel = (boole)(old_channel->maintainer_id == client->client_id);
+    }
+
+    if (is_client_that_is_leaving_channel_maintainer_of_that_channel)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_go_to_idle_mode_request is_client_that_is_leaving_channel_maintainer_of_that_channel TRUE  \n");
+
+        is_maintainer_found = base__find_new_maintainer_for_channel(&new_maintainer_index, old_channel->channel_id, sender_client_index, TRUE);
+        if (is_maintainer_found)
+        {
+            //
+            //client that left channel was maintainer of that channel, choose new maintainer
+            //then broadcast channel join message
+            //then send new maintainer id to clients in that channel so they know who new maintainer is
+            //
+
+            DBG_CLIENT_MESSAGE log_info("%s %d %s", "client_msg__process_go_to_idle_mode_request maintainer found ", new_maintainer_index, "\n");
+            old_channel->is_channel_maintainer_present = TRUE;
+            old_channel->maintainer_id = new_maintainer_index;
+
+            //first send join message, then maintainer message for clients in that chnanel
+            server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_index);
+            server_msg__send_maintainer_id_to_clients_in_same_channel(old_channel->channel_id, old_channel->maintainer_id);
+        }
+        else
+        {
+            DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_go_to_idle_mode_request maintainer found  FALSE \n");
+            old_channel->is_channel_maintainer_present = FALSE;
+            old_channel->maintainer_id = 0;
+            server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_index);
+        }
+    }
+    else
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request_continue is_client_that_is_leaving_channel_maintainer_of_that_channel FALSE  \n");
+        server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_index);
+    }
+
+    //audio_channel__process_client_channel_join(client_that_is_joining_channel);
+
+
+    label_go_to_idle_mode_request_end:
+    pthread_rwlock_unlock(&channels_global_rwlock_guard);
+    pthread_rwlock_unlock(&clients_global_rwlock_guard);
 }
+
+
+
+
+
+
+
 
 /**
  * @brief self explanatory
@@ -4019,4 +4290,204 @@ void client_msg__process_ban_request(cJSON *json_root, int sender_client_index)
     label_client_msg__process_ban_request_end:
     pthread_rwlock_unlock(&clients_global_rwlock_guard);
 }
+
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @param int sender_client_index
+ * *
+ * @return void
+ */
+void client_msg__process_create_music_bot_request(cJSON *json_root, int sender_client_index)
+{
+    boole status;
+
+    cJSON *json_message_object;
+    cJSON *json_channel_id;
+    cJSON *json_music_bot_username;
+
+    client_t *admin;
+
+    status = FALSE;
+    json_message_object = NULL_POINTER;
+
+    status = _client_msg_internal__is_client_msg__process_create_music_bot_request_valid(json_root);
+    if (!status)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_create_music_bot is not valid");
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+    json_music_bot_username = cJSON_GetObjectItemCaseSensitive(json_message_object, "music_bot_username");
+
+    pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+    pthread_rwlock_wrlock(&channels_global_rwlock_guard);
+
+    //
+    //check if client that sent the message is valid. If he is connected and he exists.
+    //this was checked before but not within write lock like here
+    //
+
+    admin = &clients_array[sender_client_index];
+
+    if (admin->is_authenticated == FALSE || admin->is_existing == FALSE)
+    {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
+    //check if channel exists
+    if (channel_array[json_channel_id->valueint].is_existing == FALSE)
+    {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
+    //check if there is already music bot in the channel
+    if (channel_array[json_channel_id->valueint].is_music_bot_active_in_channel == TRUE)
+    {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
+    //load mp3 file on server side from disk. dont upload it yet, that will on on the end
+
+    //first create client
+    //assign him some random keys (client will be music client, messaing to him wont be possible), he will get channel keys but he wont get public key
+
+    DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_create_music_bot_request \n");
+
+
+    int index = base__get_new_index_for_client();
+
+
+    DBG_CLIENT_MESSAGE log_info("%s %d %s", "client_msg__process_create_music_bot_request", index ,"\n");
+
+    channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = TRUE;
+
+    clients_array[index].is_authenticated = TRUE;
+    clients_array[index].timestamp_connected = base__get_timestamp_ms();
+    clients_array[index].p_ws_connection = NULL_POINTER;
+    clients_array[index].is_existing = TRUE;
+    clients_array[index].client_id = index;
+    clients_array[index].audio_state = AUDIO_STATE__PUSH_TO_TALK_ACTIVE;
+    clients_array[index].is_music_bot = TRUE;
+    clients_array[index].channel_id = json_channel_id->valueint;
+
+    log_info("%s %d %s", "client_msg__process_create_music_bot_request client id is -> ", clients_array[index].client_id ,"\n");
+
+
+
+    clib__copy_memory(json_music_bot_username->valuestring, clients_array[index].username, clib__utf8_string_length(json_music_bot_username->valuestring), USERNAME_MAX_LENGTH);
+
+
+    server_msg__send_client_connect_message_to_all_clients(clients_array[index].client_id);
+
+
+
+    label_client_msg__process_create_music_bot_end:
+    pthread_rwlock_unlock(&clients_global_rwlock_guard);
+    pthread_rwlock_unlock(&channels_global_rwlock_guard);
+
+}
+
+
+
+/**
+ * @brief self explanatory
+ *
+ * @param cJSON* json_root
+ * @param int sender_client_index
+ * *
+ * @return void
+ */
+void client_msg__process_delete_music_bot_request(cJSON *json_root, int sender_client_index)
+{
+    boole status;
+
+    cJSON *json_message_object;
+    cJSON *json_channel_id;
+
+    client_t* music_bot;
+
+    client_t *admin;
+
+    status = FALSE;
+    json_message_object = NULL_POINTER;
+
+    status = _client_msg_internal__is_client_msg__process_delete_music_bot_request_valid(json_root);
+    if (!status)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_create_music_bot is not valid");
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+
+    pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+    pthread_rwlock_wrlock(&channels_global_rwlock_guard);
+
+    //
+    //check if client that sent the message is valid. If he is connected and he exists.
+    //this was checked before but not within write lock like here
+    //
+
+    admin = &clients_array[sender_client_index];
+
+    if (admin->is_authenticated == FALSE || admin->is_existing == FALSE)
+    {
+        goto label_client_msg__process_delete_music_bot_end;
+    }
+
+    //check if channel exists
+    if (channel_array[json_channel_id->valueint].is_existing == FALSE)
+    {
+        goto label_client_msg__process_delete_music_bot_end;
+    }
+
+    //check if there is already music bot in the channel
+    if (channel_array[json_channel_id->valueint].is_music_bot_active_in_channel == FALSE)
+    {
+        goto label_client_msg__process_delete_music_bot_end;
+    }
+
+    //load mp3 file on server side from disk. dont upload it yet, that will on on the end
+
+    log_info("%s", "client_msg__process_delete_music_bot_request \n");
+
+
+    music_bot = base__find_music_bot_in_channel(json_channel_id->valueint);
+
+
+    log_info("%s %d %s", "client_msg__process_delete_music_bot_request music bot id -> ", music_bot->client_id ,  "\n");
+    log_info("%s %s %s", "client_msg__process_delete_music_bot_request music bot username -> ", music_bot->username ,  "\n");
+
+
+    if (music_bot == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_delete_music_bot_request failed to find music bot \n");
+        goto label_client_msg__process_delete_music_bot_end;
+    }
+
+    //find music bot in channel
+
+    log_info("%s", "client_msg__process_delete_music_bot_request server_msg__send_client_disconnect_message_to_all_clients \n");
+
+    server_msg__send_client_disconnect_message_to_all_clients(music_bot->client_id);
+
+    channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = FALSE;
+
+    clib__null_memory(music_bot, sizeof(client_t));
+
+
+    log_info("%s", "client_msg__process_delete_music_bot_request END \n");
+
+
+label_client_msg__process_delete_music_bot_end:
+    pthread_rwlock_unlock(&clients_global_rwlock_guard);
+    pthread_rwlock_unlock(&channels_global_rwlock_guard);
+}
+
 

@@ -1,14 +1,6 @@
 #ifndef AUDIO_CHANNEL_H
 
-//typedef struct opus_data_buffer_entry_t
-//{
-//	int cursor;
-//	boole is_active;
-//	unsigned char buffer[131072];
-//	//unsigned char buffer[16384]; //16384 je max dlzka unordered, unreliable spravy v chrome/safari/firefox, avsak bytov sa tam nahromadi za ten cas ovela menej.. v stovkach bajtov, max
-//} opus_data_buffer_entry_t;
 
-//voice
 typedef struct webrtc_peer_t
 {
 	int peer_connection_handle;
@@ -19,11 +11,10 @@ typedef struct webrtc_peer_t
 	int channel_id;
 	int client_id;
 	boole is_existing;
-	char dh_shared_secret[1000]; //stored on heap
+	char dh_shared_secret[1000];
 	ws_cli_conn_t *p_ws_connection;
 } webrtc_peer_t;
 
-//extern opus_data_buffer_entry_t *opus_data_buffer_entries_array;
 extern webrtc_peer_t *webrtc_muggles_array;
 
 boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client);

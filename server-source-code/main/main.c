@@ -340,6 +340,11 @@ int base__get_client_count_for_channel(int channel_id)
 			continue;
 		}
 
+        if (client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
 		if (client->channel_id == channel_id)
 		{
 			result = result + 1;
@@ -457,6 +462,11 @@ boole base__find_new_maintainer_for_channel(int *_out__new_index_of_maintainer, 
 			continue;
 		}
 
+        if (client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
 		if (do_not_include_client_that_left_when_searching_for_new_maintainer)
 		{
 			if (i == index_of_client_that_left)
@@ -487,6 +497,68 @@ boole base__find_new_maintainer_for_channel(int *_out__new_index_of_maintainer, 
 	memorymanager__free((nuint)possible_new_maintainers);
 
 	return maintainer_found;
+}
+
+
+/**
+ * @brief finds new index of maintainer of channel
+ *
+ * @param int* _out__new_index_of_maintainer pointer to is_existing int variable, where new index of maintainer will be stored
+ * @param int channel_id
+ * @param int index_of_client_that_left
+ * @param boole do_not_include_client_that_left_when_searching_for_new_maintainer
+ *
+ * @note this is used function in situation where client leaves the channel for whatever reason and he happens to be the maintainer of it
+ *
+ * @return TRUE if maintainer is found, FALSE if not
+ *
+ * @attention bad code
+ */
+client_t* base__find_music_bot_in_channel(int channel_id)
+{
+    int i;
+    client_t *client_in_loop = NULL_POINTER;
+
+    client_t *result = NULL_POINTER;
+
+    //maintainer will be random chosen
+
+    for (i = 0; i < MAX_CLIENTS; i++)
+    {
+        client_in_loop = &clients_array[i];
+
+        //
+        //if statements that are most probable to run should be first in loop
+        //
+
+        if (client_in_loop->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->channel_id != channel_id)
+        {
+            continue;
+        }
+
+        if (client_in_loop->is_music_bot == FALSE)
+        {
+            continue;
+        }
+
+
+        log_info("%s %s %s", "base__find_music_bot_in_channel client " , client_in_loop->username , " is the music bot \n");
+
+
+        result = client_in_loop;
+    }
+
+    return result;
 }
 
 /**
@@ -610,7 +682,7 @@ end_loop:
  *
  * @return void
  */
-int get_new_index_for_client(void)
+int base__get_new_index_for_client(void)
 {
 	int i;
 	for (i = 0; i < MAX_CLIENTS; i++)
@@ -682,11 +754,11 @@ uint64 base__get_timestamp_ms(void)
 
 #ifdef __linux__
 	/*static struct timeb timer_msec;
-	static unsigned long long timestamp_msec;
+	static uint64 timestamp_msec;
 	timestamp_msec = 0;
 	if (!ftime(&timer_msec))
 	{
-		timestamp_msec = ((unsigned long long)timer_msec.time) * 1000 + (unsigned long long)timer_msec.millitm;
+		timestamp_msec = ((uint64)timer_msec.time) * 1000 + (uint64)timer_msec.millitm;
 	}
 	else
 	{
@@ -870,7 +942,7 @@ char *base__encrypt_cstring_and_convert_to_base64(char *string_to_encrypt, int *
 }
 
 /**
- * @brief decrypts base64 string
+ * @brief decrypts base64 string (used for decrypting metadata of message, not contents, contents are decrypted on clients end)
  *
  * @param int client_id
  * @param char* base64_string
@@ -981,7 +1053,7 @@ void onopen(ws_cli_conn_t *client)
 
 	g_server_settings.client_count++;
 
-	int index = get_new_index_for_client();
+	int index = base__get_new_index_for_client();
 
 	if (g_server_settings.client_count > g_server_settings.max_client_count)
 	{
@@ -993,7 +1065,7 @@ void onopen(ws_cli_conn_t *client)
 
 	if (index == -1)
 	{
-		DBG_AUTHENTICATION log_info("get_new_index_for_client returned -1, closing socket");
+		DBG_AUTHENTICATION log_info("base__get_new_index_for_client returned -1, closing socket");
 
 		ws_close_client(client);
 		goto label_onopen_end;
@@ -1229,11 +1301,9 @@ void base__process_authenticated_client_message(ws_cli_conn_t *websocket, int cl
 
 	boole is_sender_idle = FALSE;
 
-	DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %s %s", "base__process_authenticated_client_message message : ", decrypted_metadata_cstring, "\n");
+	//DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %s %s", "base__process_authenticated_client_message message : ", decrypted_metadata_cstring, "\n");
 
 	json_root = cJSON_Parse(decrypted_metadata_cstring);
-
-	DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s", "base__process_authenticated_client_message decrypted_metadata_cstring \n");
 
 	if (json_root == 0)
 	{
@@ -1379,6 +1449,15 @@ void base__process_authenticated_client_message(ws_cli_conn_t *websocket, int cl
             {
                 client_msg__process_ban_request(json_root, client_index);
             }
+
+            else if (clib__is_string_equal(message_type, "create_music_bot"))
+            {
+                client_msg__process_create_music_bot_request(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "delete_music_bot"))
+            {
+                client_msg__process_delete_music_bot_request(json_root, client_index);
+            }
 		}
 
 		if (is_sender_idle == TRUE)
@@ -1523,6 +1602,11 @@ void websocket_connection_check_thread(void)
 
 			if (clients_array[i].is_authenticated == TRUE)
 			{
+                if (clients_array[i].is_music_bot == TRUE)
+                {
+                    continue;
+                }
+
 				timestamp_now = base__get_timestamp_ms();
 
 				//
@@ -1731,7 +1815,7 @@ void base__set_server_settings(void)
 	}
 	clib__null_memory(input, sizeof(input));
 
-	printf("%s", "Prevent clients with same ip address from connecting? (y/n) ");
+	printf("%s", "Prevent multiple clients with same ip address from connecting? (y/n) ");
 	fgets(input, sizeof(input), stdin);
 	clib__sanitize_stdin(input);
 	if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
@@ -1750,9 +1834,6 @@ void base__set_server_settings(void)
 		printf("server will send country flag info for client to each client \n");
 	}
 	clib__null_memory(input, sizeof(input));
-
-	printf("%s", "Prevent clients with vpns, proxies, tor exit nodes from connecting? (y/n) \n");
-	printf("%s", "Prevent clients from specific countries from connecting? (y/n) \n");
 
 	printf("%s", "disable idle clients? (y/n) ");
 	fgets(input, sizeof(input), stdin);

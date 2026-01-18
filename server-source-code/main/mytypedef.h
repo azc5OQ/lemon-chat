@@ -1,7 +1,7 @@
 #ifndef MYTYPEDEF_H
 #define MYTYPEDEF_H
 
-//#define DEBUG_ACTIVE 1
+#define DEBUG_ACTIVE 1
 
 //#define WINDOWS_BUILD 1
 //#define LINUX_BUILD 1

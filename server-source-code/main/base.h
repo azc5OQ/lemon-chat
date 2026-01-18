@@ -1,6 +1,8 @@
 #ifndef BASE_H
 #define BASE_H
 
+//everything should be as simple as possible, but not simpler
+
 #define MAX_CHANNELS 100
 #define MAX_CLIENTS 500
 #define MAX_CLIENT_STORED_DATA 100
@@ -11,12 +13,19 @@
 #define TIMESTAMP_LAST_ACTION_COOLDOWN_MS 100
 #define CHANNEL_PASSWORD_MAX_LENGTH 128
 #define CHANNEL_DESCRIPTION_MAX_LENGTH 1000
+#define MAX_PUBLIC_KEY_LENGTH 1000
 #define CHANNEL_NAME_MAX_LENGTH 128
 #define SONG_NAME_MAX_LENGTH 512
 #define TAG_MAX_NAME_LENGTH 32
 #define ICON_MAX_LENGTH 8192
+#define SHARED_SECRET_LENGTH 1000
 #define MAX_TAGS_PER_USER 32
 #define ADMIN_TAG_ID 0
+#define CHALLENGE_STRING_LENGTH 128
+#define ADMIN_PASSWORD_MAX_LENGTH 50
+#define COUNTRY_ISO_CODE_LENGTH 3
+#define MAX_TAGS_FOR_SINGLE_CLIENT 30
+#define MAX_CLIENT_AVATAR_LENGTH 131072
 
 #include "../theldus-websocket/include/ws.h"
 #include "mytypedef.h"
@@ -39,30 +48,30 @@ typedef struct key_data
 
 typedef struct server_settings
 {
-	int keys_count;
+    boole is_same_ip_address_allowed;
+    boole is_hide_clients_in_password_protected_channels_active;
+    boole is_restrict_channel_deletion_creation_editing_to_admin_active;
+    boole is_display_country_flags_active;
+    boole is_display_admin_tag_active;
+    boole is_idle_mode_allowed;
+    boole is_voice_chat_active;
+    boole is_logging_of_failed_attempts_active;
+    uint64 chat_cooldown_milliseconds;
+    uint64 join_channel_request_cooldown_milliseconds;
+    uint64 delete_channel_request_cooldown_milliseconds;
+    uint64 create_channel_request_cooldown_milliseconds;
+    int channel_count;
+    int max_channel_count;
+    int client_count;
+    int max_client_count;
+    int keys_count;
+    int websocket_port;
+    int websocket_message_max_length;
+    int websocket_chat_message_string_max_length;
 	key_data_t keys[100];
-	boole is_logging_of_failed_attempts_active;
 	char client_verificaton_message_cleartext[1024]; //should be enough
-	int websocket_port;
-	int websocket_message_max_length;
-	int websocket_chat_message_string_max_length;
-	unsigned long long chat_cooldown_milliseconds;
-	unsigned long long join_channel_request_cooldown_milliseconds;
-	unsigned long long delete_channel_request_cooldown_milliseconds;
-	unsigned long long create_channel_request_cooldown_milliseconds;
 	char default_client_name[30];
-	char admin_password[50];
-	boole is_voice_chat_active;
-	int channel_count;
-	int max_channel_count;
-	int client_count;
-	int max_client_count;
-	boole is_same_ip_address_allowed;
-	boole is_hide_clients_in_password_protected_channels_active;
-	boole is_restrict_channel_deletion_creation_editing_to_admin_active;
-	boole is_display_country_flags_active;
-	boole is_display_admin_tag_active;
-	boole is_idle_mode_allowed;
+	char admin_password[ADMIN_PASSWORD_MAX_LENGTH];
 } server_settings_t;
 
 typedef enum audio_state_e
@@ -85,36 +94,33 @@ typedef enum microphone_usage_e
 #define INET6_ADDRSTRLEN 1025
 #endif
 
-//client id is same as clients index in array
 typedef struct client_t
 {
-	int client_id;
+    ws_cli_conn_t *p_ws_connection;
 	boole is_existing;
-	ws_cli_conn_t *p_ws_connection;
-	int websocket_audio_fd;
-	boole is_authenticated;
-	boole is_admin;
-	uint64 timestamp_connected;
+    boole is_authenticated;
+    boole is_admin;
+    boole is_audio_websocket_authenticated;
+    boole is_dh_shared_secret_agreed_upon;
+    boole is_streaming_song;
+    boole is_public_key_challenge_sent;
+    boole is_idle;
+    boole is_music_bot;
+    int client_id; //client id is same as index of client_t in clients_array
+    int channel_id;
+    int audio_state; //1 -> active, 2 -> not active bud enabled, 3 -> disabled audio still active, 4 audio disabled
+    uint64 timestamp_connected;
 	uint64 timestamp_last_action;
 	uint64 timestamp_last_maintain_connection_message_received;
 	char username[USERNAME_MAX_LENGTH];
-	char public_key[1000];
-	int channel_id;
-	boole microphone_active; //delete, and rely on audio_state
-	char websocket_audio_auth_string_base64[100];
-	boole is_audio_websocket_authenticated;
-	boole is_dh_shared_secret_agreed_upon;
-	char dh_shared_secret[1000]; //stored on heap
-	char challenge_string[128];
-	boole is_public_key_challenge_sent;
-	int audio_state; //1 -> active, 2 -> not active bud enabled, 3 -> disabled audio still active, 4 audio disabled
-	boole is_streaming_song;
+	char public_key[MAX_PUBLIC_KEY_LENGTH];
+	char dh_shared_secret[SHARED_SECRET_LENGTH];
+	char challenge_string[CHALLENGE_STRING_LENGTH];
 	char song_name[SONG_NAME_MAX_LENGTH];
 	char ip_address[INET6_ADDRSTRLEN]; //max size of ivp6
-	char country_iso_code[3];
+	char country_iso_code[COUNTRY_ISO_CODE_LENGTH];
 	int *tag_ids; //must be int because function of other library depends on this being int
 	//int tag_ids_count;
-	boole is_idle;
 } client_t;
 
 //channel id is same as channels index in array
@@ -122,23 +128,23 @@ typedef struct channel
 {
 	boole is_existing;
 	boole is_channel_maintainer_present;
-	int channel_id;
+    boole is_using_password;
+    boole is_audio_enabled;
+    boole is_music_bot_active_in_channel;
+    int channel_id;
 	int parent_channel_id;
-	char name[CHANNEL_NAME_MAX_LENGTH];
 	int current_clients;
 	int max_clients;
-	char password[CHANNEL_PASSWORD_MAX_LENGTH];
-	char description[CHANNEL_DESCRIPTION_MAX_LENGTH];
-	boole is_using_password;
 	int type;
 	int maintainer_id;
-	boole is_audio_enabled;
-	pthread_rwlock_t lock;
+    char name[CHANNEL_NAME_MAX_LENGTH];
+    char password[CHANNEL_PASSWORD_MAX_LENGTH];
+    char description[CHANNEL_DESCRIPTION_MAX_LENGTH];
 } channel_t;
 
 typedef struct message
 {
-	unsigned long long timestamp_sent;
+    uint64 timestamp_sent;
 	int id_sender;
 } message_t;
 
@@ -170,16 +176,19 @@ typedef struct icon_t
 
 //
 //data of clients are linked to public keys..
+//just some metadata of clients, but right now this struct is not used
 //
 
 typedef struct client_stored_data_t
 {
-	char public_key[1000];
-	uint64 tag_ids[30]; //nahradit za vec
+	char public_key[MAX_PUBLIC_KEY_LENGTH];
+	uint64 tag_ids[MAX_TAGS_FOR_SINGLE_CLIENT]; //nahradit za vec
 	uint64 tag_id_count;
-	char username[100];
-	char base64_avatar[131072];
+	char username[USERNAME_MAX_LENGTH];
+	char base64_avatar[MAX_CLIENT_AVATAR_LENGTH];
 } client_stored_data_t;
+
+int base__get_new_index_for_client(void);
 
 void base__process_authenticated_client_message(ws_cli_conn_t *websocket, int client_index, char *decrypted_metadata_cstring);
 void base__process_not_authenticated_client_message(ws_cli_conn_t *websocket, int index, char *decrypted_metadata_cstring);
@@ -190,19 +199,7 @@ void base__get_data_from_base64_and_decrypt_it(int client_id, char *base64_strin
 
 void base__free_json_message(cJSON *json_root_object1, char *json_root_object1_string);
 
-//type
-//0 -> not set
-//1 - > sdp_answer from peer
-//2 -> ice_message from peer
-//3 -> new peer connection creation
-//4 -> delete peer
 
-typedef struct cross_thread_message
-{
-	int type;
-	int client_id;
-	char data[2048];
-} cross_thread_message_t;
 
 int base__get_client_count_for_channel(int channel_id);
 char *base__encrypt_string_with_public_key(char *public_key_modulus, unsigned char *bytes, uint64 buffer_length);
@@ -225,6 +222,7 @@ void base__init_tags_and_icons(void);
 boole base__is_tag_id_real(int tag_id);
 boole base__is_client_already_assigned_this_tag_id(int client_id, int this_tag_id);
 int base__get_index_of_tag_id_of_client(int client_id, int this_tag_id);
+client_t* base__find_music_bot_in_channel(int channel_id);
 
 void base__process_client_disconnect(int client_index);
 
