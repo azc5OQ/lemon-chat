@@ -15,8 +15,8 @@ void client_msg__process_create_channel_request(cJSON *json_root, int sender_cli
 void client_msg__process_edit_channel_request(cJSON *json_root, int sender_client_index);
 void client_msg__process_direct_chat_message(cJSON *json_root, int sender_client_index);
 void client_msg__process_channel_chat_message(cJSON *json_root, int sender_client_index);
-void client_msg__process_channel_chat_picture(cJSON *json_root, int sender_client_index);
-void client_msg__process_direct_chat_picture(cJSON *json_root, int sender_client_index);
+void client_msg__process_channel_chat_picture(int sender_client_index, int local_message_id, char *message_value);
+void client_msg__process_direct_chat_picture(int sender_client_index, int receiver_id, int local_message_id, char *message_value);
 void client_msg__process_join_channel_request(cJSON *json_root, int sender_client_index);
 void client_msg__process_delete_channel_request(cJSON *json_root, int sender_client_index);
 void client_msg__process_poke_client_request(cJSON *json_root, int sender_client_index);
@@ -38,5 +38,9 @@ void client_msg__process_kick_request(cJSON *json_root, int sender_client_index)
 void client_msg__process_ban_request(cJSON *json_root, int sender_client_index);
 void client_msg__process_create_music_bot_request(cJSON *json_root, int sender_client_index);
 void client_msg__process_delete_music_bot_request(cJSON *json_root, int sender_client_index);
+void client_msg__process_musicbot_get_song_list_request(cJSON *json_root, int sender_client_index);
+void client_msg__process_remove_song_from_music_bot_request(cJSON *json_root, int sender_client_index);
+void client_msg__process_file_send_request(cJSON *json_root, int sender_client_index);
+void client_msg__process_file_send_completed_request(cJSON *json_root, int sender_client_index);
 
 #endif //TEST0S_SOLUTION_CLIENT_MESSAGE_H

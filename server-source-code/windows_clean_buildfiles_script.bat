@@ -9,6 +9,7 @@
 ::libdatachannel (.dll)
 ::libviolet (.a)
 ::theldus-websocket (.a)
+::opus (.a)
 ::lemonchat-server (.exe)
 
 ::there are a

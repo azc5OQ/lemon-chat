@@ -62,6 +62,12 @@ pthread_rwlock_t tags_global_rwlock_guard = PTHREAD_RWLOCK_INITIALIZER;
 pthread_rwlock_t webrtc_muggles_rwlock_guard = PTHREAD_RWLOCK_INITIALIZER;
 
 pthread_mutex_t chat_message_id_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+uint64 thread_id0 = 0;
+uint64 thread_id1 = 0;
+uint64 thread_id2 = 0;
+uint64 thread_id3 = 0;
+
 uint64 chat_message_id;
 client_t *clients_array;
 channel_t *channel_array;
@@ -115,7 +121,7 @@ boole base__is_request_allowed_based_on_spam_protection(int client_index)
  *
  * @return void
  */
-uint64 base___get_chat_message_id(void)
+uint64 base__get_chat_message_id(void)
 {
 	uint64 to_return = 0;
 	pthread_mutex_lock(&chat_message_id_mutex);
@@ -133,7 +139,7 @@ uint64 base___get_chat_message_id(void)
  *
  * @return void
  */
-void base___increment_chat_message_id(void)
+void base__increment_chat_message_id(void)
 {
 	pthread_mutex_lock(&chat_message_id_mutex);
 
@@ -340,10 +346,10 @@ int base__get_client_count_for_channel(int channel_id)
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
 		if (client->channel_id == channel_id)
 		{
@@ -462,10 +468,10 @@ boole base__find_new_maintainer_for_channel(int *_out__new_index_of_maintainer, 
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
 		if (do_not_include_client_that_left_when_searching_for_new_maintainer)
 		{
@@ -499,7 +505,6 @@ boole base__find_new_maintainer_for_channel(int *_out__new_index_of_maintainer, 
 	return maintainer_found;
 }
 
-
 /**
  * @brief finds new index of maintainer of channel
  *
@@ -514,51 +519,49 @@ boole base__find_new_maintainer_for_channel(int *_out__new_index_of_maintainer, 
  *
  * @attention bad code
  */
-client_t* base__find_music_bot_in_channel(int channel_id)
+client_t *base__find_music_bot_in_channel(int channel_id)
 {
-    int i;
-    client_t *client_in_loop = NULL_POINTER;
+	int i;
+	client_t *client_in_loop = NULL_POINTER;
 
-    client_t *result = NULL_POINTER;
+	client_t *result = NULL_POINTER;
 
-    //maintainer will be random chosen
+	//maintainer will be random chosen
 
-    for (i = 0; i < MAX_CLIENTS; i++)
-    {
-        client_in_loop = &clients_array[i];
+	for (i = 0; i < MAX_CLIENTS; i++)
+	{
+		client_in_loop = &clients_array[i];
 
-        //
-        //if statements that are most probable to run should be first in loop
-        //
+		//
+		//if statements that are most probable to run should be first in loop
+		//
 
-        if (client_in_loop->is_existing == FALSE)
-        {
-            continue;
-        }
+		if (client_in_loop->is_existing == FALSE)
+		{
+			continue;
+		}
 
-        if (client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
+		if (client_in_loop->is_authenticated == FALSE)
+		{
+			continue;
+		}
 
-        if (client_in_loop->channel_id != channel_id)
-        {
-            continue;
-        }
+		if (client_in_loop->channel_id != channel_id)
+		{
+			continue;
+		}
 
-        if (client_in_loop->is_music_bot == FALSE)
-        {
-            continue;
-        }
+		if (client_in_loop->is_music_bot == FALSE)
+		{
+			continue;
+		}
 
+		DBG_DLLMAIN log_info("%s %s %s", "base__find_music_bot_in_channel client ", client_in_loop->username, " is the music bot \n");
 
-        log_info("%s %s %s", "base__find_music_bot_in_channel client " , client_in_loop->username , " is the music bot \n");
+		result = client_in_loop;
+	}
 
-
-        result = client_in_loop;
-    }
-
-    return result;
+	return result;
 }
 
 /**
@@ -684,15 +687,17 @@ end_loop:
  */
 int base__get_new_index_for_client(void)
 {
-	int i;
+	int new_index = -1;
+	int i = 0;
 	for (i = 0; i < MAX_CLIENTS; i++)
 	{
 		if (clients_array[i].timestamp_connected == 0)
 		{
-			return i;
+			new_index = i;
+			break;
 		}
 	}
-	return -1;
+	return new_index;
 }
 
 /**
@@ -725,13 +730,13 @@ void base__fill_block_of_data_with_ascii_characters(char *block, int length)
  */
 void base__free_json_message(cJSON *json_root_object1, char *json_root_object1_string)
 {
-	if (json_root_object1 != 0)
+	if (json_root_object1 != NULL_POINTER)
 	{
 		//log_info("base__free_json_message() cJSON_Delete(json_root_object1); \n");
 		cJSON_Delete(json_root_object1);
 	}
 
-	if (json_root_object1_string != 0)
+	if (json_root_object1_string != NULL_POINTER)
 	{
 		free(json_root_object1_string);
 	}
@@ -769,6 +774,39 @@ uint64 base__get_timestamp_ms(void)
 	gettimeofday(&tv, NULL);
 	uint64 timestamp_msec = (uint64)tv.tv_sec * 1000 + tv.tv_usec / 1000;
 	return timestamp_msec;
+#endif
+}
+
+/**
+ * @brief sleeps for X milliseconds
+ * *
+ * @return void
+ *
+ * @attention should work on windows and linux
+ */
+#ifdef WIN32
+#include <windows.h>
+#elif _POSIX_C_SOURCE >= 199309L
+#include <time.h> // for nanosleep
+#else
+#include <unistd.h> // for usleep
+#endif
+
+void base__sleep_for_milliseconds(int milliseconds)
+{ // cross-platform sleep function
+#ifdef WIN32
+	Sleep(milliseconds);
+#elif _POSIX_C_SOURCE >= 199309L
+	struct timespec ts;
+	ts.tv_sec = milliseconds / 1000;
+	ts.tv_nsec = (milliseconds % 1000) * 1000000;
+	nanosleep(&ts, NULL);
+#else
+	if (milliseconds >= 1000)
+	{
+		sleep(milliseconds / 1000);
+	}
+	usleep((milliseconds % 1000) * 1000);
 #endif
 }
 
@@ -1329,7 +1367,7 @@ void base__process_authenticated_client_message(ws_cli_conn_t *websocket, int cl
 	is_sender_idle = clients_array[client_index].is_idle;
 	pthread_rwlock_unlock(&clients_global_rwlock_guard);
 
-    //todo , ignore audio related messages if audio is completely disabled by server
+	//todo , ignore audio related messages if audio is completely disabled by server
 
 	//first two messages are the ones where it doesnt matter if client is in idle state or not
 	if (clib__is_string_equal(message_type, "client_connection_check"))
@@ -1365,14 +1403,6 @@ void base__process_authenticated_client_message(ws_cli_conn_t *websocket, int cl
 			else if (clib__is_string_equal(message_type, "channel_chat_message"))
 			{
 				client_msg__process_channel_chat_message(json_root, client_index);
-			}
-			else if (clib__is_string_equal(message_type, "channel_chat_picture"))
-			{
-				client_msg__process_channel_chat_picture(json_root, client_index);
-			}
-			else if (clib__is_string_equal(message_type, "direct_chat_picture"))
-			{
-				client_msg__process_direct_chat_picture(json_root, client_index);
 			}
 			else if (clib__is_string_equal(message_type, "join_channel_request"))
 			{
@@ -1440,24 +1470,45 @@ void base__process_authenticated_client_message(ws_cli_conn_t *websocket, int cl
 					client_msg__process_go_to_idle_mode_request(json_root, client_index);
 				}
 			}
-            else if (clib__is_string_equal(message_type, "kick"))
-            {
-                client_msg__process_kick_request(json_root, client_index);
-            }
+			else if (clib__is_string_equal(message_type, "kick"))
+			{
+				client_msg__process_kick_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "ban"))
+			{
+				client_msg__process_ban_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "create_music_bot"))
+			{
+				client_msg__process_create_music_bot_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "delete_music_bot"))
+			{
+				client_msg__process_delete_music_bot_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "musicbot_get_song_list"))
+			{
+				client_msg__process_musicbot_get_song_list_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "remove_song_from_music_bot"))
+			{
+				client_msg__process_remove_song_from_music_bot_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "file_send"))
+			{
+				client_msg__process_file_send_request(json_root, client_index);
+			}
+			else if (clib__is_string_equal(message_type, "file_send_completed"))
+			{
+				//
+				//client_msg__process_direct_chat_picture
+				//and
+				//client_msg__process_channel_chat_picture
+				//gets called by client_msg__process_file_send_completed_request if needed
+				//
 
-            else if (clib__is_string_equal(message_type, "ban"))
-            {
-                client_msg__process_ban_request(json_root, client_index);
-            }
-
-            else if (clib__is_string_equal(message_type, "create_music_bot"))
-            {
-                client_msg__process_create_music_bot_request(json_root, client_index);
-            }
-            else if (clib__is_string_equal(message_type, "delete_music_bot"))
-            {
-                client_msg__process_delete_music_bot_request(json_root, client_index);
-            }
+				client_msg__process_file_send_completed_request(json_root, client_index);
+			}
 		}
 
 		if (is_sender_idle == TRUE)
@@ -1602,10 +1653,10 @@ void websocket_connection_check_thread(void)
 
 			if (clients_array[i].is_authenticated == TRUE)
 			{
-                if (clients_array[i].is_music_bot == TRUE)
-                {
-                    continue;
-                }
+				if (clients_array[i].is_music_bot == TRUE)
+				{
+					continue;
+				}
 
 				timestamp_now = base__get_timestamp_ms();
 
@@ -1725,7 +1776,7 @@ void base__set_server_settings(void)
 	unsigned char custom_iv[16] = { 90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10 };
 
 	clib__null_memory(&g_server_settings, sizeof(server_settings_t));
-	clib__copy_memory(verification_message, g_server_settings.client_verificaton_message_cleartext, strlen(verification_message), 1024);
+	//clib__copy_memory(verification_message, g_server_settings.client_verificaton_message_cleartext, strlen(verification_message), 1024);
 	g_server_settings.websocket_message_max_length = 5000000;
 	g_server_settings.websocket_chat_message_string_max_length = 8000;
 	g_server_settings.chat_cooldown_milliseconds = 100;
@@ -1734,7 +1785,7 @@ void base__set_server_settings(void)
 	g_server_settings.is_same_ip_address_allowed = TRUE;
 	g_server_settings.is_voice_chat_active = TRUE;
 	g_server_settings.is_hide_clients_in_password_protected_channels_active = TRUE;
-	g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active = FALSE;
+	g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active = TRUE;
 	g_server_settings.is_display_country_flags_active = FALSE;
 	g_server_settings.is_display_admin_tag_active = TRUE;
 	g_server_settings.is_idle_mode_allowed = TRUE;
@@ -2041,7 +2092,7 @@ char *base__encrypt_string_with_public_key(char *public_key_modulus, unsigned ch
 }
 
 /**
- * @brief prints out debug information
+ * @brief prints out debug information at start
  *
  */
 void _main_internal__print_debug_information(void)
@@ -2061,6 +2112,8 @@ void _main_internal__print_debug_information(void)
 	DBG_VIOLET printf("DBG_VIOLET active \n");
 	DBG_DBG_MEMORY_ALLOCATIONS printf("DBG_DBG_MEMORY_ALLOCATIONS active \n");
 	DBG_IP_TOOLS printf("DBG_IP_TOOLS active \n");
+	DBG_MUSIC_BOT printf("DBG_MUSIC_BOT active \n");
+	DBG_FILE_UPLOAD printf("DBG_FILE_UPLOAD active \n");
 }
 
 /**
@@ -2074,7 +2127,7 @@ int main(void)
 	_main_internal__print_debug_information();
 #endif
 
-	//toto sa spusti aby bol vystup rand() u nahodny
+	//run this so rand() gives random output every time
 	srand(time(0));
 
 	char input[50];
@@ -2129,11 +2182,6 @@ int main(void)
 	base__init_channel_list();
 	base__set_server_settings();
 	base__init_tags_and_icons();
-
-	unsigned long thread_id0 = 0;
-	unsigned long thread_id1 = 0;
-	unsigned long thread_id2 = 0;
-	unsigned long thread_id3 = 0;
 
 	pthread_create((pthread_t *)&thread_id0, 0, (void *)&websocket_thread, 0);
 	pthread_create((pthread_t *)&thread_id1, 0, (void *)&websocket_connection_check_thread, 0);

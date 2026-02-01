@@ -66,6 +66,8 @@ typedef const char *cstring;
 #define DBG_VIOLET if (0)
 #define DBG_DBG_MEMORY_ALLOCATIONS if (0)
 #define DBG_IP_TOOLS if (0)
+#define DBG_FILE_UPLOAD if (0)
+#define DBG_MUSIC_BOT if (0)
 #endif
 
 #ifndef DEBUG_ACTIVE
@@ -84,6 +86,8 @@ typedef const char *cstring;
 #define DBG_VIOLET if (0)
 #define DBG_DBG_MEMORY_ALLOCATIONS if (0)
 #define DBG_IP_TOOLS if (0)
+#define DBG_FILE_UPLOAD if (0)
+#define DBG_MUSIC_BOT if (0)
 #endif
 
 #ifdef DONT_USE_AUDIO_CHANNEL

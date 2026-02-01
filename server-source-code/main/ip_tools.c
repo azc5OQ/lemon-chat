@@ -126,7 +126,6 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *memory_to
 
 	// Perform the lookup in the MMDB
 
-
 	MMDB_lookup_result_s gresult = MMDB_lookup_string(&mmdb, &ip_address_to_resolve[0], &gai_error, &mmdb_error);
 
 	// Check for errors in the lookup process

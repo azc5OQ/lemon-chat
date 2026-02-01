@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <pthread.h>
 
-#include "libdatachannel/include/rtc/rtc.h"
+#include "../libdatachannel/include/rtc/rtc.h"
 #include "dave-g-json/cJSON.h"
 
 #include "base.h"
@@ -36,11 +36,7 @@ char *rtcGatheringState_print(rtcGatheringState state);
 
 //bol som nuteny odstranit z audio_channel.c rwlocky, pretoze, sposobovali zamrzanie.
 
-
 //helper function
-
-
-
 
 /**
  * @brief error callback
@@ -385,8 +381,6 @@ void RTC_API datachannel_on_closed_callback(int id, void *ptr)
  * @param const char *message
  * @param int size
  * @param void *ptr
- *
- * @warning this function lags the chat. Solution, create small list that will mirror client ids and their channel ids that only this messagecallback will use
  *
  * @return void
  */
@@ -831,4 +825,47 @@ label_audio_channel__initialize_webrtc_datachannel_connection_end:
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s %d %s", "audio_channel__initialize_webrtc_datachannel_connection asas", peer->data_channel_handle, "\n");
 
 	return result;
+}
+
+void audio_channel__send_music_bot_data(int channel_id, unsigned char *data, int data_length)
+{
+	//log_info("%s", "audio_channel__send_music_bot_data called");
+
+	//printf("%s %s", "datachannel_on_message_callback" , "\n");
+	webrtc_peer_t *peer_receiver;
+	int dc = 0;
+
+	//toremove--pthread_rwlock_rdlock(&webrtc_muggles_rwlock_guard);
+
+	//printf("Message %s: [binary of size %d]\n", "offerer", size);
+
+	//
+	// sent audio data to other clients located in same channel as found client, if they too have authenticated audio websocket
+	//
+
+	for (int i = 0; i < MAX_CLIENTS; i++)
+	{
+		peer_receiver = &webrtc_muggles_array[i];
+
+		if (peer_receiver->is_existing == FALSE)
+		{
+			continue;
+		}
+		else if (peer_receiver->channel_id != channel_id)
+		{
+			continue;
+		}
+
+		void *message1 = (void *)memorymanager__allocate(data_length + 5, MEMALLOC_MUSICBOT_AUDIOCHANNEL_ONMESSAGE);
+		((int *)message1)[0] = -2; //sender is music bot
+		clib__copy_memory((void *)data, ((unsigned char *)message1 + 4), data_length, data_length);
+
+		//log_info("%s %d %s", "sending  ", data_length, "bytes of data \n");
+
+		rtcSendMessage(peer_receiver->data_channel_handle, message1, data_length + 4);
+
+		memorymanager__free((nuint)message1);
+
+		//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+	}
 }

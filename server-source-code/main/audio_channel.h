@@ -1,5 +1,6 @@
 #ifndef AUDIO_CHANNEL_H
 
+#define AUDIO_CHANNEL_H 1
 
 typedef struct webrtc_peer_t
 {
@@ -24,5 +25,7 @@ void audio_channel__set_is_client_sending_audio(int client_id, boole is_active);
 void audio_channel__process_client_channel_join(client_t *client);
 void audio_channel__process_client_disconnect(client_t *client);
 void audio_channel__data_sending_thread(void);
+
+void audio_channel__send_music_bot_data(int channel_id, unsigned char *data, int length);
 
 #endif

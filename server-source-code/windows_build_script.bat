@@ -93,6 +93,10 @@ IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
   del "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\CMakeCache.txt"
   del "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a"
 
+  del "%ROOT_DIRECTORY%\libopus-1.5.2\CMakeCache.txt"
+  rd "%ROOT_DIRECTORY%\libopus-1.5.2\CMakeFiles"  /S /Q
+  del "%ROOT_DIRECTORY%\libopus-1.5.2\libopus.a"
+
   rd "%ROOT_DIRECTORY%\main\CMakeFiles"  /S /Q
   del "%ROOT_DIRECTORY%\main\CMakeCache.txt"
   del "%ROOT_DIRECTORY%\main\cmake_install.cmake"
@@ -250,7 +254,7 @@ copy "%ROOT_DIRECTORY%\libviolet\libviolet.a" "%ROOT_DIRECTORY%\main\linkage-fil
 
 
 ::********************************************************
-::****** libmaxminddb builld                        ******
+::****** libmaxminddb build                        ******
 ::********************************************************
 
 cd "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\"
@@ -261,6 +265,23 @@ cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_
 cmake --build . -j32 --target maxminddb
 
 copy "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmaxminddb.a"
+
+
+cd ../
+
+
+::********************************************************
+::****** libopus build                        ******
+::********************************************************
+
+cd "%ROOT_DIRECTORY%\libopus-1.5.2\"
+
+make clean
+
+cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
+cmake --build . -j32 --target opus
+
+copy "%ROOT_DIRECTORY%\libopus-1.5.2\libopus.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libopus.a"
 
 
 cd ../

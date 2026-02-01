@@ -43,6 +43,8 @@ void server_msg__send_create_new_tag_event_to_all_clients(int tag_id, char *tag_
 void server_msg__send_call_event_to_idle_client(client_t *caller, client_t *callee);
 void server_msg__send_client_going_to_idle_mode_info_to_all_clients(int client_that_goes_idle);
 void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(int client_that_comes_from_idle, int channel_the_client_joins);
+void server_msg__send_music_bot_song_list_to_single_client(int sender_client_index, int music_bot_index);
+void server_msg__send_file_send_completed_status_to_single_client(client_t *client);
 
 //audio related
 void server_msg__send_webrtc_sdp_offer_to_single_client(const char *cand, const char *mid, client_t *client);

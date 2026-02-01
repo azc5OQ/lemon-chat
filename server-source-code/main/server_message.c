@@ -254,21 +254,25 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t *websocket, cha
 		}
 
 		cJSON_AddNumberToObject(single_client, "client_id", (double)client_in_loop->client_id);
-        cJSON_AddBoolToObject(single_client, "is_music_bot", client_in_loop->is_music_bot);
+
+		cJSON_AddBoolToObject(single_client, "is_music_bot", client_in_loop->is_music_bot);
+
+		if (client_in_loop->is_music_bot)
+		{
+			DBG_SERVER_MESSAGE log_info("%s %d %s", "server_msg client id is -> ", client_in_loop->client_id, "\n");
+		}
 
 		int audio_state_to_send = client_in_loop->audio_state;
 
+		//
+		//only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
+		//privacy reasons
+		//
 
-        //
-        //only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
-        //privacy reasons
-        //
-
-        if (client_in_loop->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != ROOT_CHANNEL_ID)
-        {
-            audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
-        }
-
+		if (client_in_loop->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != ROOT_CHANNEL_ID)
+		{
+			audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
+		}
 
 		cJSON_AddNumberToObject(single_client, "audio_state", (double)audio_state_to_send);
 
@@ -571,16 +575,13 @@ void server_msg__send_client_connect_message_to_all_clients(int client_id_of_con
 	char *msg_text = 0;
 	client_t *client_in_loop = 0;
 
-
-    new_client = &clients_array[client_id_of_connected_client];
-
-
+	new_client = &clients_array[client_id_of_connected_client];
 
 	DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_tag_list_to_single_client: json_root_object1_string ", json_root_object1_string, "\n");
 
 	for (x = 0; x < MAX_CLIENTS; x++)
 	{
-        client_in_loop = &clients_array[x];
+		client_in_loop = &clients_array[x];
 
 		if (client_in_loop->is_existing == FALSE)
 		{
@@ -597,57 +598,54 @@ void server_msg__send_client_connect_message_to_all_clients(int client_id_of_con
 			continue;
 		}
 
-        if (client_in_loop->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client_in_loop->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-        json_root_object1 = cJSON_CreateObject();
-        json_message_object1 = cJSON_CreateObject();
-        json_tag_ids_array = cJSON_CreateArray();
+		json_root_object1 = cJSON_CreateObject();
+		json_message_object1 = cJSON_CreateObject();
+		json_tag_ids_array = cJSON_CreateArray();
 
-        cJSON_AddStringToObject(json_message_object1, "type", "client_connect");
-        cJSON_AddStringToObject(json_message_object1, "username", new_client->username);
-        cJSON_AddStringToObject(json_message_object1, "public_key", new_client->public_key);
-        cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)new_client->channel_id);
-        cJSON_AddNumberToObject(json_message_object1, "client_id", (double)new_client->client_id);
-        cJSON_AddBoolToObject(json_message_object1, "is_music_bot", new_client->is_music_bot);
+		cJSON_AddStringToObject(json_message_object1, "type", "client_connect");
+		cJSON_AddStringToObject(json_message_object1, "username", new_client->username);
+		cJSON_AddStringToObject(json_message_object1, "public_key", new_client->public_key);
+		cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)new_client->channel_id);
+		cJSON_AddNumberToObject(json_message_object1, "client_id", (double)new_client->client_id);
+		cJSON_AddBoolToObject(json_message_object1, "is_music_bot", new_client->is_music_bot);
 
-        int audio_state_to_send = new_client->audio_state;
+		int audio_state_to_send = new_client->audio_state;
 
+		//
+		//only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
+		//privacy reasons
+		//
 
-        //
-        //only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
-        //privacy reasons
-        //
+		if (new_client->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != new_client->channel_id)
+		{
+			audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
+		}
 
-        if (new_client->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != new_client->channel_id)
-        {
-            audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
-        }
+		cJSON_AddNumberToObject(json_message_object1, "audio_state", audio_state_to_send);
+		cJSON_AddStringToObject(json_message_object1, "country_iso_code", new_client->country_iso_code);
+		cJSON_AddItemToObject(json_message_object1, "tag_ids", json_tag_ids_array);
 
+		cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
-        cJSON_AddNumberToObject(json_message_object1, "audio_state", audio_state_to_send);
-        cJSON_AddStringToObject(json_message_object1, "country_iso_code", new_client->country_iso_code);
-        cJSON_AddItemToObject(json_message_object1, "tag_ids", json_tag_ids_array);
+		json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
-        cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-        json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
 
-        base__free_json_message(json_root_object1, json_root_object1_string);
+		base__free_json_message(json_root_object1, json_root_object1_string);
 
-        if (msg_text != NULL_POINTER)
+		if (msg_text != NULL_POINTER)
 		{
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-
-    }
+			DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
+			ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
+			memorymanager__free((nuint)msg_text);
+		}
+	}
 }
 
 /**
@@ -787,13 +785,12 @@ void server_msg__send_client_rename_message_to_all_clients(int id_of_client_that
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -907,12 +904,12 @@ void server_msg__send_channel_create_message_to_all_clients(int created_channel_
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -982,13 +979,12 @@ void server_msg__send_channel_edit_message_to_all_clients(int edited_channel_ind
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -1149,8 +1145,8 @@ void server_msg__send_chat_message_to_clients_in_same_channel(int client_sender_
 	cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_message");
 	cJSON_AddStringToObject(json_message_object1, "value", chat_message_value);
 	cJSON_AddStringToObject(json_message_object1, "sender_username", client_sender->username);
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
+	cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
+	cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
 	cJSON_AddNumberToObject(json_message_object1, "server_chat_message_id", server_chat_message_id);
 
 	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -1187,10 +1183,10 @@ void server_msg__send_chat_message_to_clients_in_same_channel(int client_sender_
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
 		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
@@ -1266,10 +1262,10 @@ void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(i
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
 		if (client->channel_id != receiving_channel_id)
 		{
@@ -1337,8 +1333,8 @@ void server_msg__send_channel_chat_picture_to_clients_in_same_channel(int client
 	cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_picture");
 	cJSON_AddStringToObject(json_message_object1, "value", chat_message_value);
 	cJSON_AddStringToObject(json_message_object1, "username", client_sender->username);
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
+	cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
+	cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
 	cJSON_AddNumberToObject(json_message_object1, "picture_id", server_chat_message_id);
 
 	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -1375,10 +1371,10 @@ void server_msg__send_channel_chat_picture_to_clients_in_same_channel(int client
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
 		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
@@ -1641,13 +1637,12 @@ void server_msg__send_channel_join_message_to_all_clients(client_t *client_that_
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-
-        boole is_hide_client_active = FALSE;
+		boole is_hide_client_active = FALSE;
 
 		if (g_server_settings.is_hide_clients_in_password_protected_channels_active)
 		{
@@ -1824,10 +1819,10 @@ void server_msg__send_maintainer_id_to_clients_in_same_channel(int channel_id, i
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
 		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
@@ -1894,12 +1889,12 @@ void server_msg__send_channel_delete_message_to_all_clients(int deleted_channel_
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -1966,12 +1961,12 @@ void server_msg__send_client_disconnect_message_to_all_clients(int client_index)
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -2108,9 +2103,8 @@ void server_msg__send_audio_state_of_client_to_all_clients(int client_id, int st
 	int size_of_allocated_message_buffer = 0;
 	char *msg_text = 0;
 	client_t *client = 0;
-    int audio_state_to_send = 0;
-    boole is_hide_client_active = FALSE;
-
+	int audio_state_to_send = 0;
+	boole is_hide_client_active = FALSE;
 
 	for (x = 0; x < MAX_CLIENTS; x++)
 	{
@@ -2126,13 +2120,12 @@ void server_msg__send_audio_state_of_client_to_all_clients(int client_id, int st
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-
-        is_hide_client_active = FALSE;
+		is_hide_client_active = FALSE;
 
 		if (g_server_settings.is_hide_clients_in_password_protected_channels_active)
 		{
@@ -2153,49 +2146,43 @@ void server_msg__send_audio_state_of_client_to_all_clients(int client_id, int st
 			continue;
 		}
 
-        //only send microphone active state to clients in same channel as sender
-        if (client->channel_id != clients_array[client_id].channel_id)
-        {
-            if (state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE)
-            {
-                audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
-            }
-        }
-        else
-        {
-            audio_state_to_send = state;
-        }
+		audio_state_to_send = state;
 
+		//only send microphone active state to clients in same channel as sender
+		if (client->channel_id != clients_array[client_id].channel_id)
+		{
+			if (state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE)
+			{
+				audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
+			}
+		}
 
-        json_root_object1 = cJSON_CreateObject();
-        json_message_object1 = cJSON_CreateObject();
+		json_root_object1 = cJSON_CreateObject();
+		json_message_object1 = cJSON_CreateObject();
 
-        cJSON_AddStringToObject(json_message_object1, "type", "audio_state_of_single_client");
-        cJSON_AddNumberToObject(json_message_object1, "client_id", client_id);
-        cJSON_AddNumberToObject(json_message_object1, "value", audio_state_to_send);
-        cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+		cJSON_AddStringToObject(json_message_object1, "type", "audio_state_of_single_client");
+		cJSON_AddNumberToObject(json_message_object1, "client_id", client_id);
+		cJSON_AddNumberToObject(json_message_object1, "value", audio_state_to_send);
+		cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
-        json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-        DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_audio_state_of_client_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
+		json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+		DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_audio_state_of_client_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
+		DBG_SERVER_MESSAGE log_info("%s %d %s %d %s", "server_msg__send_audio_state_of_client_to_all_clients ", client_id, " to client ", client->client_id, "\n");
 
+		size_of_allocated_message_buffer = 0;
+		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
-        DBG_SERVER_MESSAGE log_info("%s %d %s %d %s", "server_msg__send_audio_state_of_client_to_all_clients ", client_id, " to client ", client->client_id, "\n");
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text == NULL_POINTER)
-        {
-            return;
-        }
+		if (msg_text == NULL_POINTER)
+		{
+			return;
+		}
 
 		ws_sendframe_txt(client->p_ws_connection, msg_text);
 
 		memorymanager__free((nuint)msg_text);
 
-        base__free_json_message(json_root_object1, json_root_object1_string);
-    }
-
+		base__free_json_message(json_root_object1, json_root_object1_string);
+	}
 }
 
 /**
@@ -2254,10 +2241,10 @@ void server_msg__send_start_song_stream_message_to_clients_in_same_channel(clien
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
 		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
@@ -2294,7 +2281,7 @@ void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client
 	client_t *client_sender;
 	client_t *client;
 
-	DBG_SERVER_MESSAGE log_info("%s", "server_msg__send_stop_song_stream_message_to_clients_in_same_channel \n");
+	DBG_SERVER_MESSAGE log_info("%s", "server__msg__send_stop_song_stream_message_to_clients_in_same_channel \n");
 
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
@@ -2306,7 +2293,7 @@ void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client
 
 	json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
-	DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_stop_song_stream_message_to_clients_in_same_channel ", json_root_object1_string, "\n");
+	DBG_SERVER_MESSAGE log_info("%s %s %s", "server__msg__send_stop_song_stream_message_to_clients_in_same_channel ", json_root_object1_string, "\n");
 
 	for (i = 0; i < MAX_CLIENTS; i++)
 	{
@@ -2326,19 +2313,17 @@ void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
 		if (client->channel_id != client_that_streams->channel_id)
 		{
 			continue;
 		}
 
-
-
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -2346,7 +2331,7 @@ void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client
 			return;
 		}
 
-		DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_stop_song_stream_message_to_clients_in_same_channel: msg_text ", msg_text, "\n");
+		DBG_SERVER_MESSAGE log_info("%s %s %s", "server__msg__send_stop_song_stream_message_to_clients_in_same_channel: msg_text ", msg_text, "\n");
 
 		ws_sendframe_txt(client->p_ws_connection, msg_text);
 		memorymanager__free((nuint)msg_text);
@@ -2407,13 +2392,12 @@ void server_msg__send_add_tag_to_client_event_to_all_clients(int client_id_of_cl
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -2482,12 +2466,12 @@ void server_msg__send_remove_tag_from_client_event_to_all_clients(int client_id_
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -2556,13 +2540,12 @@ void server_msg__send_add_new_icon_event_to_all_clients(int new_icon_id, char *i
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -2632,13 +2615,12 @@ void server_msg__send_create_new_tag_event_to_all_clients(int tag_id, char *tag_
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -2747,10 +2729,10 @@ void server_msg__send_client_going_to_idle_mode_info_to_all_clients(int client_t
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
 		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
@@ -2816,13 +2798,12 @@ void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(int 
 			continue;
 		}
 
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
+		if (client->is_music_bot == TRUE)
+		{
+			continue;
+		}
 
-
-        size_of_allocated_message_buffer = 0;
+		size_of_allocated_message_buffer = 0;
 		msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
 		if (msg_text == NULL_POINTER)
@@ -2837,4 +2818,127 @@ void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(int 
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief sends song list of music bot to single_client
+ *
+ * @param id_of_client_that_changed_his_username self explanatory
+ * @param new_username self explanatory
+ *
+ * @attention this function must be used within rdlock
+ *
+ * @return void
+ */
+void server_msg__send_music_bot_song_list_to_single_client(int sender_client_index, int music_bot_index)
+{
+	cJSON *json_root_object1 = 0;
+	cJSON *json_message_object1 = 0;
+	cJSON *json_songs_array = 0;
+	char *json_root_object1_string = 0;
+	int size_of_allocated_message_buffer = 0;
+	char *msg_text = 0;
+	client_t *client = 0;
+	music_bot_single_song_data_t *single_song_in_loop;
+	client_t *music_bot = NULL_POINTER;
+	int loop_index = 0;
+
+	json_root_object1 = cJSON_CreateObject();
+	json_message_object1 = cJSON_CreateObject();
+	json_songs_array = cJSON_CreateArray();
+
+	// create array of music bot data
+	client = &clients_array[sender_client_index];
+
+	if (client->is_authenticated == FALSE || client->is_existing == FALSE || client->is_admin == FALSE)
+	{
+		return;
+	}
+
+	music_bot = &clients_array[music_bot_index];
+	if (music_bot->is_music_bot == FALSE)
+	{
+		return;
+	}
+
+	// create array of clients
+	for (loop_index = 0; loop_index < MUSIC_BOT_MAX_FILE_COUNT; loop_index++)
+	{
+		single_song_in_loop = &music_bot->music_bot_client_extension.songs[loop_index];
+
+		if (single_song_in_loop->is_existing == FALSE)
+		{
+			continue;
+		}
+
+		cJSON *song = cJSON_CreateObject();
+		cJSON_AddStringToObject(song, "name", single_song_in_loop->song_name);
+		cJSON_AddNumberToObject(song, "id", loop_index);
+		cJSON_AddNumberToObject(song, "duration_seconds", single_song_in_loop->length_seconds);
+		cJSON_AddItemToArray(json_songs_array, song);
+	}
+
+	cJSON_AddStringToObject(json_message_object1, "type", "music_bot_song_list");
+	cJSON_AddItemToObject(json_message_object1, "songs", json_songs_array);
+	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+	json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+	DBG_SERVER_MESSAGE log_info("%s %s %s", "json_root_object1_string: msg_text ", json_root_object1_string, "\n");
+
+	size_of_allocated_message_buffer = 0;
+	msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+	if (msg_text == NULL_POINTER)
+	{
+		return;
+	}
+
+	DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
+
+	ws_sendframe_txt(client->p_ws_connection, msg_text);
+	memorymanager__free((nuint)msg_text);
+
+	base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief self explanatory
+ *
+ * @param informs the client that his file upload was succesfull, the client then sends the server information about what to do with the file
+ * @todo make image file upload use this function
+ *
+ * @attention this function is used within acquired readlock within client_message.c , multiple functions
+ *
+ * @return void
+ */
+void server_msg__send_file_send_completed_status_to_single_client(client_t *client)
+{
+	char *json_root_object1_string = 0;
+	int size_of_allocated_message_buffer = 0;
+	char *msg_text = 0;
+	int i = 0;
+	cJSON *json_root_object1 = 0;
+	cJSON *json_message_object1 = 0;
+
+	json_root_object1 = cJSON_CreateObject();
+	json_message_object1 = cJSON_CreateObject();
+
+	cJSON_AddStringToObject(json_message_object1, "type", "file_send_success");
+	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+	json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+	size_of_allocated_message_buffer = 0;
+	msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+	base__free_json_message(json_root_object1, json_root_object1_string);
+
+	if (msg_text == NULL_POINTER)
+	{
+		return;
+	}
+
+	ws_sendframe_txt(client->p_ws_connection, msg_text);
+
+	memorymanager__free((nuint)msg_text);
 }

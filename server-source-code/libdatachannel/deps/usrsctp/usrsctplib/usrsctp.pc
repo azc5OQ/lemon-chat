@@ -1,7 +1,7 @@
-prefix=C:/Program Files (x86)/libdatachannel
-exec_prefix=C:/Program Files (x86)/libdatachannel
-libdir=C:/Program Files (x86)/libdatachannel/lib
-includedir=C:/Program Files (x86)/libdatachannel/include
+prefix=/usr/local
+exec_prefix=/usr/local
+libdir=/usr/local/lib64
+includedir=/usr/local/include
 
 Name: usrsctp
 Description: SCTP implementation

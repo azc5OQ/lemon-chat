@@ -38,9 +38,11 @@ echo $build_directory
 
 #QUESTION = "do you wish to delete any files?
 
+#zmaz subory ktore ostali
 
 ROOT_DIRECTORY="$PWD"
-
+#tento skript nieje dobry, ak $PWD nepoukazuje na priecinok v ktorom je linux_build_script.bat, ale na priecinok odkial sa spusta linux_build_script.bat
+ 
 
 rm -f -v -r $ROOT_DIRECTORY/../buildresult/
 
@@ -82,6 +84,8 @@ then
     rm -fv "$ROOT_DIRECTORY/main/build.ninja"
     rm -fv "$ROOT_DIRECTORY/main/.ninja_deps"
     rm -fv "$ROOT_DIRECTORY/main/.ninja_log"
+    rm -rfv "$ROOT_DIRECTORY/libopus-1.5.2/CMakeFiles"
+    rm -fv "$ROOT_DIRECTORY/libopus-1.5.2/CMakeCache.txt"
     rm -fv "$ROOT_DIRECTORY/../buildresult/*"
 
 fi
@@ -232,8 +236,16 @@ cp -v "$ROOT_DIRECTORY/libmaxminddb-1.12.2/src/.libs/libmaxminddb.a" "$ROOT_DIRE
 
 cd ../
 
+message "building libopus-1.5.2"
 
+cd libopus-1.5.2
 
+cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
+
+cmake --build . -j32  --target opus
+cp -r -v "$ROOT_DIRECTORY/libopus-1.5.2/libopus.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libopus.a"
+
+cd ../
 
 #********************************************************
 #******  at last, main-chat-server build          ******
@@ -283,6 +295,6 @@ cd ../
 message "build finished. Try running start_server.sh in buildresult directory"
 
 
-strip -v "$ROOT_DIRECTORY/../buildresult/chat-server.bin"
+#strip -v "$ROOT_DIRECTORY/../buildresult/chat-server.bin"
 
 message "add stripping binary from symbols"

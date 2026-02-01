@@ -42,6 +42,7 @@ add_executable(chat-server
         memory_manager.c
         vec/vec.c
         ip_tools.c
+        musicbot/musicbot.c
         )
 
 
@@ -66,12 +67,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}\\linkage-files\\windows\\libmbedx509.a)
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}\\linkage-files\\windows\\libmbedcrypto.a)
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}\\linkage-files\\windows\\libmaxminddb.a)
+    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}\\linkage-files\\windows\\libopus.a)
     target_link_libraries(chat-server PRIVATE ws2_32 wsock32 bcrypt) #system libraries
 endif()
 
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-
+    target_link_libraries(chat-server PRIVATE -lm)
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libws.a)
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libtommath.a)
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libtomcrypt.a)
@@ -80,6 +82,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmbedx509.a)
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmbedcrypto.a)
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmaxminddb.a)
+    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libopus.a)
 
 
 
