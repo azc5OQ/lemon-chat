@@ -23380,26 +23380,8 @@
                 }
                 else
                 {
-                    begin_connect_to_server();
+                    begin_connect_to_server(); //only connects if autoconnect is enabled
                 }
-
-                if (are_server_details_predefined == true && is_autoconnect_without_user_action_active == true)
-                {
-                    connect_to_server();
-
-                    if (is_reconnect_active)
-                    {
-
-                        let intervalID = window.setInterval( () => {
-
-                            if (is_authenticated == false)
-                            {
-                                connect_to_server();
-                            }
-                        }, 30000);
-                    }
-                }
-
             }
 
             //

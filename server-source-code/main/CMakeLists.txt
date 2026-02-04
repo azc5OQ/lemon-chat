@@ -21,8 +21,6 @@ else()
 endif()
 
 
-#pozor, moznost -static dodrbe, dynamicke kniznice
-
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 
 include_directories(untitled PUBLIC ${PROJECT_SOURCE_DIR}/../mbedtls-3.5.1/include)
@@ -47,14 +45,6 @@ add_executable(chat-server
 
 
 
-#in the command 'target_link_libraries' the keywords PUBLIC,PRIVATE,INTERFACE have certain meaning, which has something to do with how header files of libs are used within CMakeList's target
-#PUBLIC -> both source and header files within this project contain #include to header files of the linked library
-#PRIVATE -> only source files within this project contain #include to header files of this linked library
-#INTERFACE -> only header files within this project contain #include to header files of this linked library
-
-
-
-
 #linux uses forward slash for path, windows two backward slashes
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -73,40 +63,23 @@ endif()
 
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(chat-server PRIVATE -lm)
-    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libws.a)
-    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libtommath.a)
-    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libtomcrypt.a)
-    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libviolet.a)
-    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmbedtls.a)
-    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmbedx509.a)
-    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmbedcrypto.a)
-    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmaxminddb.a)
-    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}/linkage-files/linux/libopus.a)
-
-
-
-#link .so file to executable, in this case libdatachannel.so located in linkage-files/linux
-#GLOBAL keyword allows finding .so file even outside of root path of CMakeLists.txt. wont harm
-#SHARED tells cmake that .so file is being imported
-#IMPORTED keyword tells cmake that library that is being imported, is not built directly by this CMakeLists.txt and comes from elsewhere
-#PRIVATE keyword already explained, it had to be used even if it doesnt make sense
-# gcc toolchain  -static flag enforces only static libs linking, and if used, will make this code unusable
+    target_link_libraries(chat-server
+    PRIVATE
+    ${PROJECT_SOURCE_DIR}/linkage-files/linux/libws.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/linux/libtommath.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/linux/libtomcrypt.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/linux/libviolet.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmbedtls.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmbedx509.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmbedcrypto.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/linux/libmaxminddb.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/linux/libopus.a
+    dl
+    m
+    )
 
     add_library(datachannel SHARED IMPORTED GLOBAL)
     set_target_properties(datachannel PROPERTIES IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/linkage-files/linux/libdatachannel.so)
     target_link_libraries(chat-server PRIVATE datachannel)
 
 endif()
-
-
-
-
-#besides these static libs, executable also needs to be glued with pthread.so and libdatachannel.so. That is done in linux_build_script.sh file
-#there is no .a / .lib file associated with .so like with .dll on windows, but, .so file still needs to be specifice
-#I have not found a way to set project to use .so file here in CMakeLists.txt so its specified in C_FLAGS
-
-#   libdatachannel.so cannot be linked as static library, or this will occur
-#/usr/lib/gcc/x86_64-pc-linux-gnu/13/../../../../x86_64-pc-linux-gnu/bin/ld: attempted static link of dynamic object `linkage-files/linux/libdatachannel.so'
-#collect2: error: ld returned 1 exit status
-#ninja: build stopped: subcommand failed.

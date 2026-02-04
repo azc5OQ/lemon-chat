@@ -227,6 +227,7 @@ message "building libmaxminddb-1.12.2"
 cd libmaxminddb-1.12.2
 
 make clean
+chmod +x configure
 ./configure
 make
 
