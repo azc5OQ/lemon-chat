@@ -10,6 +10,7 @@
 - channel messages (text and pictures)
 - audio in channel
 - end to end encryption
+- android app
 
 <br>
 
@@ -21,6 +22,7 @@ https://fruitybackendtesting.com/
 - set different theme
 - change font size and color of message
 - add groups/tags to other users
+- create music bots
 
 ## how to start server:
 - clone repository and run windows_build_script.bat or linux_build_script.sh
