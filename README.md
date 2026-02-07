@@ -14,9 +14,6 @@
 
 <br>
 
-## live demo here
-https://fruitybackendtesting.com/
-
 ## other fun features
 - select .mp3 file from disk and play in channel
 - set different theme
