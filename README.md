@@ -21,11 +21,13 @@
 - add groups/tags to other users
 - create music bots
 
+## live demo -> https://fruitybackendtesting.com/client.html
+<br>
+
 ## how to start server:
 - clone repository and run windows_build_script.bat or linux_build_script.sh
 - or use prebuild release
 - watch how-to-build-and-use-video.mkv included in repository
-
 
 
 ## how to start client:
