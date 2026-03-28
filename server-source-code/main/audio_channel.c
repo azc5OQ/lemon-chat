@@ -4,17 +4,17 @@
 #include <unistd.h>
 #include <pthread.h>
 
-#include "../libdatachannel/include/rtc/rtc.h"
-#include "dave-g-json/cJSON.h"
+#include "../third-party/libdatachannel/include/rtc/rtc.h"
+#include "../third-party/dave-g-json/cJSON.h"
 
 #include "base.h"
 
 #include "audio_channel.h"
-#include "../theldus-websocket/include/ws.h"
+#include "../third-party/theldus-websocket/include/ws.h"
 
 #include "clib/clib_memory.h"
 #include "clib/clib_string.h"
-#include "log/log.h"
+#include "../third-party/rxi-log/log.h"
 #include "memory_manager.h"
 
 #include "server_message.h"
@@ -750,7 +750,7 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client)
 
 	rtcConfiguration config;
 
-	memset(&config, 0, sizeof(config));
+	clib__null_memory(&config, sizeof(rtcConfiguration));
 
 	//const char* iceServers[1] = { "stun:stun.l.google.com:19302" };
 	const char *iceServers[1] = { "127.0.0.1:3478" }; //using our own stun server! (violet)

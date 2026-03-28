@@ -29,7 +29,7 @@
 #define MUSIC_BOT_MAX_FILE_COUNT 200
 #define MAX_CLIENT_FILE_UPLOAD_LENGTH 13946000
 
-#include "../theldus-websocket/include/ws.h"
+#include "../third-party/theldus-websocket/include/ws.h"
 #include "mytypedef.h"
 #include <pthread.h>
 

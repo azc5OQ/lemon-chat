@@ -15,38 +15,38 @@
 
 #include "clib/clib_string.h"
 #include "clib/clib_memory.h"
-#include "dave-g-json/cJSON.h"
+#include "../third-party/dave-g-json/cJSON.h"
 #include "base.h"
 
-#include "zhicheng/base64.h"
-#include "../theldus-websocket/include/ws.h"
-#include "ITH-sha/sha256.h"
-#include "kokke-tiny-aes-c/aes.h"
+#include "../third-party/zhicheng/base64.h"
+#include "../third-party/theldus-websocket/include/ws.h"
+#include "../third-party/ITH-sha/sha256.h"
+#include "../third-party/kokke-tiny-aes-c/aes.h"
 
-#include "violet/src/options.h"
-#include "violet/src/utils.h"
+#include "../third-party/libviolet/src/options.h"
+#include "../third-party/libviolet/src/utils.h"
 
-#include "violet/deps/libjuice/include/juice/juice.h"
+#include "../third-party/libviolet/deps/libjuice/include/juice/juice.h"
 
-#include "log/log.h"
+#include "../third-party/rxi-log/log.h"
 
 #include "mytypedef.h"
 #include "client_message.h"
 #include "server_message.h"
 
-#include "libtom/tommath.h"
+#include "../third-party/libtom/libtommath/tommath.h"
 
-#include "../mbedtls-3.5.1/include/mbedtls/build_info.h"
-#include "../mbedtls-3.5.1/include/mbedtls/platform.h"
-#include "../mbedtls-3.5.1/include/mbedtls/rsa.h"
-#include "../mbedtls-3.5.1/include/mbedtls/entropy.h"
-#include "../mbedtls-3.5.1/include/mbedtls/ctr_drbg.h"
-#include "../mbedtls-3.5.1/include/mbedtls/bignum.h"
+#include "../third-party/mbedtls-3.5.1/include/mbedtls/build_info.h"
+#include "../third-party/mbedtls-3.5.1/include/mbedtls/platform.h"
+#include "../third-party/mbedtls-3.5.1/include/mbedtls/rsa.h"
+#include "../third-party/mbedtls-3.5.1/include/mbedtls/entropy.h"
+#include "../third-party/mbedtls-3.5.1/include/mbedtls/ctr_drbg.h"
+#include "../third-party/mbedtls-3.5.1/include/mbedtls/bignum.h"
 
 #include "memory_manager.h"
 #include "audio_channel.h"
 
-#include "eteran-cvector/cvector.h"
+#include "../third-party/eteran-cvector/cvector.h"
 
 #ifdef WIN32
 #include <Windows.h>
@@ -1785,7 +1785,7 @@ void base__set_server_settings(void)
 	g_server_settings.is_same_ip_address_allowed = TRUE;
 	g_server_settings.is_voice_chat_active = TRUE;
 	g_server_settings.is_hide_clients_in_password_protected_channels_active = TRUE;
-	g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active = TRUE;
+	g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active = FALSE;
 	g_server_settings.is_display_country_flags_active = FALSE;
 	g_server_settings.is_display_admin_tag_active = TRUE;
 	g_server_settings.is_idle_mode_allowed = TRUE;

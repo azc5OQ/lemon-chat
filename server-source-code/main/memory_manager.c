@@ -1,7 +1,7 @@
 #include "memory_manager.h"
 #include "clib/clib_memory.h"
-#include "log/log.h"
-#include "dave-g-json/cJSON.h"
+#include "../third-party/rxi-log/log.h"
+#include "../third-party/dave-g-json/cJSON.h"
 #include <pthread.h>
 #include "base.h"
 

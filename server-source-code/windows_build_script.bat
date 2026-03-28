@@ -44,6 +44,10 @@ SET "PATH=%MINGWPATH%;%PATH%"
 ::sets current working directory
 set "ROOT_DIRECTORY=%~dp0"
 
+set "THIRD_PARTY_DIRECTORY=%ROOT_DIRECTORY%third-party"
+
+echo %THIRD_PARTY_DIRECTORY%
+
 set /p choice= "clean files from previous build if any y/n: "
 
 echo %choice%
@@ -53,49 +57,48 @@ IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
   ::delete any files that might be leftovers from previous build
   ::checking if they exist is not needed, would only waste space in .bat file
 
-  rd "%ROOT_DIRECTORY%\mbedtls-3.5.1\CMakeFiles"  /S /Q
-  rd "%ROOT_DIRECTORY%\mbedtls-3.5.1\library\CMakeFiles"  /S /Q
-  del "%ROOT_DIRECTORY%\mbedtls-3.5.1\CMakeCache.txt"
+  rd "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\CMakeFiles"  /S /Q
+  rd "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\CMakeCache.txt"
 
   del "%ROOT_DIRECTORY%\*.o" /S /Q
   del "%ROOT_DIRECTORY%\*.a" /S /Q
   del "%ROOT_DIRECTORY%\*.ninja_deps" /S /Q
   del "%ROOT_DIRECTORY%\*.ninja_log" /S /Q
 
+  rd "%THIRD_PARTY_DIRECTORY%\libdatachannel\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel-static.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll.a"
 
-  rd "%ROOT_DIRECTORY%\libdatachannel\CMakeFiles"  /S /Q
-  del "%ROOT_DIRECTORY%\libdatachannel\CMakeCache.txt"
-  del "%ROOT_DIRECTORY%\libdatachannel\libdatachannel-static.a"
-  del "%ROOT_DIRECTORY%\libdatachannel\libdatachannel.dll"
-  del "%ROOT_DIRECTORY%\libdatachannel\libdatachannel.dll.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedcrypto.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedtls.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedx509.a"
 
-  del "%ROOT_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedcrypto.a"
-  del "%ROOT_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedtls.a"
-  del "%ROOT_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedx509.a"
+  rd "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\cmake-build-release"   /S /Q
+  rd "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\CMakeFiles"   /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\libtommath.a"
 
-  rd "%ROOT_DIRECTORY%\libtom\libtommath\cmake-build-release"   /S /Q
-  rd "%ROOT_DIRECTORY%\libtom\libtommath\CMakeFiles"   /S /Q
-  del "%ROOT_DIRECTORY%\libtom\libtommath\CMakeCache.txt"
-  del "%ROOT_DIRECTORY%\libtom\libtommath\libtommath.a"
+  del "%THIRD_PARTY_DIRECTORY%\libtom\libtomcrypt\libtomcrypt.a"
 
-  del "%ROOT_DIRECTORY%\libtom\libtomcrypt\libtomcrypt.a"
+  rd "%THIRD_PARTY_DIRECTORY%\theldus-websocket\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\theldus-websocket\CMakeCache.txt"
+
+  rd "%THIRD_PARTY_DIRECTORY%\libviolet\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libviolet\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libviolet\libviolet.a"
+
+  del "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a"
+
+  del "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\CMakeCache.txt"
+  rd "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a"
 
   del "%ROOT_DIRECTORY%\main\linkage-files\windows\*" /S /Q
   del "%ROOT_DIRECTORY%\main\linkage-files\linux\*" /S /Q
-  rd "%ROOT_DIRECTORY%\theldus-websocket\CMakeFiles"  /S /Q
-  del "%ROOT_DIRECTORY%\theldus-websocket\CMakeCache.txt"
-
-  rd "%ROOT_DIRECTORY%\libviolet\CMakeFiles"  /S /Q
-  del "%ROOT_DIRECTORY%\libviolet\CMakeCache.txt"
-  del "%ROOT_DIRECTORY%\libviolet\libviolet.a"
-
-
-  del "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\CMakeCache.txt"
-  del "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a"
-
-  del "%ROOT_DIRECTORY%\libopus-1.5.2\CMakeCache.txt"
-  rd "%ROOT_DIRECTORY%\libopus-1.5.2\CMakeFiles"  /S /Q
-  del "%ROOT_DIRECTORY%\libopus-1.5.2\libopus.a"
 
   rd "%ROOT_DIRECTORY%\main\CMakeFiles"  /S /Q
   del "%ROOT_DIRECTORY%\main\CMakeCache.txt"
@@ -149,11 +152,9 @@ set "CMAKE_LINKER=%MINGWPATH%\ld.exe"
 ::********************************************************
 
 
-::zmeni sa priecinok, aby sa pracovalo so spravnym CMakeLists.txt, nieje dobre spustat cmake prikaz v inom root priecinku
-cd "%ROOT_DIRECTORY%\mbedtls-3.5.1\"
-
-
-::this command will call build tool "ninja". This tool can also be called directly but, its better to call it through cmake, otherwise ninja would have to be added into path of operating system
+cd "%THIRD_PARTY_DIRECTORY%"
+cd mbedtls-3.5.1
+::this command will call build tool "ninja". This tool can also be called directly, but its better to call it through cmake, otherwise ninja would have to be added into path of operating system
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
 cmake --build . -j32 --target mbedtls
@@ -162,17 +163,15 @@ cmake --build . -j32 --target mbedtls
 ::libdatachannel needs three static libraries to build (libmbedtls.a, libmbedx509.a, libmbedcrypto.a)
 ::move them from resulting build directory of mbedtls-3.5.1 to dependencies directory of libdatachannel, so libdatachannel can detect these libraries
 
-copy "%ROOT_DIRECTORY%\mbedtls-3.5.1\library\libmbedtls.a" "%ROOT_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedtls.a"
-copy "%ROOT_DIRECTORY%\mbedtls-3.5.1\library\libmbedx509.a" "%ROOT_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedx509.a"
-copy "%ROOT_DIRECTORY%\mbedtls-3.5.1\library\libmbedcrypto.a" "%ROOT_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedcrypto.a"
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedtls.a" "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedtls.a"
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedx509.a" "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedx509.a"
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedcrypto.a" "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedcrypto.a"
 
 
-::and also move them from resulting build directory of mbedtls-3.5.1 to dependencies directory of .exe itself, linkage-files (mbedtls is used for RSA encryption within chat-server.exe)
-copy "%ROOT_DIRECTORY%\mbedtls-3.5.1\library\libmbedtls.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedtls.a"
-copy "%ROOT_DIRECTORY%\mbedtls-3.5.1\library\libmbedx509.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedx509.a"
-copy "%ROOT_DIRECTORY%\mbedtls-3.5.1\library\libmbedcrypto.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedcrypto.a"
-
-
+::also move them from resulting build directory of mbedtls-3.5.1 to dependencies directory of .exe itself, linkage-files (mbedtls is used for RSA encryption within chat-server.exe)
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedtls.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedtls.a"
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedx509.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedx509.a"
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedcrypto.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedcrypto.a"
 
 cd ../
 
@@ -188,9 +187,9 @@ cmake --build . -j32  --target datachannel
 ::in case cmake --build . -j32  --target datachannel wasnt called, somehow old .a file was still generated from leftover files , I thought I cleared the cache
 
 
-copy "%ROOT_DIRECTORY%\libdatachannel\libdatachannel.dll" "%ROOT_DIRECTORY%\main\linkage-files\windows\libdatachannel.dll"
+copy "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll" "%ROOT_DIRECTORY%\main\linkage-files\windows\libdatachannel.dll"
 ::the .dll.a file is needed during linking its type of dynamic library that needs, i cant explain it well but its different kind of .a file that is needed for certain use of .dll, mingw produces that file
-copy "%ROOT_DIRECTORY%\libdatachannel\libdatachannel.dll.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libdatachannel.dll.a"
+copy "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libdatachannel.dll.a"
 
 cd ../
 
@@ -203,7 +202,7 @@ cd libtom/libtommath
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
 cmake --build . -j32  --target libtommath
 
-copy "%ROOT_DIRECTORY%\libtom\libtommath\libtommath.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libtommath.a"
+copy "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\libtommath.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libtommath.a"
 
 cd ../../
 
@@ -219,7 +218,7 @@ cd libtom/libtomcrypt
 
 make -f makefile.mingw -j32
 
-copy "%ROOT_DIRECTORY%\libtom\libtomcrypt\libtomcrypt.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libtomcrypt.a"
+copy "%THIRD_PARTY_DIRECTORY%\libtom\libtomcrypt\libtomcrypt.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libtomcrypt.a"
 
 cd ../../
 
@@ -234,7 +233,7 @@ cd theldus-websocket
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
 cmake --build . -j32  --target ws
 
-copy "%ROOT_DIRECTORY%\theldus-websocket\libws.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libws.a"
+copy "%THIRD_PARTY_DIRECTORY%\theldus-websocket\libws.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libws.a"
 
 cd ../
 
@@ -250,21 +249,21 @@ cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_
 cmake --build . -j32  --target violet
 
 
-copy "%ROOT_DIRECTORY%\libviolet\libviolet.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libviolet.a"
+copy "%THIRD_PARTY_DIRECTORY%\libviolet\libviolet.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libviolet.a"
 
 
 ::********************************************************
 ::****** libmaxminddb build                        ******
 ::********************************************************
 
-cd "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\"
+cd "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\"
 
 make clean
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
 cmake --build . -j32 --target maxminddb
 
-copy "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmaxminddb.a"
+copy "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmaxminddb.a"
 
 
 cd ../
@@ -274,17 +273,17 @@ cd ../
 ::****** libopus build                        ******
 ::********************************************************
 
-cd "%ROOT_DIRECTORY%\libopus-1.5.2\"
+cd "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\"
 
 make clean
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
 cmake --build . -j32 --target opus
 
-copy "%ROOT_DIRECTORY%\libopus-1.5.2\libopus.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libopus.a"
+copy "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libopus.a"
 
 
-cd ../
+cd ../../
 
 
 ::********************************************************
@@ -298,9 +297,9 @@ cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_
 cmake --build . -j32
 
 
-copy "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\dbip-country-lite-2025-06.mmdb" "%ROOT_DIRECTORY%\..\buildresult\"
-move "%ROOT_DIRECTORY%\libdatachannel\libdatachannel.dll" "%ROOT_DIRECTORY%\..\buildresult\"
-copy "%ROOT_DIRECTORY%\main\chat-server.exe" "%ROOT_DIRECTORY%\..\buildresult\"
+copy "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\dbip-country-lite-2025-06.mmdb" "%ROOT_DIRECTORY%\..\buildresult\"
+move "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll" "%ROOT_DIRECTORY%\..\buildresult\"
+move "%ROOT_DIRECTORY%\main\chat-server.exe" "%ROOT_DIRECTORY%\..\buildresult\"
 
 
 ::cd ../

@@ -1,18 +1,24 @@
+#include <pthread.h>
+
 #include "mytypedef.h"
-#include "dave-g-json/cJSON.h"
+
+#include "../third-party/dave-g-json/cJSON.h"
 #include "client_message.h"
-#include "log/log.h"
+
 #include "clib/clib_string.h"
 #include "base.h"
 #include "memory_manager.h"
 #include "clib/clib_memory.h"
-#include "libtom/tommath.h"
+
 #include "server_message.h"
 #include "audio_channel.h"
 #include "ip_tools.h"
-#include "eteran-cvector/cvector.h"
-#include "musicbot/musicbot.h"
-#include "zhicheng/base64.h"
+#include "musicbot.h"
+
+#include "../third-party/eteran-cvector/cvector.h"
+#include "../third-party/libtom/libtommath/tommath.h"
+#include "../third-party/zhicheng/base64.h"
+#include "../third-party/rxi-log/log.h"
 
 //static functions are defined first
 
@@ -5045,10 +5051,21 @@ void client_msg__process_file_send_completed_request(cJSON *json_root, int sende
 		void *mp3_data_buffer = (void *)memorymanager__allocate(sender_client->file_upload_extension.expected_file_length, MEMALLOC_MUSICBOT_SONG);
 
 		uint64 mp3_data_buffer_length = zchg_base64_decode(sender_client->file_upload_extension.file_upload_buffer, clib__utf8_string_length(sender_client->file_upload_extension.file_upload_buffer), mp3_data_buffer);
-		musicbot__add_song(json_song_name->valuestring, mp3_data_buffer, mp3_data_buffer_length, music_bot);
 
-		server_msg__send_music_bot_song_list_to_single_client(sender_client_index, music_bot->client_id);
-		DBG_CLIENT_MESSAGE log_info("%s", "calling server_msg__send_music_bot_song_list_to_single_client");
+		//copy of song name must be initialized here because by the time the add_music_bot thread gets to it
+		//main thread deletes the json holding the song name
+
+		musicbot_add_song_arg_struct_t *arguments = (musicbot_add_song_arg_struct_t *)memorymanager__allocate(sizeof(musicbot_add_song_arg_struct_t), MEMALLOC_MUSICBOT_SONG);
+		clib__null_memory(arguments, sizeof(musicbot_add_song_arg_struct_t));
+
+		arguments->music_bot = music_bot;
+		arguments->mp3_data_buffer_length = mp3_data_buffer_length;
+		arguments->mp3_data_buffer = mp3_data_buffer;
+		arguments->sender_client_index = sender_client_index;
+		clib__copy_memory(json_song_name->valuestring, arguments->song_name, clib__utf8_string_length(json_song_name->valuestring), SONG_NAME_MAX_LENGTH - 1);
+
+		uint64 thread_id1 = 0;
+		pthread_create((pthread_t *)&thread_id1, 0, (void *)&musicbot__add_song, arguments);
 	}
 	else if (clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_picture_file") == TRUE)
 	{

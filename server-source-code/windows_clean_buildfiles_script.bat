@@ -21,6 +21,10 @@
 ::sets current working directory
 set "ROOT_DIRECTORY=%~dp0"
 
+set "THIRD_PARTY_DIRECTORY=%ROOT_DIRECTORY%third-party"
+
+echo %THIRD_PARTY_DIRECTORY%
+
 set /p choice= "clean files from previous build if any y/n: "
 
 echo %choice%
@@ -30,45 +34,48 @@ IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
   ::delete any files that might be leftovers from previous build
   ::checking if they exist is not needed, would only waste space in .bat file
 
+  rd "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\CMakeFiles"  /S /Q
+  rd "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\CMakeCache.txt"
+
   del "%ROOT_DIRECTORY%\*.o" /S /Q
   del "%ROOT_DIRECTORY%\*.a" /S /Q
-  del "%ROOT_DIRECTORY%\*.ninja_deps"
-  del "%ROOT_DIRECTORY%\*.ninja_log"
+  del "%ROOT_DIRECTORY%\*.ninja_deps" /S /Q
+  del "%ROOT_DIRECTORY%\*.ninja_log" /S /Q
 
-  rd "%ROOT_DIRECTORY%\mbedtls-3.5.1\CMakeFiles"  /S /Q
-  rd "%ROOT_DIRECTORY%\mbedtls-3.5.1\library\CMakeFiles"  /S /Q
-  del "%ROOT_DIRECTORY%\mbedtls-3.5.1\CMakeCache.txt"
+  rd "%THIRD_PARTY_DIRECTORY%\libdatachannel\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel-static.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll.a"
 
-  rd "%ROOT_DIRECTORY%\libdatachannel\CMakeFiles"  /S /Q
-  del "%ROOT_DIRECTORY%\libdatachannel\CMakeCache.txt"
-  del "%ROOT_DIRECTORY%\libdatachannel\libdatachannel-static.a"
-  del "%ROOT_DIRECTORY%\libdatachannel\libdatachannel.dll"
-  del "%ROOT_DIRECTORY%\libdatachannel\libdatachannel.dll.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedcrypto.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedtls.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedx509.a"
 
-  del "%ROOT_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedcrypto.a"
-  del "%ROOT_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedtls.a"
-  del "%ROOT_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedx509.a"
+  rd "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\cmake-build-release"   /S /Q
+  rd "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\CMakeFiles"   /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\libtommath.a"
 
-  rd "%ROOT_DIRECTORY%\libtom\libtommath\cmake-build-release"   /S /Q
-  rd "%ROOT_DIRECTORY%\libtom\libtommath\CMakeFiles"   /S /Q
-  del "%ROOT_DIRECTORY%\libtom\libtommath\CMakeCache.txt"
-  del "%ROOT_DIRECTORY%\libtom\libtommath\libtommath.a"
+  del "%THIRD_PARTY_DIRECTORY%\libtom\libtomcrypt\libtomcrypt.a"
 
-  del "%ROOT_DIRECTORY%\libtom\libtomcrypt\libtomcrypt.a"
+  rd "%THIRD_PARTY_DIRECTORY%\theldus-websocket\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\theldus-websocket\CMakeCache.txt"
 
+  rd "%THIRD_PARTY_DIRECTORY%\libviolet\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libviolet\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libviolet\libviolet.a"
+
+  del "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a"
+
+  del "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\CMakeCache.txt"
+  rd "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a"
 
   del "%ROOT_DIRECTORY%\main\linkage-files\windows\*" /S /Q
   del "%ROOT_DIRECTORY%\main\linkage-files\linux\*" /S /Q
-  rd "%ROOT_DIRECTORY%\theldus-websocket\CMakeFiles"  /S /Q
-  del "%ROOT_DIRECTORY%\theldus-websocket\CMakeCache.txt"
-
-  rd "%ROOT_DIRECTORY%\libviolet\CMakeFiles"  /S /Q
-  del "%ROOT_DIRECTORY%\libviolet\CMakeCache.txt"
-  del "%ROOT_DIRECTORY%\libviolet\libviolet.a"
-
-  del "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\CMakeCache.txt"
-  del "%ROOT_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a"
-
 
   rd "%ROOT_DIRECTORY%\main\CMakeFiles"  /S /Q
   del "%ROOT_DIRECTORY%\main\CMakeCache.txt"
@@ -89,7 +96,9 @@ IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
   rd "%ROOT_DIRECTORY%\main\.idea" /S /Q
 
   rd "%ROOT_DIRECTORY%\main\cmake-build-debug" /S /Q
-
 )
+del all_files.txt
+del no_extension_files.txt
+del gitignore_file_count.txt
 
 pause

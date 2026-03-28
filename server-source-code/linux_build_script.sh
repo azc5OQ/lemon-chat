@@ -34,14 +34,11 @@ command ()
 
 echo $build_directory
 
-
-
 #QUESTION = "do you wish to delete any files?
 
-#zmaz subory ktore ostali
 
 ROOT_DIRECTORY="$PWD"
-#tento skript nieje dobry, ak $PWD nepoukazuje na priecinok v ktorom je linux_build_script.bat, ale na priecinok odkial sa spusta linux_build_script.bat
+THIRD_PARTY_DIRECTORY="$PWD/third-party"
  
 
 rm -f -v -r $ROOT_DIRECTORY/../buildresult/
@@ -54,28 +51,28 @@ echo    # (optional) move to a new line
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
     rm -fv "$ROOT_DIRECTORY/*.o"
-    rm -rfv "$ROOT_DIRECTORY/mbedtls-3.5.1/CMakeFiles"
-    rm -rfv "$ROOT_DIRECTORY/mbedtls-3.5.1/library/CMakeFiles"
-    rm -fv "$ROOT_DIRECTORY/mbedtls-3.5.1/CMakeCache.txt"
-    rm -rfv "$ROOT_DIRECTORY/mbedtls-3.5.1/output"
-    rm -rfv "$ROOT_DIRECTORY/mbedtls-3.5.1/library/libmbedtls.a"
-    rm -rfv "$ROOT_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a"
-    rm -rfv "$ROOT_DIRECTORY/mbedtls-3.5.1/library/libmbedx509.a"
-    rm -rfv "$ROOT_DIRECTORY/libdatachannel/CMakeFiles"
-    rm -fv "$ROOT_DIRECTORY/libdatachannel/CMakeCache.txt"
-    rm -rfv "$ROOT_DIRECTORY/libdatachannel/libdatachannel-static.a"
-    rm -rfv "$ROOT_DIRECTORY/libdatachannel/libdatachannel.dll"
-    rm -rfv "$ROOT_DIRECTORY/libdatachannel/libdatachannel.dll.a"
-    rm -rfv "$ROOT_DIRECTORY/libtom/libtommath/cmake-build-release"
-    rm -rfv "$ROOT_DIRECTORY/libtom/libtommath/CMakeFiles"
-    rm -fv "$ROOT_DIRECTORY/libtom/libtommath/CMakeCache.txt"
-    rm -fv "$ROOT_DIRECTORY/libtom/libtommath/libtommath.a" 
-    rm -fv "$ROOT_DIRECTORY/libtom/libtomcrypt/libtomcrypt.a" 
-    rm -rfv "$ROOT_DIRECTORY/theldus-websocket/CMakeFiles"
-    rm -fv "$ROOT_DIRECTORY/theldus-websocket/CMakeCache.txt"
-    rm -rfv "$ROOT_DIRECTORY/libviolet/CMakeFiles"
-    rm -fv "$ROOT_DIRECTORY/libviolet/CMakeCache.txt"
-    rm -fv "$ROOT_DIRECTORY/libviolet/libviolet.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/CMakeFiles"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/CMakeFiles"
+    rm -fv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/CMakeCache.txt"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/output"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedtls.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedx509.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel/CMakeFiles"
+    rm -fv "$THIRD_PARTY_DIRECTORY/libdatachannel/CMakeCache.txt"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel/libdatachannel-static.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel/libdatachannel.dll"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel/libdatachannel.dll.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libtom/libtommath/cmake-build-release"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libtom/libtommath/CMakeFiles"
+    rm -fv "$THIRD_PARTY_DIRECTORY/libtom/libtommath/CMakeCache.txt"
+    rm -fv "$THIRD_PARTY_DIRECTORY/libtom/libtommath/libtommath.a" 
+    rm -fv "$THIRD_PARTY_DIRECTORY/libtom/libtomcrypt/libtomcrypt.a" 
+    rm -rfv "$THIRD_PARTY_DIRECTORY/theldus-websocket/CMakeFiles"
+    rm -fv "$THIRD_PARTY_DIRECTORY/theldus-websocket/CMakeCache.txt"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libviolet/CMakeFiles"
+    rm -fv "$THIRD_PARTY_DIRECTORY/libviolet/CMakeCache.txt"
+    rm -fv "$THIRD_PARTY_DIRECTORY/libviolet/libviolet.a"
     rm -rfv "$ROOT_DIRECTORY/main/linkage-files/windows/*"
     rm -rfv "$ROOT_DIRECTORY/main/linkage-files/linux/*"
     rm -rfv "$ROOT_DIRECTORY/main/CMakeFiles"
@@ -84,8 +81,8 @@ then
     rm -fv "$ROOT_DIRECTORY/main/build.ninja"
     rm -fv "$ROOT_DIRECTORY/main/.ninja_deps"
     rm -fv "$ROOT_DIRECTORY/main/.ninja_log"
-    rm -rfv "$ROOT_DIRECTORY/libopus-1.5.2/CMakeFiles"
-    rm -fv "$ROOT_DIRECTORY/libopus-1.5.2/CMakeCache.txt"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeFiles"
+    rm -fv "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeCache.txt"
     rm -fv "$ROOT_DIRECTORY/../buildresult/*"
 
 fi
@@ -105,6 +102,8 @@ BUILD_CONFIG="Release"
 #BUILD_CONFIG="Debug"
 
 
+cd "$THIRD_PARTY_DIRECTORY"
+
 
 #********************************************************
 #****** mbedtls build                              ******
@@ -121,9 +120,9 @@ cmake --build . -j32 --target mbedtls
 message "mbedtls build finished, moving some mbedtls files to their destination"
 
 
-cp -v "$ROOT_DIRECTORY/mbedtls-3.5.1/library/libmbedtls.a" "$ROOT_DIRECTORY/libdatachannel/deps/mbedtls/lib/libmbedtls.a"
-cp -v "$ROOT_DIRECTORY/mbedtls-3.5.1/library/libmbedx509.a" "$ROOT_DIRECTORY/libdatachannel/deps/mbedtls/lib/libmbedx509.a"
-cp -v "$ROOT_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a" "$ROOT_DIRECTORY/libdatachannel/deps/mbedtls/lib/libmbedcrypto.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedtls.a" "$THIRD_PARTY_DIRECTORY/libdatachannel/deps/mbedtls/lib/libmbedtls.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedx509.a" "$THIRD_PARTY_DIRECTORY/libdatachannel/deps/mbedtls/lib/libmbedx509.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a" "$THIRD_PARTY_DIRECTORY/libdatachannel/deps/mbedtls/lib/libmbedcrypto.a"
 
 
 #and also move them from resulting build directory of mbedtls-3.5.1 to dependencies directory of .exe itself, linkage-files (mbedtls is used for RSA encryption within chat server)
@@ -131,9 +130,9 @@ cp -v "$ROOT_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a" "$ROOT_DIRECTORY/l
 mkdir -p "$ROOT_DIRECTORY/main/linkage-files/linux"
 
 
-cp -v "$ROOT_DIRECTORY/mbedtls-3.5.1/library/libmbedtls.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedtls.a"
-cp -v "$ROOT_DIRECTORY/mbedtls-3.5.1/library/libmbedx509.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedx509.a"
-cp -v "$ROOT_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedcrypto.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedtls.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedtls.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedx509.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedx509.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedcrypto.a"
 
 
 cd ../
@@ -150,8 +149,8 @@ cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKE
 
 cmake --build . -j32 --target datachannel
 
-cp -v "$ROOT_DIRECTORY/libdatachannel/libdatachannel.so" "$ROOT_DIRECTORY/main/linkage-files/linux/libdatachannel.so"
-cp -v "$ROOT_DIRECTORY/libdatachannel/libdatachannel.so" "$ROOT_DIRECTORY/../buildresult/"
+cp -v "$THIRD_PARTY_DIRECTORY/libdatachannel/libdatachannel.so" "$ROOT_DIRECTORY/main/linkage-files/linux/libdatachannel.so"
+cp -v "$THIRD_PARTY_DIRECTORY/libdatachannel/libdatachannel.so" "$ROOT_DIRECTORY/../buildresult/"
 
 cd ../
 
@@ -168,7 +167,7 @@ cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKE
 
 cmake --build . -j32  --target libtommath
 
-cp -v "$ROOT_DIRECTORY/libtom/libtommath/libtommath.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libtommath.a"
+cp -v "$THIRD_PARTY_DIRECTORY/libtom/libtommath/libtommath.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libtommath.a"
 
 cd ../../
 
@@ -181,7 +180,7 @@ message "building libtomcrypt.a"
 cd libtom/libtomcrypt
  
 make -f makefile.unix -j32
-cp -v "$ROOT_DIRECTORY/libtom/libtomcrypt/libtomcrypt.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libtomcrypt.a"
+cp -v "$THIRD_PARTY_DIRECTORY/libtom/libtomcrypt/libtomcrypt.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libtomcrypt.a"
 cd ../../
 
 
@@ -197,7 +196,7 @@ cd theldus-websocket
 cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
 
 cmake --build . -j32  --target ws
-cp -r -v "$ROOT_DIRECTORY/theldus-websocket/libws.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libws.a"
+cp -r -v "$THIRD_PARTY_DIRECTORY/theldus-websocket/libws.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libws.a"
 
 cd ../
 
@@ -213,7 +212,7 @@ cd libviolet
 cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
 
 cmake --build . -j32  --target violet
-cp -v "$ROOT_DIRECTORY/libviolet/libviolet.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libviolet.a"
+cp -v "$THIRD_PARTY_DIRECTORY/libviolet/libviolet.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libviolet.a"
 
 cd ../
 
@@ -232,7 +231,7 @@ chmod +x configure
 make
 
 
-cp -v "$ROOT_DIRECTORY/libmaxminddb-1.12.2/src/.libs/libmaxminddb.a" "$ROOT_DIRECTORY/main/linkage-files/linux/"
+cp -v "$THIRD_PARTY_DIRECTORY/libmaxminddb-1.12.2/src/.libs/libmaxminddb.a" "$ROOT_DIRECTORY/main/linkage-files/linux/"
 
 
 cd ../
@@ -244,9 +243,9 @@ cd libopus-1.5.2
 cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
 
 cmake --build . -j32  --target opus
-cp -r -v "$ROOT_DIRECTORY/libopus-1.5.2/libopus.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libopus.a"
+cp -r -v "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/libopus.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libopus.a"
 
-cd ../
+cd ../../
 
 #********************************************************
 #******  at last, main-chat-server build          ******
@@ -287,7 +286,7 @@ cd server-source-code
 
 cp -v "$ROOT_DIRECTORY/main/unix_start_template" "$ROOT_DIRECTORY/../buildresult/start_server.sh"
 
-cp -v "$ROOT_DIRECTORY/libmaxminddb-1.12.2/dbip-country-lite-2025-06.mmdb" "$ROOT_DIRECTORY/../buildresult/"
+cp -v "$THIRD_PARTY_DIRECTORY/libmaxminddb-1.12.2/dbip-country-lite-2025-06.mmdb" "$ROOT_DIRECTORY/../buildresult/"
 
 chmod +x "$ROOT_DIRECTORY/../buildresult/start_server.sh"
 
@@ -298,4 +297,3 @@ message "build finished. Try running start_server.sh in buildresult directory"
 
 #strip -v "$ROOT_DIRECTORY/../buildresult/chat-server.bin"
 
-message "add stripping binary from symbols"

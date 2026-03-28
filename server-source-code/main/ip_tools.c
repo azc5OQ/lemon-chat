@@ -1,4 +1,4 @@
-#include "../libmaxminddb-1.12.2/include/maxminddb.h"
+#include "../third-party/libmaxminddb-1.12.2/include/maxminddb.h"
 #include "ip_tools.h"
 
 #include <stdio.h>
@@ -12,9 +12,9 @@
 
 #include "clib/clib_string.h"
 #include "clib/clib_memory.h"
-#include "dave-g-json/cJSON.h"
+#include "../third-party/dave-g-json/cJSON.h"
 
-#include "log/log.h"
+#include "../third-party/rxi-log/log.h"
 
 /* @brief self explanatory
  *

@@ -113,10 +113,6 @@ nuint clib__utf8_string_length(cstring arg_string)
 	//ASCII string
 	nuint curr_string_length = 0;
 
-	//string length limit, 1000
-
-	// printf("%s %s %s", "arg_string", arg_string, "\n");
-
 	nuint i = 0;
 
 	for (;;)
@@ -138,8 +134,6 @@ nuint clib__utf8_string_length(cstring arg_string)
 
 boole clib__is_string_equal(cstring str1, cstring str2)
 {
-	//isnt there like a.. assemblt instruction for this? that would make it a lot faster
-	//like real strcmp, we return FALSE if strings are EQUAL true if not equal
 	boole result = TRUE;
 
 	if (str1 == NULL || str2 == NULL)

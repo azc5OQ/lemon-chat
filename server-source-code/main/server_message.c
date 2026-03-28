@@ -1,21 +1,15 @@
-#include <stdio.h>
-#include <stdlib.h>
-
-#include "mytypedef.h"
-#include "dave-g-json/cJSON.h"
-#include "../theldus-websocket/include/ws.h"
-#include "base.h"
-#include "server_message.h"
-#include "log/log.h"
-#include "clib/clib_string.h"
-#include "clib/clib_memory.h"
-#include "dave-g-json/cJSON.h"
-#include "memory_manager.h"
-#include "eteran-cvector/cvector.h"
-
 #ifdef WIN32
 #include <Windows.h>
 #endif
+
+#include "mytypedef.h"
+#include "../third-party/dave-g-json/cJSON.h"
+#include "../third-party/theldus-websocket/include/ws.h"
+#include "base.h"
+#include "server_message.h"
+#include "memory_manager.h"
+#include "../third-party/eteran-cvector/cvector.h"
+#include "../third-party/rxi-log/log.h"
 
 /**
  * @brief gets called by invididuals websocket thread

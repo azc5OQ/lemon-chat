@@ -21,28 +21,30 @@ else()
 endif()
 
 
+#pozor, moznost -static dodrbe, dynamicke kniznice
+
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 
-include_directories(untitled PUBLIC ${PROJECT_SOURCE_DIR}/../mbedtls-3.5.1/include)
+include_directories(untitled
+        PUBLIC
+        ${PROJECT_SOURCE_DIR}/../third-party/mbedtls-3.5.1/include)
 
 add_executable(chat-server
         main.c
         audio_channel.c
-        log/log.c
-        zhicheng/base64.c
-        kokke-tiny-aes-c/aes.c
-        ITH-sha/sha256.c
-        dave-g-json/cJSON.c
+        ../third-party/rxi-log/log.c
+        ../third-party/zhicheng/base64.c
+        ../third-party/kokke-tiny-aes-c/aes.c
+        ../third-party/ITH-sha/sha256.c
+        ../third-party/dave-g-json/cJSON.c
         clib/clib_memory.c
         clib/clib_string.c
         client_message.c
         server_message.c
         memory_manager.c
-        vec/vec.c
         ip_tools.c
-        musicbot/musicbot.c
+        musicbot.c
         )
-
 
 
 #linux uses forward slash for path, windows two backward slashes

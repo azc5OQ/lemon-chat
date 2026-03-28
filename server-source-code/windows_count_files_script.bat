@@ -139,9 +139,6 @@ for /r %%f in (*) do (
 for /f "usebackq" %%b in (`type no_extension_files.txt ^| find "" /v /c`) do (
     echo files without extension count %%b
 )
-del no_extension_files.txt
-
-
 
 
 dir /s /b * | findstr /R /E /C:".*" > all_files.txt
@@ -149,5 +146,6 @@ set "cmd=findstr /R /N "^^" all_files.txt | find /C ":""
 for /f %%a in ('!cmd!') do set all_files_count=%%a
 echo all files count %all_files_count%
 del all_files.txt
-
+del no_extension_files.txt
+del gitignore_file_count.txt
 pause

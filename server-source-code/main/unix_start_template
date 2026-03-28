@@ -23,8 +23,10 @@ if [ -L "$LINK" ]; then
         echo "Symlink $LINK -> $TARGET created."
     fi
 elif [ -e "$LINK" ]; then
-    echo "File $LINK exists but is not a symlink. Exiting."
-    exit 1
+    echo "File $LINK exists but is not a symlink. Deleting it and creating new"
+    rm "$LINK"
+    ln -s "$TARGET" "$LINK"
+    echo "Symlink $LINK -> $TARGET created."
 else
     # If the symlink doesn't exist, create it
     ln -s "$TARGET" "$LINK"
