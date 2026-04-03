@@ -90,7 +90,6 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
 		clib__copy_memory((void *)arg->song_name, song_in_loop->song_name, clib__utf8_string_length(arg->song_name), SONG_NAME_MAX_LENGTH);
 		clib__null_memory((void *)&mp3, sizeof(drmp3));
 
-
 		/* Decode MP3 */
 		void *mp3_data_buffer1;
 		int mp3_data_buffer_length1;
@@ -157,7 +156,6 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
 
 		memorymanager__free((nuint)arg);
 	}
-
 }
 
 /**

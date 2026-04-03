@@ -33,7 +33,6 @@ void base__process_client_disconnect(int client_index);
 boole base__is_client_valid(int client_id);
 int base__get_other_clients_in_channel(int client_to_ignore, int channel_id, int *receiving_client_ids);
 
-
 extern uint64 chat_message_id;
 
 extern client_t *clients_array;

@@ -1484,8 +1484,6 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t *websocket, in
 	json_root = 0;
 }
 
-
-
 int base__get_other_clients_in_channel(int client_to_ignore, int channel_id, int *receiving_client_ids)
 {
 	int count = 0;

@@ -82,7 +82,6 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t *webs
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_authentication_status_to_single_client");
 
-
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
 
@@ -132,7 +131,6 @@ void server_msg__send_channel_list_to_single_client(ws_cli_conn_t *websocket, ch
 	cJSON *single_channel = 0;
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_list_to_single_client \n");
-
 
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
@@ -322,7 +320,6 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t *websocket, cha
 		ws_sendframe_txt(websocket, msg_text);
 		memorymanager__free((nuint)msg_text);
 	}
-
 }
 
 /**
@@ -416,7 +413,6 @@ void server_msg__send_tag_list_to_single_client(ws_cli_conn_t *websocket, char *
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_tag_list_to_single_client \n");
 
-
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
 	json_tags_array = cJSON_CreateArray();
@@ -485,7 +481,6 @@ void server_msg__send_active_microphone_usage_for_current_channel_to_single_clie
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_active_microphone_usage_for_current_channel_to_single_client \n");
 
-
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
 	json_clients_array = cJSON_CreateArray();
@@ -549,7 +544,6 @@ void server_msg__send_active_microphone_usage_for_current_channel_to_single_clie
 		ws_sendframe_txt(websocket, msg_text);
 		memorymanager__free((nuint)msg_text);
 	}
-
 }
 
 /**
@@ -671,7 +665,6 @@ void server_msg__send_maintainer_id_to_single_client(client_t *client, int chann
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_maintainer_id_to_single_client \n");
 
-
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
 
@@ -694,7 +687,6 @@ void server_msg__send_maintainer_id_to_single_client(client_t *client, int chann
 		ws_sendframe_txt(client->p_ws_connection, msg_text);
 		memorymanager__free((nuint)msg_text);
 	}
-
 }
 
 /**
@@ -717,7 +709,6 @@ void server_msg__send_connection_check_response_to_single_client(client_t *clien
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_connection_check_response_to_single_client \n");
 
-
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
 
@@ -739,7 +730,6 @@ void server_msg__send_connection_check_response_to_single_client(client_t *clien
 
 		memorymanager__free((nuint)msg_text);
 	}
-
 }
 
 /**
@@ -763,7 +753,6 @@ void server_msg__send_client_rename_message_to_all_clients(int id_of_client_that
 	client_t *client_in_loop = 0;
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_rename_message_to_all_clients \n");
-
 
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
@@ -807,7 +796,6 @@ void server_msg__send_client_rename_message_to_all_clients(int id_of_client_that
 			ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -835,7 +823,6 @@ void server_msg__send_access_denied_to_single_client(client_t *client)
 	json_message_object1 = cJSON_CreateObject();
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_access_denied_to_single_client \n");
-
 
 	cJSON_AddStringToObject(json_message_object1, "type", "access_denied");
 	cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -882,7 +869,6 @@ void server_msg__send_channel_create_message_to_all_clients(int created_channel_
 	json_message_object1 = cJSON_CreateObject();
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_create_message_to_all_clients \n");
-
 
 	channel = &channel_array[created_channel_index];
 
@@ -931,7 +917,6 @@ void server_msg__send_channel_create_message_to_all_clients(int created_channel_
 			ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -961,7 +946,6 @@ void server_msg__send_channel_edit_message_to_all_clients(int edited_channel_ind
 	json_message_object1 = cJSON_CreateObject();
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_edit_message_to_all_clients \n");
-
 
 	channel = &channel_array[edited_channel_index];
 
@@ -1008,7 +992,6 @@ void server_msg__send_channel_edit_message_to_all_clients(int edited_channel_ind
 			ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -1211,7 +1194,6 @@ void server_msg__send_chat_message_to_clients_in_same_channel(int client_sender_
 			ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -1396,7 +1378,6 @@ void server_msg__send_channel_chat_picture_to_clients_in_same_channel(int client
 			ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -1423,7 +1404,6 @@ void server_msg__send_image_status_to_single_client(client_t *client, char *stat
 	json_message_object1 = cJSON_CreateObject();
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_image_status_to_single_client \n");
-
 
 	cJSON_AddStringToObject(json_message_object1, "type", "image_sent_status");
 	cJSON_AddStringToObject(json_message_object1, "value", status);
@@ -1533,7 +1513,6 @@ void server_msg__send_channel_join_message_to_all_clients(client_t *client_that_
 	char *song_name = 0;
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_join_message_to_all_clients \n");
-
 
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
@@ -1670,7 +1649,6 @@ void server_msg__send_channel_join_message_to_single_client(client_t *client_tha
 	json_message_object1 = cJSON_CreateObject();
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_join_message_to_single_client \n");
-
 
 	//
 	//clients not in same channel will not receive real time microphone usage information from the client that switched the channel
@@ -1820,7 +1798,6 @@ void server_msg__send_channel_delete_message_to_all_clients(int deleted_channel_
 	client_t *client = 0;
 	channel_t *channel = 0;
 
-
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_delete_message_to_all_clients \n");
 
 	json_root_object1 = cJSON_CreateObject();
@@ -1865,7 +1842,6 @@ void server_msg__send_channel_delete_message_to_all_clients(int deleted_channel_
 			ws_sendframe_txt(client->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -1894,7 +1870,6 @@ void server_msg__send_client_disconnect_message_to_all_clients(int client_index)
 	json_message_object1 = cJSON_CreateObject();
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_disconnect_message_to_all_clients \n");
-
 
 	cJSON_AddStringToObject(json_message_object1, "type", "client_disconnect");
 	cJSON_AddNumberToObject(json_message_object1, "client_id", client_index);
@@ -1939,7 +1914,6 @@ void server_msg__send_client_disconnect_message_to_all_clients(int client_index)
 			ws_sendframe_txt(client->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -2022,7 +1996,6 @@ void server_msg__send_webrtc_sdp_offer_to_single_client(const char *candidate, c
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_webrtc_sdp_offer_to_single_client \n");
 
-
 	jsoncandidate = cJSON_CreateString(candidate);
 	cJSON_AddItemToObject(json_message_value, "candidate", jsoncandidate);
 
@@ -2085,7 +2058,6 @@ void server_msg__send_audio_state_of_client_to_all_clients(int client_whose_audi
 
 		client = &clients_array[i];
 
-
 		is_hide_client_active = FALSE;
 
 		if (g_server_settings.is_hide_clients_in_password_protected_channels_active)
@@ -2139,7 +2111,6 @@ void server_msg__send_audio_state_of_client_to_all_clients(int client_whose_audi
 		}
 	}
 }
-
 
 /**
  * @brief self explanatory
@@ -2502,7 +2473,6 @@ void server_msg__send_add_new_icon_event_to_all_clients(int new_icon_id, char *i
 			ws_sendframe_txt(client->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -2576,7 +2546,6 @@ void server_msg__send_create_new_tag_event_to_all_clients(int tag_id, char *tag_
 			ws_sendframe_txt(client->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -2650,7 +2619,6 @@ void server_msg__send_client_going_to_idle_mode_info_to_all_clients(int client_t
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_going_to_idle_mode_info_to_all_clients \n");
 
-
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
 
@@ -2692,7 +2660,6 @@ void server_msg__send_client_going_to_idle_mode_info_to_all_clients(int client_t
 			ws_sendframe_txt(client->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -2719,7 +2686,6 @@ void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(int 
 	client_t *client = 0;
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients \n");
-
 
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
@@ -2763,7 +2729,6 @@ void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(int 
 			ws_sendframe_txt(client->p_ws_connection, msg_text);
 			memorymanager__free((nuint)msg_text);
 		}
-
 	}
 
 	base__free_json_message(json_root_object1, json_root_object1_string);
@@ -2792,9 +2757,7 @@ void server_msg__send_music_bot_song_list_to_single_client(int sender_client_ind
 	client_t *music_bot = NULL_POINTER;
 	int loop_index = 0;
 
-
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_music_bot_song_list_to_single_client \n");
-
 
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();
@@ -2812,7 +2775,6 @@ void server_msg__send_music_bot_song_list_to_single_client(int sender_client_ind
 	}
 
 	music_bot = &clients_array[music_bot_index];
-
 
 	// create array of clients
 	for (loop_index = 0; loop_index < MUSIC_BOT_MAX_FILE_COUNT; loop_index++)
@@ -2874,7 +2836,6 @@ void server_msg__send_file_send_completed_status_to_single_client(client_t *clie
 	cJSON *json_message_object1 = 0;
 
 	DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_file_send_completed_status_to_single_client \n");
-
 
 	json_root_object1 = cJSON_CreateObject();
 	json_message_object1 = cJSON_CreateObject();

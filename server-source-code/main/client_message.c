@@ -2070,7 +2070,6 @@ void client_msg__process_public_key_challenge_response(cJSON *json_root, int sen
 	//something like that
 	//
 
-
 	clib__read_lock(&clients_global_rwlock_guard);
 	client_t *current_client = &clients_array[sender_client_index];
 	if (!current_client->is_public_key_challenge_sent)
@@ -2081,7 +2080,6 @@ void client_msg__process_public_key_challenge_response(cJSON *json_root, int sen
 		return;
 	}
 	clib__unlock(&clients_global_rwlock_guard);
-
 
 	//
 	//compare the key
@@ -4845,7 +4843,6 @@ void client_msg__process_file_send_request(cJSON *json_root, int sender_client_i
 		}
 	}
 
-
 	int data_part_length = clib__utf8_string_length(json_message_data_part_base64->valuestring);
 
 	clib__copy_memory(json_message_data_part_base64->valuestring, client_sender->file_upload_extension.file_upload_buffer + client_sender->file_upload_extension.buffer_cursor, data_part_length, MAX_CLIENT_FILE_UPLOAD_LENGTH / 400);
@@ -5241,7 +5238,7 @@ static void _client_message_internal__file_download_thread(data_for_file_send_th
 
 				clib__unlock(&clients_global_rwlock_guard);
 
-//				base__sleep_for_milliseconds(10);
+				//				base__sleep_for_milliseconds(10);
 			}
 
 			clib__null_memory(chunk, current_size + 1);

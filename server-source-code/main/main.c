@@ -91,7 +91,6 @@ void onopen(ws_cli_conn_t *client)
 
 	g_server_settings.client_count = g_server_settings.client_count + 1;
 
-
 	DBG_AUTHENTICATION log_info("%s %p %s", "client connected , ", client, "\n");
 
 	int index = base__get_new_index_for_client();
@@ -160,7 +159,6 @@ void onclose(ws_cli_conn_t *websocket)
 
 	clib__write_lock(&clients_global_rwlock_guard);
 	clib__write_lock(&channels_global_rwlock_guard);
-
 
 	g_server_settings.client_count = g_server_settings.client_count - 1;
 
