@@ -1,7 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-
+#include "../definitions.h"
 #include "clib_memory.h"
 
 void clib__set_memory(void *source, long long length, unsigned char value)

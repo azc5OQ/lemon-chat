@@ -15850,7 +15850,7 @@
                     let webaudio_data_chunks = e.data.value;
                     audio_queue.write(webaudio_data_chunks);
                 }
-                else if (e.data.type == "mp3_to_pcm_worker__decode_result")
+                else if (e.data.type == "minimp3_worker__decode_result")
                 {
                     let data_chunks = chunkBuffers(e.data.value, 4096);
 
@@ -16319,6 +16319,14 @@
                 {
                     server_msg.process_file_send_success_from_server(e.data.value);
                 }
+                else if (e.data.type == "data_processing_worker__file_receive_chunk_from_server")
+                {
+                    server_msg.process_file_receive_chunk_from_server_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__file_receive_completed_from_server")
+                {
+                    server_msg.process_file_receive_completed_from_server_from_server(e.data.value);
+                }
             }
 
 
@@ -16606,7 +16614,7 @@
             }
 
 
-            async function mp3_to_pcm_worker_onmessage(e)
+            async function minimp3_worker_onmessage(e)
             {
                 if (e.data.type == "decode")
                 {
@@ -16615,7 +16623,7 @@
                     let result = to_mono_pcm(decoded.pcm, decoded.numChannels);
 
                     global.postMessage({
-                        type: "mp3_to_pcm_worker__decode_result",
+                        type: "minimp3_worker__decode_result",
                         value: result,
                         mp3_sample_rate: decoded.samplingRate
                     });
@@ -16967,6 +16975,64 @@
                         type: "data_processing_worker__tell_websocket_worker_to_send_data",
                         data_to_be_sent_over_websocket: data
                     });
+                }
+                else if (e.data.type == "mainthread__process_encrypted_direct_chat_picture_data")
+                {
+                    let message_data = JSON.parse(e.data.message_raw);
+                    let decryption_result = cryptico_library.decrypt(message_data.message_keys, my_rsa_key_object);
+
+                    if (decryption_result.status == 'failure')
+                    {
+                        log("failed to decrypt direct chat picture");
+                        return;       
+                    }
+
+                    let current_message_keys = JSON.parse(decryption_result.plaintext);
+                    let decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(current_message_keys, message_data.message_value);
+                    let decrypted_base64_picture_sanitized = sanitize_string(decrypted_base64_picture);
+
+                    let msg = {
+                        message : {
+                            picture_id: e.data.picture_id,
+                            client_id: e.data.sender_id,
+                            value: null,
+                            decrypted_base64_picture: ""
+                        }
+                    };
+
+                    msg.message.decrypted_base64_picture = decrypted_base64_picture_sanitized;
+                    
+                    global.postMessage({
+                        type: "data_processing_worker__direct_chat_picture",
+                        value: msg
+                    });
+                }
+                else if (e.data.type == "mainthread__process_encrypted_channel_chat_picture_data")
+                {
+                    if (current_channel_keys != null)
+                    {
+                        let msg = {
+                            message : {
+                                picture_id: e.data.picture_id,
+                                client_id: e.data.sender_id,
+                                value: null,
+                                decrypted_base64_picture: ""
+                            }
+                        }
+
+                        let decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(current_channel_keys, e.data.message_raw);
+                        let decrypted_base64_picture_sanitized = sanitize_string(decrypted_base64_picture);
+                        msg.message.decrypted_base64_picture = decrypted_base64_picture_sanitized;
+                        msg.message.value = null;
+                        global.postMessage({
+                            type: "data_processing_worker__channel_chat_picture",
+                            value: msg
+                        });
+                    }
+                    else
+                    {
+                        custom_log("channel_chat_picture decrypt failed, data_processing_worker thread missing current channel keys");
+                    }
                 }
             }
 
@@ -17333,51 +17399,6 @@
                             value: msg
                         });
                     }
-                    else if (msg.message.type == "direct_chat_picture")
-                    {
-                        console.log(msg);
-
-
-                        let message_data = JSON.parse(msg.message.value);
-                        let decryption_result = cryptico_library.decrypt(message_data.message_keys, my_rsa_key_object);
-
-                        if (decryption_result.status == 'failure')
-                        {
-                            log("failed to decrypt direct chat picture");
-                            return;       
-                        }
-
-                        let current_message_keys = JSON.parse(decryption_result.plaintext);
-
-                        let decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(current_message_keys, message_data.message_value);
-
-                        let decrypted_base64_picture_sanitized = sanitize_string(decrypted_base64_picture);
-
-                        msg.message.value = null;
-                        msg.message.decrypted_base64_picture = decrypted_base64_picture_sanitized;
-
-                        global.postMessage({
-                            type: "data_processing_worker__direct_chat_picture",
-                            value: msg
-                        });
-                    }
-                    else if (msg.message.type == "channel_chat_picture")
-                    {
-                        if (current_channel_keys != null)
-                        {
-                            msg.message.decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(current_channel_keys, msg.message.value);
-                            msg.message.value = null;
-                            global.postMessage({
-                                type: "data_processing_worker__channel_chat_picture",
-                                value: msg
-                            });
-                        }
-                        else
-                        {
-
-                            custom_log("channel_chat_picture decrypt failed, data_processing_worker thread missing current channel keys");
-                        }
-                    }
                     else if (msg.message.type == "image_sent_status")
                     {
                         global.postMessage({
@@ -17405,6 +17426,20 @@
                             type: "data_processing_worker__file_send_success_from_server",
                             value: msg
                         });                        
+                    }
+                    else if (msg.message.type == "file_receive_chunk")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__file_receive_chunk_from_server",
+                            value: msg
+                        });      
+                    }
+                    else if (msg.message.type == "file_receive_completed")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__file_receive_completed_from_server",
+                            value: msg
+                        });      
                     }
                 }
             }
@@ -17484,9 +17519,9 @@
                     global.onmessage = opus_decoder_worker_onmessage;
                     asm = create_opus_webassembly_instance();
                 }
-                else if (THREAD_NAME == "mp3_to_pcm_worker")
+                else if (THREAD_NAME == "minimp3_worker")
                 {
-                    global.onmessage = mp3_to_pcm_worker_onmessage;
+                    global.onmessage = minimp3_worker_onmessage;
                 }
             }
 
@@ -17509,7 +17544,7 @@
             //if you dont care about client hearing sound, set are_server_details_predefined and is_autoconnect_without_user_action_active to true
 
             var autoconnect_details = {
-                host: "192.168.1.233",
+                host: "127.0.0.1",
                 port: 1111,
                 keys: [
                     "test",
@@ -17589,6 +17624,8 @@
             var is_pressing = null;  //for touch devices
             var is_long_press = null;
 
+            var received_files = []; //in chunks
+
 
             const AudioState = {
                 PUSH_TO_TALK_ACTIVE: 1,
@@ -17616,7 +17653,7 @@
             var opus_encoder_worker = null;
             var opus_decoder_worker = null;
             var data_processing_worker = null;
-            var mp3_to_pcm_worker = null;
+            var minimp3_worker = null;
 
             var cryptico_library = null;
             var websocket_worker = null;
@@ -20002,6 +20039,88 @@
                     {
                         client_msg.send_file_send_completed_request(file_send_intent);
                     }
+                },
+
+                process_file_receive_chunk_from_server_from_server: function(msg)
+                {
+                    let is_found = false;
+                    for (i = 0; i < received_files.length; i++)
+                    {
+                        if(received_files[i].file_id == msg.message.server_chat_message_id)
+                        {
+                            is_found = true;
+                            break;
+                        }
+                    }
+
+                    if (is_found == false)
+                    {
+                        let single_file = {
+                            file_id: msg.message.server_chat_message_id,
+                            file_content_base64: "",
+                            timestamp_last_received: new Date().valueOf()
+                        };
+
+                        received_files.push(single_file);     
+                    }
+
+                    
+                    for (i = 0; i < received_files.length; i++)
+                    {
+                        if(received_files[i].file_id == msg.message.server_chat_message_id)
+                        {
+                            received_files[i].timestamp_last_received = new Date().valueOf();
+                            received_files[i].file_content_base64 += msg.message.value;
+                            break;
+                        }
+                    }
+                },
+
+                process_file_receive_completed_from_server_from_server: function(msg)
+                {
+                    let message_raw = "";                    
+                    let index_to_delete = 0;
+                    let is_found = false;
+                    for (i = 0; i < received_files.length; i++)
+                    {
+                        if(received_files[i].file_id == msg.message.server_chat_message_id)
+                        {
+                            is_found = true;
+                            index_to_delete = i;
+                            message_raw = received_files[i].file_content_base64;
+                            break;
+                        }
+                    }
+
+                    if (is_found == false)
+                    {
+                        return;
+                    }
+
+                    if (msg.message.receive_type == "direct_chat_picture")
+                    {
+                        data_processing_worker.postMessage({
+                            type: "mainthread__process_encrypted_direct_chat_picture_data",
+                            message_raw: message_raw,
+                            picture_id: msg.message.server_chat_message_id,
+                            sender_id: msg.message.sender_id 
+                        });
+
+                        received_files.splice(index_to_delete, 1);
+                        console.log("total files in received_files " + received_files.length +"");
+                    }
+                    else if (msg.message.receive_type == "channel_chat_picture")
+                    {
+                        data_processing_worker.postMessage({
+                            type: "mainthread__process_encrypted_channel_chat_picture_data",
+                            message_raw: message_raw,
+                            picture_id: msg.message.server_chat_message_id,
+                            sender_id: msg.message.sender_id 
+                        });
+
+                        received_files.splice(index_to_delete, 1);
+                        console.log("total files in received_files " + received_files.length +"");
+                    }
                 }
             };
 
@@ -21529,11 +21648,11 @@
                         if (x == 0)
                         {
                             let file = files[x];
-                            let max_size = 2 * 1024 * 1024;
+                            let max_size = 4 * 1024 * 1024;
 
                             if (file.size > max_size)
                             {
-                                custom_alert("image is too large. Max size: 2mb");
+                                custom_alert("image is too large. Max size: 4mb");
                                 return;
                             }
 
@@ -22090,7 +22209,7 @@
                                 let arrayBuffer = fileReader.result;
 
 
-                                mp3_to_pcm_worker.postMessage({
+                                minimp3_worker.postMessage({
                                     type: "decode",
                                     value: arrayBuffer
                                 });
@@ -25903,7 +26022,7 @@
                 websocket_worker = create_new_webworker_in_same_file("websocket_worker");
                 opus_encoder_worker = create_new_webworker_in_same_file("opus_encoder_worker");
                 opus_decoder_worker = create_new_webworker_in_same_file("opus_decoder_worker");
-                mp3_to_pcm_worker = create_new_webworker_in_same_file("mp3_to_pcm_worker");
+                minimp3_worker = create_new_webworker_in_same_file("minimp3_worker");
 
                 data_processing_worker.postMessage({
                     type: "mainthread__generate_rsa_keypair",
@@ -25911,7 +26030,7 @@
                     identity_passphrase_string: null
                 });
 
-                mp3_to_pcm_worker.postMessage({
+                minimp3_worker.postMessage({
                     type: "init"
                 });
 

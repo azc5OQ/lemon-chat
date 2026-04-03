@@ -11,7 +11,6 @@ typedef int BOOL;
 #define FALSE 0
 #endif
 
-#include "../mytypedef.h"
 boole clib__is_str_number(char *string_to_check);
 void clib__int_to_hex_string(int n, char *hex_string);
 void clib__sanitize_stdin(char *input);

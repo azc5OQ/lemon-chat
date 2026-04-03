@@ -1,8 +1,9 @@
+#include "definitions.h"
+
 #include "memory_manager.h"
 #include "clib/clib_memory.h"
 #include "../third-party/rxi-log/log.h"
 #include "../third-party/dave-g-json/cJSON.h"
-#include <pthread.h>
 #include "base.h"
 
 //static char *dummy_string = "d";

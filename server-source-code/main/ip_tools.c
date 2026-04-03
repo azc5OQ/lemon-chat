@@ -1,14 +1,8 @@
+#include "definitions.h"
+
 #include "../third-party/libmaxminddb-1.12.2/include/maxminddb.h"
+
 #include "ip_tools.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-
-#include <sys/timeb.h>
-
-#include <pthread.h>
 
 #include "clib/clib_string.h"
 #include "clib/clib_memory.h"
@@ -223,6 +217,8 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *memory_to
 	free_string_buffer(&sb);
 
 label_ip_tools_load_iso_country_code_end:
+
+	MMDB_close(&mmdb);
 
 	return;
 }

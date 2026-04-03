@@ -1,8 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include "../mytypedef.h"
+#include "../definitions.h"
 #include "clib_string.h"
 
 void clib__int_to_hex_string(int n, char *hex_string)

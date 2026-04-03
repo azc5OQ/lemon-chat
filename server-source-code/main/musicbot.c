@@ -1,12 +1,4 @@
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <pthread.h>
-
-#ifdef __linux__
-#include <sys/time.h>
-#endif
+#include "definitions.h"
 
 #include "../third-party/dave-g-json/cJSON.h"
 #include "../third-party/libopus-1.5.2/include/opus.h"
@@ -22,6 +14,7 @@
 #include "clib/clib_memory.h"
 #include "memory_manager.h"
 #include "server_message.h"
+#include "util.h"
 
 //todo, add two stereo, mono sounds weird
 
@@ -61,85 +54,110 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
 {
 	music_bot_single_song_data_t *song_in_loop;
 	drmp3 mp3;
+	boole status;
+	boole is_song_added_succesfully = FALSE;
 
 	//find free song index
 
-	boole status = FALSE;
-
-	pthread_rwlock_rdlock(&clients_global_rwlock_guard);
-	//need some type of macro to verify the client
-	if (arg->music_bot->music_bot_client_extension.music_bot_songs_count == MUSIC_BOT_MAX_FILE_COUNT)
-	{
-		memorymanager__free((nuint)arg->mp3_data_buffer);
-		status = TRUE;
-	}
-	pthread_rwlock_unlock(&clients_global_rwlock_guard);
-
-	if (status == TRUE)
-	{
-		return;
-	}
-
 	for (int i = 0; i < MUSIC_BOT_MAX_FILE_COUNT; i++)
 	{
-		status = FALSE;
-		pthread_rwlock_rdlock(&clients_global_rwlock_guard);
+		//lock clients array and do all the checks
+		//if music bot is valid, if it song slot is valid
+		//if all checks are passed assign buffer to the song
+		clib__write_lock(&clients_global_rwlock_guard);
+
+		status = util__is_client_valid_musicbot(arg->music_bot->client_id);
+
+		if (status == FALSE)
+		{
+			memorymanager__free((nuint)arg->mp3_data_buffer);
+			memorymanager__free((nuint)arg);
+			clib__unlock(&clients_global_rwlock_guard);
+			break;
+		}
 
 		song_in_loop = &arg->music_bot->music_bot_client_extension.songs[i];
-		if (song_in_loop->is_existing == TRUE)
+		if (song_in_loop->is_existing == TRUE || song_in_loop->is_being_uploaded == TRUE)
 		{
-			status = TRUE;
-		}
-		pthread_rwlock_unlock(&clients_global_rwlock_guard);
-
-		if (status == TRUE)
-		{
+			clib__unlock(&clients_global_rwlock_guard);
 			continue;
 		}
 
-		pthread_rwlock_wrlock(&clients_global_rwlock_guard);
-
+		song_in_loop->is_being_uploaded = TRUE; //so other thread wont start uploading to the same slot
 		song_in_loop->mp3_data_buffer = arg->mp3_data_buffer;
 		song_in_loop->mp3_data_buffer_length = arg->mp3_data_buffer_length;
-
 		DBG_MUSIC_BOT log_info("%s %s %s", "musicbot__add_song added song -> ", arg->song_name, "\n");
-
 		clib__copy_memory((void *)arg->song_name, song_in_loop->song_name, clib__utf8_string_length(arg->song_name), SONG_NAME_MAX_LENGTH);
 		clib__null_memory((void *)&mp3, sizeof(drmp3));
 
-		pthread_rwlock_unlock(&clients_global_rwlock_guard);
 
 		/* Decode MP3 */
 		void *mp3_data_buffer1;
 		int mp3_data_buffer_length1;
-
-		pthread_rwlock_rdlock(&clients_global_rwlock_guard);
 		mp3_data_buffer1 = song_in_loop->mp3_data_buffer;
 		mp3_data_buffer_length1 = song_in_loop->mp3_data_buffer_length;
-		pthread_rwlock_unlock(&clients_global_rwlock_guard);
+
+		clib__unlock(&clients_global_rwlock_guard);
+
+		//
+		//unlock write lock here because drmp3_init_memory is very time consuming
+		//its called because i wanted to find out what is the length of the mp3 in seconds
+		//
+
+		//add is being_processed to song in loop so other song wont screw it
 
 		drmp3_init_memory(&mp3, mp3_data_buffer1, mp3_data_buffer_length1, NULL_POINTER);
-
 		drmp3_uint64 frameCount = drmp3_get_pcm_frame_count(&mp3);
 		uint64 seconds_length = frameCount / mp3.sampleRate;
-		song_in_loop->length_seconds = seconds_length;
 		DBG_MUSIC_BOT log_info("%s", "music bot add song success");
 		drmp3_uninit(&mp3);
 
-		pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+		//do check here, again
+		clib__write_lock(&clients_global_rwlock_guard);
+
+		status = util__is_client_valid_musicbot(arg->music_bot->client_id);
+
+		if (status == FALSE)
+		{
+			memorymanager__free((nuint)arg->mp3_data_buffer);
+			memorymanager__free((nuint)arg);
+			clib__unlock(&clients_global_rwlock_guard);
+			break;
+		}
+
+		//at this point read lock is still active
+		song_in_loop = &arg->music_bot->music_bot_client_extension.songs[i];
+		if (song_in_loop->is_existing == TRUE)
+		{
+			clib__unlock(&clients_global_rwlock_guard);
+			continue;
+		}
+
+		song_in_loop->length_seconds = seconds_length;
 		arg->music_bot->music_bot_client_extension.music_bot_songs_count++;
 		song_in_loop->is_existing = TRUE;
-		pthread_rwlock_unlock(&clients_global_rwlock_guard);
+		song_in_loop->is_being_uploaded = FALSE;
+
+		is_song_added_succesfully = TRUE;
+
+		clib__unlock(&clients_global_rwlock_guard);
 
 		break;
 	}
 
-	pthread_rwlock_rdlock(&clients_global_rwlock_guard);
-	server_msg__send_music_bot_song_list_to_single_client(arg->sender_client_index, arg->music_bot->client_id);
-	pthread_rwlock_unlock(&clients_global_rwlock_guard);
-	DBG_CLIENT_MESSAGE log_info("%s", "calling server_msg__send_music_bot_song_list_to_single_client");
+	if (is_song_added_succesfully == TRUE)
+	{
+		clib__read_lock(&clients_global_rwlock_guard);
 
-	memorymanager__free((nuint)arg);
+		//server_msg__send_music_bot_song_list_to_single_client checks validity of client
+		server_msg__send_music_bot_song_list_to_single_client(arg->sender_client_index, arg->music_bot->client_id);
+
+		clib__unlock(&clients_global_rwlock_guard);
+		DBG_CLIENT_MESSAGE log_info("%s", "calling server_msg__send_music_bot_song_list_to_single_client");
+
+		memorymanager__free((nuint)arg);
+	}
+
 }
 
 /**

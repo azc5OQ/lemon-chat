@@ -1,23 +1,20 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <pthread.h>
+#include "definitions.h"
 
-#include "../third-party/libdatachannel/include/rtc/rtc.h"
-#include "../third-party/dave-g-json/cJSON.h"
-
+#include "../third-party/dave-g-json/cJSON.h" //needed by base.h
 #include "base.h"
 
-#include "audio_channel.h"
-#include "../third-party/theldus-websocket/include/ws.h"
+#include "../third-party/libdatachannel/include/rtc/rtc.h"
+#include "../third-party/rxi-log/log.h"
 
 #include "clib/clib_memory.h"
 #include "clib/clib_string.h"
-#include "../third-party/rxi-log/log.h"
-#include "memory_manager.h"
 
+#include "memory_manager.h"
 #include "server_message.h"
+
+#include "audio_channel.h"
+
+#include "util.h"
 
 //externy sa musia inicializovat, na 0
 //opus_data_buffer_entry_t *opus_data_buffer_entries_array = 0;
@@ -33,10 +30,6 @@ void RTC_API datachannel_on_closed_callback(int id, void *ptr);
 void RTC_API datachannel_on_message_callback(int id, const char *message, int size, void *ptr);
 char *state_print(rtcState state);
 char *rtcGatheringState_print(rtcGatheringState state);
-
-//bol som nuteny odstranit z audio_channel.c rwlocky, pretoze, sposobovali zamrzanie.
-
-//helper function
 
 /**
  * @brief error callback
@@ -75,11 +68,12 @@ void RTC_API peerconnection_on_setlocaldescription_callback(int pc, const char *
 	cJSON *jdescription = NULL;
 	webrtc_peer_t *peer = 0;
 	char *json_value_object_string;
+	boole status;
 
 	DBG_AUDIOCHANNEL_WEBRTC log_info("peerconnection_on_setlocaldescription_callback \n");
 
-	//toremove--pthread_rwlock_rdlock(&clients_global_rwlock_guard);
-	//toremove--pthread_rwlock_rdlock(&webrtc_muggles_rwlock_guard);
+	clib__read_lock(&clients_global_rwlock_guard);
+	clib__read_lock(&webrtc_muggles_rwlock_guard);
 
 	if (ptr == NULL_POINTER)
 	{
@@ -93,7 +87,9 @@ void RTC_API peerconnection_on_setlocaldescription_callback(int pc, const char *
 		goto label_descriptionCallback_end;
 	}
 
-	if (clients_array[peer->client_id].is_authenticated == FALSE)
+	status = util__is_client_valid(peer->client_id);
+
+	if (status == FALSE)
 	{
 		goto label_descriptionCallback_end;
 	}
@@ -133,10 +129,9 @@ void RTC_API peerconnection_on_setlocaldescription_callback(int pc, const char *
 	}
 
 label_descriptionCallback_end:
-	return;
 
-	//toremove--pthread_rwlock_unlock(&clients_global_rwlock_guard);
-	//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+	clib__unlock(&webrtc_muggles_rwlock_guard);
+	clib__unlock(&clients_global_rwlock_guard);
 }
 
 /**
@@ -154,7 +149,7 @@ void RTC_API peerconnection_on_datachannel_callback(int pc, int dc, void *ptr)
 
 	webrtc_peer_t *peer = (webrtc_peer_t *)ptr;
 
-	//toremove--pthread_rwlock_wrlock(&webrtc_muggles_rwlock_guard);
+	clib__write_lock(&webrtc_muggles_rwlock_guard);
 
 	if (peer != NULL_POINTER)
 	{
@@ -170,7 +165,7 @@ void RTC_API peerconnection_on_datachannel_callback(int pc, int dc, void *ptr)
 		}
 	}
 
-	//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+	clib__unlock(&webrtc_muggles_rwlock_guard);
 }
 
 /**
@@ -181,7 +176,7 @@ void RTC_API peerconnection_on_datachannel_callback(int pc, int dc, void *ptr)
  * @param const char *mid
  * @param void *ptr
  *
- * @attention internal thread of libdatachannel calls previously set candidatecallback function. using //toremove--pthread_rwlock_rdlock should be safe because thread is different from websockets thread where read and write locks are used
+ * @attention internal thread of libdatachannel calls previously set candidatecallback function. using //toremove--clib__read_lock should be safe because thread is different from websockets thread where read and write locks are used
  *
  * @return void
  */
@@ -197,6 +192,7 @@ void RTC_API peerconnection_on_icecandidate_callback(int pc, const char *cand, c
 	int size_of_allocated_message_buffer = 0;
 	char *json_root_object_string = 0;
 	char *text_to_send = 0;
+	boole status1 = FALSE;
 
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "peerconnection_on_icecandidate_callback \n");
 
@@ -207,23 +203,24 @@ void RTC_API peerconnection_on_icecandidate_callback(int pc, const char *cand, c
 		return;
 	}
 
-	//toremove--pthread_rwlock_rdlock(&clients_global_rwlock_guard);
+	clib__read_lock(&clients_global_rwlock_guard);
 
 	if (peer->is_existing)
 	{
-		//toremove--pthread_rwlock_rdlock(&clients_global_rwlock_guard);
+		status1 = util__is_client_valid(peer->client_id);
 
-		if (clients_array[peer->client_id].is_authenticated)
+		if (status1 == FALSE)
 		{
-			DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "sending sdp offer to client \n");
-
-			server_msg__send_webrtc_sdp_offer_to_single_client(cand, mid, &clients_array[peer->client_id]);
+			goto _label_peerconnection_on_icecandidate_callback_end;
 		}
 
-		//toremove--pthread_rwlock_unlock(&clients_global_rwlock_guard);
+		DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "sending sdp offer to client \n");
+		server_msg__send_webrtc_sdp_offer_to_single_client(cand, mid, &clients_array[peer->client_id]);
 	}
 
-	//toremove--pthread_rwlock_unlock(&clients_global_rwlock_guard);
+_label_peerconnection_on_icecandidate_callback_end:
+
+	clib__unlock(&clients_global_rwlock_guard);
 }
 
 /**
@@ -237,6 +234,7 @@ void RTC_API peerconnection_on_icecandidate_callback(int pc, const char *cand, c
 void audio_channel__set_is_client_sending_audio(int client_id, boole is_active)
 {
 	webrtc_muggles_array[client_id].is_sending_audio_right_now = is_active;
+	//to add lock?
 }
 
 /**
@@ -252,6 +250,7 @@ void RTC_API peerconnection_on_statechanged_callback(int pc, rtcState state, voi
 {
 	webrtc_peer_t *peer = 0;
 	client_t *client = 0;
+	boole status;
 
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "entered this function");
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s %d %s %s %s", "peerconnection_on_statechanged_callback ", ((webrtc_peer_t *)ptr)->client_id, " to client ", state_print(state), "\n");
@@ -260,17 +259,18 @@ void RTC_API peerconnection_on_statechanged_callback(int pc, rtcState state, voi
 
 	if (peer != NULL_POINTER)
 	{
-		//toremove--pthread_rwlock_wrlock(&webrtc_muggles_rwlock_guard);
+		clib__write_lock(&clients_global_rwlock_guard);
+		clib__write_lock(&webrtc_muggles_rwlock_guard);
 
 		if (peer->is_existing)
 		{
-			//toremove--pthread_rwlock_wrlock(&clients_global_rwlock_guard);
+			status = util__is_client_valid(peer->client_id);
 
-			DBG_AUDIOCHANNEL_WEBRTC log_info("%s %s %s", "peerconnection_on_statechanged_callback ", state_print(state), "\n");
-			client = &clients_array[peer->client_id];
-
-			if (client->is_authenticated)
+			if (status == TRUE)
 			{
+				DBG_AUDIOCHANNEL_WEBRTC log_info("%s %s %s", "peerconnection_on_statechanged_callback ", state_print(state), "\n");
+				client = &clients_array[peer->client_id];
+
 				int state_to_send;
 				if (state == RTC_CONNECTED)
 				{
@@ -287,13 +287,10 @@ void RTC_API peerconnection_on_statechanged_callback(int pc, rtcState state, voi
 					peer->last_sent_audio_state = client->audio_state;
 					server_msg__send_audio_state_of_client_to_all_clients(peer->client_id, client->audio_state);
 				}
-
-				//server_msg__send_peer_connection_state_to_all_clients(client->client_id, state_to_send);
 			}
-
-			//toremove--pthread_rwlock_unlock(&clients_global_rwlock_guard);
 		}
-		//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+		clib__unlock(&webrtc_muggles_rwlock_guard);
+		clib__unlock(&clients_global_rwlock_guard);
 	}
 }
 
@@ -332,7 +329,7 @@ void RTC_API datachannel_on_open_callback(int id, void *ptr)
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s %s", "datachannel_on_open_callback", "\n");
 	webrtc_peer_t *peer = (webrtc_peer_t *)ptr;
 
-	//toremove--pthread_rwlock_wrlock(&webrtc_muggles_rwlock_guard);
+	clib__write_lock(&webrtc_muggles_rwlock_guard);
 
 	if (peer != NULL_POINTER)
 	{
@@ -344,7 +341,7 @@ void RTC_API datachannel_on_open_callback(int id, void *ptr)
 		}
 	}
 
-	//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+	clib__unlock(&webrtc_muggles_rwlock_guard);
 }
 
 /**
@@ -362,7 +359,7 @@ void RTC_API datachannel_on_closed_callback(int id, void *ptr)
 
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s %s", "datachannel_on_closed_callback", "\n");
 
-	//toremove--pthread_rwlock_wrlock(&webrtc_muggles_rwlock_guard);
+	clib__write_lock(&webrtc_muggles_rwlock_guard);
 
 	peer = (webrtc_peer_t *)ptr;
 
@@ -371,7 +368,7 @@ void RTC_API datachannel_on_closed_callback(int id, void *ptr)
 		clib__null_memory(peer, sizeof(webrtc_peer_t));
 	}
 
-	//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+	clib__unlock(&webrtc_muggles_rwlock_guard);
 }
 
 /**
@@ -382,6 +379,9 @@ void RTC_API datachannel_on_closed_callback(int id, void *ptr)
  * @param int size
  * @param void *ptr
  *
+ * @attention this cant use rwlocks. The audio transfer would be too slo
+ * The reads im doing here are safe so Im not sure if that is a problem
+ *
  * @return void
  */
 void RTC_API datachannel_on_message_callback(int id, const char *message, int size, void *ptr)
@@ -390,6 +390,7 @@ void RTC_API datachannel_on_message_callback(int id, const char *message, int si
 	webrtc_peer_t *peer_receiver;
 	webrtc_peer_t *peer_sender;
 	int dc = 0;
+	boole status;
 
 	if (size < 0)
 	{
@@ -397,20 +398,19 @@ void RTC_API datachannel_on_message_callback(int id, const char *message, int si
 	}
 	else
 	{
-		//toremove--pthread_rwlock_rdlock(&webrtc_muggles_rwlock_guard);
-
-		//printf("Message %s: [binary of size %d]\n", "offerer", size);
-
 		peer_sender = (webrtc_peer_t *)ptr;
+		boole is_sending_audio = peer_sender->is_sending_audio_right_now;
 
-		if (peer_sender->is_sending_audio_right_now == TRUE)
+		if (is_sending_audio == TRUE)
 		{
 			//
 			// sent audio data to other clients located in same channel as found client, if they too have authenticated audio websocket
 			//
 
-			for (int i = 0; i < MAX_CLIENTS; i++)
+			for (int i = 0; i < g_server_settings.max_client_count; i++)
 			{
+				peer_sender = (webrtc_peer_t *)ptr;
+
 				peer_receiver = &webrtc_muggles_array[i];
 
 				if (peer_receiver->is_existing == FALSE)
@@ -421,11 +421,15 @@ void RTC_API datachannel_on_message_callback(int id, const char *message, int si
 				{
 					continue;
 				}
-				else if (channel_array[peer_receiver->channel_id].is_audio_enabled == FALSE)
+
+				status = channel_array[peer_receiver->channel_id].is_audio_enabled && channel_array[peer_receiver->channel_id].is_existing;
+
+				if (status == FALSE)
 				{
 					continue;
 				}
-				else if (i == peer_sender->client_id) //dont want to sent message to ourselve
+
+				if (i == peer_sender->client_id) //dont want to sent message to ourselve
 				{
 					continue;
 				}
@@ -441,8 +445,6 @@ void RTC_API datachannel_on_message_callback(int id, const char *message, int si
 				memorymanager__free((nuint)message1);
 			}
 		}
-
-		//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
 	}
 }
 
@@ -522,7 +524,7 @@ void audio_channel__process_client_channel_join(client_t *client)
 {
 	webrtc_peer_t *peer = NULL;
 
-	//toremove--pthread_rwlock_wrlock(&webrtc_muggles_rwlock_guard);
+	clib__write_lock(&webrtc_muggles_rwlock_guard);
 
 	peer = &webrtc_muggles_array[client->client_id];
 
@@ -536,7 +538,7 @@ void audio_channel__process_client_channel_join(client_t *client)
 
 label_audio_channel__process_client_channel_switch_end:
 
-	//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+	clib__unlock(&webrtc_muggles_rwlock_guard);
 
 	return;
 }
@@ -554,7 +556,7 @@ void audio_channel__process_client_disconnect(client_t *client)
 
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "audio_channel__process_client_disconnect \n");
 
-	//toremove--pthread_rwlock_wrlock(&webrtc_muggles_rwlock_guard);
+	clib__write_lock(&webrtc_muggles_rwlock_guard);
 
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "audio_channel__process_client_disconnect got here \n");
 
@@ -583,9 +585,7 @@ void audio_channel__process_client_disconnect(client_t *client)
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s %d %s", "audio_channel__process_client_disconnect peer ", client->client_id, "disconnected \n");
 
 label_audio_channel__process_client_disconnect:
-	return;
-
-	//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+	clib__unlock(&webrtc_muggles_rwlock_guard);
 }
 
 /**
@@ -598,8 +598,6 @@ label_audio_channel__process_client_disconnect:
  */
 void audio_channel__process_ice_candidate_from_remote_peer(client_t *client, cJSON *json_root)
 {
-	sleep(1);
-
 	cJSON *cjson_candidate = NULL;
 	webrtc_peer_t *peer = NULL;
 
@@ -614,7 +612,7 @@ void audio_channel__process_ice_candidate_from_remote_peer(client_t *client, cJS
 	//tu sa deje nejaky deadlock, pokial si nevytvorim bezpecnu rwlock strukturu, bude to zakomentovane.
 	//chcem vyriesit funkcnost audia ako takeho
 
-	// //toremove--pthread_rwlock_rdlock(&webrtc_muggles_rwlock_guard);
+	clib__read_lock(&webrtc_muggles_rwlock_guard);
 
 	peer = &webrtc_muggles_array[client->client_id];
 
@@ -648,8 +646,8 @@ void audio_channel__process_ice_candidate_from_remote_peer(client_t *client, cJS
 	rtcAddRemoteCandidate(peer->peer_connection_handle, cjson_candidate->valuestring, 0); //it is possible that value cjson_candidate->valuestring will have to be stored on heap, test for crashes
 
 label_audio_channel__process_ice_candidate_from_remote_peer_end:
-	return;
-	////toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+
+	clib__unlock(&webrtc_muggles_rwlock_guard);
 }
 
 /**
@@ -676,7 +674,7 @@ void audio_channel__process_sdp_answer_from_remote_peer(client_t *client, cJSON 
 		return;
 	}
 
-	//toremove--pthread_rwlock_wrlock(&webrtc_muggles_rwlock_guard);
+	clib__write_lock(&webrtc_muggles_rwlock_guard);
 
 	peer = &webrtc_muggles_array[client->client_id];
 
@@ -711,9 +709,8 @@ void audio_channel__process_sdp_answer_from_remote_peer(client_t *client, cJSON 
 	rtcSetRemoteDescription(peer->peer_connection_handle, cjson_sdp->valuestring, cjson_type->valuestring);
 
 label_audio_channel__process_sdp_answer_from_remote_peer_end:
-	return;
 
-	//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+	clib__unlock(&webrtc_muggles_rwlock_guard);
 }
 
 /**
@@ -757,7 +754,7 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client)
 	config.iceServers = iceServers;
 	config.iceServersCount = 1;
 
-	//toremove--pthread_rwlock_wrlock(&webrtc_muggles_rwlock_guard);
+	clib__write_lock(&webrtc_muggles_rwlock_guard);
 
 	peer = &webrtc_muggles_array[client->client_id];
 
@@ -777,8 +774,6 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client)
 	if (peer->peer_connection_handle == NULL_POINTER)
 	{
 		peer->is_existing = FALSE;
-		//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
-
 		goto label_audio_channel__initialize_webrtc_datachannel_connection_end;
 		result = FALSE;
 	}
@@ -821,7 +816,7 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client)
 	rtcSetErrorCallback(peer->data_channel_handle, datachannel_onerror_callback);
 
 label_audio_channel__initialize_webrtc_datachannel_connection_end:
-	//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
+	clib__unlock(&webrtc_muggles_rwlock_guard);
 	DBG_AUDIOCHANNEL_WEBRTC log_info("%s %d %s", "audio_channel__initialize_webrtc_datachannel_connection asas", peer->data_channel_handle, "\n");
 
 	return result;
@@ -835,7 +830,7 @@ void audio_channel__send_music_bot_data(int channel_id, unsigned char *data, int
 	webrtc_peer_t *peer_receiver;
 	int dc = 0;
 
-	//toremove--pthread_rwlock_rdlock(&webrtc_muggles_rwlock_guard);
+	clib__read_lock(&webrtc_muggles_rwlock_guard);
 
 	//printf("Message %s: [binary of size %d]\n", "offerer", size);
 
@@ -843,7 +838,7 @@ void audio_channel__send_music_bot_data(int channel_id, unsigned char *data, int
 	// sent audio data to other clients located in same channel as found client, if they too have authenticated audio websocket
 	//
 
-	for (int i = 0; i < MAX_CLIENTS; i++)
+	for (int i = 0; i < g_server_settings.max_client_count; i++)
 	{
 		peer_receiver = &webrtc_muggles_array[i];
 
@@ -865,7 +860,6 @@ void audio_channel__send_music_bot_data(int channel_id, unsigned char *data, int
 		rtcSendMessage(peer_receiver->data_channel_handle, message1, data_length + 4);
 
 		memorymanager__free((nuint)message1);
-
-		//toremove--pthread_rwlock_unlock(&webrtc_muggles_rwlock_guard);
 	}
+	clib__unlock(&webrtc_muggles_rwlock_guard);
 }

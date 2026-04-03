@@ -31,6 +31,7 @@ include_directories(untitled
 
 add_executable(chat-server
         main.c
+        base.c
         audio_channel.c
         ../third-party/rxi-log/log.c
         ../third-party/zhicheng/base64.c
@@ -39,11 +40,13 @@ add_executable(chat-server
         ../third-party/dave-g-json/cJSON.c
         clib/clib_memory.c
         clib/clib_string.c
+        clib/clib_rwlock.c
         client_message.c
         server_message.c
         memory_manager.c
         ip_tools.c
         musicbot.c
+        util.c
         )
 
 

@@ -26,7 +26,6 @@ void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(i
 void server_msg__send_channel_chat_picture_to_clients_in_same_channel(int client_sender_id, int receiving_channel_id, int server_chat_message_id, char *chat_message_value);
 void server_msg__send_image_status_to_single_client(client_t *client, char *status);
 void server_msg__send_chat_picture_metadata_to_single_client(int client_sender_id, int client_receiver_id, int server_chat_message_id);
-void server_msg__send_chat_picture_to_single_client(int client_sender_id, int client_receiver_id, int server_chat_message_id, char *chat_message_value);
 void server_msg__send_channel_join_message_to_all_clients(client_t *client_that_switched_channel, channel_t *new_channel);
 void server_msg__send_channel_join_message_to_single_client(client_t *client_that_switched_channel, channel_t *new_channel, client_t *receiving_client);
 void server_msg__send_maintainer_id_to_clients_in_same_channel(int channel_id, int maintainer_id);
@@ -45,6 +44,8 @@ void server_msg__send_client_going_to_idle_mode_info_to_all_clients(int client_t
 void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(int client_that_comes_from_idle, int channel_the_client_joins);
 void server_msg__send_music_bot_song_list_to_single_client(int sender_client_index, int music_bot_index);
 void server_msg__send_file_send_completed_status_to_single_client(client_t *client);
+void server_msg__send_file_by_chunk_to_single_client(char *chunk, uint64 current_size, int sender_id, int receiver_id, int server_chat_message_id);
+void server_msg__send_file_receive_completed_to_single_client(data_for_file_send_thread_t *info, int receiver_id, char *receive_type);
 
 //audio related
 void server_msg__send_webrtc_sdp_offer_to_single_client(const char *cand, const char *mid, client_t *client);
