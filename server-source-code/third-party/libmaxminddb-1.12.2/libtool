@@ -75,22 +75,22 @@ build=x86_64-pc-linux-gnu
 build_os=linux-gnu
 
 # A sed program that does not truncate output.
-SED="/usr/bin/sed"
+SED="/usr/sbin/sed"
 
 # Sed that helps us avoid accidentally triggering echo(1) options like -n.
 Xsed="$SED -e 1s/^X//"
 
 # A grep program that handles long lines.
-GREP="/usr/bin/grep"
+GREP="/usr/sbin/grep"
 
 # An ERE matcher.
-EGREP="/usr/bin/grep -E"
+EGREP="/usr/sbin/grep -E"
 
 # A literal string matcher.
-FGREP="/usr/bin/grep -F"
+FGREP="/usr/sbin/grep -F"
 
 # A BSD- or MS-compatible name lister.
-NM="/usr/bin/nm -B"
+NM="/usr/sbin/nm -B"
 
 # Whether we need soft or hard links.
 LN_S="ln -s"
@@ -173,19 +173,19 @@ LTCC="gcc"
 LTCFLAGS="-g  -fms-extensions"
 
 # Take the output of nm and produce a listing of raw symbols and C names.
-global_symbol_pipe="/usr/bin/sed -n -e 's/^.*[	 ]\\([ABCDGIRSTW][ABCDGIRSTW]*\\)[	 ][	 ]*\\([_A-Za-z][_A-Za-z0-9]*\\)\$/\\1 \\2 \\2/p' | /usr/bin/sed '/ __gnu_lto/d'"
+global_symbol_pipe="/usr/sbin/sed -n -e 's/^.*[	 ]\\([ABCDGIRSTW][ABCDGIRSTW]*\\)[	 ][	 ]*\\([_A-Za-z][_A-Za-z0-9]*\\)\$/\\1 \\2 \\2/p' | /usr/sbin/sed '/ __gnu_lto/d'"
 
 # Transform the output of nm in a proper C declaration.
-global_symbol_to_cdecl="/usr/bin/sed -n -e 's/^T .* \\(.*\\)\$/extern int \\1();/p' -e 's/^[ABCDGIRSTW][ABCDGIRSTW]* .* \\(.*\\)\$/extern char \\1;/p'"
+global_symbol_to_cdecl="/usr/sbin/sed -n -e 's/^T .* \\(.*\\)\$/extern int \\1();/p' -e 's/^[ABCDGIRSTW][ABCDGIRSTW]* .* \\(.*\\)\$/extern char \\1;/p'"
 
 # Transform the output of nm into a list of symbols to manually relocate.
 global_symbol_to_import=""
 
 # Transform the output of nm in a C name address pair.
-global_symbol_to_c_name_address="/usr/bin/sed -n -e 's/^: \\(.*\\) .*\$/  {\"\\1\", (void *) 0},/p' -e 's/^[ABCDGIRSTW][ABCDGIRSTW]* .* \\(.*\\)\$/  {\"\\1\", (void *) \\&\\1},/p'"
+global_symbol_to_c_name_address="/usr/sbin/sed -n -e 's/^: \\(.*\\) .*\$/  {\"\\1\", (void *) 0},/p' -e 's/^[ABCDGIRSTW][ABCDGIRSTW]* .* \\(.*\\)\$/  {\"\\1\", (void *) \\&\\1},/p'"
 
 # Transform the output of nm in a C name address pair when lib prefix is needed.
-global_symbol_to_c_name_address_lib_prefix="/usr/bin/sed -n -e 's/^: \\(.*\\) .*\$/  {\"\\1\", (void *) 0},/p' -e 's/^[ABCDGIRSTW][ABCDGIRSTW]* .* \\(lib.*\\)\$/  {\"\\1\", (void *) \\&\\1},/p' -e 's/^[ABCDGIRSTW][ABCDGIRSTW]* .* \\(.*\\)\$/  {\"lib\\1\", (void *) \\&\\1},/p'"
+global_symbol_to_c_name_address_lib_prefix="/usr/sbin/sed -n -e 's/^: \\(.*\\) .*\$/  {\"\\1\", (void *) 0},/p' -e 's/^[ABCDGIRSTW][ABCDGIRSTW]* .* \\(lib.*\\)\$/  {\"\\1\", (void *) \\&\\1},/p' -e 's/^[ABCDGIRSTW][ABCDGIRSTW]* .* \\(.*\\)\$/  {\"lib\\1\", (void *) \\&\\1},/p'"
 
 # The name lister interface.
 nm_interface="BSD nm"
@@ -197,7 +197,7 @@ nm_file_list_spec="@"
 lt_sysroot=
 
 # Command to truncate a binary pipe.
-lt_truncate_bin="/usr/bin/dd bs=4096 count=1"
+lt_truncate_bin="/usr/sbin/dd bs=4096 count=1"
 
 # The name of the directory that contains temporary libtool files.
 objdir=.libs

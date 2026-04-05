@@ -21,13 +21,13 @@ else()
 endif()
 
 
-#pozor, moznost -static dodrbe, dynamicke kniznice
-
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 
 include_directories(untitled
         PUBLIC
-        ${PROJECT_SOURCE_DIR}/../third-party/mbedtls-3.5.1/include)
+        ${PROJECT_SOURCE_DIR}/../third-party/libviolet-0.5.4/deps/libjuice/include
+        ${PROJECT_SOURCE_DIR}/../third-party/libviolet-0.5.4/deps/libjuice/include/juice
+        ${PROJECT_SOURCE_DIR}/../third-party/mbedtls-3.6.6/include)
 
 add_executable(chat-server
         main.c

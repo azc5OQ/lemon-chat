@@ -12,11 +12,6 @@
 #include "../third-party/ITH-sha/sha256.h"
 #include "../third-party/kokke-tiny-aes-c/aes.h"
 
-#include "../third-party/libviolet/src/options.h"
-#include "../third-party/libviolet/src/utils.h"
-
-#include "../third-party/libviolet/deps/libjuice/include/juice/juice.h"
-
 #include "../third-party/rxi-log/log.h"
 
 #include "client_message.h"
@@ -24,12 +19,10 @@
 
 #include "../third-party/libtom/libtommath/tommath.h"
 
-#include "../third-party/mbedtls-3.5.1/include/mbedtls/build_info.h"
-#include "../third-party/mbedtls-3.5.1/include/mbedtls/platform.h"
-#include "../third-party/mbedtls-3.5.1/include/mbedtls/rsa.h"
-#include "../third-party/mbedtls-3.5.1/include/mbedtls/entropy.h"
-#include "../third-party/mbedtls-3.5.1/include/mbedtls/ctr_drbg.h"
-#include "../third-party/mbedtls-3.5.1/include/mbedtls/bignum.h"
+#include "../third-party/mbedtls-3.6.6/include/mbedtls/rsa.h"
+#include "../third-party/mbedtls-3.6.6/include/mbedtls/entropy.h"
+#include "../third-party/mbedtls-3.6.6/include/mbedtls/ctr_drbg.h"
+#include "../third-party/mbedtls-3.6.6/include/mbedtls/bignum.h"
 
 #include "memory_manager.h"
 #include "audio_channel.h"
@@ -1064,7 +1057,7 @@ char *base__encrypt_string_with_public_key(char *public_key_modulus, unsigned ch
 	int ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char *)pers, strlen(pers));
 	if (ret != 0)
 	{
-		DBG_ENCRYPTION mbedtls_printf(" failed\n  ! mbedtls_ctr_drbg_seed returned %d\n", ret);
+		DBG_ENCRYPTION log_info("%s %d", "failed\n  ! mbedtls_ctr_drbg_seed returned ", ret);
 	}
 
 	//modulus and exponent; others are not needed for successful import

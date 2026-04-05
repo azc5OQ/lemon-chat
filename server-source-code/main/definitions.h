@@ -1,12 +1,8 @@
 #ifndef MYTYPEDEF_H
 #define MYTYPEDEF_H
 
-#define DEBUG_ACTIVE 1
+//#define DEBUG_ACTIVE 1
 
-//#define WINDOWS_BUILD 1
-//#define LINUX_BUILD 1
-
-#define DONT_USE_AUDIO_CHANNEL 1
 
 #define ARCHITECTURE_AMD64 1
 //#define ARCHITECTURE_I386 1
@@ -63,8 +59,8 @@ typedef const char *cstring;
 #define DBG_MEMORY_MANAGER if (0)
 #define DBG_CONNECTION_CHECK_THREAD if (0)
 #define DBG_CLIENT_DISCONNECT if (0)
-#define DBG_AUDIOCHANNEL_WEBRTC if (0)
-#define DBG_VIOLET if (0)
+#define DBG_AUDIOCHANNEL_WEBRTC if (1)
+#define DBG_VIOLET if (01)
 #define DBG_DBG_MEMORY_ALLOCATIONS if (0)
 #define DBG_IP_TOOLS if (0)
 #define DBG_FILE_UPLOAD if (0)

@@ -43,15 +43,15 @@ IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
   del "%ROOT_DIRECTORY%\*.ninja_deps" /S /Q
   del "%ROOT_DIRECTORY%\*.ninja_log" /S /Q
 
-  rd "%THIRD_PARTY_DIRECTORY%\libdatachannel\CMakeFiles"  /S /Q
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\CMakeCache.txt"
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel-static.a"
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll"
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll.a"
+  rd "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel-static.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll.a"
 
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedcrypto.a"
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedtls.a"
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedx509.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls-3.6.6\lib\libmbedcrypto.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls-3.6.6\lib\libmbedtls.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls-3.6.6\lib\libmbedx509.a"
 
   rd "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\cmake-build-release"   /S /Q
   rd "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\CMakeFiles"   /S /Q
@@ -63,9 +63,9 @@ IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
   rd "%THIRD_PARTY_DIRECTORY%\theldus-websocket\CMakeFiles"  /S /Q
   del "%THIRD_PARTY_DIRECTORY%\theldus-websocket\CMakeCache.txt"
 
-  rd "%THIRD_PARTY_DIRECTORY%\libviolet\CMakeFiles"  /S /Q
-  del "%THIRD_PARTY_DIRECTORY%\libviolet\CMakeCache.txt"
-  del "%THIRD_PARTY_DIRECTORY%\libviolet\libviolet.a"
+  rd "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\libviolet.a"
 
   del "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\CMakeCache.txt"
   del "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a"

@@ -3,7 +3,7 @@
 #include "../third-party/dave-g-json/cJSON.h" //needed by base.h
 #include "base.h"
 
-#include "../third-party/libdatachannel/include/rtc/rtc.h"
+#include "../third-party/libdatachannel-0.24.2/include/rtc/rtc.h"
 #include "../third-party/rxi-log/log.h"
 
 #include "clib/clib_memory.h"
@@ -733,6 +733,7 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client)
 
 	if (client == NULL_POINTER)
 	{
+		DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "client == NULL_POINTER");
 		result = FALSE;
 		goto label_audio_channel__initialize_webrtc_datachannel_connection_end;
 	}
@@ -740,10 +741,11 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client)
 	if (client->is_existing == FALSE || client->is_authenticated == FALSE)
 	{
 		result = FALSE;
+		DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "client->is_existing == FALSE || client->is_authenticated == FALSE");
 		goto label_audio_channel__initialize_webrtc_datachannel_connection_end;
 	}
 
-	//rtcInitLogger(RTC_LOG_VERBOSE, NULL);
+	//rtcInitLogger(RTC_LOG_VERBOSE, NULL); //If something doesnt work, uncomment!
 
 	rtcConfiguration config;
 
@@ -773,6 +775,7 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t *client)
 
 	if (peer->peer_connection_handle == NULL_POINTER)
 	{
+		DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "peer->peer_connection_handle == NULL_POINTER");
 		peer->is_existing = FALSE;
 		goto label_audio_channel__initialize_webrtc_datachannel_connection_end;
 		result = FALSE;

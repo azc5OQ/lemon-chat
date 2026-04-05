@@ -10,8 +10,8 @@
 
 #include "../third-party/ITH-sha/sha256.h"
 
-#include "../third-party/libviolet/src/options.h"
-#include "../third-party/libviolet/src/utils.h"
+#include "../third-party/libviolet-0.5.4/src/options.h"
+#include "../third-party/libviolet-0.5.4/src/utils.h"
 
 #include "../third-party/rxi-log/log.h"
 

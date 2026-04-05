@@ -1,6 +1,8 @@
 #include "../definitions.h"
 #include "clib_string.h"
 
+#include <string.h>
+
 void clib__int_to_hex_string(int n, char *hex_string)
 {
 	int i = 12;

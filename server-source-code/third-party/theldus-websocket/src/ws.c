@@ -723,7 +723,8 @@ void ws_ping(ws_cli_conn_t *cli, int threshold)
 		/* clang-format off */
 		pthread_mutex_lock(&mutex);
 			for (i = 0; i < MAX_CLIENTS; i++)
-				send_ping_close(&client_socks[i], threshold, 0);
+				send_ping_close(&client_socks[i], threshold, 0
+);
 		pthread_mutex_unlock(&mutex);
 		/* clang-format on */
 	}
@@ -739,6 +740,8 @@ void ws_ping(ws_cli_conn_t *cli, int threshold)
  */
 int ws_sendframe_txt(ws_cli_conn_t *client, const char *msg)
 {
+	//printf("%s %s", msg, "\n");
+	//Sleep(5000);
 	return ws_sendframe(client, msg, (uint64_t)strlen(msg), WS_FR_OP_TXT);
 }
 

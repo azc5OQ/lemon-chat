@@ -1,0 +1,71 @@
+{
+	"kind" : "toolchains",
+	"toolchains" : 
+	[
+		{
+			"compiler" : 
+			{
+				"id" : "GNU",
+				"implicit" : 
+				{
+					"includeDirectories" : 
+					[
+						"C:/software/w64devkit/lib/gcc/x86_64-w64-mingw32/14.1.0/include",
+						"C:/software/w64devkit/lib/gcc/x86_64-w64-mingw32/14.1.0/include-fixed",
+						"C:/software/w64devkit/x86_64-w64-mingw32/include"
+					],
+					"linkDirectories" : 
+					[
+						"C:/software/w64devkit/lib/gcc/x86_64-w64-mingw32/14.1.0",
+						"C:/software/w64devkit/lib/gcc",
+						"C:/software/w64devkit/x86_64-w64-mingw32/lib",
+						"C:/software/w64devkit/lib"
+					],
+					"linkFrameworkDirectories" : [],
+					"linkLibraries" : 
+					[
+						"mingw32",
+						"gcc",
+						"mingwex",
+						"kernel32",
+						"pthread",
+						"advapi32",
+						"shell32",
+						"user32",
+						"kernel32",
+						"mingw32",
+						"gcc",
+						"mingwex",
+						"kernel32"
+					]
+				},
+				"path" : "C:/software/w64devkit/bin/gcc.exe",
+				"version" : "14.1.0"
+			},
+			"language" : "C",
+			"sourceFileExtensions" : 
+			[
+				"c",
+				"m"
+			]
+		},
+		{
+			"compiler" : 
+			{
+				"implicit" : {},
+				"path" : "C:/software/w64devkit/bin/windres.exe"
+			},
+			"language" : "RC",
+			"sourceFileExtensions" : 
+			[
+				"rc",
+				"RC"
+			]
+		}
+	],
+	"version" : 
+	{
+		"major" : 1,
+		"minor" : 0
+	}
+}

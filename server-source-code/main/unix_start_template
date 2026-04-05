@@ -1,9 +1,9 @@
 
 #!/bin/bash
 
-# Check if the symlink libdatachannel.so.0.23 exists and points to the correct target
+# Check if the symlink libdatachannel.so.0.24 exists and points to the correct target
 TARGET="libdatachannel.so"
-LINK="libdatachannel.so.0.23"
+LINK="libdatachannel.so.0.24"
 
 # Ensure the target file exists
 if [ ! -e "$TARGET" ]; then

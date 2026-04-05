@@ -10,6 +10,9 @@
 
 #include "../third-party/rxi-log/log.h"
 
+#include <stdio.h>
+#include <string.h>
+
 /* @brief self explanatory
  *
  * @param StringBuffer* sb

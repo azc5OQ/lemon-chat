@@ -51,18 +51,18 @@ echo    # (optional) move to a new line
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
     rm -fv "$ROOT_DIRECTORY/*.o"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/CMakeFiles"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/CMakeFiles"
-    rm -fv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/CMakeCache.txt"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/output"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedtls.a"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedx509.a"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel/CMakeFiles"
-    rm -fv "$THIRD_PARTY_DIRECTORY/libdatachannel/CMakeCache.txt"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel/libdatachannel-static.a"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel/libdatachannel.dll"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel/libdatachannel.dll.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/CMakeFiles"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/CMakeFiles"
+    rm -fv "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/CMakeCache.txt"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/output"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedtls.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedcrypto.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedx509.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/CMakeFiles"
+    rm -fv "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/CMakeCache.txt"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/libdatachannel-static.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/libdatachannel.dll"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/libdatachannel.dll.a"
     rm -rfv "$THIRD_PARTY_DIRECTORY/libtom/libtommath/cmake-build-release"
     rm -rfv "$THIRD_PARTY_DIRECTORY/libtom/libtommath/CMakeFiles"
     rm -fv "$THIRD_PARTY_DIRECTORY/libtom/libtommath/CMakeCache.txt"
@@ -70,9 +70,9 @@ then
     rm -fv "$THIRD_PARTY_DIRECTORY/libtom/libtomcrypt/libtomcrypt.a" 
     rm -rfv "$THIRD_PARTY_DIRECTORY/theldus-websocket/CMakeFiles"
     rm -fv "$THIRD_PARTY_DIRECTORY/theldus-websocket/CMakeCache.txt"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/libviolet/CMakeFiles"
-    rm -fv "$THIRD_PARTY_DIRECTORY/libviolet/CMakeCache.txt"
-    rm -fv "$THIRD_PARTY_DIRECTORY/libviolet/libviolet.a"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/CMakeFiles"
+    rm -fv "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/CMakeCache.txt"
+    rm -fv "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/libviolet.a"
     rm -rfv "$ROOT_DIRECTORY/main/linkage-files/windows/*"
     rm -rfv "$ROOT_DIRECTORY/main/linkage-files/linux/*"
     rm -rfv "$ROOT_DIRECTORY/main/CMakeFiles"
@@ -111,7 +111,11 @@ cd "$THIRD_PARTY_DIRECTORY"
 
 message "building mbedtls (libmbedtls.a, libmbedx509.a, libmbedcrypto.a)"
 
-cd mbedtls-3.5.1
+cd mbedtls-3.6.6
+
+pause
+dir
+pause
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE" -DCMAKE_C_FLAGS="-fPIC" -DCMAKE_CXX_FLAGS="-fPIC"
 
@@ -120,9 +124,14 @@ cmake --build . -j32 --target mbedtls
 message "mbedtls build finished, moving some mbedtls files to their destination"
 
 
-cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedtls.a" "$THIRD_PARTY_DIRECTORY/libdatachannel/deps/mbedtls/lib/libmbedtls.a"
-cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedx509.a" "$THIRD_PARTY_DIRECTORY/libdatachannel/deps/mbedtls/lib/libmbedx509.a"
-cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a" "$THIRD_PARTY_DIRECTORY/libdatachannel/deps/mbedtls/lib/libmbedcrypto.a"
+#copy include folder from mbedtls dir to deps
+
+rm -rf "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/deps/mbedtls/include"
+cp -r "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/include" "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/deps/mbedtls/"
+
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedtls.a" "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/deps/mbedtls/lib/libmbedtls.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedx509.a" "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/deps/mbedtls/lib/libmbedx509.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedcrypto.a" "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/deps/mbedtls/lib/libmbedcrypto.a"
 
 
 #and also move them from resulting build directory of mbedtls-3.5.1 to dependencies directory of .exe itself, linkage-files (mbedtls is used for RSA encryption within chat server)
@@ -130,9 +139,9 @@ cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a" "$THIRD_PAR
 mkdir -p "$ROOT_DIRECTORY/main/linkage-files/linux"
 
 
-cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedtls.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedtls.a"
-cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedx509.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedx509.a"
-cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.5.1/library/libmbedcrypto.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedcrypto.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedtls.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedtls.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedx509.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedx509.a"
+cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedcrypto.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libmbedcrypto.a"
 
 
 cd ../
@@ -143,14 +152,14 @@ cd ../
 
 message "building libdatachannel.so and its dependencies (libjuice, libsrtp, usrsctp)"
 
-cd libdatachannel
+cd libdatachannel-0.24.2
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
 
 cmake --build . -j32 --target datachannel
 
-cp -v "$THIRD_PARTY_DIRECTORY/libdatachannel/libdatachannel.so" "$ROOT_DIRECTORY/main/linkage-files/linux/libdatachannel.so"
-cp -v "$THIRD_PARTY_DIRECTORY/libdatachannel/libdatachannel.so" "$ROOT_DIRECTORY/../buildresult/"
+cp -v "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/libdatachannel.so" "$ROOT_DIRECTORY/main/linkage-files/linux/libdatachannel.so"
+cp -v "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/libdatachannel.so" "$ROOT_DIRECTORY/../buildresult/"
 
 cd ../
 
@@ -207,12 +216,12 @@ cd ../
 
 message "building libviolet.a"
 
-cd libviolet
+cd libviolet-0.5.4
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
 
 cmake --build . -j32  --target violet
-cp -v "$THIRD_PARTY_DIRECTORY/libviolet/libviolet.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libviolet.a"
+cp -v "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/libviolet.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libviolet.a"
 
 cd ../
 
@@ -276,7 +285,7 @@ cd ../../
 echo "cutrentdirectory is $PWD"
 
 cd buildresult
-ln -s libdatachannel.so libdatachannel.so.0.23
+ln -s libdatachannel.so libdatachannel.so.0.24
 
 cd ../
 cd server-source-code

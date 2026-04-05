@@ -10,11 +10,14 @@
 *.outs
 *.exp
 *.dll.a
+*.opus
+*.h264
 
 # ignore ANY build directory
 /build/
 build*/
 build/
+
 
 # ---- Core CMake files ----
 CMakeCache.txt
@@ -37,3 +40,32 @@ Makefile
 
 # ---- Optional: CTest output ----
 Testing/
+
+#ide folders
+.idea/
+
+
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---- CMake presets (user-specific) ----
+CMakeUserPresets.json
+
+# ---- Package managers ----
+vcpkg_installed/
+conan/
+
+# ---- Compilation database (clangd, etc.) ----
+compile_commands.json
+
+# ---- Debug ----
+*.dSYM/
+*.pdb
+*.ilk
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+desktop.ini

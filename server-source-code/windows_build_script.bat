@@ -57,24 +57,24 @@ IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
   ::delete any files that might be leftovers from previous build
   ::checking if they exist is not needed, would only waste space in .bat file
 
-  rd "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\CMakeFiles"  /S /Q
-  rd "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\CMakeFiles"  /S /Q
-  del "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\CMakeCache.txt"
+  rd "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\CMakeFiles"  /S /Q
+  rd "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\library\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\CMakeCache.txt"
 
   del "%ROOT_DIRECTORY%\*.o" /S /Q
   del "%ROOT_DIRECTORY%\*.a" /S /Q
   del "%ROOT_DIRECTORY%\*.ninja_deps" /S /Q
   del "%ROOT_DIRECTORY%\*.ninja_log" /S /Q
 
-  rd "%THIRD_PARTY_DIRECTORY%\libdatachannel\CMakeFiles"  /S /Q
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\CMakeCache.txt"
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel-static.a"
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll"
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll.a"
+  rd "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel-static.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll.a"
 
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedcrypto.a"
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedtls.a"
-  del "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedx509.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\lib\libmbedcrypto.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\lib\libmbedtls.a"
+  del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\lib\libmbedx509.a"
 
   rd "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\cmake-build-release"   /S /Q
   rd "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\CMakeFiles"   /S /Q
@@ -86,9 +86,9 @@ IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
   rd "%THIRD_PARTY_DIRECTORY%\theldus-websocket\CMakeFiles"  /S /Q
   del "%THIRD_PARTY_DIRECTORY%\theldus-websocket\CMakeCache.txt"
 
-  rd "%THIRD_PARTY_DIRECTORY%\libviolet\CMakeFiles"  /S /Q
-  del "%THIRD_PARTY_DIRECTORY%\libviolet\CMakeCache.txt"
-  del "%THIRD_PARTY_DIRECTORY%\libviolet\libviolet.a"
+  rd "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\CMakeFiles"  /S /Q
+  del "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\CMakeCache.txt"
+  del "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\libviolet.a"
 
   del "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\CMakeCache.txt"
   del "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a"
@@ -145,33 +145,36 @@ set "CMAKE_C_FLAGS_RELWITHDEBINFO= -O2 -g -DNDEBUG"
 set "CMAKE_LINKER=%MINGWPATH%\ld.exe"
 
 
-
-
 ::********************************************************
 ::****** mbedtls build                              ******
 ::********************************************************
 
 
 cd "%THIRD_PARTY_DIRECTORY%"
-cd mbedtls-3.5.1
+cd mbedtls-3.6.6
 ::this command will call build tool "ninja". This tool can also be called directly, but its better to call it through cmake, otherwise ninja would have to be added into path of operating system
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
 cmake --build . -j32 --target mbedtls
 
+
+::copy include folder from mbedtls dir to deps
+rd "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\include" /Q /S
+mkdir "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\include"
+xcopy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\include" "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\include" /E /H /I /Y
+
 ::after the build of mbedtls is done, few more things
 ::libdatachannel needs three static libraries to build (libmbedtls.a, libmbedx509.a, libmbedcrypto.a)
-::move them from resulting build directory of mbedtls-3.5.1 to dependencies directory of libdatachannel, so libdatachannel can detect these libraries
+::move them from resulting build directory of mbedtls-3.6.6 to dependencies directory of libdatachannel, so libdatachannel can detect these libraries
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\library\libmbedtls.a" "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\lib\libmbedtls.a"
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\library\libmbedx509.a" "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\lib\libmbedx509.a"
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\library\libmbedcrypto.a" "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\lib\libmbedcrypto.a"
 
-copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedtls.a" "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedtls.a"
-copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedx509.a" "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedx509.a"
-copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedcrypto.a" "%THIRD_PARTY_DIRECTORY%\libdatachannel\deps\mbedtls\lib\libmbedcrypto.a"
 
-
-::also move them from resulting build directory of mbedtls-3.5.1 to dependencies directory of .exe itself, linkage-files (mbedtls is used for RSA encryption within chat-server.exe)
-copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedtls.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedtls.a"
-copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedx509.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedx509.a"
-copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.5.1\library\libmbedcrypto.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedcrypto.a"
+::also move them from resulting build directory of mbedtls-3.6.6 to dependencies directory of .exe itself, linkage-files (mbedtls is used for RSA encryption within chat-server.exe)
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\library\libmbedtls.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedtls.a"
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\library\libmbedx509.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedx509.a"
+copy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\library\libmbedcrypto.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmbedcrypto.a"
 
 cd ../
 
@@ -180,16 +183,16 @@ cd ../
 ::********************************************************
 
 
-cd libdatachannel
+cd libdatachannel-0.24.2
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
 cmake --build . -j32  --target datachannel
 ::in case cmake --build . -j32  --target datachannel wasnt called, somehow old .a file was still generated from leftover files , I thought I cleared the cache
 
 
-copy "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll" "%ROOT_DIRECTORY%\main\linkage-files\windows\libdatachannel.dll"
+copy "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll" "%ROOT_DIRECTORY%\main\linkage-files\windows\libdatachannel.dll"
 ::the .dll.a file is needed during linking its type of dynamic library that needs, i cant explain it well but its different kind of .a file that is needed for certain use of .dll, mingw produces that file
-copy "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libdatachannel.dll.a"
+copy "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libdatachannel.dll.a"
 
 cd ../
 
@@ -238,7 +241,7 @@ copy "%THIRD_PARTY_DIRECTORY%\theldus-websocket\libws.a" "%ROOT_DIRECTORY%\main\
 cd ../
 
 
-cd libviolet
+cd libviolet-0.5.4
 
 ::********************************************************
 ::****** libviolet build                            ******
@@ -249,7 +252,7 @@ cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_
 cmake --build . -j32  --target violet
 
 
-copy "%THIRD_PARTY_DIRECTORY%\libviolet\libviolet.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libviolet.a"
+copy "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\libviolet.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libviolet.a"
 
 
 ::********************************************************
@@ -298,7 +301,7 @@ cmake --build . -j32
 
 
 copy "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\dbip-country-lite-2025-06.mmdb" "%ROOT_DIRECTORY%\..\buildresult\"
-move "%THIRD_PARTY_DIRECTORY%\libdatachannel\libdatachannel.dll" "%ROOT_DIRECTORY%\..\buildresult\"
+move "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll" "%ROOT_DIRECTORY%\..\buildresult\"
 move "%ROOT_DIRECTORY%\main\chat-server.exe" "%ROOT_DIRECTORY%\..\buildresult\"
 
 

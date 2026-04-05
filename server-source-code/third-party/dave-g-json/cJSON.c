@@ -20,6 +20,7 @@
   THE SOFTWARE.
 */
 //#include "../log/log.h"
+#include "../../main/definitions.h"
 #include "../../main/memory_manager.h"
 /* cJSON */
 /* JSON parser in C. */
