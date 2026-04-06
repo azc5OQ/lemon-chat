@@ -946,9 +946,12 @@ char *base__encrypt_cstring_and_convert_to_base64(char *string_to_encrypt, int *
  */
 void base__get_data_from_base64_and_decrypt_it(int client_id, char *base64_string, unsigned char *out_buffer, int out_buffer_length)
 {
+	int base64_decoded_size; //25 percent smaller
 	client_t *client = &clients_array[client_id];
 
 	DBG_ENCRYPTION log_info("%s %d %s", "base__get_data_from_base64_and_decrypt_it ", client_id, "\n");
+
+	base64_decoded_size = zchg_base64_decode(base64_string, strlen(base64_string), out_buffer);
 
 	if (client != NULL_POINTER && client->is_existing == TRUE && client->is_dh_shared_secret_agreed_upon == TRUE)
 	{
@@ -961,8 +964,6 @@ void base__get_data_from_base64_and_decrypt_it(int client_id, char *base64_strin
 
 		DBG_ENCRYPTION log_info("%s %lu %s", "get_data_from_base64_and_derypt_it", i, "\n");
 
-		zchg_base64_decode(base64_string, strlen(base64_string), out_buffer);
-
 		//
 		//first key used in decryption is last key used in encryption
 		//this only decrypts metadata. Does not decrypt content of messages
@@ -973,7 +974,7 @@ void base__get_data_from_base64_and_decrypt_it(int client_id, char *base64_strin
 			DBG_ENCRYPTION log_info("%s %d %s", "decrypting data with key", i, "\n");
 
 			AES_init_ctx_iv(&ctx, g_server_settings.keys[i].key_value, g_server_settings.keys[i].key_iv);
-			AES_CTR_xcrypt_buffer(&ctx, out_buffer, out_buffer_length);
+			AES_CTR_xcrypt_buffer(&ctx, out_buffer, base64_decoded_size);
 		}
 
 		unsigned char shared_key_iv[16] = { 90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10 };
@@ -989,7 +990,7 @@ void base__get_data_from_base64_and_decrypt_it(int client_id, char *base64_strin
 		ith_sha256_final(&sha256ctx, shared_key);
 
 		AES_init_ctx_iv(&ctx, shared_key, shared_key_iv);
-		AES_CTR_xcrypt_buffer(&ctx, out_buffer, out_buffer_length);
+		AES_CTR_xcrypt_buffer(&ctx, out_buffer, base64_decoded_size);
 	}
 	else
 	{
@@ -1002,8 +1003,6 @@ void base__get_data_from_base64_and_decrypt_it(int client_id, char *base64_strin
 
 		DBG_ENCRYPTION log_info("%s %d %s", "get_data_from_base64_and_derypt_it ", strlen(base64_string), "\n");
 
-		zchg_base64_decode(base64_string, strlen(base64_string), out_buffer);
-
 		//
 		//first key used in decryption is last key used in encryption
 		//this only decrypts metadata. Does not decrypt content of messages
@@ -1014,7 +1013,7 @@ void base__get_data_from_base64_and_decrypt_it(int client_id, char *base64_strin
 			DBG_ENCRYPTION log_info("%s %d %s", "decrypting data with key", i, "\n");
 
 			AES_init_ctx_iv(&ctx, g_server_settings.keys[i].key_value, g_server_settings.keys[i].key_iv);
-			AES_CTR_xcrypt_buffer(&ctx, out_buffer, out_buffer_length);
+			AES_CTR_xcrypt_buffer(&ctx, out_buffer, base64_decoded_size);
 		}
 	}
 }
@@ -1431,7 +1430,7 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t *websocket, in
 	//check message length first. If string is too long( more than 1000 chars) drop it
 	//
 
-	status1 = clib__utf8_string_length_check_max_length(decrypted_metadata_cstring, 1000);
+	status1 = clib__utf8_string_length_check_max_length(decrypted_metadata_cstring, 2000);
 
 	if (status1 == -1)
 	{
@@ -1484,7 +1483,7 @@ int base__get_other_clients_in_channel(int client_to_ignore, int channel_id, int
 	{
 		boole status = util__is_client_valid(i);
 
-		if (status == TRUE && i != client_to_ignore)
+		if (status == TRUE && i != client_to_ignore && channel_id == clients_array[i].channel_id)
 		{
 			receiving_client_ids[count] = i;
 			count++;

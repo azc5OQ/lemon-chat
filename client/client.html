@@ -13008,9 +13008,9 @@
 
                 my.challenge_decrypt = function (ciphertext, key)
                 {
-                    console.log("challenge_decrypt tried");
+                    //console.log("challenge_decrypt tried");
                     let result = key.decrypt(my.b64to16(ciphertext));
-                    console.log("challenge_decrypt succeeded");
+                    console.log("my.challenge_decrypt = function (ciphertext, key) succeeded");
                     return result;
                 }
 
@@ -16094,15 +16094,17 @@
                 {
                     let msg = e.data.value;
                     let dh_public_mix_string = msg.message.dh_public_mix;
-                    console.log("dh_public_mix_string from server -> " + dh_public_mix_string);
+                    //console.log("DH dh_public_mix_string from server -> " + dh_public_mix_string);
 
 
                     let dh_public_mix = bigInt(dh_public_mix_string);
-                    let shared_secret = dh_public_mix.pow(dh_secret_exponent).mod(dh_modulus);
+                    //let shared_secret = dh_public_mix.pow(dh_secret_exponent).mod(dh_modulus);
+
+                    let shared_secret = dh_public_mix.modPow(dh_secret_exponent, dh_modulus);
+
 
                     //add shared secret to
-                    console.log("shared_secret -> " + shared_secret);
-                    console.log(shared_secret);
+                    //console.log("DH shared_secret -> " + shared_secret.toString());
 
                     //
                     //because there is also "secret key" used ,used to further secure connection between server and client, and is different for every connected client, (obtained with steps that wants to look like diffie-hellman key exchange)
@@ -16301,7 +16303,7 @@
                     let parts = split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
                     file_send_intent = "direct_chat_picture_file";
                     file_send_intent_extra_data = e.data.extra_data;
-                    send_file_by_parts(parts, total_bytes_length, 20);
+                    send_file_by_parts(parts, total_bytes_length, 5);
                 }
                 else if (e.data.type == "data_processing_worker__channel_chat_picture_to_be_uploaded_by_parts")
                 {
@@ -16309,7 +16311,7 @@
                     let parts = split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
                     file_send_intent = "channel_chat_picture_file";
                     file_send_intent_extra_data = e.data.extra_data;
-                    send_file_by_parts(parts, total_bytes_length, 20);
+                    send_file_by_parts(parts, total_bytes_length, 5);
                 }
                 else if (e.data.type == "data_processing_worker__music_bot_song_list_from_server")
                 {
@@ -16706,6 +16708,15 @@
                 }
                 else if (e.data.type == "mainthread__channel_keys_for_data_processing_worker")
                 {
+                    if (current_channel_keys != null)
+                    {
+                        historic_keys_of_current_channel.push(current_channel_keys);
+
+                        if (historic_keys_of_current_channel.length > 7)
+                        {
+                            historic_keys_of_current_channel.shift();
+                        }
+                    }
                     current_channel_keys = e.data.value;
                 }
                 else if (e.data.type == "mainthread__create_websocket_channel_keys_message")
@@ -17020,14 +17031,37 @@
                             }
                         }
 
+                        let is_decrypted = false;
                         let decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(current_channel_keys, e.data.message_raw);
-                        let decrypted_base64_picture_sanitized = sanitize_string(decrypted_base64_picture);
-                        msg.message.decrypted_base64_picture = decrypted_base64_picture_sanitized;
-                        msg.message.value = null;
-                        global.postMessage({
-                            type: "data_processing_worker__channel_chat_picture",
-                            value: msg
-                        });
+
+                        if (decrypted_base64_picture.startsWith("data:image"))
+                        {
+                            is_decrypted = true;
+                        }
+                        else
+                        {
+                            for (i = 0; i < historic_keys_of_current_channel.length; i++)
+                            {
+                                decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(historic_keys_of_current_channel[i], e.data.message_raw);
+                                if (decrypted_base64_picture.startsWith("data:image"))
+                                {
+                                    console.log("managed to decrypt channel chat picture with channel key at" + i)
+                                    is_decrypted = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (is_decrypted)
+                        {
+                            let decrypted_base64_picture_sanitized = sanitize_string(decrypted_base64_picture);
+                            msg.message.decrypted_base64_picture = decrypted_base64_picture_sanitized;
+                            msg.message.value = null;
+                            global.postMessage({
+                                type: "data_processing_worker__channel_chat_picture",
+                                value: msg
+                            });
+                        }
                     }
                     else
                     {
@@ -17377,7 +17411,7 @@
 
                         if (decryption_result.status == 'failure')
                         {
-                            custom_log("failed to decrypt direct chat message");
+                            custom_log("! failed to decrypt direct chat message !");
                             return;
                         }
 
@@ -17525,7 +17559,7 @@
                 }
             }
 
-            var are_server_details_predefined = false;
+            var are_server_details_predefined = true;
             //for webpage to play sounds,  microphone user has to interact with it. A simple click on button (for example connect button) is enough
             //in android WebView, this is not a problem, its not a problem in electron either i assume
             //its also not a problem if chat is embedded in website, user already interacts with the website lots of ways before he loads some chat
@@ -17534,7 +17568,7 @@
             //so in rare cases when it is a problem, just set the is_autoconnect_without_user_action_active to false
             //i could explore this problem more but for now this solution is enough
 
-            var is_autoconnect_without_user_action_active = false; 
+            var is_autoconnect_without_user_action_active = true; 
             var is_reconnect_active = true;
 
             //for any sound to play in html page, client must click something first
@@ -17565,14 +17599,8 @@
             {
                 dh_generator = bigInt(2);
 
-                //2048bit prime
-                //dh_modulus = bigInt(32317006071311007300338913926423828248817941241140239112842009751400741706634354222619689417363569347117901737909704191754605873209195028853758986185622153212175412514901774520270235796078236248884246189477587641105928646099411723245426622522193230540919037680524235519125679715870117001058055877651038861847280257976054903569732561526167081339361799541336476559160368317896729073178384589680639671900977202194168647225871031411336429319536193471636533209717077448227988588565369208645296636077250268955505928362751121174096972998068410554359584866583291642136218231078990999448652468262416972035911852507045361090559n);
-
-                //1536bit prime
-                //dh_modulus = bigInt(2410312426921032588552076022197566074856950548502459942654116941958108831682612228890093858261341614673227141477904012196503648957050582631942730706805009223062734745341073406696246014589361659774041027169249453200378729434170325843778659198143763193776859869524088940195577346119843545301547043747207749969763750084308926339295559968882457872412993810129130294592999947926365264059284647209730384947211681434464714438488520940127459844288859336526896320919633919n);
-
-                //512bit prime
-                dh_modulus = bigInt(13232376895198612407547930718267435757728527029623408872245156039757713029036368719146452186041204237350521785240337048752071462798273003935646236777459223n);
+                //2048bit safe prime
+                dh_modulus = bigInt(32317006071311007300338913926423828248817941241140239112842009751400741706634354222619689417363569347117901737909704191754605873209195028853758986185622153212175412514901774520270235796078236248884246189477587641105928646099411723245426622522193230540919037680524235519125679715870117001058055877651038861847280257976054903569732561526167081339361799541336476559160368317896729073178384589680639671900977202194168647225871031411336429319536193471636533209717077448227988588565369208645296636077250268955505928362751121174096972998068410554359584866583291642136218231078990999448652468262416972035911852507045361090559n);
             }
 
             var is_microphone_always_on = false;
@@ -17641,6 +17669,15 @@
             var selected_channel_id;
             var selected_client_id;
             var current_channel_keys = null;
+
+            //channel encryption keys are changed when somebody new joins the channel with clients already in it.
+            //that creates the situation where somebody send the channel chat message encrypted with old channel keys but receiver expects the new ones
+            //historic_keys_of_current_channel allows clients to try to decrypt incoming image with the old ones
+            //historic_keys_of_current_channel gets reset if local client switches channel
+            //its the data processing worker that does the work with historic channel keys, main UI thread does not need it
+
+            var historic_keys_of_current_channel = []; 
+
             var chat_context_array = [
                 {
                     type: "channel",
@@ -19071,6 +19108,11 @@
                         if (channel_list[index].maintainer_id == msg.message.sender_id)
                         {
                             console.log("received keys for channel '" + channel_list[index].name + "' from user : '" + msg.message.sender_username + "'. Setting new value of current_channel_keys");
+                            //if (current_channel_keys != null)
+                            //{
+                            //    historic_keys_of_current_channel.push(current_channel_keys);
+                            //    console.log(historic_keys_of_current_channel);
+                            //}
                             current_channel_keys = JSON.parse(msg.message.some_json.value);
                             console.log("current_channel_keys -> ", current_channel_keys);
 
@@ -22612,7 +22654,7 @@
                                     musicbot_id: parseInt(selected_client_id) 
                                 };
 
-                                send_file_by_parts(parts, total_bytes_length, 20);
+                                send_file_by_parts(parts, total_bytes_length, 5);
                             }
                             reader.readAsDataURL(file); //invokes onload
                         }
@@ -23706,8 +23748,7 @@
                 {
                     if (current_channel_keys == null)
                     {
-                        console.log("%cDONT HAVE CHANNEL KEYS BUT SENDING ANYWAT", "color: red");
-                        custom_alert("no channel encryption keys from maintainer,CANNOT SEND MESSAGE");
+                        custom_alert("no channel keys from channel maintainer, cant send the message");
                         return;
                     }
                     send_channel_chat_message();
@@ -25309,41 +25350,32 @@
 
             function get_public_mix()
             {
-                let value_to_construct_big_int_from = "0b";
+                let random_exponent_binary_string = "0b";
 
-                for (let a = 0; a < 11; a++)    //randomly exponent should cannot have 256bits, javascript starts to complain that BigInt exceeded allowed size and I do not know how to get past it
+                //random exponent for Diffie hellman key exchange of 256 bits, first bit always 1, rest are random
+                for (let a = 0; a < 256; a++)
                 {
                     if (a == 0)
                     {
                         let single_random_bit_stringpart = "1";
-                        value_to_construct_big_int_from += single_random_bit_stringpart;
-                    }
-                    else if (a == 1 || a == 2 || a == 3)
-                    {
-                        let single_random_bit_stringpart = "0";
-                        value_to_construct_big_int_from += single_random_bit_stringpart;
+                        random_exponent_binary_string += single_random_bit_stringpart;
                     }
                     else
                     {
                         let single_random_bit_stringpart = Math.random() < 0.5 ? "0" : "1";
-                        value_to_construct_big_int_from += single_random_bit_stringpart;
+                        random_exponent_binary_string += single_random_bit_stringpart;
                     }
                 }
 
-                dh_secret_exponent = BigInt(value_to_construct_big_int_from);
+                //console.log(random_exponent_binary_string);
+                dh_secret_exponent = BigInt(random_exponent_binary_string);
 
-                console.log("dh_secret_exponent ");
-                console.log(dh_secret_exponent);
+                //console.log("DH dh_secret_exponent " + dh_secret_exponent);
 
-                let product = dh_generator.pow(dh_secret_exponent);
+                //let A = product.mod(dh_modulus);
+                let A = dh_generator.modPow(dh_secret_exponent, dh_modulus);
 
-                console.log("product");
-                console.log(product);
-
-                let A = product.mod(dh_modulus);
-
-                console.log("A");
-                console.log(A);
+                //console.log("DH A -> " + A.toString());
 
                 return A;
             }

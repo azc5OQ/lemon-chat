@@ -3,7 +3,6 @@
 
 //#define DEBUG_ACTIVE 1
 
-
 #define ARCHITECTURE_AMD64 1
 //#define ARCHITECTURE_I386 1
 
@@ -53,14 +52,14 @@ typedef const char *cstring;
 #define DBG_AUTHENTICATION if (0)
 #define DBG_ENCRYPTION if (0)
 #define DBG_SERVER_MESSAGE if (0)
-#define DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE if (0)
+#define DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE if (1)
 #define DBG_CLOSE_CONNECTION if (0)
 #define DBG_ONMESSAGE if (0)
 #define DBG_MEMORY_MANAGER if (0)
 #define DBG_CONNECTION_CHECK_THREAD if (0)
 #define DBG_CLIENT_DISCONNECT if (0)
-#define DBG_AUDIOCHANNEL_WEBRTC if (1)
-#define DBG_VIOLET if (01)
+#define DBG_AUDIOCHANNEL_WEBRTC if (0)
+#define DBG_VIOLET if (0)
 #define DBG_DBG_MEMORY_ALLOCATIONS if (0)
 #define DBG_IP_TOOLS if (0)
 #define DBG_FILE_UPLOAD if (0)
@@ -127,6 +126,7 @@ int mytypedef__check_data_types_for_consistency(void);
 #define MUSIC_BOT_MAX_FILE_COUNT 200
 #define MAX_CLIENT_FILE_UPLOAD_LENGTH 13946000
 #define MAX_SIMULTANEOUS_FILE_SEND_THREADS 20
+#define CHALLENGE_STRING_SIZE 100
 
 #include "../third-party/theldus-websocket/include/ws.h"
 #include <pthread.h>

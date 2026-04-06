@@ -1788,243 +1788,264 @@ void client_msg__get_public_key_and_verification_string_and_dh_public_mix(cJSON 
 	*dh_mix = dh_public_mix_json->valuestring;
 }
 
+//safe prime numbers for Diffie-Hellman key exchange , for modulus
+//client.html has the same
+//replace with your own if you want
+
+//2048bit
+const char *dh_known_modulus_str = "32317006071311007300338913926423828248817941241140239112842009751400741706634354222619689417363569347117901737909704191754605873209195028853758986185622153212175412514901774520270235796078236248884246189477587641105928646099411723245426622522193230540919037680524235519125679715870117001058055877651038861847280257976054903569732561526167081339361799541336476559160368317896729073178384589680639671900977202194168647225871031411336429319536193471636533209717077448227988588565369208645296636077250268955505928362751121174096972998068410554359584866583291642136218231078990999448652468262416972035911852507045361090559";
+
 /**
- * @brief this is first message server processes from client
+ * @brief First message server processes from a new client - handles the full DH key exchange + RSA challenge.
  *
- * @param cJSON* json_root
- * @param int sender_client_index
+ * This function does the following in order:
+ *   1. Validates the incoming message (spam check, JSON structure, verification string)
+ *   2. Rejects duplicate public keys (no two connected clients can share one)
+ *   3. Stores the client's RSA public key
+ *   4. Performs Diffie-Hellman key exchange:
+ *      - Loads the shared prime modulus (must match client's)
+ *      - Generates a random 256-bit server secret exponent
+ *      - Computes shared_secret = client_public_mix ^ server_exponent mod p
+ *      - Computes server_public_mix = g ^ server_exponent mod p
+ *   5. Generates a random challenge string, encrypts it with the client's RSA public key
+ *   6. Sends server_public_mix + encrypted challenge to the client
+ *   7. Stores the plaintext challenge so it can be verified when client responds
  *
- * @attention this function will be improved. the "diffie-hellman key exchange" here is not secure enough it just tries to imitate the diffie hellman key exchange
+ * After this function, the client must decrypt the challenge and send it back.
+ * That is handled by client_msg__process_public_key_challenge_response().
  *
- * @return boole
+ * @param json_root     Parsed JSON message from the client
+ * @param sender_client_index  Index into clients_array for this client
  */
 void client_msg__process_public_key_info(cJSON *json_root, int sender_client_index)
 {
 	boole status;
-	mp_int bignum_dh_secret_exponent_of_this_server;
+	mp_err mp_status;
+	size_t mp_written;
+
+	/* data extracted from JSON */
 	char *public_key;
 	char *verification_string;
 	char *dh_received_public_mix_from_client;
-	unsigned int dh_server_secret_exponent;
-	mp_int bignum_dh_received_public_mix_from_client;
-	mp_int bignum_dh_shared_secret;
-	mp_err mpstatus1;
-	size_t written;
-	mp_int bignum_dh_public_mix_from_server_for_client;
-	mp_int bignum_dh_public_modulus;
-	mp_int bignum_dh_public_base_generator;
-	size_t written1;
+
+	/* DH bignums */
+	mp_int bignum_modulus;
+	mp_int bignum_server_exponent;
+	mp_int bignum_client_public_mix;
+	mp_int bignum_shared_secret;
+	mp_int bignum_generator;
+	mp_int bignum_server_public_mix;
+
+	/* challenge + server's DH public mix as strings for transmission */
 	char *challenge_string;
-	char *dh_public_mix_from_server_string_for_client;
 	char *challenge_value_for_client;
-	boole is_everything_ok_still;
+	char *dh_public_mix_from_server_string_for_client;
+
+	/* ──────────────────────────────────────────────────────────────────
+	 *  STEP 1: Basic validation (before acquiring write lock)
+	 * ────────────────────────────────────────────────────────────────── */
 
 	status = base__is_request_allowed_based_on_spam_protection(sender_client_index);
 	if (!status)
 	{
-		DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_public_key_info base__is_request_allowed_based_on_spam_protection == FALSE \n");
+		DBG_AUTHENTICATION log_info("[auth] client %d: rejected by spam protection", sender_client_index);
 		return;
 	}
 
 	status = client_msg__is_public_key_info_message_valid(json_root, sender_client_index);
 	if (!status)
 	{
+		DBG_AUTHENTICATION log_info("[auth] client %d: invalid message structure", sender_client_index);
 		base__close_websocket_connection(sender_client_index, TRUE);
-		DBG_AUTHENTICATION log_info("%s %d %s", "client : ", sender_client_index, " json_message_type != string \n");
 		return;
 	}
 
-	DBG_AUTHENTICATION log_info("%s %d %s", "client : ", sender_client_index, " everything looks valid, proceeding with authentication\n");
+	/* ──────────────────────────────────────────────────────────────────
+	 *  Acquire write lock for the rest of the function.
+	 *  All early exits below use goto to ensure the lock is released.
+	 * ────────────────────────────────────────────────────────────────── */
 
-	//
-	//verification string should be "welcome"
-	//there also should not be another connected client using same public_key, loop through clients, find out if anyone is using same public key
-	//
+	clib__write_lock(&clients_global_rwlock_guard);
+
+	if (clients_array[sender_client_index].is_existing == FALSE)
+	{
+		base__close_websocket_connection(sender_client_index, FALSE);
+		goto _label_client_msg__process_public_key_info_end;
+	}
+
+	DBG_AUTHENTICATION log_info("[auth] client %d: message valid, proceeding with authentication", sender_client_index);
+
+	/* ──────────────────────────────────────────────────────────────────
+	 *  STEP 2: Extract and verify fields from JSON
+	 *  - verification_string must be "welcome" (protocol handshake)
+	 *  - public_key must not already be in use by another client
+	 * ────────────────────────────────────────────────────────────────── */
 
 	public_key = 0;
 	verification_string = 0;
-	dh_received_public_mix_from_client = 0; //diffie hellman received (product of public base to private exponent received from client)
+	dh_received_public_mix_from_client = 0;
 
 	client_msg__get_public_key_and_verification_string_and_dh_public_mix(json_root, &public_key, &verification_string, &dh_received_public_mix_from_client);
 
-	status = clib__is_string_equal(verification_string, "welcome");
-
-	if (!status)
+	if (!clib__is_string_equal(verification_string, "welcome"))
 	{
-		DBG_AUTHENTICATION log_info("%s %d %s", "client : ", sender_client_index, " verification string not welcome  \n");
+		DBG_AUTHENTICATION log_info("[auth] client %d: verification string is not 'welcome'", sender_client_index);
 		base__close_websocket_connection(sender_client_index, TRUE);
-		return;
+		goto _label_client_msg__process_public_key_info_end;
 	}
 
-	clib__read_lock(&clients_global_rwlock_guard);
-	status = base__is_there_a_client_with_same_public_key(public_key);
-	clib__unlock(&clients_global_rwlock_guard);
-
-	if (status)
+	if (base__is_there_a_client_with_same_public_key(public_key))
 	{
-		DBG_AUTHENTICATION log_info("%s %d %s", "client : ", sender_client_index, " duplicate client \n");
+		DBG_AUTHENTICATION log_info("[auth] client %d: duplicate public key, rejecting", sender_client_index);
 		base__close_websocket_connection(sender_client_index, TRUE);
-		return;
+		goto _label_client_msg__process_public_key_info_end;
 	}
 
-	/* computation expensive part of code, but */
+	/* ──────────────────────────────────────────────────────────────────
+	 *  STEP 3: Store client's RSA public key
+	 * ────────────────────────────────────────────────────────────────── */
 
-	DBG_AUTHENTICATION log_info("%s %s %s", "client public_key : ", public_key, " \n");
-
-	clib__write_lock(&clients_global_rwlock_guard);
+	DBG_AUTHENTICATION log_info("[auth] client %d: storing public key", sender_client_index);
 	clib__copy_memory(public_key, &clients_array[sender_client_index].public_key[0], clib__utf8_string_length(public_key), 1000);
-	clib__unlock(&clients_global_rwlock_guard);
 
-	//
-	//create modulus. Client and server have same modulus
-	//
+	/* ──────────────────────────────────────────────────────────────────
+	 *  STEP 4: Diffie-Hellman key exchange
+	 *
+	 *  Both client and server know:
+	 *    p = dh_known_modulus_str  (shared prime, defined at top of file)
+	 *    g = 2                    (generator)
+	 *
+	 *  Client sent:   A = g^a mod p   (dh_received_public_mix_from_client)
+	 *  Server picks:  b              (random 256-bit secret exponent)
+	 *  Server computes:
+	 *    shared_secret = A^b mod p   (same value as g^(a*b) mod p)
+	 *    B = g^b mod p               (sent back to client)
+	 *  Client will compute:
+	 *    shared_secret = B^a mod p   (same value as g^(a*b) mod p)
+	 * ────────────────────────────────────────────────────────────────── */
 
-	cstring dh_known_modulus_str = "13232376895198612407547930718267435757728527029623408872245156039757713029036368719146452186041204237350521785240337048752071462798273003935646236777459223";
-	mpstatus1 = mp_init(&bignum_dh_public_modulus);
-	status = mp_read_radix(&bignum_dh_public_modulus, (char *)dh_known_modulus_str, 10);
-	if (status != MP_OKAY)
+	/* 4a. load the shared prime modulus */
+	mp_status = mp_init(&bignum_modulus);
+	mp_status = mp_read_radix(&bignum_modulus, dh_known_modulus_str, 10);
+	if (mp_status != MP_OKAY)
 	{
-		printf("%s", "mp_read_radix error \n");
+		DBG_AUTHENTICATION log_info("[auth] client %d: failed to parse DH modulus", sender_client_index);
+		base__close_websocket_connection(sender_client_index, FALSE);
+		goto _label_client_msg__process_public_key_info_end;
 	}
 
-	//
-	//create secret exponent used by server
-	//
-
-	dh_server_secret_exponent |= 1 << 10;
-	int a = rand();
-	dh_server_secret_exponent |= (a & 127);
-	dh_server_secret_exponent = 1092;
-	DBG_AUTHENTICATION log_info("%s %d", "dh_secret_exponent ", dh_server_secret_exponent);
-	mpstatus1 = mp_init_i64(&bignum_dh_secret_exponent_of_this_server, dh_server_secret_exponent);
-
-	//
-	//convert string public mix received from client to mp_int
-	//
-
-	mpstatus1 = mp_init(&bignum_dh_received_public_mix_from_client);
-	status = mp_read_radix(&bignum_dh_received_public_mix_from_client, (char *)dh_received_public_mix_from_client, 10);
-	if (status != MP_OKAY)
+	/* 4b. generate server's secret exponent (256-bit random)
+	 *     first bit forced to 1 to guarantee full 256-bit length,
+	 *     remaining 255 bits are random (same approach as the client) */
 	{
-		printf("%s", "mp_read_radix error \n");
-	}
+		char exponent_bits[257];
+		int i;
 
-	DBG_AUTHENTICATION log_info("%s", "step 2 \n");
-
-	mpstatus1 = mp_init(&bignum_dh_shared_secret);
-
-	//
-	//take public mix received from client, multiple by itself n number of times (pow function) where n is bignum_dh_secret_exponent_of_this_server
-	//then use modulo on the result of the pow, and store result of modulo operation in bignum_dh_shared_secret
-	//result of modulo operation is bignum_dh_shared_secret
-	//
-
-	status = mp_exptmod(&bignum_dh_received_public_mix_from_client, &bignum_dh_secret_exponent_of_this_server, &bignum_dh_public_modulus, &bignum_dh_shared_secret);
-	if (status != MP_OKAY)
-	{
-		printf("%s", "mp_exptmod error \n");
-	}
-
-	//
-	//convert shared secret to readable string
-	//
-
-	clib__write_lock(&clients_global_rwlock_guard);
-
-	is_everything_ok_still = FALSE;
-
-	if (clients_array[sender_client_index].is_existing)
-	{
-		status = mp_to_radix(&bignum_dh_shared_secret, clients_array[sender_client_index].dh_shared_secret, 1000, &written, 10);
-		if (status != MP_OKAY)
+		exponent_bits[0] = '1';
+		for (i = 1; i < 256; i++)
 		{
-			DBG_AUTHENTICATION log_info("%s", "mp_to_radix bignum_dh_shared_secret error \n");
+			exponent_bits[i] = (rand() % 2 == 0) ? '0' : '1';
 		}
+		exponent_bits[256] = '\0';
 
-		DBG_AUTHENTICATION log_info("%s %s %s", "bignum_dh_shared_secret: ", clients_array[sender_client_index].dh_shared_secret, " \n");
-
-		//
-		//very important, save the shared secret
-		//
-
-		clients_array[sender_client_index].is_dh_shared_secret_agreed_upon = TRUE;
-		is_everything_ok_still = TRUE;
+		mp_status = mp_init(&bignum_server_exponent);
+		mp_status = mp_read_radix(&bignum_server_exponent, exponent_bits, 2);
+		if (mp_status != MP_OKAY)
+		{
+			DBG_AUTHENTICATION log_info("[auth] client %d: failed to create DH exponent", sender_client_index);
+			base__close_websocket_connection(sender_client_index, FALSE);
+			goto _label_client_msg__process_public_key_info_end;
+		}
 	}
+	DBG_AUTHENTICATION log_info("[auth] client %d: generated 256-bit DH exponent", sender_client_index);
 
-	clib__unlock(&clients_global_rwlock_guard);
-
-	if (is_everything_ok_still == FALSE)
+	/* 4c. parse client's public mix: A = g^a mod p (received as decimal string) */
+	mp_status = mp_init(&bignum_client_public_mix);
+	mp_status = mp_read_radix(&bignum_client_public_mix, (char *)dh_received_public_mix_from_client, 10);
+	if (mp_status != MP_OKAY)
 	{
-		DBG_AUTHENTICATION log_info("%s %d %s", "turns out client: ", sender_client_index, "doenst exist anymore \n");
-		return;
+		DBG_AUTHENTICATION log_info("[auth] client %d: failed to parse client's DH public mix", sender_client_index);
+		base__close_websocket_connection(sender_client_index, FALSE);
+		goto _label_client_msg__process_public_key_info_end;
 	}
 
-	DBG_AUTHENTICATION log_info("%s %s %s", "clients_array[client_id].dh_shared_secret: ", &clients_array[sender_client_index].dh_shared_secret[0], " \n");
-
-	//
-	//create public mix that will be sent TO client
-	//
-
-	mpstatus1 = mp_init_i64(&bignum_dh_public_base_generator, 2);
-
-	mpstatus1 = mp_init(&bignum_dh_public_mix_from_server_for_client);
-	status = mp_exptmod(&bignum_dh_public_base_generator, &bignum_dh_secret_exponent_of_this_server, &bignum_dh_public_modulus, &bignum_dh_public_mix_from_server_for_client);
-	if (status != MP_OKAY)
+	/* 4d. compute shared_secret = A^b mod p */
+	mp_status = mp_init(&bignum_shared_secret);
+	mp_status = mp_exptmod(&bignum_client_public_mix, &bignum_server_exponent, &bignum_modulus, &bignum_shared_secret);
+	if (mp_status != MP_OKAY)
 	{
-		DBG_AUTHENTICATION log_info("%s", "mp_exptmod error \n");
+		DBG_AUTHENTICATION log_info("[auth] client %d: mp_exptmod failed for shared secret", sender_client_index);
+		goto _label_client_msg__process_public_key_info_end;
 	}
 
-	//
-	//public mix is sent as decimal number in string format in json, thats why the usage of mp_to_radix
-	//
+	/* 4e. store shared secret as decimal string in client slot */
+	mp_status = mp_to_radix(&bignum_shared_secret, clients_array[sender_client_index].dh_shared_secret, 1000, &mp_written, 10);
+	if (mp_status != MP_OKAY)
+	{
+		DBG_AUTHENTICATION log_info("[auth] client %d: failed to convert shared secret to string", sender_client_index);
+		goto _label_client_msg__process_public_key_info_end;
+	}
 
+	clients_array[sender_client_index].is_dh_shared_secret_agreed_upon = TRUE;
+	DBG_AUTHENTICATION log_info("[auth] client %d: shared secret computed and stored", sender_client_index);
+
+	/* 4f. compute server's public mix: B = g^b mod p */
+	mp_status = mp_init_i64(&bignum_generator, 2);
+	mp_status = mp_init(&bignum_server_public_mix);
+	mp_status = mp_exptmod(&bignum_generator, &bignum_server_exponent, &bignum_modulus, &bignum_server_public_mix);
+	if (mp_status != MP_OKAY)
+	{
+		DBG_AUTHENTICATION log_info("[auth] client %d: mp_exptmod failed for server public mix", sender_client_index);
+		goto _label_client_msg__process_public_key_info_end;
+	}
+
+	/* 4g. convert B to decimal string for JSON transmission */
 	dh_public_mix_from_server_string_for_client = (char *)memorymanager__allocate(1000, MEMALLOC_DHPROCESS);
-	status = mp_to_radix(&bignum_dh_public_mix_from_server_for_client, dh_public_mix_from_server_string_for_client, 1000, &written1, 10);
-	if (status != MP_OKAY)
+	mp_status = mp_to_radix(&bignum_server_public_mix, dh_public_mix_from_server_string_for_client, 1000, &mp_written, 10);
+	if (mp_status != MP_OKAY)
 	{
-		DBG_AUTHENTICATION log_info("%s", "mp_to_radix bignum_dh_shared_secret error \n");
+		DBG_AUTHENTICATION log_info("[auth] client %d: failed to convert server public mix to string", sender_client_index);
+		base__close_websocket_connection(sender_client_index, FALSE);
+		goto _label_client_msg__process_public_key_info_end;
 	}
 
-	DBG_AUTHENTICATION log_info("%s %s", "WTF public_key -> ", public_key);
+	DBG_AUTHENTICATION log_info("[auth] client %d: server public mix computed", sender_client_index);
 
-	//
-	//challenge string to verify public key
-	//
+	/* ──────────────────────────────────────────────────────────────────
+	 *  STEP 5: RSA challenge - prove the client owns the public key
+	 *
+	 *  Generate a random string, encrypt it with client's RSA public key,
+	 *  and send it along with the server's DH public mix.
+	 *  Only the real owner of the private key can decrypt the challenge.
+	 * ────────────────────────────────────────────────────────────────── */
 
 	challenge_string = (char *)memorymanager__allocate(128, MEMALLOC_TYPE_CHALLENGE);
-
-#define CHALLENGE_STRING_SIZE 100
 	base__fill_block_of_data_with_ascii_characters(challenge_string, CHALLENGE_STRING_SIZE);
 
-	DBG_AUTHENTICATION log_info("%s %s %s", "challenge_string: ", challenge_string, " \n");
+	DBG_AUTHENTICATION log_info("[auth] client %d: generated %d-byte challenge", sender_client_index, CHALLENGE_STRING_SIZE);
 
+	/* encrypt challenge with client's RSA public key */
 	challenge_value_for_client = base__encrypt_string_with_public_key(public_key, (unsigned char *)challenge_string, (uint64)clib__utf8_string_length(challenge_string));
-	DBG_AUTHENTICATION log_info("%s %s %s", "dh_public_mix_for_client: ", dh_public_mix_from_server_string_for_client, " \n");
+
+	/* send server's DH public mix + encrypted challenge to client */
 	server_msg__send_public_key_challenge_to_single_client(clients_array[sender_client_index].p_ws_connection, challenge_value_for_client, dh_public_mix_from_server_string_for_client);
+
 	memorymanager__free((nuint)challenge_value_for_client);
 
-	is_everything_ok_still = FALSE;
+	/* ──────────────────────────────────────────────────────────────────
+	 *  STEP 6: Store plaintext challenge for verification when client responds
+	 * ────────────────────────────────────────────────────────────────── */
 
-	clib__write_lock(&clients_global_rwlock_guard);
+	clib__copy_memory(challenge_string, &clients_array[sender_client_index].challenge_string[0], CHALLENGE_STRING_SIZE, 128);
+	clients_array[sender_client_index].is_public_key_challenge_sent = TRUE;
 
-	if (clients_array[sender_client_index].is_existing)
-	{
-		clib__copy_memory(challenge_string, &clients_array[sender_client_index].challenge_string[0], CHALLENGE_STRING_SIZE, 128);
-		clients_array[sender_client_index].is_public_key_challenge_sent = TRUE;
-		is_everything_ok_still = TRUE;
-		DBG_AUTHENTICATION log_info("%s", " public key challenge is sent \n");
-	}
-
-	clib__unlock(&clients_global_rwlock_guard);
+	DBG_AUTHENTICATION log_info("[auth] client %d: challenge stored, waiting for response", sender_client_index);
 
 	memorymanager__free((nuint)challenge_string);
 	memorymanager__free((nuint)dh_public_mix_from_server_string_for_client);
 
-	if (is_everything_ok_still == FALSE)
-	{
-		DBG_AUTHENTICATION log_info("%s", " public key challenge failed something didnt go right \n");
-		base__close_websocket_connection(sender_client_index, TRUE);
-	}
+_label_client_msg__process_public_key_info_end:
+	clib__unlock(&clients_global_rwlock_guard);
 }
 
 /**
@@ -2045,8 +2066,6 @@ void client_msg__process_public_key_challenge_response(cJSON *json_root, int sen
 	int channel_index;
 	channel_t *root_channel;
 
-	DBG_AUTHENTICATION log_info("%s", "co sa tu sakra deje 1 \n");
-
 	//status = base__is_request_allowed_based_on_spam_protection(sender_client_index);
 	//if (!status)
 	//{
@@ -2062,6 +2081,8 @@ void client_msg__process_public_key_challenge_response(cJSON *json_root, int sen
 		return;
 	}
 
+	clib__write_lock(&clients_global_rwlock_guard);
+
 	//
 	//client sends public key to server at the time of authentication
 	//server generates random string, encrypts that string with the clients public key
@@ -2070,16 +2091,13 @@ void client_msg__process_public_key_challenge_response(cJSON *json_root, int sen
 	//something like that
 	//
 
-	clib__read_lock(&clients_global_rwlock_guard);
 	client_t *current_client = &clients_array[sender_client_index];
 	if (!current_client->is_public_key_challenge_sent)
 	{
 		base__close_websocket_connection(sender_client_index, FALSE);
 		DBG_AUTHENTICATION log_info("%s %d %s", "client_msg__process_public_key_challenge_response deleting client because !current_client->is_public_key_challenge_sent : client index ", sender_client_index, " \n");
-		clib__unlock(&clients_global_rwlock_guard);
-		return;
+		goto _label_client_msg__process_public_key_challenge_response_end;
 	}
-	clib__unlock(&clients_global_rwlock_guard);
 
 	//
 	//compare the key
@@ -2093,8 +2111,6 @@ void client_msg__process_public_key_challenge_response(cJSON *json_root, int sen
 	{
 		DBG_AUTHENTICATION log_info("%s %d %s", "client_msg__process_public_key_challenge_response challenge response string match : client index ", sender_client_index, " \n");
 
-		clib__write_lock(&clients_global_rwlock_guard);
-
 		current_client->channel_id = 0;
 		current_client->is_admin = FALSE;
 		current_client->is_authenticated = TRUE;
@@ -2106,18 +2122,16 @@ void client_msg__process_public_key_challenge_response(cJSON *json_root, int sen
 		}
 
 		status = base__assign_username_for_newly_joined_client(sender_client_index, g_server_settings.default_client_name);
-		clib__unlock(&clients_global_rwlock_guard);
 
 		if (!status)
 		{
 			base__close_websocket_connection(sender_client_index, FALSE);
 			DBG_AUTHENTICATION log_info("%s %d %s", "client_msg__process_public_key_challenge_response deleting client base__assign_username_for_newly_joined_client returned false : client index ", sender_client_index, " \n");
-			return;
+			goto _label_client_msg__process_public_key_challenge_response_end;
 		}
 
 		//its better when readlock is placed here instead of it being placed directly in server_msg__send_channel_list_to_single_client function
 
-		clib__write_lock(&clients_global_rwlock_guard);
 		clib__write_lock(&channels_global_rwlock_guard);
 		clib__read_lock(&tags_global_rwlock_guard);
 		clib__read_lock(&icons_global_rwlock_guard);
@@ -2152,14 +2166,16 @@ void client_msg__process_public_key_challenge_response(cJSON *json_root, int sen
 			clib__unlock(&icons_global_rwlock_guard);
 			clib__unlock(&tags_global_rwlock_guard);
 			clib__unlock(&channels_global_rwlock_guard);
-			clib__unlock(&clients_global_rwlock_guard);
 		}
 	}
 	else
 	{
 		DBG_AUTHENTICATION log_info("%s", " challenge string not equal \n");
-		base__close_websocket_connection(sender_client_index, TRUE);
+		base__close_websocket_connection(sender_client_index, FALSE);
 	}
+
+_label_client_msg__process_public_key_challenge_response_end:
+	clib__unlock(&clients_global_rwlock_guard);
 }
 
 /**
