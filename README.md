@@ -46,8 +46,10 @@
 
 ![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/example/android.jpg)
 
+<br>
 
-<br>\
+### To support further development of this project, consider giving it a ⭐
+<br>
 <br>
 <br>
 
