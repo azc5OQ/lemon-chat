@@ -12,6 +12,11 @@ client-development/
 ├─ build.bat           # Windows: runs build.py, then pauses
 ├─ build.sh            # Unix:    runs build.py
 ├─ _split.py           # one-time bootstrap (see below)
+├─ client-webassemblies/   # Opus/minimp3 .wasm *sources* + how to rebuild them
+│  ├─ README.md            # what the two modules are, build/removal steps
+│  ├─ wasmstob64.py        # converts a built .wasm into the embedded base64
+│  ├─ libopusjs/           # libopus source archive (.tar.gz)
+│  └─ mp3-to-pcm/          # minimp3 source archive (.tar.gz)
 └─ src/
    ├─ template.html    # the HTML shell: <head>, <body>, the <style>/<script>
    │                   # tags, and one /* @@INCLUDE: ... @@ */ marker per source
@@ -115,3 +120,8 @@ Below these, the same block declares the rest of the per-session state
   `../client.html`. It is kept for reference / re-splitting and reads the
   pristine `../client.html` (never modified). You normally do **not** run it —
   use `build.py`.
+- `client-webassemblies/` holds the *sources* for the two embedded `.wasm`
+  binaries (libopus, minimp3), the `wasmstob64.py` converter, and a README on
+  how to rebuild them. The build does **not** touch this folder — the binaries
+  it actually embeds are the ones under `src/wasm/`. Only come here when you
+  need to recompile a `.wasm` from scratch. See `client-webassemblies/README.md`.
