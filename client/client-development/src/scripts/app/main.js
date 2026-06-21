@@ -938,7 +938,7 @@
             //if you dont care about client hearing sound, set are_server_details_predefined and is_autoconnect_without_user_action_active to true
 
             var autoconnect_details = {
-                host: "127.0.0.1",
+                host: "192.168.1.106",
                 port: 1111,
                 keys: [
                     "test",

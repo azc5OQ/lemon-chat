@@ -3,9 +3,12 @@
 One-time bootstrap: splits the monolithic client.html into per-library source
 files under src/, plus a template.html that build.py reassembles.
 
-Reads the pristine original from ../client.html (never modified) and writes
-into ./src/. Safe to re-run. After editing the split sources you use build.py,
-not this script.
+Reads ../client.html and writes into ./src/. Safe to re-run. After editing the
+split sources you use build.py, not this script.
+
+NOTE: build.py now writes its output back to ../client.html, so that file is no
+longer a pristine original -- re-running this would re-split the latest build.
+The untouched original is preserved in git history.
 
 Byte-exactness: every source file holds the EXACT text of its original line
 range (no trailing newline). template.html keeps all the HTML shell (head,

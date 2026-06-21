@@ -8,7 +8,7 @@ back together by `build.py`.
 
 ```
 client-development/
-├─ build.py            # glues src/ -> src/client-build.html
+├─ build.py            # glues src/ -> ../client.html (the shipped client)
 ├─ build.bat           # Windows: runs build.py, then pauses
 ├─ build.sh            # Unix:    runs build.py
 ├─ _split.py           # one-time bootstrap (see below)
@@ -41,9 +41,10 @@ build.bat        (Windows)
 python build.py
 ```
 
-Output is written to `src/client-build.html` (deleted and regenerated every
-run). To ship, copy it over the real `../client.html`. The output path is the
-`OUT` variable near the top of `build.py` if you want to change it.
+Output is written straight to `../client.html` at the repo root — the shipped
+client itself — deleted and regenerated every run. There is no separate
+`client-build.html` step anymore; the build *is* the ship. The output path is
+the `OUT` variable near the top of `build.py` if you want to change it.
 
 ## How the glue works
 
@@ -116,10 +117,11 @@ Below these, the same block declares the rest of the per-session state
 - Many libraries were originally concatenated *inside* a single `<script>` tag.
   The split cuts them apart at their own headers; the build just concatenates,
   so the result is identical to the original byte-for-byte.
-- `_split.py` is the one-time bootstrap that created `src/` from the original
-  `../client.html`. It is kept for reference / re-splitting and reads the
-  pristine `../client.html` (never modified). You normally do **not** run it —
-  use `build.py`.
+- `_split.py` is the one-time bootstrap that created `src/` from `../client.html`.
+  It is kept for reference / re-splitting. Note that `build.py` now overwrites
+  `../client.html` on every run, so it is no longer a pristine original — the
+  untouched first version lives in git history. You normally do **not** run
+  `_split.py` — use `build.py`.
 - `client-webassemblies/` holds the *sources* for the two embedded `.wasm`
   binaries (libopus, minimp3), the `wasmstob64.py` converter, and a README on
   how to rebuild them. The build does **not** touch this folder — the binaries

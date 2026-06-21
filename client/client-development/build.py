@@ -6,9 +6,11 @@ Glues the split sources under src/ back into a single client.html.
   src/**/*.js, *.style     pure source, one per token (no HTML tags)
   src/wasm/*.wasm          binaries, re-encoded to base64 at @@WASM path@@ tokens
 
-Output: src/client-build.html (removed and regenerated on every run).
-Edit the sources or template.html, then re-run this. The output name/location
-is intentionally easy to change -- see OUT below.
+Output: ../client.html at the repo root -- i.e. the shipped client itself,
+removed and regenerated on every run. There is no separate client-build.html;
+this writes straight to the file you ship. Edit the sources or template.html,
+then re-run this. The output name/location is intentionally easy to change --
+see OUT below.
 """
 import base64
 import os
@@ -17,7 +19,10 @@ import re
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "src")
 TEMPLATE = os.path.join(SRC, "template.html")
-OUT = os.path.join(SRC, "client-build.html")
+# The build output IS the shipped client: overwrite ../client.html at the root.
+OUT = os.path.normpath(os.path.join(HERE, "..", "client.html"))
+# Older builds wrote here; delete any leftover so only the single OUT remains.
+LEGACY_OUT = os.path.join(SRC, "client-build.html")
 
 # marker is a /* ... */ block comment so it is valid CSS *and* JS (no VS Code
 # red squiggles inside <style>/<script>); the whole line is swapped for the file.
@@ -65,7 +70,12 @@ def main():
         return b64
     assembled = WASM_RE.sub(sub_wasm, assembled)
 
-    # 3. write fresh output (delete first)
+    # 3. drop the legacy src/client-build.html so only one output file remains
+    if os.path.exists(LEGACY_OUT):
+        print("removing legacy artifact: %s" % os.path.relpath(LEGACY_OUT, HERE))
+        os.remove(LEGACY_OUT)
+
+    # 4. write fresh output (delete first) -- this overwrites the shipped client
     if os.path.exists(OUT):
         print("removing old output: %s" % os.path.relpath(OUT, HERE))
         os.remove(OUT)

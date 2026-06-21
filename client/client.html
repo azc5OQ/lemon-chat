@@ -17568,7 +17568,7 @@
             //so in rare cases when it is a problem, just set the is_autoconnect_without_user_action_active to false
             //i could explore this problem more but for now this solution is enough
 
-            var is_autoconnect_without_user_action_active = true; 
+            var is_autoconnect_without_user_action_active = false; 
             var is_reconnect_active = true;
 
             //for any sound to play in html page, client must click something first
@@ -17578,7 +17578,7 @@
             //if you dont care about client hearing sound, set are_server_details_predefined and is_autoconnect_without_user_action_active to true
 
             var autoconnect_details = {
-                host: "127.0.0.1",
+                host: "192.168.1.106",
                 port: 1111,
                 keys: [
                     "test",
