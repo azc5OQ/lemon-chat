@@ -491,7 +491,13 @@
                         }],
                     };
 
+                    //
+                    //the datachannel/playback below is set up whenever audio is on for clients or music bots,
+                    //so this flag (which keeps the datachannel established/reconnected) is always true here.
+                    //whether this client may transmit its own microphone is a separate flag, gated on client voice
+                    //
                     is_voice_chat_allowed_by_server = true;
+                    is_client_microphone_allowed_by_server = (e.data.client_voice_allowed == true);
                     audio_context = new (window.AudioContext || window.webkitAudioContext)();
                     console.log("audio_context.sampleRate" + audio_context.sampleRate);
 
@@ -672,12 +678,25 @@
                 {
                     server_msg.process_access_denied_from_server(e.data.value);
                 }
+                else if (e.data.type == "data_processing_worker__client_info_from_server")
+                {
+                    server_msg.process_client_info_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__channel_full_from_server")
+                {
+                    let full_channel = get_channel_by_id(channel_list, e.data.value.message.channel_id);
+                    let full_channel_name = (full_channel != null && full_channel.name != null) ? full_channel.name : "channel";
+                    custom_alert("'" + full_channel_name + "' is full");
+                }
                 else if (e.data.type == "data_processing_worker__server_settings_values_from_server")
                 {
                     let msg = e.data.value;
                     document.getElementById("server-settings-general-display-flags-checkbox").checked = msg.message.display_country_flags == true;
                     document.getElementById("server-settings-general-enable-audio").checked = msg.message.enable_audio == true;
+                    document.getElementById("server-settings-general-enable-music-bot-audio-checkbox").checked = msg.message.enable_music_bot_audio == true;
                     document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked = msg.message.hide_clients_in_password_channels == true;
+                    document.getElementById("server-settings-general-allow-temp-channels-checkbox").checked = msg.message.allow_temp_channels == true;
+                    UI.render_bans_list(msg.message.bans);
                 }
                 else if (e.data.type == "data_processing_worker__channel_join_from_server")
                 {

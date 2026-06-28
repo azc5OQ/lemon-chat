@@ -33,8 +33,13 @@ boole   base__is_client_already_assigned_this_tag_id(uint64 client_id, uint64 th
 int64   base__get_index_of_tag_id_of_client(uint64 client_id, uint64 this_tag_id);
 client_t* base__find_music_bot_in_channel(uint64 channel_id);
 void    base__process_client_disconnect(uint64 client_id);
+void    base__destroy_temp_channel(uint64 temp_channel_id);
+void    base__move_client_into_channel(uint64 client_id, uint64 destination_channel_id);
 boole   base__is_client_valid(uint64 client_id);
 uint64  base__get_other_clients_in_channel(int client_to_ignore, uint64 channel_id, int64* out_receiving_client_ids);
+boole   base__is_ip_banned(char* ip_address);
+boole   base__add_ban(char* ip_address, char* country_iso_code, char* identity, char* extra_data);
+boole   base__remove_ban_by_ip(char* ip_address);
 
 extern uint64 g_chat_message_id;
 
@@ -42,9 +47,10 @@ extern client_t* g_clients_array;
 extern channel_t* g_channel_array;
 extern icon_t* g_icons_array;
 extern tag_t* g_tags_array;
+extern ban_entry_t* g_ban_array;
 extern client_stored_data_t* g_client_stored_data;
 
-/* global lock ordering goes like this: clients, muggles, channels, icons, tags */
+/* global lock ordering goes like this: clients, muggles, channels, icons, tags, bans (bans is always taken last) */
 
 extern server_settings_t g_server_settings;
 extern custom_rwlock_t g_clients_global_rwlock_guard;
@@ -52,6 +58,7 @@ extern custom_rwlock_t g_webrtc_muggles_rwlock_guard;
 extern custom_rwlock_t g_channels_global_rwlock_guard;
 extern custom_rwlock_t g_icons_global_rwlock_guard;
 extern custom_rwlock_t g_tags_global_rwlock_guard;
+extern custom_rwlock_t g_bans_global_rwlock_guard;
 
 extern pthread_mutex_t g_chat_message_id_mutex;
 

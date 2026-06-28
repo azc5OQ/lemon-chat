@@ -2363,11 +2363,15 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
 {
     boole is_channel_create_allowed = FALSE;
     boole is_parent_channel_id_existing = FALSE;
+    boole creating_temp_channel = FALSE;
+    boole parent_is_temp_channel = FALSE;
     cJSON* json_parent_channel_id = 0;
     cJSON* json_channel_description = 0;
     cJSON* json_channel_password = 0;
     cJSON* json_channel_name = 0;
     cJSON* json_is_audio_enabled = 0;
+    cJSON* json_is_client_limit_active = 0;
+    cJSON* json_max_client_count = 0;
     boole is_password_used = FALSE;
     boole is_channel_created_successfully = FALSE;
     cJSON* json_message_object = 0;
@@ -2396,24 +2400,29 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
         return;
     }
 
-    /* doesn't really need read lock, */
-    is_channel_create_allowed = TRUE;
-
-    if (g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active == TRUE)
+    /* decide whether this is a normal channel or a guest temp channel:
+       - an admin always creates a normal channel
+       - a non-admin creates a temp channel, but only when temp channels are enabled server-wide and the
+         non-admin does not already own one (a temp channel is destroyed when its creator leaves it - see
+         the join / disconnect / delete paths)
+       - otherwise the request is refused: creating a normal channel is admin-only */
+    is_channel_create_allowed = FALSE;
+    clib__read_lock(&g_clients_global_rwlock_guard);
+    if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
     {
-        is_channel_create_allowed = FALSE;
-        clib__read_lock(&g_clients_global_rwlock_guard);
-        if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
+        if (g_clients_array[sender_client_id].is_admin == TRUE)
         {
-            if (g_clients_array[sender_client_id].is_admin == TRUE)
-            {
-                is_channel_create_allowed = TRUE;
-            }
+            is_channel_create_allowed = TRUE;
         }
-        clib__unlock(&g_clients_global_rwlock_guard);
+        else if (g_server_settings.is_temp_channel_creation_allowed == TRUE
+            && g_clients_array[sender_client_id].is_temp_admin_channel == FALSE)
+        {
+            is_channel_create_allowed = TRUE;
+            creating_temp_channel = TRUE;
+        }
     }
+    clib__unlock(&g_clients_global_rwlock_guard);
 
-    /* is_channel_create_allowed = TRUE; */
     if (is_channel_create_allowed == TRUE)
     {
         /* what is done here:
@@ -2427,6 +2436,8 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
         json_channel_description = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_description");
         json_channel_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_name");
         json_is_audio_enabled = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_audio_enabled");
+        json_is_client_limit_active = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_client_limit_active");
+        json_max_client_count = cJSON_GetObjectItemCaseSensitive(json_message_object, "max_client_count");
 
         for (i = 0; i < g_server_settings.max_channel_count; i++)
         {
@@ -2438,11 +2449,17 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
             if (g_channel_array[i].channel_id == (int64)json_parent_channel_id->valuedouble)
             {
                 is_parent_channel_id_existing = TRUE;
+                parent_is_temp_channel = g_channel_array[i].is_temp_channel;
                 break;
             }
         }
 
-        if (is_parent_channel_id_existing == TRUE)
+        if (is_parent_channel_id_existing == TRUE && parent_is_temp_channel == TRUE)
+        {
+            /* no channel (not even an admin's) may be created under a temp channel */
+            DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_create_channel_request parent is a temp channel, refusing to create a child under it \n");
+        }
+        else if (is_parent_channel_id_existing == TRUE)
         {
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_create_channel_request is_parent_channel_id_existing == TRUE \n");
 
@@ -2467,6 +2484,13 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
                     is_password_used = (boole)(clib__utf8_string_length(json_channel_password->valuestring) > 0);
                     channel->is_using_password = is_password_used;
                     channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
+                    channel->is_temp_channel = creating_temp_channel;
+                    channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
+                    channel->max_client_count = 0;
+                    if (cJSON_IsNumber(json_max_client_count))
+                    {
+                        channel->max_client_count = (uint64)json_max_client_count->valuedouble;
+                    }
 
                     DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_create_channel_request is_parent_channel_id_existing ", i, "\n");
                     is_channel_created_successfully = TRUE;
@@ -2486,6 +2510,8 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
         /* okay, channel created successfully, acquire read lock for channels and clients */
         if (is_channel_created_successfully == TRUE)
         {
+            /* announce the new channel to everyone first, so it exists in every client's UI before the
+               temp creator is moved into it below */
             clib__read_lock(&g_clients_global_rwlock_guard);
             clib__read_lock(&g_channels_global_rwlock_guard);
 
@@ -2493,6 +2519,22 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
 
             clib__unlock(&g_channels_global_rwlock_guard);
             clib__unlock(&g_clients_global_rwlock_guard);
+
+            /* a temp channel: mark the creator as its admin/owner (so a second temp channel is refused, and
+               so the join / disconnect / delete paths know whose departure destroys it) and move them into
+               it right away, the same server-side way the delete path moves clients to root */
+            if (creating_temp_channel == TRUE)
+            {
+                clib__write_lock(&g_clients_global_rwlock_guard);
+                clib__write_lock(&g_channels_global_rwlock_guard);
+
+                g_clients_array[channel_creator_client_id].is_temp_admin_channel = TRUE;
+                g_clients_array[channel_creator_client_id].temp_channel_id = created_channel_index;
+                base__move_client_into_channel(channel_creator_client_id, created_channel_index);
+
+                clib__unlock(&g_channels_global_rwlock_guard);
+                clib__unlock(&g_clients_global_rwlock_guard);
+            }
         }
     }
     else
@@ -2527,6 +2569,8 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
     boole is_channel_edited_successfully = FALSE;
     cJSON* json_message_object = 0;
     cJSON* json_is_audio_enabled = 0;
+    cJSON* json_is_client_limit_active = 0;
+    cJSON* json_max_client_count = 0;
     uint64 channel_index_to_edit = 0;
     channel_t* channel = 0;
     boole status = FALSE;
@@ -2545,22 +2589,25 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
         return;
     }
 
-    /* doesn't really need read lock, */
-    is_channel_edit_allowed = TRUE;
-
-    if (g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active == TRUE)
+    /* editing a channel is admin-only, except a temp admin may edit (rename / set password / toggle audio)
+       their own temp channel without admin rights */
+    is_channel_edit_allowed = FALSE;
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+    clib__read_lock(&g_clients_global_rwlock_guard);
+    if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
     {
-        is_channel_edit_allowed = FALSE;
-        clib__read_lock(&g_clients_global_rwlock_guard);
-        if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
+        if (g_clients_array[sender_client_id].is_admin == TRUE)
         {
-            if (g_clients_array[sender_client_id].is_admin == TRUE)
-            {
-                is_channel_edit_allowed = TRUE;
-            }
+            is_channel_edit_allowed = TRUE;
         }
-        clib__unlock(&g_clients_global_rwlock_guard);
+        else if (g_clients_array[sender_client_id].is_temp_admin_channel == TRUE
+            && g_clients_array[sender_client_id].temp_channel_id == (uint64)json_channel_id->valueint)
+        {
+            is_channel_edit_allowed = TRUE;
+        }
     }
+    clib__unlock(&g_clients_global_rwlock_guard);
 
     if (is_channel_edit_allowed == TRUE)
     {
@@ -2571,6 +2618,8 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
         json_channel_description = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_description");
         json_channel_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_name");
         json_is_audio_enabled = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_audio_enabled");
+        json_is_client_limit_active = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_client_limit_active");
+        json_max_client_count = cJSON_GetObjectItemCaseSensitive(json_message_object, "max_client_count");
 
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_edit_channel_request got here \n");
 
@@ -2591,6 +2640,12 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
             is_password_used = (boole)(clib__utf8_string_length(json_channel_password->valuestring) > 0);
             channel->is_using_password = is_password_used;
             channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
+            channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
+            channel->max_client_count = 0;
+            if (cJSON_IsNumber(json_max_client_count))
+            {
+                channel->max_client_count = (uint64)json_max_client_count->valuedouble;
+            }
 
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_edit_channel_request channel is_existing TRUE \n");
             is_channel_edited_successfully = TRUE;
@@ -2943,6 +2998,18 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
         goto client_msg__process_join_channel_request_end;
     }
 
+    /* channel capacity: a full channel rejects non-admins. the count excludes music bots already (see
+       base__get_client_count_for_channel); admins bypass the limit */
+    if (new_channel->is_client_limit_active == TRUE
+        && new_channel->max_client_count > 0
+        && client_that_is_joining_channel->is_admin == FALSE
+        && base__get_client_count_for_channel(new_channel->channel_id) >= new_channel->max_client_count)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request channel is full \n");
+        server_msg__send_channel_full_to_single_client(client_that_is_joining_channel, new_channel->channel_id);
+        goto client_msg__process_join_channel_request_end;
+    }
+
     /* check if password is valid */
     if (new_channel->is_using_password == TRUE)
     {
@@ -2965,6 +3032,18 @@ client_msg__process_join_channel_request_continue:
 
     /* change channel in client struct */
     client_that_is_joining_channel->channel_id = json_channel_id->valueint;
+
+    /* if the client owns this temp channel and is now leaving it, destroy it: any remaining members move
+       to root and the channel is freed. old_channel is then zeroed, so the maintainer-handoff code below
+       naturally takes the no-old-maintainer path */
+    if (old_channel->is_temp_channel == TRUE
+        && client_that_is_joining_channel->is_temp_admin_channel == TRUE
+        && client_that_is_joining_channel->temp_channel_id == old_channel->channel_id)
+    {
+        client_that_is_joining_channel->is_temp_admin_channel = FALSE;
+        client_that_is_joining_channel->temp_channel_id = 0;
+        base__destroy_temp_channel(old_channel->channel_id);
+    }
 
     if (old_channel->is_channel_maintainer_present == TRUE)
     {
@@ -3144,7 +3223,7 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
     uint64 channel_id_to_delete = 0;
     uint64 client_count_in_channel = 0;
     uint64 index_of_new_maintainer = 0;
-    boole is_channel_delete_allowed = TRUE;
+    boole is_channel_delete_allowed = FALSE;
     uint64 marked_channel_index = 0;
     uint64 client_id = 0;
 
@@ -3187,16 +3266,17 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
         goto label_client_msg__process_delete_channel_request_end;
     }
 
-    if (g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active == TRUE)
+    /* deleting a channel is admin-only, except a temp admin may delete their own temp channel */
+    is_channel_delete_allowed = FALSE;
+    if (g_clients_array[sender_client_id].is_admin == TRUE)
     {
-        is_channel_delete_allowed = FALSE;
-        if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
-        {
-            if (g_clients_array[sender_client_id].is_admin == TRUE)
-            {
-                is_channel_delete_allowed = TRUE;
-            }
-        }
+        is_channel_delete_allowed = TRUE;
+    }
+    else if (g_clients_array[sender_client_id].is_temp_admin_channel == TRUE
+        && g_clients_array[sender_client_id].temp_channel_id == (uint64)json_channel_id->valueint
+        && g_channel_array[json_channel_id->valueint].is_temp_channel == TRUE)
+    {
+        is_channel_delete_allowed = TRUE;
     }
 
     if (is_channel_delete_allowed == TRUE)
@@ -3272,6 +3352,14 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
                 g_channel_array[ROOT_CHANNEL_ID].maintainer_id = index_of_new_maintainer;
                 server_msg__send_maintainer_id_to_clients_in_same_channel(ROOT_CHANNEL_ID, g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
             }
+        }
+
+        /* if the sender just deleted their own temp channel, they are no longer a temp admin */
+        if (g_clients_array[sender_client_id].is_temp_admin_channel == TRUE
+            && g_clients_array[sender_client_id].temp_channel_id == (uint64)json_channel_id->valueint)
+        {
+            g_clients_array[sender_client_id].is_temp_admin_channel = FALSE;
+            g_clients_array[sender_client_id].temp_channel_id = 0;
         }
     }
     else
@@ -4039,7 +4127,9 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     boole save_succeeded = FALSE;
     boole previous_display_country_flags = FALSE;
     boole previous_voice_chat_active = FALSE;
+    boole previous_music_bot_audio_active = FALSE;
     boole previous_hide_clients_in_password_channels = FALSE;
+    boole previous_temp_channel_creation_allowed = FALSE;
     cJSON* json_message_object = NULL_POINTER;
     cJSON* json_field = NULL_POINTER;
 
@@ -4065,7 +4155,9 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     /* snapshot the current toggles so they can be rolled back if the persist fails */
     previous_display_country_flags = g_server_settings.is_display_country_flags_active;
     previous_voice_chat_active = g_server_settings.is_voice_chat_active;
+    previous_music_bot_audio_active = g_server_settings.is_music_bot_audio_active;
     previous_hide_clients_in_password_channels = g_server_settings.is_hide_clients_in_password_protected_channels_active;
+    previous_temp_channel_creation_allowed = g_server_settings.is_temp_channel_creation_allowed;
 
     /* apply the general-settings toggles the admin sent (each only when present and boolean) */
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -4082,20 +4174,34 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         g_server_settings.is_voice_chat_active = cJSON_IsTrue(json_field);
     }
 
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "enable_music_bot_audio");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.is_music_bot_audio_active = cJSON_IsTrue(json_field);
+    }
+
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "hide_clients_in_password_channels");
     if (cJSON_IsBool(json_field))
     {
         g_server_settings.is_hide_clients_in_password_protected_channels_active = cJSON_IsTrue(json_field);
     }
 
-    /* persist everything into server_settings.json. lock ordering is clients, muggles, channels, icons,
-       tags - the save reads channels, icons and tags, so take those three read locks in that order */
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "allow_temp_channels");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.is_temp_channel_creation_allowed = cJSON_IsTrue(json_field);
+    }
+
+    /* persist everything into server_settings.json. the save reads channels, icons, tags and bans, so take
+       those read locks in lock order (bans is always last) */
     clib__read_lock(&g_channels_global_rwlock_guard);
     clib__read_lock(&g_icons_global_rwlock_guard);
     clib__read_lock(&g_tags_global_rwlock_guard);
+    clib__read_lock(&g_bans_global_rwlock_guard);
 
     save_succeeded = base__save_server_settings_to_file();
 
+    clib__unlock(&g_bans_global_rwlock_guard);
     clib__unlock(&g_tags_global_rwlock_guard);
     clib__unlock(&g_icons_global_rwlock_guard);
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -4106,7 +4212,9 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     {
         g_server_settings.is_display_country_flags_active = previous_display_country_flags;
         g_server_settings.is_voice_chat_active = previous_voice_chat_active;
+        g_server_settings.is_music_bot_audio_active = previous_music_bot_audio_active;
         g_server_settings.is_hide_clients_in_password_protected_channels_active = previous_hide_clients_in_password_channels;
+        g_server_settings.is_temp_channel_creation_allowed = previous_temp_channel_creation_allowed;
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_save_server_settings_request: save failed, rolled back the general-settings toggles");
     }
 }
@@ -4468,6 +4576,14 @@ void client_msg__process_ban_request(cJSON* json_root, uint64 sender_client_id)
     cJSON* json_client_id = 0;
     client_t* admin = 0;
     client_t* receiver = 0;
+    boole should_ban = FALSE;
+    char banned_ip[BAN_IP_MAX_LENGTH];
+    char banned_country[COUNTRY_ISO_CODE_LENGTH];
+    char banned_identity[MAX_PUBLIC_KEY_LENGTH];
+
+    clib__null_memory(banned_ip, sizeof(banned_ip));
+    clib__null_memory(banned_country, sizeof(banned_country));
+    clib__null_memory(banned_identity, sizeof(banned_identity));
 
     status = _client_msg_internal__is_kick_ban_request_valid(json_root);
     if (status == FALSE)
@@ -4496,9 +4612,131 @@ void client_msg__process_ban_request(cJSON* json_root, uint64 sender_client_id)
         goto label_client_msg__process_ban_request_end;
     }
 
+    /* snapshot the target's identifying data while we hold the clients lock, then disconnect them */
+    clib__copy_memory(&receiver->ip_address[0], banned_ip, clib__utf8_string_length(&receiver->ip_address[0]), BAN_IP_MAX_LENGTH - 1);
+    clib__copy_memory(&receiver->country_iso_code[0], banned_country, clib__utf8_string_length(&receiver->country_iso_code[0]), COUNTRY_ISO_CODE_LENGTH - 1);
+    clib__copy_memory(&receiver->public_key[0], banned_identity, clib__utf8_string_length(&receiver->public_key[0]), MAX_PUBLIC_KEY_LENGTH - 1);
+    should_ban = TRUE;
+
     ws_close_client(receiver->p_ws_connection);
 
 label_client_msg__process_ban_request_end:
+    clib__unlock(&g_clients_global_rwlock_guard);
+
+    /* record + persist the ban outside the clients lock. lock order puts bans last, so take channels,
+       icons and tags (read, for the save) before the bans write lock */
+    if (should_ban == TRUE)
+    {
+        clib__read_lock(&g_channels_global_rwlock_guard);
+        clib__read_lock(&g_icons_global_rwlock_guard);
+        clib__read_lock(&g_tags_global_rwlock_guard);
+        clib__write_lock(&g_bans_global_rwlock_guard);
+
+        base__add_ban(banned_ip, banned_country, banned_identity, "");
+        base__save_server_settings_to_file();
+
+        clib__unlock(&g_bans_global_rwlock_guard);
+        clib__unlock(&g_tags_global_rwlock_guard);
+        clib__unlock(&g_icons_global_rwlock_guard);
+        clib__unlock(&g_channels_global_rwlock_guard);
+    }
+}
+
+/**
+ * @brief processes an admin request to remove one ban (by ip address) from the persisted ban list
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_remove_ban_request(cJSON* json_root, uint64 sender_client_id)
+{
+    cJSON* json_message_object = 0;
+    cJSON* json_ip = 0;
+    boole is_admin = FALSE;
+    boole removed = FALSE;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_ip = cJSON_GetObjectItemCaseSensitive(json_message_object, "ip_address");
+    if (cJSON_IsString(json_ip) == FALSE || json_ip->valuestring == NULL_POINTER)
+    {
+        return;
+    }
+
+    clib__read_lock(&g_clients_global_rwlock_guard);
+    is_admin = (boole)(g_clients_array[sender_client_id].is_authenticated == TRUE
+        && g_clients_array[sender_client_id].is_existing == TRUE
+        && g_clients_array[sender_client_id].is_admin == TRUE);
+    clib__unlock(&g_clients_global_rwlock_guard);
+
+    if (is_admin == FALSE)
+    {
+        return;
+    }
+
+    clib__read_lock(&g_channels_global_rwlock_guard);
+    clib__read_lock(&g_icons_global_rwlock_guard);
+    clib__read_lock(&g_tags_global_rwlock_guard);
+    clib__write_lock(&g_bans_global_rwlock_guard);
+
+    removed = base__remove_ban_by_ip(json_ip->valuestring);
+    if (removed == TRUE)
+    {
+        base__save_server_settings_to_file();
+    }
+
+    clib__unlock(&g_bans_global_rwlock_guard);
+    clib__unlock(&g_tags_global_rwlock_guard);
+    clib__unlock(&g_icons_global_rwlock_guard);
+    clib__unlock(&g_channels_global_rwlock_guard);
+}
+
+/**
+ * @brief processes an admin request to read another client's info (connected time, ip, country, identity).
+ *        only an admin gets a reply; a non-admin's request is silently ignored ("nothing happens for now")
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_get_client_info_request(cJSON* json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    cJSON* json_message_object = 0;
+    cJSON* json_client_id = 0;
+    client_t* admin = 0;
+    client_t* target = 0;
+
+    status = _client_msg_internal__is_kick_ban_request_valid(json_root);
+    if (status == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_get_client_info_request is not valid");
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
+
+    clib__read_lock(&g_clients_global_rwlock_guard);
+
+    admin = &g_clients_array[sender_client_id];
+
+    if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
+    {
+        goto label_client_msg__process_get_client_info_request_end;
+    }
+
+    target = &g_clients_array[json_client_id->valueint];
+    if (target->is_authenticated == FALSE || target->is_existing == FALSE)
+    {
+        goto label_client_msg__process_get_client_info_request_end;
+    }
+
+    server_msg__send_client_info_to_single_client(admin, target);
+
+label_client_msg__process_get_client_info_request_end:
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -4554,6 +4792,12 @@ void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sende
 
     /* check if there is already music bot in the channel */
     if (g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel == TRUE)
+    {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
+    /* music bots are not allowed in temp channels */
+    if (g_channel_array[json_channel_id->valueint].is_temp_channel == TRUE)
     {
         goto label_client_msg__process_create_music_bot_end;
     }

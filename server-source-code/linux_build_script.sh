@@ -139,6 +139,14 @@ if [ "$WSL_MODE" = "1" ]; then
   message "WSL mode: -j$JOBS, gnu17, CMake policy >=3.5"
 fi
 
+echo
+echo -e "${LCYAN} ====================================================================${NC}"
+echo -e "${LCYAN}   parallel build jobs (-j): ${GREEN}$JOBS${NC}"
+echo -e "${LCYAN}   to change, edit JOBS (or NJOBS for --wsl) near the top of this${NC}"
+echo -e "${LCYAN}   script, or set it as an env var: ${GREEN}JOBS=N ./linux_build_script.sh${NC}"
+echo -e "${LCYAN} ====================================================================${NC}"
+echo
+
 
 cd "$THIRD_PARTY_DIRECTORY"
 
@@ -297,6 +305,20 @@ cp -r -v "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/libopus.a" "$ROOT_DIRECTORY/main/
 cd ../../
 
 #********************************************************
+#******  build the browser client (client.html)   ******
+#********************************************************
+# the bundled http server serves client.html out of the buildresult directory, so build it here
+# (build.py is fast, about a second) and copy it in next to the server binary below.
+
+message "building the browser client (client.html)"
+if type python3 >/dev/null 2>&1; then
+  python3 "$ROOT_DIRECTORY/../client-source-code/client-development/build.py"
+else
+  warning "python3 not found - skipping client build, the served client.html may be stale or missing"
+fi
+
+
+#********************************************************
 #******  at last, main-chat-server build          ******
 #********************************************************
 
@@ -336,6 +358,13 @@ cd server-source-code
 cp -v "$ROOT_DIRECTORY/main/unix_start_template" "$ROOT_DIRECTORY/../buildresult/start_server.sh"
 
 cp -v "$THIRD_PARTY_DIRECTORY/libmaxminddb-1.12.2/dbip-country-lite-2025-06.mmdb" "$ROOT_DIRECTORY/../buildresult/"
+
+# the page the bundled http server serves (built above)
+if [ -f "$ROOT_DIRECTORY/../client-source-code/client.html" ]; then
+  cp -v "$ROOT_DIRECTORY/../client-source-code/client.html" "$ROOT_DIRECTORY/../buildresult/"
+else
+  warning "client.html not found - the bundled http server will have no page to serve"
+fi
 
 chmod +x "$ROOT_DIRECTORY/../buildresult/start_server.sh"
 

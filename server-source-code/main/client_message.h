@@ -36,6 +36,8 @@ void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint
 void client_msg__process_create_new_webrtc_datachannel_connection(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_kick_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_ban_request(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_remove_ban_request(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_get_client_info_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_delete_music_bot_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_musicbot_get_song_list_request(cJSON* json_root, uint64 sender_client_id);

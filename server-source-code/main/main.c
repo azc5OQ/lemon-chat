@@ -156,6 +156,14 @@ void onopen(ws_cli_conn_t* client)
         goto label_onopen_end;
     }
 
+    /* drop banned ips right away, before any client slot is set up */
+    if (base__is_ip_banned(ip_address) == TRUE)
+    {
+        DBG_AUTHENTICATION log_info("%s", "ip address is banned, closing socket");
+        ws_close_client(client);
+        goto label_onopen_end;
+    }
+
     if (g_server_settings.is_same_ip_address_allowed == FALSE)
     {
         ip_address_already_in_use = base__is_there_a_client_with_same_ip_address(ip_address);
@@ -450,16 +458,21 @@ static void _main_internal__load_persisted_state(void)
     cJSON* json_icon = NULL_POINTER;
     cJSON* json_tags = NULL_POINTER;
     cJSON* json_tag = NULL_POINTER;
+    cJSON* json_bans = NULL_POINTER;
+    cJSON* json_ban = NULL_POINTER;
     cJSON* json_field = NULL_POINTER;
     channel_t* channel_in_loop = NULL_POINTER;
     icon_t* icon_in_loop = NULL_POINTER;
     tag_t* tag_in_loop = NULL_POINTER;
+    ban_entry_t* ban_in_loop = NULL_POINTER;
     int64 channel_id = 0;
     int64 icon_id = 0;
     int64 tag_id = 0;
     uint64 loaded_channels = 0;
     uint64 loaded_icons = 0;
     uint64 loaded_tags = 0;
+    uint64 loaded_bans = 0;
+    uint64 ban_slot = 0;
 
     settings_file = fopen("server_settings.json", "rb");
     if (settings_file == NULL_POINTER)
@@ -540,6 +553,12 @@ static void _main_internal__load_persisted_state(void)
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "is_audio_enabled");
             if (cJSON_IsBool(json_field)) { channel_in_loop->is_audio_enabled = cJSON_IsTrue(json_field); }
 
+            json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "is_client_limit_active");
+            if (cJSON_IsBool(json_field)) { channel_in_loop->is_client_limit_active = cJSON_IsTrue(json_field); }
+
+            json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "max_client_count");
+            if (cJSON_IsNumber(json_field)) { channel_in_loop->max_client_count = (uint64)json_field->valuedouble; }
+
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "name");
             if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &channel_in_loop->name[0], clib__utf8_string_length(json_field->valuestring), CHANNEL_NAME_MAX_LENGTH - 1); }
 
@@ -616,11 +635,50 @@ static void _main_internal__load_persisted_state(void)
         }
     }
 
+    /* load the ban list (filled sequentially; ip is required, the rest is optional metadata) */
+    json_bans = cJSON_GetObjectItemCaseSensitive(json_root, "bans");
+    if (cJSON_IsArray(json_bans) == TRUE)
+    {
+        cJSON_ArrayForEach(json_ban, json_bans)
+        {
+            if (ban_slot >= MAX_BANS)
+            {
+                break;
+            }
+
+            json_field = cJSON_GetObjectItemCaseSensitive(json_ban, "ip_address");
+            if (cJSON_IsString(json_field) == FALSE || json_field->valuestring == NULL_POINTER)
+            {
+                continue;
+            }
+
+            ban_in_loop = &g_ban_array[ban_slot];
+            clib__null_memory(ban_in_loop, sizeof(ban_entry_t));
+            ban_in_loop->is_existing = TRUE;
+            clib__copy_memory(json_field->valuestring, &ban_in_loop->ip_address[0], clib__utf8_string_length(json_field->valuestring), BAN_IP_MAX_LENGTH - 1);
+
+            json_field = cJSON_GetObjectItemCaseSensitive(json_ban, "country_iso_code");
+            if (cJSON_IsString(json_field) && json_field->valuestring != NULL_POINTER) { clib__copy_memory(json_field->valuestring, &ban_in_loop->country_iso_code[0], clib__utf8_string_length(json_field->valuestring), COUNTRY_ISO_CODE_LENGTH - 1); }
+
+            json_field = cJSON_GetObjectItemCaseSensitive(json_ban, "identity");
+            if (cJSON_IsString(json_field) && json_field->valuestring != NULL_POINTER) { clib__copy_memory(json_field->valuestring, &ban_in_loop->identity[0], clib__utf8_string_length(json_field->valuestring), MAX_PUBLIC_KEY_LENGTH - 1); }
+
+            json_field = cJSON_GetObjectItemCaseSensitive(json_ban, "extra_data");
+            if (cJSON_IsString(json_field) && json_field->valuestring != NULL_POINTER) { clib__copy_memory(json_field->valuestring, &ban_in_loop->extra_data[0], clib__utf8_string_length(json_field->valuestring), BAN_EXTRA_DATA_MAX_LENGTH - 1); }
+
+            json_field = cJSON_GetObjectItemCaseSensitive(json_ban, "timestamp_banned");
+            if (cJSON_IsNumber(json_field)) { ban_in_loop->timestamp_banned = (uint64)json_field->valuedouble; }
+
+            ban_slot++;
+            loaded_bans++;
+        }
+    }
+
     cJSON_Delete(json_root);
 
-    if (loaded_channels > 0 || loaded_icons > 0 || loaded_tags > 0)
+    if (loaded_channels > 0 || loaded_icons > 0 || loaded_tags > 0 || loaded_bans > 0)
     {
-        printf("%s %s%llu%s%llu%s%llu%s\n", g_mark_ok, "restored from server_settings.json (", loaded_channels, " channels, ", loaded_icons, " icons, ", loaded_tags, " tags)");
+        printf("%s %s%llu%s%llu%s%llu%s%llu%s\n", g_mark_ok, "restored from server_settings.json (", loaded_channels, " channels, ", loaded_icons, " icons, ", loaded_tags, " tags, ", loaded_bans, " bans)");
     }
 }
 
@@ -682,9 +740,11 @@ static void _main_internal__save_server_settings(char plaintext_keys[][256], uin
     }
 
     cJSON_AddItemToObject(json_root, "is_voice_chat_active", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
+    cJSON_AddItemToObject(json_root, "is_music_bot_audio_active", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
     cJSON_AddItemToObject(json_root, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "is_display_country_flags_active", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
     cJSON_AddItemToObject(json_root, "is_hide_clients_in_password_protected_channels_active", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
+    cJSON_AddItemToObject(json_root, "is_temp_channel_creation_allowed", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "is_idle_mode_allowed", cJSON_CreateBool(g_server_settings.is_idle_mode_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "restart_on_crash", cJSON_CreateBool(g_server_settings.restart_on_crash == TRUE));
 
@@ -753,7 +813,9 @@ static void _main_internal__set_server_settings(void)
     g_server_settings.create_channel_request_cooldown_milliseconds = 1000;
     g_server_settings.is_same_ip_address_allowed = TRUE;
     g_server_settings.is_voice_chat_active = TRUE;
+    g_server_settings.is_music_bot_audio_active = TRUE;
     g_server_settings.is_hide_clients_in_password_protected_channels_active = TRUE;
+    g_server_settings.is_temp_channel_creation_allowed = FALSE;
     g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active = FALSE;
     g_server_settings.is_display_country_flags_active = FALSE;
     g_server_settings.is_display_admin_tag_active = TRUE;
@@ -823,12 +885,16 @@ static void _main_internal__set_server_settings(void)
 
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_voice_chat_active");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_voice_chat_active = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_music_bot_audio_active");
+                if (cJSON_IsBool(json_field)) { g_server_settings.is_music_bot_audio_active = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_same_ip_address_allowed");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_same_ip_address_allowed = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_display_country_flags_active");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_display_country_flags_active = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_hide_clients_in_password_protected_channels_active");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_hide_clients_in_password_protected_channels_active = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_temp_channel_creation_allowed");
+                if (cJSON_IsBool(json_field)) { g_server_settings.is_temp_channel_creation_allowed = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_idle_mode_allowed");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_idle_mode_allowed = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "restart_on_crash");
@@ -1385,6 +1451,7 @@ static void _main_internal__launch_stunnel(void)
 static void _main_internal__print_startup_summary(void)
 {
     boole is_voice_on = g_server_settings.is_voice_chat_active;
+    boole is_bot_audio_on = g_server_settings.is_music_bot_audio_active;
 
     printf("\n");
     printf("  %s%s%s\n", g_color_banner, "lemon-chat is running - services and ports", g_color_reset);
@@ -1393,17 +1460,27 @@ static void _main_internal__print_startup_summary(void)
     /* the websocket listener is always running */
     printf("  %s  %-18s port %lld\n", g_mark_ok, "websocket", g_server_settings.websocket_port);
 
-    /* the webrtc datachannel + bundled libviolet STUN/TURN listener (udp 3478) are always up; only the
-       audio relay between clients is gated by is_voice_chat_active */
+    /* the webrtc datachannel + bundled libviolet STUN/TURN listener (udp 3478) are always up; this is just
+       the transport. whether the server actually forwards audio over it is gated separately for client
+       voice and for music bots, shown on the next two lines */
     printf("  %s  %-18s port 3478 (udp)\n", g_mark_ok, "webrtc + stun/turn");
 
     if (is_voice_on == TRUE)
     {
-        printf("  %s  %-18s on\n", g_mark_ok, "audio relay");
+        printf("  %s  %-18s on\n", g_mark_ok, "client voice relay");
     }
     else
     {
-        printf("  %s  %-18s off\n", g_mark_off, "audio relay");
+        printf("  %s  %-18s off\n", g_mark_off, "client voice relay");
+    }
+
+    if (is_bot_audio_on == TRUE)
+    {
+        printf("  %s  %-18s on\n", g_mark_ok, "music bot audio");
+    }
+    else
+    {
+        printf("  %s  %-18s off\n", g_mark_off, "music bot audio");
     }
 
     /* optional bundled http server that serves the client */
@@ -1427,8 +1504,6 @@ static void _main_internal__print_startup_summary(void)
         printf("  %s  %-18s not enabled\n", g_mark_off, "stunnel (wss)");
     }
 
-    printf("\n");
-    printf("  %s\n", "webrtc is client<->server only, like a UDP websocket - no peer-to-peer");
     printf("\n");
 }
 
@@ -1669,6 +1744,8 @@ int main(void)
     g_client_stored_data = (client_stored_data_t*)memorymanager__allocate(sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
     g_icons_array = (icon_t*)memorymanager__allocate(sizeof(icon_t) * MAX_ICONS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
     g_tags_array = (tag_t*)memorymanager__allocate(sizeof(tag_t) * MAX_TAGS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
+    g_ban_array = (ban_entry_t*)memorymanager__allocate(sizeof(ban_entry_t) * MAX_BANS, MEMALLOC_BANS_ARRAY);
+    clib__null_memory(g_ban_array, sizeof(ban_entry_t) * MAX_BANS);
     g_webrtc_muggles_array = (webrtc_peer_t*)memorymanager__allocate(sizeof(webrtc_peer_t) * g_server_settings.max_client_count, MEMALLOC_WEBRTC_PEERS);
 
     _main_internal__init_channel_list();

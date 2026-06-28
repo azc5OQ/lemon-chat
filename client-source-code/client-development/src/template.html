@@ -37,6 +37,12 @@
     </style>
 
 
+    <!-- old school theme style -->
+    <style id="style-theme-oldschool" class="style-theme-html-element">
+/* @@INCLUDE: styles/theme-oldschool.style @@ */
+    </style>
+
+
     <script type="text/javascript">
 /* @@INCLUDE: scripts/vendor/biginteger.js @@ */
     </script>
@@ -82,6 +88,7 @@
                 <li class="server-settings-tab-li" data-action="0">icons</li>
                 <li class="server-settings-tab-li" data-action="1">tags</li>
                 <li class="server-settings-tab-li" data-action="2">server settings</li>
+                <li class="server-settings-tab-li" data-action="3">bans</li>
             </ul>
             </div>
             <div id="server-settings-tab-subcontainer2">
@@ -123,11 +130,25 @@
                             <span>enable audio server-wide</span>
                         </label>
                         <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-enable-music-bot-audio-checkbox">
+                            <span>enable audio for music bots</span>
+                        </label>
+                        <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-hide-clients-in-password-protected-channels">
                             <span>hide clients in password protected channels</span>
                         </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-temp-channels-checkbox">
+                            <span>allow creation of temp channels by guests</span>
+                        </label>
 
                         <input type="button" value="save server settings" id="save-server-settings-button">
+                    </div>
+                </div>
+                <div id="server-settings-tab-bans">
+                    <div id="server-settings-bans-container">
+                        <p class="server-settings-general-header">bans</p>
+                        <div id="server-settings-bans-list"></div>
                     </div>
                 </div>
             </div>
@@ -194,6 +215,7 @@
                 <div id="choose-theme-button-list">
                     <p class='choose-theme-item' data-name="default">default</p>
                     <p class='choose-theme-item' data-name="light-theme">light</p>
+                    <p class='choose-theme-item' data-name="oldschool">old school</p>
                    <!-- <p class='choose-theme-item' data-name="90swindows">90s windows</p> -->
                 </div>
                 <input type="button" id="enter-server-settings">
@@ -297,6 +319,7 @@
         <div id="channel-properties-edit-container">
             <div id="channel-properties-edit">
                 <div id="menu-bar-container">
+                    <p class="dialog-title">Channel Properties</p>
                     <div class="close-button" id="close-button">
                     </div>
                 </div>
@@ -314,6 +337,9 @@
                         <div class="text-input-container-2">
                             <input type="text" disabled="" class="text-input-not-pretty-2" value="disable audio">
                         </div>
+                        <div class="text-input-container-2">
+                            <input type="text" disabled="" class="text-input-not-pretty-2" value="client limit">
+                        </div>
                     </div>
                     <div id="channel-properties-input-container-enter" style="display: inline-block; vertical-align: top;">
                         <div class="text-input-container-2">
@@ -328,6 +354,10 @@
                         <div class="text-input-container-2">
                             <input type="checkbox" id="channel-properties-disable-audio-checkbox">
                         </div>
+                        <div class="text-input-container-2">
+                            <input type="checkbox" id="channel-properties-limit-clients-checkbox">
+                            <input class="text-input-not-pretty-2" id="channel-properties-input-max-clients" type="number" min="1" placeholder="max" value="" style="display: none; width: 70px; margin-left: 8px;">
+                        </div>
                     </div>
                     <input type="hidden" id="create-channel-hidden-parent-id" value="">
                     <div style="text-align: right;">
@@ -340,6 +370,7 @@
         <div id="channel-password-enter-container">
             <div id="channel-password-enter">
                 <div id="menu-bar-container">
+                    <p class="dialog-title">Channel Password</p>
                     <div class="close-button" id="close-button-enter-password">
                     </div>
                 </div>
@@ -365,6 +396,7 @@
         <div id="admin-password-enter-container">
             <div id="admin-password-enter">
                 <div id="menu-bar-container">
+                    <p class="dialog-title">Admin Password</p>
                     <div class="close-button" id="close-button-admin-password">
                     </div>
                 </div>
@@ -391,6 +423,7 @@
         <div id="poke-client-enter-container">
             <div id="poke-client-enter">
                 <div id="menu-bar-container">
+                    <p class="dialog-title">Poke Client</p>
                     <div class="close-button" id="close-button-poke-client">
                     </div>
                 </div>
@@ -412,6 +445,7 @@
         <div id="set-new-username-enter-container">
             <div id="set-new-username-enter">
                 <div id="menu-bar-container">
+                    <p class="dialog-title">Set Username</p>
                     <div class="close-button" id="close-button-set-new-username">
                     </div>
                 </div>
@@ -431,9 +465,28 @@
         </div>
     
 
+        <div id="client-info-container">
+            <div id="client-info-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Client Info</p>
+                    <div class="close-button" id="close-button-client-info">
+                    </div>
+                </div>
+                <div id="client-info-content">
+                    <p class="client-info-row"><span class="client-info-label">user</span><span id="client-info-username"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">connected</span><span id="client-info-connected"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">ip address</span><span id="client-info-ip"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">country</span><span id="client-info-country"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">last action</span><span id="client-info-last-action"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">identity</span><span id="client-info-identity" class="client-info-identity"></span></p>
+                </div>
+            </div>
+        </div>
+
         <div id="identity-string-use-container">
             <div id="identity-string-use-container-enter">
                 <div id="menu-bar-container">
+                    <p class="dialog-title">Identity</p>
                     <div class="close-button" id="close-button-identity-string-use">
                     </div>
                 </div>
@@ -460,6 +513,7 @@
         <div id="secret-identity-string-container">
             <div id="secret-identity-string-container-enter">
                 <div id="menu-bar-container">
+                    <p class="dialog-title">Your Identity</p>
                     <div class="close-button" id="close-button-secret-identity-string">
                     </div>
                 </div>

@@ -15,6 +15,8 @@ void server_msg__send_maintainer_id_to_single_client(client_t* client, uint64 ch
 void server_msg__send_connection_check_response_to_single_client(client_t* client);
 void server_msg__send_client_rename_message_to_all_clients(uint64 username_changer_client_id, char* new_username);
 void server_msg__send_access_denied_to_single_client(client_t* client);
+void server_msg__send_client_info_to_single_client(client_t* receiving_client, client_t* target_client);
+void server_msg__send_channel_full_to_single_client(client_t* client, uint64 channel_id);
 void server_msg__send_server_settings_to_single_client(client_t* client);
 void server_msg__send_channel_create_message_to_all_clients(uint64 created_channel_index, uint64 channel_creator_client_id);
 void server_msg__send_channel_edit_message_to_all_clients(uint64 edited_channel_id, uint64 channel_editor_client_id);

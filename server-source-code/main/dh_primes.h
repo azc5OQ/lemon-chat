@@ -3,7 +3,7 @@
 
 /* diffie-hellman key exchange moduli */
 /* along with the (public) base and (private) exponent, the (public) modulus is used to derive the shared secret */
-/* the shared secret is a 32-byte value unique to each client and is used to encrypt its metadata */
+/* the shared secret is a large value (the size of the modulus) unique to each client; the key that encrypts its metadata is derived from it */
 /* the modulus cannot be just any large number; it must be a suitable safe prime */
 /* the client and server must use the same modulus; it is public and not meant to be secret */
 /* the private exponent and the resulting shared secret are the secret values */

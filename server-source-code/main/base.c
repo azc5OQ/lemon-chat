@@ -46,6 +46,7 @@ custom_rwlock_t g_channels_global_rwlock_guard;
 custom_rwlock_t g_icons_global_rwlock_guard;
 custom_rwlock_t g_tags_global_rwlock_guard;
 custom_rwlock_t g_webrtc_muggles_rwlock_guard;
+custom_rwlock_t g_bans_global_rwlock_guard;
 
 pthread_mutex_t g_chat_message_id_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -55,6 +56,7 @@ channel_t* g_channel_array;
 client_stored_data_t* g_client_stored_data;
 icon_t* g_icons_array;
 tag_t* g_tags_array;
+ban_entry_t* g_ban_array;
 server_settings_t g_server_settings;
 
 /**
@@ -118,15 +120,142 @@ boole base__write_file_atomically(char* path, char* contents)
 }
 
 /**
- * @brief persists the runtime-editable server state into server_settings.json: the general-settings
- *        toggles (country flags, server-wide audio, hide-in-password-channels), the channel layout, and
- *        the tags/icons. it READS the existing file first and only updates the keys it manages, so ports,
- *        operator keys and every other setting are preserved untouched. if the file is missing or cannot
- *        be parsed it aborts WITHOUT writing, so a transient error can never destroy a good settings file.
- *        the admin icon/tag (id 0) are re-seeded on every start and are not written. caller holds the
- *        channels, icons and tags locks for reading.
+ * @brief checks whether an ip address is currently banned
  *
- * @return void
+ * @param char* ip_address -> the ip to check
+ *
+ * @return boole TRUE if the ip is in the ban list
+ */
+boole base__is_ip_banned(char* ip_address)
+{
+    boole is_banned = FALSE;
+    uint64 i = 0;
+
+    if (ip_address == NULL_POINTER || g_ban_array == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    clib__read_lock(&g_bans_global_rwlock_guard);
+    for (i = 0; i < MAX_BANS; i++)
+    {
+        if (g_ban_array[i].is_existing == FALSE)
+        {
+            continue;
+        }
+        if (clib__is_string_equal(g_ban_array[i].ip_address, ip_address) == TRUE)
+        {
+            is_banned = TRUE;
+            break;
+        }
+    }
+    clib__unlock(&g_bans_global_rwlock_guard);
+
+    return is_banned;
+}
+
+/**
+ * @brief adds a ban entry. ignored if the ip is already banned or the ban list is full
+ *
+ * @param char* ip_address -> the banned ip (matching is by this)
+ * @param char* country_iso_code -> the client's country at ban time (may be empty)
+ * @param char* identity -> the client's identity / public key at ban time (may be empty)
+ * @param char* extra_data -> free-form extra data, e.g. a future fingerprint (may be empty)
+ *
+ * @attention caller must hold the bans write lock
+ *
+ * @return boole TRUE if a ban was added
+ */
+boole base__add_ban(char* ip_address, char* country_iso_code, char* identity, char* extra_data)
+{
+    uint64 i = 0;
+    int64 free_index = -1;
+
+    if (ip_address == NULL_POINTER || g_ban_array == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i < MAX_BANS; i++)
+    {
+        if (g_ban_array[i].is_existing == TRUE)
+        {
+            if (clib__is_string_equal(g_ban_array[i].ip_address, ip_address) == TRUE)
+            {
+                return FALSE; /* already banned */
+            }
+        }
+        else if (free_index == -1)
+        {
+            free_index = (int64)i;
+        }
+    }
+
+    if (free_index == -1)
+    {
+        log_info("%s", "base__add_ban: ban list is full");
+        return FALSE;
+    }
+
+    clib__null_memory(&g_ban_array[free_index], sizeof(ban_entry_t));
+    g_ban_array[free_index].is_existing = TRUE;
+    g_ban_array[free_index].timestamp_banned = base__get_timestamp_ms();
+    clib__copy_memory(ip_address, &g_ban_array[free_index].ip_address[0], clib__utf8_string_length(ip_address), BAN_IP_MAX_LENGTH - 1);
+    if (country_iso_code != NULL_POINTER)
+    {
+        clib__copy_memory(country_iso_code, &g_ban_array[free_index].country_iso_code[0], clib__utf8_string_length(country_iso_code), COUNTRY_ISO_CODE_LENGTH - 1);
+    }
+    if (identity != NULL_POINTER)
+    {
+        clib__copy_memory(identity, &g_ban_array[free_index].identity[0], clib__utf8_string_length(identity), MAX_PUBLIC_KEY_LENGTH - 1);
+    }
+    if (extra_data != NULL_POINTER)
+    {
+        clib__copy_memory(extra_data, &g_ban_array[free_index].extra_data[0], clib__utf8_string_length(extra_data), BAN_EXTRA_DATA_MAX_LENGTH - 1);
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief removes a ban entry matching an ip address
+ *
+ * @param char* ip_address -> the ip to unban
+ *
+ * @attention caller must hold the bans write lock
+ *
+ * @return boole TRUE if an entry was removed
+ */
+boole base__remove_ban_by_ip(char* ip_address)
+{
+    uint64 i = 0;
+
+    if (ip_address == NULL_POINTER || g_ban_array == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i < MAX_BANS; i++)
+    {
+        if (g_ban_array[i].is_existing == TRUE && clib__is_string_equal(&g_ban_array[i].ip_address[0], ip_address) == TRUE)
+        {
+            clib__null_memory(&g_ban_array[i], sizeof(ban_entry_t));
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/**
+ * @brief persists the runtime-editable server state into server_settings.json: the general-settings
+ *        toggles, the channel layout, the tags/icons and the ban list. it READS the existing file first
+ *        and only updates the keys it manages, so ports, operator keys and every other setting stay
+ *        untouched. if the file is missing or cannot be parsed it aborts WITHOUT writing, so a transient
+ *        error can never destroy a good settings file. the admin icon/tag (id 0) are re-seeded on every
+ *        start and are not written. caller holds the channels, icons, tags and bans locks for reading.
+ *
+ * @return boole TRUE if the file was written
  */
 boole base__save_server_settings_to_file(void)
 {
@@ -137,6 +266,8 @@ boole base__save_server_settings_to_file(void)
     cJSON* json_icon = NULL_POINTER;
     cJSON* json_tags = NULL_POINTER;
     cJSON* json_tag = NULL_POINTER;
+    cJSON* json_bans = NULL_POINTER;
+    cJSON* json_ban = NULL_POINTER;
     char* json_text = NULL_POINTER;
     FILE* settings_file = NULL_POINTER;
     int64 file_length = 0;
@@ -145,6 +276,7 @@ boole base__save_server_settings_to_file(void)
     channel_t* channel_in_loop = NULL_POINTER;
     icon_t* icon_in_loop = NULL_POINTER;
     tag_t* tag_in_loop = NULL_POINTER;
+    ban_entry_t* ban_in_loop = NULL_POINTER;
     uint64 i = 0;
     boole write_succeeded = FALSE;
 
@@ -189,8 +321,12 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "is_display_country_flags_active", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_voice_chat_active");
     cJSON_AddItemToObject(json_root, "is_voice_chat_active", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_music_bot_audio_active");
+    cJSON_AddItemToObject(json_root, "is_music_bot_audio_active", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_hide_clients_in_password_protected_channels_active");
     cJSON_AddItemToObject(json_root, "is_hide_clients_in_password_protected_channels_active", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_temp_channel_creation_allowed");
+    cJSON_AddItemToObject(json_root, "is_temp_channel_creation_allowed", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
 
     /* rebuild the channel layout (persistent fields only; runtime state like maintainer/occupants is skipped) */
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "channels");
@@ -204,6 +340,12 @@ boole base__save_server_settings_to_file(void)
             continue;
         }
 
+        /* temp channels are disposable and never persisted */
+        if (channel_in_loop->is_temp_channel == TRUE)
+        {
+            continue;
+        }
+
         json_channel = cJSON_CreateObject();
         cJSON_AddNumberToObject(json_channel, "channel_id", channel_in_loop->channel_id);
         cJSON_AddNumberToObject(json_channel, "parent_channel_id", (int64)channel_in_loop->parent_channel_id);
@@ -211,6 +353,8 @@ boole base__save_server_settings_to_file(void)
         cJSON_AddItemToObject(json_channel, "is_root_channel", cJSON_CreateBool(channel_in_loop->is_root_channel == TRUE));
         cJSON_AddItemToObject(json_channel, "is_using_password", cJSON_CreateBool(channel_in_loop->is_using_password == TRUE));
         cJSON_AddItemToObject(json_channel, "is_audio_enabled", cJSON_CreateBool(channel_in_loop->is_audio_enabled == TRUE));
+        cJSON_AddItemToObject(json_channel, "is_client_limit_active", cJSON_CreateBool(channel_in_loop->is_client_limit_active == TRUE));
+        cJSON_AddNumberToObject(json_channel, "max_client_count", (double)channel_in_loop->max_client_count);
         cJSON_AddStringToObject(json_channel, "name", &channel_in_loop->name[0]);
         cJSON_AddStringToObject(json_channel, "password", &channel_in_loop->password[0]);
         cJSON_AddStringToObject(json_channel, "description", &channel_in_loop->description[0]);
@@ -252,6 +396,27 @@ boole base__save_server_settings_to_file(void)
         cJSON_AddNumberToObject(json_tag, "icon_id", tag_in_loop->icon_id);
         cJSON_AddStringToObject(json_tag, "name", &tag_in_loop->name[0]);
         cJSON_AddItemToArray(json_tags, json_tag);
+    }
+
+    /* rebuild the ban list (matching is by ip; country/identity/extra data are recorded for the admin) */
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "bans");
+    json_bans = cJSON_CreateArray();
+    cJSON_AddItemToObject(json_root, "bans", json_bans);
+    for (i = 0; i < MAX_BANS; i++)
+    {
+        ban_in_loop = &g_ban_array[i];
+        if (ban_in_loop->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        json_ban = cJSON_CreateObject();
+        cJSON_AddStringToObject(json_ban, "ip_address", &ban_in_loop->ip_address[0]);
+        cJSON_AddStringToObject(json_ban, "country_iso_code", &ban_in_loop->country_iso_code[0]);
+        cJSON_AddStringToObject(json_ban, "identity", &ban_in_loop->identity[0]);
+        cJSON_AddStringToObject(json_ban, "extra_data", &ban_in_loop->extra_data[0]);
+        cJSON_AddNumberToObject(json_ban, "timestamp_banned", (double)ban_in_loop->timestamp_banned);
+        cJSON_AddItemToArray(json_bans, json_ban);
     }
 
     json_text = cJSON_Print(json_root);
@@ -1611,6 +1776,128 @@ char* base__encrypt_string_with_public_key(char* public_key_modulus, unsigned ch
 }
 
 /**
+ * @brief destroys a temp channel: moves any remaining members to the root channel and frees the slot,
+ *        then broadcasts the deletion. used when a temp channel's owner leaves it, disconnects, or
+ *        deletes it. temp channels never have child channels or music bots, so no cascade is needed.
+ *
+ * @param uint64 temp_channel_id -> id of the temp channel to destroy
+ *
+ * @attention caller must hold the clients and channels write locks
+ *
+ * @return void
+ */
+void base__destroy_temp_channel(uint64 temp_channel_id)
+{
+    uint64 i = 0;
+    uint64 index_of_new_maintainer = 0;
+    boole status = FALSE;
+    client_t* client_to_move = NULL_POINTER;
+
+    /* move any remaining members of the temp channel to the root channel */
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client_to_move = &g_clients_array[i];
+
+        if (client_to_move->is_existing == FALSE)
+        {
+            continue;
+        }
+        if (client_to_move->is_authenticated == FALSE)
+        {
+            continue;
+        }
+        if (client_to_move->channel_id != temp_channel_id)
+        {
+            continue;
+        }
+
+        client_to_move->channel_id = ROOT_CHANNEL_ID;
+        server_msg__send_channel_join_message_to_all_clients(client_to_move, &g_channel_array[ROOT_CHANNEL_ID]);
+
+        if (g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present == TRUE)
+        {
+            server_msg__send_maintainer_id_to_single_client(client_to_move, ROOT_CHANNEL_ID, g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
+        }
+
+        server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client_to_move->p_ws_connection, client_to_move->dh_shared_secret, ROOT_CHANNEL_ID);
+    }
+
+    /* free the channel slot and tell everyone the channel is gone */
+    clib__null_memory(&g_channel_array[temp_channel_id], sizeof(channel_t));
+    server_msg__send_channel_delete_message_to_all_clients(temp_channel_id, 0);
+
+    /* the root channel may have just gained members and have no maintainer; pick one */
+    if (g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present == FALSE)
+    {
+        status = base__find_new_maintainer_for_channel(&index_of_new_maintainer, ROOT_CHANNEL_ID, 0, FALSE);
+        if (status == TRUE)
+        {
+            g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present = TRUE;
+            g_channel_array[ROOT_CHANNEL_ID].maintainer_id = index_of_new_maintainer;
+            server_msg__send_maintainer_id_to_clients_in_same_channel(ROOT_CHANNEL_ID, g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
+        }
+    }
+}
+
+/**
+ * @brief moves a client into a channel server-side and tells everyone, the same way the delete path moves
+ *        clients to the root channel: hand off the maintainer of the channel being left, set the new
+ *        channel id, broadcast the channel join, sync the audio peer, then send the new maintainer id and
+ *        the active microphone usage to the moved client
+ *
+ * @param uint64 client_id -> the client to move
+ * @param uint64 destination_channel_id -> the channel to move the client into
+ *
+ * @attention caller must hold the clients and channels write locks
+ *
+ * @return void
+ */
+void base__move_client_into_channel(uint64 client_id, uint64 destination_channel_id)
+{
+    client_t* client = NULL_POINTER;
+    channel_t* old_channel = NULL_POINTER;
+    channel_t* new_channel = NULL_POINTER;
+    uint64 new_maintainer_index = 0;
+    boole status = FALSE;
+
+    client = &g_clients_array[client_id];
+    old_channel = &g_channel_array[client->channel_id];
+    new_channel = &g_channel_array[destination_channel_id];
+
+    /* if the client was the maintainer of the channel they are leaving, hand it off to someone still there */
+    if (old_channel->is_channel_maintainer_present == TRUE && old_channel->maintainer_id == client->client_id)
+    {
+        status = base__find_new_maintainer_for_channel(&new_maintainer_index, old_channel->channel_id, client_id, TRUE);
+        if (status == TRUE)
+        {
+            old_channel->is_channel_maintainer_present = TRUE;
+            old_channel->maintainer_id = new_maintainer_index;
+            server_msg__send_maintainer_id_to_clients_in_same_channel(old_channel->channel_id, old_channel->maintainer_id);
+        }
+        else
+        {
+            old_channel->is_channel_maintainer_present = FALSE;
+            old_channel->maintainer_id = 0;
+        }
+    }
+
+    /* move the client and tell everyone (same message order as the delete -> move-to-root path) */
+    client->channel_id = destination_channel_id;
+    server_msg__send_channel_join_message_to_all_clients(client, new_channel);
+    audio_channel__process_client_channel_join(client);
+
+    /* if the client is now the only member of the channel, they become its maintainer */
+    if (base__get_client_count_for_channel(destination_channel_id) == 1)
+    {
+        new_channel->maintainer_id = client->client_id;
+        new_channel->is_channel_maintainer_present = TRUE;
+    }
+
+    server_msg__send_maintainer_id_to_single_client(client, destination_channel_id, new_channel->maintainer_id);
+    server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client->p_ws_connection, client->dh_shared_secret, destination_channel_id);
+}
+
+/**
  * @brief this function takes care of events that must happen when client disconnects
  *
  * @param uint64 client_index -> id of the disconnecting client
@@ -1625,6 +1912,8 @@ void base__process_client_disconnect(uint64 client_index)
     uint64 new_maintainer_index = 0;
     boole status = FALSE;
     boole is_client_also_channel_maintainer = FALSE;
+    boole owns_temp_channel = FALSE;
+    uint64 owned_temp_channel_id = 0;
     client_t* client = NULL_POINTER;
 
     DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "base__process_client_disconnect ", client_index, "\n");
@@ -1640,6 +1929,9 @@ void base__process_client_disconnect(uint64 client_index)
         channel_id = g_clients_array[client_index].channel_id;
 
         is_client_also_channel_maintainer = (boole)(g_channel_array[channel_id].maintainer_id == client_index);
+
+        owns_temp_channel = client->is_temp_admin_channel;
+        owned_temp_channel_id = client->temp_channel_id;
 
         DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "base__process_client_disconnect setting client struct to null ", client_index, "\n");
 
@@ -1661,7 +1953,13 @@ void base__process_client_disconnect(uint64 client_index)
 
         server_msg__send_client_disconnect_message_to_all_clients(client_index);
 
-        if (is_client_also_channel_maintainer == TRUE)
+        if (owns_temp_channel == TRUE)
+        {
+            /* the client owned a temp channel (their current channel); destroy it instead of handing the
+               maintainer role off to someone else */
+            base__destroy_temp_channel(owned_temp_channel_id);
+        }
+        else if (is_client_also_channel_maintainer == TRUE)
         {
             DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "base__process_client_disconnect client was maintainer of channel ", client_index, "\n");
 
@@ -1847,6 +2145,14 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "ban"))
             {
                 client_msg__process_ban_request(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "get_client_info"))
+            {
+                client_msg__process_get_client_info_request(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "remove_ban"))
+            {
+                client_msg__process_remove_ban_request(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "create_music_bot"))
             {

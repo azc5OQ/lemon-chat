@@ -1,31 +1,29 @@
 @echo off
 
+
+:: Builds chat-server.exe on Windows. Run this .bat from cmd.
 ::
-::this is the script that is supposed to be run in order to build chat-server.exe on windows
-::every library needed to build this project is already included here and configured for convenience
-::this script builds the third-party libs here "in place" from source rather than using
-::precompiled binaries - building them from source makes the project more trustworthy.
-::basically, you just run this .bat from cmd and it should build chat-server.exe for you
-::with all the necessary dependencies.
+:: All third-party libraries are bundled and built from source, in place (not from precompiled
+:: binaries), so the whole build is auditable. The script builds every dependency, then the server.
 ::
-:: ****  BUT  *****
+:: Requires:
+::   - w64devkit: a MinGW-based toolchain providing gcc, g++, ld, ninja, make, windres. Used because
+::     the server must build on both Windows and Linux, so MSVC is not an option.
+::   - cmake (installed separately).
 ::
-::nothing is really that easy, is it. This project uses the w64devkit toolchain, which can be thought of as an alternative to Microsoft's Visual Studio C++ toolchain.
-::a toolchain is a collection of tools that build source code into binaries (here: cmake, ld, gcc, g++, clang, ninja)
-::why w64devkit specifically? Because some libraries in this project need it to build. The server source had to compile on both Windows and Linux, so a solution other than Visual Studio was needed.
-::I found w64devkit to work where others did not. Do what works for you
-::
-:: The steps: 
-:: download w64devkit somewhere from internet, from github for example
-:: install / unpack w64devkit to location you want
-:: edit the MINGWPATH variable in this .bat file so that it points to your w64devkit "bin" folder. Mine was C:/software/w64devkit/bin, as you can see below
-::
+:: Setup:
+::   1. Download w64devkit (e.g. from its GitHub releases) and unpack it anywhere.
+::   2. Point the MINGWPATH variable below at the w64devkit "bin" folder.
 
 
 :: >>> EDIT THIS to point at your own w64devkit "bin" folder <<<
 SET "MINGWPATH=C:\Users\user\Downloads\w64devkit\bin"
 set "CMAKE_MAKE_PROGRAM=%MINGWPATH%\ninja.exe"
 SET "PATH=%MINGWPATH%;%PATH%"
+
+:: number of parallel build jobs passed to cmake/make (-j); lower it if you run out of RAM
+set "BUILD_JOBS=2"
+
 
 
 ::list of libraries used in project
@@ -64,6 +62,11 @@ echo    g++            = %MINGWPATH%/g++.exe
 echo    ld             = %MINGWPATH%/ld.exe
 echo    project root   = %ROOT_DIRECTORY%
 echo    third-party    = %THIRD_PARTY_DIRECTORY%
+echo.
+echo  ====================================================================
+echo    parallel build jobs (-j) : %BUILD_JOBS%
+echo    to change, edit   set "BUILD_JOBS=N"   near the top of this script
+echo  ====================================================================
 echo.
 set /p pathsok= "Are these paths correct? (y/n): "
 if /i not "%pathsok%"=="y" (
@@ -164,8 +167,6 @@ if /i not "%buildok%"=="y" (
 set BUILD_CONFIG=Release
 ::set BUILD_CONFIG=Debug
 
-:: number of parallel build jobs passed to cmake/make (-j); lower it if you run out of RAM
-set "BUILD_JOBS=32"
 
 mkdir "%ROOT_DIRECTORY%\main\linkage-files\windows\"
 mkdir "%ROOT_DIRECTORY%\..\buildresult\"
@@ -331,6 +332,21 @@ cd ../../
 
 
 ::********************************************************
+::******  build the browser client (client.html)  ******
+::********************************************************
+:: the bundled http server serves client.html out of the buildresult directory, so build it here and copy
+:: it in next to the exe below. build.py is fast (about a second) and needs python on PATH.
+
+where python >nul 2>nul
+if errorlevel 1 (
+  echo   WARNING: python not on PATH - skipping client build, the served client.html may be stale or missing.
+) else (
+  echo Building the browser client client.html ...
+  python "%ROOT_DIRECTORY%\..\client-source-code\client-development\build.py"
+)
+
+
+::********************************************************
 ::******  at last, chat-server.exe build          ******
 ::********************************************************
 
@@ -344,6 +360,13 @@ cmake --build . -j%BUILD_JOBS%
 copy "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\dbip-country-lite-2025-06.mmdb" "%ROOT_DIRECTORY%\..\buildresult\"
 move "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll" "%ROOT_DIRECTORY%\..\buildresult\"
 move "%ROOT_DIRECTORY%\main\chat-server.exe" "%ROOT_DIRECTORY%\..\buildresult\"
+
+:: the page the bundled http server serves (built above)
+if exist "%ROOT_DIRECTORY%\..\client-source-code\client.html" (
+  copy /Y "%ROOT_DIRECTORY%\..\client-source-code\client.html" "%ROOT_DIRECTORY%\..\buildresult\"
+) else (
+  echo   WARNING: client.html not found - the bundled http server will have no page to serve.
+)
 
 
 ::********************************************************

@@ -540,13 +540,6 @@ label_audio_channel__process_client_channel_switch_end:
     return;
 }
 
-/* handles for one disconnected peer's libdatachannel objects, passed to the detached teardown thread */
-typedef struct webrtc_teardown_arg_t
-{
-    int peer_connection_handle;   // 0x0
-    int data_channel_handle;      // 0x4
-} webrtc_teardown_arg_t;
-
 /**
  * @brief detached thread that deletes a disconnected peer's libdatachannel objects, holding no locks
  *
@@ -605,8 +598,7 @@ void audio_channel__process_client_disconnect(client_t* client)
         return;
     }
 
-    /* snapshot the libdatachannel handles, then clear the slot so the lock-free relay callback stops
-       referencing this peer the moment we unlock */
+    /* snapshot the libdatachannel handles, then clear the slot so the lock-free relay callback stops referencing this peer the moment we unlock */
     peer_connection_handle = peer->peer_connection_handle;
     data_channel_handle = peer->data_channel_handle;
 
@@ -616,10 +608,10 @@ void audio_channel__process_client_disconnect(client_t* client)
 
     clib__unlock(&g_webrtc_muggles_rwlock_guard);
 
-    /* delete the libdatachannel objects on a detached thread that holds no locks. rtcDeletePeerConnection
-       blocks until libdatachannel's threads finish, and those callbacks need locks this disconnect path's
-       callers hold, so deleting inline deadlocked (the original code commented these out and leaked). doing
-       it off-thread, with nobody waiting on it, stops both the freeze and the per-disconnect leak */
+    /* delete the libdatachannel objects on a detached thread that holds no locks. rtcDeletePeerConnection   */
+    /* blocks until libdatachannel's threads finish, and those callbacks need locks this disconnect path's   */
+    /* callers hold, so deleting inline deadlocked (the original code commented these out and leaked). doing */
+    /* it off-thread, with nobody waiting on it, stops both the freeze and the per-disconnect leak           */
     if (peer_connection_handle != 0 || data_channel_handle != 0)
     {
         teardown_arg = (webrtc_teardown_arg_t*)memorymanager__allocate(sizeof(webrtc_teardown_arg_t), MEMALLOC_WEBRTC_PEERS);
@@ -687,11 +679,6 @@ void audio_channel__process_ice_candidate_from_remote_peer(client_t* client, cJS
     }
 
     DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "process_ice_candidate_from_remote_peer rtcAddRemoteCandidate \n");
-
-    /* improvement, better check the string length, max length must be known */
-    /* char* candidate_value = (char*)calloc(clib__utf8_string_length(cjson_candidate->valuestring), sizeof(char)); */
-
-    /* clib__copy_memory(cjson_candidate->valuestring, candidate_value, strlen(cjson_candidate->valuestring), strlen(cjson_candidate->valuestring)); */
 
     /* 3rd arg is the sdpMid (id of the SDP media section the candidate belongs to); 0 means the single default media line; WebRTC's other router is sdpMLineIndex, the m= line's zero-based position */
     rtcAddRemoteCandidate(peer->peer_connection_handle, cjson_candidate->valuestring, 0); /* it is possible that value cjson_candidate->valuestring will have to be stored on heap, test for crashes */
@@ -879,6 +866,16 @@ void audio_channel__send_music_bot_data(uint64 channel_id, unsigned char* data, 
     /* printf("%s %s", "datachannel_on_message_callback" , "\n"); */
     webrtc_peer_t* peer_receiver = 0;
     int dc = 0;
+
+    /* music bot audio has its own server-wide switch (is_music_bot_audio_active), independent of client
+       voice (is_voice_chat_active), so an admin can run "music bots only" with client voice off. it still
+       respects the per-channel audio toggle, like the client relay does */
+    if (g_server_settings.is_music_bot_audio_active == FALSE
+        || g_channel_array[channel_id].is_existing == FALSE
+        || g_channel_array[channel_id].is_audio_enabled == FALSE)
+    {
+        return;
+    }
 
     clib__read_lock(&g_webrtc_muggles_rwlock_guard);
 

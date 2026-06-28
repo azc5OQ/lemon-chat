@@ -96,6 +96,9 @@ int mytypedef__check_data_types_for_consistency(void);
 #define MAX_CLIENT_STORED_DATA 100
 #define MAX_ICONS 1000
 #define MAX_TAGS 1000
+#define MAX_BANS 1024
+#define BAN_IP_MAX_LENGTH 46
+#define BAN_EXTRA_DATA_MAX_LENGTH 256
 #define ROOT_CHANNEL_ID 0
 #define USERNAME_MAX_LENGTH 100
 #define TIMESTAMP_LAST_ACTION_COOLDOWN_MS 100
@@ -145,10 +148,12 @@ typedef struct server_settings
     boole is_same_ip_address_allowed;
     boole is_hide_clients_in_password_protected_channels_active;
     boole is_restrict_channel_deletion_creation_editing_to_admin_active;
+    boole is_temp_channel_creation_allowed;
     boole is_display_country_flags_active;
     boole is_display_admin_tag_active;
     boole is_idle_mode_allowed;
     boole is_voice_chat_active;
+    boole is_music_bot_audio_active;
     boole is_logging_of_failed_attempts_active;
     uint64 chat_cooldown_milliseconds;
     uint64 join_channel_request_cooldown_milliseconds;
@@ -248,8 +253,10 @@ typedef struct client_t
     boole is_public_key_challenge_sent;
     boole is_idle;
     boole is_music_bot;
+    boole is_temp_admin_channel; /* TRUE if this client owns a temp channel */
     uint64 client_id; /* client id is the same as the index of the client_t in clients_array */
     uint64 channel_id;
+    uint64 temp_channel_id; /* if is_temp_admin_channel, the id of the temp channel this client owns */
     int64 audio_state; /* 1 -> active, 2 -> not active but enabled, 3 -> disabled but audio still active, 4 -> audio disabled */
     uint64 timestamp_connected;
     uint64 timestamp_last_action;
@@ -276,9 +283,12 @@ typedef struct channel
     boole is_using_password;
     boole is_audio_enabled;
     boole is_music_bot_active_in_channel;
+    boole is_temp_channel;
+    boole is_client_limit_active;
     uint64 channel_id;
     uint64 parent_channel_id;
     uint64 current_clients;
+    uint64 max_client_count;
     uint64 type;
     uint64 maintainer_id;
     char name[CHANNEL_NAME_MAX_LENGTH];
@@ -306,6 +316,17 @@ typedef struct tag_t
     uint64 icon_id;
     char name[TAG_MAX_NAME_LENGTH];
 } tag_t;
+
+/* one persisted ban. matching is by ip address; the rest (country/identity/extra data) is recorded for the admin */
+typedef struct ban_entry_t
+{
+    boole is_existing;
+    uint64 timestamp_banned;
+    char ip_address[BAN_IP_MAX_LENGTH];
+    char country_iso_code[COUNTRY_ISO_CODE_LENGTH];
+    char identity[MAX_PUBLIC_KEY_LENGTH];
+    char extra_data[BAN_EXTRA_DATA_MAX_LENGTH];
+} ban_entry_t;
 
 typedef struct icon_t
 {
@@ -342,6 +363,7 @@ typedef enum memory_manager_allocation_type_e
     MEMALLOC_CLIENTS_ARRAY,
     MEMALLOC_CHANNELS_ARRAY,
     MEMALLOC_CLIENT_STORED_DATA_ARRAY,
+    MEMALLOC_BANS_ARRAY,
     MEMALLOC_FIND_MAINTAINER,
     MEMALLOC_MARKED_CLIENT_INDICES,
     MEMALLOC_OPUS_DATA_BUFFER_ENTRY,

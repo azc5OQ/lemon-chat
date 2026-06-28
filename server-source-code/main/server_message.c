@@ -88,6 +88,7 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     cJSON_AddStringToObject(json_message_object1, "type", "authentication_status");
     cJSON_AddStringToObject(json_message_object1, "value", "success");
     cJSON_AddBoolToObject(json_message_object1, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
+    cJSON_AddBoolToObject(json_message_object1, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
     cJSON_AddBoolToObject(json_message_object1, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
     cJSON_AddNumberToObject(json_message_object1, "stun_port", 3478);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -106,6 +107,107 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     }
 
     ws_sendframe_txt(websocket, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief sends one client's info (connected duration, ip, country, identity, last action) to a single
+ *        admin client, in reply to a get_client_info request
+ *
+ * @param client_t* receiving_client -> the admin the reply is sent to (provides the websocket + shared secret)
+ * @param client_t* target_client -> the client the info is about
+ *
+ * @attention caller must hold at least the clients read lock
+ *
+ * @return void
+ */
+void server_msg__send_client_info_to_single_client(client_t* receiving_client, client_t* target_client)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    uint64 now_ms = 0;
+    uint64 connected_seconds = 0;
+    uint64 last_action_seconds_ago = 0;
+
+    now_ms = base__get_timestamp_ms();
+    if (now_ms >= target_client->timestamp_connected)
+    {
+        connected_seconds = (now_ms - target_client->timestamp_connected) / 1000;
+    }
+    if (now_ms >= target_client->timestamp_last_action)
+    {
+        last_action_seconds_ago = (now_ms - target_client->timestamp_last_action) / 1000;
+    }
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "client_info");
+    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)target_client->client_id);
+    cJSON_AddNumberToObject(json_message_object1, "connected_seconds", (double)connected_seconds);
+    cJSON_AddNumberToObject(json_message_object1, "last_action_seconds_ago", (double)last_action_seconds_ago);
+    cJSON_AddStringToObject(json_message_object1, "ip_address", &target_client->ip_address[0]);
+    cJSON_AddStringToObject(json_message_object1, "country_iso_code", &target_client->country_iso_code[0]);
+    cJSON_AddStringToObject(json_message_object1, "identity", &target_client->public_key[0]);
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, receiving_client->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(receiving_client->p_ws_connection, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief tells a single client that the channel they tried to join is full (used by the capacity gate)
+ *
+ * @param client_t* client -> the client to notify
+ * @param uint64 channel_id -> the full channel
+ *
+ * @return void
+ */
+void server_msg__send_channel_full_to_single_client(client_t* client, uint64 channel_id)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "channel_full");
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)channel_id);
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(client->p_ws_connection, msg_text);
 
     memorymanager__free((nuint)msg_text);
 }
@@ -154,6 +256,9 @@ void server_msg__send_channel_list_to_single_client(ws_cli_conn_t* websocket, ch
         cJSON_AddBoolToObject(single_channel, "is_audio_enabled", g_channel_array[i].is_audio_enabled);
         cJSON_AddBoolToObject(single_channel, "is_root_channel", g_channel_array[i].is_root_channel);
         cJSON_AddBoolToObject(single_channel, "has_maintainer", g_channel_array[i].is_channel_maintainer_present);
+        cJSON_AddBoolToObject(single_channel, "is_temp_channel", g_channel_array[i].is_temp_channel);
+        cJSON_AddBoolToObject(single_channel, "is_client_limit_active", g_channel_array[i].is_client_limit_active);
+        cJSON_AddNumberToObject(single_channel, "max_client_count", (double)g_channel_array[i].max_client_count);
         cJSON_AddItemToArray(json_channel_array, single_channel);
     }
 
@@ -857,6 +962,10 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     char* msg_text = 0;
     cJSON* json_root_object1 = 0;
     cJSON* json_message_object1 = 0;
+    cJSON* json_bans = 0;
+    cJSON* json_ban = 0;
+    ban_entry_t* ban_in_loop = 0;
+    uint64 i = 0;
 
     json_root_object1 = cJSON_CreateObject();
     json_message_object1 = cJSON_CreateObject();
@@ -864,7 +973,31 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON_AddStringToObject(json_message_object1, "type", "server_settings_values");
     cJSON_AddItemToObject(json_message_object1, "display_country_flags", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "enable_audio", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "enable_music_bot_audio", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "hide_clients_in_password_channels", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "allow_temp_channels", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
+
+    /* include the current ban list so the admin's bans section can render it */
+    json_bans = cJSON_CreateArray();
+    cJSON_AddItemToObject(json_message_object1, "bans", json_bans);
+    clib__read_lock(&g_bans_global_rwlock_guard);
+    for (i = 0; i < MAX_BANS; i++)
+    {
+        ban_in_loop = &g_ban_array[i];
+        if (ban_in_loop->is_existing == FALSE)
+        {
+            continue;
+        }
+        json_ban = cJSON_CreateObject();
+        cJSON_AddStringToObject(json_ban, "ip_address", &ban_in_loop->ip_address[0]);
+        cJSON_AddStringToObject(json_ban, "country_iso_code", &ban_in_loop->country_iso_code[0]);
+        cJSON_AddStringToObject(json_ban, "identity", &ban_in_loop->identity[0]);
+        cJSON_AddStringToObject(json_ban, "extra_data", &ban_in_loop->extra_data[0]);
+        cJSON_AddNumberToObject(json_ban, "timestamp_banned", (double)ban_in_loop->timestamp_banned);
+        cJSON_AddItemToArray(json_bans, json_ban);
+    }
+    clib__unlock(&g_bans_global_rwlock_guard);
+
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
@@ -922,6 +1055,9 @@ void server_msg__send_channel_create_message_to_all_clients(uint64 created_chann
     cJSON_AddBoolToObject(json_message_object1, "is_audio_enabled", channel->is_audio_enabled);
     cJSON_AddBoolToObject(json_message_object1, "is_root_channel", channel->is_root_channel);
     cJSON_AddBoolToObject(json_message_object1, "has_maintainer", channel->is_channel_maintainer_present);
+    cJSON_AddBoolToObject(json_message_object1, "is_temp_channel", channel->is_temp_channel);
+    cJSON_AddBoolToObject(json_message_object1, "is_client_limit_active", channel->is_client_limit_active);
+    cJSON_AddNumberToObject(json_message_object1, "max_client_count", (double)channel->max_client_count);
     cJSON_AddNumberToObject(json_message_object1, "channel_creator_id", channel_creator_client_index);
 
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -997,6 +1133,8 @@ void server_msg__send_channel_edit_message_to_all_clients(uint64 edited_channel_
     cJSON_AddStringToObject(json_message_object1, "channel_description", channel->description);
     cJSON_AddBoolToObject(json_message_object1, "is_using_password", (cJSON_bool)channel->is_using_password);
     cJSON_AddBoolToObject(json_message_object1, "is_audio_enabled", (cJSON_bool)channel->is_audio_enabled);
+    cJSON_AddBoolToObject(json_message_object1, "is_client_limit_active", (cJSON_bool)channel->is_client_limit_active);
+    cJSON_AddNumberToObject(json_message_object1, "max_client_count", (double)channel->max_client_count);
     cJSON_AddNumberToObject(json_message_object1, "channel_editor_id", channel_editor_id);
 
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
