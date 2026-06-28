@@ -239,7 +239,7 @@ char *find_header_value(char *http_response_headers, char *header_name)
 
 char *get_forwarded_ip_address(char *hsrequest)
 {
-	char *ip_str = find_header_value(hsrequest, "X-Forwarded-For");
+	char *ip_str = find_header_value(hsrequest, "X-Stunnel-Client-IP");
 	if (ip_str == NULL)
 	{
 		DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] failed to find header \n");

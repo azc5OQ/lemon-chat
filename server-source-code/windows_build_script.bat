@@ -3,24 +3,27 @@
 ::
 ::this is the script that is supposed to be run in order to build chat-server.exe on windows
 ::every library needed to build this project is already included here and configured for convenience
-::this script builds third party libs here "in place", libraries used here are not binaries, they have to be build aswell, i thought it would be more trustworthy project if it build libs aswell instead of using precompiled ones, like other projects are doing
-::basically, you should just run the .bat file from cmd and it should build the chat-server.exe for you with all nessecary dependencies
+::this script builds the third-party libs here "in place" from source rather than using
+::precompiled binaries - building them from source makes the project more trustworthy.
+::basically, you just run this .bat from cmd and it should build chat-server.exe for you
+::with all the necessary dependencies.
 ::
 :: ****  BUT  *****
 ::
-::nothing is really that easy is it.  This project uses w64devkit toolchain, which can be thought of as an alternative to microsofts visual studio C++ toolchain.
-::toolchain is a collection of tools that build source code into binary files. (in case of this project, these tools are cmake, ld, gcc, gcc++, clang, ninja)
-::why w64devkit specifically? Because some libraries in this project need that to be built. server source code needed to be compatible with windows and linux so other solutions that visual studio were needed
-::I found w64devkit to be working while other not. Do what works for you
+::nothing is really that easy, is it. This project uses the w64devkit toolchain, which can be thought of as an alternative to Microsoft's Visual Studio C++ toolchain.
+::a toolchain is a collection of tools that build source code into binaries (here: cmake, ld, gcc, g++, clang, ninja)
+::why w64devkit specifically? Because some libraries in this project need it to build. The server source had to compile on both Windows and Linux, so a solution other than Visual Studio was needed.
+::I found w64devkit to work where others did not. Do what works for you
 ::
 :: The steps: 
 :: download w64devkit somewhere from internet, from github for example
 :: install / unpack w64devkit to location you want
-:: manually overwrite MINGWPATH variable in this .bat file, so that it poiints to your filesystem location of w64devkit bin folder. . My was C:/software/w64devkit/bin as you can see down below
+:: edit the MINGWPATH variable in this .bat file so that it points to your w64devkit "bin" folder. Mine was C:/software/w64devkit/bin, as you can see below
 ::
 
 
-SET "MINGWPATH=C:/software/w64devkit/bin" ::set this
+:: >>> EDIT THIS to point at your own w64devkit "bin" folder <<<
+SET "MINGWPATH=C:\Users\user\Downloads\w64devkit\bin"
 set "CMAKE_MAKE_PROGRAM=%MINGWPATH%\ninja.exe"
 SET "PATH=%MINGWPATH%;%PATH%"
 
@@ -35,8 +38,8 @@ SET "PATH=%MINGWPATH%;%PATH%"
 ::theldus-websocket (.a)
 ::chat-server (.exe)
 
-::there are a
-::libraries cJSON , console logging library (log), kokke-tiny-aes and ITH-SHA are built into .exe
+::the libraries cJSON, the console logging library (log), kokke-tiny-aes and ITH-SHA
+::are compiled directly into the .exe
 
 ::note, when using w64devkit toolchain, what would be a .lib file has an ".a" extension like on linux, not .lib .. .dll stays .dll
 
@@ -46,13 +49,34 @@ set "ROOT_DIRECTORY=%~dp0"
 
 set "THIRD_PARTY_DIRECTORY=%ROOT_DIRECTORY%third-party"
 
-echo %THIRD_PARTY_DIRECTORY%
+echo.
+echo You need these tools for building : cmake, w64devkit  [w64devkit provides gcc, g++, ld, ninja, make, windres]
+echo The optional stunnel/wss build also needs a full Perl, e.g. Strawberry Perl.
+
+:: ---- show the paths this build will use, and confirm before doing anything ----
+echo.
+echo The build will use these paths:
+echo.
+echo    MINGWPATH      = %MINGWPATH%
+echo    ninja          = %CMAKE_MAKE_PROGRAM%
+echo    gcc            = %MINGWPATH%/gcc.exe
+echo    g++            = %MINGWPATH%/g++.exe
+echo    ld             = %MINGWPATH%/ld.exe
+echo    project root   = %ROOT_DIRECTORY%
+echo    third-party    = %THIRD_PARTY_DIRECTORY%
+echo.
+set /p pathsok= "Are these paths correct? (y/n): "
+if /i not "%pathsok%"=="y" (
+  echo Aborting - edit MINGWPATH at the top of this script and run it again.
+  pause
+  exit /b 1
+)
 
 set /p choice= "clean files from previous build if any y/n: "
 
 echo %choice%
 
-IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
+IF /i "%choice%"=="y" (
   
   ::delete any files that might be leftovers from previous build
   ::checking if they exist is not needed, would only waste space in .bat file
@@ -119,12 +143,29 @@ IF /i "%choice%"=="Y" IF /i "%choice%"=="y" (
   rd "%ROOT_DIRECTORY%\main\.idea" /S /Q
 
   rd "%ROOT_DIRECTORY%\main\cmake-build-debug" /S /Q
+
+  :: stunnel + its OpenSSL dependency (binaries + build trees)
+  rd "%THIRD_PARTY_DIRECTORY%\stunnel\win-build" /S /Q
+  rd "%THIRD_PARTY_DIRECTORY%\stunnel\openssl" /S /Q
+  rd "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\obj" /S /Q
+  rd "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\bin" /S /Q
+  del "%ROOT_DIRECTORY%\..\buildresult\stunnel.exe"
 )
 
+
+set /p buildok= "Proceed with the build? (y/n): "
+if /i not "%buildok%"=="y" (
+  echo Build cancelled - no build performed.
+  pause
+  exit /b 0
+)
 
 
 set BUILD_CONFIG=Release
 ::set BUILD_CONFIG=Debug
+
+:: number of parallel build jobs passed to cmake/make (-j); lower it if you run out of RAM
+set "BUILD_JOBS=32"
 
 mkdir "%ROOT_DIRECTORY%\main\linkage-files\windows\"
 mkdir "%ROOT_DIRECTORY%\..\buildresult\"
@@ -155,7 +196,7 @@ cd mbedtls-3.6.6
 ::this command will call build tool "ninja". This tool can also be called directly, but its better to call it through cmake, otherwise ninja would have to be added into path of operating system
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
-cmake --build . -j32 --target mbedtls
+cmake --build . -j%BUILD_JOBS% --target mbedtls
 
 
 ::copy include folder from mbedtls dir to deps
@@ -186,12 +227,12 @@ cd ../
 cd libdatachannel-0.24.2
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
-cmake --build . -j32  --target datachannel
-::in case cmake --build . -j32  --target datachannel wasnt called, somehow old .a file was still generated from leftover files , I thought I cleared the cache
+cmake --build . -j%BUILD_JOBS%  --target datachannel
+::building the explicit "datachannel" target avoids picking up a stale .a from leftover files
 
 
 copy "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll" "%ROOT_DIRECTORY%\main\linkage-files\windows\libdatachannel.dll"
-::the .dll.a file is needed during linking its type of dynamic library that needs, i cant explain it well but its different kind of .a file that is needed for certain use of .dll, mingw produces that file
+::the .dll.a import library is needed at link time; mingw produces it alongside the .dll so other code can link against the DLL
 copy "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libdatachannel.dll.a"
 
 cd ../
@@ -203,7 +244,7 @@ cd ../
 cd libtom/libtommath
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
-cmake --build . -j32  --target libtommath
+cmake --build . -j%BUILD_JOBS%  --target libtommath
 
 copy "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\libtommath.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libtommath.a"
 
@@ -219,7 +260,7 @@ cd libtom/libtomcrypt
 :: Why doesn’t it have one? Because nobody has created it yet, but there is a pull request for it on GitHub.
 :: From my experience, it does not work with the CLion toolchain; you need to download the full MinGW toolchain.
 
-make -f makefile.mingw -j32
+make -f makefile.mingw -j%BUILD_JOBS%
 
 copy "%THIRD_PARTY_DIRECTORY%\libtom\libtomcrypt\libtomcrypt.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libtomcrypt.a"
 
@@ -234,7 +275,7 @@ cd ../../
 cd theldus-websocket
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
-cmake --build . -j32  --target ws
+cmake --build . -j%BUILD_JOBS%  --target ws
 
 copy "%THIRD_PARTY_DIRECTORY%\theldus-websocket\libws.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libws.a"
 
@@ -249,7 +290,7 @@ cd libviolet-0.5.4
 
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
-cmake --build . -j32  --target violet
+cmake --build . -j%BUILD_JOBS%  --target violet
 
 
 copy "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\libviolet.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libviolet.a"
@@ -264,7 +305,7 @@ cd "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\"
 make clean
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
-cmake --build . -j32 --target maxminddb
+cmake --build . -j%BUILD_JOBS% --target maxminddb
 
 copy "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libmaxminddb.a"
 
@@ -281,7 +322,7 @@ cd "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\"
 make clean
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
-cmake --build . -j32 --target opus
+cmake --build . -j%BUILD_JOBS% --target opus
 
 copy "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libopus.a"
 
@@ -297,12 +338,46 @@ cd ../../
 cd main
 
 cmake -G Ninja . -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" "-DCMAKE_LINKER=%CMAKE_LINKER%" -DCMAKE_C_COMPILER="%CMAKE_C_COMPILER%" -DCMAKE_CXX_COMPILER="%CMAKE_CXX_COMPILER%" "-DCMAKE_C_COMPILER_AR=%CMAKE_C_COMPILER_AR%" "-DCMAKE_C_COMPILER_RANLIB=%CMAKE_C_COMPILER_RANLIN%" "-DCMAKE_C_FLAGS=%CMAKE_C_FLAGS%" "-DCMAKE_C_FLAGS_DEBUG=%CMAKE_C_FLAGS_DEBUG%" "-DCMAKE_C_FLAGS_RELEASE=%CMAKE_C_FLAGS_RELEASE%" "-DCMAKE_C_FLAGS_MINSIZEREL=%CMAKE_C_FLAGS_MINSIZEREL%" "-DCMAKE_C_FLAGS_RELWITHDEBINFO=%CMAKE_C_FLAGS_RELWITHDEBINFO%"
-cmake --build . -j32
+cmake --build . -j%BUILD_JOBS%
 
 
 copy "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\dbip-country-lite-2025-06.mmdb" "%ROOT_DIRECTORY%\..\buildresult\"
 move "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll" "%ROOT_DIRECTORY%\..\buildresult\"
 move "%ROOT_DIRECTORY%\main\chat-server.exe" "%ROOT_DIRECTORY%\..\buildresult\"
+
+
+::********************************************************
+::****** optional: bundled stunnel - wss front-end ******
+::********************************************************
+:: stunnel.exe lets the server also serve wss:// on Windows, but building it needs
+:: a FULL Perl for OpenSSL. Git-for-Windows' Perl is too minimal; Strawberry Perl
+:: works. If no suitable Perl is found we SKIP stunnel and still finish the build -
+:: the server runs fine over ws:// without it.
+
+echo.
+perl -MExtUtils::MakeMaker -MLocale::Maketext::Simple -e "exit 0" 2>nul
+if errorlevel 1 goto stunnel_noperl
+echo Perl found - building the bundled stunnel wss front-end...
+where bash >nul 2>nul
+if errorlevel 1 goto stunnel_nobash
+bash "%THIRD_PARTY_DIRECTORY%\stunnel\_bundle_and_build_windows.sh"
+if exist "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\bin\MGW32\stunnel.exe" copy /Y "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\bin\MGW32\stunnel.exe" "%ROOT_DIRECTORY%\..\buildresult\stunnel.exe"
+goto stunnel_done
+
+:stunnel_nobash
+echo   bash not on PATH - run third-party\stunnel\_bundle_and_build_windows.sh manually to build stunnel.
+goto stunnel_done
+
+:stunnel_noperl
+echo ==========================================================================
+echo  NOTE: no suitable Perl found - SKIPPING the optional stunnel wss build.
+echo  The chat server is built and runs over ws:// without it. For wss on Windows
+echo  install Strawberry Perl from https://strawberryperl.com and then run
+echo  third-party\stunnel\_bundle_and_build_windows.sh with perl + w64devkit on PATH.
+echo ==========================================================================
+
+:stunnel_done
+echo.
 
 
 ::cd ../

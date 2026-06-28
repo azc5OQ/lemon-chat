@@ -1,0 +1,66 @@
+lemon-chat fix - WebRTC DTLS handshake fails (intermittently) under mbedTLS
+==========================================================================
+
+SYMPTOM
+  WebRTC audio sometimes fails to connect. ICE reaches connected/completed,
+  then DTLS aborts with "DTLS recv: Handshake failed: SSL - An invalid SSL
+  record was received" (mbedTLS error -0x7200); the peer goes RTC_FAILED.
+  The SAME mbedTLS build connects fine on some paths/servers and fails on
+  others - it is intermittent, not a different TLS backend.
+
+ROOT CAUSE
+  DtlsTransport::ReadCallback (the mbedTLS receive callback) in
+  src/impl/dtlstransport.cpp copies the incoming datagram into mbedTLS's input
+  buffer but returns `len` (the size of the buffer mbedTLS offered) instead of
+  the number of bytes it actually copied (the real datagram size). So mbedTLS
+  believes the datagram is `len` bytes long - the whole offered buffer - rather
+  than its true, smaller size, and keeps parsing past the real bytes into the
+  uninitialized tail of the buffer, where it reads a bogus record header
+  (content type 0) and aborts.
+
+  In the captured failure this broke FRAGMENT reassembly of a ClientHello
+  larger than the DTLS MTU: mid-reassembly mbedTLS looked for the next fragment
+  inside the same (falsely buffer-sized) datagram instead of the next datagram,
+  hit the stale tail, and failed. Whether it triggers depends on the datagram
+  sizes / fragmentation (ClientHello size vs the negotiated MTU) and on whatever
+  bytes happen to sit past the real datagram - all of which vary with the
+  network path. That environment-sensitivity is why the same build works on one
+  route (e.g. a remote server) and fails on another (e.g. locally).
+
+  For comparison, the GnuTLS receive callback in the same file returns the real
+  byte count (min(buffer, datagram)); the mbedTLS one returned the buffer size.
+
+FIX
+  Return the bytes actually copied (`bufMin`) instead of `len`.
+
+APPLY (from repo root, on a clean libdatachannel checkout):
+  git apply server-source-code/third-party/libdatachannel-0.24.2/src/impl/dtlstransport.cpp.patch
+REVERT:
+  git apply -R server-source-code/third-party/libdatachannel-0.24.2/src/impl/dtlstransport.cpp.patch
+  (or change `bufMin` back to `len` at the marked line in ReadCallback)
+
+Then rebuild only libdatachannel (it is loaded dynamically):
+  cd server-source-code/third-party/libdatachannel-0.24.2 && cmake --build . --target datachannel
+  cp libdatachannel.so ../../../buildresult/
+
+==========================================================================
+diff --git a/server-source-code/third-party/libdatachannel-0.24.2/src/impl/dtlstransport.cpp b/server-source-code/third-party/libdatachannel-0.24.2/src/impl/dtlstransport.cpp
+index a310b04..7619e0a 100644
+--- a/server-source-code/third-party/libdatachannel-0.24.2/src/impl/dtlstransport.cpp
++++ b/server-source-code/third-party/libdatachannel-0.24.2/src/impl/dtlstransport.cpp
+@@ -661,7 +661,14 @@ int DtlsTransport::ReadCallback(void *ctx, unsigned char *buf, size_t len) {
+ 
+ 			auto bufMin = std::min(len, size_t(message->size()));
+ 			std::memcpy(buf, message->data(), bufMin);
+-			return int(len);
++			// FIX (lemon-chat, see dtlstransport.cpp.patch): return the bytes
++			// actually copied (the datagram size), not the buffer size `len`.
++			// Returning `len` told mbedTLS the datagram filled its whole input
++			// buffer, so it parsed past the real data into uninitialized memory
++			// and aborted the DTLS handshake with "invalid record" (record type
++			// 0). The GnuTLS/OpenSSL ReadCallbacks already return the real size.
++			// To revert: change `bufMin` back to `len`.
++			return int(bufMin);
+ 		}
+ 
+ 		// Closed

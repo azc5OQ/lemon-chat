@@ -1,0 +1,107 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"programs/hash/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 14,
+				"parent" : 0
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "bin",
+			"paths" : 
+			[
+				"programs/hash/generic_sum.exe"
+			],
+			"targetId" : "generic_sum::@fe88f6e23c360cd58fd5",
+			"targetIndex" : 21,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"cxxModuleBmiTarget" : 
+			{
+				"id" : "generic_sum::@fe88f6e23c360cd58fd5",
+				"index" : 21
+			},
+			"destination" : "bin",
+			"type" : "cxxModuleBmi"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "bin",
+			"paths" : 
+			[
+				"programs/hash/hello.exe"
+			],
+			"targetId" : "hello::@fe88f6e23c360cd58fd5",
+			"targetIndex" : 22,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"cxxModuleBmiTarget" : 
+			{
+				"id" : "hello::@fe88f6e23c360cd58fd5",
+				"index" : 22
+			},
+			"destination" : "bin",
+			"type" : "cxxModuleBmi"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "bin",
+			"paths" : 
+			[
+				"programs/hash/md_hmac_demo.exe"
+			],
+			"targetId" : "md_hmac_demo::@fe88f6e23c360cd58fd5",
+			"targetIndex" : 34,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"cxxModuleBmiTarget" : 
+			{
+				"id" : "md_hmac_demo::@fe88f6e23c360cd58fd5",
+				"index" : 34
+			},
+			"destination" : "bin",
+			"type" : "cxxModuleBmi"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "programs/hash",
+		"source" : "programs/hash"
+	}
+}

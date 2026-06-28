@@ -1,5 +1,5 @@
-//TLS = thread local storage
-//FIFO = first in first out
+/* TLS = thread local storage */
+/* FIFO = first in first out */
 
 /*
  * custom_rwlock_t — reentrant, FIFO-fair, upgradeable reader-writer lock
@@ -64,68 +64,68 @@
    specific lock. Stored in a per-thread linked list (thread_lock_map_t). */
 typedef struct thread_lock_entry_t
 {
-	void *lock;
-	int read_count;
-	struct thread_lock_entry_t *next;
+    void* lock;
+    int read_count;
+    struct thread_lock_entry_t* next;
 } thread_lock_entry_t;
 
 /* Head of the per-thread linked list of thread_lock_entry_t nodes.
    Stored in TLS — one instance per thread, allocated on first use. */
 typedef struct thread_lock_map_t
 {
-	thread_lock_entry_t *head;
+    thread_lock_entry_t* head;
 } thread_lock_map_t;
 
 /* One node in the FIFO wait queue. Each thread that cannot acquire
    immediately allocates one, enqueues it, and sleeps on cv. */
 typedef struct fifo_rwlock_node_t
 {
-	boole is_writer;
-	pthread_cond_t cv;
-	unsigned int ticket;
-	struct fifo_rwlock_node_t *next;
+    boole is_writer;
+    pthread_cond_t cv;
+    unsigned int ticket;
+    struct fifo_rwlock_node_t* next;
 } fifo_rwlock_node_t;
 
 typedef struct custom_rwlock_t
 {
-	pthread_mutex_t mutex; /* guards all fields below */
+    pthread_mutex_t mutex; /* guards all fields below */
 
-	/* FIFO ticket system — every caller takes a ticket from next_ticket,
-	   then waits until serving_ticket reaches their ticket value.
-	   unsigned int gives well-defined wrap-around after 2^32 cycles. */
-	unsigned int next_ticket;
-	unsigned int serving_ticket;
+    /* FIFO ticket system — every caller takes a ticket from next_ticket,
+       then waits until serving_ticket reaches their ticket value.
+       unsigned int gives well-defined wrap-around after 2^32 cycles. */
+    unsigned int next_ticket;
+    unsigned int serving_ticket;
 
-	/* Writer identity and recursion depth.
-	   write_recursion > 0 means a writer holds the lock.
-	   writer_thread is the pthread_t of that writer.
-	   Nested write_lock calls increment write_recursion; each clib__unlock
-	   decrements it; the lock is released when it reaches 0. */
-	pthread_t writer_thread;
-	int write_recursion;
+    /* Writer identity and recursion depth.
+       write_recursion > 0 means a writer holds the lock.
+       writer_thread is the pthread_t of that writer.
+       Nested write_lock calls increment write_recursion; each clib__unlock
+       decrements it; the lock is released when it reaches 0. */
+    pthread_t writer_thread;
+    int write_recursion;
 
-	/* Total number of active reader acquisitions, including recursive ones.
-	   Does NOT count nested reads acquired by the current writer (those go
-	   through fast-path 1 and only increment the per-thread TLS counter). */
-	int num_readers;
+    /* Total number of active reader acquisitions, including recursive ones.
+       Does NOT count nested reads acquired by the current writer (those go
+       through fast-path 1 and only increment the per-thread TLS counter). */
+    int num_readers;
 
-	fifo_rwlock_node_t *queue_head;
-	fifo_rwlock_node_t *queue_tail;
+    fifo_rwlock_node_t* queue_head;
+    fifo_rwlock_node_t* queue_tail;
 
-	/* Read-to-write upgrade state.
-	   upgrade_pending is set to 1 while a thread is waiting to upgrade its
-	   read lock to a write lock. During this window, new slow-path readers
-	   are blocked so the upgrader cannot be indefinitely delayed. upgrade_cv
-	   is the condition the upgrader sleeps on while waiting for other readers
-	   to drain. */
-	int upgrade_pending;
-	pthread_cond_t upgrade_cv;
+    /* Read-to-write upgrade state.
+       upgrade_pending is set to 1 while a thread is waiting to upgrade its
+       read lock to a write lock. During this window, new slow-path readers
+       are blocked so the upgrader cannot be indefinitely delayed. upgrade_cv
+       is the condition the upgrader sleeps on while waiting for other readers
+       to drain. */
+    int upgrade_pending;
+    pthread_cond_t upgrade_cv;
 } custom_rwlock_t;
 
-void clib__rwlock_init(custom_rwlock_t *lock);
-void clib__rwlock_destroy(custom_rwlock_t *lock);
-void clib__read_lock(custom_rwlock_t *lock);
-void clib__write_lock(custom_rwlock_t *lock); /* also upgrades automatically if called while holding a read lock */
-void clib__unlock(custom_rwlock_t *lock);
+void clib__rwlock_init(custom_rwlock_t* lock);
+void clib__rwlock_destroy(custom_rwlock_t* lock);
+void clib__read_lock(custom_rwlock_t* lock);
+void clib__write_lock(custom_rwlock_t* lock); /* also upgrades automatically if called while holding a read lock */
+void clib__unlock(custom_rwlock_t* lock);
 
 #endif

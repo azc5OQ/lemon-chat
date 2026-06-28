@@ -864,8 +864,15 @@ static int do_handshake(struct ws_frame_data *wfd)
 	wfd->cur_pos = (size_t)((ptrdiff_t)(p - (char *)wfd->frm)) + 4;
 
 	char *forwarded_ip_address = 0;
-	//get forwarded ip address that stunnel sent
-	forwarded_ip_address = get_forwarded_ip_address((char *)wfd->frm);
+	/* Only trust the X-Stunnel-Client-IP header when the connection comes from
+	 * our local stunnel front-end (127.0.0.1). A direct (non-stunnel) client
+	 * must not be able to spoof its address, so for those we ignore the header
+	 * and fall back to the real socket address below. */
+	if (strcmp(wfd->client->ip, "127.0.0.1") == 0)
+	{
+		//get forwarded ip address that stunnel sent
+		forwarded_ip_address = get_forwarded_ip_address((char *)wfd->frm);
+	}
 
 	if (forwarded_ip_address != 0)
 	{

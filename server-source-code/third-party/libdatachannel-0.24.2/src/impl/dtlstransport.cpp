@@ -661,7 +661,14 @@ int DtlsTransport::ReadCallback(void *ctx, unsigned char *buf, size_t len) {
 
 			auto bufMin = std::min(len, size_t(message->size()));
 			std::memcpy(buf, message->data(), bufMin);
-			return int(len);
+			// FIX (lemon-chat, see dtlstransport.cpp.patch): return the bytes
+			// actually copied (the datagram size), not the buffer size `len`.
+			// Returning `len` told mbedTLS the datagram filled its whole input
+			// buffer, so it parsed past the real data into uninitialized memory
+			// and aborted the DTLS handshake with "invalid record" (record type
+			// 0). The GnuTLS/OpenSSL ReadCallbacks already return the real size.
+			// To revert: change `bufMin` back to `len`.
+			return int(bufMin);
 		}
 
 		// Closed

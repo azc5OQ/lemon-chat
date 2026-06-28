@@ -1,0 +1,72 @@
+# OpenSSL configuration file to create a server certificate
+# by Michal Trojnara 1998-2025
+
+# Use this in order to automatically load providers.
+openssl_conf = openssl_init
+
+# Comment out the next line to ignore configuration errors
+config_diagnostics = 1
+
+# For FIPS
+#.include "../config/fipsmodule.cnf"
+
+[openssl_init]
+#providers = provider_sect
+alg_section = evp_properties
+
+# List of providers to load
+[provider_sect]
+default = default_sect
+#fips = fips_sect
+
+# To enforce FIPS mode for the application
+[evp_properties]
+#default_properties = "fips=yes"
+
+[default_sect]
+activate = 1
+
+[ req ]
+# comment out the next line to protect the private key with a passphrase
+encrypt_key                     = no
+# the default key length is secure and quite fast - do not change it
+default_bits                    = 2048
+default_md                      = sha256
+x509_extensions                 = stunnel_extensions
+distinguished_name              = stunnel_dn
+
+[ stunnel_extensions ]
+nsCertType                      = server, client
+basicConstraints                = CA:TRUE,pathlen:0
+keyUsage                        = keyCertSign, digitalSignature, keyEncipherment
+extendedKeyUsage                = serverAuth, clientAuth
+nsComment                       = "stunnel self-signed certificate"
+
+[ stunnel_dn ]
+countryName = Country Name (2 letter code)
+countryName_default             = PL
+countryName_min                 = 2
+countryName_max                 = 2
+
+stateOrProvinceName             = State or Province Name (full name)
+stateOrProvinceName_default     = Mazovia Province
+
+localityName                    = Locality Name (eg, city)
+localityName_default            = Warsaw
+
+organizationName                = Organization Name (eg, company)
+organizationName_default        = Stunnel Developers
+
+organizationalUnitName          = Organizational Unit Name (eg, section)
+organizationalUnitName_default  = Provisional CA
+
+0.commonName                    = Common Name (FQDN of your server)
+0.commonName_default            = localhost
+
+# To create a certificate for more than one name uncomment:
+# 1.commonName                  = DNS alias of your server
+# 2.commonName                  = DNS alias of your server
+# ...
+# See http://home.netscape.com/eng/security/ssl_2.0_certificate.html
+# to see how Netscape understands commonName.
+

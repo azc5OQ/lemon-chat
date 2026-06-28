@@ -1,0 +1,85 @@
+lemon-chat - inject X-Stunnel-Client-IP and strip client-supplied copies
+========================================================================
+Adapts the bundled WT X-Forwarded patch to:
+  - inject the header "X-Stunnel-Client-IP" (was X-Forwarded-For), and
+  - STRIP any client-supplied X-Stunnel-Client-IP header from the request
+    first, so the backend only ever sees the trusted value stunnel adds from
+    the real peer address.
+
+  src/client.c  : header name + length math + the strip loop
+  src/options.c : option help text
+
+APPLY  (from the stunnel-5.75 dir):  patch -p1 <  src/xstunnelclientip.patch
+REVERT (from the stunnel-5.75 dir):  patch -p1 -R < src/xstunnelclientip.patch
+========================================================================
+--- a/src/client.c
++++ b/src/client.c
+@@ -1227,23 +1227,51 @@
+ 
+ 			if (c->opt->option.xforwardedfor)
+ 			{
+-			    /* X-Forwarded-For: xxxx \r\n\0 */
+-			    char xforw[17 + IPLEN + 3];
++			    /* X-Stunnel-Client-IP: xxxx \r\n\0 */
++			    char xforw[21 + IPLEN + 3];
++
++		    /* Strip any client-supplied X-Stunnel-Client-IP header(s) from the
++		     * request, so that only the trusted one we append below (taken from
++		     * the real peer address) survives and reaches the backend. */
++		    {
++			static const char xsci_name[] = "X-Stunnel-Client-IP";
++			int xsci_len = (int)(sizeof(xsci_name) - 1);
++			int i = 0;
++			while (i < last) {
++			    if (i + xsci_len <= last &&
++				strncasecmp(c->ssl_buff + i, xsci_name, xsci_len) == 0) {
++				int j = i;
++				while (j < c->ssl_ptr && c->ssl_buff[j] != '\n')
++				    j++;
++				if (j < c->ssl_ptr)
++				    j++; /* include the trailing newline */
++				memmove(c->ssl_buff + i, c->ssl_buff + j,
++					(size_t)(c->ssl_ptr - j));
++				c->ssl_ptr -= (j - i);
++				last -= (j - i);
++			    } else {
++				while (i < last && c->ssl_buff[i] != '\n')
++				    i++;
++				if (i < last)
++				    i++;
++			    }
++			}
++		    }
+ 
+ 			    /*
+-			     * We will insert our X-Forwarded-For: header here.
++			     * We will insert our X-Stunnel-Client-IP: header here.
+ 			     * We need to write the IP address, but if we use
+ 			     * sprintf, it will pad with the terminating 0.
+ 			     * So we will pass via a temporary buffer allocated
+ 			     * on the stack.
+ 			     */
+-			    memcpy(xforw, "X-Forwarded-For: ", 17);
++			    memcpy(xforw, "X-Stunnel-Client-IP: ", 21);
+ 			    if (getnameinfo(&c->peer_addr.sa,
+ 					    c->peer_addr_len,
+-					    xforw + 17, IPLEN, NULL, 0,
++					    xforw + 21, IPLEN, NULL, 0,
+ 					    NI_NUMERICHOST) == 0)
+ 			    {
+-				strcat(xforw + 17, "\r\n");
++				strcat(xforw + 21, "\r\n");
+ 				buffer_insert(c->ssl_buff, &last, &c->ssl_ptr,
+ 					      c->buffsize, xforw);
+ 			    }
+--- a/src/options.c
++++ b/src/options.c
+@@ -2260,7 +2260,7 @@
+             return "argument should be either 'yes' or 'no'";
+         return NULL; /* OK */
+     case CMD_PRINT_HELP:
+-        s_log(LOG_NOTICE, "%-22s = yes|no append an HTTP X-Forwarded-For header",
++        s_log(LOG_NOTICE, "%-22s = yes|no append an HTTP X-Stunnel-Client-IP header",
+             "xforwardedfor");
+         break;
+     }

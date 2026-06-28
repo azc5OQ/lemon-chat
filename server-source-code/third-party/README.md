@@ -51,6 +51,18 @@ here for better organization.
 - dr_mp3 (single header file)
 - kokke-tiny-aes-c
 
+## stunnel (standalone TLS proxy)
+
+Unlike the entries above, `stunnel` is **not** a library linked into the server —
+it is a standalone executable. It terminates TLS in front of the plaintext
+WebSocket so the client works on HTTPS pages (over `wss://`), and is patched to
+pass the real client IP to the server as an `X-Stunnel-Client-IP` header.
+
+It is built separately from the CMake libraries by `stunnel/_bundle_and_build.sh`,
+which bundles a static OpenSSL and produces a self-contained binary. The main
+build scripts call that script and copy the resulting `stunnel` next to
+`chat-server` so the server can launch it on demand.
+
 ## How the libraries are used
 
 Libraries can also be categorized by how they are used. For example,
@@ -76,5 +88,6 @@ uses libviolet directly.
 | libviolet | TURN/STUN functionality for the main project; also a dependency of libdatachannel |
 | mbedtls-3.6.6 | Dependency of libdatachannel; also used for general cryptographic operations |
 | rxi-log | Logging |
+| stunnel | Standalone TLS proxy (not linked in); terminates HTTPS/`wss` in front of the plaintext WebSocket so the chat works on HTTPS sites, forwarding the real client IP as `X-Stunnel-Client-IP`. The server can launch it automatically |
 | theldus-websocket | WebSocket functionality |
 | zhicheng | Base64 encoding/decoding |

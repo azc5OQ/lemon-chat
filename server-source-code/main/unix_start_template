@@ -44,5 +44,24 @@ ulimit -n 65535
 #unlike windows, linux doesnt look for dynamic libraries in current working directory, so you have to tell him where to look for .so files (.dll equivalent)
 
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$PWD"
-./chat-server.bin
+
+# Auto-restart on crash, if enabled in server_settings.json ("restart_on_crash": true).
+# A clean exit (code 0) stops the loop; a crash (non-zero exit) is timestamped into
+# crashes.txt and the server is relaunched. Ctrl+C / SIGTERM stops the loop.
+if [ -f server_settings.json ] && grep -Eq '"restart_on_crash"[[:space:]]*:[[:space:]]*true' server_settings.json; then
+    trap 'echo; echo "stopping (signal received)."; exit 0' INT TERM
+    while true; do
+        ./chat-server.bin
+        EXIT_CODE=$?
+        if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "server exited cleanly (code 0); not restarting."
+            break
+        fi
+        echo "$(date '+%Y-%m-%d %H:%M:%S') server crashed (exit code $EXIT_CODE), restarting" >> crashes.txt
+        echo "server crashed (exit code $EXIT_CODE) - restarting in 3s (Ctrl+C to stop)..."
+        sleep 3
+    done
+else
+    ./chat-server.bin
+fi
 

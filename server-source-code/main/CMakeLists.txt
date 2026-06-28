@@ -47,6 +47,7 @@ add_executable(chat-server
         ip_tools.c
         musicbot.c
         util.c
+        http/http_server.c
         )
 
 

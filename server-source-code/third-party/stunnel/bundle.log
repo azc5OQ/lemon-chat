@@ -1,0 +1,368 @@
+
+==================== bundled OpenSSL ====================
+-rw-r--r-- 1 user user 12386648 Jun 24 17:38 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/openssl/lib/libcrypto.a
+-rw-r--r-- 1 user user  2138148 Jun 24 17:38 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/openssl/lib/libssl.a
+-rw-r--r-- 1 user user 12386648 Jun 24 17:38 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/openssl/lib64/libcrypto.a
+-rw-r--r-- 1 user user  2138148 Jun 24 17:38 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/openssl/lib64/libssl.a
+
+==================== configuring + building stunnel against bundled OpenSSL ====================
+configure: **************************************** initialization
+checking for a BSD-compatible install... /usr/bin/install -c
+checking whether sleep supports fractional seconds... yes
+checking filesystem timestamp resolution... 0.01
+checking whether build environment is sane... yes
+checking for a race-free mkdir -p... /usr/bin/mkdir -p
+checking for gawk... gawk
+checking whether make sets $(MAKE)... yes
+checking whether make supports nested variables... yes
+checking xargs -n works... yes
+checking build system type... x86_64-pc-linux-gnu
+checking host system type... x86_64-pc-linux-gnu
+checking for gcc... gcc
+checking whether the C compiler works... yes
+checking for C compiler default output file name... a.out
+checking for suffix of executables... 
+checking whether we are cross compiling... no
+checking for suffix of object files... o
+checking whether the compiler supports GNU C... yes
+checking whether gcc accepts -g... yes
+checking for gcc option to enable C11 features... none needed
+checking whether gcc understands -c and -o together... yes
+checking whether make supports the include directive... yes (GNU style)
+checking dependency style of gcc... gcc3
+checking whether make sets $(MAKE)... (cached) yes
+configure: **************************************** bash completion
+checking for bashcompdir... 
+configure: **************************************** thread model
+checking for a sed that does not truncate output... /usr/bin/sed
+checking how to run the C preprocessor... gcc -E
+checking for egrep -e... /usr/bin/grep -E
+checking whether gcc is Clang... no
+checking whether pthreads work with "-pthread" and "-lpthread"... yes
+checking for joinable pthread attribute... PTHREAD_CREATE_JOINABLE
+checking whether more special flags are required for pthreads... no
+checking for PTHREAD_PRIO_INHERIT... yes
+configure: PTHREAD thread model detected
+configure: **************************************** compiler/linker flags
+checking whether C compiler accepts -Wall... yes
+checking whether C compiler accepts -Wextra... yes
+checking whether C compiler accepts -Wpedantic... yes
+checking whether C compiler accepts -Wformat=2... yes
+checking whether C compiler accepts -Wconversion... yes
+checking whether C compiler accepts -Wno-deprecated-declarations... yes
+checking whether C compiler accepts -Wno-unused-command-line-argument... yes
+checking whether C compiler accepts -fPIE... yes
+checking whether C compiler accepts -fstack-protector-strong... yes
+checking whether C compiler accepts -fcf-protection=full... yes
+checking whether C compiler accepts -fstack-clash-protection... yes
+checking whether the linker accepts -fPIE... yes
+checking whether the linker accepts -pie... yes
+checking whether the linker accepts -Wl,-z,relro... yes
+checking whether the linker accepts -Wl,-z,now... yes
+checking whether the linker accepts -Wl,-z,noexecstack... yes
+checking whether C compiler accepts -D_FORTIFY_SOURCE=2... yes
+configure: **************************************** libtool
+checking how to print strings... printf
+checking for a sed that does not truncate output... (cached) /usr/bin/sed
+checking for grep that handles long lines and -e... /usr/bin/grep
+checking for egrep... /usr/bin/grep -E
+checking for fgrep... /usr/bin/grep -F
+checking for ld used by gcc... /usr/bin/x86_64-linux-gnu-ld
+checking if the linker (/usr/bin/x86_64-linux-gnu-ld) is GNU ld... yes
+checking for BSD- or MS-compatible name lister (nm)... /usr/bin/nm -B
+checking the name lister (/usr/bin/nm -B) interface... BSD nm
+checking whether ln -s works... yes
+checking the maximum length of command line arguments... 1572864
+checking how to convert x86_64-pc-linux-gnu file names to x86_64-pc-linux-gnu format... func_convert_file_noop
+checking how to convert x86_64-pc-linux-gnu file names to toolchain format... func_convert_file_noop
+checking for /usr/bin/x86_64-linux-gnu-ld option to reload object files... -r
+checking for file... file
+checking for objdump... objdump
+checking how to recognize dependent libraries... pass_all
+checking for dlltool... no
+checking how to associate runtime and link libraries... printf %s\n
+checking for ranlib... ranlib
+checking for ar... ar
+checking for archiver @FILE support... @
+checking for strip... strip
+checking command to parse /usr/bin/nm -B output from gcc object... ok
+checking for sysroot... no
+checking for a working dd... /usr/bin/dd
+checking how to truncate binary pipes... /usr/bin/dd bs=4096 count=1
+checking for mt... no
+checking if : is a manifest tool... no
+checking for stdio.h... yes
+checking for stdlib.h... yes
+checking for string.h... yes
+checking for inttypes.h... yes
+checking for stdint.h... yes
+checking for strings.h... yes
+checking for sys/stat.h... yes
+checking for sys/types.h... yes
+checking for unistd.h... yes
+checking for dlfcn.h... yes
+checking for objdir... .libs
+checking if gcc supports -fno-rtti -fno-exceptions... no
+checking for gcc option to produce PIC... -fPIC -DPIC
+checking if gcc PIC flag -fPIC -DPIC works... yes
+checking if gcc static flag -static works... yes
+checking if gcc supports -c -o file.o... yes
+checking if gcc supports -c -o file.o... (cached) yes
+checking whether the gcc linker (/usr/bin/x86_64-linux-gnu-ld -m elf_x86_64) supports shared libraries... yes
+checking whether -lc should be explicitly linked in... no
+checking dynamic linker characteristics... GNU/Linux ld.so
+checking how to hardcode library paths into programs... immediate
+checking whether stripping libraries is possible... yes
+checking if libtool supports shared libraries... yes
+checking whether to build shared libraries... yes
+checking whether to build static libraries... no
+configure: **************************************** types
+checking for int8_t... yes
+checking for int16_t... yes
+checking for int32_t... yes
+checking for int64_t... yes
+checking for uint8_t... yes
+checking for uint16_t... yes
+checking for uint32_t... yes
+checking for uint64_t... yes
+checking for size_t... yes
+checking for ssize_t... yes
+checking for uid_t... yes
+checking for gid_t... yes
+checking for socklen_t... yes
+checking for struct sockaddr_un... yes
+checking for struct addrinfo... yes
+configure: **************************************** PTY device files
+checking for "/dev/ptmx"... yes
+checking for "/dev/ptc"... no
+configure: **************************************** entropy sources
+checking for "/dev/urandom"... yes
+configure: **************************************** default group
+checking for default group... nogroup
+checking for gcc option to enable large file support... none needed
+configure: **************************************** header files
+checking for stdint.h... (cached) yes
+checking for inttypes.h... (cached) yes
+checking for malloc.h... yes
+checking for ucontext.h... yes
+checking for pthread.h... yes
+checking for poll.h... yes
+checking for tcpd.h... no
+checking for stropts.h... no
+checking for grp.h... yes
+checking for unistd.h... (cached) yes
+checking for util.h... no
+checking for libutil.h... no
+checking for pty.h... yes
+checking for limits.h... yes
+checking for sys/types.h... (cached) yes
+checking for sys/select.h... yes
+checking for sys/poll.h... yes
+checking for sys/socket.h... yes
+checking for sys/un.h... yes
+checking for sys/ioctl.h... yes
+checking for sys/filio.h... no
+checking for sys/resource.h... yes
+checking for sys/uio.h... yes
+checking for sys/syscall.h... yes
+checking for sys/param.h... yes
+checking for linux/sched.h... yes
+checking for struct msghdr.msg_control... yes
+checking for linux/netfilter_ipv4.h... yes
+checking for mimalloc.h... no
+configure: **************************************** libraries
+checking for library containing gethostbyname... none required
+checking for library containing yp_get_default_domain... no
+checking for library containing socket... none required
+checking for library containing openpty... none required
+checking for library containing dlopen... none required
+checking for library containing shl_load... no
+checking for library containing mi_malloc... no
+configure: **************************************** library functions
+checking for snprintf... yes
+checking for vsnprintf... yes
+checking for openpty... yes
+checking for _getpty... no
+checking for daemon... yes
+checking for waitpid... yes
+checking for wait4... yes
+checking for setsid... yes
+checking for setgroups... yes
+checking for chroot... yes
+checking for realpath... yes
+checking for sysconf... yes
+checking for getrlimit... yes
+checking for pthread_sigmask... yes
+checking for localtime_r... yes
+checking for getcontext... yes
+checking for __makecontext_v2... no
+checking for poll... yes
+checking for gethostbyname2... yes
+checking for endhostent... yes
+checking for getnameinfo... yes
+checking for getaddrinfo... yes
+checking for broken poll() implementation... no
+checking for pipe2... yes
+checking for accept4... yes
+configure: **************************************** optional features
+checking whether to enable IPv6 support... yes (default)
+checking whether to enable FIPS support... autodetecting
+checking whether to enable systemd socket activation support... autodetecting
+checking for library containing sd_listen_fds... no
+configure: systemd library not found
+checking whether to enable TCP wrappers support... autodetecting
+checking for hosts_access in -lwrap... no
+configure: libwrap library not found
+configure: **************************************** TLS
+checking for TLS directory... /mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/openssl
+checking for FIPS_mode_set... no
+checking for OSSL_PROVIDER_available... yes
+configure: FIPS support enabled
+checking whether DH parameters need to be updated... no
+configure: updating version.txt
+configure: **************************************** write the results
+checking that generated files are newer than configure... done
+configure: creating ./config.status
+config.status: creating Makefile
+config.status: creating src/Makefile
+config.status: creating doc/Makefile
+config.status: creating tools/Makefile
+config.status: creating tests/Makefile
+config.status: creating tests/certs/Makefile
+config.status: creating src/config.h
+config.status: executing depfiles commands
+config.status: executing libtool commands
+configure: **************************************** success
+Making all in src
+make[1]: Entering directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/src'
+make  all-am
+make[2]: Entering directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/src'
+  CC       stunnel-tls.o
+  CC       stunnel-str.o
+  CC       stunnel-file.o
+  CC       stunnel-client.o
+  CC       stunnel-log.o
+client.c: In function ‘buffer_insert_with_len’:
+client.c:129:59: warning: conversion to ‘long unsigned int’ from ‘int’ may change the sign of the result [-Wsign-conversion]
+  129 |     memmove(buffer + *start + len, buffer + *start, *stop - *start);
+      |                                                     ~~~~~~^~~~~~~~
+client.c:130:37: warning: conversion to ‘long unsigned int’ from ‘int’ may change the sign of the result [-Wsign-conversion]
+  130 |     memcpy(buffer + *start, string, len);
+      |                                     ^~~
+client.c: In function ‘buffer_insert’:
+client.c:140:71: warning: conversion from ‘size_t’ {aka ‘long unsigned int’} to ‘int’ may change value [-Wconversion]
+  140 |     return buffer_insert_with_len(buffer, start, stop, limit, string, strlen(string));
+      |                                                                       ^~~~~~~~~~~~~~
+client.c: In function ‘transfer’:
+client.c:1181:32: warning: conversion from ‘size_t’ {aka ‘long unsigned int’} to ‘int’ may change value [-Wconversion]
+ 1181 |                     int last = c->ssl_ptr;
+      |                                ^
+client.c:1182:32: warning: conversion to ‘size_t’ {aka ‘long unsigned int’} from ‘int’ may change the sign of the result [-Wsign-conversion]
+ 1182 |                     c->ssl_ptr += num;
+      |                                ^~
+client.c:1190:33: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+ 1190 |                     while (last < c->ssl_ptr)
+      |                                 ^
+client.c:1199:39: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+ 1199 |                         else if (last < c->ssl_ptr - 1 &&
+      |                                       ^
+client.c:1242:73: warning: conversion to ‘size_t’ {aka ‘long unsigned int’} from ‘int’ may change the sign of the result [-Wsign-conversion]
+ 1242 |                                 strncasecmp(c->ssl_buff + i, xsci_name, xsci_len) == 0) {
+      |                                                                         ^~~~~~~~
+client.c:1244:42: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+ 1244 |                                 while (j < c->ssl_ptr && c->ssl_buff[j] != '\n')
+      |                                          ^
+client.c:1246:39: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+ 1246 |                                 if (j < c->ssl_ptr)
+      |                                       ^
+client.c:1249:61: warning: conversion to ‘size_t’ {aka ‘long unsigned int’} from ‘int’ may change the sign of the result [-Wsign-conversion]
+ 1249 |                                         (size_t)(c->ssl_ptr - j));
+      |                                                             ^
+client.c:1250:44: warning: conversion to ‘size_t’ {aka ‘long unsigned int’} from ‘int’ may change the sign of the result [-Wsign-conversion]
+ 1250 |                                 c->ssl_ptr -= (j - i);
+      |                                            ^~
+client.c:1275:67: warning: passing argument 3 of ‘buffer_insert’ from incompatible pointer type [-Wincompatible-pointer-types]
+ 1275 |                                 buffer_insert(c->ssl_buff, &last, &c->ssl_ptr,
+      |                                                                   ^~~~~~~~~~~
+      |                                                                   |
+      |                                                                   size_t * {aka long unsigned int *}
+client.c:138:57: note: expected ‘int *’ but argument is of type ‘size_t *’ {aka ‘long unsigned int *’}
+  138 | static int buffer_insert(char *buffer, int *start, int *stop, int limit, char *string)
+      |                                                    ~~~~~^~~~
+client.c:1289:32: warning: conversion to ‘size_t’ {aka ‘long unsigned int’} from ‘int’ may change the sign of the result [-Wsign-conversion]
+ 1289 |                     c->ssl_ptr += num;
+      |                                ^~
+  CC       stunnel-options.o
+At top level:
+cc1: note: unrecognized command-line option ‘-Wno-unused-command-line-argument’ may have been intended to silence earlier diagnostics
+  CC       stunnel-protocol.o
+options.c: In function ‘parse_service_option’:
+options.c:2248:5: warning: enumeration value ‘CMD_SET_COPY’ not handled in switch [-Wswitch]
+ 2248 |     switch(cmd) {
+      |     ^~~~~~
+options.c:2248:5: warning: enumeration value ‘CMD_FREE’ not handled in switch [-Wswitch]
+options.c:2248:5: warning: enumeration value ‘CMD_INITIALIZE’ not handled in switch [-Wswitch]
+options.c:2248:5: warning: enumeration value ‘CMD_PRINT_DEFAULTS’ not handled in switch [-Wswitch]
+protocol.c: In function ‘capwin_decode’:
+protocol.c:1772:8: warning: assignment discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+ 1772 |     us1=strchr(src, '\x1f');
+      |        ^
+At top level:
+cc1: note: unrecognized command-line option ‘-Wno-unused-command-line-argument’ may have been intended to silence earlier diagnostics
+  CC       stunnel-network.o
+At top level:
+cc1: note: unrecognized command-line option ‘-Wno-unused-command-line-argument’ may have been intended to silence earlier diagnostics
+  CC       stunnel-resolver.o
+  CC       stunnel-ssl.o
+  CC       stunnel-ctx.o
+  CC       stunnel-verify.o
+  CC       stunnel-sthreads.o
+  CC       stunnel-ocsp.o
+  CC       stunnel-fd.o
+  CC       stunnel-dhparam.o
+  CC       stunnel-cron.o
+  CC       stunnel-stunnel.o
+  CC       stunnel-pty.o
+  CC       stunnel-libwrap.o
+  CC       stunnel-ui_unix.o
+  CC       env.lo
+sed -e 's|@bindir[@]|/usr/local/bin|g' -e 's|@PACKAGE_VERSION[@]|5.75|g' './stunnel3.in' >stunnel3
+sed -e 's|@bindir[@]|/usr/local/bin|g' -e 's|@PACKAGE_VERSION[@]|5.75|g' './os2.mak.in' >os2.mak
+  CCLD     libstunnel.la
+  CCLD     stunnel
+make[2]: Leaving directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/src'
+make[1]: Leaving directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/src'
+Making all in doc
+make[1]: Entering directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/doc'
+sed -e 's|@bindir[@]|/usr/local/bin|g' -e 's|@sysconfdir[@]|/usr/local/etc|g' -e 's|\\f(CI@sysconfdir\\fI@|/usr/local/etc|g' -e '\|^<link rev="made" href="|d' './stunnel.8.in' >stunnel.8
+sed -e 's|@bindir[@]|/usr/local/bin|g' -e 's|@sysconfdir[@]|/usr/local/etc|g' -e 's|\\f(CI@sysconfdir\\fI@|/usr/local/etc|g' -e '\|^<link rev="made" href="|d' './stunnel.pl.8.in' >stunnel.pl.8
+sed -e 's|@bindir[@]|/usr/local/bin|g' -e 's|@sysconfdir[@]|/usr/local/etc|g' -e 's|\\f(CI@sysconfdir\\fI@|/usr/local/etc|g' -e '\|^<link rev="made" href="|d' './stunnel.html.in' >stunnel.html
+sed -e 's|@bindir[@]|/usr/local/bin|g' -e 's|@sysconfdir[@]|/usr/local/etc|g' -e 's|\\f(CI@sysconfdir\\fI@|/usr/local/etc|g' -e '\|^<link rev="made" href="|d' './stunnel.pl.html.in' >stunnel.pl.html
+make[1]: Leaving directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/doc'
+Making all in tools
+make[1]: Entering directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/tools'
+sed -e 's|@prefix[@]|/usr/local|g' -e 's|@bindir[@]|/usr/local/bin|g' -e 's|@localstatedir[@]|/usr/local/var|g' -e 's|@sysconfdir[@]|/usr/local/etc|g' -e 's|@DEFAULT_GROUP[@]|nogroup|g' -e 's|@PACKAGE_VERSION[@]|5.75|g' './stunnel.conf-sample.in' >stunnel.conf-sample
+sed -e 's|@prefix[@]|/usr/local|g' -e 's|@bindir[@]|/usr/local/bin|g' -e 's|@localstatedir[@]|/usr/local/var|g' -e 's|@sysconfdir[@]|/usr/local/etc|g' -e 's|@DEFAULT_GROUP[@]|nogroup|g' -e 's|@PACKAGE_VERSION[@]|5.75|g' './stunnel.init.in' >stunnel.init
+sed -e 's|@prefix[@]|/usr/local|g' -e 's|@bindir[@]|/usr/local/bin|g' -e 's|@localstatedir[@]|/usr/local/var|g' -e 's|@sysconfdir[@]|/usr/local/etc|g' -e 's|@DEFAULT_GROUP[@]|nogroup|g' -e 's|@PACKAGE_VERSION[@]|5.75|g' './stunnel.service.in' >stunnel.service
+sed -e 's|@prefix[@]|/usr/local|g' -e 's|@bindir[@]|/usr/local/bin|g' -e 's|@localstatedir[@]|/usr/local/var|g' -e 's|@sysconfdir[@]|/usr/local/etc|g' -e 's|@DEFAULT_GROUP[@]|nogroup|g' -e 's|@PACKAGE_VERSION[@]|5.75|g' './stunnel.spec.in' >stunnel.spec
+make[1]: Leaving directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/tools'
+Making all in tests
+make[1]: Entering directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/tests'
+Making all in certs
+make[2]: Entering directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/tests/certs'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/tests/certs'
+make[2]: Entering directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/tests'
+make[2]: Nothing to be done for 'all-am'.
+make[2]: Leaving directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/tests'
+make[1]: Leaving directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/tests'
+make[1]: Entering directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75'
+make[1]: Nothing to be done for 'all-am'.
+make[1]: Leaving directory '/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75'
+
+==================== RESULT ====================
+-rwxr-xr-x 1 user user 8216680 Jun 24 17:44 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/src/stunnel
+/mnt/c/Users/babikp/Desktop/dev/lemon-chat/patchedstunnel/stunnel-5.75/src/stunnel: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=a8350d65ee513ba999a2b9d512b92c17780f80a2, for GNU/Linux 3.2.0, with debug_info, not stripped
+--- runtime ssl/crypto deps (want: none = self-contained) ---
+OK: no dynamic libssl/libcrypto
+DONE

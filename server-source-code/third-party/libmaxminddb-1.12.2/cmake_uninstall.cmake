@@ -1,14 +1,14 @@
-if(NOT EXISTS "C:/Users/retur/Desktop/lemon-chat-master/server-source-code/third-party/libmaxminddb-1.12.2/install_manifest.txt")
-  message(FATAL_ERROR "Cannot find install manifest: C:/Users/retur/Desktop/lemon-chat-master/server-source-code/third-party/libmaxminddb-1.12.2/install_manifest.txt")
+if(NOT EXISTS "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/libmaxminddb-1.12.2/install_manifest.txt")
+  message(FATAL_ERROR "Cannot find install manifest: C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/libmaxminddb-1.12.2/install_manifest.txt")
 endif()
 
-file(READ "C:/Users/retur/Desktop/lemon-chat-master/server-source-code/third-party/libmaxminddb-1.12.2/install_manifest.txt" files)
+file(READ "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/libmaxminddb-1.12.2/install_manifest.txt" files)
 string(REGEX REPLACE "\n" ";" files "${files}")
 foreach(file ${files})
   message(STATUS "Uninstalling $ENV{DESTDIR}${file}")
   if(IS_SYMLINK "$ENV{DESTDIR}${file}" OR EXISTS "$ENV{DESTDIR}${file}")
     execute_process(
-      COMMAND "C:/Program Files/CMake/bin/cmake.exe" -E remove "$ENV{DESTDIR}${file}"
+      COMMAND "C:/Users/babikp/Downloads/w64devkit/bin/cmake.exe" -E remove "$ENV{DESTDIR}${file}"
       OUTPUT_VARIABLE rm_out
       RESULT_VARIABLE rm_retval
       )

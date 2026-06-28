@@ -1,14 +1,13 @@
 #ifndef MEMORY_MANAGER_H
-
 #define MEMORY_MANAGER_H
 
-#include <stdlib.h>
+void   memorymanager__init(void);
 
-void memorymanager__init(void);
-nuint memorymanager__allocate(nuint size, nuint type);
-void memorymanager__print_all_allocations();
-boole memorymanager__free(nuint address);
-nuint memorymanager__realloc(nuint address, nuint newsize);
-void memorymanager__print_allocations_count();
+nuint  memorymanager__allocate(uint64 size, uint64 type);
+nuint  memorymanager__realloc(nuint address, uint64 newsize);
+boole  memorymanager__free(nuint address);
+
+void   memorymanager__print_all_allocations(void);
+void   memorymanager__print_allocations_count(void);
 
 #endif

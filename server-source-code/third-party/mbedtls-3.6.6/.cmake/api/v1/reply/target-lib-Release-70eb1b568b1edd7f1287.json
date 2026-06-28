@@ -1,0 +1,95 @@
+{
+	"backtrace" : 1,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_custom_target"
+		],
+		"files" : 
+		[
+			"library/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 377,
+				"parent" : 0
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"dependencies" : 
+	[
+		{
+			"id" : "mbedx509::@25993c7f548492bbc626"
+		},
+		{
+			"id" : "mbedcrypto::@25993c7f548492bbc626"
+		},
+		{
+			"id" : "mbedtls::@25993c7f548492bbc626"
+		}
+	],
+	"id" : "lib::@25993c7f548492bbc626",
+	"name" : "lib",
+	"orderDependencies" : 
+	[
+		{
+			"id" : "mbedx509::@25993c7f548492bbc626"
+		},
+		{
+			"id" : "mbedcrypto::@25993c7f548492bbc626"
+		},
+		{
+			"id" : "mbedtls::@25993c7f548492bbc626"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "library",
+		"source" : "library"
+	},
+	"sourceGroups" : 
+	[
+		{
+			"name" : "",
+			"sourceIndexes" : 
+			[
+				0
+			]
+		},
+		{
+			"name" : "CMake Rules",
+			"sourceIndexes" : 
+			[
+				1
+			]
+		}
+	],
+	"sources" : 
+	[
+		{
+			"backtrace" : 1,
+			"isGenerated" : true,
+			"path" : "library/CMakeFiles/lib",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 0,
+			"isGenerated" : true,
+			"path" : "library/CMakeFiles/lib.rule",
+			"sourceGroupIndex" : 1
+		}
+	],
+	"type" : "UTILITY"
+}

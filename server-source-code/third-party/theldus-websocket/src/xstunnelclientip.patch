@@ -1,0 +1,48 @@
+lemon-chat - trust the forwarded client IP only from the local stunnel
+======================================================================
+Renames the WebSocket forwarded-IP header from X-Forwarded-For to
+X-Stunnel-Client-IP, and only honours it when the connection originates from
+127.0.0.1 (the local stunnel front-end). Direct clients fall back to their real
+socket address and cannot spoof their IP.
+
+  src/handshake.c : look up "X-Stunnel-Client-IP"
+  src/ws.c        : only read the header when client->ip == "127.0.0.1"
+
+APPLY  (from the repo root):  git apply <this file>
+REVERT (from the repo root):  git apply -R <this file>
+======================================================================
+diff --git a/server-source-code/third-party/theldus-websocket/src/handshake.c b/server-source-code/third-party/theldus-websocket/src/handshake.c
+index b9f8033..864cde3 100644
+--- a/server-source-code/third-party/theldus-websocket/src/handshake.c
++++ b/server-source-code/third-party/theldus-websocket/src/handshake.c
+@@ -239,7 +239,7 @@ char *find_header_value(char *http_response_headers, char *header_name)
+ 
+ char *get_forwarded_ip_address(char *hsrequest)
+ {
+-	char *ip_str = find_header_value(hsrequest, "X-Forwarded-For");
++	char *ip_str = find_header_value(hsrequest, "X-Stunnel-Client-IP");
+ 	if (ip_str == NULL)
+ 	{
+ 		DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] failed to find header \n");
+diff --git a/server-source-code/third-party/theldus-websocket/src/ws.c b/server-source-code/third-party/theldus-websocket/src/ws.c
+index 5e76709..5a72f82 100644
+--- a/server-source-code/third-party/theldus-websocket/src/ws.c
++++ b/server-source-code/third-party/theldus-websocket/src/ws.c
+@@ -864,8 +864,15 @@ static int do_handshake(struct ws_frame_data *wfd)
+ 	wfd->cur_pos = (size_t)((ptrdiff_t)(p - (char *)wfd->frm)) + 4;
+ 
+ 	char *forwarded_ip_address = 0;
+-	//get forwarded ip address that stunnel sent
+-	forwarded_ip_address = get_forwarded_ip_address((char *)wfd->frm);
++	/* Only trust the X-Stunnel-Client-IP header when the connection comes from
++	 * our local stunnel front-end (127.0.0.1). A direct (non-stunnel) client
++	 * must not be able to spoof its address, so for those we ignore the header
++	 * and fall back to the real socket address below. */
++	if (strcmp(wfd->client->ip, "127.0.0.1") == 0)
++	{
++		//get forwarded ip address that stunnel sent
++		forwarded_ip_address = get_forwarded_ip_address((char *)wfd->frm);
++	}
+ 
+ 	if (forwarded_ip_address != 0)
+ 	{

@@ -1,5 +1,10 @@
 #!/bin/bash
-
+#
+# Build the lemon-chat server + bundled stunnel into ../buildresult/.
+#   ./linux_build_script.sh          normal Linux build
+#   ./linux_build_script.sh --wsl    building inside WSL on /mnt/c with a modern
+#                                    toolchain (GCC 15 / CMake 4)
+#
 
 LRED='\033[01;31m'
 GREEN='\033[0;32m'
@@ -27,18 +32,16 @@ command ()
   echo -e "$LCYAN$@$NC"
   $@
   if [ $? -ne 0 ]; then
-    echo -e "$LREDFailed$NC"
+    echo -e "${LRED}Failed${NC}"
     exit 1
   fi
 }
 
-echo $build_directory
-
-#QUESTION = "do you wish to delete any files?
-
-
 ROOT_DIRECTORY="$PWD"
 THIRD_PARTY_DIRECTORY="$PWD/third-party"
+
+message "you need these tools for building : gcc, g++, cmake, ninja, make"
+message "(the bundled stunnel/wss build also needs perl, curl, tar; --wsl also needs autoconf, automake, libtool)"
  
 
 rm -f -v -r $ROOT_DIRECTORY/../buildresult/
@@ -85,6 +88,14 @@ then
     rm -fv "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeCache.txt"
     rm -fv "$ROOT_DIRECTORY/../buildresult/*"
 
+    # stunnel + its OpenSSL dependency (binaries + build trees)
+    ( cd "$THIRD_PARTY_DIRECTORY/stunnel/stunnel-5.75" && make distclean ) >/dev/null 2>&1
+    rm -rfv "$THIRD_PARTY_DIRECTORY/stunnel/openssl"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/stunnel/win-build"
+    rm -fv "$THIRD_PARTY_DIRECTORY/stunnel/stunnel-5.75/src/stunnel"
+    rm -fv "$THIRD_PARTY_DIRECTORY/stunnel/stunnel-5.75/bin/MGW32/stunnel.exe"
+    rm -fv "$ROOT_DIRECTORY/../buildresult/stunnel"
+
 fi
 
 warning "files deleted"
@@ -96,10 +107,37 @@ warning "files deleted"
 CMAKE_CXX_COMPILER="g++"
 CMAKE_C_COMPILER="gcc"
 CMAKE_LINKER="ld"
-CMAKE_C_FLAGS="-Wno-expansion-to-defined -Wno-shadow -Wnodeclaration-after-statement -DUSE_LTM -DLTM_DESC"
+CMAKE_C_FLAGS="-Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement -DUSE_LTM -DLTM_DESC"
 CMAKE_C_FLAGS_RELEASE="-DDEBUG -Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement"
 BUILD_CONFIG="Release"
 #BUILD_CONFIG="Debug"
+
+
+# ---- optional WSL mode: ./linux_build_script.sh --wsl -----------------------
+# Building inside WSL on /mnt/c with a modern toolchain (GCC 15 / CMake 4) needs the
+# tweaks the old _wsl_build.sh did: -std=gnu17, a CMake policy floor, fewer parallel
+# jobs, the autotools regen for libmaxminddb, and a /mnt metadata-mount check.
+WSL_MODE=0
+case "$1" in --wsl|-w) WSL_MODE=1 ;; esac
+
+# number of parallel build jobs passed to cmake/make (-j); override with: JOBS=8 ./linux_build_script.sh
+JOBS="${JOBS:-32}"
+WSL_CMAKE=""
+if [ "$WSL_MODE" = "1" ]; then
+  JOBS="${NJOBS:-4}"
+  WSL_CMAKE="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"            # CMake 4 dropped <3.5 compat
+  CMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE -std=gnu17"  # GCC 15 defaults to C23
+  case "$ROOT_DIRECTORY" in
+    /mnt/*)
+      mp="$(printf '%s' "$ROOT_DIRECTORY" | cut -d/ -f1-3)"
+      findmnt -no OPTIONS "$mp" 2>/dev/null | grep -q metadata || {
+        echo "ERROR: $mp is not mounted with 'metadata' - CMake will fail."
+        echo "Add [automount] options=\"metadata\" to /etc/wsl.conf, then run 'wsl --shutdown'."
+        exit 1; }
+    ;;
+  esac
+  message "WSL mode: -j$JOBS, gnu17, CMake policy >=3.5"
+fi
 
 
 cd "$THIRD_PARTY_DIRECTORY"
@@ -113,13 +151,9 @@ message "building mbedtls (libmbedtls.a, libmbedx509.a, libmbedcrypto.a)"
 
 cd mbedtls-3.6.6
 
-pause
-dir
-pause
+cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE" $WSL_CMAKE -DCMAKE_C_FLAGS="-fPIC" -DCMAKE_CXX_FLAGS="-fPIC"
 
-cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE" -DCMAKE_C_FLAGS="-fPIC" -DCMAKE_CXX_FLAGS="-fPIC"
-
-cmake --build . -j32 --target mbedtls
+cmake --build . -j"$JOBS" --target mbedtls
 
 message "mbedtls build finished, moving some mbedtls files to their destination"
 
@@ -134,7 +168,7 @@ cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedx509.a" "$THIRD_PARTY
 cp -v "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/libmbedcrypto.a" "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/deps/mbedtls/lib/libmbedcrypto.a"
 
 
-#and also move them from resulting build directory of mbedtls-3.5.1 to dependencies directory of .exe itself, linkage-files (mbedtls is used for RSA encryption within chat server)
+# also copy them from the mbedtls-3.6.6 build directory into linkage-files (the chat server's own dependency directory); mbedtls is used for RSA encryption in the chat server
 
 mkdir -p "$ROOT_DIRECTORY/main/linkage-files/linux"
 
@@ -154,9 +188,9 @@ message "building libdatachannel.so and its dependencies (libjuice, libsrtp, usr
 
 cd libdatachannel-0.24.2
 
-cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
+cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE" $WSL_CMAKE
 
-cmake --build . -j32 --target datachannel
+cmake --build . -j"$JOBS" --target datachannel
 
 cp -v "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/libdatachannel.so" "$ROOT_DIRECTORY/main/linkage-files/linux/libdatachannel.so"
 cp -v "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/libdatachannel.so" "$ROOT_DIRECTORY/../buildresult/"
@@ -172,9 +206,9 @@ message "building libtommath.a"
 
 cd libtom/libtommath
 
-cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
+cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE" $WSL_CMAKE
 
-cmake --build . -j32  --target libtommath
+cmake --build . -j"$JOBS"  --target libtommath
 
 cp -v "$THIRD_PARTY_DIRECTORY/libtom/libtommath/libtommath.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libtommath.a"
 
@@ -188,7 +222,7 @@ message "building libtomcrypt.a"
 
 cd libtom/libtomcrypt
  
-make -f makefile.unix -j32
+make -f makefile.unix -j"$JOBS"
 cp -v "$THIRD_PARTY_DIRECTORY/libtom/libtomcrypt/libtomcrypt.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libtomcrypt.a"
 cd ../../
 
@@ -202,9 +236,9 @@ message "building theldus-websocket (libws.a)"
 
 cd theldus-websocket
 
-cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
+cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE" $WSL_CMAKE
 
-cmake --build . -j32  --target ws
+cmake --build . -j"$JOBS"  --target ws
 cp -r -v "$THIRD_PARTY_DIRECTORY/theldus-websocket/libws.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libws.a"
 
 cd ../
@@ -218,9 +252,9 @@ message "building libviolet.a"
 
 cd libviolet-0.5.4
 
-cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
+cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE" $WSL_CMAKE
 
-cmake --build . -j32  --target violet
+cmake --build . -j"$JOBS"  --target violet
 cp -v "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/libviolet.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libviolet.a"
 
 cd ../
@@ -234,10 +268,16 @@ message "building libmaxminddb-1.12.2"
 
 cd libmaxminddb-1.12.2
 
-make clean
-chmod +x configure
-./configure
-make
+if [ "$WSL_MODE" = "1" ]; then
+  autoreconf -fi          # regen so stale /mnt/c timestamps don't trigger maintainer-mode
+  ./configure
+  make -C src -j"$JOBS"   # src/ only; the vendored tree lacks the test suite
+else
+  make clean
+  chmod +x configure
+  ./configure
+  make
+fi
 
 
 cp -v "$THIRD_PARTY_DIRECTORY/libmaxminddb-1.12.2/src/.libs/libmaxminddb.a" "$ROOT_DIRECTORY/main/linkage-files/linux/"
@@ -249,9 +289,9 @@ message "building libopus-1.5.2"
 
 cd libopus-1.5.2
 
-cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
+cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE" $WSL_CMAKE
 
-cmake --build . -j32  --target opus
+cmake --build . -j"$JOBS"  --target opus
 cp -r -v "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/libopus.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libopus.a"
 
 cd ../../
@@ -265,24 +305,24 @@ message "building chat server executable"
 
 cd main
 
-cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE"
-cmake --build . -j32
+cmake -G Ninja . -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" -DCMAKE_LINKER="$CMAKE_LINKER" -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER" -DCMAKE_CXX_COMPILER="$CMAKE_CXX_COMPILER" -DCMAKE_C_FLAGS_RELEASE="$CMAKE_C_FLAGS_RELEASE" $WSL_CMAKE
+cmake --build . -j"$JOBS"
 
 
 cp -v "$ROOT_DIRECTORY/main/chat-server" "$ROOT_DIRECTORY/../buildresult/chat-server.bin"
 cp -v "$ROOT_DIRECTORY/main/linkage-files/linux/libdatachannel.so" "$ROOT_DIRECTORY/../buildresult/libdatachannel.so"
 
-#in linux, name libdatachannel.so is not enough, create symlink with that name pointing to libdatachannel.so, or executable wont find it
+# On Linux the bare name libdatachannel.so is not enough; the executable looks for the soname (libdatachannel.so.0.24).
 
 
 
-# this didnt work ln -s "$ROOT_DIRECTORY/../buildresult/libdatachannel.so" "$ROOT_DIRECTORY/../buildresult/libdatachannel.so.0.19"
+# (an absolute-path symlink did not work here, so we cd into buildresult and use a relative one)
 
-#so cd there and set symlink
+# so cd into buildresult and create the symlink
 
 cd ../../
 
-echo "cutrentdirectory is $PWD"
+echo "current directory is $PWD"
 
 cd buildresult
 ln -s libdatachannel.so libdatachannel.so.0.24
@@ -298,6 +338,25 @@ cp -v "$ROOT_DIRECTORY/main/unix_start_template" "$ROOT_DIRECTORY/../buildresult
 cp -v "$THIRD_PARTY_DIRECTORY/libmaxminddb-1.12.2/dbip-country-lite-2025-06.mmdb" "$ROOT_DIRECTORY/../buildresult/"
 
 chmod +x "$ROOT_DIRECTORY/../buildresult/start_server.sh"
+
+
+#********************************************************
+#****** bundled stunnel (wss front-end) build+copy ******
+#********************************************************
+# main.c can launch this to serve wss alongside ws, so the stunnel binary must
+# sit next to chat-server.bin in buildresult. buildresult is wiped at the top of
+# this script, so stunnel has to be (re)built and copied here on every build.
+
+message "building + collecting bundled stunnel (wss front-end)"
+
+STUNNEL_DIRECTORY="$THIRD_PARTY_DIRECTORY/stunnel"
+if [ -f "$STUNNEL_DIRECTORY/_bundle_and_build.sh" ]; then
+    bash "$STUNNEL_DIRECTORY/_bundle_and_build.sh"
+    cp -v "$STUNNEL_DIRECTORY/stunnel-5.75/src/stunnel" "$ROOT_DIRECTORY/../buildresult/stunnel"
+    chmod +x "$ROOT_DIRECTORY/../buildresult/stunnel"
+else
+    warning "stunnel/_bundle_and_build.sh not found - wss auto-launch will be unavailable"
+fi
 
 cd ../
 
