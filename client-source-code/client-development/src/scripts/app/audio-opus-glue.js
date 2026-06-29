@@ -678,6 +678,18 @@
                 {
                     server_msg.process_access_denied_from_server(e.data.value);
                 }
+                else if (e.data.type == "data_processing_worker__force_admin_password_change")
+                {
+                    //the admin password set during server setup was typed in cleartext; prompt once for a new one
+                    let new_admin_password = prompt("The admin password set at server setup was typed in cleartext in the console. Please set a new admin password now.");
+                    if (new_admin_password != null && new_admin_password != "")
+                    {
+                        let message_object = { message: { type: "change_admin_password", value: new_admin_password } };
+                        let message_json_string = process_message_before_sending(message_object);
+                        let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                        websocket_worker_send(data);
+                    }
+                }
                 else if (e.data.type == "data_processing_worker__client_info_from_server")
                 {
                     server_msg.process_client_info_from_server(e.data.value);

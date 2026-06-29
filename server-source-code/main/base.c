@@ -327,6 +327,10 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "is_hide_clients_in_password_protected_channels_active", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_temp_channel_creation_allowed");
     cJSON_AddItemToObject(json_root, "is_temp_channel_creation_allowed", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_password");
+    cJSON_AddStringToObject(json_root, "admin_password", &g_server_settings.admin_password[0]);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_password_is_initial");
+    cJSON_AddItemToObject(json_root, "admin_password_is_initial", cJSON_CreateBool(g_server_settings.admin_password_is_initial == TRUE));
 
     /* rebuild the channel layout (persistent fields only; runtime state like maintainer/occupants is skipped) */
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "channels");
@@ -1358,6 +1362,48 @@ static boole _base_internal__constant_time_str_equal(char* a, char* b)
 }
 
 /**
+ * @brief SHA256-hashes a password then base64-encodes it, so auth secrets can be stored without plaintext.
+ *
+ * @param char* plaintext -> the password to hash
+ * @param char* out -> caller buffer for the base64(SHA256) text (44 chars + NUL)
+ * @param int64 out_size -> size of out in bytes (must be >= 45)
+ *
+ * @return void
+ */
+void base__hash_password_to_base64(char* plaintext, char* out, int64 out_size)
+{
+    ITH_SHA256_CTX ctx;
+    unsigned char digest[32];
+    char encoded[BASE64_ENCODE_OUT_SIZE(32)];
+
+    ith_sha256_init(&ctx);
+    ith_sha256_update(&ctx, (unsigned char* )plaintext, strlen(plaintext));
+    ith_sha256_final(&ctx, digest);
+
+    clib__null_memory(encoded, sizeof(encoded));
+    zchg_base64_encode(digest, 32, encoded);
+
+    clib__null_memory(out, out_size);
+    clib__copy_memory(encoded, out, clib__utf8_string_length(encoded), out_size - 1);
+}
+
+/**
+ * @brief checks a submitted plaintext password against a stored base64(SHA256) hash.
+ *
+ * @param char* plaintext -> the submitted password
+ * @param char* stored_base64_hash -> the stored base64(SHA256) to compare against
+ *
+ * @return boole -> TRUE when they match
+ */
+boole base__password_matches(char* plaintext, char* stored_base64_hash)
+{
+    char computed[BASE64_ENCODE_OUT_SIZE(32)];
+
+    base__hash_password_to_base64(plaintext, computed, sizeof(computed));
+    return clib__is_string_equal(computed, stored_base64_hash);
+}
+
+/**
  * @brief encrypts string and converts it to base64 string.
  *
  * @param char* string_to_encrypt -> the null-terminated string to encrypt
@@ -2099,6 +2145,10 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "admin_password"))
             {
                 client_msg__process_admin_password_message(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "change_admin_password"))
+            {
+                client_msg__process_change_admin_password_message(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "add_tag_to_client"))
             {

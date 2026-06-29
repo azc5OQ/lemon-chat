@@ -39,6 +39,7 @@ typedef int http_socket_t;
 #define HTTP_SERVER_PATH_SIZE 1024
 #define HTTP_SERVER_SEND_CHUNK_SIZE 16384
 #define HTTP_SERVER_HEADER_SIZE 512
+#define HTTP_CLIENT_CONFIG_SIZE 2048
 #define HTTP_SERVER_RECV_TIMEOUT_SECONDS 10
 #define HTTP_SERVER_LISTEN_BACKLOG 16
 
@@ -52,6 +53,10 @@ typedef struct http_mime_entry_t
 /* the single http server's configuration, set by http_server__start before the thread is spawned */
 static int64 g_http_server_port = 0;
 static char g_http_server_webroot[512];
+
+/* window.__SERVER_CONFIG__ script (websocket port + connect keys) injected into the served client.html so it can autoconnect; empty until http_server__set_client_config runs */
+static char g_http_client_config_script[HTTP_CLIENT_CONFIG_SIZE];
+static boole g_http_client_config_set = FALSE;
 
 static const http_mime_entry_t g_http_mime_table[] = {
     { ".html", "text/html; charset=utf-8" },
@@ -203,6 +208,110 @@ static const char* _http_server_internal__content_type_for_path(const char* file
 }
 
 /**
+ * @brief stores the window.__SERVER_CONFIG__ script injected into served client.html; call before http_server__start
+ *
+ * @param char* config_script -> the script text the served page should run, e.g. window.__SERVER_CONFIG__={...};
+ *
+ * @return void
+ */
+void http_server__set_client_config(char* config_script)
+{
+    clib__null_memory(g_http_client_config_script, sizeof(g_http_client_config_script));
+    clib__copy_memory(config_script, g_http_client_config_script, clib__utf8_string_length(config_script), sizeof(g_http_client_config_script) - 1);
+    g_http_client_config_set = TRUE;
+}
+
+/**
+ * @brief finds the first occurrence of needle inside the first haystack_length bytes of haystack
+ *
+ * @return char* -> pointer to the match within haystack, or NULL_POINTER when absent
+ */
+static char* _http_server_internal__find_bytes(char* haystack, uint64 haystack_length, const char* needle, uint64 needle_length)
+{
+    uint64 i = 0;
+    uint64 j = 0;
+
+    if ((needle_length == 0) || (haystack_length < needle_length))
+    {
+        return NULL_POINTER;
+    }
+
+    for (i = 0; i <= haystack_length - needle_length; i++)
+    {
+        for (j = 0; j < needle_length; j++)
+        {
+            if (haystack[i + j] != needle[j])
+            {
+                break;
+            }
+        }
+
+        if (j == needle_length)
+        {
+            return haystack + i;
+        }
+    }
+
+    return NULL_POINTER;
+}
+
+/**
+ * @brief overwrites the LEMONCFG placeholder comment in the first chunk of client.html with the connection
+ *        config, then pads it back to the original byte length so the already-sent Content-Length stays valid
+ *
+ * @param char* chunk -> first read chunk of client.html, modified in place
+ * @param uint64 chunk_length -> count of valid bytes in chunk
+ *
+ * @return void
+ */
+static void _http_server_internal__inject_client_config(char* chunk, uint64 chunk_length)
+{
+    char* marker = NULL_POINTER;
+    char* comment_end = NULL_POINTER;
+    char* pad = NULL_POINTER;
+    uint64 region_length = 0;
+    uint64 config_length = 0;
+    uint64 pad_length = 0;
+    uint64 pad_index = 0;
+
+    marker = _http_server_internal__find_bytes(chunk, chunk_length, "/*LEMONCFG", 10);
+    if (marker == NULL_POINTER)
+    {
+        return;
+    }
+
+    comment_end = _http_server_internal__find_bytes(marker, chunk_length - (uint64)(marker - chunk), "*/", 2);
+    if (comment_end == NULL_POINTER)
+    {
+        return;
+    }
+    comment_end += 2; /* advance past the placeholder comment terminator */
+
+    region_length = (uint64)(comment_end - marker);
+    config_length = clib__utf8_string_length(g_http_client_config_script);
+
+    /* leave room for a trailing padding comment, which is at least 4 bytes */
+    if ((config_length + 4) > region_length)
+    {
+        printf("%s", "http: client config too large for the client.html placeholder; serving without autoconnect\n");
+        return;
+    }
+
+    clib__copy_memory(g_http_client_config_script, marker, config_length, region_length);
+
+    pad = marker + config_length;
+    pad_length = region_length - config_length;
+    pad[0] = '/';
+    pad[1] = '*';
+    for (pad_index = 2; pad_index < (pad_length - 2); pad_index++)
+    {
+        pad[pad_index] = ' ';
+    }
+    pad[pad_length - 2] = '*';
+    pad[pad_length - 1] = '/';
+}
+
+/**
  * @brief resolves request_path under the webroot and streams the file, or sends 403/404
  *
  * @param http_socket_t client_socket -> the connection to write the response to
@@ -220,6 +329,8 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
     FILE* file = NULL_POINTER;
     int64 file_size = 0;
     uint64 read_count = 0;
+    boole is_client_page = FALSE;
+    boole is_first_chunk = TRUE;
 
     if (_http_server_internal__is_request_path_safe(request_path) == FALSE)
     {
@@ -233,6 +344,8 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
     {
         serve_target = "/client.html";
     }
+
+    is_client_page = clib__is_string_equal((char* )serve_target, "/client.html");
 
     clib__null_memory(file_path, sizeof(file_path));
     snprintf(file_path, sizeof(file_path), "%s%s", g_http_server_webroot, serve_target);
@@ -270,6 +383,12 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
         {
             break;
         }
+
+        if ((is_first_chunk == TRUE) && (is_client_page == TRUE) && (g_http_client_config_set == TRUE))
+        {
+            _http_server_internal__inject_client_config(send_chunk, read_count);
+        }
+        is_first_chunk = FALSE;
 
         _http_server_internal__send_all(client_socket, send_chunk, read_count);
     }

@@ -731,6 +731,7 @@ static void _main_internal__save_server_settings(char plaintext_keys[][256], uin
 
     cJSON_AddNumberToObject(json_root, "websocket_port", g_server_settings.websocket_port);
     cJSON_AddStringToObject(json_root, "admin_password", &g_server_settings.admin_password[0]);
+    cJSON_AddItemToObject(json_root, "admin_password_is_initial", cJSON_CreateBool(g_server_settings.admin_password_is_initial == TRUE));
 
     json_keys = cJSON_CreateArray();
     cJSON_AddItemToObject(json_root, "keys", json_keys);
@@ -758,6 +759,8 @@ static void _main_internal__save_server_settings(char plaintext_keys[][256], uin
     cJSON_AddItemToObject(json_root, "serve_client_http", cJSON_CreateBool(g_server_settings.serve_client_http == TRUE));
     cJSON_AddNumberToObject(json_root, "http_port", g_server_settings.http_port);
     cJSON_AddStringToObject(json_root, "http_webroot", &g_server_settings.http_webroot[0]);
+    cJSON_AddStringToObject(json_root, "default_theme", &g_server_settings.default_theme[0]);
+    cJSON_AddItemToObject(json_root, "embed_client_config", cJSON_CreateBool(g_server_settings.embed_client_config == TRUE));
 
     json_text = cJSON_Print(json_root);
     if (json_text != NULL_POINTER)
@@ -781,11 +784,166 @@ static void _main_internal__save_server_settings(char plaintext_keys[][256], uin
  * *
  * @return void
  * */
+/* builds the window.__SERVER_CONFIG__ script (websocket port + plaintext connect keys) and hands it to the
+   bundled http server, which injects it into the client.html it serves so the served page can autoconnect */
+static void _main_internal__build_and_push_client_config(int64 websocket_port, char plaintext_keys[][256], uint64 keys_count)
+{
+    cJSON* config_object = NULL_POINTER;
+    cJSON* keys_array = NULL_POINTER;
+    char* config_json = NULL_POINTER;
+    char config_script[2048];
+    uint64 i = 0;
+
+    config_object = cJSON_CreateObject();
+    if (config_object == NULL_POINTER)
+    {
+        return;
+    }
+
+    /* only bake the connection details (port + keys) into the served page if the admin opted in */
+    if (g_server_settings.embed_client_config == TRUE)
+    {
+        cJSON_AddNumberToObject(config_object, "port", (double)websocket_port);
+
+        keys_array = cJSON_CreateArray();
+        if (keys_array != NULL_POINTER)
+        {
+            for (i = 0; i < keys_count; i++)
+            {
+                cJSON_AddItemToArray(keys_array, cJSON_CreateString(&plaintext_keys[i][0]));
+            }
+            cJSON_AddItemToObject(config_object, "keys", keys_array);
+        }
+    }
+
+    if (g_server_settings.default_theme[0] != 0)
+    {
+        cJSON_AddStringToObject(config_object, "theme", &g_server_settings.default_theme[0]);
+    }
+
+    config_json = cJSON_PrintUnformatted(config_object);
+    if (config_json != NULL_POINTER)
+    {
+        clib__null_memory(config_script, sizeof(config_script));
+        snprintf(config_script, sizeof(config_script), "window.__SERVER_CONFIG__=%s;", config_json);
+        http_server__set_client_config(config_script);
+        cJSON_free(config_json);
+    }
+
+    cJSON_Delete(config_object);
+}
+
+/* scans the served client.html for the selectable theme names baked into it (choose-theme-item data-name="X"),
+   so first-time setup can offer them as a default. returns how many were found, filling out_themes[][32]. */
+static int64 _main_internal__scan_client_themes(char* client_html_path, char out_themes[][32], int64 max_themes)
+{
+    FILE* file = NULL_POINTER;
+    int64 file_size = 0;
+    char* buffer = NULL_POINTER;
+    uint64 bytes_read = 0;
+    int64 count = 0;
+    char* cursor = NULL_POINTER;
+    char* found = NULL_POINTER;
+    char* value_start = NULL_POINTER;
+    char* value_end = NULL_POINTER;
+    int64 length = 0;
+    int64 j = 0;
+    boole duplicate = FALSE;
+    char* comment_open = NULL_POINTER;
+    char* comment_close = NULL_POINTER;
+    char* blank_p = NULL_POINTER;
+    const char* marker = "choose-theme-item' data-name=\"";
+
+    file = fopen(client_html_path, "rb");
+    if (file == NULL_POINTER)
+    {
+        return 0;
+    }
+
+    fseek(file, 0, SEEK_END);
+    file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    if (file_size <= 0)
+    {
+        fclose(file);
+        return 0;
+    }
+
+    buffer = (char* )malloc(file_size + 1);
+    if (buffer == NULL_POINTER)
+    {
+        fclose(file);
+        return 0;
+    }
+    bytes_read = fread(buffer, 1, file_size, file);
+    buffer[bytes_read] = 0;
+    fclose(file);
+
+    /* blank out HTML comments first, so a commented-out theme entry is never offered */
+    cursor = buffer;
+    for (;;)
+    {
+        comment_open = strstr(cursor, "<!--");
+        if (comment_open == NULL_POINTER) { break; }
+        comment_close = strstr(comment_open, "-->");
+        if (comment_close == NULL_POINTER) { break; }
+        for (blank_p = comment_open; blank_p < (comment_close + 3); blank_p++) { *blank_p = ' '; }
+        cursor = comment_close + 3;
+    }
+
+    cursor = buffer;
+    for (;;)
+    {
+        found = strstr(cursor, marker);
+        if (found == NULL_POINTER)
+        {
+            break;
+        }
+
+        value_start = found + strlen(marker);
+        value_end = strchr(value_start, '"');
+        if (value_end == NULL_POINTER)
+        {
+            break;
+        }
+
+        length = (int64)(value_end - value_start);
+        if ((length > 0) && (length < 31) && (count < max_themes))
+        {
+            duplicate = FALSE;
+            for (j = 0; j < count; j++)
+            {
+                if ((strncmp(out_themes[j], value_start, length) == 0) && (out_themes[j][length] == 0))
+                {
+                    duplicate = TRUE;
+                    break;
+                }
+            }
+
+            if (duplicate == FALSE)
+            {
+                clib__null_memory(out_themes[count], 32);
+                clib__copy_memory(value_start, out_themes[count], length, 31);
+                count++;
+            }
+        }
+
+        cursor = value_end;
+    }
+
+    free(buffer);
+    return count;
+}
+
 static void _main_internal__set_server_settings(void)
 {
     char input[256];
     uint64 i = 0;
     char plaintext_keys[100][256];
+    char client_themes[16][32];
+    int64 client_theme_count = 0;
+    int64 theme_choice = 0;
+    char theme_scan_path[600];
     char verification_message[] = "welcome";
     char default_client_name[30] = "user";
 
@@ -865,6 +1023,8 @@ static void _main_internal__set_server_settings(void)
                 {
                     clib__copy_memory(json_field->valuestring, &g_server_settings.admin_password[0], clib__utf8_string_length(json_field->valuestring), 50);
                 }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_password_is_initial");
+                if (cJSON_IsBool(json_field)) { g_server_settings.admin_password_is_initial = cJSON_IsTrue(json_field); }
 
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "keys");
                 if (cJSON_IsArray(json_field) == TRUE)
@@ -877,6 +1037,7 @@ static void _main_internal__set_server_settings(void)
                             ith_sha256_update(&ctx, (unsigned char* )json_key->valuestring, strlen(json_key->valuestring));
                             ith_sha256_final(&ctx, g_server_settings.keys[key_index].key_value);
                             clib__copy_memory(custom_iv, &g_server_settings.keys[key_index].key_iv, 16, 16);
+                            clib__copy_memory(json_key->valuestring, &plaintext_keys[key_index][0], clib__utf8_string_length(json_key->valuestring), 255);
                             key_index++;
                         }
                     }
@@ -921,6 +1082,12 @@ static void _main_internal__set_server_settings(void)
                 if (cJSON_IsNumber(json_field) == TRUE) { g_server_settings.http_port = json_field->valueint; }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "http_webroot");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &g_server_settings.http_webroot[0], clib__utf8_string_length(json_field->valuestring), 511); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "default_theme");
+                if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &g_server_settings.default_theme[0], clib__utf8_string_length(json_field->valuestring), 31); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "embed_client_config");
+                if (cJSON_IsBool(json_field)) { g_server_settings.embed_client_config = cJSON_IsTrue(json_field); }
+
+                _main_internal__build_and_push_client_config(g_server_settings.websocket_port, plaintext_keys, g_server_settings.keys_count);
 
                 cJSON_Delete(json_root);
 
@@ -1022,7 +1189,8 @@ static void _main_internal__set_server_settings(void)
     printf("%s %s", g_mark_ask, "Admin password (max 50 chars): ");
     fgets(input, sizeof(input), stdin);
     clib__sanitize_stdin(input);
-    clib__copy_memory(input, &g_server_settings.admin_password[0], clib__utf8_string_length(input), 50);
+    base__hash_password_to_base64(input, &g_server_settings.admin_password[0], ADMIN_PASSWORD_MAX_LENGTH);
+    g_server_settings.admin_password_is_initial = TRUE;
     clib__null_memory(input, sizeof(input));
 
     printf("%s %s", g_mark_ask, "Disable voice chat? (y/n): ");
@@ -1100,11 +1268,63 @@ static void _main_internal__set_server_settings(void)
             printf("%s %s\n", g_mark_warn, "invalid port, defaulting to 80");
         }
 
-        printf("%s %s%lld%s\n", g_mark_info, "HTTP server: serving the client on port ", g_server_settings.http_port, " (port 80 may need admin/root; voice needs HTTPS, so mainly for LAN testing)");
+        printf("%s %s%lld%s\n", g_mark_info, "HTTP server: serving the client on port ", g_server_settings.http_port, " (port 80 may need admin/root)");
+
+        clib__null_memory(input, sizeof(input));
+        printf("%s %s", g_mark_ask, "Embed connection details so the served page connects automatically? (y/n): ");
+        fgets(input, sizeof(input), stdin);
+        clib__sanitize_stdin(input);
+        if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y") == TRUE))
+        {
+            g_server_settings.embed_client_config = TRUE;
+            printf("%s %s\n", g_mark_ok, "autoconnect on: the served page carries the connection details");
+        }
+        else
+        {
+            printf("%s %s\n", g_mark_info, "autoconnect off: the served page omits the keys; users connect manually");
+        }
+
+        /* offer a default theme baked into the served client.html, scanned from the page itself */
+        clib__null_memory(theme_scan_path, sizeof(theme_scan_path));
+        if (g_server_settings.http_webroot[0] != 0)
+        {
+            snprintf(theme_scan_path, sizeof(theme_scan_path), "%s/client.html", g_server_settings.http_webroot);
+        }
+        else
+        {
+            snprintf(theme_scan_path, sizeof(theme_scan_path), "client.html");
+        }
+
+        client_theme_count = _main_internal__scan_client_themes(theme_scan_path, client_themes, 16);
+        if (client_theme_count > 0)
+        {
+            printf("%s %s\n", g_mark_info, "themes baked into client.html:");
+            for (i = 0; i < (uint64)client_theme_count; i++)
+            {
+                printf("      %llu) %s\n", (unsigned long long)(i + 1), client_themes[i]);
+            }
+
+            clib__null_memory(input, sizeof(input));
+            printf("%s %s", g_mark_ask, "Default theme number for served clients (blank = the client's own default): ");
+            fgets(input, sizeof(input), stdin);
+            clib__sanitize_stdin(input);
+            theme_choice = atoi(input);
+            if ((theme_choice >= 1) && (theme_choice <= client_theme_count))
+            {
+                clib__copy_memory(client_themes[theme_choice - 1], &g_server_settings.default_theme[0], clib__utf8_string_length(client_themes[theme_choice - 1]), 31);
+                printf("%s %s%s\n", g_mark_ok, "default theme: ", g_server_settings.default_theme);
+            }
+        }
+        else
+        {
+            printf("%s %s\n", g_mark_info, "no themes detected in client.html; served clients will use their own default");
+        }
     }
     clib__null_memory(input, sizeof(input));
 
     _main_internal__save_server_settings(plaintext_keys, g_server_settings.keys_count);
+
+    _main_internal__build_and_push_client_config(g_server_settings.websocket_port, plaintext_keys, g_server_settings.keys_count);
 }
 
 #ifndef WIN32

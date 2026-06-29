@@ -171,6 +171,7 @@ typedef struct server_settings
     /* char client_verificaton_message_cleartext[1024]; not used right now, but it was supposed to be a welcome message that the server sends when somebody joins */
     char default_client_name[30];
     char admin_password[ADMIN_PASSWORD_MAX_LENGTH];
+    boole admin_password_is_initial;
 
     boole restart_on_crash;
 
@@ -184,6 +185,8 @@ typedef struct server_settings
     boole serve_client_http;
     int64 http_port;
     char http_webroot[512];
+    char default_theme[32];
+    boole embed_client_config;
 } server_settings_t;
 
 typedef enum audio_state_e

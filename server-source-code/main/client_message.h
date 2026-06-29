@@ -24,6 +24,7 @@ void client_msg__process_microphone_usage(cJSON* json_root, uint64 sender_client
 void client_msg__process_start_song_stream_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_stop_song_stream_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_change_admin_password_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_set_server_settings_icon_upload(cJSON* json_root, uint64 sender_client_id);

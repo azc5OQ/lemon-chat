@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script id="lemon-cfg">/*LEMONCFG replaced at serve-time by the built-in HTTP server with window.__SERVER_CONFIG__={"port":N,"keys":[...]} so the served page autoconnects; served any other way this stays an inert comment and the normal connect form shows. padding leaves room for the injected config:............................................................................................................................................................................................................*/</script>
     <title>chat</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -18,7 +19,12 @@
     <style>
 /* @@INCLUDE: styles/fonts.style @@ */
     </style>
-   
+
+    <!-- country flags: shared base set, always-on; a theme overrides individual flags with !important -->
+    <style>
+/* @@INCLUDE: styles/flags.style @@ */
+    </style>
+
     <!-- default theme style -->
     <style id="style-theme-default" class="style-theme-html-element">
 /* @@INCLUDE: styles/theme-default.style @@ */
@@ -83,6 +89,7 @@
 
 
     <div id="server-settings-tab">
+        <div class="close-button" id="close-button-server-settings" style="position: absolute; top: 8px; right: 8px; z-index: 3;"></div>
         <div id="server-settings-tab-subcontainer">
             <ul class="server-settings-tab-ul">
                 <li class="server-settings-tab-li" data-action="0">icons</li>
@@ -158,6 +165,22 @@
     <a-toast style="visibility:hidden"></a-toast>
 
     <div id="body-container">
+        <div id="communication-system-head-menu">
+            <input type="button" id="clear-chat-button">
+            <input type="button" id="hide-chat-button">
+            <input type="button" id="show-admin-password-entry">
+            <input type="button" id="show-secret-identity-string">
+            <input type="button" id="microphone-always-broadcasting-audio-button">
+            <input type="button" id="hide-show-flags-button">
+            <input type="button" id="sound-effects-button">
+            <input type="button" id="choose-theme-button" value="theme">
+            <div id="choose-theme-button-list">
+                <p class='choose-theme-item' data-name="default">default</p>
+                <p class='choose-theme-item' data-name="light-theme">light</p>
+                <p class='choose-theme-item' data-name="oldschool">old school</p>
+            </div>
+            <input type="button" id="enter-server-settings">
+        </div>
         <div id="verification-system">
             <div style="height: 25vmin;"></div>
             <div id="container-2" style="min-width: 330px;">
@@ -203,23 +226,6 @@
             </div>
         </div>
         <div id="communication-system-container">
-            <div id="communication-system-head-menu">
-                <input type="button" id="clear-chat-button">
-                <input type="button" id="hide-chat-button">
-                <input type="button" id="show-admin-password-entry">
-                <input type="button" id="show-secret-identity-string">
-                <input type="button" id="microphone-always-broadcasting-audio-button">
-                <input type="button" id="hide-show-flags-button">
-                <input type="button" id="sound-effects-button">
-                <input type="button" id="choose-theme-button" value="theme">
-                <div id="choose-theme-button-list">
-                    <p class='choose-theme-item' data-name="default">default</p>
-                    <p class='choose-theme-item' data-name="light-theme">light</p>
-                    <p class='choose-theme-item' data-name="oldschool">old school</p>
-                   <!-- <p class='choose-theme-item' data-name="90swindows">90s windows</p> -->
-                </div>
-                <input type="button" id="enter-server-settings">
-            </div>
             <div id="space-devider1">
                 <div id="channel-list-container">
                 </div>

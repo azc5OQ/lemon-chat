@@ -8,6 +8,8 @@ int64   base__get_new_index_for_client(void);
 void    base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64 client_id, char* decrypted_metadata_cstring);
 void    base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, uint64 index, char* decrypted_metadata_cstring);
 char*   base__encrypt_cstring_and_convert_to_base64(char* string, int64* out_allocated_buffer_size, char* dh_shared_secret);
+void    base__hash_password_to_base64(char* plaintext, char* out, int64 out_size);
+boole   base__password_matches(char* plaintext, char* stored_base64_hash);
 void    base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64_string, unsigned char* out_buffer, int64 out_buffer_length);
 void    base__free_json_message(cJSON* json_root_object1, char* json_root_object1_string);
 uint64  base__get_client_count_for_channel(uint64 channel_id);

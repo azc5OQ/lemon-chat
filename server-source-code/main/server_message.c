@@ -913,6 +913,45 @@ void server_msg__send_client_rename_message_to_all_clients(uint64 id_of_client_t
  *
  * @return void
  */
+/**
+ * @brief tells a single client it should change the admin password (sent once after the first admin login,
+ *        because the initial password was typed in cleartext at setup)
+ *
+ * @param client_t* client -> the client to notify
+ *
+ * @return void
+ */
+void server_msg__send_force_admin_password_change_to_single_client(client_t* client)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "force_admin_password_change");
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(client->p_ws_connection, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
 void server_msg__send_access_denied_to_single_client(client_t* client)
 {
     char* json_root_object1_string = 0;

@@ -2477,7 +2477,11 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
                     channel->parent_channel_id = (int64)json_parent_channel_id->valuedouble;
                     channel->is_root_channel = FALSE;
                     clib__copy_memory(json_channel_name->valuestring, channel->name, clib__utf8_string_length(json_channel_name->valuestring), CHANNEL_NAME_MAX_LENGTH);
-                    clib__copy_memory(json_channel_password->valuestring, channel->password, clib__utf8_string_length(json_channel_password->valuestring), CHANNEL_PASSWORD_MAX_LENGTH);
+                    clib__null_memory(channel->password, CHANNEL_PASSWORD_MAX_LENGTH);
+                    if (clib__utf8_string_length(json_channel_password->valuestring) > 0)
+                    {
+                        base__hash_password_to_base64(json_channel_password->valuestring, channel->password, CHANNEL_PASSWORD_MAX_LENGTH);
+                    }
                     clib__copy_memory(json_channel_description->valuestring, channel->description, clib__utf8_string_length(json_channel_description->valuestring), CHANNEL_DESCRIPTION_MAX_LENGTH);
                     channel->maintainer_id = -1;
                     channel->is_channel_maintainer_present = FALSE;
@@ -2634,7 +2638,10 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
             clib__null_memory(channel->description, CHANNEL_DESCRIPTION_MAX_LENGTH);
 
             clib__copy_memory(json_channel_name->valuestring, channel->name, clib__utf8_string_length(json_channel_name->valuestring), CHANNEL_NAME_MAX_LENGTH);
-            clib__copy_memory(json_channel_password->valuestring, channel->password, clib__utf8_string_length(json_channel_password->valuestring), CHANNEL_PASSWORD_MAX_LENGTH);
+            if (clib__utf8_string_length(json_channel_password->valuestring) > 0)
+            {
+                base__hash_password_to_base64(json_channel_password->valuestring, channel->password, CHANNEL_PASSWORD_MAX_LENGTH);
+            }
             clib__copy_memory(json_channel_description->valuestring, channel->description, clib__utf8_string_length(json_channel_description->valuestring), CHANNEL_DESCRIPTION_MAX_LENGTH);
 
             is_password_used = (boole)(clib__utf8_string_length(json_channel_password->valuestring) > 0);
@@ -3013,7 +3020,7 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
     /* check if password is valid */
     if (new_channel->is_using_password == TRUE)
     {
-        status = clib__is_string_equal(new_channel->password, json_channel_password->valuestring) || client_that_is_joining_channel->is_admin;
+        status = base__password_matches(json_channel_password->valuestring, new_channel->password) || client_that_is_joining_channel->is_admin;
         if (status == TRUE)
         {
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request correct password \n");
@@ -3690,7 +3697,7 @@ void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     admin_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
 
-    status = clib__is_string_equal(admin_password->valuestring, g_server_settings.admin_password);
+    status = base__password_matches(admin_password->valuestring, g_server_settings.admin_password);
 
     if (status == FALSE)
     {
@@ -3724,10 +3731,63 @@ void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_
 
             server_msg__send_add_tag_to_client_event_to_all_clients(client->client_id, ADMIN_TAG_ID);
         }
+
+        /* the setup admin password was typed in cleartext; on the first admin login, ask for a one-time change */
+        if (g_server_settings.admin_password_is_initial == TRUE)
+        {
+            server_msg__send_force_admin_password_change_to_single_client(client);
+            g_server_settings.admin_password_is_initial = FALSE;
+            base__save_server_settings_to_file();
+        }
     }
 
     /* send admin status to other clients possibly, or not, do they have to know you are an admin */
 label_client_msg__process_admin_password_message_end:
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief processes a change-admin-password request from an authenticated admin: hashes and stores the new password
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_change_admin_password_message(cJSON* json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    client_t* client = 0;
+    cJSON* new_password = 0;
+    cJSON* json_message_object = 0;
+
+    status = _client_msg_internal__is_admin_password_message_valid(json_root);
+    if (status == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_change_admin_password_message invalid message \n");
+        return;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+
+    if (client->is_admin == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_change_admin_password_message sender is not an admin \n");
+        goto label_client_msg__process_change_admin_password_message_end;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    new_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
+
+    base__hash_password_to_base64(new_password->valuestring, &g_server_settings.admin_password[0], ADMIN_PASSWORD_MAX_LENGTH);
+    g_server_settings.admin_password_is_initial = FALSE;
+    base__save_server_settings_to_file();
+
+    DBG_CLIENT_MESSAGE log_info("%s", "admin password changed by admin \n");
+
+label_client_msg__process_change_admin_password_message_end:
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 

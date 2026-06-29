@@ -539,6 +539,13 @@
                             value: msg
                         });
                     }
+                    else if (msg.message.type == "force_admin_password_change")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__force_admin_password_change",
+                            value: msg
+                        });
+                    }
                     else if (msg.message.type == "server_settings_values")
                     {
                         global.postMessage({
@@ -5374,17 +5381,13 @@
                     }
                 },
 
-                choose_theme_item_onclick: function(event)
+                apply_theme: function(themename, persist)
                 {
-                    event.stopPropagation();
-                    console.log(event.target);
-
                     for (let i = 0; i < document.getElementsByClassName("style-theme-html-element").length; i++)
                     {
                         document.getElementsByClassName("style-theme-html-element")[i].setAttribute("media","max-width: 1px");
                     }
 
-                    let themename = event.target.getAttribute("data-name");
                     if (themename == "light-theme")
                     {
                         document.getElementById("style-theme-light").removeAttribute("media");
@@ -5397,6 +5400,15 @@
                     {
                         document.getElementById("style-theme-oldschool").removeAttribute("media");
                     }
+
+                    //persist defaults to true (user picks); the server-baked default passes false so it never sticks in localStorage
+                    if (persist !== false) { try { localStorage.setItem("lemon_theme", themename); } catch (e) {} }
+                },
+
+                choose_theme_item_onclick: function(event)
+                {
+                    event.stopPropagation();
+                    UI.apply_theme(event.target.getAttribute("data-name"));
                 },
 
                 hide_chat_container: function()
@@ -6032,6 +6044,12 @@
                         document.getElementById("server-settings-tab").style.display = "none";
                         is_server_settings_tab_visible = false;
                     }
+                },
+
+                close_button_server_settings_onclick: function()
+                {
+                    document.getElementById("server-settings-tab").style.display = "none";
+                    is_server_settings_tab_visible = false;
                 },
 
                 import_identity_button_onclick: function()
@@ -8762,6 +8780,20 @@
                     document.getElementById("connect-form-sub-container-2").style.visibility = "hidden";
                 }
 
+                //web: if the server baked connection details into the page, enable autoconnect before the form-visibility logic below runs; hide only the connect form (ip/port), leaving the loading/connecting status visible so the page isn't blank while it connects
+                if (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.port && is_running_in_android_webview == false)
+                {
+                    are_server_details_predefined = true;
+                    is_autoconnect_without_user_action_active = true;
+                    autoconnect_details = {
+                        host: window.location.hostname,
+                        port: window.__SERVER_CONFIG__.port,
+                        keys: window.__SERVER_CONFIG__.keys
+                    };
+                    document.getElementById("connect-form-sub-container-1").style.display = "none";
+                    document.getElementById("connect-form-sub-container-2").style.display = "none";
+                }
+
                 if (is_running_in_android_webview == false)
                 {
                     if (are_server_details_predefined == false)
@@ -8834,6 +8866,7 @@
                 document.getElementById("close-button-poke-client").onclick = UI.close_button_poke_client_onclick;
                 document.getElementById("close-button-client-info").onclick = UI.close_button_client_info_onclick;
                 document.getElementById("close-button-set-new-username").onclick = UI.close_button_set_new_username_onclick;
+                document.getElementById("close-button-server-settings").onclick = UI.close_button_server_settings_onclick;
                 document.getElementById("poke-client-send-button").onclick = UI.poke_client_send_button_onclick;
                 document.getElementById("set-new-username-send-button").onclick = UI.set_new_username_send_button_onclick;
                 document.getElementById("chat-input-file-input-container").onmousedown = UI.chat_input_container_on_mousedown;
@@ -8900,10 +8933,51 @@
                     }
                 })();
 
+                //make every popup draggable by its title bar (#menu-bar-container), like a real window
+                (function() {
+                    let dragging = null, ox = 0, oy = 0;
+                    let bars = document.querySelectorAll('[id="menu-bar-container"]');
+                    for (let i = 0; i < bars.length; i++)
+                    {
+                        bars[i].addEventListener("mousedown", function(e) {
+                            if (e.target.closest(".close-button") != null) { return; }
+                            let dialog = this.parentElement;
+                            let rect = dialog.getBoundingClientRect();
+                            dragging = dialog;
+                            ox = e.clientX - rect.left;
+                            oy = e.clientY - rect.top;
+                            dialog.style.position = "fixed";
+                            dialog.style.margin = "0";
+                            dialog.style.left = rect.left + "px";
+                            dialog.style.top = rect.top + "px";
+                            e.preventDefault();
+                        });
+                    }
+                    document.addEventListener("mousemove", function(e) {
+                        if (dragging == null) { return; }
+                        dragging.style.left = (e.clientX - ox) + "px";
+                        dragging.style.top = (e.clientY - oy) + "px";
+                    });
+                    document.addEventListener("mouseup", function() { dragging = null; });
+                })();
+
                 for (let i = 0; i < document.getElementsByClassName("choose-theme-item").length; i++)
                 {
                     document.getElementsByClassName("choose-theme-item")[i].onclick = UI.choose_theme_item_onclick;
                 }
+
+                //browsers create an AudioContext suspended unless it is made during a user gesture; resume it on the first click/tap so audio works after an autoconnect, with no dedicated connect click
+                let unlock_audio_on_first_user_gesture = function()
+                {
+                    if (typeof audioContextHandle !== "undefined" && audioContextHandle != null && audioContextHandle.state === "suspended")
+                    {
+                        audioContextHandle.resume();
+                        document.removeEventListener("click", unlock_audio_on_first_user_gesture, true);
+                        document.removeEventListener("touchend", unlock_audio_on_first_user_gesture, true);
+                    }
+                };
+                document.addEventListener("click", unlock_audio_on_first_user_gesture, true);
+                document.addEventListener("touchend", unlock_audio_on_first_user_gesture, true);
 
                 data_processing_worker = create_new_webworker_in_same_file("data_processing_worker");
                 websocket_worker = create_new_webworker_in_same_file("websocket_worker");
@@ -8941,6 +9015,23 @@
                     //document.getElementById("style-theme-default-mobile").removeAttribute("media"); //set default theme
                     document.getElementById("style-theme-default").removeAttribute("media"); //set default theme
                 }
+
+                //server-baked default theme (from the injected config); applied unless the user has their own saved choice. persist=false so it never sticks
+                if (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.theme)
+                {
+                    UI.apply_theme(window.__SERVER_CONFIG__.theme, false);
+                }
+
+                //restore a theme the user previously picked (from the in-app menu); wins over the server default
+                try
+                {
+                    let saved_theme = localStorage.getItem("lemon_theme");
+                    if (saved_theme != null)
+                    {
+                        UI.apply_theme(saved_theme, false);
+                    }
+                }
+                catch (e) {}
                 
                 if (is_running_in_android_webview)
                 {
