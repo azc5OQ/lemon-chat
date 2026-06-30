@@ -359,6 +359,7 @@ cd server-source-code
 #copy start script there
 
 cp -v "$ROOT_DIRECTORY/main/unix_start_template" "$ROOT_DIRECTORY/../buildresult/start_server.sh"
+chmod +x "$ROOT_DIRECTORY/../buildresult/start_server.sh"
 
 cp -v "$THIRD_PARTY_DIRECTORY/libmaxminddb-1.12.2/dbip-country-lite-2025-06.mmdb" "$ROOT_DIRECTORY/../buildresult/"
 
@@ -368,8 +369,6 @@ if [ -f "$ROOT_DIRECTORY/../client-source-code/client.html" ]; then
 else
   warning "client.html not found - the bundled http server will have no page to serve"
 fi
-
-chmod +x "$ROOT_DIRECTORY/../buildresult/start_server.sh"
 
 
 #********************************************************
