@@ -40,8 +40,7 @@ command ()
 ROOT_DIRECTORY="$PWD"
 THIRD_PARTY_DIRECTORY="$PWD/third-party"
 
-message "you need these tools for building : gcc, g++, cmake, ninja, make"
-message "(the bundled stunnel/wss build also needs perl, curl, tar; --wsl also needs autoconf, automake, libtool)"
+message "Debian/Ubuntu: install the build packages with: apt install build-essential cmake ninja-build pkg-config perl curl tar autoconf automake libtool"
  
 
 rm -f -v -r $ROOT_DIRECTORY/../buildresult/
@@ -53,7 +52,7 @@ read -p "delete build files? " -n 1 -r
 echo    # (optional) move to a new line
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
-    rm -fv "$ROOT_DIRECTORY/*.o"
+    rm -fv "$ROOT_DIRECTORY"/*.o
     rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/CMakeFiles"
     rm -rfv "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/library/CMakeFiles"
     rm -fv "$THIRD_PARTY_DIRECTORY/mbedtls-3.6.6/CMakeCache.txt"
@@ -76,8 +75,8 @@ then
     rm -rfv "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/CMakeFiles"
     rm -fv "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/CMakeCache.txt"
     rm -fv "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/libviolet.a"
-    rm -rfv "$ROOT_DIRECTORY/main/linkage-files/windows/*"
-    rm -rfv "$ROOT_DIRECTORY/main/linkage-files/linux/*"
+    rm -rfv "$ROOT_DIRECTORY/main/linkage-files/windows/"*
+    rm -rfv "$ROOT_DIRECTORY/main/linkage-files/linux/"*
     rm -rfv "$ROOT_DIRECTORY/main/CMakeFiles"
     rm -fv "$ROOT_DIRECTORY/main/CMakeCache.txt"
     rm -fv "$ROOT_DIRECTORY/main/cmake_install.cmake"
@@ -86,7 +85,7 @@ then
     rm -fv "$ROOT_DIRECTORY/main/.ninja_log"
     rm -rfv "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeFiles"
     rm -fv "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeCache.txt"
-    rm -fv "$ROOT_DIRECTORY/../buildresult/*"
+    rm -fv "$ROOT_DIRECTORY/../buildresult/"*
 
     # stunnel + its OpenSSL dependency (binaries + build trees)
     ( cd "$THIRD_PARTY_DIRECTORY/stunnel/stunnel-5.75" && make distclean ) >/dev/null 2>&1
@@ -284,10 +283,11 @@ if [ "$WSL_MODE" = "1" ]; then
   ./configure
   make -C src -j"$JOBS"   # src/ only; the vendored tree lacks the test suite
 else
-  make clean
+  make clean ACLOCAL=: AUTOCONF=: AUTOHEADER=: AUTOMAKE=:
   chmod +x configure
   ./configure
-  make
+  # skip autotools regen (committed configure is fine; fresh-checkout mtimes otherwise make `make` call aclocal-1.18 etc. which aren't installed). ':' makes those steps no-ops.
+  make ACLOCAL=: AUTOCONF=: AUTOHEADER=: AUTOMAKE=:
 fi
 
 
