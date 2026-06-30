@@ -53,8 +53,11 @@ make distclean >/dev/null 2>&1 || true
 # WT X-Forwarded patch passes &c->ssl_ptr (size_t*) where buffer_insert wants
 # int* — harmless for handshake-sized buffers and a warning on older gcc, so
 # keep it a warning here too rather than patch upstream's buffer_insert.
+# a fresh clone can lose configure's execute bit (git made from Windows often does not carry +x); restore it so ./configure runs
+chmod +x ./configure
 ./configure --with-ssl="$SSL_PREFIX" CFLAGS="-g -O2 -Wno-error=incompatible-pointer-types"
-make -j"$NJOBS"
+# don't regenerate the build system: the committed configure already works (it just ran); a fresh checkout's mtimes otherwise make `make` rerun autoconf/automake, which fails here. ':' makes those steps no-ops.
+make -j"$NJOBS" ACLOCAL=: AUTOCONF=: AUTOHEADER=: AUTOMAKE=:
 
 step "RESULT"
 ls -la "$STUNNEL_DIR/src/stunnel" 2>/dev/null || true
