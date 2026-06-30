@@ -8249,14 +8249,20 @@
                     }
 
                     let protocol_part_of_connection_string = "ws://";
+                    let connection_port = port;
 
                     if (document.location.protocol == "https:")
                     {
                         protocol_part_of_connection_string = "wss://";
+                        //an https page must use wss, on the separate stunnel wss port (not the plain ws port)
+                        if (are_server_details_predefined == true && autoconnect_details.wss_port)
+                        {
+                            connection_port = autoconnect_details.wss_port;
+                        }
                     }
 
 
-                    let connection_string = protocol_part_of_connection_string + '' + host + ':' + port + '/';
+                    let connection_string = protocol_part_of_connection_string + '' + host + ':' + connection_port + '/';
 
 
                     //must be transported as string, then parsed
@@ -8788,7 +8794,8 @@
                     autoconnect_details = {
                         host: window.location.hostname,
                         port: window.__SERVER_CONFIG__.port,
-                        keys: window.__SERVER_CONFIG__.keys
+                        keys: window.__SERVER_CONFIG__.keys,
+                        wss_port: window.__SERVER_CONFIG__.wss_port
                     };
                     document.getElementById("connect-form-sub-container-1").style.display = "none";
                     document.getElementById("connect-form-sub-container-2").style.display = "none";

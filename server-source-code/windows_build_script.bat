@@ -17,7 +17,7 @@
 
 
 :: >>> EDIT THIS to point at your own w64devkit "bin" folder <<<
-SET "MINGWPATH=C:\Users\user\Downloads\w64devkit\bin"
+SET "MINGWPATH=C:\Users\babikp\Downloads\w64devkit\bin"
 set "CMAKE_MAKE_PROGRAM=%MINGWPATH%\ninja.exe"
 SET "PATH=%MINGWPATH%;%PATH%"
 

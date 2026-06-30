@@ -54,7 +54,6 @@ static void _main_internal__init_tags_and_icons(void);
 static void _main_internal__set_server_settings(void);
 static void _main_internal__prompt_stunnel_setup(void);
 static void _main_internal__launch_stunnel(void);
-static void _main_internal__prompt_client_html_placement(void);
 static int64 _main_internal__get_client_index_by_ws_client_pointer(ws_cli_conn_t* p_ws_connection);
 static void _main_internal__print_debug_information(void);
 static void _main_internal__start_stun_turn_listener_for_webrtc_datachannel(void);
@@ -759,6 +758,8 @@ static void _main_internal__save_server_settings(char plaintext_keys[][256], uin
     cJSON_AddItemToObject(json_root, "serve_client_http", cJSON_CreateBool(g_server_settings.serve_client_http == TRUE));
     cJSON_AddNumberToObject(json_root, "http_port", g_server_settings.http_port);
     cJSON_AddStringToObject(json_root, "http_webroot", &g_server_settings.http_webroot[0]);
+    cJSON_AddItemToObject(json_root, "serve_https", cJSON_CreateBool(g_server_settings.serve_https == TRUE));
+    cJSON_AddNumberToObject(json_root, "https_port", g_server_settings.https_port);
     cJSON_AddStringToObject(json_root, "default_theme", &g_server_settings.default_theme[0]);
     cJSON_AddItemToObject(json_root, "embed_client_config", cJSON_CreateBool(g_server_settings.embed_client_config == TRUE));
 
@@ -804,6 +805,10 @@ static void _main_internal__build_and_push_client_config(int64 websocket_port, c
     if (g_server_settings.embed_client_config == TRUE)
     {
         cJSON_AddNumberToObject(config_object, "port", (double)websocket_port);
+        if (g_server_settings.use_stunnel == TRUE)
+        {
+            cJSON_AddNumberToObject(config_object, "wss_port", (double)g_server_settings.wss_port);
+        }
 
         keys_array = cJSON_CreateArray();
         if (keys_array != NULL_POINTER)
@@ -1080,6 +1085,10 @@ static void _main_internal__set_server_settings(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.serve_client_http = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "http_port");
                 if (cJSON_IsNumber(json_field) == TRUE) { g_server_settings.http_port = json_field->valueint; }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "serve_https");
+                if (cJSON_IsBool(json_field)) { g_server_settings.serve_https = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "https_port");
+                if (cJSON_IsNumber(json_field) == TRUE) { g_server_settings.https_port = json_field->valueint; }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "http_webroot");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &g_server_settings.http_webroot[0], clib__utf8_string_length(json_field->valuestring), 511); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "default_theme");
@@ -1245,30 +1254,89 @@ static void _main_internal__set_server_settings(void)
 
     _main_internal__prompt_stunnel_setup();
 
-    if (g_server_settings.use_stunnel == TRUE)
-    {
-        _main_internal__prompt_client_html_placement();
-    }
 
-    printf("%s %s", g_mark_ask, "Also serve the client over plain HTTP, for LAN testing (no local copy needed)? (y/n): ");
+    printf("%s %s", g_mark_ask, "Use built-in HTTP server to users to join from browser ? (y/n): ");
     fgets(input, sizeof(input), stdin);
     clib__sanitize_stdin(input);
     if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y") == TRUE))
     {
         g_server_settings.serve_client_http = TRUE;
 
-        clib__null_memory(input, sizeof(input));
-        printf("%s %s", g_mark_ask, "HTTP port (80 is standard; choose another like 8080 if 80 is taken): ");
-        fgets(input, sizeof(input), stdin);
-        clib__sanitize_stdin(input);
-        g_server_settings.http_port = strtol(input, 0, 10);
-        if (g_server_settings.http_port <= 0 || g_server_settings.http_port > 65535)
+        if (g_server_settings.http_port == 0)
         {
             g_server_settings.http_port = 80;
-            printf("%s %s\n", g_mark_warn, "invalid port, defaulting to 80");
+        }
+        while (TRUE)
+        {
+            clib__null_memory(input, sizeof(input));
+            printf("%s %s", g_mark_ask, "HTTP port (80 is standard; choose another like 8080 if 80 is taken): ");
+            if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
+            {
+                break;
+            }
+            clib__sanitize_stdin(input);
+            if (input[0] != 0)
+            {
+                g_server_settings.http_port = strtol(input, 0, 10);
+            }
+            if (g_server_settings.http_port <= 0 || g_server_settings.http_port > 65535)
+            {
+                printf("%s %s\n", g_mark_warn, "invalid port (must be 1-65535)");
+                g_server_settings.http_port = 80;
+                continue;
+            }
+            if (g_server_settings.http_port == g_server_settings.websocket_port || (g_server_settings.use_stunnel == TRUE && g_server_settings.http_port == g_server_settings.wss_port))
+            {
+                printf("%s %s%lld%s\n", g_mark_warn, "port ", g_server_settings.http_port, " is already used (ws/wss) - pick another");
+                continue;
+            }
+            break;
         }
 
         printf("%s %s%lld%s\n", g_mark_info, "HTTP server: serving the client on port ", g_server_settings.http_port, " (port 80 may need admin/root)");
+
+        if (g_server_settings.use_stunnel == TRUE)
+        {
+            clib__null_memory(input, sizeof(input));
+            printf("%s %s", g_mark_ask, "Also serve this page over HTTPS here (stunnel), so you don't need apache/nginx? (y/n): ");
+            fgets(input, sizeof(input), stdin);
+            clib__sanitize_stdin(input);
+            if (input[0] == 'y' || input[0] == 'Y')
+            {
+                g_server_settings.serve_https = TRUE;
+                if (g_server_settings.https_port == 0)
+                {
+                    g_server_settings.https_port = 443;
+                }
+                while (TRUE)
+                {
+                    clib__null_memory(input, sizeof(input));
+                    printf("%s %s%lld%s", g_mark_ask, "HTTPS port [default ", g_server_settings.https_port, "]: ");
+                    if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
+                    {
+                        break;
+                    }
+                    clib__sanitize_stdin(input);
+                    if (input[0] != 0)
+                    {
+                        g_server_settings.https_port = strtol(input, 0, 10);
+                    }
+                    if (g_server_settings.https_port <= 0 || g_server_settings.https_port > 65535)
+                    {
+                        printf("%s %s\n", g_mark_warn, "invalid port (must be 1-65535)");
+                        g_server_settings.https_port = 443;
+                        continue;
+                    }
+                    if (g_server_settings.https_port == g_server_settings.wss_port || g_server_settings.https_port == g_server_settings.http_port || g_server_settings.https_port == g_server_settings.websocket_port)
+                    {
+                        printf("%s %s%lld%s\n", g_mark_warn, "port ", g_server_settings.https_port, " is already used (ws/wss/http) - pick another");
+                        continue;
+                    }
+                    break;
+                }
+                printf("%s %s%lld%s%lld%s\n", g_mark_ok, "HTTPS: serving the page over TLS on port ", g_server_settings.https_port, " (stunnel -> http ", g_server_settings.http_port, ")");
+            }
+        }
 
         clib__null_memory(input, sizeof(input));
         printf("%s %s", g_mark_ask, "Embed connection details so the served page connects automatically? (y/n): ");
@@ -1405,6 +1473,33 @@ static void _main_internal__prompt_stunnel_setup(void)
         g_server_settings.wss_port = 1112;
     }
 
+    while (TRUE)
+    {
+        clib__null_memory(input, sizeof(input));
+        printf("%s %s%lld%s", g_mark_ask, "wss (secure websocket) port [default ", g_server_settings.wss_port, "]: ");
+        if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
+        {
+            break;
+        }
+        clib__sanitize_stdin(input);
+        if (input[0] != 0)
+        {
+            g_server_settings.wss_port = strtol(input, 0, 10);
+        }
+        if (g_server_settings.wss_port <= 0 || g_server_settings.wss_port > 65535)
+        {
+            printf("%s %s\n", g_mark_warn, "invalid port (must be 1-65535)");
+            g_server_settings.wss_port = 1112;
+            continue;
+        }
+        if (g_server_settings.wss_port == g_server_settings.websocket_port)
+        {
+            printf("%s %s%lld%s\n", g_mark_warn, "port ", g_server_settings.wss_port, " is the plain ws port - pick another");
+            continue;
+        }
+        break;
+    }
+
     /* detect existing Let's Encrypt certificates */
     cert_dir = opendir("/etc/letsencrypt/live");
     if (cert_dir != NULL_POINTER)
@@ -1448,33 +1543,71 @@ static void _main_internal__prompt_stunnel_setup(void)
     }
     else
     {
-        printf("%s", "No certificates found under /etc/letsencrypt/live/.\n");
-        printf("%s", "Run certbot now to obtain one (needs certbot installed, port 80 free)? (y/n) ");
+        printf("%s", "No certificate found under /etc/letsencrypt/live/.\n\n");
+        printf("%s", "wss needs a TLS certificate. A free Let's Encrypt one requires that your domain\n");
+        printf("%s", "already points to THIS server:\n");
+        printf("%s", "  1. open the DNS control panel at your domain registrar / DNS provider\n");
+        printf("%s", "  2. add an 'A' record for your domain pointing to this server's public IP\n");
+        printf("%s", "     (the same IP address you use to connect to / SSH into this server)\n");
+        printf("%s", "  3. make sure port 80 is reachable from the internet (open in any firewall)\n");
+        printf("%s", "Let's Encrypt connects to http://<your-domain>/ on port 80 to verify you own it;\n");
+        printf("%s", "if the domain does not resolve to this server yet, it cannot succeed.\n\n");
+        printf("%s", "Have you pointed your domain at this server and waited for DNS to propagate? (y/n) ");
         fgets(input, sizeof(input), stdin);
         clib__sanitize_stdin(input);
-        if (input[0] == 'y' || input[0] == 'Y')
+        if (input[0] != 'y' && input[0] != 'Y')
         {
-            printf("%s", "Domain name (e.g. chat.example.com): ");
-            fgets(domain, sizeof(domain), stdin);
-            clib__sanitize_stdin(domain);
-
-            certbot_pid = fork();
-            if (certbot_pid == 0)
-            {
-                /* exec certbot directly (no shell) so the domain cannot inject commands */
-                execlp("certbot", "certbot", "certonly", "--standalone", "-d", domain, (char* )NULL_POINTER);
-                _exit(127);
-            }
-            else if (certbot_pid > 0)
-            {
-                waitpid(certbot_pid, &status, 0);
-            }
-
-            snprintf(g_server_settings.stunnel_domain, 256, "%s", domain);
-            snprintf(g_server_settings.stunnel_cert_fullchain, 512, "/etc/letsencrypt/live/%s/fullchain.pem", domain);
-            snprintf(g_server_settings.stunnel_cert_privkey, 512, "/etc/letsencrypt/live/%s/privkey.pem", domain);
+            printf("%s", "Set up the DNS 'A' record first, then re-run this setup. wss stays off for now.\n");
+            g_server_settings.use_stunnel = FALSE;
             return;
         }
+
+        printf("%s", "Domain name (e.g. chat.example.com): ");
+        fgets(domain, sizeof(domain), stdin);
+        clib__sanitize_stdin(domain);
+
+        printf("%s", "running: certbot certonly --standalone -d <your-domain>\n");
+        printf("%s", "(certbot serves port 80 itself to answer the challenge; nothing else may use it now)\n");
+
+        status = 0;
+        certbot_pid = fork();
+        if (certbot_pid == 0)
+        {
+            /* exec certbot directly (no shell) so the domain cannot inject commands */
+            execlp("certbot", "certbot", "certonly", "--standalone", "-d", domain, (char* )NULL_POINTER);
+            _exit(127); /* exec failed -> certbot is not installed / not on PATH */
+        }
+        else if (certbot_pid > 0)
+        {
+            waitpid(certbot_pid, &status, 0);
+        }
+
+        /* we do NOT auto-install certbot (too distro-specific); detect its absence and instruct */
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 127)
+        {
+            printf("%s", "certbot is not installed (or not on PATH). Install it, then re-run this setup:\n");
+            printf("%s", "  Debian/Ubuntu : apt install certbot\n");
+            printf("%s", "  Fedora/RHEL   : dnf install certbot\n");
+            printf("%s", "  Arch          : pacman -S certbot\n");
+            printf("%s", "  Gentoo        : emerge app-crypt/certbot\n");
+            printf("%s", "  other         : snap install --classic certbot   (then put it on PATH)\n");
+            printf("%s", "wss stays off until a certificate exists.\n");
+            g_server_settings.use_stunnel = FALSE;
+            return;
+        }
+
+        snprintf(g_server_settings.stunnel_domain, 256, "%s", domain);
+        snprintf(g_server_settings.stunnel_cert_fullchain, 512, "/etc/letsencrypt/live/%s/fullchain.pem", domain);
+        snprintf(g_server_settings.stunnel_cert_privkey, 512, "/etc/letsencrypt/live/%s/privkey.pem", domain);
+
+        /* only enable wss if certbot actually produced the cert + key */
+        if (access(g_server_settings.stunnel_cert_privkey, R_OK) != 0 || access(g_server_settings.stunnel_cert_fullchain, R_OK) != 0)
+        {
+            printf("%s", "certbot did not produce a certificate (see its output above - usually the domain\n");
+            printf("%s", "not pointing here yet, or port 80 blocked/in use). wss stays off; fix and re-run.\n");
+            g_server_settings.use_stunnel = FALSE;
+        }
+        return;
     }
 
     /* manual entry */
@@ -1487,103 +1620,6 @@ static void _main_internal__prompt_stunnel_setup(void)
     printf("%s", "Path to privkey.pem: ");
     fgets(g_server_settings.stunnel_cert_privkey, sizeof(g_server_settings.stunnel_cert_privkey), stdin);
     clib__sanitize_stdin(g_server_settings.stunnel_cert_privkey);
-#endif
-}
-
-/**
- * @brief if wss is enabled, optionally copies client.html into a web root so the page
- *        is served over https alongside the wss endpoint; looks for client.html next to
- *        the server and in the repo's client/ dir, then asks for a destination directory
- *        (default /var/www/html). Only called when use_stunnel is TRUE.
- *
- * @return void
- */
-static void _main_internal__prompt_client_html_placement(void)
-{
-#ifndef WIN32
-    char input[600];
-    char exe_dir[600];
-    char candidates[3][700];
-    char dest_dir[480];
-    char dest_path[512];
-    char copy_buffer[8192];
-    const char* source = NULL_POINTER;
-    FILE* in_file = 0;
-    FILE* out_file = 0;
-    uint64 bytes_read = 0;
-    uint64 i = 0;
-
-    clib__null_memory(input, sizeof(input));
-    clib__null_memory(exe_dir, sizeof(exe_dir));
-    clib__null_memory(candidates, sizeof(candidates));
-    clib__null_memory(dest_dir, sizeof(dest_dir));
-    clib__null_memory(dest_path, sizeof(dest_path));
-    clib__null_memory(copy_buffer, sizeof(copy_buffer));
-
-    _main_internal__executable_dir(exe_dir, sizeof(exe_dir));
-    if (exe_dir[0] == 0)
-    {
-        snprintf(exe_dir, sizeof(exe_dir), ".");
-    }
-    snprintf(candidates[0], sizeof(candidates[0]), "%s/client.html", exe_dir);
-    snprintf(candidates[1], sizeof(candidates[1]), "%s/../client/client.html", exe_dir);
-    snprintf(candidates[2], sizeof(candidates[2]), "client.html");
-
-    for (i = 0; i < 3; i++)
-    {
-        if (access(candidates[i], R_OK) == 0)
-        {
-            source = candidates[i];
-            break;
-        }
-    }
-
-    if (source == NULL_POINTER)
-    {
-        printf("%s", "client.html not found near the server - copy it to your web root manually.\n");
-        return;
-    }
-
-    printf("%s%s%s", "found client.html at ", source, "\n");
-    printf("%s", "copy it to a web root so it is served over https? (y/n) ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
-    if (input[0] != 'y' && input[0] != 'Y')
-    {
-        return;
-    }
-
-    printf("%s", "destination directory (default /var/www/html): ");
-    fgets(dest_dir, sizeof(dest_dir), stdin);
-    clib__sanitize_stdin(dest_dir);
-    if (dest_dir[0] == 0)
-    {
-        snprintf(dest_dir, sizeof(dest_dir), "%s", "/var/www/html");
-    }
-    snprintf(dest_path, sizeof(dest_path), "%s/client.html", dest_dir);
-
-    in_file = fopen(source, "rb");
-    if (in_file == NULL_POINTER)
-    {
-        printf("%s%s%s", "could not read ", source, "\n");
-        return;
-    }
-    out_file = fopen(dest_path, "wb");
-    if (out_file == NULL_POINTER)
-    {
-        printf("%s%s%s", "could not write ", dest_path, " (need root for /var/www/html?)\n");
-        fclose(in_file);
-        return;
-    }
-    while ((bytes_read = fread(copy_buffer, 1, sizeof(copy_buffer), in_file)) > 0)
-    {
-        fwrite(copy_buffer, 1, bytes_read, out_file);
-    }
-    fclose(in_file);
-    fclose(out_file);
-
-    snprintf(g_server_settings.client_html_dest, sizeof(g_server_settings.client_html_dest), "%s", dest_path);
-    printf("%s%s%s", "copied client.html -> ", dest_path, "\n");
 #endif
 }
 
@@ -1635,11 +1671,29 @@ static void _main_internal__launch_stunnel(void)
     /* the patched-stunnel option key is still "xforwardedfor"; it injects the renamed X-Stunnel-Client-IP header */
     fprintf(conf_file, "# inject the real client IP as the X-Stunnel-Client-IP header\n");
     fprintf(conf_file, "xforwardedfor = yes\n");
+
+    if (g_server_settings.serve_https == TRUE && g_server_settings.serve_client_http == TRUE)
+    {
+        fprintf(conf_file, "\n[https]\n");
+        fprintf(conf_file, "accept = 0.0.0.0:%lld\n", g_server_settings.https_port);
+        fprintf(conf_file, "connect = 127.0.0.1:%lld\n", g_server_settings.http_port);
+        fprintf(conf_file, "cert = %s\n", g_server_settings.stunnel_cert_fullchain);
+        fprintf(conf_file, "key = %s\n", g_server_settings.stunnel_cert_privkey);
+    }
     fclose(conf_file);
 
     if (access(stunnel_path, X_OK) != 0)
     {
         printf("%s%s%s", "stunnel binary not found / not executable at ", stunnel_path, "; not started\n");
+        return;
+    }
+
+    /* never launch stunnel without a usable cert + key, or it just crash-loops on startup */
+    if (access(g_server_settings.stunnel_cert_privkey, R_OK) != 0 || access(g_server_settings.stunnel_cert_fullchain, R_OK) != 0)
+    {
+        printf("%s%s%s", "wss disabled: TLS certificate not found at ", g_server_settings.stunnel_cert_privkey, "\n");
+        printf("%s", "get one (certbot) and restart to enable wss; ws + http keep running normally.\n");
+        g_server_settings.use_stunnel = FALSE;
         return;
     }
 
@@ -1722,6 +1776,11 @@ static void _main_internal__print_startup_summary(void)
     else
     {
         printf("  %s  %-18s not enabled\n", g_mark_off, "stunnel (wss)");
+    }
+
+    if (g_server_settings.serve_https == TRUE)
+    {
+        printf("  %s  %-18s port %lld (https -> http %lld)\n", g_mark_ok, "https (page)", g_server_settings.https_port, g_server_settings.http_port);
     }
 
     printf("\n");

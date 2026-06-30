@@ -185,6 +185,8 @@ typedef struct server_settings
     boole serve_client_http;
     int64 http_port;
     char http_webroot[512];
+    boole serve_https;
+    int64 https_port;
     char default_theme[32];
     boole embed_client_config;
 } server_settings_t;

@@ -1,0 +1,169 @@
+{
+	"backtrace" : 1,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_custom_target",
+			"add_dependencies"
+		],
+		"files" : 
+		[
+			"CMakeLists.txt",
+			"programs/ssl/CMakeLists.txt",
+			"programs/test/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 448,
+				"parent" : 0
+			},
+			{
+				"file" : 1
+			},
+			{
+				"command" : 1,
+				"file" : 1,
+				"line" : 20,
+				"parent" : 2
+			},
+			{
+				"file" : 2
+			},
+			{
+				"command" : 1,
+				"file" : 2,
+				"line" : 12,
+				"parent" : 4
+			},
+			{
+				"command" : 1,
+				"file" : 2,
+				"line" : 20,
+				"parent" : 4
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"dependencies" : 
+	[
+		{
+			"backtrace" : 3,
+			"id" : "dtls_client::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "dtls_server::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_mail_client::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_server2::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_client1::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_client2::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_context_info::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_fork_server::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "mini_client::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_server::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 5,
+			"id" : "udp_proxy::@6ffcf4fc3485ee952408"
+		},
+		{
+			"backtrace" : 6,
+			"id" : "query_compile_time_config::@6ffcf4fc3485ee952408"
+		}
+	],
+	"id" : "ssl-opt::@6890427a1f51a3e7e1df",
+	"name" : "ssl-opt",
+	"orderDependencies" : 
+	[
+		{
+			"backtrace" : 3,
+			"id" : "dtls_client::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "dtls_server::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_mail_client::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_server2::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_client1::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_client2::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_context_info::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_fork_server::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "mini_client::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ssl_server::@da7f551ec8200a6ca364"
+		},
+		{
+			"backtrace" : 5,
+			"id" : "udp_proxy::@6ffcf4fc3485ee952408"
+		},
+		{
+			"backtrace" : 6,
+			"id" : "query_compile_time_config::@6ffcf4fc3485ee952408"
+		}
+	],
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	},
+	"sources" : [],
+	"type" : "UTILITY"
+}
