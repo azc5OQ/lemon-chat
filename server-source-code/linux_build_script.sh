@@ -40,6 +40,24 @@ command ()
 ROOT_DIRECTORY="$PWD"
 THIRD_PARTY_DIRECTORY="$PWD/third-party"
 
+#======================== build configuration (edit these) ========================
+CMAKE_CXX_COMPILER="g++"
+CMAKE_C_COMPILER="gcc"
+CMAKE_LINKER="ld"
+CMAKE_C_FLAGS="-Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement -DUSE_LTM -DLTM_DESC"
+CMAKE_C_FLAGS_RELEASE="-DDEBUG -Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement"
+BUILD_CONFIG="Release"
+#BUILD_CONFIG="Debug"
+
+# optional WSL mode: ./linux_build_script.sh --wsl  (modern toolchain on /mnt/c: -std=gnu17,
+# a CMake policy floor, fewer parallel jobs, libmaxminddb autotools regen, /mnt metadata check)
+WSL_MODE=0
+case "$1" in --wsl|-w) WSL_MODE=1 ;; esac
+
+# parallel build jobs (-j); override with: JOBS=8 ./linux_build_script.sh
+JOBS="${JOBS:-32}"
+#==================================================================================
+
 message "Debian/Ubuntu: install the build packages with: apt install build-essential cmake ninja-build pkg-config perl curl tar autoconf automake libtool"
  
 
@@ -103,24 +121,6 @@ warning "files deleted"
 #add exit if only file deletion is needed
 #exit
 
-CMAKE_CXX_COMPILER="g++"
-CMAKE_C_COMPILER="gcc"
-CMAKE_LINKER="ld"
-CMAKE_C_FLAGS="-Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement -DUSE_LTM -DLTM_DESC"
-CMAKE_C_FLAGS_RELEASE="-DDEBUG -Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement"
-BUILD_CONFIG="Release"
-#BUILD_CONFIG="Debug"
-
-
-# ---- optional WSL mode: ./linux_build_script.sh --wsl -----------------------
-# Building inside WSL on /mnt/c with a modern toolchain (GCC 15 / CMake 4) needs the
-# tweaks the old _wsl_build.sh did: -std=gnu17, a CMake policy floor, fewer parallel
-# jobs, the autotools regen for libmaxminddb, and a /mnt metadata-mount check.
-WSL_MODE=0
-case "$1" in --wsl|-w) WSL_MODE=1 ;; esac
-
-# number of parallel build jobs passed to cmake/make (-j); override with: JOBS=8 ./linux_build_script.sh
-JOBS="${JOBS:-32}"
 WSL_CMAKE=""
 if [ "$WSL_MODE" = "1" ]; then
   JOBS="${NJOBS:-4}"
