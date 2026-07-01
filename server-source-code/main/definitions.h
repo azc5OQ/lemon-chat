@@ -1,7 +1,7 @@
 #ifndef MYTYPEDEF_H
 #define MYTYPEDEF_H
 
-/* #define DEBUG_ACTIVE 1 */
+//#define DEBUG_ACTIVE 1
 
 #define ARCHITECTURE_AMD64 1
 /* #define ARCHITECTURE_I386 1 */

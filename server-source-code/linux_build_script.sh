@@ -167,7 +167,7 @@ message "mbedtls build finished, moving some mbedtls files to their destination"
 
 #copy include folder from mbedtls dir to deps
 
-#a fresh clone has no empty deps/mbedtls/lib (git does not track empty directories), so the copies below would fail with "No such file or directory"; create it first (-p also makes the parent deps/mbedtls that the include copy needs)
+#a fresh clone has no empty deps/mbedtls/lib (git does not track empty directories)
 mkdir -p "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/deps/mbedtls/lib"
 
 rm -rf "$THIRD_PARTY_DIRECTORY/libdatachannel-0.24.2/deps/mbedtls/include"

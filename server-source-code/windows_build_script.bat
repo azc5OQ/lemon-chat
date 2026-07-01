@@ -203,6 +203,7 @@ cmake --build . -j%BUILD_JOBS% --target mbedtls
 ::copy include folder from mbedtls dir to deps
 rd "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\include" /Q /S
 mkdir "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\include"
+mkdir "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\lib"
 xcopy "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\include" "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\include" /E /H /I /Y
 
 ::after the build of mbedtls is done, few more things

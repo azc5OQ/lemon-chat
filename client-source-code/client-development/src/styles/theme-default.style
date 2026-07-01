@@ -915,7 +915,6 @@
 
         #channel-properties-disable-audio-checkbox {
             height: 25px;
-            float: right;
         }
         
         .add-tag-context-menu-items {

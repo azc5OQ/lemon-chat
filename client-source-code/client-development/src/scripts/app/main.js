@@ -8263,6 +8263,7 @@
 
 
                     let connection_string = protocol_part_of_connection_string + '' + host + ':' + connection_port + '/';
+                    console.log("connection_string -> " + connection_string);
 
 
                     //must be transported as string, then parsed
