@@ -531,9 +531,10 @@ void server_msg__send_tag_list_to_single_client(ws_cli_conn_t* websocket, char* 
         }
 
         single_tag_id_object = cJSON_CreateObject();
-        cJSON_AddNumberToObject(single_tag_id_object, "tag_id", (double)g_tags_array->id);
+        cJSON_AddNumberToObject(single_tag_id_object, "tag_id", (double)g_tags_array[x].id);
         cJSON_AddStringToObject(single_tag_id_object, "tag_name", g_tags_array[x].name);
         cJSON_AddNumberToObject(single_tag_id_object, "tag_linked_icon_id", (double)g_tags_array[x].icon_id);
+        cJSON_AddItemToObject(single_tag_id_object, "has_icon", cJSON_CreateBool(g_tags_array[x].has_icon == TRUE));
         cJSON_AddItemToArray(json_tags_array, single_tag_id_object);
     }
 
@@ -707,7 +708,8 @@ void server_msg__send_client_connect_message_to_all_clients(uint64 client_id_of_
 
         json_root_object1 = cJSON_CreateObject();
         json_message_object1 = cJSON_CreateObject();
-        json_tag_ids_array = cJSON_CreateArray();
+        /* carry the connecting client's tags so identity-restored tags show up on join without a page reload */
+        json_tag_ids_array = cJSON_CreateIntArray(new_client->tag_ids, (int)cvector_size(new_client->tag_ids));
 
         cJSON_AddStringToObject(json_message_object1, "type", "client_connect");
         cJSON_AddStringToObject(json_message_object1, "username", new_client->username);
@@ -2671,6 +2673,193 @@ void server_msg__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char
 }
 
 /**
+ * @brief broadcasts a tag-deleted-from-pool event to all clients
+ *
+ * @param uint64 tag_id -> id of the tag that was deleted
+ *
+ * @return void
+ */
+void server_msg__send_remove_tag_event_to_all_clients(uint64 tag_id)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_remove_tag_event_to_all_clients \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "tag_delete");
+    cJSON_AddNumberToObject(json_message_object1, "tag_id", tag_id);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        if (client->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief broadcasts an icon-deleted-from-pool event to all clients
+ *
+ * @param uint64 icon_id -> id of the icon that was deleted
+ *
+ * @return void
+ */
+void server_msg__send_remove_icon_event_to_all_clients(uint64 icon_id)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_remove_icon_event_to_all_clients \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "icon_delete");
+    cJSON_AddNumberToObject(json_message_object1, "icon_id", icon_id);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        if (client->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief broadcasts a tag-icon-changed event to all clients
+ *
+ * @param uint64 tag_id -> id of the tag whose icon changed
+ * @param boole has_icon -> whether the tag now has an icon
+ * @param uint64 icon_id -> the tag's icon id (meaningful only when has_icon is TRUE)
+ *
+ * @return void
+ */
+void server_msg__send_tag_icon_changed_event_to_all_clients(uint64 tag_id, boole has_icon, uint64 icon_id)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_tag_icon_changed_event_to_all_clients \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "tag_icon_changed");
+    cJSON_AddNumberToObject(json_message_object1, "tag_id", tag_id);
+    cJSON_AddItemToObject(json_message_object1, "has_icon", cJSON_CreateBool(has_icon == TRUE));
+    cJSON_AddNumberToObject(json_message_object1, "tag_linked_icon_id", icon_id);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        if (client->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
  * @brief broadcasts a new-tag-created event to all clients
  *
  * @param uint64 tag_id -> id of the new tag
@@ -2679,7 +2868,7 @@ void server_msg__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char
  *
  * @return void
  */
-void server_msg__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* tag_name, uint64 tag_linked_icon_id)
+void server_msg__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* tag_name, uint64 tag_linked_icon_id, boole has_icon)
 {
     char* json_root_object1_string = 0;
     int64 size_of_allocated_message_buffer = 0;
@@ -2698,6 +2887,7 @@ void server_msg__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* t
     cJSON_AddNumberToObject(json_message_object1, "tag_id", tag_id);
     cJSON_AddStringToObject(json_message_object1, "tag_name", tag_name);
     cJSON_AddNumberToObject(json_message_object1, "tag_linked_icon_id", tag_linked_icon_id);
+    cJSON_AddItemToObject(json_message_object1, "has_icon", cJSON_CreateBool(has_icon == TRUE));
 
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 

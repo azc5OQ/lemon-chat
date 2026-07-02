@@ -195,17 +195,21 @@ static boole _client_msg_internal__is_process_server_settings_add_new_tag_messag
         return FALSE;
     }
 
+    /* the linked icon is optional; a tag may be created without one. only validate it when present */
     json_linked_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "linked_icon_id");
-    if (cJSON_IsNumber(json_linked_icon_id) == FALSE)
+    if (json_linked_icon_id != NULL_POINTER)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_process_server_settings_add_new_tag_message_valid cJSON_IsNumber(json_linked_icon_id)");
-        return FALSE;
-    }
+        if (cJSON_IsNumber(json_linked_icon_id) == FALSE)
+        {
+            DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_process_server_settings_add_new_tag_message_valid cJSON_IsNumber(json_linked_icon_id)");
+            return FALSE;
+        }
 
-    if (json_linked_icon_id->valueint < 0 || json_linked_icon_id->valueint >= MAX_ICONS)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "icon id is invalid");
-        return FALSE;
+        if (json_linked_icon_id->valueint < 0 || json_linked_icon_id->valueint >= MAX_ICONS)
+        {
+            DBG_CLIENT_MESSAGE log_info("%s", "icon id is invalid");
+            return FALSE;
+        }
     }
 
     return TRUE;
@@ -2164,6 +2168,14 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
 
         if (status == TRUE)
         {
+            /* restore this client's saved tags from the identity store (matched by public-key hash); the
+               admin tag re-grants admin. runs before the connect broadcast so every client sees the tags.
+               the tags read lock (held above) and clients write lock (held for this handler) cover it */
+            if (g_server_settings.are_identities_enabled == TRUE)
+            {
+                base__restore_identity_tags(current_client);
+            }
+
             server_msg__send_authentication_status_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
             server_msg__send_channel_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
             server_msg__send_client_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret, current_client->username, current_client->client_id);
@@ -3008,11 +3020,11 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
     /* channel capacity: a full channel rejects non-admins. the count excludes music bots already (see
        base__get_client_count_for_channel); admins bypass the limit */
     if (new_channel->is_client_limit_active == TRUE
-        && new_channel->max_client_count > 0
         && client_that_is_joining_channel->is_admin == FALSE
-        && base__get_client_count_for_channel(new_channel->channel_id) >= new_channel->max_client_count)
+        && (new_channel->max_client_count == 0
+            || base__get_client_count_for_channel(new_channel->channel_id) >= new_channel->max_client_count))
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request channel is full \n");
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request channel is full, or admin-only (limit 0) \n");
         server_msg__send_channel_full_to_single_client(client_that_is_joining_channel, new_channel->channel_id);
         goto client_msg__process_join_channel_request_end;
     }
@@ -3328,6 +3340,10 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
                 DBG_CLIENT_MESSAGE log_info("%s %lld %s", "client_msg__process_delete_channel_request moving client ", client_to_move_maybe->client_id, "to root channel \n");
 
                 client_to_move_maybe->channel_id = ROOT_CHANNEL_ID;
+
+                /* keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this
+                   client on the channel-mismatch check after the move to root */
+                audio_channel__process_client_channel_join(client_to_move_maybe);
 
                 server_msg__send_channel_join_message_to_all_clients(client_to_move_maybe, &g_channel_array[ROOT_CHANNEL_ID]);
 
@@ -4096,15 +4112,17 @@ void client_msg__process_set_server_settings_add_new_tag(cJSON* json_root, uint6
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_tags_global_rwlock_guard);
 
-    /* one more check for linked_icon_id , check if it exists
-       range check for json_linked_icon_id->valueint is done in _client_msg_internal__is_process_server_settings_add_new_tag_message_valid
-       icon id is same as icon index */
-    status = g_icons_array[json_linked_icon_id->valueint].is_existing;
-
-    if (status == FALSE)
+    /* the linked icon is optional. when one is given it must reference an existing icon (id equals icon index,
+       range already checked in the validator); when none is given the tag is created without an icon */
+    if (json_linked_icon_id != NULL_POINTER)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_set_server_settings_add_new_tag linked icon id does not exist \n");
-        goto label_client_msg__process_server_settings_add_new_tag_end;
+        status = g_icons_array[json_linked_icon_id->valueint].is_existing;
+
+        if (status == FALSE)
+        {
+            DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_set_server_settings_add_new_tag linked icon id does not exist \n");
+            goto label_client_msg__process_server_settings_add_new_tag_end;
+        }
     }
 
     /* check if client that is sending request has permission to create new server tags */
@@ -4139,14 +4157,25 @@ void client_msg__process_set_server_settings_add_new_tag(cJSON* json_root, uint6
     }
 
     /* at this point client is verified, icon id is correct, newly_added_tag length is correct */
-    for (tag_index = 0; tag_index < MAX_TAGS; tag_index++)
+    /* start at index 1: id 0 is ADMIN_TAG_ID (reserved for the admin tag). a user tag at id 0 would collide
+       with it - adding it would grant admin, and adding/removing it would add/strip the admin tag. */
+    for (tag_index = 1; tag_index < MAX_TAGS; tag_index++)
     {
         tag_in_loop = &g_tags_array[tag_index];
 
         if (tag_in_loop->is_existing == FALSE)
         {
             tag_in_loop->is_existing = TRUE;
-            tag_in_loop->icon_id = json_linked_icon_id->valueint;
+            if (json_linked_icon_id != NULL_POINTER)
+            {
+                tag_in_loop->has_icon = TRUE;
+                tag_in_loop->icon_id = (uint64)json_linked_icon_id->valueint;
+            }
+            else
+            {
+                tag_in_loop->has_icon = FALSE;
+                tag_in_loop->icon_id = 0;
+            }
             clib__copy_memory((void*)&json_tag_name->valuestring[0], (void*)&tag_in_loop->name[0], clib__utf8_string_length(json_tag_name->valuestring), TAG_MAX_NAME_LENGTH);
             tag_in_loop->id = tag_index;
 
@@ -4161,9 +4190,218 @@ void client_msg__process_set_server_settings_add_new_tag(cJSON* json_root, uint6
         goto label_client_msg__process_server_settings_add_new_tag_end;
     }
 
-    server_msg__send_create_new_tag_event_to_all_clients(tag_in_loop->id, tag_in_loop->name, tag_in_loop->icon_id);
+    server_msg__send_create_new_tag_event_to_all_clients(tag_in_loop->id, tag_in_loop->name, tag_in_loop->icon_id, tag_in_loop->has_icon);
 
 label_client_msg__process_server_settings_add_new_tag_end:
+    clib__unlock(&g_tags_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief processes an admin request to delete a tag from the server's tag pool. the tag is stripped from every
+ *        client that currently holds it, its pool slot is freed, and all clients are told to remove it. the
+ *        admin tag (ADMIN_TAG_ID) can never be deleted this way.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_set_server_settings_delete_tag(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* sender_client = 0;
+    client_t* client = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_tag_id = 0;
+    uint64 tag_id = 0;
+    uint64 i = 0;
+    int64 tag_id_index = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_tag_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "tag_id");
+
+    if (cJSON_IsNumber(json_tag_id) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_set_server_settings_delete_tag: tag_id missing or not a number");
+        return;
+    }
+
+    tag_id = (uint64)json_tag_id->valueint;
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_tags_global_rwlock_guard);
+
+    sender_client = &g_clients_array[sender_client_id];
+
+    if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE || sender_client->is_admin == FALSE)
+    {
+        goto label_client_msg__process_set_server_settings_delete_tag_end;
+    }
+
+    /* the admin tag lives in slot 0 and is never a deletable pool tag */
+    if (tag_id == ADMIN_TAG_ID)
+    {
+        goto label_client_msg__process_set_server_settings_delete_tag_end;
+    }
+
+    if (base__is_tag_id_real(tag_id) == FALSE)
+    {
+        goto label_client_msg__process_set_server_settings_delete_tag_end;
+    }
+
+    /* strip the tag from every client that currently holds it, so server state stays consistent */
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        if (client->is_existing == FALSE || client->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        tag_id_index = base__get_index_of_tag_id_of_client(client->client_id, tag_id);
+        if (tag_id_index != -1)
+        {
+            cvector_erase(client->tag_ids, tag_id_index);
+        }
+    }
+
+    /* free the tag's pool slot (a tag id equals its index in g_tags_array) */
+    g_tags_array[tag_id].is_existing = FALSE;
+    g_tags_array[tag_id].icon_id = 0;
+    clib__null_memory(&g_tags_array[tag_id].name[0], TAG_MAX_NAME_LENGTH);
+
+    server_msg__send_remove_tag_event_to_all_clients(tag_id);
+
+label_client_msg__process_set_server_settings_delete_tag_end:
+    clib__unlock(&g_tags_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief processes an admin request to delete an icon from the server's icon pool. tags that still reference the
+ *        deleted icon keep their icon_id, but their image no longer resolves.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_set_server_settings_delete_icon(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* sender_client = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_icon_id = 0;
+    uint64 icon_id = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "icon_id");
+
+    if (cJSON_IsNumber(json_icon_id) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_set_server_settings_delete_icon: icon_id missing or not a number");
+        return;
+    }
+
+    icon_id = (uint64)json_icon_id->valueint;
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_icons_global_rwlock_guard);
+
+    sender_client = &g_clients_array[sender_client_id];
+
+    if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE || sender_client->is_admin == FALSE)
+    {
+        goto label_client_msg__process_set_server_settings_delete_icon_end;
+    }
+
+    if (icon_id >= MAX_ICONS || g_icons_array[icon_id].is_existing == FALSE)
+    {
+        goto label_client_msg__process_set_server_settings_delete_icon_end;
+    }
+
+    /* free the icon's pool slot (an icon id equals its index in g_icons_array) */
+    g_icons_array[icon_id].is_existing = FALSE;
+    clib__null_memory(&g_icons_array[icon_id].base64[0], ICON_MAX_LENGTH);
+
+    server_msg__send_remove_icon_event_to_all_clients(icon_id);
+
+label_client_msg__process_set_server_settings_delete_icon_end:
+    clib__unlock(&g_icons_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief processes an admin request to set or clear a tag's linked icon. an icon_id in the message assigns that
+ *        icon (it must exist); an absent icon_id clears the tag's icon. the change is broadcast to all clients.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_set_server_settings_set_tag_icon(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* sender_client = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_tag_id = 0;
+    cJSON* json_icon_id = 0;
+    uint64 tag_id = 0;
+    uint64 icon_id = 0;
+    boole wants_icon = FALSE;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_tag_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "tag_id");
+    json_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "icon_id");
+
+    if (cJSON_IsNumber(json_tag_id) == FALSE)
+    {
+        return;
+    }
+
+    tag_id = (uint64)json_tag_id->valueint;
+    wants_icon = cJSON_IsNumber(json_icon_id);
+    if (wants_icon == TRUE)
+    {
+        icon_id = (uint64)json_icon_id->valueint;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_tags_global_rwlock_guard);
+
+    sender_client = &g_clients_array[sender_client_id];
+
+    if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE || sender_client->is_admin == FALSE)
+    {
+        goto label_client_msg__process_set_server_settings_set_tag_icon_end;
+    }
+
+    if (base__is_tag_id_real(tag_id) == FALSE)
+    {
+        goto label_client_msg__process_set_server_settings_set_tag_icon_end;
+    }
+
+    if (wants_icon == TRUE)
+    {
+        /* the assigned icon must exist (an icon id equals its index) */
+        if (icon_id >= MAX_ICONS || g_icons_array[icon_id].is_existing == FALSE)
+        {
+            goto label_client_msg__process_set_server_settings_set_tag_icon_end;
+        }
+
+        g_tags_array[tag_id].has_icon = TRUE;
+        g_tags_array[tag_id].icon_id = icon_id;
+    }
+    else
+    {
+        /* no icon_id in the request -> clear the tag's icon */
+        g_tags_array[tag_id].has_icon = FALSE;
+        g_tags_array[tag_id].icon_id = 0;
+    }
+
+    server_msg__send_tag_icon_changed_event_to_all_clients(tag_id, g_tags_array[tag_id].has_icon, g_tags_array[tag_id].icon_id);
+
+label_client_msg__process_set_server_settings_set_tag_icon_end:
     clib__unlock(&g_tags_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -4253,18 +4491,22 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     }
 
     /* persist everything into server_settings.json. the save reads channels, icons, tags and bans, so take
-       those read locks in lock order (bans is always last) */
+       those read locks in lock order (bans is always last). the clients read lock is taken first (clients
+       before channels, matching the auth path) so the identity snapshot can read each client's tag list */
+    clib__read_lock(&g_clients_global_rwlock_guard);
     clib__read_lock(&g_channels_global_rwlock_guard);
     clib__read_lock(&g_icons_global_rwlock_guard);
     clib__read_lock(&g_tags_global_rwlock_guard);
     clib__read_lock(&g_bans_global_rwlock_guard);
 
+    base__snapshot_connected_clients_into_identity_store();
     save_succeeded = base__save_server_settings_to_file();
 
     clib__unlock(&g_bans_global_rwlock_guard);
     clib__unlock(&g_tags_global_rwlock_guard);
     clib__unlock(&g_icons_global_rwlock_guard);
     clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
 
     /* if the file could not be written, roll the toggles back so the running state stays consistent with
        what is on disk (which is what the next restart will load) */
@@ -4465,7 +4707,10 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
         server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_id);
     }
 
-    /* audio_channel__process_client_channel_join(client_that_is_joining_channel); */
+    /* keep the webrtc peer's channel in sync: while idle (channel_id -2) the relay's channel-mismatch
+       check correctly delivers no channel audio to this client */
+    audio_channel__process_client_channel_join(client);
+
 label_go_to_idle_mode_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -4519,6 +4764,10 @@ void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint
 
     client->is_idle = FALSE;
     client->channel_id = channel_to_join->channel_id;
+
+    /* keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this client on the
+       channel-mismatch check after it returns from idle */
+    audio_channel__process_client_channel_join(client);
 
     server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(sender_client_id, channel_to_join->channel_id);
 
@@ -5236,6 +5485,16 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
     if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client->is_authenticated == FALSE || client->is_existing == FALSE goto label_client_msg__process_file_send_completed_request_end end");
+        goto label_client_msg__process_file_send_completed_request_end;
+    }
+
+    /* an upload must actually be in progress. file_upload_buffer is NULL on a fresh connection and after a
+       prior upload completes (it is freed and zeroed below), so without this guard the intent handlers pass a
+       NULL buffer to clib__utf8_string_length / the picture handlers, dereferencing address 0 and crashing the
+       whole server. the buffer pointer is the single source of truth for whether an upload is in progress. */
+    if (sender_client->file_upload_extension.file_upload_buffer == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_file_send_completed_request: no upload in progress, ignoring");
         goto label_client_msg__process_file_send_completed_request_end;
     }
 

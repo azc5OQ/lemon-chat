@@ -25,6 +25,8 @@ CMakeFiles/
 cmake_install.cmake
 CTestTestfile.cmake
 install_manifest.txt
+# CMake File API artifacts (.cmake/api/... query/reply jsons, regenerated on every configure)
+.cmake/
 
 # ---- Ninja generator ----
 build.ninja

@@ -498,8 +498,29 @@
                     //
                     is_voice_chat_allowed_by_server = true;
                     is_client_microphone_allowed_by_server = (e.data.client_voice_allowed == true);
-                    audio_context = new (window.AudioContext || window.webkitAudioContext)();
+                    //decoded audio is 48 kHz PCM and is pushed into the context untouched (the SpeexResampler below
+                    //is not wired into the playback path), so ask for a 48 kHz context and let the browser do the
+                    //device-rate conversion itself. without this, a 44.1 kHz device plays 48 kHz samples ~9% slow
+                    //(pitch drop) and the playback queue grows ~8% per second - the endlessly accumulating delay
+                    try
+                    {
+                        audio_context = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+                    }
+                    catch (sample_rate_hint_not_supported)
+                    {
+                        audio_context = new (window.AudioContext || window.webkitAudioContext)();
+                    }
                     console.log("audio_context.sampleRate" + audio_context.sampleRate);
+
+                    //with autoconnect there may have been no user gesture before this point, then the browser
+                    //creates the context suspended and every played frame is silently discarded. try to resume
+                    //right away (succeeds when a gesture already happened); if it stays suspended, the
+                    //first-gesture unlock handler in main.js resumes it on the next click/tap/keypress
+                    if (audio_context.state === "suspended")
+                    {
+                        console.log("audio_context created suspended (autoplay policy, no user gesture yet); audio stays silent until a gesture resumes it");
+                        audio_context.resume();
+                    }
 
                     let opus_decoding_sampler_channels = 1;
                     let opus_decoding_sampler_input_rate = 48000;
@@ -578,6 +599,18 @@
                 {
                     server_msg.process_tag_add_from_server(e.data.value);
                 }
+                else if (e.data.type == "data_processing_worker__tag_delete_from_server")
+                {
+                    server_msg.process_tag_delete_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__icon_delete_from_server")
+                {
+                    server_msg.process_icon_delete_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__tag_icon_changed_from_server")
+                {
+                    server_msg.process_tag_icon_changed_from_server(e.data.value);
+                }
                 else if (e.data.type == "data_processing_worker__start_song_stream_from_server")
                 {
                     server_msg.process_start_song_stream_from_server(e.data.value);
@@ -625,13 +658,10 @@
                     let dh_keys = dh_derive_keys(shared_secret_string);
                     key_bytes = dh_keys.enc_key;
 
-                    let iv_bytes = [90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10];
-
                     let single_key = {
                         info: "aes-ctr",
                         key_string: shared_secret_string,
                         key_bytes: key_bytes,
-                        iv_bytes: iv_bytes,
                         mac_bytes: dh_keys.mac_key
                     };
 
@@ -983,11 +1013,13 @@
                     }
 
                     let pulse_code_modulation_bytes_for_webaudio = decoder.getPcmBuffer();
-                    
+
+                    //getPcmBuffer returns a freshly allocated copy, so its buffer can be transferred instead of
+                    //structure-cloned - one less full copy of every decoded chunk on the worker -> main hop
                     global.postMessage({
                         type: "opus_decoder_worker__decode_result",
                         value: pulse_code_modulation_bytes_for_webaudio
-                    });
+                    }, [pulse_code_modulation_bytes_for_webaudio.buffer]);
                 }
 
                 opus_decoder_worker_clients_opus_data.length = 0;

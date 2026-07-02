@@ -139,7 +139,6 @@ typedef struct key_data
 {
     int64 key_data_type;
     unsigned char key_value[32];
-    unsigned char key_iv[16];
 } key_data_t;
 
 /* todo, use int64 whenever possible */
@@ -155,6 +154,7 @@ typedef struct server_settings
     boole is_voice_chat_active;
     boole is_music_bot_audio_active;
     boole is_logging_of_failed_attempts_active;
+    boole are_identities_enabled;
     uint64 chat_cooldown_milliseconds;
     uint64 join_channel_request_cooldown_milliseconds;
     uint64 delete_channel_request_cooldown_milliseconds;
@@ -240,7 +240,7 @@ typedef struct music_bot_client_extension_t
 
 typedef struct client_file_upload_extension_t
 {
-    boole is_file_being_uploaded;
+    /* file_upload_buffer is the single in-progress signal: non-NULL while a file is buffered, NULL otherwise */
     ubyte* file_upload_buffer; /* stores the base64 content of the file */
     uint64 buffer_cursor;
     uint64 expected_file_length;
@@ -319,6 +319,7 @@ typedef struct tag_t
     boole is_existing;
     uint64 id;
     uint64 icon_id;
+    boole has_icon; /* a tag may exist without a linked icon; icon_id is only meaningful when this is TRUE */
     char name[TAG_MAX_NAME_LENGTH];
 } tag_t;
 

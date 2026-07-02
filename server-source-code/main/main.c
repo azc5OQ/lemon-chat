@@ -43,16 +43,19 @@ static const char* g_color_reset = "";
 #include <dirent.h>     /* opendir / readdir (Let's Encrypt cert detection) */
 #include <signal.h>
 #include <sys/wait.h>   /* waitpid (certbot) */
+#include <sys/stat.h>   /* stat (certificate age for the days-of-validity-left estimate) */
 #include <sys/prctl.h>  /* PR_SET_PDEATHSIG (stunnel dies with the server) */
 #endif
 
 static int g_stunnel_pid = 0; /* pid of the optional bundled stunnel child, 0 = none */
+static char g_first_run_admin_password[ADMIN_PASSWORD_MAX_LENGTH]; /* plaintext admin password, kept only through this run's startup summary, then wiped */
 static pthread_mutex_t g_log_mutex = PTHREAD_MUTEX_INITIALIZER; /* serializes console log output across threads */
 
 static void _main_internal__init_channel_list(void);
 static void _main_internal__init_tags_and_icons(void);
 static void _main_internal__set_server_settings(void);
 static void _main_internal__prompt_stunnel_setup(void);
+static void _main_internal__renew_certificate_if_due(void);
 static void _main_internal__launch_stunnel(void);
 static int64 _main_internal__get_client_index_by_ws_client_pointer(ws_cli_conn_t* p_ws_connection);
 static void _main_internal__print_debug_information(void);
@@ -459,11 +462,16 @@ static void _main_internal__load_persisted_state(void)
     cJSON* json_tag = NULL_POINTER;
     cJSON* json_bans = NULL_POINTER;
     cJSON* json_ban = NULL_POINTER;
+    cJSON* json_identities = NULL_POINTER;
+    cJSON* json_identity = NULL_POINTER;
+    cJSON* json_identity_tag_ids = NULL_POINTER;
+    cJSON* json_identity_tag_id = NULL_POINTER;
     cJSON* json_field = NULL_POINTER;
     channel_t* channel_in_loop = NULL_POINTER;
     icon_t* icon_in_loop = NULL_POINTER;
     tag_t* tag_in_loop = NULL_POINTER;
     ban_entry_t* ban_in_loop = NULL_POINTER;
+    client_stored_data_t* identity_in_loop = NULL_POINTER;
     int64 channel_id = 0;
     int64 icon_id = 0;
     int64 tag_id = 0;
@@ -471,7 +479,9 @@ static void _main_internal__load_persisted_state(void)
     uint64 loaded_icons = 0;
     uint64 loaded_tags = 0;
     uint64 loaded_bans = 0;
+    uint64 loaded_identities = 0;
     uint64 ban_slot = 0;
+    uint64 identity_slot = 0;
 
     settings_file = fopen("server_settings.json", "rb");
     if (settings_file == NULL_POINTER)
@@ -627,6 +637,10 @@ static void _main_internal__load_persisted_state(void)
             json_field = cJSON_GetObjectItemCaseSensitive(json_tag, "icon_id");
             if (cJSON_IsNumber(json_field) == TRUE) { tag_in_loop->icon_id = (uint64)json_field->valueint; }
 
+            json_field = cJSON_GetObjectItemCaseSensitive(json_tag, "has_icon");
+            if (cJSON_IsBool(json_field) == TRUE) { tag_in_loop->has_icon = cJSON_IsTrue(json_field); }
+            else { tag_in_loop->has_icon = TRUE; } /* settings written before has_icon existed had a mandatory icon */
+
             json_field = cJSON_GetObjectItemCaseSensitive(json_tag, "name");
             if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &tag_in_loop->name[0], clib__utf8_string_length(json_field->valuestring), TAG_MAX_NAME_LENGTH - 1); }
 
@@ -673,11 +687,64 @@ static void _main_internal__load_persisted_state(void)
         }
     }
 
+    /* load the identity store (public-key hash -> tag ids). only consulted on auth when identities are
+       enabled, but always loaded so the data survives a disable/re-enable cycle. entries with no tags are
+       dropped so they don't occupy a slot */
+    json_identities = cJSON_GetObjectItemCaseSensitive(json_root, "identities");
+    if (cJSON_IsArray(json_identities) == TRUE)
+    {
+        cJSON_ArrayForEach(json_identity, json_identities)
+        {
+            if (identity_slot >= MAX_CLIENT_STORED_DATA)
+            {
+                break;
+            }
+
+            json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "public_key_hash");
+            if (cJSON_IsString(json_field) == FALSE || json_field->valuestring == NULL_POINTER)
+            {
+                continue;
+            }
+
+            identity_in_loop = &g_client_stored_data[identity_slot];
+            clib__null_memory(identity_in_loop, sizeof(client_stored_data_t));
+            clib__copy_memory(json_field->valuestring, &identity_in_loop->public_key[0], clib__utf8_string_length(json_field->valuestring), MAX_PUBLIC_KEY_LENGTH - 1);
+
+            identity_in_loop->tag_id_count = 0;
+            json_identity_tag_ids = cJSON_GetObjectItemCaseSensitive(json_identity, "tag_ids");
+            if (cJSON_IsArray(json_identity_tag_ids) == TRUE)
+            {
+                cJSON_ArrayForEach(json_identity_tag_id, json_identity_tag_ids)
+                {
+                    if (identity_in_loop->tag_id_count >= MAX_TAGS_FOR_SINGLE_CLIENT)
+                    {
+                        break;
+                    }
+                    if (cJSON_IsNumber(json_identity_tag_id) == FALSE)
+                    {
+                        continue;
+                    }
+                    identity_in_loop->tag_ids[identity_in_loop->tag_id_count] = (uint64)json_identity_tag_id->valueint;
+                    identity_in_loop->tag_id_count++;
+                }
+            }
+
+            if (identity_in_loop->tag_id_count == 0)
+            {
+                clib__null_memory(identity_in_loop, sizeof(client_stored_data_t));
+                continue;
+            }
+
+            identity_slot++;
+            loaded_identities++;
+        }
+    }
+
     cJSON_Delete(json_root);
 
-    if (loaded_channels > 0 || loaded_icons > 0 || loaded_tags > 0 || loaded_bans > 0)
+    if (loaded_channels > 0 || loaded_icons > 0 || loaded_tags > 0 || loaded_bans > 0 || loaded_identities > 0)
     {
-        printf("%s %s%llu%s%llu%s%llu%s%llu%s\n", g_mark_ok, "restored from server_settings.json (", loaded_channels, " channels, ", loaded_icons, " icons, ", loaded_tags, " tags, ", loaded_bans, " bans)");
+        printf("%s %s%llu%s%llu%s%llu%s%llu%s%llu%s\n", g_mark_ok, "restored from server_settings.json (", loaded_channels, " channels, ", loaded_icons, " icons, ", loaded_tags, " tags, ", loaded_bans, " bans, ", loaded_identities, " identities)");
     }
 }
 
@@ -952,9 +1019,7 @@ static void _main_internal__set_server_settings(void)
     char verification_message[] = "welcome";
     char default_client_name[30] = "user";
 
-    /* initialization vector must match iv defined in client.html */
     ITH_SHA256_CTX ctx;
-    unsigned char custom_iv[16] = { 90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10 };
     FILE* settings_file = 0;
     int64 file_length = 0;
     char* file_buffer = NULL_POINTER;
@@ -983,6 +1048,7 @@ static void _main_internal__set_server_settings(void)
     g_server_settings.is_display_country_flags_active = FALSE;
     g_server_settings.is_display_admin_tag_active = TRUE;
     g_server_settings.is_idle_mode_allowed = TRUE;
+    g_server_settings.are_identities_enabled = TRUE;
 
     /* set the max client/channel counts here too; the JSON path below returns early, so without this the arrays would allocate at size 0 */
     g_server_settings.max_client_count = MAX_CLIENTS;
@@ -1041,7 +1107,6 @@ static void _main_internal__set_server_settings(void)
                             ith_sha256_init(&ctx);
                             ith_sha256_update(&ctx, (unsigned char* )json_key->valuestring, strlen(json_key->valuestring));
                             ith_sha256_final(&ctx, g_server_settings.keys[key_index].key_value);
-                            clib__copy_memory(custom_iv, &g_server_settings.keys[key_index].key_iv, 16, 16);
                             clib__copy_memory(json_key->valuestring, &plaintext_keys[key_index][0], clib__utf8_string_length(json_key->valuestring), 255);
                             key_index++;
                         }
@@ -1065,6 +1130,8 @@ static void _main_internal__set_server_settings(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_idle_mode_allowed = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "restart_on_crash");
                 if (cJSON_IsBool(json_field)) { g_server_settings.restart_on_crash = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "are_identities_enabled");
+                if (cJSON_IsBool(json_field)) { g_server_settings.are_identities_enabled = cJSON_IsTrue(json_field); }
 
                 /* optional bundled-stunnel front-end (wss) */
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "use_stunnel");
@@ -1153,9 +1220,6 @@ static void _main_internal__set_server_settings(void)
             ith_sha256_init(&ctx);
             ith_sha256_update(&ctx, (unsigned char* )input, strlen(input));
             ith_sha256_final(&ctx, g_server_settings.keys[i].key_value);
-
-            /* destination, source, length */
-            clib__copy_memory(custom_iv, &g_server_settings.keys[i].key_iv, 16, 16);
         }
 
         printf("%s %llu %s\n", g_mark_ok, g_server_settings.keys_count, "extra metadata key(s) set");
@@ -1200,6 +1264,8 @@ static void _main_internal__set_server_settings(void)
     clib__sanitize_stdin(input);
     base__hash_password_to_base64(input, &g_server_settings.admin_password[0], ADMIN_PASSWORD_MAX_LENGTH);
     g_server_settings.admin_password_is_initial = TRUE;
+    /* keep the plaintext only for this run's startup summary (shown once, then wiped) */
+    clib__copy_memory(input, &g_first_run_admin_password[0], clib__utf8_string_length(input), ADMIN_PASSWORD_MAX_LENGTH - 1);
     clib__null_memory(input, sizeof(input));
 
     printf("%s %s", g_mark_ask, "Disable voice chat? (y/n): ");
@@ -1249,6 +1315,16 @@ static void _main_internal__set_server_settings(void)
     {
         g_server_settings.restart_on_crash = TRUE;
         printf("%s %s\n", g_mark_ok, "auto-restart: on (relaunches on crash; times logged to crashes.txt)");
+    }
+    clib__null_memory(input, sizeof(input));
+
+    printf("%s %s", g_mark_ask, "Disable identities (remembering each user's tags across reconnects)? (y/n): ");
+    fgets(input, sizeof(input), stdin);
+    clib__sanitize_stdin(input);
+    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+    {
+        g_server_settings.are_identities_enabled = FALSE;
+        printf("%s %s\n", g_mark_off, "identities: off");
     }
     clib__null_memory(input, sizeof(input));
 
@@ -1543,16 +1619,21 @@ static void _main_internal__prompt_stunnel_setup(void)
     }
     else
     {
-        printf("%s", "No certificate found under /etc/letsencrypt/live/.\n\n");
-        printf("%s", "wss needs a TLS certificate. A free Let's Encrypt one requires that your domain\n");
-        printf("%s", "already points to THIS server:\n");
-        printf("%s", "  1. open the DNS control panel at your domain registrar / DNS provider\n");
-        printf("%s", "  2. add an 'A' record for your domain pointing to this server's public IP\n");
+        printf("%s", "You decided to make lemon-chat accessible as an https secured website, but no existing\n");
+        printf("%s", "certificate was found under /etc/letsencrypt/live/.\n\n");
+        printf("%s", "To get this working, you need a valid https certificate, and therefore a domain.\n");
+        printf("%s", "If you already have a domain:\n");
+        printf("%s", "  1. open the DNS control panel at the website where you bought the domain\n");
+        printf("%s", "  2. add an 'A' record for your domain pointing to this server's public IP address\n");
         printf("%s", "     (the same IP address you use to connect to / SSH into this server)\n");
-        printf("%s", "  3. make sure port 80 is reachable from the internet (open in any firewall)\n");
-        printf("%s", "Let's Encrypt connects to http://<your-domain>/ on port 80 to verify you own it;\n");
-        printf("%s", "if the domain does not resolve to this server yet, it cannot succeed.\n\n");
-        printf("%s", "Have you pointed your domain at this server and waited for DNS to propagate? (y/n) ");
+        printf("%s", "  3. make sure port 80 is reachable from the internet (open in your firewall;\n");
+        printf("%s", "     if your VPS provider has its own cloud firewall, open it there too)\n");
+        printf("%s", "lemon-chat's server will then run certbot, which starts its own temporary http server\n");
+        printf("%s", "on port 80, and Let's Encrypt connects to http://<your-domain>/ to verify you own it.\n");
+        printf("%s", "If the DNS record already points to this server's IP address, the cert will get created\n");
+        printf("%s", "and the chat will be accessible over https.\n");
+        printf("%s", "(a freshly added DNS record can take some minutes to start resolving)\n\n");
+        printf("%s", "Do you already have a domain with its DNS record set to this server? (y/n) ");
         fgets(input, sizeof(input), stdin);
         clib__sanitize_stdin(input);
         if (input[0] != 'y' && input[0] != 'Y')
@@ -1591,7 +1672,6 @@ static void _main_internal__prompt_stunnel_setup(void)
             printf("%s", "  Arch          : pacman -S certbot\n");
             printf("%s", "  Gentoo        : emerge app-crypt/certbot\n");
             printf("%s", "  other         : snap install --classic certbot   (then put it on PATH)\n");
-            printf("%s", "wss stays off until a certificate exists.\n");
             g_server_settings.use_stunnel = FALSE;
             return;
         }
@@ -1624,6 +1704,56 @@ static void _main_internal__prompt_stunnel_setup(void)
 }
 
 /**
+ * @brief runs "certbot renew" for the configured domain before anything binds port 80, so the same
+ *        standalone challenge that issued the certificate can also renew it. certbot checks the
+ *        expiry itself and only acts when the certificate has under 30 days of validity left, so on
+ *        most startups this returns in about a second without contacting Let's Encrypt at all.
+ *
+ * @attention failure is never fatal - the server keeps running with the existing certificate
+ *
+ * @return void
+ */
+static void _main_internal__renew_certificate_if_due(void)
+{
+#ifndef WIN32
+    pid_t certbot_pid = 0;
+    int certbot_status = 0;
+
+    /* only certbot-managed certificates can be renewed by certbot; manually entered cert paths
+       outside /etc/letsencrypt/live/ are the operator's own responsibility */
+    if (g_server_settings.use_stunnel == FALSE
+        || g_server_settings.stunnel_domain[0] == 0
+        || strncmp(g_server_settings.stunnel_cert_fullchain, "/etc/letsencrypt/live/", 22) != 0)
+    {
+        return;
+    }
+
+    printf("checking whether the https/wss certificate needs renewal (certbot renew)...\n");
+
+    certbot_pid = fork();
+    if (certbot_pid == 0)
+    {
+        /* exec certbot directly (no shell) so the stored domain cannot inject commands */
+        execlp("certbot", "certbot", "renew", "--cert-name", g_server_settings.stunnel_domain, "--non-interactive", (char* )NULL_POINTER);
+        _exit(127); /* exec failed -> certbot is not installed / not on PATH */
+    }
+    else if (certbot_pid > 0)
+    {
+        waitpid(certbot_pid, &certbot_status, 0);
+    }
+
+    if (WIFEXITED(certbot_status) && WEXITSTATUS(certbot_status) == 127)
+    {
+        printf("%s %s\n", g_mark_warn, "certbot is not installed (or not on PATH) - skipping the renewal check");
+    }
+    else if (WIFEXITED(certbot_status) == 0 || WEXITSTATUS(certbot_status) != 0)
+    {
+        printf("%s %s\n", g_mark_warn, "certbot renew failed (see its output above) - continuing with the existing certificate");
+    }
+#endif
+}
+
+/**
  * @brief if wss is enabled, writes stunnel.conf next to the executable and launches
  *        the bundled stunnel so the server is reachable over wss as well as ws
  *
@@ -1637,12 +1767,14 @@ static void _main_internal__launch_stunnel(void)
     char exe_dir[600];
     char conf_path[700];
     char stunnel_path[700];
+    char kill_old_stunnel_command[800];
     FILE* conf_file = 0;
     pid_t stunnel_pid = 0;
 
     clib__null_memory(exe_dir, sizeof(exe_dir));
     clib__null_memory(conf_path, sizeof(conf_path));
     clib__null_memory(stunnel_path, sizeof(stunnel_path));
+    clib__null_memory(kill_old_stunnel_command, sizeof(kill_old_stunnel_command));
 
     if (g_server_settings.use_stunnel != TRUE)
     {
@@ -1679,6 +1811,7 @@ static void _main_internal__launch_stunnel(void)
         fprintf(conf_file, "connect = 127.0.0.1:%lld\n", g_server_settings.http_port);
         fprintf(conf_file, "cert = %s\n", g_server_settings.stunnel_cert_fullchain);
         fprintf(conf_file, "key = %s\n", g_server_settings.stunnel_cert_privkey);
+        fprintf(conf_file, "xforwardedfor = yes\n");
     }
     fclose(conf_file);
 
@@ -1696,6 +1829,12 @@ static void _main_internal__launch_stunnel(void)
         g_server_settings.use_stunnel = FALSE;
         return;
     }
+
+    /* a previous run's stunnel may still hold the wss/https ports (e.g. the server was SIGKILLed so
+       PR_SET_PDEATHSIG never fired); kill the one launched with this same conf, then let the ports free */
+    snprintf(kill_old_stunnel_command, sizeof(kill_old_stunnel_command), "pkill -f '%s' 2>/dev/null", conf_path);
+    system(kill_old_stunnel_command);
+    usleep(300000);
 
     stunnel_pid = fork();
     if (stunnel_pid == 0)
@@ -1726,6 +1865,25 @@ static void _main_internal__print_startup_summary(void)
 {
     boole is_voice_on = g_server_settings.is_voice_chat_active;
     boole is_bot_audio_on = g_server_settings.is_music_bot_audio_active;
+    int64 certificate_days_left = -1;
+#ifndef WIN32
+    struct stat certificate_file_info;
+
+    /* estimate the days of validity left on a certbot-managed certificate: Let's Encrypt certs are
+       valid for exactly 90 days from issuance and the fullchain.pem symlink target's modification
+       time is the issuance time. renewal already ran before this summary, so under 30 days here
+       means the renewal did not succeed */
+    if (g_stunnel_pid > 0
+        && strncmp(g_server_settings.stunnel_cert_fullchain, "/etc/letsencrypt/live/", 22) == 0
+        && stat(g_server_settings.stunnel_cert_fullchain, &certificate_file_info) == 0)
+    {
+        certificate_days_left = 90 - (((int64)time(NULL_POINTER) - (int64)certificate_file_info.st_mtime) / 86400);
+        if (certificate_days_left < 0)
+        {
+            certificate_days_left = 0;
+        }
+    }
+#endif
 
     printf("\n");
     printf("  %s%s%s\n", g_color_banner, "lemon-chat is running - services and ports", g_color_reset);
@@ -1772,6 +1930,15 @@ static void _main_internal__print_startup_summary(void)
     if (g_stunnel_pid > 0)
     {
         printf("  %s  %-18s port %lld (wss -> ws %lld)\n", g_mark_ok, "stunnel (wss)", g_server_settings.wss_port, g_server_settings.websocket_port);
+
+        if (certificate_days_left >= 0 && certificate_days_left < 30)
+        {
+            printf("  %s  %-18s about %lld days of validity left, but the renewal on this start did not succeed - check the certbot output above\n", g_mark_warn, "certificate", certificate_days_left);
+        }
+        else if (certificate_days_left >= 0)
+        {
+            printf("  %s  %-18s about %lld days of validity left (renews on server start once under 30)\n", g_mark_ok, "certificate", certificate_days_left);
+        }
     }
     else
     {
@@ -1782,6 +1949,31 @@ static void _main_internal__print_startup_summary(void)
     {
         printf("  %s  %-18s port %lld (https -> http %lld)\n", g_mark_ok, "https (page)", g_server_settings.https_port, g_server_settings.http_port);
     }
+
+    printf("\n");
+    printf("  ============================================================\n");
+    printf("  %s%s%s\n", g_color_banner, " your chat server is ready", g_color_reset);
+    printf("  ============================================================\n");
+    if (g_server_settings.use_stunnel == TRUE && g_server_settings.serve_https == TRUE && g_server_settings.stunnel_domain[0] != 0)
+    {
+        printf("   open it in a browser:   https://%s/\n", g_server_settings.stunnel_domain);
+        if (g_first_run_admin_password[0] != 0)
+        {
+            printf("   admin password:         %s\n", g_first_run_admin_password);
+            printf("\n");
+            printf("   log in with that password, then change it right away\n");
+            printf("   (you will be prompted to change it on the first admin login)\n");
+        }
+    }
+    else
+    {
+        printf("   running on websocket port %lld\n", g_server_settings.websocket_port);
+        printf("   point a client at this machine's address on that port\n");
+    }
+    printf("  ============================================================\n");
+
+    /* do not let the plaintext admin password linger in memory past this one-time summary */
+    clib__null_memory(g_first_run_admin_password, sizeof(g_first_run_admin_password));
 
     printf("\n");
 }
@@ -2073,6 +2265,12 @@ int main(void)
         }
     }
 
+    /* renew the Let's Encrypt certificate if it is close to expiry. this must run BEFORE stunnel and
+       the http server are started, while port 80 is still free for certbot's standalone challenge -
+       the same window the first issuance used. the /etc/letsencrypt/live/ paths are symlinks to the
+       newest cert, so the stunnel launched right after this automatically picks up a renewed one */
+    _main_internal__renew_certificate_if_due();
+
     /* launch stunnel (synchronous, main thread; sets g_stunnel_pid) and print the startup summary BEFORE
        any worker thread is started, so they cannot interleave on the console with thread log output */
     _main_internal__launch_stunnel();
@@ -2085,6 +2283,10 @@ int main(void)
     /* http_server__start spawns its own thread and returns immediately (webroot already resolved above) */
     if (g_server_settings.serve_client_http == TRUE)
     {
+        if (g_server_settings.use_stunnel == TRUE && g_server_settings.serve_https == TRUE)
+        {
+            http_server__set_https_redirect(TRUE, g_server_settings.https_port);
+        }
         http_server__start(g_server_settings.http_port, http_webroot_resolved);
     }
 

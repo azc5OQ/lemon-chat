@@ -19,6 +19,8 @@ boole   base__fill_block_of_data_with_ascii_characters(char* block, uint64 lengt
 boole   base__is_there_a_client_with_same_public_key(cstring public_key);
 boole   base__assign_username_for_newly_joined_client(uint64 client_id, cstring default_name);
 boole   base__is_public_key_present_in_client_stored_data(char* public_key);
+void    base__restore_identity_tags(client_t* client);
+void    base__snapshot_connected_clients_into_identity_store(void);
 void    base__close_websocket_connection(uint64 client_id, boole use_readlock);
 uint64  base__get_timestamp_ms(void);
 void    base__sleep_for_milliseconds(uint64 milliseconds);

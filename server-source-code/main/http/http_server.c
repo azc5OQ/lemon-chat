@@ -54,6 +54,10 @@ typedef struct http_mime_entry_t
 static int64 g_http_server_port = 0;
 static char g_http_server_webroot[512];
 
+/* when TRUE, direct http visitors (not stunnel-forwarded https backend requests) are 301'd to https */
+static boole g_http_https_redirect_enabled = FALSE;
+static int64 g_http_https_redirect_port = 443;
+
 /* window.__SERVER_CONFIG__ script (websocket port + connect keys) injected into the served client.html so it can autoconnect; empty until http_server__set_client_config runs */
 static char g_http_client_config_script[HTTP_CLIENT_CONFIG_SIZE];
 static boole g_http_client_config_set = FALSE;
@@ -410,6 +414,11 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
     int64 received = 0;
     uint64 i = 0;
     uint64 path_length = 0;
+    char redirect_host[300];
+    char redirect_location[700];
+    char redirect_response[900];
+    char* host_header_value = 0;
+    uint64 host_length = 0;
 
     /* don't let a stalled client hold the single-threaded accept loop forever. SO_RCVTIMEO takes a DWORD of
        milliseconds on Windows but a struct timeval on POSIX, so it has to be set per platform. */
@@ -455,6 +464,49 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
     }
 
     request_path[path_length] = 0;
+
+    /* if we also serve the page over https, send direct http visitors there. stunnel-forwarded requests (the
+       https backend) carry the X-Stunnel-Client-IP header, so only requests WITHOUT it are redirected -
+       otherwise stunnel's own backend fetch to this server would bounce in a redirect loop. */
+    if (g_http_https_redirect_enabled == TRUE
+        && _http_server_internal__find_bytes(request_buffer, (uint64)received, "X-Stunnel-Client-IP", 19) == NULL_POINTER)
+    {
+        clib__null_memory(redirect_host, sizeof(redirect_host));
+        clib__null_memory(redirect_location, sizeof(redirect_location));
+        clib__null_memory(redirect_response, sizeof(redirect_response));
+
+        host_header_value = _http_server_internal__find_bytes(request_buffer, (uint64)received, "\r\nHost:", 7);
+        if (host_header_value != NULL_POINTER)
+        {
+            host_header_value += 7;
+            while (*host_header_value == ' ') { host_header_value++; }
+            while (*host_header_value != 0 && *host_header_value != '\r' && *host_header_value != '\n' && *host_header_value != ':' && host_length < sizeof(redirect_host) - 1)
+            {
+                redirect_host[host_length] = *host_header_value;
+                host_length++;
+                host_header_value++;
+            }
+        }
+
+        if (redirect_host[0] == 0)
+        {
+            _http_server_internal__send_simple_response(client_socket, "400 Bad Request", "400 Bad Request");
+            return;
+        }
+
+        if (g_http_https_redirect_port == 443)
+        {
+            snprintf(redirect_location, sizeof(redirect_location), "https://%s%s", redirect_host, request_path);
+        }
+        else
+        {
+            snprintf(redirect_location, sizeof(redirect_location), "https://%s:%lld%s", redirect_host, g_http_https_redirect_port, request_path);
+        }
+
+        snprintf(redirect_response, sizeof(redirect_response), "HTTP/1.1 301 Moved Permanently\r\nLocation: %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", redirect_location);
+        _http_server_internal__send_all(client_socket, redirect_response, clib__utf8_string_length(redirect_response));
+        return;
+    }
 
     _http_server_internal__serve_file(client_socket, request_path);
 }
@@ -542,6 +594,12 @@ static void* _http_server_internal__server_thread(void* arg_unused)
  *
  * @return void
  */
+void http_server__set_https_redirect(boole enabled, int64 https_port)
+{
+    g_http_https_redirect_enabled = enabled;
+    g_http_https_redirect_port = https_port;
+}
+
 void http_server__start(int64 port, char* webroot)
 {
     pthread_t server_thread = 0;

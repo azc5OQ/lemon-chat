@@ -114,6 +114,12 @@ uint64 clib__utf8_string_length(cstring arg_string)
 
     uint64 i = 0;
 
+    /* guard against a NULL argument: strlen(NULL) is undefined and would crash; treat it as an empty string */
+    if (arg_string == 0)
+    {
+        return 0;
+    }
+
     for (;;)
     {
         char single_char = 0;

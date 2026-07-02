@@ -1002,10 +1002,11 @@
             }
 
             .connected-client-country-flag {
-                width: 23px;
+                width: 31px;
                 height: 15px;
                 float: right;
                 margin-top: 2px;
+                background-size: 20px 13px;
             }
 
             .connected-client-country-flag-hide {

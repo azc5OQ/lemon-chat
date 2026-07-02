@@ -40,7 +40,10 @@ void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client
 void server_msg__send_add_tag_to_client_event_to_all_clients(uint64 client_id_of_client_that_got_the_new_tag, uint64 tag_id);
 void server_msg__send_remove_tag_from_client_event_to_all_clients(uint64 client_id_of_client_that_got_tag_removed, uint64 tag_id);
 void server_msg__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char* icon_base64_value);
-void server_msg__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* tag_name, uint64 tag_linked_icon_id);
+void server_msg__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* tag_name, uint64 tag_linked_icon_id, boole has_icon);
+void server_msg__send_remove_tag_event_to_all_clients(uint64 tag_id);
+void server_msg__send_remove_icon_event_to_all_clients(uint64 icon_id);
+void server_msg__send_tag_icon_changed_event_to_all_clients(uint64 tag_id, boole has_icon, uint64 icon_id);
 void server_msg__send_call_event_to_idle_client(client_t* caller, client_t* callee);
 void server_msg__send_client_going_to_idle_mode_info_to_all_clients(uint64 idle_going_client_id);
 void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(uint64 back_from_idle_client_id, uint64 channel_the_client_joins);

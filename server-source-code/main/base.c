@@ -50,6 +50,11 @@ custom_rwlock_t g_bans_global_rwlock_guard;
 
 pthread_mutex_t g_chat_message_id_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/* guards the identity store (g_client_stored_data). taken as the innermost lock so restore-on-auth and the
+   snapshot at save time never tear each other's reads/writes; the save handler only holds the tags read lock,
+   which does not exclude a concurrent restore reader */
+pthread_mutex_t g_client_stored_data_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 uint64 g_chat_message_id;
 client_t* g_clients_array;
 channel_t* g_channel_array;
@@ -248,6 +253,58 @@ boole base__remove_ban_by_ip(char* ip_address)
 }
 
 /**
+ * @brief writes the in-memory identity store (g_client_stored_data) into json_root under the "identities"
+ *        key: one object per stored identity with its public-key hash and the tag ids it owns. entries with
+ *        no hash or no tags are skipped. when identities are disabled the existing "identities" key is left
+ *        untouched, so disabling then re-enabling does not wipe the stored data. guarded by the store mutex.
+ *
+ * @param cJSON* json_root -> the settings document being written
+ *
+ * @return void
+ */
+static void _base_internal__serialize_identities(cJSON* json_root)
+{
+    cJSON* json_identities = NULL_POINTER;
+    cJSON* json_identity = NULL_POINTER;
+    cJSON* json_identity_tag_ids = NULL_POINTER;
+    uint64 i = 0;
+    uint64 t = 0;
+
+    if (g_server_settings.are_identities_enabled == FALSE)
+    {
+        return;
+    }
+
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "identities");
+    json_identities = cJSON_CreateArray();
+    cJSON_AddItemToObject(json_root, "identities", json_identities);
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (g_client_stored_data[i].public_key[0] == 0 || g_client_stored_data[i].tag_id_count == 0)
+        {
+            continue;
+        }
+
+        json_identity = cJSON_CreateObject();
+        cJSON_AddStringToObject(json_identity, "public_key_hash", &g_client_stored_data[i].public_key[0]);
+
+        json_identity_tag_ids = cJSON_CreateArray();
+        for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
+        {
+            cJSON_AddItemToArray(json_identity_tag_ids, cJSON_CreateNumber((double)g_client_stored_data[i].tag_ids[t]));
+        }
+        cJSON_AddItemToObject(json_identity, "tag_ids", json_identity_tag_ids);
+
+        cJSON_AddItemToArray(json_identities, json_identity);
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
  * @brief persists the runtime-editable server state into server_settings.json: the general-settings
  *        toggles, the channel layout, the tags/icons and the ban list. it READS the existing file first
  *        and only updates the keys it manages, so ports, operator keys and every other setting stay
@@ -331,6 +388,8 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddStringToObject(json_root, "admin_password", &g_server_settings.admin_password[0]);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_password_is_initial");
     cJSON_AddItemToObject(json_root, "admin_password_is_initial", cJSON_CreateBool(g_server_settings.admin_password_is_initial == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "are_identities_enabled");
+    cJSON_AddItemToObject(json_root, "are_identities_enabled", cJSON_CreateBool(g_server_settings.are_identities_enabled == TRUE));
 
     /* rebuild the channel layout (persistent fields only; runtime state like maintainer/occupants is skipped) */
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "channels");
@@ -398,6 +457,7 @@ boole base__save_server_settings_to_file(void)
         json_tag = cJSON_CreateObject();
         cJSON_AddNumberToObject(json_tag, "id", tag_in_loop->id);
         cJSON_AddNumberToObject(json_tag, "icon_id", tag_in_loop->icon_id);
+        cJSON_AddItemToObject(json_tag, "has_icon", cJSON_CreateBool(tag_in_loop->has_icon == TRUE));
         cJSON_AddStringToObject(json_tag, "name", &tag_in_loop->name[0]);
         cJSON_AddItemToArray(json_tags, json_tag);
     }
@@ -422,6 +482,9 @@ boole base__save_server_settings_to_file(void)
         cJSON_AddNumberToObject(json_ban, "timestamp_banned", (double)ban_in_loop->timestamp_banned);
         cJSON_AddItemToArray(json_bans, json_ban);
     }
+
+    /* rebuild the identity store (public-key hash -> tag ids); left untouched when identities are disabled */
+    _base_internal__serialize_identities(json_root);
 
     json_text = cJSON_Print(json_root);
     if (json_text == NULL_POINTER)
@@ -736,6 +799,8 @@ boole base__is_public_key_present_in_client_stored_data(char* public_key)
     boole status = FALSE;
     uint64 i = 0;
 
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
         status = clib__is_string_equal(g_client_stored_data[i].public_key, public_key);
@@ -746,6 +811,9 @@ boole base__is_public_key_present_in_client_stored_data(char* public_key)
             break;
         }
     }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+
     return result;
 }
 
@@ -1404,6 +1472,157 @@ boole base__password_matches(char* plaintext, char* stored_base64_hash)
 }
 
 /**
+ * @brief restores a re-authenticated client's tags from the persisted identity store. the store is keyed by
+ *        base64(SHA256(public_key)) so the settings file never holds the raw public key. the admin tag
+ *        (id 0) is restored like any other tag and re-grants admin. only meaningful when identities are
+ *        enabled; the caller checks that.
+ *
+ * @param client_t* client -> the freshly authenticated client whose tags should be restored
+ *
+ * @note the caller must hold the clients write lock (client->tag_ids and is_admin are written) and the tags
+ *       read lock (g_tags_array is read). the store itself is guarded by g_client_stored_data_mutex.
+ *
+ * @return void
+ */
+void base__restore_identity_tags(client_t* client)
+{
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    uint64 i = 0;
+    uint64 t = 0;
+    uint64 tag_id = 0;
+
+    if (client == NULL_POINTER)
+    {
+        return;
+    }
+
+    base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (g_client_stored_data[i].public_key[0] == 0)
+        {
+            continue;
+        }
+
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == FALSE)
+        {
+            continue;
+        }
+
+        for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
+        {
+            tag_id = g_client_stored_data[i].tag_ids[t];
+
+            /* keep the admin tag (id 0) always; for every other tag, skip it if it no longer exists */
+            if (tag_id != ADMIN_TAG_ID && (tag_id >= MAX_TAGS || g_tags_array[tag_id].is_existing == FALSE))
+            {
+                continue;
+            }
+
+            cvector_push_back(client->tag_ids, (int)tag_id);
+
+            if (tag_id == ADMIN_TAG_ID)
+            {
+                client->is_admin = TRUE;
+            }
+        }
+
+        break;
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
+ * @brief snapshots every connected, authenticated client that currently owns at least one tag into the
+ *        in-memory identity store, keyed by base64(SHA256(public_key)). an existing entry for that hash is
+ *        overwritten; otherwise the first free slot is used. called at "save server settings" time so the
+ *        store mirrors the tags people currently wear, without persisting on every tag change. does nothing
+ *        when identities are disabled.
+ *
+ * @note the caller must hold the clients read lock (g_clients_array and each client->tag_ids are read).
+ *       the store itself is guarded by g_client_stored_data_mutex.
+ *
+ * @return void
+ */
+void base__snapshot_connected_clients_into_identity_store(void)
+{
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    client_t* client = NULL_POINTER;
+    uint64 client_index = 0;
+    uint64 tag_count = 0;
+    uint64 t = 0;
+    uint64 j = 0;
+    int64 slot = 0;
+
+    if (g_server_settings.are_identities_enabled == FALSE)
+    {
+        return;
+    }
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (client_index = 0; client_index < g_server_settings.max_client_count; client_index++)
+    {
+        client = &g_clients_array[client_index];
+
+        if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        tag_count = cvector_size(client->tag_ids);
+        if (tag_count == 0)
+        {
+            continue;
+        }
+
+        base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
+
+        /* find an existing entry for this identity, else the first free slot */
+        slot = -1;
+        for (j = 0; j < MAX_CLIENT_STORED_DATA; j++)
+        {
+            if (clib__is_string_equal(g_client_stored_data[j].public_key, identity_hash) == TRUE)
+            {
+                slot = (int64)j;
+                break;
+            }
+        }
+        if (slot == -1)
+        {
+            for (j = 0; j < MAX_CLIENT_STORED_DATA; j++)
+            {
+                if (g_client_stored_data[j].public_key[0] == 0)
+                {
+                    slot = (int64)j;
+                    break;
+                }
+            }
+        }
+        if (slot == -1)
+        {
+            continue; /* store is full */
+        }
+
+        clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+        clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
+
+        g_client_stored_data[slot].tag_id_count = 0;
+        for (t = 0; t < tag_count && t < MAX_TAGS_FOR_SINGLE_CLIENT; t++)
+        {
+            g_client_stored_data[slot].tag_ids[g_client_stored_data[slot].tag_id_count] = (uint64)client->tag_ids[t];
+            g_client_stored_data[slot].tag_id_count++;
+        }
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
  * @brief encrypts string and converts it to base64 string.
  *
  * @param char* string_to_encrypt -> the null-terminated string to encrypt
@@ -1858,6 +2077,11 @@ void base__destroy_temp_channel(uint64 temp_channel_id)
         }
 
         client_to_move->channel_id = ROOT_CHANNEL_ID;
+
+        /* keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this client
+           on the channel-mismatch check after the move to root */
+        audio_channel__process_client_channel_join(client_to_move);
+
         server_msg__send_channel_join_message_to_all_clients(client_to_move, &g_channel_array[ROOT_CHANNEL_ID]);
 
         if (g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present == TRUE)
@@ -2165,6 +2389,18 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "server_settings_add_new_tag"))
             {
                 client_msg__process_set_server_settings_add_new_tag(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "server_settings_delete_tag"))
+            {
+                client_msg__process_set_server_settings_delete_tag(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "server_settings_delete_icon"))
+            {
+                client_msg__process_set_server_settings_delete_icon(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "server_settings_set_tag_icon"))
+            {
+                client_msg__process_set_server_settings_set_tag_icon(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "save_server_settings"))
             {

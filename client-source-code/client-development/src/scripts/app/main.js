@@ -360,7 +360,7 @@
 
                     let current_message_keys = JSON.parse(decryption_result.plaintext);
                     let decrypted_base64_picture = decrypt_base64_contents_with_aes_keys(current_message_keys, message_data.message_value);
-                    let decrypted_base64_picture_sanitized = sanitize_string(decrypted_base64_picture);
+                    let decrypted_base64_picture_sanitized = sanitize_image_data_url(decrypted_base64_picture);
 
                     let msg = {
                         message : {
@@ -414,7 +414,7 @@
 
                         if (is_decrypted)
                         {
-                            let decrypted_base64_picture_sanitized = sanitize_string(decrypted_base64_picture);
+                            let decrypted_base64_picture_sanitized = sanitize_image_data_url(decrypted_base64_picture);
                             msg.message.decrypted_base64_picture = decrypted_base64_picture_sanitized;
                             msg.message.value = null;
                             global.postMessage({
@@ -613,6 +613,27 @@
                     {
                         global.postMessage({
                             type: "data_processing_worker__tag_add_from_server",
+                            value: msg
+                        });
+                    }
+                    else if (msg.message.type == "tag_delete")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__tag_delete_from_server",
+                            value: msg
+                        });
+                    }
+                    else if (msg.message.type == "icon_delete")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__icon_delete_from_server",
+                            value: msg
+                        });
+                    }
+                    else if (msg.message.type == "tag_icon_changed")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__tag_icon_changed_from_server",
                             value: msg
                         });
                     }
@@ -1037,6 +1058,10 @@
             var client_list = [];
             var icons = [];
             var tags = [];
+            var icon_upload_queue = [];             //base64 icons waiting to be uploaded one at a time
+            var icon_upload_in_flight_base64 = null; //the icon whose server reply we are currently waiting for
+            var settings_delete_delegation_wired = false;
+            var tag_icon_picker_target_tag_id = null; //tag whose icon the currently open picker will change
             var channel_list = [];
             //internal sentinel meaning "the root level" while walking the channel tree.
             //root channels are identified by their is_root_channel flag, never by this value
@@ -1165,12 +1190,24 @@
             var audio_queue = {
                 buffer: new Float32Array(0),
 
+                //hard cap on buffered playback (in samples at 48 kHz; ~300 ms). anything beyond this is
+                //accumulated delay the listener never catches up with (decode output outpacing playback after
+                //gc pauses, tab throttling, or a sample-rate mismatch). when the backlog exceeds the cap the
+                //oldest samples are dropped, so playback snaps back to near-real-time instead of lagging forever
+                max_buffered_samples: 14400,
+
                 write: function (newAudio)
                 {
                     var currentQLength = this.buffer.length;
                     var newBuffer = new Float32Array(currentQLength + newAudio.length);
                     newBuffer.set(this.buffer, 0);
                     newBuffer.set(newAudio, currentQLength);
+
+                    if (newBuffer.length > this.max_buffered_samples)
+                    {
+                        newBuffer = newBuffer.subarray(newBuffer.length - this.max_buffered_samples);
+                    }
+
                     this.buffer = newBuffer;
                 },
 
@@ -1196,12 +1233,14 @@
             var server_msg = {
                 process_tag_list_from_server: function(msg)
                 {
+                    UI.wire_settings_delete_delegation();
+
                     for (let i = 0; i < msg.message.tags.length; i++)
                     {
                         let tag = msg.message.tags[i];
                         tags.push(tag);
 
-                        let icon = get_icon_by_icon_id(tag.tag_linked_icon_id);
+                        let icon = tag.has_icon ? get_icon_by_icon_id(tag.tag_linked_icon_id) : null;
 
                         let base64_icon = "";
 
@@ -1210,11 +1249,13 @@
                             base64_icon = icon.base64_icon;
                         }
 
-                        let html_to_append = "<div class=\"server-settings-tag-entry\">\n\
+                        let tag_delete_button_html = (tag.tag_id != 0) ? "<button class=\"settings-entry-delete-button\" title=\"delete tag\">✕</button>" : "";
+                        let html_to_append = "<div class=\"server-settings-tag-entry\" data-tag-id=\""+tag.tag_id+"\">\n\
                                                 <p class=\"tag-settings-entry-p\">"+tag.tag_id+"</p>\n\
                                                 <p class=\"tag-settings-entry-p\">"+tag.tag_name+"</p>\n\
                                                 <p class=\"tag-settings-entry-p\">"+tag.tag_linked_icon_id+"</p>\n\
                                                 <div class=\"tag-settings-entry-img\" style=\"background-image: url("+base64_icon+");\"></div>\n\
+                                                "+tag_delete_button_html+"\n\
                                             </div>";
 
                         document.getElementById("server-settings-tab-tags-container").insertAdjacentHTML("beforeend", html_to_append);
@@ -1247,7 +1288,7 @@
                             node.className = "single-tag";
                             node.setAttribute("tag-id", tag.tag_id);
 
-                            let icon = get_icon_by_icon_id(tag.tag_linked_icon_id);
+                            let icon = tag.has_icon ? get_icon_by_icon_id(tag.tag_linked_icon_id) : null;
 
                             if (icon != null)
                             {
@@ -1260,6 +1301,8 @@
                 },
                 process_icon_list_from_server: function(msg)
                 {
+                    UI.wire_settings_delete_delegation();
+
                     for (let i = 0; i < msg.message.icons.length; i++)
                     {
                         let icon = {
@@ -1269,7 +1312,7 @@
 
                         icons.push(icon);
 
-                        let html_to_append = "<img class='img-uploaded-icon' src="+icon.base64_icon+" data-icon-id="+icon.id+"></img>";
+                        let html_to_append = "<div class='server-settings-icon-entry' data-icon-id="+icon.id+"><img class='img-uploaded-icon' src="+icon.base64_icon+"></img><button class='settings-entry-delete-button' title='delete icon'>✕</button></div>";
 
                         document.getElementById("server-settings-tab-icons-container").insertAdjacentHTML("beforeend", html_to_append);
                     }
@@ -1333,7 +1376,7 @@
                                                         <div class=\"padding-div\" style=\"padding-left: " + indentation_level * 20 + "px;\"></div>\n\
                                                         <div class=\"single-channel-collapse-button\">\n\
                                                         </div>\n\
-                                                        <p class='single-channel-name-p "+html_to_append_is_using_password_class+" "+html_to_append_is_temp_class+"' data-channel-name-id=\"" + child_channels[a].channel_id + "\">" + child_channels[a].name + "</p>\n\
+                                                        <p class='single-channel-name-p "+html_to_append_is_using_password_class+" "+html_to_append_is_temp_class+"' data-channel-name-id=\"" + child_channels[a].channel_id + "\">" + sanitize_string(child_channels[a].name) + "</p>\n\
                                                         <div class="+html_to_append_audio_disabled_class+"></div>\n\
                                                     </div>";
                                 }
@@ -1345,7 +1388,7 @@
                                                             <div class=\"padding-div\" style=\"padding-left: " + indentation_level * 20 + "px;\"></div>\n\
                                                             <div class=\"single-channel-collapse-button\">\n\
                                                             </div>\n\
-                                                            <p class='single-channel-name-p "+html_to_append_is_temp_class+"' data-channel-name-id=\"" + child_channels[a].channel_id + "\" >" + child_channels[a].name + "</p>\n\
+                                                            <p class='single-channel-name-p "+html_to_append_is_temp_class+"' data-channel-name-id=\"" + child_channels[a].channel_id + "\" >" + sanitize_string(child_channels[a].name) + "</p>\n\
                                                             <div class="+html_to_append_audio_disabled_class+"></div>\n\
                                                         </div>";
                                 }
@@ -1558,7 +1601,7 @@
                     single_client.username = username;
                     single_client.public_key = msg.message.public_key;
                     single_client.channel_id = msg.message.channel_id;
-                    single_client.tag_ids = [];
+                    single_client.tag_ids = (msg.message.tag_ids != null) ? msg.message.tag_ids : [];
                     single_client.audio_state = msg.message.audio_state;
                     single_client.is_clients_channel_hidden = false;
                     single_client.country_iso_code = msg.message.country_iso_code;
@@ -1573,7 +1616,7 @@
 
                     html_to_append = generate_html_for_single_client(single_client, false);
 
-                    document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').insertAdjacentHTML("afterend", html_to_append);
+                    get_channel_own_clients_last_element(msg.message.channel_id).insertAdjacentHTML("afterend", html_to_append);
 
                     let elements = document.getElementsByClassName('connected-client');
 
@@ -1797,7 +1840,7 @@
                         html_to_append = generate_html_for_single_client(single_client, true);
                     }
                     
-                    document.querySelector('[data-channel-id="'+msg.message.channel_id+'"]').insertAdjacentHTML("afterend", html_to_append);
+                    get_channel_own_clients_last_element(msg.message.channel_id).insertAdjacentHTML("afterend", html_to_append);
 
                     let element = document.querySelector('.connected-client[data-connected-client-id="'+msg.message.client_id+'"]');
 
@@ -1969,7 +2012,7 @@
                     }
 
                     let index = get_channel_index_in_array_by_channel_id(channel_list, msg.message.channel_id);
-                    document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[2].innerHTML = msg.message.channel_name;
+                    document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[2].innerHTML = sanitize_string(msg.message.channel_name);
                     channel_list[index].description = msg.message.channel_description;
                     channel_list[index].is_using_password = msg.message.is_using_password;
                     channel_list[index].name = msg.message.channel_name;
@@ -2109,36 +2152,11 @@
                     //so gui is consistent
                     //
 
-                    let are_there_clients = false;
-                    let clients_in_parent_channel_count = 0;
-
-                    for (var i = 0; i < client_list.length; i++)
-                    {
-                        if (client_list[i].channel_id == new_channel.parent_channel_id)
-                        {
-                            are_there_clients = true;
-                            clients_in_parent_channel_count++;
-                        }
-                    }
-
-                    if (are_there_clients == false)
-                    {
-                        document.querySelector("[data-channel-id='" + new_channel.parent_channel_id + "']").insertAdjacentHTML("afterend", html_to_append);
-                    }
-                    else
-                    {
-                        console.log("clients_in_parent_channel_count =>", clients_in_parent_channel_count);
-
-                        let aa = document.querySelector("[data-channel-id='" + new_channel.parent_channel_id + "']");
-                        let target_element = aa.nextSibling;
-
-                        for (var i = 0; i < clients_in_parent_channel_count - 1; i++)
-                        {
-                            target_element = target_element.nextSibling;
-                        }
-
-                        target_element.insertAdjacentHTML("afterend", html_to_append);
-                    }
+                    //append the new subchannel at the end of the parent's whole subtree (after the parent's clients
+                    //and any already-existing subchannels), so siblings keep creation order instead of the new one
+                    //being prepended right after the parent header
+                    let subtree_anchor = get_channel_subtree_last_element(new_channel.parent_channel_id);
+                    subtree_anchor.insertAdjacentHTML("afterend", html_to_append);
 
                     let elements = document.getElementsByClassName('single-channel');
                     //let elements = document.querySelector(".single-channel:not(.idle-channel)");
@@ -2247,7 +2265,7 @@
                     let html_to_append = "<div class=\"single-chat-message\">\n\
                                                 <div class=\"single-message-content\">\n\
                                                     <div class=\"single-chat-message-sender-username-container\">\n\
-                                                        <p>" + sender_username + "</p>\n\
+                                                        <p>" + sanitize_string(sender_username) + "</p>\n\
                                                     </div>\n\
                                                 <div class=\"single-chat-message-sender-time\">\n\
                                                     <p>" + new Date().toLocaleTimeString() + "</p>\n\
@@ -2282,9 +2300,9 @@
                         console.log("element not found");
 
                         let html_to_append = "<div class=\"chat-context\" id=\"" + received_direct_message_chat_context_id + "\">\n\
-                                                        <div class=\"single-server-message\">now talking to user: " + msg.message.sender_username + "</div>\n\
+                                                        <div class=\"single-server-message\">now talking to user: " + sanitize_string(msg.message.sender_username) + "</div>\n\
                                                             <div class=\"single-server-message\">your public key: " + rsa_public_key_string + "</div>\n\
-                                                            <div class=\"single-server-message\">his public key: " + get_public_key_by_client_id(msg.message.sender_id) + "</div>\n\
+                                                            <div class=\"single-server-message\">his public key: " + sanitize_string(get_public_key_by_client_id(msg.message.sender_id)) + "</div>\n\
                                                         <div class=\"single-server-message\"></div>\n\
                                                     </div>";
 
@@ -2304,7 +2322,7 @@
                     let html_to_append = "<div class=\"single-chat-message\">\n\
                                                 <div class=\"single-message-content\">\n\
                                                     <div class=\"single-chat-message-sender-username-container\">\n\
-                                                        <p>" + msg.message.sender_username + "</p>\n\
+                                                        <p>" + sanitize_string(msg.message.sender_username) + "</p>\n\
                                                     </div>\n\
                                                     <div class=\"single-chat-message-sender-time\"><p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                     </div>\n\
@@ -2422,7 +2440,7 @@
 
                     if (chat_context_array[chat_context_index].last_known_message_sender_username == chat_message_username)
                     {
-                        let chat_message = "<p class='single-chat-message-content-p "+received_channel_chat_message_object.font+"' data-single-chat-message-server-message-id='" + msg.message.server_chat_message_id + "' style='color: "+received_channel_chat_message_object.font_color+"; font-size: "+font_size1+";'>" + received_channel_chat_message_object.value + "</p>";
+                        let chat_message = "<p class='single-chat-message-content-p "+sanitize_string(received_channel_chat_message_object.font)+"' data-single-chat-message-server-message-id='" + msg.message.server_chat_message_id + "' style='color: "+sanitize_string(received_channel_chat_message_object.font_color)+"; font-size: "+font_size1+";'>" + received_channel_chat_message_object.value + "</p>";
                         let last_child_index = document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
                         document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].insertAdjacentHTML("beforeend", chat_message);
                     }
@@ -2437,7 +2455,7 @@
                                                                 <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                             </div>\n\
                                                             <div class=\"single-chat-message-content\">\n\
-                                                                <p class='single-chat-message-content-p "+received_channel_chat_message_object.font+"' data-single-chat-message-server-message-id='"+ msg.message.server_chat_message_id + "' style='color: "+received_channel_chat_message_object.font_color+"; font-size: "+font_size1+";'>" + received_channel_chat_message_object.value + "</p>\n\
+                                                                <p class='single-chat-message-content-p "+sanitize_string(received_channel_chat_message_object.font)+"' data-single-chat-message-server-message-id='"+ msg.message.server_chat_message_id + "' style='color: "+sanitize_string(received_channel_chat_message_object.font_color)+"; font-size: "+font_size1+";'>" + received_channel_chat_message_object.value + "</p>\n\
                                                             </div>\n\
                                                         </div>\n\
                                                     </div>";
@@ -2510,9 +2528,9 @@
                             }
 
                             let html_to_append = "<div class=\"chat-context\" id=\"" + received_direct_message_chat_context_id + "\">\n\
-                                                    <div class=\"single-server-message\">now talking to user:  " + msg.message.sender_username + "</div>\n\
+                                                    <div class=\"single-server-message\">now talking to user:  " + sanitize_string(msg.message.sender_username) + "</div>\n\
                                                     <div class=\"single-server-message\">your public key: " + rsa_public_key_string + "</div>\n\
-                                                    <div class=\"single-server-message\">his public key: " + get_public_key_by_client_id(msg.message.sender_id) + "</div>\n\
+                                                    <div class=\"single-server-message\">his public key: " + sanitize_string(get_public_key_by_client_id(msg.message.sender_id)) + "</div>\n\
                                                     <div class=\"single-server-message\"></div>\n\
                                                 </div>"
 
@@ -2532,7 +2550,7 @@
 
                         if (chat_context_array[chat_context_index].last_known_message_sender_username == msg.message.sender_username)
                         {
-                            let chat_message = "<p class='single-chat-message-content-p "+received_direct_message_object.font+"' data-single-chat-message-server-message-id='" + msg.message.server_chat_message_id + "' style='color: "+received_direct_message_object.font_color+"; font-size: "+font_size1+";'>" + received_direct_message_object.value + "</p>";
+                            let chat_message = "<p class='single-chat-message-content-p "+sanitize_string(received_direct_message_object.font)+"' data-single-chat-message-server-message-id='" + msg.message.server_chat_message_id + "' style='color: "+sanitize_string(received_direct_message_object.font_color)+"; font-size: "+font_size1+";'>" + received_direct_message_object.value + "</p>";
                             let last_child_index = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
                             let exists = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message") != "undefined";
                             document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].insertAdjacentHTML("beforeend", chat_message);
@@ -2543,13 +2561,13 @@
                             let html_to_append = "<div class=\"single-chat-message\">\n\
                                                     <div class=\"single-message-content\">\n\
                                                         <div class=\"single-chat-message-sender-username-container\">\n\
-                                                            <p>" + msg.message.sender_username + "</p>\n\
+                                                            <p>" + sanitize_string(msg.message.sender_username) + "</p>\n\
                                                         </div>\n\
                                                         <div class=\"single-chat-message-sender-time\">\n\
                                                             <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                                         </div>\n\
                                                         <div class=\"single-chat-message-content\">\n\
-                                                            <p class='single-chat-message-content-p "+received_direct_message_object.font+"' data-single-chat-message-server-message-id='"+ msg.message.server_chat_message_id + "' style='color: "+received_direct_message_object.font_color+"; font-size: "+font_size1+";'>" + received_direct_message_object.value + "</p>\n\
+                                                            <p class='single-chat-message-content-p "+sanitize_string(received_direct_message_object.font)+"' data-single-chat-message-server-message-id='"+ msg.message.server_chat_message_id + "' style='color: "+sanitize_string(received_direct_message_object.font_color)+"; font-size: "+font_size1+";'>" + received_direct_message_object.value + "</p>\n\
                                                         </div>\n\
                                                     </div>\n\
                                                 </div>";
@@ -2664,7 +2682,7 @@
                         html_to_append = generate_html_for_single_client(single_client, true);
                     }
 
-                    document.querySelector('[data-channel-id="idle"]').insertAdjacentHTML("afterend", html_to_append);
+                    get_channel_own_clients_last_element("idle").insertAdjacentHTML("afterend", html_to_append);
 
                     let element = document.querySelector('.connected-client[data-connected-client-id="'+msg.message.client_id+'"]');
 
@@ -3074,7 +3092,7 @@
 
                             html_to_append = generate_html_for_single_client(client_that_joined, true);
 
-                            document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').insertAdjacentHTML("afterend", html_to_append);
+                            get_channel_own_clients_last_element(msg.message.channel_id).insertAdjacentHTML("afterend", html_to_append);
                             document.getElementById('connected-local-client-input').addEventListener("focusout", UI.connected_local_user_input_on_focusout);
 
                             current_channel_id = msg.message.channel_id;
@@ -3204,7 +3222,7 @@
 
                             html_to_append = generate_html_for_single_client(client_that_joined, false);
 
-                            document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').insertAdjacentHTML("afterend", html_to_append);
+                            get_channel_own_clients_last_element(msg.message.channel_id).insertAdjacentHTML("afterend", html_to_append);
 
                             if (msg.message.channel_id == current_channel_id)
                             {
@@ -3316,7 +3334,7 @@
                             if (element != null)
                             {
                                 element.style.display = "inline-block";
-                                document.getElementById("marquee-song-name-client-id-" + msg.message.client_id).innerHTML = msg.message.song_name;
+                                document.getElementById("marquee-song-name-client-id-" + msg.message.client_id).innerHTML = sanitize_string(msg.message.song_name);
                             }
                             else
                             {
@@ -3372,7 +3390,7 @@
                     {
                         sound_effects.poke.play();
                     }
-                    let string1 = "" + get_client_by_client_id(msg.message.client_id).username + " says : " + msg.message.poke_message;
+                    let string1 = "" + sanitize_string(get_client_by_client_id(msg.message.client_id).username) + " says : " + sanitize_string(msg.message.poke_message);
                     custom_alert(string1);
                 },
                 process_chat_message_edit_from_server: function(msg)
@@ -3380,7 +3398,7 @@
                     let element = document.querySelector('.single-chat-message-content-p[data-single-chat-message-server-message-id="' + msg.message.chat_message_id + '"]');
                     if (element != null)
                     {
-                        element.innerHTML = msg.message.new_message_value;
+                        element.innerHTML = sanitize_string(msg.message.new_message_value);
                         element.style.color = "pink";
                     }
                 },
@@ -3393,9 +3411,16 @@
 
                     icons.push(icon);
 
-                    let html_to_append = "<img class='img-uploaded-icon' src="+icon.base64_icon+" data-icon-id="+icon.id+"></img>";
+                    let html_to_append = "<div class='server-settings-icon-entry' data-icon-id="+icon.id+"><img class='img-uploaded-icon' src="+icon.base64_icon+"></img><button class='settings-entry-delete-button' title='delete icon'>✕</button></div>";
 
                     document.getElementById("server-settings-tab-icons-container").insertAdjacentHTML("beforeend", html_to_append);
+
+                    //batch upload: if this reply is the icon we just sent, send the next queued one
+                    if (icon_upload_in_flight_base64 != null && msg.message.base64_icon == icon_upload_in_flight_base64)
+                    {
+                        icon_upload_in_flight_base64 = null;
+                        UI.send_next_queued_icon_upload();
+                    }
                 },
                 process_remove_tag_from_client_from_server: function(msg)
                 {
@@ -3464,7 +3489,7 @@
                         return;
                     }
 
-                    let icon = get_icon_by_icon_id(tag.tag_linked_icon_id);
+                    let icon = tag.has_icon ? get_icon_by_icon_id(tag.tag_linked_icon_id) : null;
 
                     if (icon != null)
                     {
@@ -3485,7 +3510,7 @@
 
                     tags.push(tag);
 
-                    let icon = get_icon_by_icon_id(tag.tag_linked_icon_id);
+                    let icon = tag.has_icon ? get_icon_by_icon_id(tag.tag_linked_icon_id) : null;
 
                     let base64_icon = "";
 
@@ -3495,14 +3520,81 @@
                     }
 
 
-                    let html_to_append = "<div class=\"server-settings-tag-entry\">\n\
+                    let tag_delete_button_html = (tag.tag_id != 0) ? "<button class=\"settings-entry-delete-button\" title=\"delete tag\">✕</button>" : "";
+                    let html_to_append = "<div class=\"server-settings-tag-entry\" data-tag-id=\""+tag.tag_id+"\">\n\
                                             <p class=\"tag-settings-entry-p\">"+tag.tag_id+"</p>\n\
                                             <p class=\"tag-settings-entry-p\">"+tag.tag_name+"</p>\n\
                                             <p class=\"tag-settings-entry-p\">"+tag.tag_linked_icon_id+"</p>\n\
                                             <div class=\"tag-settings-entry-img\" style=\"background-image: url("+base64_icon+");\"></div>\n\
+                                            "+tag_delete_button_html+"\n\
                                         </div>";
 
                     document.getElementById("server-settings-tab-tags-container").insertAdjacentHTML("beforeend", html_to_append);
+                },
+                process_tag_delete_from_server: function(msg)
+                {
+                    let tag_id = msg.message.tag_id;
+
+                    for (let i = tags.length - 1; i >= 0; i--)
+                    {
+                        if (tags[i].tag_id == tag_id) { tags.splice(i, 1); }
+                    }
+
+                    let entry = document.querySelector('.server-settings-tag-entry[data-tag-id="' + tag_id + '"]');
+                    if (entry != null) { entry.remove(); }
+
+                    let displayed_tags = document.querySelectorAll('.single-tag[tag-id="' + tag_id + '"]');
+                    for (let i = 0; i < displayed_tags.length; i++) { displayed_tags[i].remove(); }
+
+                    for (let i = 0; i < client_list.length; i++)
+                    {
+                        let index_of_tag = client_list[i].tag_ids.indexOf(tag_id);
+                        if (index_of_tag != -1) { client_list[i].tag_ids.splice(index_of_tag, 1); }
+                    }
+                },
+                process_icon_delete_from_server: function(msg)
+                {
+                    let icon_id = msg.message.icon_id;
+
+                    for (let i = icons.length - 1; i >= 0; i--)
+                    {
+                        if (icons[i].id == icon_id) { icons.splice(i, 1); }
+                    }
+
+                    let entry = document.querySelector('.server-settings-icon-entry[data-icon-id="' + icon_id + '"]');
+                    if (entry != null) { entry.remove(); }
+                },
+                process_tag_icon_changed_from_server: function(msg)
+                {
+                    let tag_id = msg.message.tag_id;
+                    let has_icon = msg.message.has_icon;
+                    let icon_id = msg.message.tag_linked_icon_id;
+
+                    for (let i = 0; i < tags.length; i++)
+                    {
+                        if (tags[i].tag_id == tag_id)
+                        {
+                            tags[i].has_icon = has_icon;
+                            tags[i].tag_linked_icon_id = icon_id;
+                            break;
+                        }
+                    }
+
+                    let icon = has_icon ? get_icon_by_icon_id(icon_id) : null;
+                    let background = (icon != null) ? ("url(" + icon.base64_icon + ")") : "";
+
+                    let entry = document.querySelector('.server-settings-tag-entry[data-tag-id="' + tag_id + '"]');
+                    if (entry != null)
+                    {
+                        let img_box = entry.querySelector('.tag-settings-entry-img');
+                        if (img_box != null) { img_box.style.backgroundImage = background; }
+                    }
+
+                    let displayed_tags = document.querySelectorAll('.single-tag[tag-id="' + tag_id + '"]');
+                    for (let i = 0; i < displayed_tags.length; i++)
+                    {
+                        displayed_tags[i].style.backgroundImage = background;
+                    }
                 },
                 process_start_song_stream_from_server: function(msg)
                 {
@@ -3510,7 +3602,7 @@
                     if (element != null)
                     {
                         element.style.display = "inline-block";
-                        document.getElementById("marquee-song-name-client-id-" + msg.message.client_id).innerHTML = msg.message.song_name;
+                        document.getElementById("marquee-song-name-client-id-" + msg.message.client_id).innerHTML = sanitize_string(msg.message.song_name);
                     }
                     else
                     {
@@ -4484,7 +4576,7 @@
                                 let html_to_append = "<div class=\"chat-context\" id=\"" + id_to_find + "\">\n\
                                                                 <div class=\"single-server-message\">now talking to user: " + data_username + "</div>\n\
                                                                 <div class=\"single-server-message\">your public key: " + rsa_public_key_string + "</div>\n\
-                                                                <div class=\"single-server-message\">his public key: " + get_public_key_by_client_id(chat_message_receiver_id) + "</div>\n\
+                                                                <div class=\"single-server-message\">his public key: " + sanitize_string(get_public_key_by_client_id(chat_message_receiver_id)) + "</div>\n\
                                                                 <div class=\"single-server-message\"> </div>\n\
                                                             </div>";
 
@@ -4565,7 +4657,7 @@
                         document.getElementById("current-client-description").style.display = "block";
                         document.getElementById("current-channel-description").style.display = "none";
                         let client = get_client_by_client_id(chat_message_receiver_id);
-                        document.getElementById("current-client-description-client-name").innerHTML = client.username;
+                        document.getElementById("current-client-description-client-name").innerHTML = sanitize_string(client.username);
                         document.getElementById("current-client-description-tags").innerHTML = "";
                         document.getElementById("current-client-avatar").style.backgroundImage = "";
                         document.getElementById("current-client-avatar").style.backgroundSize = "";
@@ -4840,8 +4932,11 @@
                         document.getElementById("create-channel-hidden-parent-id").value = selected_channel_id;
 
                         let index = get_channel_index_in_array_by_channel_id(channel_list, selected_channel_id);
-                        document.getElementById("channel-properties-input-channel-name").value = sanitize_string(channel_list[index].name);
-                        document.getElementById("channel-properties-input-channel-description").value = sanitize_string(channel_list[index].description);
+                        //assign the raw values: input.value is a property assignment, not an HTML sink, so it
+                        //cannot execute markup, and escaping here would show entities (e.g. an apostrophe as
+                        //&#039;) in the edit box and corrupt the value when the dialog is saved back
+                        document.getElementById("channel-properties-input-channel-name").value = channel_list[index].name;
+                        document.getElementById("channel-properties-input-channel-description").value = channel_list[index].description;
                         document.getElementById("channel-properties-disable-audio-checkbox").checked = channel_list[index].is_audio_enabled == false;
                         document.getElementById("channel-properties-limit-clients-checkbox").checked = channel_list[index].is_client_limit_active == true;
                         document.getElementById("channel-properties-input-max-clients").value = (channel_list[index].is_client_limit_active == true && channel_list[index].max_client_count > 0) ? channel_list[index].max_client_count : "";
@@ -5592,7 +5687,12 @@
                         let ch = channel_list[i];
                         let is_full = false;
 
-                        if (ch.is_client_limit_active == true && ch.max_client_count > 0)
+                        if (ch.is_client_limit_active == true && ch.max_client_count == 0)
+                        {
+                            //a limit-active channel with capacity 0 is admin-only, so it is always shown as full
+                            is_full = true;
+                        }
+                        else if (ch.is_client_limit_active == true)
                         {
                             let count = 0;
                             for (let j = 0; j < client_list.length; j++)
@@ -5785,34 +5885,185 @@
 
                     let fileInput = document.getElementById('choose_icon_input');
 
-                    let file = fileInput.files[0];
-
-                    if (file.size > 5000)
+                    if (!fileInput.files || fileInput.files.length == 0)
                     {
-                        custom_alert("icon is too large. Max size: 5000 bytes");
                         return;
                     }
 
-                    var fileReader = new FileReader();
+                    //queue every selected icon; they are read and then uploaded one at a time (see
+                    //send_next_queued_icon_upload), each next one only after the previous upload's reply arrives
+                    let files = Array.prototype.slice.call(fileInput.files);
 
-                    if (fileReader && fileInput.files && fileInput.files.length)
+                    for (let i = 0; i < files.length; i++)
                     {
+                        let file = files[i];
+
+                        if (file.size > 5000)
+                        {
+                            custom_alert("icon '" + file.name + "' is too large. Max size: 5000 bytes");
+                            continue;
+                        }
+
+                        let fileReader = new FileReader();
                         fileReader.onload = function (event)
                         {
-                            let message_object = {
-                                message:{
-                                    type: "server_settings_icon_upload",
-                                    base64_icon_value: event.target.result
-                                }
-                            };
-
-                            let message_json_string = process_message_before_sending(message_object);
-                            let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
-                            websocket_worker_send(data);
+                            icon_upload_queue.push(event.target.result);
+                            UI.send_next_queued_icon_upload();
                         };
-
                         fileReader.readAsDataURL(file); //invokes onload
                     }
+
+                    fileInput.value = ""; //let the same files be chosen again later
+                },
+                send_next_queued_icon_upload: function()
+                {
+                    if (icon_upload_in_flight_base64 != null) //still waiting for the previous upload's reply
+                    {
+                        return;
+                    }
+                    if (icon_upload_queue.length == 0)
+                    {
+                        return;
+                    }
+
+                    let base64_icon = icon_upload_queue.shift();
+                    icon_upload_in_flight_base64 = base64_icon;
+
+                    let message_object = {
+                        message: {
+                            type: "server_settings_icon_upload",
+                            base64_icon_value: base64_icon
+                        }
+                    };
+
+                    let message_json_string = process_message_before_sending(message_object);
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                    websocket_worker_send(data);
+                },
+                wire_settings_delete_delegation: function()
+                {
+                    if (settings_delete_delegation_wired == true)
+                    {
+                        return;
+                    }
+
+                    let tags_container = document.getElementById("server-settings-tab-tags-container");
+                    let icons_container = document.getElementById("server-settings-tab-icons-container");
+
+                    if (tags_container == null || icons_container == null)
+                    {
+                        return;
+                    }
+
+                    tags_container.addEventListener("click", function(event)
+                    {
+                        let button = event.target.closest(".settings-entry-delete-button");
+                        if (button != null)
+                        {
+                            let entry = button.closest(".server-settings-tag-entry");
+                            if (entry == null) { return; }
+                            let tag_id = parseInt(entry.getAttribute("data-tag-id"));
+                            if (isNaN(tag_id) || tag_id == 0) { return; } //never the admin tag
+                            UI.send_delete_tag_request(tag_id);
+                            return;
+                        }
+
+                        let icon_box = event.target.closest(".tag-settings-entry-img");
+                        if (icon_box != null)
+                        {
+                            let entry = icon_box.closest(".server-settings-tag-entry");
+                            if (entry == null) { return; }
+                            let tag_id = parseInt(entry.getAttribute("data-tag-id"));
+                            if (isNaN(tag_id)) { return; }
+                            UI.open_tag_icon_picker(tag_id);
+                        }
+                    });
+
+                    icons_container.addEventListener("click", function(event)
+                    {
+                        let button = event.target.closest(".settings-entry-delete-button");
+                        if (button == null) { return; }
+                        let entry = button.closest(".server-settings-icon-entry");
+                        if (entry == null) { return; }
+                        let icon_id = parseInt(entry.getAttribute("data-icon-id"));
+                        if (isNaN(icon_id)) { return; }
+                        UI.send_delete_icon_request(icon_id);
+                    });
+
+                    let picker = document.getElementById("tag-icon-picker-popup");
+                    if (picker != null)
+                    {
+                        picker.addEventListener("click", function(event)
+                        {
+                            let option = event.target.closest(".tag-icon-picker-option");
+                            if (option == null) { return; }
+                            UI.send_set_tag_icon_request(tag_icon_picker_target_tag_id, option.getAttribute("data-picker-icon-id"));
+                            UI.close_tag_icon_picker();
+                        });
+                    }
+
+                    //close the picker on Escape, or a click outside it that is not the click that opened it
+                    document.addEventListener("keydown", function(event)
+                    {
+                        if (event.key == "Escape") { UI.close_tag_icon_picker(); }
+                    });
+                    document.addEventListener("click", function(event)
+                    {
+                        let open_picker = document.getElementById("tag-icon-picker-popup");
+                        if (open_picker == null || open_picker.style.display == "none") { return; }
+                        if (open_picker.contains(event.target)) { return; }
+                        if (event.target.closest(".tag-settings-entry-img") != null) { return; }
+                        UI.close_tag_icon_picker();
+                    });
+
+                    settings_delete_delegation_wired = true;
+                },
+                send_delete_tag_request: function(tag_id)
+                {
+                    let message_object = { message: { type: "server_settings_delete_tag", tag_id: tag_id } };
+                    let message_json_string = process_message_before_sending(message_object);
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                    websocket_worker_send(data);
+                },
+                send_delete_icon_request: function(icon_id)
+                {
+                    let message_object = { message: { type: "server_settings_delete_icon", icon_id: icon_id } };
+                    let message_json_string = process_message_before_sending(message_object);
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                    websocket_worker_send(data);
+                },
+                open_tag_icon_picker: function(tag_id)
+                {
+                    let popup = document.getElementById("tag-icon-picker-popup");
+                    if (popup == null) { return; }
+
+                    tag_icon_picker_target_tag_id = tag_id;
+
+                    let html = "<div class=\"tag-icon-picker-option tag-icon-picker-no-icon\" data-picker-icon-id=\"none\" title=\"no icon\">none</div>";
+                    for (let i = 0; i < icons.length; i++)
+                    {
+                        html += "<img class=\"tag-icon-picker-option\" src=\"" + icons[i].base64_icon + "\" data-picker-icon-id=\"" + icons[i].id + "\" title=\"icon " + icons[i].id + "\">";
+                    }
+                    popup.innerHTML = html;
+                    popup.style.display = "flex";
+                },
+                close_tag_icon_picker: function()
+                {
+                    let popup = document.getElementById("tag-icon-picker-popup");
+                    if (popup != null) { popup.style.display = "none"; }
+                    tag_icon_picker_target_tag_id = null;
+                },
+                send_set_tag_icon_request: function(tag_id, picked_icon_id)
+                {
+                    if (tag_id == null) { return; }
+
+                    let message = { type: "server_settings_set_tag_icon", tag_id: tag_id };
+                    if (picked_icon_id != "none") { message.icon_id = parseInt(picked_icon_id); } //absent icon_id clears the icon
+
+                    let message_object = { message: message };
+                    let message_json_string = process_message_before_sending(message_object);
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                    websocket_worker_send(data);
                 },
 
                 choose_song_file_input_onchange: function()
@@ -5939,13 +6190,12 @@
                     event.stopPropagation();
 
                     let tag_name = document.getElementById("server-settings-tab-add-tag-details-input-tag-name").value;
-                    let tag_linked_icon_id = parseInt(document.getElementById("server-settings-tab-add-tag-details-input-tag-associated-icon-id").value);
 
+                    //tags are created without an icon; an icon is assigned later by clicking the tag's icon box
                     let message_object = {
                         message: {
                             type: "server_settings_add_new_tag",
-                            tag_name: tag_name,
-                            linked_icon_id: tag_linked_icon_id
+                            tag_name: tag_name
                         }
                     };
 
@@ -7001,7 +7251,9 @@
 
                 decryptedBytes = encrypted_data_in_current_iteration;
 
-                let str1 = new TextDecoder().decode(decryptedBytes);
+                //coerce to Uint8Array: when no cipher layer is applied (zero metadata keys) the value is still the
+                //plain array from base64StringToBytes, and TextDecoder.decode rejects a plain array
+                let str1 = new TextDecoder().decode(new Uint8Array(decryptedBytes));
                 let decrypted_metadata = substringByNullTerminator(str1);
                 return decrypted_metadata;
             }
@@ -7076,7 +7328,6 @@
                 let message_iv = new Uint8Array(16);
                 crypto.getRandomValues(message_iv);
 
-                let base64EncryptedData = "";
                 let encrypted_data_in_current_iteration = byteArrayToSend;
 
                 for (let i = 0; i < metadata_keys.length; i++)
@@ -7085,12 +7336,11 @@
 
                     let aesCtrCustom = new aesjs.ModeOfOperation.ctr(key_bytes, new aesjs.Counter(Array.from(message_iv)));
                     encrypted_data_in_current_iteration = aesCtrCustom.encrypt(encrypted_data_in_current_iteration);
-
-                    if (i + 1 == metadata_keys.length) //if end was reached, its time to convert encrypted bytes to string
-                    {
-                        base64EncryptedData = bytesToBase64String(encrypted_data_in_current_iteration);
-                    }
                 }
+
+                //base64 the result after all layers. with 0 metadata keys this is just the plaintext bytes,
+                //matching the server which base64-decodes and applies no cipher when keys_count is 0
+                let base64EncryptedData = bytesToBase64String(encrypted_data_in_current_iteration);
 
                 let iv_base64 = bytesToBase64String(message_iv);
                 let envelope = { iv: iv_base64, data: base64EncryptedData };
@@ -7156,13 +7406,25 @@
 
                 decryptedBytes = encrypted_data_in_current_iteration;
 
-                let str1 = new TextDecoder().decode(decryptedBytes);
+                //coerce to Uint8Array: when no cipher layer is applied (zero metadata keys) the value is still the
+                //plain array from base64StringToBytes, and TextDecoder.decode rejects a plain array
+                let str1 = new TextDecoder().decode(new Uint8Array(decryptedBytes));
                 let decrypted_metadata = substringByNullTerminator(str1);
                 return decrypted_metadata;
             }
 
+            //HTML-entity-escape for the two contexts this app inserts untrusted strings into: element text
+            //("<p>NAME</p>") and quoted attribute values (class='...', style='...', value="..."). escaping both
+            //quote characters plus < > & covers those. it is NOT sufficient for unquoted attributes, javascript:
+            //URLs, inline event handlers, or <script>/<style> bodies - do not use it there. it is not idempotent,
+            //so escape a value exactly once on the way into the DOM. for an <img> src use sanitize_image_data_url.
             function sanitize_string(str)
             {
+                if (str === null || str === undefined)
+                {
+                    return "";
+                }
+                str = "" + str; //coerce so a non-string (malformed/attacker field) cannot throw on .replace
                 var map = {
                     '&': '&amp;',
                     '<': '&lt;',
@@ -7175,6 +7437,29 @@
                     return map[m];
                 });
                 return new_string;
+            }
+
+            //validate a decrypted picture before it is used as an <img> src. only a base64 image data URL is
+            //allowed; anything else (an external http(s) URL that would beacon the viewer's ip/online status on
+            //load, a javascript:/data:text-html scheme, or malformed data) is replaced with a blank placeholder.
+            //assigning to .src does not decode HTML entities, so sanitize_string is the wrong tool for this sink;
+            //this scheme+charset allowlist is.
+            function sanitize_image_data_url(str)
+            {
+                if (str === null || str === undefined)
+                {
+                    return "";
+                }
+                str = "" + str;
+
+                //data:image/<subtype>;base64,<base64 payload>
+                if (/^data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+$/.test(str) === true)
+                {
+                    return str;
+                }
+
+                //1x1 transparent png, shown in place of anything that is not a well-formed image data URL
+                return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
             }
 
             function remove_data_url_prefix_from_base64_string(base64string)
@@ -7690,12 +7975,110 @@
                 }
             }
 
+            //--- channel/client tree DOM ordering helpers ---
+            //the channel-list container is a flat pre-order (DFS) list: each .single-channel header is followed by
+            //that channel's own .connected-client rows and then by its subchannels' subtrees. new items are inserted
+            //relative to these anchors so they land at the correct (bottom) position instead of being prepended
+            //right after a header (which reversed sibling order until a full rebuild on rejoin).
+
+            //true if ancestor_channel_id is child_channel_id itself or any of its ancestors
+            function is_channel_in_subtree_of(child_channel_id, ancestor_channel_id)
+            {
+                let current = get_channel_by_id(channel_list, child_channel_id);
+                let guard = 0;
+
+                while (current != null && guard < 10000)
+                {
+                    if (current.channel_id == ancestor_channel_id)
+                    {
+                        return true;
+                    }
+                    current = get_channel_by_id(channel_list, current.parent_channel_id);
+                    guard++;
+                }
+
+                return false;
+            }
+
+            //last DOM element belonging to a channel's whole subtree (its clients, its subchannels and their
+            //content), or the channel header itself when the subtree is empty; insert a new subchannel after this
+            function get_channel_subtree_last_element(channel_id)
+            {
+                let header = document.querySelector('[data-channel-id="' + channel_id + '"]');
+                let anchor = null;
+                let node = null;
+
+                if (header == null)
+                {
+                    return null;
+                }
+
+                anchor = header;
+                node = header.nextElementSibling;
+
+                while (node != null)
+                {
+                    let belongs = false;
+
+                    if (node.classList.contains("connected-client"))
+                    {
+                        let client = get_client_by_client_id(parseInt(node.getAttribute("data-connected-client-id")));
+                        if (client != null && is_channel_in_subtree_of(client.channel_id, channel_id))
+                        {
+                            belongs = true;
+                        }
+                    }
+                    else if (node.classList.contains("single-channel"))
+                    {
+                        if (is_channel_in_subtree_of(parseInt(node.getAttribute("data-channel-id")), channel_id))
+                        {
+                            belongs = true;
+                        }
+                    }
+
+                    if (belongs == false)
+                    {
+                        break;
+                    }
+
+                    anchor = node;
+                    node = node.nextElementSibling;
+                }
+
+                return anchor;
+            }
+
+            //last of a channel's own .connected-client rows (the contiguous run right after its header, before any
+            //subchannel), or the header itself when the channel has no clients; insert a joining client after this
+            function get_channel_own_clients_last_element(channel_id)
+            {
+                let header = document.querySelector('[data-channel-id="' + channel_id + '"]');
+                let anchor = null;
+                let node = null;
+
+                if (header == null)
+                {
+                    return null;
+                }
+
+                anchor = header;
+                node = header.nextElementSibling;
+
+                while (node != null && node.classList.contains("connected-client"))
+                {
+                    anchor = node;
+                    node = node.nextElementSibling;
+                }
+
+                return anchor;
+            }
+
             function generate_html_for_single_client(client, is_local_client)
             {
                 let result = "";
                 let client_id = client.client_id;
                 let channel_id_of_client = client.channel_id;
-                let username = client.username;
+                let username = sanitize_string(client.username);
                 let audio_state = client.audio_state;
                 let country_iso_code = client.country_iso_code;
                 let is_music_bot = client.is_music_bot;
@@ -8068,7 +8451,7 @@
                     if (element != null)
                     {
                         element.style.display = "inline-block";
-                        document.getElementById("marquee-song-name-client-id-" + client.client_id).innerHTML = client.song_name;
+                        document.getElementById("marquee-song-name-client-id-" + client.client_id).innerHTML = sanitize_string(client.song_name);
                     }
                     else
                     {
@@ -8110,13 +8493,10 @@
                         hash.array();
                         key_bytes = hash.array();
 
-                        let iv_bytes = [90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10];
-
                         let single_key = {
                             info: "aes-ctr",
                             key_string: key_string_value,
-                            key_bytes: key_bytes,
-                            iv_bytes: iv_bytes
+                            key_bytes: key_bytes
                         };
 
                         metadata_keys[i] = single_key;
@@ -8135,13 +8515,10 @@
                         hash.array();
                         key_bytes = hash.array();
 
-                        let iv_bytes = [90, 11, 8, 33, 4, 50, 50, 88, 8, 89, 200, 15, 24, 4, 15, 10];
-
                         let single_key = {
                             info: "aes-ctr",
                             key_string: key_string_value,
-                            key_bytes: key_bytes,
-                            iv_bytes: iv_bytes
+                            key_bytes: key_bytes
                         };
 
                         metadata_keys[i] = single_key;
@@ -8974,18 +9351,32 @@
                     document.getElementsByClassName("choose-theme-item")[i].onclick = UI.choose_theme_item_onclick;
                 }
 
-                //browsers create an AudioContext suspended unless it is made during a user gesture; resume it on the first click/tap so audio works after an autoconnect, with no dedicated connect click
+                //browsers create an AudioContext suspended unless it is made during a user gesture; resume it on the first click/tap so audio works after an autoconnect, with no dedicated connect click.
+                //the context that matters is audio_context (created at authentication time, all voice/music playback runs through it);
+                //audioContextHandle is the legacy XAudioJS context and resuming only that one left audio_context suspended forever.
+                //the listeners must stay attached until audio_context exists and is running: a gesture can fire before authentication creates it
                 let unlock_audio_on_first_user_gesture = function()
                 {
                     if (typeof audioContextHandle !== "undefined" && audioContextHandle != null && audioContextHandle.state === "suspended")
                     {
                         audioContextHandle.resume();
+                    }
+
+                    if (typeof audio_context !== "undefined" && audio_context != null && audio_context.state === "suspended")
+                    {
+                        audio_context.resume();
+                    }
+
+                    if (typeof audio_context !== "undefined" && audio_context != null && audio_context.state === "running")
+                    {
                         document.removeEventListener("click", unlock_audio_on_first_user_gesture, true);
                         document.removeEventListener("touchend", unlock_audio_on_first_user_gesture, true);
+                        document.removeEventListener("keydown", unlock_audio_on_first_user_gesture, true);
                     }
                 };
                 document.addEventListener("click", unlock_audio_on_first_user_gesture, true);
                 document.addEventListener("touchend", unlock_audio_on_first_user_gesture, true);
+                document.addEventListener("keydown", unlock_audio_on_first_user_gesture, true);
 
                 data_processing_worker = create_new_webworker_in_same_file("data_processing_worker");
                 websocket_worker = create_new_webworker_in_same_file("websocket_worker");
