@@ -119,6 +119,11 @@ int mytypedef__check_data_types_for_consistency(void);
 #define MAX_TAGS_FOR_SINGLE_CLIENT 30
 #define MAX_CLIENT_AVATAR_LENGTH 131072
 #define MUSIC_BOT_MAX_FILE_COUNT 200
+
+/* debug aid: allow creating several music bots in one channel (several simultaneous audio senders, for
+   testing multi-speaker mixing without needing several people). keep commented out for normal builds -
+   one bot per channel */
+//#define MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL 1
 #define MAX_CLIENT_FILE_UPLOAD_LENGTH 14400000 /* must exceed the base64 of the client musicbot gate: 10*1024*1024 raw -> ~13,981,016 base64 chars. the /400 per-part cap (36000) then exceeds the client's ceil(total/400) part size (~34953), so a full 10MiB upload is not rejected */
 #define MAX_SIMULTANEOUS_FILE_SEND_THREADS 20
 #define CHALLENGE_STRING_SIZE 100
@@ -296,6 +301,8 @@ typedef struct channel
     uint64 max_client_count;
     uint64 type;
     uint64 maintainer_id;
+    boole has_channel_icon;
+    uint64 icon_id;
     char name[CHANNEL_NAME_MAX_LENGTH];
     char password[CHANNEL_PASSWORD_MAX_LENGTH];
     char description[CHANNEL_DESCRIPTION_MAX_LENGTH];

@@ -7966,14 +7966,12 @@
             }
 
             .single-tag {
-                width: 20px;
-                height: 17px;
+                width: 18px;
+                height: 18px;
                 background-repeat: no-repeat;
                 background-position: center center;
                 background-size: 15px 15px;
                 display: inline-block;
-                padding-left: 2px;
-                padding-right: 2px;
             }
 
             .padding-div {
@@ -9793,6 +9791,25 @@
             background-size: 18px 18px !important;
         }
 
+
+.channel-list-context-menu, .add-tag-context-menu {
+    background-color: #f0f0f0 !important;
+    box-shadow: 2px 3px 2px rgba(0,0,0,0.5) !important;
+}
+
+.channel-list-context-menu-background, .add-tag-context-menu-background {
+    background-color: #f0f0f0 !important;
+    border: 0px !important;
+    box-shadow: none !important;
+}
+
+#chat-context-container {
+    height: calc(100% - 33px);
+}
+
+.country-flag- {
+    width: 0px !important;
+}
     </style>
 
 
@@ -11250,165 +11267,6 @@
             return bigInt;
         });
     }
-
-    </script>
-
-    <script type="text/javascript">
-
-        var samplesPerCallback = 2048;			//Has to be between 2048 and 4096 (If over, then samples are ignored, if under then silence is added).
-        var outputConvert = null;
-
-
-        //Audio API Event Handler:
-        var audioContextHandle = null;
-        var audioNode = null;
-        var audioSource = null;
-        var launchedContext = false;
-        var audioContextSampleBuffer = [];
-        var resampled = [];
-        var webAudioMinBufferSize = 15000;
-        var webAudioMaxBufferSize = 25000;
-        var webAudioActualSampleRate = 44100;
-        var XAudioJSSampleRate = 0;
-        var webAudioMono = false;
-        var defaultNeutralValue = 0;
-        var resampleControl = null;
-        var audioBufferSize = 0;
-        var resampleBufferStart = 0;
-        var resampleBufferEnd = 0;
-        var resampleBufferSize = 2;
-
-        function audioOutputEvent(event)
-        {		//Web Audio API callback...
-            var index = 0;
-            var buffer1 = event.outputBuffer.getChannelData(0);
-            var buffer2 = event.outputBuffer.getChannelData(1);
-            resampleRefill();
-            if (!webAudioMono)
-            {
-                //STEREO:
-                while (index < samplesPerCallback && resampleBufferStart != resampleBufferEnd)
-                {
-                    buffer1[index] = resampled[resampleBufferStart++];
-                    buffer2[index++] = resampled[resampleBufferStart++];
-                    if (resampleBufferStart == resampleBufferSize)
-                    {
-                        resampleBufferStart = 0;
-                    }
-                }
-            }
-            else
-            {
-                //MONO:
-                while (index < samplesPerCallback && resampleBufferStart != resampleBufferEnd)
-                {
-                    buffer2[index] = buffer1[index] = resampled[resampleBufferStart++];
-                    ++index;
-                    if (resampleBufferStart == resampleBufferSize)
-                    {
-                        resampleBufferStart = 0;
-                    }
-                }
-            }
-            //Pad with silence if we're underrunning:
-            while (index < samplesPerCallback)
-            {
-                buffer2[index] = buffer1[index] = defaultNeutralValue;
-                ++index;
-            }
-        }
-        function resampleRefill()
-        {
-            if (audioBufferSize > 0)
-            {
-                //Resample a chunk of audio:
-                var resampleLength = resampleControl.resampler(getBufferSamples());
-                var resampledResult = resampleControl.outputBuffer;
-                for (var index2 = 0; index2 < resampleLength; ++index2)
-                {
-                    resampled[resampleBufferEnd++] = resampledResult[index2];
-                    if (resampleBufferEnd == resampleBufferSize)
-                    {
-                        resampleBufferEnd = 0;
-                    }
-                    if (resampleBufferStart == resampleBufferEnd)
-                    {
-                        ++resampleBufferStart;
-                        if (resampleBufferStart == resampleBufferSize)
-                        {
-                            resampleBufferStart = 0;
-                        }
-                    }
-                }
-                audioBufferSize = 0;
-            }
-        }
-        function resampledSamplesLeft()
-        {
-            return ((resampleBufferStart <= resampleBufferEnd) ? 0 : resampleBufferSize) + resampleBufferEnd - resampleBufferStart;
-        }
-        function getBufferSamples()
-        {
-            //Typed array and normal array buffer section referencing:
-            try
-            {
-                return audioContextSampleBuffer.subarray(0, audioBufferSize);
-            }
-            catch (error)
-            {
-                try
-                {
-                    //Regular array pass:
-                    audioContextSampleBuffer.length = audioBufferSize;
-                    return audioContextSampleBuffer;
-                }
-                catch (error)
-                {
-                    //Nightly Firefox 4 used to have the subarray function named as slice:
-                    return audioContextSampleBuffer.slice(0, audioBufferSize);
-                }
-            }
-        }
-
-        function initializeWebkitAudio()
-        {
-            if (!launchedContext)
-            {
-                try
-                {
-                    console.log("audioContextHandle = new AudioContext();");
-                    audioContextHandle = new AudioContext();							//Create a system audio context.
-                }
-                catch (error)
-                {
-                    try
-                    {
-                        audioContextHandle = new AudioContext();								//Create a system audio context.
-                    }
-                    catch (error)
-                    {
-                        return;
-                    }
-                }
-                try
-                {
-                    audioSource = audioContextHandle.createBufferSource();						//We need to create a false input to get the chain started.
-                    audioSource.loop = false;	//Keep this alive forever (Event handler will know when to ouput.)
-                    XAudioJSSampleRate = webAudioActualSampleRate = audioContextHandle.sampleRate;
-                    audioSource.buffer = audioContextHandle.createBuffer(1, 1, webAudioActualSampleRate);	//Create a zero'd input buffer for the input to be valid.
-                    audioNode = audioContextHandle.createJavaScriptNode(samplesPerCallback, 1, 2);			//Create 2 outputs and ignore the input buffer (Just copy buffer 1 over if mono)
-                    audioNode.onaudioprocess = audioOutputEvent;								//Connect the audio processing event to a handling function so we can manipulate output
-                    audioSource.connect(audioNode);												//Send and chain the input to the audio manipulation.
-                    audioNode.connect(audioContextHandle.destination);							//Send and chain the output of the audio manipulation to the system audio output.
-                    audioSource.noteOn(0);														//Start the loop!
-                }
-                catch (error)
-                {
-                    return;
-                }
-                launchedContext = true;
-            }
-        }
 
     </script>
 
@@ -19284,6 +19142,7 @@
                 var bufSize = 1275 * 3 + 7;
                 var pcmSamples = this.frameSize * this.channels;
 
+                this.bufSize = bufSize;
                 this.bufPtr = Module._malloc(bufSize);
                 this.buf = Module.HEAPU8.subarray(this.bufPtr, this.bufPtr + bufSize);
 
@@ -19310,6 +19169,16 @@
                 return aa;
             }
 
+            //re-derives the wasm-heap views from the current heap buffer. the views cached at construction
+            //time detach if the emscripten heap grows during a later instance's allocation, so after building
+            //the whole decoder pool every member's views are refreshed once, when no further mallocs follow
+            OpusDecoder.prototype.refresh_heap_views = function()
+            {
+                this.buf = Module.HEAPU8.subarray(this.bufPtr, this.bufPtr + this.bufSize);
+                this.pcm = Module.HEAPF32.subarray(this.pcmPtr / 4, this.pcmPtr / 4 + this.frameSize * this.channels);
+                this.pcm_buffer_for_mixing = Module.HEAPF32.subarray(0, this.pcmBufferSize / 4);
+            }
+
             OpusDecoder.prototype.decode = function (payload, clear_buffered_pcm)
             {
                 /* edited 29.6.2025
@@ -19319,11 +19188,13 @@
 
                 this.buf.set(new Uint8Array(payload));
                 var ret = _opus_decode_float(this.handle, this.bufPtr, payload.byteLength, this.pcmPtr, this.pcmBufferSize, this.pcm_buffer_for_mixing, clear_buffered_pcm, this.frameSize, 0);
-                
+
                 if (ret > this.highestPcmCountEncountered)
                 {
                     this.highestPcmCountEncountered = ret;
                 }
+
+                return ret;
             }
 
             OpusDecoder.prototype.destroy = function ()
@@ -19364,594 +19235,7 @@
             }
 
 
-            /** Callback when main thread receives a message */
-            function mainthread_onmessage(e)
-            {
-                // console.log("%cmainthread_onmessage => " + e.data.type, "color: purple");
-
-                if (e.data.type == "log")
-                {
-                    custom_log(e.data.value);
-                }
-                else if (e.data.type == "opus_encoder_worker__encode_result")
-                {
-                    if (current_channel_keys != null)
-                    {
-                        let opus_data_chunks = e.data.value;
-
-                        for (var i = 0; i < opus_data_chunks.length; i++)
-                        {
-                            //console.log(opus_data_chunks[i]); useful for finding out if audio is sent
-                            let data = encrypt_data_with_aes_keys(current_channel_keys, opus_data_chunks[i]);
-                            g_datachannel.send(data);
-                        }
-                    }
-                    else
-                    {
-                        custom_log("dont have channel keys, cant encrypt audio for sending");
-                    }
-                }
-                else if (e.data.type == "opus_decoder_worker__decode_result")
-                {
-                    let webaudio_data_chunks = e.data.value;
-                    audio_queue.write(webaudio_data_chunks);
-                }
-                else if (e.data.type == "minimp3_worker__decode_result")
-                {
-                    let data_chunks = chunkBuffers(e.data.value, 4096);
-
-                    let message_object1 = {
-                        message:
-                        {
-                            type: "start_song_stream",
-                            song_name: selected_song_name
-                        }
-                    };
-
-                    let message_json_string1 = process_message_before_sending(message_object1);
-                    let data1 = encrypt_all_message_data_and_convert_to_base64(message_json_string1);
-                    websocket_worker_send(data1);
-
-                    stream_local_mp3_file_to_other_clients(data_chunks, e.data.mp3_sample_rate);
-
-                    if (alert_streaming_music_shown_once == false)
-                    {
-                        custom_alert("when streaming music from file, detach browser tab where chat is to separate window (if using multiple tabs) or stay focused on tab where chat is otherwise music is not sent reliably and it lags");
-                        alert_streaming_music_shown_once = true;
-                    }
-                }
-                else if (e.data.type == "websocket_worker_onmessage")
-                {
-                    //data from websocket_worker are passed to main thread and then to data_processing_worker
-                    data_processing_worker.postMessage({
-                        type: "mainthread__process_received_websocket_message",
-                        value: e.data.value
-                    });
-                }
-                else if (e.data.type == "websocket_worker_onclose")
-                {
-                    if (is_authenticated)
-                    {
-                        if (is_running_in_android_webview == false)
-                        {
-                            custom_alert("connection with server was lost");
-                        }
-                        //window.location.reload();
-                    }
-                    is_authenticated = false;
-
-                    reset_chat_app_keep_identity();
-                }
-                else if (e.data.type == "websocket_worker_onerror")
-                {
-                    if (is_running_in_android_webview == false)
-                    {
-                        custom_alert("connecting to server failed");
-
-                        // window.alert("connection with server lost"); //this will be window.alert, this is serious problem
-                    }
-                    reset_chat_app_keep_identity();
-
-                    // window.location.reload();
-                    is_authenticated = false;
-                }
-                else if (e.data.type == "data_processing_worker__generate_rsa_keypair_result")
-                {
-                    rsa_public_key_string = e.data.value;
-                    console.log("public key string -> " + rsa_public_key_string);
-                    is_rsa_key_generated = true;
-                    document.getElementById("another-buttons-sub-loading-container").style.display = "none";
-                    document.getElementById("another-buttons-sub-container").style.display = "";
-                    identity_string = e.data.identity_string;
-                }
-                else if (e.data.type == "data_processing_worker__authentication_status")
-                {
-                    if (e.data.value == "success")
-                    {
-                        hide_custom_alert(); //if there was any alert
-
-                        if (e.data.is_idle_mode_allowed)
-                        {
-                           document.getElementById('channel-list-container').style.height = "calc(70% - 30px)";
-                           document.getElementById("idle-channel-collapse-button").addEventListener("mousedown", UI.collapse_expand_channel);
-                           document.getElementById('idle-clients-container').style.display = "block";
-                        }
-
-                        is_authenticated = true;
-
-                        g_client_list = client_list;
-                        g_channel_list = channel_list;
-
-                        if (is_running_in_android_webview)
-                        {
-                            document.getElementById("android-settings-button").style.display = "none";
-                        }
-
-    
-                        document.getElementById('verification-system').style.display = "none";
-                        document.getElementById('communication-system-container').style.display = "block";
-
-                        //people on touch device dont need to see chat by default, current UI isnt suitable for that
-                        //most likely they will just want to call with voice
-                        if (is_client_running_under_touch_device)
-                        {
-                            UI.hide_chat_container();
-                        }
-
-                        if (!should_connection_check_be_running)
-                        {
-                            should_connection_check_be_running = true;
-                            websocket_connection_check(websocket);
-                        }
-
-
-                        //the connected sound effect is delayed for 1 second...
-                        //because at this moment its not yet known if the sound effect should be played or not. why?
-                        //because, at the moment client.html receives client_list message (later, shortly after this)
-                        //client.html invokes JavaExport onconnected (if client.html is running in android)
-                        //the invoke causes java to send user settings to androids WebView (client.html) 
-                        //it happens in short time frame
-                        //so thats why this timeout waits 1 second
-                        //of course this is a bit useless in web browser context, but web browser can live with the sound effect delayed at 1 second
-                        //plus minus 1 second doesnt matter in this case
-                        //and the way its made now, android needs it
-                        setTimeout( () => {
-                            if (are_sound_effects_enabled)
-                            {
-                                sound_effects.connected.play();
-                            }
-                        }, 1000);
-                    }
-                }
-                else if (e.data.type == "data_processing_worker__audio_enabled")
-                {
-                    //
-                    //default stun port is 3478 for this chat. Stun port is given to client with websocket connection, stun port can be changed if needed, there are two places that need to be edited in code of server to set different stun port
-                    //in stun_server.rs in this line let bind_address: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 3478);
-                    //in main.rs in beginning of this function: fn send_authentication_status_to_client(responder: &Responder)
-                    //    let message_to_send: serde_json::Value = serde_json::json!({
-                    //   "message" : {
-                    //        "value": "success",
-                    //  "stun_port": 3478
-                    //    }
-                    //});
-                    //
-
-                    iceconfig = {
-                        iceServers: [{
-                            urls: "stun:" + host + ":" + e.data.stun_port,
-                        }],
-                    };
-
-                    //
-                    //the datachannel/playback below is set up whenever audio is on for clients or music bots,
-                    //so this flag (which keeps the datachannel established/reconnected) is always true here.
-                    //whether this client may transmit its own microphone is a separate flag, gated on client voice
-                    //
-                    is_voice_chat_allowed_by_server = true;
-                    is_client_microphone_allowed_by_server = (e.data.client_voice_allowed == true);
-                    //decoded audio is 48 kHz PCM and is pushed into the context untouched (the SpeexResampler below
-                    //is not wired into the playback path), so ask for a 48 kHz context and let the browser do the
-                    //device-rate conversion itself. without this, a 44.1 kHz device plays 48 kHz samples ~9% slow
-                    //(pitch drop) and the playback queue grows ~8% per second - the endlessly accumulating delay
-                    try
-                    {
-                        audio_context = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-                    }
-                    catch (sample_rate_hint_not_supported)
-                    {
-                        audio_context = new (window.AudioContext || window.webkitAudioContext)();
-                    }
-                    console.log("audio_context.sampleRate" + audio_context.sampleRate);
-
-                    //with autoconnect there may have been no user gesture before this point, then the browser
-                    //creates the context suspended and every played frame is silently discarded. try to resume
-                    //right away (succeeds when a gesture already happened); if it stays suspended, the
-                    //first-gesture unlock handler in main.js resumes it on the next click/tap/keypress
-                    if (audio_context.state === "suspended")
-                    {
-                        console.log("audio_context created suspended (autoplay policy, no user gesture yet); audio stays silent until a gesture resumes it");
-                        audio_context.resume();
-                    }
-
-                    let opus_decoding_sampler_channels = 1;
-                    let opus_decoding_sampler_input_rate = 48000;
-                    let opus_decoding_sampler_output_rate = audio_context.sampleRate;
-
-                    opus_decoding_sampler = new SpeexResampler(opus_decoding_sampler_channels,
-                        opus_decoding_sampler_input_rate,
-                        opus_decoding_sampler_output_rate);
-
-                    opus_decoder_worker.postMessage({
-                        type: "init",
-                        sampleRate: opus_decoding_sampler_output_rate
-                    });
-
-                    silence = new Float32Array(audio_config.codec.bufferSize);
-                    player = audio_context.createScriptProcessor(audio_config.codec.bufferSize, 1, 1);
-                    player.onaudioprocess = player_onaudioprocess;
-                    audio_player_gain_node = audio_context.createGain();
-                    player.connect(audio_player_gain_node);
-                    audio_player_gain_node.connect(audio_context.destination);
-
-                    try
-                    {
-                       console.log("create_new_peer_connection_object_for_use");
-                       is_is_webrtc_datachannel_check_running = true;
-                       webrtc_datachannel_connection_check(false);
-                    }
-                    catch (Exception)
-                    {
-                       custom_log(Exception.toString());
-                       custom_alert('audio connection failed');
-                       return;
-                    }
-                }
-                else if (e.data.type == "data_processing_worker__metadata_keys_accepted")
-                {
-                    keys_init_status = true;
-                }
-                else if (e.data.type == "data_processing_worker__client_list_from_server")
-                {
-                    server_msg.process_client_list_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__client_avatar_from_server")
-                {
-                    server_msg.process_client_avatar_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__connection_check_response")
-                {
-                    g_connection_check_message_response_received_timestamp = new Date().valueOf();
-                }
-                else if (e.data.type == "data_processing_worker__channel_list_from_server")
-                {
-                    server_msg.process_channel_list_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__tag_list_from_server")
-                {
-                    server_msg.process_tag_list_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__icon_list_from_server")
-                {
-                    server_msg.process_icon_list_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__icon_add_from_server")
-                {
-                    server_msg.process_icon_add_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__tag_add_to_client_from_server")
-                {
-                    server_msg.process_add_tag_to_client_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__remove_tag_from_client_from_server")
-                {
-                    server_msg.process_remove_tag_from_client_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__tag_add_from_server")
-                {
-                    server_msg.process_tag_add_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__tag_delete_from_server")
-                {
-                    server_msg.process_tag_delete_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__icon_delete_from_server")
-                {
-                    server_msg.process_icon_delete_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__tag_icon_changed_from_server")
-                {
-                    server_msg.process_tag_icon_changed_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__start_song_stream_from_server")
-                {
-                    server_msg.process_start_song_stream_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__stop_song_stream_from_server")
-                {
-                    server_msg.process_stop_song_stream_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__chat_message_delete_from_server")
-                {
-                    server_msg.process_chat_message_delete_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__public_key_challenge_from_server")
-                {
-                    let msg = e.data.value;
-                    let dh_public_mix_string = msg.message.dh_public_mix;
-                    //console.log("DH dh_public_mix_string from server -> " + dh_public_mix_string);
-
-
-                    let dh_public_mix = bigInt(dh_public_mix_string);
-
-                    //reject a degenerate server public mix (B <= 1 or B >= p-1) before using it; such values
-                    //force a known/tiny shared secret. for a safe prime, requiring 2 <= B <= p-2 is sufficient.
-                    if (dh_public_mix.lesserOrEquals(1) || dh_public_mix.greaterOrEquals(dh_modulus.minus(1)))
-                    {
-                        console.error("rejected degenerate DH public mix from server; aborting handshake");
-                        return;
-                    }
-
-                    let shared_secret = dh_public_mix.modPow(dh_secret_exponent, dh_modulus);
-
-
-                    //add shared secret to
-                    //console.log("DH shared_secret -> " + shared_secret.toString());
-
-                    //
-                    //because there is also "secret key" used ,used to further secure connection between server and client, and is different for every connected client, (obtained with steps that wants to look like diffie-hellman key exchange)
-                    //this secret key needs to be added to metadata keys
-                    //and then copy of metadata_keys object sent to data processing webworker aswell (there are two copies of same object)
-                    //
-
-                    let shared_secret_string = shared_secret.toString();
-
-                    //derive the AES enc key + HMAC mac key from the shared secret via HKDF (matches the server)
-                    let dh_keys = dh_derive_keys(shared_secret_string);
-                    key_bytes = dh_keys.enc_key;
-
-                    let single_key = {
-                        info: "aes-ctr",
-                        key_string: shared_secret_string,
-                        key_bytes: key_bytes,
-                        mac_bytes: dh_keys.mac_key
-                    };
-
-                    metadata_keys.unshift(single_key);
-
-                    /* removed: never log key material (metadata_keys holds the session key) */
-
-                    //
-                    //here the metadata_keys object within data_processing web worker is updated aswell
-                    //
-
-
-                    console.log("public_key_challenge_response result -> ", msg.message.decryption_result);
-
-
-                    data_processing_worker.postMessage({
-                        type: "mainthread__metadata_keys",
-                        value: metadata_keys
-                    });
-
-
-                    let message_object = {
-                        message: {
-                            type: "public_key_challenge_response",
-                            value: msg.message.decryption_result
-                        }
-                    };
-
-                    let message_json_string = process_message_before_sending(message_object);
-
-                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
-
-                    websocket_worker_send(data);
-                }
-                else if (e.data.type == "data_processing_worker__chat_message_edit_from_server")
-                {
-                    server_msg.process_chat_message_edit_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__poke_from_server")
-                {
-                    server_msg.process_poke_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__access_denied_from_server")
-                {
-                    server_msg.process_access_denied_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__force_admin_password_change")
-                {
-                    //the admin password set during server setup was typed in cleartext; prompt once for a new one
-                    let new_admin_password = prompt("The admin password set at server setup was typed in cleartext in the console. Please set a new admin password now.");
-                    if (new_admin_password != null && new_admin_password != "")
-                    {
-                        let message_object = { message: { type: "change_admin_password", value: new_admin_password } };
-                        let message_json_string = process_message_before_sending(message_object);
-                        let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
-                        websocket_worker_send(data);
-                    }
-                }
-                else if (e.data.type == "data_processing_worker__client_info_from_server")
-                {
-                    server_msg.process_client_info_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__channel_full_from_server")
-                {
-                    let full_channel = get_channel_by_id(channel_list, e.data.value.message.channel_id);
-                    let full_channel_name = (full_channel != null && full_channel.name != null) ? full_channel.name : "channel";
-                    custom_alert("'" + full_channel_name + "' is full");
-                }
-                else if (e.data.type == "data_processing_worker__server_settings_values_from_server")
-                {
-                    let msg = e.data.value;
-                    document.getElementById("server-settings-general-display-flags-checkbox").checked = msg.message.display_country_flags == true;
-                    document.getElementById("server-settings-general-enable-audio").checked = msg.message.enable_audio == true;
-                    document.getElementById("server-settings-general-enable-music-bot-audio-checkbox").checked = msg.message.enable_music_bot_audio == true;
-                    document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked = msg.message.hide_clients_in_password_channels == true;
-                    document.getElementById("server-settings-general-allow-temp-channels-checkbox").checked = msg.message.allow_temp_channels == true;
-                    UI.render_bans_list(msg.message.bans);
-                }
-                else if (e.data.type == "data_processing_worker__channel_join_from_server")
-                {
-                    server_msg.process_channel_join_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__server_chat_message_id_for_local_message_id_from_server")
-                {
-                    server_msg.process_server_chat_message_id_for_local_message_id_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__client_connect_from_server")
-                {
-                    server_msg.process_client_connect_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__client_rename_from_server")
-                {
-                    server_msg.process_client_rename_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__client_disconnect_from_server")
-                {
-                    server_msg.process_client_disconnect_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__audio_state_of_single_client_from_server")
-                {
-                    //console.log(e.data.value);
-
-                    let client = {
-                        client_id: e.data.value.message.client_id,
-                        audio_state: e.data.value.message.value,
-                    }
-                    process_audio_state_of_single_client(client);
-                }
-                else if (e.data.type == "data_processing_worker__current_channel_active_microphone_usage_from_server")
-                {
-                    console.log("data_processing_worker__current_channel_active_microphone_usage_from_server");
-
-                    console.log(e.data.value);
-                    for (var i = 0; i < e.data.value.message.clients.length; i++)
-                    {
-                        process_audio_state_of_single_client(e.data.value.message.clients[i]);
-                    }
-                }
-                else if (e.data.type == "data_processing_worker__sdp_offer_from_server")
-                {
-                    server_msg.process_sdp_offer_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__ice_candidate_from_server")
-                {
-                    server_msg.process_ice_candidate_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__server_info_broadcast_from_server")
-                {
-                    server_msg.process_server_info_broadcast_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__channel_edit_from_server")
-                {
-                    server_msg.process_channel_edit_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__client_going_to_idle_mode")
-                {
-                    server_msg.process_client_client_going_to_idle_mode_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__client_coming_back_from_idle_mode")
-                {
-                    server_msg.process_client_coming_back_from_idle_mode_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__channel_delete_from_server")
-                {
-                    server_msg.process_channel_delete_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__channel_create_from_server")
-                {
-                    server_msg.process_channel_create_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__channel_chat_picture_metadata")
-                {
-                    server_msg.process_channel_chat_picture_metadata_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__direct_chat_picture_metadata")
-                {
-                    server_msg.process_direct_chat_picture_metadata_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__channel_maintainer_id")
-                {
-                    server_msg.process_channel_maintainer_id_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__channel_chat_message")
-                {
-                    server_msg.process_channel_chat_message_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__direct_chat_message")
-                {
-                    server_msg.process_direct_chat_message_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__direct_chat_picture")
-                {
-                    server_msg.process_direct_chat_picture_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__channel_chat_picture")
-                {
-                    server_msg.process_channel_chat_picture_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__image_sent_status_from_server")
-                {
-                    server_msg.process_image_sent_status_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__call_from_server")
-                {
-                    server_msg.process_call_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__create_websocket_channel_keys_message_result")
-                {
-                    console.log("sending channel keys to user -> " + e.data.username);
-                    websocket_worker_send(e.data.channel_keys_message_content);
-                }
-                else if (e.data.type == "data_processing_worker__new_channel_keys_from_data_processing_worker")
-                {
-                    current_channel_keys = e.data.value;
-                    
-                    //data processing worker created new channel keys and sent them to UI thread, now send them from UI thread to opus_decoder worker
-                    opus_decoder_worker.postMessage({
-                        type: "mainthread__channel_keys_for_opus_decoder",
-                        value: current_channel_keys
-                    });
-                }
-                else if (e.data.type == "data_processing_worker__tell_websocket_worker_to_send_data")
-                {
-                    websocket_worker_send(e.data.data_to_be_sent_over_websocket);
-                }
-                else if (e.data.type == "data_processing_worker__direct_chat_picture_to_be_uploaded_by_parts")
-                {
-                    let total_bytes_length = e.data.data_for_upload_process.length;
-                    let parts = split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
-                    file_send_intent = "direct_chat_picture_file";
-                    file_send_intent_extra_data = e.data.extra_data;
-                    send_file_by_parts(parts, total_bytes_length, 5);
-                }
-                else if (e.data.type == "data_processing_worker__channel_chat_picture_to_be_uploaded_by_parts")
-                {
-                    let total_bytes_length = e.data.data_for_upload_process.length;
-                    let parts = split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
-                    file_send_intent = "channel_chat_picture_file";
-                    file_send_intent_extra_data = e.data.extra_data;
-                    send_file_by_parts(parts, total_bytes_length, 5);
-                }
-                else if (e.data.type == "data_processing_worker__music_bot_song_list_from_server")
-                {
-                    server_msg.process_music_bot_song_list_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__file_send_success_from_server")
-                {
-                    server_msg.process_file_send_success_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__file_receive_chunk_from_server")
-                {
-                    server_msg.process_file_receive_chunk_from_server_from_server(e.data.value);
-                }
-                else if (e.data.type == "data_processing_worker__file_receive_completed_from_server")
-                {
-                    server_msg.process_file_receive_completed_from_server_from_server(e.data.value);
-                }
-            }
+            /* mainthread_onmessage (the main-thread worker-message dispatcher) lives in main.js */
 
 
             //e.data.value must be Float32Array
@@ -20005,14 +19289,255 @@
             var opus_decoder_worker_current_channel_opus_client_ids = [];
             var opus_decoder_worker_current_channel_opus_client_ids_map = new Map();
 
+            //
+            //per-sender decoder pool. opus is stateful (each frame is predicted from the same stream's previous
+            //frame), so every concurrently-audible sender needs its own decoder - pushing interleaved streams
+            //through one decoder corrupts the predictor state of all of them. the pool is allocated ONCE at init
+            //(a mid-run malloc can grow the wasm heap and detach the cached heap views) and is never freed:
+            //"releasing" a decoder just returns its slot to the free list, and the codec state is scrubbed in
+            //place with OPUS_RESET_STATE when the slot is handed to a new sender. sized to simultaneous
+            //SPEAKERS, not channel population - past a handful of concurrent voices the mix is noise anyway
+            //
+            var OPUS_DECODER_POOL_SIZE = 16;
+            var OPUS_DECODER_IDLE_TICKS_BEFORE_RELEASE = 250; //250 ticks x 20ms = 5s of silence
+            var OPUS_CTL_RESET_STATE = 4028; //OPUS_RESET_STATE from opus_defines.h
+            var opus_decoder_pool = [];
+            var opus_decoder_pool_free_indices = [];
+            var opus_decoder_sender_map = new Map(); //sender client_id -> { pool_index, last_used_tick }
+            var opus_decoder_tick_counter = 0;
+            var opus_decoder_mix_scratch = null; //Float32Array(frameSize), created at init after the pool
+
+            //receive-side sequence telemetry (frames lost on the unordered/unreliable datachannel)
+            var opus_decoder_worker_lost_frame_count = 0;
+            var opus_decoder_worker_late_frame_count = 0;
+            var opus_decoder_worker_last_logged_lost_frame_count = 0;
+
+            //direct mode: one end of a MessageChannel whose other end sits inside the player worklet.
+            //while set, chunks are decoded on arrival and their pcm goes straight to the worklet
+            //(per sender, no mixing here) - no 20 ms tick, no main-thread hop. null = tick/fallback mode
+            var opus_decoder_direct_worklet_port = null;
+
+            //returns the sender's decoder, claiming a pool slot on first use. on pool exhaustion the
+            //longest-idle sender's slot is stolen (that one stream restarts cleanly on its next frame,
+            //everyone else stays untouched)
+            function opus_decoder_worker_get_decoder_for_sender(sender_client_id)
+            {
+                let mapping = opus_decoder_sender_map.get(sender_client_id);
+
+                if (mapping != null)
+                {
+                    mapping.last_used_tick = opus_decoder_tick_counter;
+                    return opus_decoder_pool[mapping.pool_index];
+                }
+
+                let pool_index = -1;
+
+                if (opus_decoder_pool_free_indices.length > 0)
+                {
+                    pool_index = opus_decoder_pool_free_indices.pop();
+                }
+                else
+                {
+                    let oldest_tick = Infinity;
+                    let oldest_sender = null;
+
+                    for (const [sender, m] of opus_decoder_sender_map)
+                    {
+                        if (m.last_used_tick < oldest_tick)
+                        {
+                            oldest_tick = m.last_used_tick;
+                            oldest_sender = sender;
+                        }
+                    }
+
+                    if (oldest_sender == null)
+                    {
+                        return null;
+                    }
+
+                    pool_index = opus_decoder_sender_map.get(oldest_sender).pool_index;
+                    opus_decoder_sender_map.delete(oldest_sender);
+                }
+
+                //scrub the previous occupant's predictor state in place - no malloc/free involved
+                _opus_decoder_ctl(opus_decoder_pool[pool_index].handle, OPUS_CTL_RESET_STATE);
+
+                opus_decoder_sender_map.set(sender_client_id, {
+                    pool_index: pool_index,
+                    last_used_tick: opus_decoder_tick_counter,
+                    last_sequence_number: null,
+                    consecutive_stale_count: 0
+                });
+                return opus_decoder_pool[pool_index];
+            }
+
+            //returns slots of senders that have been silent for a while back to the free list.
+            //no state is touched here; the reset happens when the slot is reassigned
+            function opus_decoder_worker_release_idle_decoders()
+            {
+                for (const [sender, m] of opus_decoder_sender_map)
+                {
+                    if (opus_decoder_tick_counter - m.last_used_tick > OPUS_DECODER_IDLE_TICKS_BEFORE_RELEASE)
+                    {
+                        opus_decoder_pool_free_indices.push(m.pool_index);
+                        opus_decoder_sender_map.delete(sender);
+                    }
+                }
+            }
+
 
             //this function gets run every 20ms. Can be extended to 100ms? possibly 200ms? But not more.
             //this function handles merging of multiple opus streams into single pcm from very high level perspective
-            function opus_decoder_worker_interval_function() 
+            //decodes one chunk with THAT SENDER'S pooled decoder, applying the per-sender sequence rules
+            //(duplicate/late drop, loss counting, resync after a counter restart). returns a fresh
+            //Float32Array of interleaved stereo pcm, or null when the chunk was dropped.
+            //used by BOTH modes: the direct pipe decodes on arrival, the tick mixer per 20 ms round
+            function opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry)
             {
+                let sender_decoder = opus_decoder_worker_get_decoder_for_sender(sender_client_id);
+
+                if (sender_decoder == null)
+                {
+                    return null;
+                }
+
+                let sender_mapping = opus_decoder_sender_map.get(sender_client_id);
+
+                //sequence handling: drop duplicates and late frames, count losses. a long run of
+                //"late" frames means the sender restarted its counter (reconnect) - resync to it
+                if (chunk_entry.sequence_number != null && sender_mapping.last_sequence_number != null)
+                {
+                    let sequence_delta = (chunk_entry.sequence_number - sender_mapping.last_sequence_number) & 0xffff;
+
+                    if (sequence_delta == 0)
+                    {
+                        return null; //duplicate frame
+                    }
+
+                    if (sequence_delta >= 0x8000)
+                    {
+                        opus_decoder_worker_late_frame_count = opus_decoder_worker_late_frame_count + 1;
+                        sender_mapping.consecutive_stale_count = sender_mapping.consecutive_stale_count + 1;
+
+                        //25 stale frames in a row (~0.5 s of audio): not reordering, the sender's
+                        //counter restarted - fall through and resync to it
+                        if (sender_mapping.consecutive_stale_count <= 25)
+                        {
+                            return null;
+                        }
+                    }
+                    else if (sequence_delta > 1)
+                    {
+                        let lost_now = sequence_delta - 1;
+
+                        if (lost_now > 250)
+                        {
+                            lost_now = 250; //a jump this big is a resync, not real loss; keep the stat sane
+                        }
+
+                        opus_decoder_worker_lost_frame_count = opus_decoder_worker_lost_frame_count + lost_now;
+
+                        if (opus_decoder_worker_lost_frame_count - opus_decoder_worker_last_logged_lost_frame_count >= 100)
+                        {
+                            console.log("audio receive: " + opus_decoder_worker_lost_frame_count + " frames lost, " + opus_decoder_worker_late_frame_count + " late/duplicate so far");
+                            opus_decoder_worker_last_logged_lost_frame_count = opus_decoder_worker_lost_frame_count;
+                        }
+                    }
+                }
+
+                if (chunk_entry.sequence_number != null)
+                {
+                    sender_mapping.last_sequence_number = chunk_entry.sequence_number;
+                    sender_mapping.consecutive_stale_count = 0;
+                }
+
+                let decoded_sample_count = sender_decoder.decode(chunk_entry.opus_chunk, 1);
+
+                if (decoded_sample_count <= 0)
+                {
+                    return null;
+                }
+
+                //decode returns samples PER CHANNEL; the shared frame buffer holds interleaved stereo
+                return new Float32Array(sender_decoder.pcm_buffer_for_mixing.subarray(0, decoded_sample_count * sender_decoder.channels));
+            }
+
+            //direct mode: decode one sender's chunk immediately (no 20 ms tick latency) and transfer the
+            //pcm straight to the player worklet, which jitter-buffers per sender and mixes on the audio clock
+            function opus_decoder_worker_decode_and_pipe(sender_client_id, chunk_entry)
+            {
+                let decoded_pcm = opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry);
+
+                if (decoded_pcm == null)
+                {
+                    return;
+                }
+
+                opus_decoder_direct_worklet_port.postMessage({
+                    id: sender_client_id,
+                    pcm: decoded_pcm
+                }, [decoded_pcm.buffer]);
+            }
+
+            //fallback (tick) mode: register the sender for this 20 ms round and queue the chunk for the mixer
+            function opus_decoder_worker_queue_chunk_for_tick(sender_client_id, chunk_entry)
+            {
+                if (!opus_decoder_worker_current_channel_opus_client_ids.includes(sender_client_id))
+                {
+                    opus_decoder_worker_current_channel_opus_client_ids.push(sender_client_id);
+                    opus_decoder_worker_current_channel_opus_client_ids.forEach((clientId, index) => {
+                        opus_decoder_worker_current_channel_opus_client_ids_map.set(clientId, index);
+                    });
+
+                    let new_client_index = opus_decoder_worker_current_channel_opus_client_ids_map.get(sender_client_id);
+                    opus_decoder_worker_clients_opus_data[new_client_index] = [];
+                }
+
+                let client_index = opus_decoder_worker_current_channel_opus_client_ids_map.get(sender_client_id);
+                opus_decoder_worker_clients_opus_data[client_index].push(chunk_entry);
+                opus_decoder_worker_clients_opus_data_count = opus_decoder_worker_clients_opus_data_count + 1;
+            }
+
+            //direct-pipe mode housekeeping: the 20 ms mixing tick is gone, but idle decoder slots still
+            //need returning to the pool. the tick counter advances by 50 per second to keep the
+            //"1 tick = 20 ms" units of last_used_tick / OPUS_DECODER_IDLE_TICKS_BEFORE_RELEASE valid
+            function opus_decoder_worker_housekeeping_function()
+            {
+                opus_decoder_tick_counter = opus_decoder_tick_counter + 50;
+                opus_decoder_worker_release_idle_decoders();
+            }
+
+            function opus_decoder_worker_interval_function()
+            {
+                opus_decoder_tick_counter = opus_decoder_tick_counter + 1;
+
+                //cheap periodic sweep: hand slots of long-silent senders back to the pool
+                if ((opus_decoder_tick_counter & 63) == 0)
+                {
+                    opus_decoder_worker_release_idle_decoders();
+                }
+
                 if (opus_decoder_worker_clients_opus_data_count == 0)
                 {
                     return;
+                }
+
+                //order each sender's chunks by sequence number (wrap-aware around 65536) so frames the
+                //unordered datachannel delivered scrambled are decoded in capture order. legacy chunks
+                //without a sequence number keep arrival order
+                for (let sender_index = 0; sender_index < opus_decoder_worker_current_channel_opus_client_ids.length; sender_index++)
+                {
+                    let sender_chunks = opus_decoder_worker_clients_opus_data[sender_index];
+
+                    if (sender_chunks.length > 1 && sender_chunks[0].sequence_number != null)
+                    {
+                        let anchor = sender_chunks[0].sequence_number;
+
+                        sender_chunks.sort(function(a, b)
+                        {
+                            return ((a.sequence_number - anchor) & 0xffff) - ((b.sequence_number - anchor) & 0xffff);
+                        });
+                    }
                 }
 
                 //finf longest Array of ArrayBuffers. Who has it? the longest array length will be n times
@@ -20031,43 +19556,62 @@
                     }
                 }
 
-                //console.log("longest array is ", longestLength);
-                let clear_buffered_pcm_needed = 0;
-
-                //this is how loop works in practice, runs every 20ms, needs testing
-                //loop through clients 1, 2, 3, get array with index 0 if it exists, and mix it
-                //at the end, send decoded mixed pcm to webaudioplayer
-                //loop throguh clients 1, 2, 3, get array with index 1 if it exists  and mix it
-                //at the end, send decoded mixed pcm to webaudioplayer
-                //loop throguh clients 1, 2, 3, get array with index 2 if it exists  and mix it
-                //at the end, send decoded mixed pcm to webaudioplayer
-
+                //per time step: decode each sender's chunk with THAT SENDER'S decoder (predictor state stays
+                //per-stream), sum the frames in js, clamp to [-1,1], post one mixed block - same message the
+                //main thread always consumed. decode is called with clear=1 so the shared frame buffer holds
+                //exactly the current call's frame, which is accumulated into the scratch before the next call
                 for (let ArrayBuffer_index = 0; ArrayBuffer_index < longestLength; ArrayBuffer_index++)
                 {
+                    let mixed_sample_count = 0;
+
+                    opus_decoder_mix_scratch.fill(0);
+
                     for (let client_index = 0; client_index < opus_decoder_worker_current_channel_opus_client_ids.length; client_index++)
                     {
-                        if (client_index == 0)
-                        {
-                            //client_index equals zero means pcm buffer should be cleared
-                            //BUT, only actual decoding in case ArrayBuffer isnt null, sets clear_buffered_pcm_needed to 0 again
-                            clear_buffered_pcm_needed = 1;
-                        }
-                        
                         //skip single_opus_chunk if client doesnt have element at that index
                         if (ArrayBuffer_index >= opus_decoder_worker_clients_opus_data[client_index].length)
                         {
                             continue;
                         }
 
-                        let single_opus_chunk = opus_decoder_worker_clients_opus_data[client_index][ArrayBuffer_index];
-                        decoder.decode(single_opus_chunk, clear_buffered_pcm_needed);
-                        clear_buffered_pcm_needed = 0;
+                        let sender_client_id = opus_decoder_worker_current_channel_opus_client_ids[client_index];
+                        let chunk_entry = opus_decoder_worker_clients_opus_data[client_index][ArrayBuffer_index];
+
+                        //sequence rules + per-sender decode live in the shared helper (same one the
+                        //direct pipe uses); null means the chunk was dropped (duplicate/late/corrupt)
+                        let decoded_pcm = opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry);
+
+                        if (decoded_pcm == null)
+                        {
+                            continue;
+                        }
+
+                        for (let k = 0; k < decoded_pcm.length; k++)
+                        {
+                            opus_decoder_mix_scratch[k] = opus_decoder_mix_scratch[k] + decoded_pcm[k];
+                        }
+
+                        if (decoded_pcm.length > mixed_sample_count)
+                        {
+                            mixed_sample_count = decoded_pcm.length;
+                        }
                     }
 
-                    let pulse_code_modulation_bytes_for_webaudio = decoder.getPcmBuffer();
+                    if (mixed_sample_count == 0)
+                    {
+                        continue;
+                    }
 
-                    //getPcmBuffer returns a freshly allocated copy, so its buffer can be transferred instead of
-                    //structure-cloned - one less full copy of every decoded chunk on the worker -> main hop
+                    //clamp-copy: summed streams can overshoot [-1,1]; the copy is freshly allocated so its
+                    //buffer is transferred instead of structure-cloned on the worker -> main hop
+                    let pulse_code_modulation_bytes_for_webaudio = new Float32Array(mixed_sample_count);
+
+                    for (let k = 0; k < mixed_sample_count; k++)
+                    {
+                        let sample = opus_decoder_mix_scratch[k];
+                        pulse_code_modulation_bytes_for_webaudio[k] = sample > 1.0 ? 1.0 : (sample < -1.0 ? -1.0 : sample);
+                    }
+
                     global.postMessage({
                         type: "opus_decoder_worker__decode_result",
                         value: pulse_code_modulation_bytes_for_webaudio
@@ -20082,7 +19626,7 @@
 
             function opus_decoder_worker_onmessage(event)
             {
-                //add_for_decoding decrypts opus data and adds it to opus_decoder_worker_clients_opus_data , array of buffers..
+                //voice frame: [4B sender client id][encrypted(2B sequence + opus)]
                 if (event.data.type == "mainthread__add_data_to_opus_decoder")
                 {
                     let dataView = new DataView(event.data.value);
@@ -20090,71 +19634,115 @@
                     //clientid is always first 4 bytes of received chunk of bytes and is in every chunk of bytes
                     let extracted_client_id = dataView.getInt32(0, true);
 
-                    //check if client id is known
-                    if (!opus_decoder_worker_current_channel_opus_client_ids.includes(extracted_client_id))
-                    {
-                        opus_decoder_worker_current_channel_opus_client_ids.push(extracted_client_id);
-                        opus_decoder_worker_current_channel_opus_client_ids.forEach((clientId, index) => {
-                            opus_decoder_worker_current_channel_opus_client_ids_map.set(clientId, index);
-                        });
+                    let opus_ArrayBuffer_encrypted = event.data.value.slice(4);
+                    let decrypted_bytes = decrypt_data_with_aes_keys(current_channel_keys, opus_ArrayBuffer_encrypted);
 
-                        let client_index = opus_decoder_worker_current_channel_opus_client_ids_map.get(extracted_client_id);
-                        opus_decoder_worker_clients_opus_data[client_index] = [];
+                    //after decryption: [2B sequence little endian][opus]. too-short frames are dropped
+                    if (decrypted_bytes == null || decrypted_bytes.length < 3)
+                    {
+                        return;
                     }
 
-                    let client_index = opus_decoder_worker_current_channel_opus_client_ids_map.get(extracted_client_id);
-                    let opus_ArrayBuffer_encrypted = event.data.value.slice(4);
-                    let opus_ArrayBuffer = decrypt_data_with_aes_keys(current_channel_keys, opus_ArrayBuffer_encrypted);
-                    
-                    //console.log(opus_ArrayBuffer);
-                    //console.log(opus_decoder_worker_clients_opus_data[client_index]);
-                    opus_decoder_worker_clients_opus_data[client_index].push(opus_ArrayBuffer);
-                    opus_decoder_worker_clients_opus_data_count = opus_decoder_worker_clients_opus_data_count + 1;
+                    let chunk_entry = {
+                        sequence_number: decrypted_bytes[0] | (decrypted_bytes[1] << 8),
+                        opus_chunk: decrypted_bytes.subarray(2)
+                    };
 
-                    //check if client id is known (in other words if it has been encountered before in clients current channel)
-                    // if not, push new client id to array of client ids and get client index in array for the client id,
-                    // that will be used to store opus data chunks
-                    //use client index to create object that will hold opus data
+                    //direct mode decodes right now and pipes to the worklet; tick mode queues for the mixer
+                    if (opus_decoder_direct_worklet_port != null)
+                    {
+                        opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
+                        return;
+                    }
+
+                    opus_decoder_worker_queue_chunk_for_tick(extracted_client_id, chunk_entry);
                 }
                 else if (event.data.type == "mainthread__add_data_to_opus_decoder_musicbot")
                 {
                     let dataView = new DataView(event.data.value);
-
                     let extracted_client_id = dataView.getInt32(0, true);
+                    let chunk_entry = null;
 
-                    if (!opus_decoder_worker_current_channel_opus_client_ids.includes(extracted_client_id))
+                    if (extracted_client_id == -2)
                     {
-                        opus_decoder_worker_current_channel_opus_client_ids.push(extracted_client_id);
-                        opus_decoder_worker_current_channel_opus_client_ids.forEach((clientId, index) => {
-                            opus_decoder_worker_current_channel_opus_client_ids_map.set(clientId, index);
-                        });
+                        //legacy format from an old server binary: [4B -2][opus], no sequence number
+                        chunk_entry = {
+                            sequence_number: null,
+                            opus_chunk: event.data.value.slice(4)
+                        };
+                    }
+                    else
+                    {
+                        //new format: [4B bot client id][2B sequence little endian][opus]
+                        if (event.data.value.byteLength < 7)
+                        {
+                            return;
+                        }
 
-                        let client_index = opus_decoder_worker_current_channel_opus_client_ids_map.get(extracted_client_id);
-                        opus_decoder_worker_clients_opus_data[client_index] = [];
+                        chunk_entry = {
+                            sequence_number: dataView.getUint16(4, true),
+                            opus_chunk: event.data.value.slice(6)
+                        };
                     }
 
-                    let client_index = opus_decoder_worker_current_channel_opus_client_ids_map.get(extracted_client_id);
-                    let opus_ArrayBuffer = event.data.value.slice(4);
-                    //console.log(opus_ArrayBuffer);
+                    if (opus_decoder_direct_worklet_port != null)
+                    {
+                        opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
+                        return;
+                    }
 
-
-                    opus_decoder_worker_clients_opus_data[client_index].push(opus_ArrayBuffer);
-                    opus_decoder_worker_clients_opus_data_count = opus_decoder_worker_clients_opus_data_count + 1;     
+                    opus_decoder_worker_queue_chunk_for_tick(extracted_client_id, chunk_entry);
                 }
                 else if (event.data.type == "mainthread__channel_keys_for_opus_decoder")
                 {
                     current_channel_keys = event.data.value;
                     //console.log("mainthread__channel_keys_for_opus_decoder got channel keys", current_channel_keys);
                 }
+                else if (event.data.type == "use_direct_worklet_pipe")
+                {
+                    //the main thread transferred one end of a MessageChannel whose other end sits inside the
+                    //player worklet: from here on, decode on arrival and pipe per-sender pcm directly - the
+                    //20 ms mixing tick and the main-thread hop are gone. the interval becomes slow housekeeping
+                    opus_decoder_direct_worklet_port = event.data.port;
+
+                    clearInterval(opus_decoder_worker_interval);
+                    opus_decoder_worker_interval = setInterval(opus_decoder_worker_housekeeping_function, 1000);
+
+                    //drop anything the tick queue still holds; the pipe owns playback from here
+                    opus_decoder_worker_clients_opus_data.length = 0;
+                    opus_decoder_worker_clients_opus_data_count = 0;
+                    opus_decoder_worker_current_channel_opus_client_ids.length = 0;
+                    opus_decoder_worker_current_channel_opus_client_ids_map.clear();
+
+                    console.log("opus decoder worker: direct worklet pipe active");
+                }
                 else if (event.data.type == "init")
                 {
                     // opus_decoder_worker_interval = window.setInterval(opus_decoder_worker_interval_function, 20);
 
-                    //how can setInterval even work? This is webworker.. it should not have setInterval.. 
+                    //how can setInterval even work? This is webworker.. it should not have setInterval..
 
                     opus_decoder_worker_interval = setInterval(opus_decoder_worker_interval_function, 20);
 
-                    decoder = new OpusDecoder(48000, 1);
+                    //allocate the whole per-sender decoder pool up front - every wasm malloc happens here,
+                    //before any audio flows, so the heap never grows mid-run under the cached views.
+                    //decoders are STEREO: an opus decoder's channel count is independent of the packet's -
+                    //stereo music-bot packets decode as true stereo, mono voice packets get duplicated to
+                    //both channels by libopus itself. everything downstream is interleaved L R L R
+                    for (let pool_index = 0; pool_index < OPUS_DECODER_POOL_SIZE; pool_index++)
+                    {
+                        opus_decoder_pool.push(new OpusDecoder(48000, 2));
+                        opus_decoder_pool_free_indices.push(pool_index);
+                    }
+
+                    //allocating a later pool member may have grown the heap and detached the views the
+                    //earlier members cached at construction - re-derive them all now that mallocs are done
+                    for (let pool_index = 0; pool_index < OPUS_DECODER_POOL_SIZE; pool_index++)
+                    {
+                        opus_decoder_pool[pool_index].refresh_heap_views();
+                    }
+
+                    opus_decoder_mix_scratch = new Float32Array(opus_decoder_pool[0].frameSize * opus_decoder_pool[0].channels);
                 }
             }
 
@@ -20901,6 +20489,13 @@
                             value: msg
                         });
                     }
+                    else if (msg.message.type == "channel_icon_changed")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__channel_icon_changed_from_server",
+                            value: msg
+                        });
+                    }
                     else if (msg.message.type == "start_song_stream")
                     {
                         global.postMessage({
@@ -21326,6 +20921,8 @@
             var icon_upload_in_flight_base64 = null; //the icon whose server reply we are currently waiting for
             var settings_delete_delegation_wired = false;
             var tag_icon_picker_target_tag_id = null; //tag whose icon the currently open picker will change
+            var channel_icon_picker_target_channel_id = null; //channel whose icon the currently open picker will change (the icon picker is shared between tags and channels)
+            var channel_properties_edit_channel_id = null; //the channel currently open in the edit form (null while creating); the form's icon box targets it
             var channel_list = [];
             //internal sentinel meaning "the root level" while walking the channel tree.
             //root channels are identified by their is_root_channel flag, never by this value
@@ -21340,6 +20937,7 @@
             var file_send_intent_extra_data = {};
             var is_file_being_uploaded = false;
             var is_client_running_under_touch_device = false;  //for touch devices
+            var client_volume_by_id = {};  //local per-client playback volume (client_id -> gain, 1.0 = default); worklet mode only, never sent to the server
             var is_running_in_android_webview = false;
             var is_microphone_enabled_on_touch_device = false;  //for touch devices
             var is_pressing = null;  //for touch devices
@@ -21446,6 +21044,11 @@
             var encoder = null;
             var microphone_recorder = null;
             var player = null;
+            var audio_player_worklet_node = null;
+            var is_audio_worklet_player_active = false;
+            var audio_worklet_module_promise = null; //set while/after the worklet module loads; null = no worklet support
+            var is_microphone_worklet_active = false;
+            var PREMIXED_AUDIO_LANE_ID = 9999999; //worklet lane id for already-mixed audio (matches PREMIXED_LANE_ID in the processor)
 
             var audio_player_gain_node = null;
             var audio_recorder_gain_node = null;
@@ -21454,11 +21057,12 @@
             var audio_queue = {
                 buffer: new Float32Array(0),
 
-                //hard cap on buffered playback (in samples at 48 kHz; ~300 ms). anything beyond this is
-                //accumulated delay the listener never catches up with (decode output outpacing playback after
-                //gc pauses, tab throttling, or a sample-rate mismatch). when the backlog exceeds the cap the
-                //oldest samples are dropped, so playback snaps back to near-real-time instead of lagging forever
-                max_buffered_samples: 14400,
+                //hard cap on buffered playback (~300 ms of 48 kHz INTERLEAVED STEREO, two floats per frame).
+                //anything beyond this is accumulated delay the listener never catches up with (decode output
+                //outpacing playback after gc pauses, tab throttling, or a sample-rate mismatch). when the
+                //backlog exceeds the cap the oldest samples are dropped, so playback snaps back to
+                //near-real-time instead of lagging forever
+                max_buffered_samples: 28800,
 
                 write: function (newAudio)
                 {
@@ -21580,6 +21184,10 @@
 
                         document.getElementById("server-settings-tab-icons-container").insertAdjacentHTML("beforeend", html_to_append);
                     }
+
+                    //channel_list arrives BEFORE this icon_list, so channel rows were rendered with empty icon
+                    //boxes; now that the icons exist, paint them
+                    UI.refresh_all_channel_icons();
                 },
                 process_channel_list_from_server: function(msg)
                 {
@@ -21641,6 +21249,7 @@
                                                         <div class=\"single-channel-collapse-button\">\n\
                                                         </div>\n\
                                                         <p class='single-channel-name-p "+html_to_append_is_using_password_class+" "+html_to_append_is_temp_class+"' data-channel-name-id=\"" + child_channels[a].channel_id + "\">" + sanitize_string(child_channels[a].name) + "</p>\n\
+                                                        <div class=\"single-channel-icon\" data-channel-icon-for=\"" + child_channels[a].channel_id + "\"></div>\n\
                                                         <div class="+html_to_append_audio_disabled_class+"></div>\n\
                                                     </div>";
                                 }
@@ -21653,6 +21262,7 @@
                                                             <div class=\"single-channel-collapse-button\">\n\
                                                             </div>\n\
                                                             <p class='single-channel-name-p "+html_to_append_is_temp_class+"' data-channel-name-id=\"" + child_channels[a].channel_id + "\" >" + sanitize_string(child_channels[a].name) + "</p>\n\
+                                                            <div class=\"single-channel-icon\" data-channel-icon-for=\"" + child_channels[a].channel_id + "\"></div>\n\
                                                             <div class="+html_to_append_audio_disabled_class+"></div>\n\
                                                         </div>";
                                 }
@@ -22304,7 +21914,7 @@
 
                     if (msg.message.is_audio_enabled == false)
                     {
-                        let element1 = document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[3];
+                        let element1 = document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').lastElementChild;
 
                         console.log("audio is disabled, adding class single-channel-is-audio-disabled");
 
@@ -22318,7 +21928,7 @@
                     else
                     {
                         console.log(msg.message);
-                        let element1 = document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[3];
+                        let element1 = document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').lastElementChild;
                         console.log("audio is enabled, removing class single-channel-is-audio-disabled");
 
                         if (element1.classList.contains("single-channel-is-audio-disabled") == true)
@@ -22378,6 +21988,8 @@
                         is_temp_channel: msg.message.is_temp_channel,
                         is_client_limit_active: msg.message.is_client_limit_active,
                         max_client_count: msg.message.max_client_count,
+                        has_channel_icon: msg.message.has_channel_icon,
+                        channel_icon_id: msg.message.channel_icon_id,
                         is_channel_directly_collapsed: false,
                     };
 
@@ -22396,6 +22008,7 @@
                                                     <div class=\"single-channel-collapse-button\">\n\
                                                     </div>\n\
                                                     <p class='single-channel-name-p "+html_to_append_is_using_password_class+" "+html_to_append_is_temp_class+"' data-channel-name-id=\"" + new_channel.channel_id + "\">" + new_channel.name + "</p>\n\
+                                                    <div class=\"single-channel-icon\" data-channel-icon-for=\"" + new_channel.channel_id + "\"></div>\n\
                                                     <div class="+html_to_append_audio_disabled_class+"></div>\n\
                                                 </div>";
                     }
@@ -22406,6 +22019,7 @@
                                                     <div class=\"single-channel-collapse-button\">\n\
                                                     </div>\n\
                                                     <p class='single-channel-name-p "+html_to_append_is_temp_class+"' data-channel-name-id=\"" + new_channel.channel_id + "\" >" + new_channel.name + "</p>\n\
+                                                    <div class=\"single-channel-icon\" data-channel-icon-for=\"" + new_channel.channel_id + "\"></div>\n\
                                                     <div class="+html_to_append_audio_disabled_class+"></div>\n\
                                                 </div>";
                     }
@@ -22421,6 +22035,10 @@
                     //being prepended right after the parent header
                     let subtree_anchor = get_channel_subtree_last_element(new_channel.parent_channel_id);
                     subtree_anchor.insertAdjacentHTML("afterend", html_to_append);
+
+                    //paint the new row's icon (a fresh channel has none yet, but this also covers the case
+                    //where it was created carrying one, and keeps the icon box consistent)
+                    UI.refresh_channel_icon(new_channel);
 
                     let elements = document.getElementsByClassName('single-channel');
                     //let elements = document.querySelector(".single-channel:not(.idle-channel)");
@@ -23342,7 +22960,7 @@
 
                         if (msg.message.client_id == local_client_id)
                         {
-                            audio_queue.clear();
+                            audio_player_clear();
 
                             let marquee_containers = document.getElementsByClassName("marquee-music-playing-container");
                             for (let i = 0; i < marquee_containers.length; i++)
@@ -23827,6 +23445,22 @@
 
                     let entry = document.querySelector('.server-settings-icon-entry[data-icon-id="' + icon_id + '"]');
                     if (entry != null) { entry.remove(); }
+                },
+                process_channel_icon_changed_from_server: function(msg)
+                {
+                    let channel = get_channel_by_id(channel_list, msg.message.channel_id);
+                    if (channel != null)
+                    {
+                        channel.has_channel_icon = msg.message.has_channel_icon;
+                        channel.channel_icon_id = msg.message.channel_icon_id;
+                        UI.refresh_channel_icon(channel);
+
+                        //if the edit form is open for this channel, update its icon box too
+                        if (channel_properties_edit_channel_id == msg.message.channel_id)
+                        {
+                            UI.refresh_channel_edit_icon_box(channel);
+                        }
+                    }
                 },
                 process_tag_icon_changed_from_server: function(msg)
                 {
@@ -25012,6 +24646,7 @@
                                                             <div class='channel-list-context-menu-items'>\n\
                                                                 <p class='context-menu-item' data-action='15'>manage</p>\n\
                                                                 <p class='context-menu-item' data-action='5'>" + ((the_client.is_muted_by_local_client == true ) ? 'un-mute' : 'mute') + "</p>\n\
+                                                                <p class='context-menu-item' data-action='18'>adjust volume</p>\n\
                                                                 <p class='context-menu-item' data-action='16'>delete</p>\n\
                                                                 <p class='context-menu-item' data-action='17'>set name</p>\n\
                                                                 "+ string_to_append +"\n\
@@ -25026,6 +24661,7 @@
                                                             <div class='channel-list-context-menu-items'>\n\
                                                                 <p class='context-menu-item' data-action='4'>" + ((the_client.is_ignored_by_local_client == true ) ? 'un-ignore' : 'ignore') + "</p>\n\
                                                                 <p class='context-menu-item' data-action='5'>" + ((the_client.is_muted_by_local_client == true ) ? 'un-mute' : 'mute') + "</p>\n\
+                                                                <p class='context-menu-item' data-action='18'>adjust volume</p>\n\
                                                                 <p class='context-menu-item"+add_tag_html_class+"' data-action='6'>add tag</p>\n\
                                                                 <p class='context-menu-item' data-action='7'>info</p>\n\
                                                                 <p class='context-menu-item' data-action='8'>poke</p>\n\
@@ -25170,6 +24806,10 @@
                         document.getElementById("channel-properties-input-max-clients").value = "";
                         UI.refresh_channel_limit_input_visibility();
 
+                        //creating a new channel: no channel exists yet, so the icon can only be set later via edit
+                        channel_properties_edit_channel_id = null;
+                        document.getElementById("channel-properties-icon-label-row").style.display = "none";
+                        document.getElementById("channel-properties-icon-row").style.display = "none";
                     }
                     else if (action == 1)
                     {
@@ -25208,6 +24848,14 @@
 
                         document.getElementById("create-channel-button").style.display = "none";
                         document.getElementById("edit-channel-button").style.display = "";
+
+                        //editing an existing channel: expose the channel-icon row and paint the current icon.
+                        //clicking the box opens the shared icon picker targeting this channel (admin only)
+                        channel_properties_edit_channel_id = parseInt(selected_channel_id);
+                        let show_icon_row = is_local_client_admin() ? "" : "none";
+                        document.getElementById("channel-properties-icon-label-row").style.display = show_icon_row;
+                        document.getElementById("channel-properties-icon-row").style.display = show_icon_row;
+                        UI.refresh_channel_edit_icon_box(channel_list[index]);
                     }
                     else if (action == 3)
                     {
@@ -25306,6 +24954,20 @@
                     else if (action == 8)
                     {
                         document.getElementById("poke-client-enter-container").style.display = "block";
+                    }
+                    else if (action == 18) //adjust this client's playback volume (local only)
+                    {
+                        let current_gain = client_volume_by_id[selected_client_id];
+                        if (current_gain == null) { current_gain = 1.0; }
+                        let percent = Math.round(current_gain * 100);
+
+                        //remember which client the slider targets on the slider itself, so it can't drift if
+                        //selected_client_id changes while the dialog is open
+                        document.getElementById("adjust-volume-slider").setAttribute("data-target-client-id", selected_client_id);
+                        document.getElementById("adjust-volume-slider").value = percent;
+                        document.getElementById("adjust-volume-value-label").innerHTML = percent + "%";
+                        document.getElementById("adjust-volume-username-label").innerHTML = sanitize_string(get_username_by_client_id(selected_client_id));
+                        document.getElementById("adjust-volume-container").style.display = "block";
                     }
                     else if (action == 9)
                     {
@@ -25759,9 +25421,34 @@
                     {
                         document.getElementById("style-theme-oldschool").removeAttribute("media");
                     }
+                    else if (themename == "default-mobile")
+                    {
+                        document.getElementById("style-theme-default-mobile").removeAttribute("media");
+                    }
 
                     //persist defaults to true (user picks); the server-baked default passes false so it never sticks in localStorage
                     if (persist !== false) { try { localStorage.setItem("lemon_theme", themename); } catch (e) {} }
+                },
+
+                //touch devices may only use themes tagged data-mobile="true" in the picker (the others are
+                //not laid out for a phone); desktop may use anything. an unknown theme name is allowed on
+                //desktop but rejected on a phone
+                is_theme_allowed_on_this_device: function(themename)
+                {
+                    if (!is_client_running_under_touch_device)
+                    {
+                        return true;
+                    }
+
+                    let theme_items = document.getElementsByClassName("choose-theme-item");
+                    for (let i = 0; i < theme_items.length; i++)
+                    {
+                        if (theme_items[i].getAttribute("data-name") === themename)
+                        {
+                            return theme_items[i].getAttribute("data-mobile") === "true";
+                        }
+                    }
+                    return false;
                 },
 
                 choose_theme_item_onclick: function(event)
@@ -26261,7 +25948,15 @@
                         {
                             let option = event.target.closest(".tag-icon-picker-option");
                             if (option == null) { return; }
-                            UI.send_set_tag_icon_request(tag_icon_picker_target_tag_id, option.getAttribute("data-picker-icon-id"));
+                            //the icon picker is shared: route the pick to whichever target opened it
+                            if (channel_icon_picker_target_channel_id != null)
+                            {
+                                UI.send_set_channel_icon_request(channel_icon_picker_target_channel_id, option.getAttribute("data-picker-icon-id"));
+                            }
+                            else
+                            {
+                                UI.send_set_tag_icon_request(tag_icon_picker_target_tag_id, option.getAttribute("data-picker-icon-id"));
+                            }
                             UI.close_tag_icon_picker();
                         });
                     }
@@ -26302,6 +25997,7 @@
                     if (popup == null) { return; }
 
                     tag_icon_picker_target_tag_id = tag_id;
+                    channel_icon_picker_target_channel_id = null;
 
                     let html = "<div class=\"tag-icon-picker-option tag-icon-picker-no-icon\" data-picker-icon-id=\"none\" title=\"no icon\">none</div>";
                     for (let i = 0; i < icons.length; i++)
@@ -26311,11 +26007,31 @@
                     popup.innerHTML = html;
                     popup.style.display = "flex";
                 },
+                //same picker as tags, targeting a channel instead. selecting "none" clears the channel icon
+                open_channel_icon_picker: function(channel_id)
+                {
+                    let popup = document.getElementById("tag-icon-picker-popup");
+                    if (popup == null) { return; }
+
+                    channel_icon_picker_target_channel_id = channel_id;
+                    tag_icon_picker_target_tag_id = null;
+
+                    let html = "<div class=\"tag-icon-picker-option tag-icon-picker-no-icon\" data-picker-icon-id=\"none\" title=\"no icon\">none</div>";
+                    for (let i = 0; i < icons.length; i++)
+                    {
+                        html += "<img class=\"tag-icon-picker-option\" src=\"" + icons[i].base64_icon + "\" data-picker-icon-id=\"" + icons[i].id + "\" title=\"icon " + icons[i].id + "\">";
+                    }
+                    popup.innerHTML = html;
+                    //the channel edit form is itself a modal; float the picker above it
+                    popup.style.zIndex = "100001";
+                    popup.style.display = "flex";
+                },
                 close_tag_icon_picker: function()
                 {
                     let popup = document.getElementById("tag-icon-picker-popup");
                     if (popup != null) { popup.style.display = "none"; }
                     tag_icon_picker_target_tag_id = null;
+                    channel_icon_picker_target_channel_id = null;
                 },
                 send_set_tag_icon_request: function(tag_id, picked_icon_id)
                 {
@@ -26328,6 +26044,63 @@
                     let message_json_string = process_message_before_sending(message_object);
                     let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
                     websocket_worker_send(data);
+                },
+                send_set_channel_icon_request: function(channel_id, picked_icon_id)
+                {
+                    if (channel_id == null) { return; }
+
+                    let message = { type: "set_channel_icon", channel_id: parseInt(channel_id) };
+                    if (picked_icon_id != "none") { message.icon_id = parseInt(picked_icon_id); } //absent icon_id clears the icon
+
+                    let message_object = { message: message };
+                    let message_json_string = process_message_before_sending(message_object);
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                    websocket_worker_send(data);
+                },
+                //paints (or clears) a channel row's icon box from the channel's has_channel_icon/channel_icon_id.
+                //the box is styled here rather than in theme css, so it works in every theme with no css edit
+                refresh_channel_icon: function(channel)
+                {
+                    if (channel == null) { return; }
+
+                    let holder = document.querySelector('.single-channel-icon[data-channel-icon-for="' + channel.channel_id + '"]');
+                    if (holder == null) { return; }
+
+                    let icon = (channel.has_channel_icon == true) ? get_icon_by_icon_id(channel.channel_icon_id) : null;
+
+                    if (icon != null)
+                    {
+                        holder.style.display = "inline-block";
+                        holder.style.width = "15px";
+                        holder.style.height = "15px";
+                        holder.style.backgroundSize = "contain";
+                        holder.style.backgroundRepeat = "no-repeat";
+                        holder.style.backgroundPosition = "center";
+                        holder.style.verticalAlign = "middle";
+                        holder.style.marginLeft = "4px";
+                        holder.style.backgroundImage = "url(" + icon.base64_icon + ")";
+                    }
+                    else
+                    {
+                        holder.style.display = "none";
+                        holder.style.backgroundImage = "";
+                    }
+                },
+                refresh_all_channel_icons: function()
+                {
+                    for (let i = 0; i < channel_list.length; i++)
+                    {
+                        UI.refresh_channel_icon(channel_list[i]);
+                    }
+                },
+                //paints the channel edit form's icon box from the channel's current icon (or clears it)
+                refresh_channel_edit_icon_box: function(channel)
+                {
+                    let box = document.getElementById("channel-properties-icon-box");
+                    if (box == null) { return; }
+
+                    let icon = (channel != null && channel.has_channel_icon == true) ? get_icon_by_icon_id(channel.channel_icon_id) : null;
+                    box.style.backgroundImage = (icon != null) ? ("url(" + icon.base64_icon + ")") : "";
                 },
 
                 choose_song_file_input_onchange: function()
@@ -27047,11 +26820,13 @@
                     let dataView = new DataView(event.data);
                     let extracted_client_id = dataView.getInt32(0, true);     //clientid is always first 4 bytes of received chunk of bytes
                     if (extracted_client_id == -2)
-                    {                    
+                    {
+                        //old servers mark every music bot frame with the constant -2; new servers send the
+                        //bot's real client id instead (handled below), so each bot gets its own decoder
                         opus_decoder_worker.postMessage({
                             type: "mainthread__add_data_to_opus_decoder_musicbot",
                             value: event.data
-                        });        
+                        });
                     }
                     else
                     {
@@ -27067,10 +26842,22 @@
                             return;
                         }
 
-                        opus_decoder_worker.postMessage({
-                            type: "mainthread__add_data_to_opus_decoder",
-                            value: event.data
-                        });          
+                        //music bot frames are plaintext opus (no channel-key layer), voice frames are encrypted;
+                        //the sender's is_music_bot flag from the client list picks the right worker path
+                        if (client_list[client_index].is_music_bot == true)
+                        {
+                            opus_decoder_worker.postMessage({
+                                type: "mainthread__add_data_to_opus_decoder_musicbot",
+                                value: event.data
+                            });
+                        }
+                        else
+                        {
+                            opus_decoder_worker.postMessage({
+                                type: "mainthread__add_data_to_opus_decoder",
+                                value: event.data
+                            });
+                        }
                     }
                 }
             }
@@ -27112,12 +26899,8 @@
                     return;
                 }
 
-                if (microphone_recorder.onaudioprocess == null)
-                {
-                    microphone_recorder.onaudioprocess = recorder_onaudioprocess;
-                }
+                set_microphone_capture_active(true);
 
-        
                 local_audio_stream.getTracks()[0].enabled = true;
 
                 try {
@@ -27145,12 +26928,7 @@
 
             function process_stop_sending_audio()
             {
-                
-
-                if (microphone_recorder != null)
-                {
-                    microphone_recorder.onaudioprocess = null;
-                }
+                set_microphone_capture_active(false);
 
                 if (is_microphone_enabled == false)
                 {
@@ -28864,7 +28642,6 @@
                     await sleep(500);
                 }
 
-                initializeWebkitAudio();
                 document.getElementById("another-buttons-sub-container").style.display = "none";
                 document.getElementById("another-buttons-sub-loading-container").style.display = "";
                 document.getElementById("another-buttons-loading-container-p").innerHTML = "connecting to server...";
@@ -28938,12 +28715,1141 @@
                 }
             }
 
+            //per-sender frame sequence for outgoing voice/song audio; 16 bits, wraps at 65536
+            var voice_send_sequence_number = 0;
+
+            /** Callback when main thread receives a message */
+            function mainthread_onmessage(e)
+            {
+                // console.log("%cmainthread_onmessage => " + e.data.type, "color: purple");
+
+                if (e.data.type == "log")
+                {
+                    custom_log(e.data.value);
+                }
+                else if (e.data.type == "opus_encoder_worker__encode_result")
+                {
+                    if (current_channel_keys != null)
+                    {
+                        let opus_data_chunks = e.data.value;
+
+                        for (var i = 0; i < opus_data_chunks.length; i++)
+                        {
+                            //prepend a 2-byte little-endian sequence number INSIDE the encrypted payload;
+                            //receivers use it to reorder frames the unordered datachannel scrambled and to
+                            //detect losses. the server relay never sees it (it sits under the encryption)
+                            let opus_chunk_bytes = new Uint8Array(opus_data_chunks[i]);
+                            let sequenced_chunk = new Uint8Array(2 + opus_chunk_bytes.length);
+
+                            sequenced_chunk[0] = voice_send_sequence_number & 0xff;
+                            sequenced_chunk[1] = (voice_send_sequence_number >> 8) & 0xff;
+                            sequenced_chunk.set(opus_chunk_bytes, 2);
+                            voice_send_sequence_number = (voice_send_sequence_number + 1) & 0xffff;
+
+                            let data = encrypt_data_with_aes_keys(current_channel_keys, sequenced_chunk);
+                            g_datachannel.send(data);
+                        }
+                    }
+                    else
+                    {
+                        custom_log("dont have channel keys, cant encrypt audio for sending");
+                    }
+                }
+                else if (e.data.type == "opus_decoder_worker__decode_result")
+                {
+                    audio_player_write_chunk(e.data.value);
+                }
+                else if (e.data.type == "minimp3_worker__decode_result")
+                {
+                    let data_chunks = chunkBuffers(e.data.value, 4096);
+
+                    let message_object1 = {
+                        message:
+                        {
+                            type: "start_song_stream",
+                            song_name: selected_song_name
+                        }
+                    };
+
+                    let message_json_string1 = process_message_before_sending(message_object1);
+                    let data1 = encrypt_all_message_data_and_convert_to_base64(message_json_string1);
+                    websocket_worker_send(data1);
+
+                    stream_local_mp3_file_to_other_clients(data_chunks, e.data.mp3_sample_rate);
+
+                    if (alert_streaming_music_shown_once == false)
+                    {
+                        custom_alert("when streaming music from file, detach browser tab where chat is to separate window (if using multiple tabs) or stay focused on tab where chat is otherwise music is not sent reliably and it lags");
+                        alert_streaming_music_shown_once = true;
+                    }
+                }
+                else if (e.data.type == "websocket_worker_onmessage")
+                {
+                    //data from websocket_worker are passed to main thread and then to data_processing_worker
+                    data_processing_worker.postMessage({
+                        type: "mainthread__process_received_websocket_message",
+                        value: e.data.value
+                    });
+                }
+                else if (e.data.type == "websocket_worker_onclose")
+                {
+                    if (is_authenticated)
+                    {
+                        if (is_running_in_android_webview == false)
+                        {
+                            custom_alert("connection with server was lost");
+                        }
+                        //window.location.reload();
+                    }
+                    is_authenticated = false;
+
+                    reset_chat_app_keep_identity();
+                }
+                else if (e.data.type == "websocket_worker_onerror")
+                {
+                    if (is_running_in_android_webview == false)
+                    {
+                        custom_alert("connecting to server failed");
+
+                        // window.alert("connection with server lost"); //this will be window.alert, this is serious problem
+                    }
+                    reset_chat_app_keep_identity();
+
+                    // window.location.reload();
+                    is_authenticated = false;
+                }
+                else if (e.data.type == "data_processing_worker__generate_rsa_keypair_result")
+                {
+                    rsa_public_key_string = e.data.value;
+                    console.log("public key string -> " + rsa_public_key_string);
+                    is_rsa_key_generated = true;
+                    document.getElementById("another-buttons-sub-loading-container").style.display = "none";
+                    document.getElementById("another-buttons-sub-container").style.display = "";
+                    identity_string = e.data.identity_string;
+                }
+                else if (e.data.type == "data_processing_worker__authentication_status")
+                {
+                    if (e.data.value == "success")
+                    {
+                        hide_custom_alert(); //if there was any alert
+
+                        if (e.data.is_idle_mode_allowed)
+                        {
+                           document.getElementById('channel-list-container').style.height = "calc(70% - 30px)";
+                           document.getElementById("idle-channel-collapse-button").addEventListener("mousedown", UI.collapse_expand_channel);
+                           document.getElementById('idle-clients-container').style.display = "block";
+                        }
+
+                        is_authenticated = true;
+
+                        g_client_list = client_list;
+                        g_channel_list = channel_list;
+
+                        if (is_running_in_android_webview)
+                        {
+                            document.getElementById("android-settings-button").style.display = "none";
+                        }
+
+    
+                        document.getElementById('verification-system').style.display = "none";
+                        document.getElementById('communication-system-container').style.display = "block";
+
+                        //people on touch device dont need to see chat by default, current UI isnt suitable for that
+                        //most likely they will just want to call with voice
+                        if (is_client_running_under_touch_device)
+                        {
+                            UI.hide_chat_container();
+                        }
+
+                        if (!should_connection_check_be_running)
+                        {
+                            should_connection_check_be_running = true;
+                            websocket_connection_check(websocket);
+                        }
+
+
+                        //the connected sound effect is delayed for 1 second...
+                        //because at this moment its not yet known if the sound effect should be played or not. why?
+                        //because, at the moment client.html receives client_list message (later, shortly after this)
+                        //client.html invokes JavaExport onconnected (if client.html is running in android)
+                        //the invoke causes java to send user settings to androids WebView (client.html) 
+                        //it happens in short time frame
+                        //so thats why this timeout waits 1 second
+                        //of course this is a bit useless in web browser context, but web browser can live with the sound effect delayed at 1 second
+                        //plus minus 1 second doesnt matter in this case
+                        //and the way its made now, android needs it
+                        setTimeout( () => {
+                            if (are_sound_effects_enabled)
+                            {
+                                sound_effects.connected.play();
+                            }
+                        }, 1000);
+                    }
+                }
+                else if (e.data.type == "data_processing_worker__audio_enabled")
+                {
+                    //
+                    //default stun port is 3478 for this chat. Stun port is given to client with websocket connection, stun port can be changed if needed, there are two places that need to be edited in code of server to set different stun port
+                    //in stun_server.rs in this line let bind_address: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 3478);
+                    //in main.rs in beginning of this function: fn send_authentication_status_to_client(responder: &Responder)
+                    //    let message_to_send: serde_json::Value = serde_json::json!({
+                    //   "message" : {
+                    //        "value": "success",
+                    //  "stun_port": 3478
+                    //    }
+                    //});
+                    //
+
+                    iceconfig = {
+                        iceServers: [{
+                            urls: "stun:" + host + ":" + e.data.stun_port,
+                        }],
+                    };
+
+                    //
+                    //the datachannel/playback below is set up whenever audio is on for clients or music bots,
+                    //so this flag (which keeps the datachannel established/reconnected) is always true here.
+                    //whether this client may transmit its own microphone is a separate flag, gated on client voice
+                    //
+                    is_voice_chat_allowed_by_server = true;
+                    is_client_microphone_allowed_by_server = (e.data.client_voice_allowed == true);
+                    //decoded audio is 48 kHz PCM and is pushed into the context untouched (the SpeexResampler below
+                    //is not wired into the playback path), so ask for a 48 kHz context and let the browser do the
+                    //device-rate conversion itself. without this, a 44.1 kHz device plays 48 kHz samples ~9% slow
+                    //(pitch drop) and the playback queue grows ~8% per second - the endlessly accumulating delay
+                    try
+                    {
+                        audio_context = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+                    }
+                    catch (sample_rate_hint_not_supported)
+                    {
+                        audio_context = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    console.log("audio_context.sampleRate" + audio_context.sampleRate);
+
+                    //with autoconnect there may have been no user gesture before this point, then the browser
+                    //creates the context suspended and every played frame is silently discarded. try to resume
+                    //right away (succeeds when a gesture already happened); if it stays suspended, the
+                    //first-gesture unlock handler in main.js resumes it on the next click/tap/keypress
+                    if (audio_context.state === "suspended")
+                    {
+                        console.log("audio_context created suspended (autoplay policy, no user gesture yet); audio stays silent until a gesture resumes it");
+                        audio_context.resume();
+                    }
+
+                    let opus_decoding_sampler_channels = 1;
+                    let opus_decoding_sampler_input_rate = 48000;
+                    let opus_decoding_sampler_output_rate = audio_context.sampleRate;
+
+                    opus_decoding_sampler = new SpeexResampler(opus_decoding_sampler_channels,
+                        opus_decoding_sampler_input_rate,
+                        opus_decoding_sampler_output_rate);
+
+                    opus_decoder_worker.postMessage({
+                        type: "init",
+                        sampleRate: opus_decoding_sampler_output_rate
+                    });
+
+                    silence = new Float32Array(audio_config.codec.bufferSize);
+                    audio_player_gain_node = audio_context.createGain();
+                    audio_player_gain_node.connect(audio_context.destination);
+
+                    //AudioWorklet playback when the context supports it, ScriptProcessorNode otherwise
+                    create_audio_player_output();
+
+                    try
+                    {
+                       console.log("create_new_peer_connection_object_for_use");
+                       is_is_webrtc_datachannel_check_running = true;
+                       webrtc_datachannel_connection_check(false);
+                    }
+                    catch (Exception)
+                    {
+                       custom_log(Exception.toString());
+                       custom_alert('audio connection failed');
+                       return;
+                    }
+                }
+                else if (e.data.type == "data_processing_worker__metadata_keys_accepted")
+                {
+                    keys_init_status = true;
+                }
+                else if (e.data.type == "data_processing_worker__client_list_from_server")
+                {
+                    server_msg.process_client_list_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__client_avatar_from_server")
+                {
+                    server_msg.process_client_avatar_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__connection_check_response")
+                {
+                    g_connection_check_message_response_received_timestamp = new Date().valueOf();
+                }
+                else if (e.data.type == "data_processing_worker__channel_list_from_server")
+                {
+                    server_msg.process_channel_list_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__tag_list_from_server")
+                {
+                    server_msg.process_tag_list_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__icon_list_from_server")
+                {
+                    server_msg.process_icon_list_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__icon_add_from_server")
+                {
+                    server_msg.process_icon_add_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__tag_add_to_client_from_server")
+                {
+                    server_msg.process_add_tag_to_client_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__remove_tag_from_client_from_server")
+                {
+                    server_msg.process_remove_tag_from_client_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__tag_add_from_server")
+                {
+                    server_msg.process_tag_add_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__tag_delete_from_server")
+                {
+                    server_msg.process_tag_delete_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__icon_delete_from_server")
+                {
+                    server_msg.process_icon_delete_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__tag_icon_changed_from_server")
+                {
+                    server_msg.process_tag_icon_changed_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__channel_icon_changed_from_server")
+                {
+                    server_msg.process_channel_icon_changed_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__start_song_stream_from_server")
+                {
+                    server_msg.process_start_song_stream_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__stop_song_stream_from_server")
+                {
+                    server_msg.process_stop_song_stream_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__chat_message_delete_from_server")
+                {
+                    server_msg.process_chat_message_delete_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__public_key_challenge_from_server")
+                {
+                    let msg = e.data.value;
+                    let dh_public_mix_string = msg.message.dh_public_mix;
+                    //console.log("DH dh_public_mix_string from server -> " + dh_public_mix_string);
+
+
+                    let dh_public_mix = bigInt(dh_public_mix_string);
+
+                    //reject a degenerate server public mix (B <= 1 or B >= p-1) before using it; such values
+                    //force a known/tiny shared secret. for a safe prime, requiring 2 <= B <= p-2 is sufficient.
+                    if (dh_public_mix.lesserOrEquals(1) || dh_public_mix.greaterOrEquals(dh_modulus.minus(1)))
+                    {
+                        console.error("rejected degenerate DH public mix from server; aborting handshake");
+                        return;
+                    }
+
+                    let shared_secret = dh_public_mix.modPow(dh_secret_exponent, dh_modulus);
+
+
+                    //add shared secret to
+                    //console.log("DH shared_secret -> " + shared_secret.toString());
+
+                    //
+                    //because there is also "secret key" used ,used to further secure connection between server and client, and is different for every connected client, (obtained with steps that wants to look like diffie-hellman key exchange)
+                    //this secret key needs to be added to metadata keys
+                    //and then copy of metadata_keys object sent to data processing webworker aswell (there are two copies of same object)
+                    //
+
+                    let shared_secret_string = shared_secret.toString();
+
+                    //derive the AES enc key + HMAC mac key from the shared secret via HKDF (matches the server)
+                    let dh_keys = dh_derive_keys(shared_secret_string);
+                    key_bytes = dh_keys.enc_key;
+
+                    let single_key = {
+                        info: "aes-ctr",
+                        key_string: shared_secret_string,
+                        key_bytes: key_bytes,
+                        mac_bytes: dh_keys.mac_key
+                    };
+
+                    metadata_keys.unshift(single_key);
+
+                    /* removed: never log key material (metadata_keys holds the session key) */
+
+                    //
+                    //here the metadata_keys object within data_processing web worker is updated aswell
+                    //
+
+
+                    console.log("public_key_challenge_response result -> ", msg.message.decryption_result);
+
+
+                    data_processing_worker.postMessage({
+                        type: "mainthread__metadata_keys",
+                        value: metadata_keys
+                    });
+
+
+                    let message_object = {
+                        message: {
+                            type: "public_key_challenge_response",
+                            value: msg.message.decryption_result
+                        }
+                    };
+
+                    let message_json_string = process_message_before_sending(message_object);
+
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+
+                    websocket_worker_send(data);
+                }
+                else if (e.data.type == "data_processing_worker__chat_message_edit_from_server")
+                {
+                    server_msg.process_chat_message_edit_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__poke_from_server")
+                {
+                    server_msg.process_poke_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__access_denied_from_server")
+                {
+                    server_msg.process_access_denied_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__force_admin_password_change")
+                {
+                    //the admin password set during server setup was typed in cleartext; prompt once for a new one
+                    let new_admin_password = prompt("The admin password set at server setup was typed in cleartext in the console. Please set a new admin password now.");
+                    if (new_admin_password != null && new_admin_password != "")
+                    {
+                        let message_object = { message: { type: "change_admin_password", value: new_admin_password } };
+                        let message_json_string = process_message_before_sending(message_object);
+                        let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                        websocket_worker_send(data);
+                    }
+                }
+                else if (e.data.type == "data_processing_worker__client_info_from_server")
+                {
+                    server_msg.process_client_info_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__channel_full_from_server")
+                {
+                    let full_channel = get_channel_by_id(channel_list, e.data.value.message.channel_id);
+                    let full_channel_name = (full_channel != null && full_channel.name != null) ? full_channel.name : "channel";
+                    custom_alert("'" + full_channel_name + "' is full");
+                }
+                else if (e.data.type == "data_processing_worker__server_settings_values_from_server")
+                {
+                    let msg = e.data.value;
+                    document.getElementById("server-settings-general-display-flags-checkbox").checked = msg.message.display_country_flags == true;
+                    document.getElementById("server-settings-general-enable-audio").checked = msg.message.enable_audio == true;
+                    document.getElementById("server-settings-general-enable-music-bot-audio-checkbox").checked = msg.message.enable_music_bot_audio == true;
+                    document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked = msg.message.hide_clients_in_password_channels == true;
+                    document.getElementById("server-settings-general-allow-temp-channels-checkbox").checked = msg.message.allow_temp_channels == true;
+                    UI.render_bans_list(msg.message.bans);
+                }
+                else if (e.data.type == "data_processing_worker__channel_join_from_server")
+                {
+                    server_msg.process_channel_join_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__server_chat_message_id_for_local_message_id_from_server")
+                {
+                    server_msg.process_server_chat_message_id_for_local_message_id_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__client_connect_from_server")
+                {
+                    server_msg.process_client_connect_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__client_rename_from_server")
+                {
+                    server_msg.process_client_rename_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__client_disconnect_from_server")
+                {
+                    server_msg.process_client_disconnect_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__audio_state_of_single_client_from_server")
+                {
+                    //console.log(e.data.value);
+
+                    let client = {
+                        client_id: e.data.value.message.client_id,
+                        audio_state: e.data.value.message.value,
+                    }
+                    process_audio_state_of_single_client(client);
+                }
+                else if (e.data.type == "data_processing_worker__current_channel_active_microphone_usage_from_server")
+                {
+                    console.log("data_processing_worker__current_channel_active_microphone_usage_from_server");
+
+                    console.log(e.data.value);
+                    for (var i = 0; i < e.data.value.message.clients.length; i++)
+                    {
+                        process_audio_state_of_single_client(e.data.value.message.clients[i]);
+                    }
+                }
+                else if (e.data.type == "data_processing_worker__sdp_offer_from_server")
+                {
+                    server_msg.process_sdp_offer_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__ice_candidate_from_server")
+                {
+                    server_msg.process_ice_candidate_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__server_info_broadcast_from_server")
+                {
+                    server_msg.process_server_info_broadcast_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__channel_edit_from_server")
+                {
+                    server_msg.process_channel_edit_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__client_going_to_idle_mode")
+                {
+                    server_msg.process_client_client_going_to_idle_mode_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__client_coming_back_from_idle_mode")
+                {
+                    server_msg.process_client_coming_back_from_idle_mode_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__channel_delete_from_server")
+                {
+                    server_msg.process_channel_delete_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__channel_create_from_server")
+                {
+                    server_msg.process_channel_create_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__channel_chat_picture_metadata")
+                {
+                    server_msg.process_channel_chat_picture_metadata_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__direct_chat_picture_metadata")
+                {
+                    server_msg.process_direct_chat_picture_metadata_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__channel_maintainer_id")
+                {
+                    server_msg.process_channel_maintainer_id_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__channel_chat_message")
+                {
+                    server_msg.process_channel_chat_message_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__direct_chat_message")
+                {
+                    server_msg.process_direct_chat_message_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__direct_chat_picture")
+                {
+                    server_msg.process_direct_chat_picture_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__channel_chat_picture")
+                {
+                    server_msg.process_channel_chat_picture_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__image_sent_status_from_server")
+                {
+                    server_msg.process_image_sent_status_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__call_from_server")
+                {
+                    server_msg.process_call_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__create_websocket_channel_keys_message_result")
+                {
+                    console.log("sending channel keys to user -> " + e.data.username);
+                    websocket_worker_send(e.data.channel_keys_message_content);
+                }
+                else if (e.data.type == "data_processing_worker__new_channel_keys_from_data_processing_worker")
+                {
+                    current_channel_keys = e.data.value;
+                    
+                    //data processing worker created new channel keys and sent them to UI thread, now send them from UI thread to opus_decoder worker
+                    opus_decoder_worker.postMessage({
+                        type: "mainthread__channel_keys_for_opus_decoder",
+                        value: current_channel_keys
+                    });
+                }
+                else if (e.data.type == "data_processing_worker__tell_websocket_worker_to_send_data")
+                {
+                    websocket_worker_send(e.data.data_to_be_sent_over_websocket);
+                }
+                else if (e.data.type == "data_processing_worker__direct_chat_picture_to_be_uploaded_by_parts")
+                {
+                    let total_bytes_length = e.data.data_for_upload_process.length;
+                    let parts = split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
+                    file_send_intent = "direct_chat_picture_file";
+                    file_send_intent_extra_data = e.data.extra_data;
+                    send_file_by_parts(parts, total_bytes_length, 5);
+                }
+                else if (e.data.type == "data_processing_worker__channel_chat_picture_to_be_uploaded_by_parts")
+                {
+                    let total_bytes_length = e.data.data_for_upload_process.length;
+                    let parts = split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
+                    file_send_intent = "channel_chat_picture_file";
+                    file_send_intent_extra_data = e.data.extra_data;
+                    send_file_by_parts(parts, total_bytes_length, 5);
+                }
+                else if (e.data.type == "data_processing_worker__music_bot_song_list_from_server")
+                {
+                    server_msg.process_music_bot_song_list_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__file_send_success_from_server")
+                {
+                    server_msg.process_file_send_success_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__file_receive_chunk_from_server")
+                {
+                    server_msg.process_file_receive_chunk_from_server_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__file_receive_completed_from_server")
+                {
+                    server_msg.process_file_receive_completed_from_server_from_server(e.data.value);
+                }
+            }
+
             function websocket_worker_send(data_to_send)
             {
                 websocket_worker.postMessage({
                     type: "send",
                     value: data_to_send
                 });
+            }
+
+            //
+            //AudioWorklet playback processor. this function is never called on the main thread: its source
+            //is stringified into a blob module and runs on the browser's dedicated audio rendering thread,
+            //where main-thread jank (busy UI, big DOM updates) cannot starve it - the ScriptProcessorNode
+            //it replaces ran its callback on the main thread and stuttered whenever the page was busy.
+            //it keeps its own ring buffer of interleaved stereo samples: chunks arrive over the port,
+            //oldest samples are dropped beyond ~300 ms of backlog (same policy as audio_queue), and each
+            //128-frame render quantum is filled from the ring (zeros on underrun)
+            //
+            function lemon_audio_worklet_scope()
+            {
+                //AudioWorkletProcessor is a class the browser only defines inside the audio worklet scope,
+                //never on the main thread - another reason this function must not be called directly
+                class LemonPlayerProcessor extends AudioWorkletProcessor
+                {
+                    constructor()
+                    {
+                        super();
+
+                        //per-SENDER playback lanes: sender id -> its own jitter-buffered ring of interleaved
+                        //stereo. each lane prebuffers to a target depth before it plays, grows the target
+                        //when it underruns (jittery network needs more cushion) and shrinks it back plus
+                        //slips out excess samples once the flow proves stable. lanes are mixed here, on the
+                        //audio clock - the decoder worker pipes raw per-sender pcm via a MessagePort
+                        this.lanes = new Map();
+                        this.pending_lane_gains = new Map(); //volume set before the lane's first pcm arrived
+
+                        this.RING_SIZE = 65536;          //interleaved floats per lane (~680 ms), power of two
+                        this.RING_MASK = 65535;          //"index & mask" wraps cheaply (replaces % RING_SIZE)
+                        this.RING_HARD_CAP = 57600;      //~600 ms; beyond this the oldest samples are dropped
+                        this.TARGET_START = 5760;        //initial jitter target: 60 ms of interleaved stereo
+                        this.TARGET_MIN = 5760;          //never shrink below 60 ms
+                        this.TARGET_MAX = 28800;         //never grow beyond 300 ms
+                        this.TARGET_GROW_STEP = 2880;    //+30 ms of cushion per underrun
+                        this.TARGET_SHRINK_STEP = 960;   //-10 ms per stable period
+                        this.SHRINK_AFTER_QUANTA = 1875; //one stable period = ~5 s (375 quanta per second)
+                        this.SLIP_EXCESS = 1920;         //buffered > target + 20 ms -> slip samples out
+                        this.FADE_FRAMES = 192;          //4 ms fade at lane (re)start and near-empty edges
+                        this.PREMIXED_LANE_ID = 9999999; //lane for already-mixed audio from the main thread
+                        this.LANE_IDLE_QUANTA = 3750;    //~10 s without new data -> lane deleted
+
+                        this.quantum_counter = 0;
+
+                        this.port.onmessage = (event) =>
+                        {
+                            //"clear" = channel switch: throw away everything buffered in every lane
+                            if (event.data === "clear")
+                            {
+                                this.lanes.clear();
+                                return;
+                            }
+
+                            //the decoder worker's end of the direct pipe: per-sender pcm arrives here
+                            //from the worker thread without ever touching the main thread
+                            if (event.data.type === "pipe")
+                            {
+                                event.data.port.onmessage = (pipe_event) =>
+                                {
+                                    this.lane_write(pipe_event.data.id, pipe_event.data.pcm);
+                                };
+                                return;
+                            }
+
+                            //per-user playback volume, applied at the mix below
+                            if (event.data.type === "gain")
+                            {
+                                let lane = this.lanes.get(event.data.sender_id);
+                                if (lane != null)
+                                {
+                                    lane.gain = event.data.value;
+                                }
+                                //remember it for a lane that does not exist yet (user preset before talking)
+                                this.pending_lane_gains.set(event.data.sender_id, event.data.value);
+                                return;
+                            }
+
+                            //pre-mixed pcm from the main thread (the flush of audio buffered while this
+                            //module was still loading); plays through its own low-latency lane
+                            if (event.data.type === "pcm")
+                            {
+                                this.lane_write(event.data.sender_id, event.data.pcm);
+                            }
+                        };
+                    }
+
+                    //appends one pcm chunk to a sender's lane, creating the lane on first use
+                    lane_write(sender_id, chunk)
+                    {
+                        let lane = this.lanes.get(sender_id);
+
+                        if (lane == null)
+                        {
+                            lane = {
+                                ring: new Float32Array(this.RING_SIZE),
+                                read_index: 0,
+                                write_index: 0,
+                                available: 0,
+                                state: 0, //0 = prebuffering, 1 = playing
+                                target: sender_id === this.PREMIXED_LANE_ID ? 960 : this.TARGET_START,
+                                fade_in_remaining: 0,
+                                stable_quanta: 0,
+                                last_data_quantum: this.quantum_counter,
+                                gain: this.pending_lane_gains.has(sender_id) ? this.pending_lane_gains.get(sender_id) : 1.0
+                            };
+                            this.lanes.set(sender_id, lane);
+                        }
+
+                        lane.last_data_quantum = this.quantum_counter;
+
+                        //hard cap: drop the oldest first - delay that piled up is never recovered by itself
+                        if (lane.available + chunk.length > this.RING_HARD_CAP)
+                        {
+                            let drop = lane.available + chunk.length - this.RING_HARD_CAP;
+                            if (drop > lane.available)
+                            {
+                                drop = lane.available;
+                            }
+                            lane.read_index = (lane.read_index + drop) & this.RING_MASK;
+                            lane.available = lane.available - drop;
+                        }
+
+                        for (let i = 0; i < chunk.length; i++)
+                        {
+                            lane.ring[lane.write_index] = chunk[i];
+                            lane.write_index = (lane.write_index + 1) & this.RING_MASK;
+                        }
+                        lane.available = lane.available + chunk.length;
+                    }
+
+                    //called by the audio engine every render quantum (128 frames, ~2.7 ms at 48 kHz);
+                    //output buffers arrive zeroed, lanes are summed into them, then soft-limited
+                    process(inputs, outputs)
+                    {
+                        let left_channel = outputs[0][0];
+                        let right_channel = outputs[0].length > 1 ? outputs[0][1] : null;
+                        let frame_count = left_channel.length;
+
+                        this.quantum_counter = this.quantum_counter + 1;
+
+                        for (const [sender_id, lane] of this.lanes)
+                        {
+                            //sender went silent long ago: free the lane (next talk starts a fresh one)
+                            if (this.quantum_counter - lane.last_data_quantum > this.LANE_IDLE_QUANTA)
+                            {
+                                this.lanes.delete(sender_id);
+                                continue;
+                            }
+
+                            //prebuffering: hold until the jitter target is reached, then start with a fade-in
+                            if (lane.state === 0)
+                            {
+                                if (lane.available < lane.target)
+                                {
+                                    continue;
+                                }
+                                lane.state = 1;
+                                lane.fade_in_remaining = this.FADE_FRAMES;
+                            }
+
+                            //stable long enough: shrink the target one step back toward the minimum
+                            lane.stable_quanta = lane.stable_quanta + 1;
+                            if (lane.stable_quanta >= this.SHRINK_AFTER_QUANTA)
+                            {
+                                lane.stable_quanta = 0;
+                                if (lane.target > this.TARGET_MIN)
+                                {
+                                    lane.target = lane.target - this.TARGET_SHRINK_STEP;
+                                }
+                            }
+
+                            //sample slipping: while buffered depth exceeds target + 20 ms, silently drop one
+                            //frame per quantum (~0.8% time compression) - drains built-up delay with no click
+                            if (lane.available > lane.target + this.SLIP_EXCESS)
+                            {
+                                lane.read_index = (lane.read_index + 2) & this.RING_MASK;
+                                lane.available = lane.available - 2;
+                            }
+
+                            for (let i = 0; i < frame_count; i++)
+                            {
+                                if (lane.available < 2)
+                                {
+                                    //underrun: back to prebuffering with a bigger cushion; the fade-out
+                                    //below already brought the level to ~zero, so no click
+                                    lane.state = 0;
+                                    lane.stable_quanta = 0;
+                                    if (lane.target < this.TARGET_MAX)
+                                    {
+                                        lane.target = lane.target + this.TARGET_GROW_STEP;
+                                    }
+                                    break;
+                                }
+
+                                let gain = lane.gain;
+
+                                //fade-in over the first few ms after a (re)start
+                                if (lane.fade_in_remaining > 0)
+                                {
+                                    gain = gain * (1 - lane.fade_in_remaining / this.FADE_FRAMES);
+                                    lane.fade_in_remaining = lane.fade_in_remaining - 1;
+                                }
+
+                                //fade-out toward an approaching empty buffer, so starvation never clicks
+                                let frames_left = lane.available >> 1;
+                                if (frames_left < this.FADE_FRAMES)
+                                {
+                                    gain = gain * (frames_left / this.FADE_FRAMES);
+                                }
+
+                                //one output frame consumes two ring samples: left then right (interleaved)
+                                left_channel[i] = left_channel[i] + lane.ring[lane.read_index] * gain;
+                                lane.read_index = (lane.read_index + 1) & this.RING_MASK;
+
+                                let right_sample = lane.ring[lane.read_index];
+                                lane.read_index = (lane.read_index + 1) & this.RING_MASK;
+                                lane.available = lane.available - 2;
+
+                                if (right_channel != null)
+                                {
+                                    right_channel[i] = right_channel[i] + right_sample * gain;
+                                }
+                            }
+                        }
+
+                        //soft limiter: |x| <= 0.85 passes untouched, louder sums get squeezed smoothly toward
+                        //1.0 instead of hard-clipping into crackle when several loud senders overlap
+                        for (let i = 0; i < frame_count; i++)
+                        {
+                            let left_sample = left_channel[i];
+                            if (left_sample > 0.85)
+                            {
+                                left_channel[i] = 0.85 + 0.15 * Math.tanh((left_sample - 0.85) / 0.15);
+                            }
+                            else if (left_sample < -0.85)
+                            {
+                                left_channel[i] = -0.85 - 0.15 * Math.tanh((-left_sample - 0.85) / 0.15);
+                            }
+
+                            if (right_channel != null)
+                            {
+                                let right_sample = right_channel[i];
+                                if (right_sample > 0.85)
+                                {
+                                    right_channel[i] = 0.85 + 0.15 * Math.tanh((right_sample - 0.85) / 0.15);
+                                }
+                                else if (right_sample < -0.85)
+                                {
+                                    right_channel[i] = -0.85 - 0.15 * Math.tanh((-right_sample - 0.85) / 0.15);
+                                }
+                            }
+                        }
+
+                        return true; //keep the processor alive
+                    }
+                }
+
+                //
+                //microphone capture processor: the mirror image of the player. the mic chain is connected
+                //INTO this node; every 128-frame quantum it appends the captured samples to a chunk of the
+                //same size the old ScriptProcessorNode delivered, and posts full chunks to the main thread,
+                //which forwards them to the opus encoder worker. push-to-talk gates it via "start"/"stop"
+                //port messages - while stopped, no pcm leaves the audio thread at all
+                //
+                class LemonRecorderProcessor extends AudioWorkletProcessor
+                {
+                    constructor(options)
+                    {
+                        super();
+                        //chunk size comes from the main thread (audio_config.codec.bufferSize) so the opus
+                        //encoder worker sees identical input on both capture paths
+                        this.chunk_size = (options && options.processorOptions && options.processorOptions.chunk_size) ? options.processorOptions.chunk_size : 8192;
+                        this.chunk = new Float32Array(this.chunk_size);
+                        this.fill = 0;              //how many samples of the current chunk are filled
+                        this.is_capturing = false;  //push-to-talk state
+
+                        this.port.onmessage = (event) =>
+                        {
+                            if (event.data === "start")
+                            {
+                                this.is_capturing = true;
+                            }
+                            else if (event.data === "stop")
+                            {
+                                this.is_capturing = false;
+                                this.fill = 0; //drop any half-filled chunk, next talk starts clean
+                            }
+                        };
+                    }
+
+                    process(inputs, outputs)
+                    {
+                        //muted: do nothing, output stays silent zeros
+                        if (this.is_capturing === false)
+                        {
+                            return true;
+                        }
+
+                        //inputs[0] is the connected mic chain; it can be absent/empty while disconnected
+                        let input_channels = inputs[0];
+                        if (input_channels == null || input_channels.length === 0 || input_channels[0] == null)
+                        {
+                            return true;
+                        }
+
+                        let samples = input_channels[0]; //mono capture: first channel only
+
+                        for (let i = 0; i < samples.length; i++)
+                        {
+                            this.chunk[this.fill] = samples[i];
+                            this.fill = this.fill + 1;
+
+                            //chunk full: hand it to the main thread (transfer, no copy) and start a fresh one
+                            if (this.fill >= this.chunk_size)
+                            {
+                                let full_chunk = this.chunk;
+                                this.port.postMessage(full_chunk, [full_chunk.buffer]);
+                                this.chunk = new Float32Array(this.chunk_size);
+                                this.fill = 0;
+                            }
+                        }
+
+                        return true; //keep the processor alive
+                    }
+                }
+
+                //makes the processors available under these names for AudioWorkletNode construction
+                registerProcessor("lemon-player-processor", LemonPlayerProcessor);
+                registerProcessor("lemon-recorder-processor", LemonRecorderProcessor);
+            }
+
+            //creates the playback output node on audio_context: AudioWorkletNode when available, the old
+            //ScriptProcessorNode otherwise. audioWorklet exists only in SECURE contexts (https, localhost,
+            //127.0.0.1) - a plain http page on a LAN ip does not have it - so the fallback is a real,
+            //routinely exercised path, not an afterthought
+            function create_audio_player_output()
+            {
+                //start from a clean state; this runs again on every fresh audio_context (reconnect)
+                is_audio_worklet_player_active = false;
+                audio_player_worklet_node = null;
+                is_microphone_worklet_active = false;
+                audio_worklet_module_promise = null;
+
+                //capability check: audioWorklet is simply absent outside secure contexts and in old browsers
+                if (audio_context.audioWorklet == null || typeof AudioWorkletNode == "undefined")
+                {
+                    console.log("audioWorklet unavailable (needs a secure context: https or localhost); using ScriptProcessorNode playback");
+                    create_script_processor_player();
+                    return;
+                }
+
+                //the worklet must be loaded as a module from a url; stringify the scope function and wrap it
+                //in "(...)();" so it executes on load - same trick as the web workers, keeps client.html one file
+                let worklet_code_url = URL.createObjectURL(new Blob(['(', lemon_audio_worklet_scope.toString(), ')();'], { type: 'application/javascript' }));
+
+                //the promise is kept: the microphone capture node creation (which happens later, at mic
+                //permission time) chains on it to build its AudioWorkletNode from the same module
+                audio_worklet_module_promise = audio_context.audioWorklet.addModule(worklet_code_url);
+
+                //addModule is async: while it loads, decoded chunks keep landing in audio_queue (see
+                //audio_player_write_chunk) and are handed over below once the node is up
+                audio_worklet_module_promise.then(function()
+                {
+                    //instantiate the registered processor: no inputs (we feed it via the port), one stereo output
+                    audio_player_worklet_node = new AudioWorkletNode(audio_context, "lemon-player-processor", {
+                        numberOfInputs: 0,
+                        numberOfOutputs: 1,
+                        outputChannelCount: [2]
+                    });
+                    //same output chain as the old player: node -> gain -> speakers
+                    audio_player_worklet_node.connect(audio_player_gain_node);
+                    is_audio_worklet_player_active = true;
+                    console.log("playback: AudioWorkletNode active");
+
+                    //hand over whatever buffered in audio_queue while the module was loading.
+                    //copy before transferring: read() returns a view into the queue's backing buffer
+                    if (audio_queue.length() > 0)
+                    {
+                        let buffered_samples = new Float32Array(audio_queue.read(audio_queue.length()));
+                        audio_player_worklet_node.port.postMessage({ type: "pcm", sender_id: PREMIXED_AUDIO_LANE_ID, pcm: buffered_samples }, [buffered_samples.buffer]);
+                    }
+
+                    //direct pipe: decoder worker -> worklet. one end goes into the worklet, the other into
+                    //the decoder worker; per-sender pcm then flows between the two threads with no
+                    //main-thread hop, and the worker stops its 20 ms mixing tick
+                    let direct_audio_pipe = new MessageChannel();
+                    audio_player_worklet_node.port.postMessage({ type: "pipe", port: direct_audio_pipe.port2 }, [direct_audio_pipe.port2]);
+                    opus_decoder_worker.postMessage({ type: "use_direct_worklet_pipe", port: direct_audio_pipe.port1 }, [direct_audio_pipe.port1]);
+                }).catch(function(worklet_setup_error)
+                {
+                    //any setup failure (csp, quirky browser) lands on the old path instead of silence
+                    console.log("AudioWorklet setup failed (" + worklet_setup_error + "); using ScriptProcessorNode playback");
+                    create_script_processor_player();
+                });
+            }
+
+            //the legacy playback path: ScriptProcessorNode calls player_onaudioprocess on the MAIN thread,
+            //which drains audio_queue - works everywhere, but stutters when the page is busy
+            function create_script_processor_player()
+            {
+                //two output channels: the decode/mix pipeline delivers interleaved stereo
+                player = audio_context.createScriptProcessor(audio_config.codec.bufferSize, 1, 2);
+                player.onaudioprocess = player_onaudioprocess;
+                player.connect(audio_player_gain_node);
+            }
+
+            //single entry point for decoded PCM: worklet ring when active, audio_queue (ScriptProcessor
+            //path, and the short window while the worklet module is still loading) otherwise
+            function audio_player_write_chunk(pcm_chunk)
+            {
+                if (is_audio_worklet_player_active == true)
+                {
+                    //pre-mixed audio goes into the worklet's dedicated low-latency lane; the buffer is
+                    //transferred to the audio thread instead of copied
+                    audio_player_worklet_node.port.postMessage({ type: "pcm", sender_id: PREMIXED_AUDIO_LANE_ID, pcm: pcm_chunk }, [pcm_chunk.buffer]);
+                }
+                else
+                {
+                    //ScriptProcessor path - and the short window while the worklet module is still loading
+                    audio_queue.write(pcm_chunk);
+                }
+            }
+
+            //per-user playback volume (1.0 = unchanged, 0.5 = half, 0 = silent), applied per sender at the
+            //mix inside the player worklet. worklet mode only: the ScriptProcessorNode fallback receives
+            //already-mixed audio, so individual volumes cannot apply there
+            function set_client_playback_volume(client_id, volume)
+            {
+                if (is_audio_worklet_player_active == true && audio_player_worklet_node != null)
+                {
+                    audio_player_worklet_node.port.postMessage({ type: "gain", sender_id: client_id, value: volume });
+                }
+            }
+
+            //flushes all buffered playback (used on channel switch, so old channel audio stops instantly)
+            function audio_player_clear()
+            {
+                audio_queue.clear();
+
+                if (is_audio_worklet_player_active == true)
+                {
+                    audio_player_worklet_node.port.postMessage("clear");
+                }
+            }
+
+            //creates the microphone capture node: AudioWorkletNode (capture runs on the audio thread,
+            //immune to main-thread jank that used to chop OUTGOING audio) when the worklet module loaded,
+            //ScriptProcessorNode otherwise. wires the capture graph either way
+            function create_microphone_capture_node()
+            {
+                //no worklet support on this context (insecure context / old browser): old path immediately
+                if (audio_worklet_module_promise == null)
+                {
+                    create_script_processor_recorder();
+                    return;
+                }
+
+                //the module load was started by create_audio_player_output; chain on it
+                audio_worklet_module_promise.then(function()
+                {
+                    //chunk_size 1920 = 40 ms at 48 kHz (two opus frames): captured voice reaches the encoder
+                    //within 40 ms instead of sitting up to 171 ms in an 8192-sample buffer. the encoder
+                    //frames internally, so any chunk size is legal - 40 ms balances latency against
+                    //message rate (25 posts/s; 960 would halve the latency at double the traffic)
+                    microphone_recorder = new AudioWorkletNode(audio_context, "lemon-recorder-processor", {
+                        numberOfInputs: 1,
+                        numberOfOutputs: 1,
+                        outputChannelCount: [1],
+                        processorOptions: { chunk_size: 1920 }
+                    });
+
+                    //captured chunks arrive here from the audio thread and go on to the opus encoder
+                    microphone_recorder.port.onmessage = function(event)
+                    {
+                        process_captured_microphone_pcm(event.data);
+                    };
+
+                    is_microphone_worklet_active = true;
+                    console.log("microphone capture: AudioWorkletNode active");
+                    wire_microphone_capture_graph();
+                }).catch(function(recorder_worklet_error)
+                {
+                    console.log("recorder worklet setup failed (" + recorder_worklet_error + "); using ScriptProcessorNode capture");
+                    create_script_processor_recorder();
+                });
+            }
+
+            function create_script_processor_recorder()
+            {
+                is_microphone_worklet_active = false;
+                //2048 samples = ~43 ms per callback (was 8192 = 171 ms of built-in send latency);
+                //ScriptProcessor buffer sizes must be powers of two, so 960 is not available here
+                microphone_recorder = audio_context.createScriptProcessor(2048, 1, 1);
+                wire_microphone_capture_graph();
+            }
+
+            //mic -> gain -> capture node -> destination. the capture node must reach the destination or
+            //the graph never pulls samples through it; it only ever outputs zeros, so nothing is audible
+            function wire_microphone_capture_graph()
+            {
+                audio_input.connect(audio_recorder_gain_node);
+                audio_recorder_gain_node.connect(microphone_recorder);
+                microphone_recorder.connect(audio_context.destination);
+            }
+
+            //push-to-talk gate for whichever capture node is in use: the worklet is told to start/stop
+            //over its port (no pcm crosses threads while muted), the ScriptProcessorNode gets its callback
+            //assigned/removed like before. safe to call before the capture node exists (does nothing)
+            function set_microphone_capture_active(is_active)
+            {
+                if (microphone_recorder == null)
+                {
+                    return;
+                }
+
+                if (is_microphone_worklet_active == true)
+                {
+                    microphone_recorder.port.postMessage(is_active ? "start" : "stop");
+                }
+                else
+                {
+                    microphone_recorder.onaudioprocess = is_active ? recorder_onaudioprocess : null;
+                }
             }
 
             function player_onaudioprocess(e)
@@ -28954,23 +29860,46 @@
                 //same as recorder_onaudioprocess
                 //
 
+                let left_channel = e.outputBuffer.getChannelData(0);
+                let right_channel = e.outputBuffer.getChannelData(1);
+
                 if (audio_queue.length())
                 {
-                    e.outputBuffer.getChannelData(0).set(audio_queue.read(audio_config.codec.bufferSize));
+                    //the queue holds interleaved stereo (L R L R), two floats per output frame
+                    let interleaved = audio_queue.read(audio_config.codec.bufferSize * 2);
+                    let frame_count = interleaved.length >> 1;
+
+                    for (let i = 0; i < frame_count; i++)
+                    {
+                        left_channel[i] = interleaved[i * 2];
+                        right_channel[i] = interleaved[i * 2 + 1];
+                    }
+
+                    //zero the tail on a short read so no stale samples from the previous callback play
+                    for (let i = frame_count; i < left_channel.length; i++)
+                    {
+                        left_channel[i] = 0;
+                        right_channel[i] = 0;
+                    }
                 }
                 else
                 {
-                    e.outputBuffer.getChannelData(0).set(silence);
+                    left_channel.set(silence);
+                    right_channel.set(silence);
                 }
             }
 
+            //ScriptProcessorNode capture fallback: runs on the MAIN thread; the worklet path delivers the
+            //same chunks through the capture node's port instead. both feed process_captured_microphone_pcm
             function recorder_onaudioprocess(event)
             {
+                process_captured_microphone_pcm(event.inputBuffer.getChannelData(0));
+            }
 
-                //
-                //if this function is assigned to microphone_recorder.onaudioprocess, it keeps running, even when microphone is not actively used
-                //to prevent this microphone_recorder.onaudioprocess is set to ,
-                //
+            //one chunk of captured microphone pcm (bufferSize mono samples), from either capture path;
+            //checks the datachannel is usable, then hands the samples to the opus encoder worker
+            function process_captured_microphone_pcm(webaudio_captured_bytes)
+            {
                 if (typeof (g_datachannel) == 'undefined')
                 {
                     console.log("%c datachannel is undefined, cannot sent audio", "color: red");
@@ -28995,8 +29924,6 @@
 
                 if (is_microphone_active)
                 {
-                    let webaudio_captured_bytes = event.inputBuffer.getChannelData(0);
-
                     opus_encoder_worker.postMessage({
                         type: "encode",
                         value: webaudio_captured_bytes
@@ -29283,7 +30210,15 @@
 
             function activate_microphone()
             {
-                navigator.getUserMedia = (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia);
+                //getUserMedia exists only in a SECURE context (https, or localhost/127.0.0.1). when a phone
+                //reaches a self-hosted server over plain http on a LAN ip, navigator.mediaDevices is
+                //undefined, so touching it throws and the mic silently never activates. detect it and tell
+                //the user, instead of the old dead navigator.getUserMedia shim (which could itself throw)
+                if (navigator.mediaDevices == null || typeof navigator.mediaDevices.getUserMedia != "function")
+                {
+                    custom_alert("microphone needs a secure connection: open the page over https (or via localhost). plain http on a phone blocks mic access.");
+                    return;
+                }
 
                 navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(
@@ -29319,11 +30254,10 @@
                             audio_input = audio_context.createMediaStreamSource(stream);
                             // console.log(audio_context);
                             audio_recorder_gain_node = audio_context.createGain();
-                            microphone_recorder = audio_context.createScriptProcessor(audio_config.codec.bufferSize, 1, 1);
 
-                            audio_input.connect(audio_recorder_gain_node);
-                            audio_recorder_gain_node.connect(microphone_recorder);
-                            microphone_recorder.connect(audio_context.destination);
+                            //AudioWorkletNode capture when the worklet module is available, ScriptProcessorNode
+                            //otherwise; also wires mic -> gain -> capture node -> destination
+                            create_microphone_capture_node();
 
                             const audioTracks = stream.getAudioTracks();
                             // console.log(audioTracks);
@@ -29385,6 +30319,12 @@
 
             function begin_connect_to_server()
             {
+                //diagnostic for the "phone shows a connect button instead of autoconnecting" report: this
+                //prints exactly why. server_config_present=false -> the server did not embed details;
+                //android_webview=true on a plain browser -> a stray global `Android` diverted into the app
+                //path; predefined/autoconnect both true but no connection -> the issue is in connect_to_server
+                console.log("[connect] server_config_present=" + (typeof window !== "undefined" && typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null) + " predefined=" + are_server_details_predefined + " autoconnect=" + is_autoconnect_without_user_action_active + " android_webview=" + is_running_in_android_webview + " touch=" + is_client_running_under_touch_device);
+
                 if (are_server_details_predefined == true && is_autoconnect_without_user_action_active == true)
                 {
                     connect_to_server();
@@ -29441,6 +30381,10 @@
                     };
                     document.getElementById("connect-form-sub-container-1").style.display = "none";
                     document.getElementById("connect-form-sub-container-2").style.display = "none";
+                    //autoconnecting: no manual connect button should be shown (it was left visible on some
+                    //mobile layouts, making it look like the user has to tap it)
+                    document.getElementById("connect-button").style.visibility = "hidden";
+                    document.getElementById("connect-button").style.display = "none";
                 }
 
                 if (is_running_in_android_webview == false)
@@ -29517,6 +30461,34 @@
                 document.getElementById("close-button-set-new-username").onclick = UI.close_button_set_new_username_onclick;
                 document.getElementById("close-button-server-settings").onclick = UI.close_button_server_settings_onclick;
                 document.getElementById("poke-client-send-button").onclick = UI.poke_client_send_button_onclick;
+
+                //channel edit form: clicking the icon box opens the shared icon picker for that channel (admin)
+                document.getElementById("channel-properties-icon-box").onclick = function()
+                {
+                    if (channel_properties_edit_channel_id != null && is_local_client_admin() == true)
+                    {
+                        UI.open_channel_icon_picker(channel_properties_edit_channel_id);
+                    }
+                };
+
+                //adjust-volume dialog: close button + live slider (updates the worklet lane gain as it moves)
+                document.getElementById("close-button-adjust-volume").onclick = function()
+                {
+                    document.getElementById("adjust-volume-container").style.display = "none";
+                };
+                document.getElementById("adjust-volume-slider").oninput = function()
+                {
+                    let target_client_id = this.getAttribute("data-target-client-id");
+                    let gain = parseInt(this.value) / 100;
+
+                    document.getElementById("adjust-volume-value-label").innerHTML = this.value + "%";
+
+                    if (target_client_id != null)
+                    {
+                        client_volume_by_id[target_client_id] = gain;
+                        set_client_playback_volume(parseInt(target_client_id), gain);
+                    }
+                };
                 document.getElementById("set-new-username-send-button").onclick = UI.set_new_username_send_button_onclick;
                 document.getElementById("chat-input-file-input-container").onmousedown = UI.chat_input_container_on_mousedown;
                 document.getElementById("color-picker-input").addEventListener("input", UI.color_picker_oninput);
@@ -29615,17 +30587,25 @@
                     document.getElementsByClassName("choose-theme-item")[i].onclick = UI.choose_theme_item_onclick;
                 }
 
+                //on a touch device, hide every theme not tagged mobile-capable, so a phone can only pick
+                //themes that are actually laid out for it (currently just the "mobile" theme)
+                if (is_client_running_under_touch_device)
+                {
+                    let theme_items = document.getElementsByClassName("choose-theme-item");
+                    for (let i = 0; i < theme_items.length; i++)
+                    {
+                        if (theme_items[i].getAttribute("data-mobile") !== "true")
+                        {
+                            theme_items[i].style.display = "none";
+                        }
+                    }
+                }
+
                 //browsers create an AudioContext suspended unless it is made during a user gesture; resume it on the first click/tap so audio works after an autoconnect, with no dedicated connect click.
-                //the context that matters is audio_context (created at authentication time, all voice/music playback runs through it);
-                //audioContextHandle is the legacy XAudioJS context and resuming only that one left audio_context suspended forever.
+                //the context that matters is audio_context (created at authentication time, all voice/music playback runs through it).
                 //the listeners must stay attached until audio_context exists and is running: a gesture can fire before authentication creates it
                 let unlock_audio_on_first_user_gesture = function()
                 {
-                    if (typeof audioContextHandle !== "undefined" && audioContextHandle != null && audioContextHandle.state === "suspended")
-                    {
-                        audioContextHandle.resume();
-                    }
-
                     if (typeof audio_context !== "undefined" && audio_context != null && audio_context.state === "suspended")
                     {
                         audio_context.resume();
@@ -29679,17 +30659,19 @@
                     document.getElementById("style-theme-default").removeAttribute("media"); //set default theme
                 }
 
-                //server-baked default theme (from the injected config); applied unless the user has their own saved choice. persist=false so it never sticks
-                if (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.theme)
+                //server-baked default theme (from the injected config); applied unless the user has their own saved choice. persist=false so it never sticks.
+                //on a phone a desktop theme is ignored here so the mobile default set above stays in effect
+                if (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.theme && UI.is_theme_allowed_on_this_device(window.__SERVER_CONFIG__.theme))
                 {
                     UI.apply_theme(window.__SERVER_CONFIG__.theme, false);
                 }
 
-                //restore a theme the user previously picked (from the in-app menu); wins over the server default
+                //restore a theme the user previously picked (from the in-app menu); wins over the server default.
+                //a saved desktop theme is ignored on a phone (keeps the mobile default)
                 try
                 {
                     let saved_theme = localStorage.getItem("lemon_theme");
-                    if (saved_theme != null)
+                    if (saved_theme != null && UI.is_theme_allowed_on_this_device(saved_theme))
                     {
                         UI.apply_theme(saved_theme, false);
                     }
@@ -29875,9 +30857,10 @@
             <input type="button" id="sound-effects-button">
             <input type="button" id="choose-theme-button" value="theme">
             <div id="choose-theme-button-list">
-                <p class='choose-theme-item' data-name="default">default</p>
-                <p class='choose-theme-item' data-name="light-theme">light</p>
-                <p class='choose-theme-item' data-name="oldschool">old school</p>
+                <p class='choose-theme-item' data-name="default" data-mobile="false">default</p>
+                <p class='choose-theme-item' data-name="light-theme" data-mobile="false">light</p>
+                <p class='choose-theme-item' data-name="oldschool" data-mobile="false">old school</p>
+                <p class='choose-theme-item' data-name="default-mobile" data-mobile="true">mobile</p>
             </div>
             <input type="button" id="enter-server-settings">
         </div>
@@ -30046,6 +31029,9 @@
                         <div class="text-input-container-2">
                             <input type="text" disabled="" class="text-input-not-pretty-2" value="client limit">
                         </div>
+                        <div class="text-input-container-2" id="channel-properties-icon-label-row">
+                            <input type="text" disabled="" class="text-input-not-pretty-2" value="channel icon">
+                        </div>
                     </div>
                     <div id="channel-properties-input-container-enter" style="display: inline-block; vertical-align: top;">
                         <div class="text-input-container-2">
@@ -30063,6 +31049,10 @@
                         <div class="text-input-container-2">
                             <input type="checkbox" id="channel-properties-limit-clients-checkbox">
                             <input class="text-input-not-pretty-2" id="channel-properties-input-max-clients" type="number" min="1" placeholder="max" value="" style="display: none; width: 70px; margin-left: 8px;">
+                        </div>
+                        <div class="text-input-container-2" id="channel-properties-icon-row">
+                            <div id="channel-properties-icon-box" title="click to choose an icon" style="display:inline-block; width:22px; height:22px; background-size:contain; background-repeat:no-repeat; background-position:center; border:1px solid #4a4a4a; border-radius:3px; cursor:pointer; vertical-align:middle;"></div>
+                            <span style="margin-left:8px; font-size:11px; opacity:0.6;">click to choose (or none)</span>
                         </div>
                     </div>
                     <input type="hidden" id="create-channel-hidden-parent-id" value="">
@@ -30144,6 +31134,21 @@
                 </div>
                 <div style="text-align: right;">
                     <input type="button" id="poke-client-send-button" class="button-1" value="send" style="right: 20px;">
+                </div>
+            </div>
+        </div>
+
+        <div id="adjust-volume-container" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.45); z-index:100000;">
+            <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); min-width:300px; background:#262626; color:#e0e0e0; border:1px solid #4a4a4a; border-radius:5px; box-shadow:0 4px 20px rgba(0,0,0,0.5);">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Adjust Volume</p>
+                    <div class="close-button" id="close-button-adjust-volume"></div>
+                </div>
+                <div style="padding:18px; text-align:center;">
+                    <p id="adjust-volume-username-label" style="margin:0 0 12px 0; font-weight:bold;"></p>
+                    <input type="range" id="adjust-volume-slider" min="0" max="200" step="5" value="100" style="width:250px; vertical-align:middle;">
+                    <p id="adjust-volume-value-label" style="margin:10px 0 0 0; font-size:15px;">100%</p>
+                    <p style="margin:6px 0 0 0; font-size:11px; opacity:0.6;">local only &mdash; changes only your own playback</p>
                 </div>
             </div>
         </div>

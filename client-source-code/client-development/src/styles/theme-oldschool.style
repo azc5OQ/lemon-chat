@@ -714,14 +714,12 @@
             }
 
             .single-tag {
-                width: 20px;
-                height: 17px;
+                width: 18px;
+                height: 18px;
                 background-repeat: no-repeat;
                 background-position: center center;
                 background-size: 15px 15px;
                 display: inline-block;
-                padding-left: 2px;
-                padding-right: 2px;
             }
 
             .padding-div {
@@ -2540,3 +2538,23 @@
             background-position: center !important;
             background-size: 18px 18px !important;
         }
+
+
+.channel-list-context-menu, .add-tag-context-menu {
+    background-color: #f0f0f0 !important;
+    box-shadow: 2px 3px 2px rgba(0,0,0,0.5) !important;
+}
+
+.channel-list-context-menu-background, .add-tag-context-menu-background {
+    background-color: #f0f0f0 !important;
+    border: 0px !important;
+    box-shadow: none !important;
+}
+
+#chat-context-container {
+    height: calc(100% - 33px);
+}
+
+.country-flag- {
+    width: 0px !important;
+}

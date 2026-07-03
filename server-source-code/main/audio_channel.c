@@ -945,7 +945,7 @@ label_audio_channel__initialize_webrtc_datachannel_connection_end:
     return result;
 }
 
-void audio_channel__send_music_bot_data(uint64 channel_id, unsigned char* data, int data_length)
+void audio_channel__send_music_bot_data(uint64 sender_music_bot_client_id, uint64 channel_id, uint64 sequence_number, unsigned char* data, int data_length)
 {
     uint64 i = 0;
     void* message1 = NULL_POINTER;
@@ -987,17 +987,24 @@ void audio_channel__send_music_bot_data(uint64 channel_id, unsigned char* data, 
             continue;
         }
 
-        message1 = (void*)memorymanager__allocate(data_length + 5, MEMALLOC_MUSICBOT_AUDIOCHANNEL_ONMESSAGE);
+        message1 = (void*)memorymanager__allocate(data_length + 7, MEMALLOC_MUSICBOT_AUDIOCHANNEL_ONMESSAGE);
         if (message1 == NULL_POINTER)
         {
             continue;
         }
-        ((int*)message1)[0] = -2; /* sender is music bot */
-        clib__copy_memory((void*)data, ((unsigned char*)message1 + 4), data_length, data_length);
+        /* frame layout: [4B bot client id][2B sequence, little endian][opus].
+           the real client id (not the old constant -2) lets a receiver with several bots in the channel
+           feed each bot its own decoder; the client recognizes bot senders by the is_music_bot flag from
+           the client list and skips voice decryption for them. the sequence lets receivers reorder frames
+           the unordered datachannel scrambled and detect losses */
+        ((int*)message1)[0] = (int)sender_music_bot_client_id;
+        ((unsigned char*)message1)[4] = (unsigned char)(sequence_number & 0xff);
+        ((unsigned char*)message1)[5] = (unsigned char)((sequence_number >> 8) & 0xff);
+        clib__copy_memory((void*)data, ((unsigned char*)message1 + 6), data_length, data_length);
 
         /* log_info("%s %d %s", "sending  ", data_length, "bytes of data \n"); */
 
-        rtcSendMessage(peer_receiver->data_channel_handle, message1, data_length + 4);
+        rtcSendMessage(peer_receiver->data_channel_handle, message1, data_length + 6);
 
         memorymanager__free((nuint)message1);
     }

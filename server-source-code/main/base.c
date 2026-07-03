@@ -418,6 +418,8 @@ boole base__save_server_settings_to_file(void)
         cJSON_AddItemToObject(json_channel, "is_audio_enabled", cJSON_CreateBool(channel_in_loop->is_audio_enabled == TRUE));
         cJSON_AddItemToObject(json_channel, "is_client_limit_active", cJSON_CreateBool(channel_in_loop->is_client_limit_active == TRUE));
         cJSON_AddNumberToObject(json_channel, "max_client_count", (double)channel_in_loop->max_client_count);
+        cJSON_AddItemToObject(json_channel, "has_channel_icon", cJSON_CreateBool(channel_in_loop->has_channel_icon == TRUE));
+        cJSON_AddNumberToObject(json_channel, "channel_icon_id", (double)channel_in_loop->icon_id);
         cJSON_AddStringToObject(json_channel, "name", &channel_in_loop->name[0]);
         cJSON_AddStringToObject(json_channel, "password", &channel_in_loop->password[0]);
         cJSON_AddStringToObject(json_channel, "description", &channel_in_loop->description[0]);
@@ -461,6 +463,14 @@ boole base__save_server_settings_to_file(void)
         cJSON_AddStringToObject(json_tag, "name", &tag_in_loop->name[0]);
         cJSON_AddItemToArray(json_tags, json_tag);
     }
+
+    /* the admin tag (id 0) itself is re-seeded on every start and skipped by the tags loop above, but its
+       icon IS runtime-editable, so persist just that link (icon id + has_icon) here and re-apply it after
+       the seed on load. without this the admin's chosen icon reverts to the default on every restart */
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_tag_icon_id");
+    cJSON_AddNumberToObject(json_root, "admin_tag_icon_id", (double)g_tags_array[ADMIN_TAG_ID].icon_id);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_tag_has_icon");
+    cJSON_AddItemToObject(json_root, "admin_tag_has_icon", cJSON_CreateBool(g_tags_array[ADMIN_TAG_ID].has_icon == TRUE));
 
     /* rebuild the ban list (matching is by ip; country/identity/extra data are recorded for the admin) */
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "bans");
@@ -2401,6 +2411,10 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "server_settings_set_tag_icon"))
             {
                 client_msg__process_set_server_settings_set_tag_icon(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "set_channel_icon"))
+            {
+                client_msg__process_set_channel_icon(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "save_server_settings"))
             {

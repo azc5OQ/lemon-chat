@@ -259,6 +259,8 @@ void server_msg__send_channel_list_to_single_client(ws_cli_conn_t* websocket, ch
         cJSON_AddBoolToObject(single_channel, "is_temp_channel", g_channel_array[i].is_temp_channel);
         cJSON_AddBoolToObject(single_channel, "is_client_limit_active", g_channel_array[i].is_client_limit_active);
         cJSON_AddNumberToObject(single_channel, "max_client_count", (double)g_channel_array[i].max_client_count);
+        cJSON_AddBoolToObject(single_channel, "has_channel_icon", g_channel_array[i].has_channel_icon);
+        cJSON_AddNumberToObject(single_channel, "channel_icon_id", (double)g_channel_array[i].icon_id);
         cJSON_AddItemToArray(json_channel_array, single_channel);
     }
 
@@ -1099,6 +1101,8 @@ void server_msg__send_channel_create_message_to_all_clients(uint64 created_chann
     cJSON_AddBoolToObject(json_message_object1, "is_temp_channel", channel->is_temp_channel);
     cJSON_AddBoolToObject(json_message_object1, "is_client_limit_active", channel->is_client_limit_active);
     cJSON_AddNumberToObject(json_message_object1, "max_client_count", (double)channel->max_client_count);
+    cJSON_AddBoolToObject(json_message_object1, "has_channel_icon", channel->has_channel_icon);
+    cJSON_AddNumberToObject(json_message_object1, "channel_icon_id", (double)channel->icon_id);
     cJSON_AddNumberToObject(json_message_object1, "channel_creator_id", channel_creator_client_index);
 
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -1176,6 +1180,8 @@ void server_msg__send_channel_edit_message_to_all_clients(uint64 edited_channel_
     cJSON_AddBoolToObject(json_message_object1, "is_audio_enabled", (cJSON_bool)channel->is_audio_enabled);
     cJSON_AddBoolToObject(json_message_object1, "is_client_limit_active", (cJSON_bool)channel->is_client_limit_active);
     cJSON_AddNumberToObject(json_message_object1, "max_client_count", (double)channel->max_client_count);
+    cJSON_AddBoolToObject(json_message_object1, "has_channel_icon", channel->has_channel_icon);
+    cJSON_AddNumberToObject(json_message_object1, "channel_icon_id", (double)channel->icon_id);
     cJSON_AddNumberToObject(json_message_object1, "channel_editor_id", channel_editor_id);
 
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -2822,6 +2828,71 @@ void server_msg__send_tag_icon_changed_event_to_all_clients(uint64 tag_id, boole
     cJSON_AddNumberToObject(json_message_object1, "tag_id", tag_id);
     cJSON_AddItemToObject(json_message_object1, "has_icon", cJSON_CreateBool(has_icon == TRUE));
     cJSON_AddNumberToObject(json_message_object1, "tag_linked_icon_id", icon_id);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        if (client->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief broadcasts a channel's icon change to every authenticated client so their channel row updates live
+ *
+ * @param uint64 channel_id -> id of the channel whose icon changed
+ * @param boole has_channel_icon -> whether the channel now has an icon
+ * @param uint64 icon_id -> the channel's icon id (meaningful only when has_channel_icon is TRUE)
+ *
+ * @return void
+ */
+void server_msg__send_channel_icon_changed_event_to_all_clients(uint64 channel_id, boole has_channel_icon, uint64 icon_id)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_icon_changed_event_to_all_clients \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "channel_icon_changed");
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)channel_id);
+    cJSON_AddItemToObject(json_message_object1, "has_channel_icon", cJSON_CreateBool(has_channel_icon == TRUE));
+    cJSON_AddNumberToObject(json_message_object1, "channel_icon_id", (double)icon_id);
 
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 

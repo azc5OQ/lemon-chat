@@ -53,10 +53,6 @@
 /* @@INCLUDE: scripts/vendor/biginteger.js @@ */
     </script>
 
-    <script type="text/javascript">
-/* @@INCLUDE: scripts/app/audio-setup.js @@ */
-    </script>
-
 
     <script type="text/javascript">
 /* @@INCLUDE: scripts/app/utils.js @@ */
@@ -175,9 +171,10 @@
             <input type="button" id="sound-effects-button">
             <input type="button" id="choose-theme-button" value="theme">
             <div id="choose-theme-button-list">
-                <p class='choose-theme-item' data-name="default">default</p>
-                <p class='choose-theme-item' data-name="light-theme">light</p>
-                <p class='choose-theme-item' data-name="oldschool">old school</p>
+                <p class='choose-theme-item' data-name="default" data-mobile="false">default</p>
+                <p class='choose-theme-item' data-name="light-theme" data-mobile="false">light</p>
+                <p class='choose-theme-item' data-name="oldschool" data-mobile="false">old school</p>
+                <p class='choose-theme-item' data-name="default-mobile" data-mobile="true">mobile</p>
             </div>
             <input type="button" id="enter-server-settings">
         </div>
@@ -346,6 +343,9 @@
                         <div class="text-input-container-2">
                             <input type="text" disabled="" class="text-input-not-pretty-2" value="client limit">
                         </div>
+                        <div class="text-input-container-2" id="channel-properties-icon-label-row">
+                            <input type="text" disabled="" class="text-input-not-pretty-2" value="channel icon">
+                        </div>
                     </div>
                     <div id="channel-properties-input-container-enter" style="display: inline-block; vertical-align: top;">
                         <div class="text-input-container-2">
@@ -363,6 +363,10 @@
                         <div class="text-input-container-2">
                             <input type="checkbox" id="channel-properties-limit-clients-checkbox">
                             <input class="text-input-not-pretty-2" id="channel-properties-input-max-clients" type="number" min="1" placeholder="max" value="" style="display: none; width: 70px; margin-left: 8px;">
+                        </div>
+                        <div class="text-input-container-2" id="channel-properties-icon-row">
+                            <div id="channel-properties-icon-box" title="click to choose an icon" style="display:inline-block; width:22px; height:22px; background-size:contain; background-repeat:no-repeat; background-position:center; border:1px solid #4a4a4a; border-radius:3px; cursor:pointer; vertical-align:middle;"></div>
+                            <span style="margin-left:8px; font-size:11px; opacity:0.6;">click to choose (or none)</span>
                         </div>
                     </div>
                     <input type="hidden" id="create-channel-hidden-parent-id" value="">
@@ -444,6 +448,21 @@
                 </div>
                 <div style="text-align: right;">
                     <input type="button" id="poke-client-send-button" class="button-1" value="send" style="right: 20px;">
+                </div>
+            </div>
+        </div>
+
+        <div id="adjust-volume-container" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.45); z-index:100000;">
+            <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); min-width:300px; background:#262626; color:#e0e0e0; border:1px solid #4a4a4a; border-radius:5px; box-shadow:0 4px 20px rgba(0,0,0,0.5);">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Adjust Volume</p>
+                    <div class="close-button" id="close-button-adjust-volume"></div>
+                </div>
+                <div style="padding:18px; text-align:center;">
+                    <p id="adjust-volume-username-label" style="margin:0 0 12px 0; font-weight:bold;"></p>
+                    <input type="range" id="adjust-volume-slider" min="0" max="200" step="5" value="100" style="width:250px; vertical-align:middle;">
+                    <p id="adjust-volume-value-label" style="margin:10px 0 0 0; font-size:15px;">100%</p>
+                    <p style="margin:6px 0 0 0; font-size:11px; opacity:0.6;">local only &mdash; changes only your own playback</p>
                 </div>
             </div>
         </div>

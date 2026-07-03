@@ -568,6 +568,13 @@ static void _main_internal__load_persisted_state(void)
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "max_client_count");
             if (cJSON_IsNumber(json_field)) { channel_in_loop->max_client_count = (uint64)json_field->valuedouble; }
 
+            channel_in_loop->has_channel_icon = FALSE;
+            channel_in_loop->icon_id = 0;
+            json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "has_channel_icon");
+            if (cJSON_IsBool(json_field)) { channel_in_loop->has_channel_icon = cJSON_IsTrue(json_field); }
+            json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "channel_icon_id");
+            if (cJSON_IsNumber(json_field)) { channel_in_loop->icon_id = (uint64)json_field->valuedouble; }
+
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "name");
             if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &channel_in_loop->name[0], clib__utf8_string_length(json_field->valuestring), CHANNEL_NAME_MAX_LENGTH - 1); }
 
@@ -739,6 +746,14 @@ static void _main_internal__load_persisted_state(void)
             loaded_identities++;
         }
     }
+
+    /* re-apply the admin tag's saved icon link. the admin tag was re-seeded with icon_id 0 before this
+       load ran; its runtime-chosen icon (and has_icon flag) is restored here, now that the icons it may
+       point at have been loaded above */
+    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_tag_icon_id");
+    if (cJSON_IsNumber(json_field)) { g_tags_array[ADMIN_TAG_ID].icon_id = (uint64)json_field->valuedouble; }
+    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_tag_has_icon");
+    if (cJSON_IsBool(json_field)) { g_tags_array[ADMIN_TAG_ID].has_icon = cJSON_IsTrue(json_field); }
 
     cJSON_Delete(json_root);
 

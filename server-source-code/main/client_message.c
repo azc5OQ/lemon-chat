@@ -2503,7 +2503,12 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
                     channel->is_temp_channel = creating_temp_channel;
                     channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
                     channel->max_client_count = 0;
-                    if (cJSON_IsNumber(json_max_client_count))
+                    /* clamp the client-supplied capacity before the double->uint64 cast, which is undefined
+                       for negative / NaN / huge values. NaN fails both comparisons, so the range check
+                       rejects it too. a channel can never hold more clients than the server allows */
+                    if (cJSON_IsNumber(json_max_client_count)
+                        && json_max_client_count->valuedouble >= 0
+                        && json_max_client_count->valuedouble <= (double)g_server_settings.max_client_count)
                     {
                         channel->max_client_count = (uint64)json_max_client_count->valuedouble;
                     }
@@ -2661,7 +2666,12 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
             channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
             channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
             channel->max_client_count = 0;
-            if (cJSON_IsNumber(json_max_client_count))
+            /* clamp the client-supplied capacity before the double->uint64 cast, which is undefined
+               for negative / NaN / huge values. NaN fails both comparisons, so the range check
+               rejects it too. a channel can never hold more clients than the server allows */
+            if (cJSON_IsNumber(json_max_client_count)
+                && json_max_client_count->valuedouble >= 0
+                && json_max_client_count->valuedouble <= (double)g_server_settings.max_client_count)
             {
                 channel->max_client_count = (uint64)json_max_client_count->valuedouble;
             }
@@ -4407,6 +4417,90 @@ label_client_msg__process_set_server_settings_set_tag_icon_end:
 }
 
 /**
+ * @brief processes an admin request to set (or clear) a channel's icon. an icon_id in the request assigns
+ *        that icon (which must exist); a request without icon_id clears the channel's icon. broadcasts the
+ *        change so every client updates its channel row live. only an authenticated admin may do this.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_set_channel_icon(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* sender_client = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_channel_id = 0;
+    cJSON* json_icon_id = 0;
+    uint64 channel_id = 0;
+    uint64 icon_id = 0;
+    boole wants_icon = FALSE;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+    json_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "icon_id");
+
+    if (cJSON_IsNumber(json_channel_id) == FALSE)
+    {
+        return;
+    }
+
+    if (json_channel_id->valueint < 0 || json_channel_id->valueint >= g_server_settings.max_channel_count)
+    {
+        return;
+    }
+
+    channel_id = (uint64)json_channel_id->valueint;
+    wants_icon = cJSON_IsNumber(json_icon_id);
+    if (wants_icon == TRUE)
+    {
+        icon_id = (uint64)json_icon_id->valueint;
+    }
+
+    /* lock order: clients -> channels -> icons */
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_channels_global_rwlock_guard);
+    clib__read_lock(&g_icons_global_rwlock_guard);
+
+    sender_client = &g_clients_array[sender_client_id];
+
+    if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE || sender_client->is_admin == FALSE)
+    {
+        goto label_client_msg__process_set_channel_icon_end;
+    }
+
+    if (g_channel_array[channel_id].is_existing == FALSE)
+    {
+        goto label_client_msg__process_set_channel_icon_end;
+    }
+
+    if (wants_icon == TRUE)
+    {
+        /* the assigned icon must exist (an icon id equals its index) */
+        if (icon_id >= MAX_ICONS || g_icons_array[icon_id].is_existing == FALSE)
+        {
+            goto label_client_msg__process_set_channel_icon_end;
+        }
+
+        g_channel_array[channel_id].has_channel_icon = TRUE;
+        g_channel_array[channel_id].icon_id = icon_id;
+    }
+    else
+    {
+        /* no icon_id in the request -> clear the channel's icon */
+        g_channel_array[channel_id].has_channel_icon = FALSE;
+        g_channel_array[channel_id].icon_id = 0;
+    }
+
+    server_msg__send_channel_icon_changed_event_to_all_clients(channel_id, g_channel_array[channel_id].has_channel_icon, g_channel_array[channel_id].icon_id);
+
+label_client_msg__process_set_channel_icon_end:
+    clib__unlock(&g_icons_global_rwlock_guard);
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
  * @brief processes an admin request to apply and persist server settings: the general-settings toggles
  *        the admin sent (country flags, server-wide audio, hide-in-password-channels) are applied to
  *        g_server_settings, then everything persistable (those toggles plus the channel layout and the
@@ -5099,11 +5193,16 @@ void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sende
         goto label_client_msg__process_create_music_bot_end;
     }
 
-    /* check if there is already music bot in the channel */
+#ifndef MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL
+    /* one music bot per channel. define MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL (definitions.h)
+       to lift this limit - debug aid only: several bots give several simultaneous audio senders for
+       testing multi-speaker mixing without needing several people. everything downstream (per-bot frame
+       ids, per-bot decoders, delete-all-bots-in-channel) works in both modes */
     if (g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel == TRUE)
     {
         goto label_client_msg__process_create_music_bot_end;
     }
+#endif
 
     /* music bots are not allowed in temp channels */
     if (g_channel_array[json_channel_id->valueint].is_temp_channel == TRUE)
@@ -5172,8 +5271,7 @@ void client_msg__process_delete_music_bot_request(cJSON* json_root, uint64 sende
     cJSON* json_channel_id = 0;
     client_t* music_bot = 0;
     client_t* admin = 0;
-    music_bot_single_song_data_t* single_song_in_loop = 0;
-    uint64 loop_index = 0;
+    uint64 bot_loop_index = 0;
 
     status = _client_msg_internal__is_client_msg__process_delete_music_bot_request_valid(json_root);
     if (status == FALSE)
@@ -5204,53 +5302,37 @@ void client_msg__process_delete_music_bot_request(cJSON* json_root, uint64 sende
         goto label_client_msg__process_delete_music_bot_end;
     }
 
-    /* check if there is already music bot in the channel */
+    /* check if there is at least one music bot in the channel */
     if (g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel == FALSE)
     {
         goto label_client_msg__process_delete_music_bot_end;
     }
 
-    /* the channel has a music bot, find it and tear it down */
+    /* tear down EVERY music bot in the channel (there can be several since multi-bot was allowed).
+       nothing is freed here: musicbot__begin_delete only signals the bot's stream thread and hides the
+       bot; a detached reaper thread joins the stream thread and THEN frees the songs and the slot.
+       freeing inline here was a use-after-free against the stream/preload threads, and nulling the
+       client_t made the slot reusable while the old bot thread still wrote into it */
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_delete_music_bot_request \n");
 
-    music_bot = base__find_music_bot_in_channel(json_channel_id->valueint);
-
-    if (music_bot == NULL_POINTER)
+    for (bot_loop_index = 0; bot_loop_index < g_server_settings.max_client_count; bot_loop_index++)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_delete_music_bot_request failed to find music bot \n");
-        goto label_client_msg__process_delete_music_bot_end;
-    }
+        music_bot = &g_clients_array[bot_loop_index];
 
-    DBG_CLIENT_MESSAGE log_info("%s %lld %s", "client_msg__process_delete_music_bot_request music bot id -> ", music_bot->client_id, "\n");
-    DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__process_delete_music_bot_request music bot username -> ", music_bot->username, "\n");
-
-    /* find music bot in channel */
-    DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_delete_music_bot_request server_msg__send_client_disconnect_message_to_all_clients \n");
-
-    server_msg__send_client_disconnect_message_to_all_clients(music_bot->client_id);
-
-    g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = FALSE;
-
-    /* find and clear out music bot songs if he had any */
-    for (loop_index = 0; loop_index < MUSIC_BOT_MAX_FILE_COUNT; loop_index++)
-    {
-        single_song_in_loop = &music_bot->music_bot_client_extension.songs[loop_index];
-
-        if (single_song_in_loop->is_existing == FALSE)
+        if (music_bot->is_existing == FALSE || music_bot->is_music_bot == FALSE || music_bot->channel_id != (uint64)json_channel_id->valueint)
         {
             continue;
         }
 
-        DBG_CLIENT_MESSAGE log_info("%s %p %s", "deleted music bot dat at address ", single_song_in_loop->mp3_data_buffer, "\n");
+        DBG_CLIENT_MESSAGE log_info("%s %lld %s", "client_msg__process_delete_music_bot_request music bot id -> ", music_bot->client_id, "\n");
+        DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__process_delete_music_bot_request music bot username -> ", music_bot->username, "\n");
 
-        memorymanager__free((nuint)single_song_in_loop->mp3_data_buffer);
-        /* maybe check if the song isn't currently playing, and delete it after that? */
-        single_song_in_loop->is_existing = FALSE;
-        single_song_in_loop->mp3_data_buffer = NULL_POINTER;
-        single_song_in_loop->mp3_data_buffer_length = 0;
+        server_msg__send_client_disconnect_message_to_all_clients(music_bot->client_id);
+
+        musicbot__begin_delete(music_bot);
     }
 
-    clib__null_memory(music_bot, sizeof(client_t));
+    g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = FALSE;
 
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_delete_music_bot_request END \n");
 

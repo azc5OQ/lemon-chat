@@ -19,6 +19,6 @@ void audio_channel__process_client_channel_join(client_t* client);
 void audio_channel__process_client_disconnect(client_t* client);
 void audio_channel__data_sending_thread(void);
 
-void audio_channel__send_music_bot_data(uint64 channel_id, unsigned char* data, int length);
+void audio_channel__send_music_bot_data(uint64 sender_music_bot_client_id, uint64 channel_id, uint64 sequence_number, unsigned char* data, int length);
 
 #endif

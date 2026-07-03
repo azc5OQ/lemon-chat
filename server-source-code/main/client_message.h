@@ -32,6 +32,7 @@ void client_msg__process_set_server_settings_add_new_tag(cJSON* json_root, uint6
 void client_msg__process_set_server_settings_delete_tag(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_set_server_settings_delete_icon(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_set_server_settings_set_tag_icon(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_set_channel_icon(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_load_server_settings_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_call_idle_client_message(cJSON* json_root, uint64 sender_client_id);

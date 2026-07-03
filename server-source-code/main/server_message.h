@@ -44,6 +44,7 @@ void server_msg__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* t
 void server_msg__send_remove_tag_event_to_all_clients(uint64 tag_id);
 void server_msg__send_remove_icon_event_to_all_clients(uint64 icon_id);
 void server_msg__send_tag_icon_changed_event_to_all_clients(uint64 tag_id, boole has_icon, uint64 icon_id);
+void server_msg__send_channel_icon_changed_event_to_all_clients(uint64 channel_id, boole has_channel_icon, uint64 icon_id);
 void server_msg__send_call_event_to_idle_client(client_t* caller, client_t* callee);
 void server_msg__send_client_going_to_idle_mode_info_to_all_clients(uint64 idle_going_client_id);
 void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(uint64 back_from_idle_client_id, uint64 channel_the_client_joins);
