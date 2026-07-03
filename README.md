@@ -72,7 +72,7 @@ There is .bat file that can be launched to build it.
 <br>
 
 ## Can the client.html file be embedded into website?
-Yes, just make sure the DNS records point to correct ip address, and run start script that will guide you through the process
+Yes, just follow the instructions when server is started
 
 <br />
 <br />
