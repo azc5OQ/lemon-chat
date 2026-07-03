@@ -72,34 +72,7 @@ There is .bat file that can be launched to build it.
 <br>
 
 ## Can the client.html file be embedded into website?
-# Yes. <br />
-with following assumptions : <br />
-- apache2 running on ubuntu <br />
-- websocket port of choice: 1111 <br />
-- stunnel used<br />
-- websockets secure (WSS) port of choice: 1112 (set in stunnel configuration file) <br />
-- certbot used <br />
-- domain name "justsometestchat.com"<br />
-
-steps to do it would be following
-- copy client.html to /var/www/html <br />
-- apt install stunnel<br />
-- apt install apache2<br />
-- install certbot (easiest way to get free certificate)<br />
-- sudo certbot --apache<br />
-- service apache2 start <br />
-- vim /etc/stunnel.conf<br />
-
-put this data in /etc/stunnel.conf<br />
-[chatserver]<br />
-accept = 0.0.0.0:1112 <br />
-connect = 127.0.0.1:1111<br />
-cert = /etc/letsencrypt/live/justsometestchat.com/cert.pem<br />
-key = /etc/letsencrypt/live/justsometestchat.com/privkey.pem<br />
-
-
-- run "stunnel" command in terminal. If command run with no error, server is probably set up correctly and accessible from https secured site.
-  try viewwing https://justsometestchat.com/client.html in browser and test if everything works. The server will be accessible from both desktop and website <br />
+Yes, just make sure the DNS records point to correct ip address, and run start script that will guide you through the process
 
 <br />
 <br />
