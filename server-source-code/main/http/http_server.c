@@ -15,6 +15,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* platform socket shims: a Windows SOCKET handle is unsigned (so "< 0" never detects an error) and is
    closed with closesocket(); Windows also has no MSG_NOSIGNAL (it never raises SIGPIPE). */
@@ -61,6 +62,15 @@ static int64 g_http_https_redirect_port = 443;
 /* window.__SERVER_CONFIG__ script (websocket port + connect keys) injected into the served client.html so it can autoconnect; empty until http_server__set_client_config runs */
 static char g_http_client_config_script[HTTP_CLIENT_CONFIG_SIZE];
 static boole g_http_client_config_set = FALSE;
+
+#ifndef DEBUG_ACTIVE
+/* client.html cached in ram once at startup (connection config already injected), so serving it
+   never touches the disk and edits to the file only take effect on a server restart. a DEBUG_ACTIVE
+   build skips the cache and re-reads the file per request, so client edits show up immediately.
+   written once before the server thread spawns, read-only afterwards - no locking needed. */
+static char* g_http_client_page_cache = NULL_POINTER;
+static uint64 g_http_client_page_cache_size = 0;
+#endif
 
 static const http_mime_entry_t g_http_mime_table[] = {
     { ".html", "text/html; charset=utf-8" },
@@ -315,6 +325,74 @@ static void _http_server_internal__inject_client_config(char* chunk, uint64 chun
     pad[pad_length - 1] = '/';
 }
 
+#ifndef DEBUG_ACTIVE
+/**
+ * @brief reads client.html from the webroot into the ram cache and injects the connection config
+ *        into it once; called from http_server__start before the server thread spawns
+ *
+ * @return void
+ *
+ * @attention on any failure the cache stays empty and _http_server_internal__serve_file falls back
+ *            to streaming the file from disk per request, same as a DEBUG_ACTIVE build
+ */
+static void _http_server_internal__cache_client_page(void)
+{
+    char file_path[HTTP_SERVER_PATH_SIZE];
+    FILE* file = NULL_POINTER;
+    int64 file_size = 0;
+    uint64 read_count = 0;
+
+    clib__null_memory(file_path, sizeof(file_path));
+    snprintf(file_path, sizeof(file_path), "%s%s", g_http_server_webroot, "/client.html");
+
+    file = fopen(file_path, "rb");
+    if (file == NULL_POINTER)
+    {
+        log_info("%s", "http server: client.html not found, ram cache stays empty \n");
+        return;
+    }
+
+    fseek(file, 0, SEEK_END);
+    file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    if (file_size <= 0)
+    {
+        fclose(file);
+        return;
+    }
+
+    g_http_client_page_cache = (char*)malloc((uint64)file_size);
+    if (g_http_client_page_cache == NULL_POINTER)
+    {
+        fclose(file);
+        log_info("%s", "http server: client.html ram cache allocation failed, serving from disk \n");
+        return;
+    }
+
+    read_count = fread(g_http_client_page_cache, 1, (uint64)file_size, file);
+    fclose(file);
+
+    if (read_count != (uint64)file_size)
+    {
+        free(g_http_client_page_cache);
+        g_http_client_page_cache = NULL_POINTER;
+        log_info("%s", "http server: client.html ram cache read failed, serving from disk \n");
+        return;
+    }
+
+    g_http_client_page_cache_size = (uint64)file_size;
+
+    /* the config is set before http_server__start, so injecting once here replaces the per-request injection */
+    if (g_http_client_config_set == TRUE)
+    {
+        _http_server_internal__inject_client_config(g_http_client_page_cache, g_http_client_page_cache_size);
+    }
+
+    log_info("%s %lld %s", "http server: client.html cached in ram (", file_size, " bytes) \n");
+}
+#endif
+
 /**
  * @brief resolves request_path under the webroot and streams the file, or sends 403/404
  *
@@ -350,6 +428,22 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
     }
 
     is_client_page = clib__is_string_equal((char* )serve_target, "/client.html");
+
+#ifndef DEBUG_ACTIVE
+    /* the client page is served straight from the ram cache: no disk i/o per request, and a
+       swapped client.html on disk only takes effect after a server restart */
+    if ((is_client_page == TRUE) && (g_http_client_page_cache != NULL_POINTER))
+    {
+        content_type = _http_server_internal__content_type_for_path(serve_target);
+
+        clib__null_memory(header, sizeof(header));
+        snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nConnection: close\r\nCache-Control: no-cache\r\n\r\n", content_type, (long long)g_http_client_page_cache_size);
+
+        _http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header));
+        _http_server_internal__send_all(client_socket, g_http_client_page_cache, g_http_client_page_cache_size);
+        return;
+    }
+#endif
 
     clib__null_memory(file_path, sizeof(file_path));
     snprintf(file_path, sizeof(file_path), "%s%s", g_http_server_webroot, serve_target);
@@ -611,6 +705,11 @@ void http_server__start(int64 port, char* webroot)
     {
         clib__copy_memory(webroot, g_http_server_webroot, clib__utf8_string_length(webroot), sizeof(g_http_server_webroot) - 1);
     }
+
+#ifndef DEBUG_ACTIVE
+    /* load client.html into ram before the thread exists, so the cache is never written concurrently */
+    _http_server_internal__cache_client_page();
+#endif
 
     if (pthread_create(&server_thread, 0, _http_server_internal__server_thread, NULL_POINTER) == 0)
     {

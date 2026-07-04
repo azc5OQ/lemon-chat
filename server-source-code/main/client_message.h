@@ -30,6 +30,9 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
 void client_msg__process_set_server_settings_icon_upload(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_set_server_settings_add_new_tag(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_set_server_settings_delete_tag(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_request_identity_list(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_delete_identity(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_modify_identity_tag(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_set_server_settings_delete_icon(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_set_server_settings_set_tag_icon(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_set_channel_icon(cJSON* json_root, uint64 sender_client_id);

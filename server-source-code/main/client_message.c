@@ -2173,7 +2173,12 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
                the tags read lock (held above) and clients write lock (held for this handler) cover it */
             if (g_server_settings.are_identities_enabled == TRUE)
             {
+                DBG_IDENTITIES log_info("%s %llu %s", "identities: enabled -> restoring tags for authenticated client_id", current_client->client_id, "\n");
                 base__restore_identity_tags(current_client);
+            }
+            else
+            {
+                DBG_IDENTITIES log_info("%s", "identities: DISABLED on this server (are_identities_enabled=false) -> no tags will be restored on connect \n");
             }
 
             server_msg__send_authentication_status_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
@@ -3758,6 +3763,10 @@ void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_
             server_msg__send_add_tag_to_client_event_to_all_clients(client->client_id, ADMIN_TAG_ID);
         }
 
+        /* tie this identity to its tags in ram right away, so a reconnect restores admin within this
+           server run even before any disk save. persistence to disk still needs a settings save */
+        base__sync_client_identity_in_store(client);
+
         /* the setup admin password was typed in cleartext; on the first admin login, ask for a one-time change */
         if (g_server_settings.admin_password_is_initial == TRUE)
         {
@@ -3910,6 +3919,10 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
 
     server_msg__send_add_tag_to_client_event_to_all_clients(client_to_add_tag_to->client_id, json_tag_id->valueint);
 
+    /* mirror the change into the ram identity store immediately, so the tag survives a reconnect
+       within this server run without needing an admin disk save */
+    base__sync_client_identity_in_store(client_to_add_tag_to);
+
     /* send admin status to other clients possibly, or not, do they have to know you are an admin */
 label_client_msg__process_add_tag_to_client_message_end:
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -4013,6 +4026,10 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
         }
 
         server_msg__send_remove_tag_from_client_event_to_all_clients(client_to_remove_tag_id_from->client_id, json_tag_id->valueint);
+
+        /* mirror the removal into the ram identity store immediately (drops the identity entirely
+           if it now wears no tags), so a reconnect does not resurrect a tag that was just removed */
+        base__sync_client_identity_in_store(client_to_remove_tag_id_from);
     }
 
 label_client_msg__process_remove_tag_from_client_message_end:
@@ -4284,6 +4301,250 @@ void client_msg__process_set_server_settings_delete_tag(cJSON* json_root, uint64
     server_msg__send_remove_tag_event_to_all_clients(tag_id);
 
 label_client_msg__process_set_server_settings_delete_tag_end:
+    clib__unlock(&g_tags_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief admin asks for the identity-management list; replies with every stored identity (hash, its
+ *        tags, and whether it is currently online). admin-only.
+ *
+ * @param cJSON* json_root -> the parsed request (no fields needed beyond type)
+ * @param uint64 sender_client_id -> the requesting client
+ *
+ * @return void
+ */
+void client_msg__process_request_identity_list(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* sender_client = 0;
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    sender_client = &g_clients_array[sender_client_id];
+
+    if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE || sender_client->is_admin == FALSE)
+    {
+        goto label_client_msg__process_request_identity_list_end;
+    }
+
+    server_msg__send_identity_list_to_single_client(sender_client->p_ws_connection, sender_client->dh_shared_secret);
+
+label_client_msg__process_request_identity_list_end:
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief admin deletes one stored identity (by public-key hash). the identity leaves the RAM store,
+ *        and if its holder is currently connected their tags are stripped and each removal is
+ *        broadcast (there is no multi-tag-removal event, so one remove event is sent per tag), and
+ *        admin is revoked. the on-disk copy is only dropped on the next "save server settings".
+ *        the requesting admin then gets a refreshed identity list. admin-only.
+ *
+ * @param cJSON* json_root -> the parsed request; message.public_key_hash identifies the identity
+ * @param uint64 sender_client_id -> the requesting client
+ *
+ * @return void
+ */
+void client_msg__process_delete_identity(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* sender_client = 0;
+    client_t* holder = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_hash = 0;
+    char target_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    char client_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    uint64 tags_to_remove[MAX_TAGS_FOR_SINGLE_CLIENT];
+    uint64 tags_to_remove_count = 0;
+    uint64 holder_client_id = 0;
+    uint64 c = 0;
+    uint64 t = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_hash = cJSON_GetObjectItemCaseSensitive(json_message_object, "public_key_hash");
+
+    if (cJSON_IsString(json_hash) == FALSE || json_hash->valuestring == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_delete_identity: public_key_hash missing or not a string \n");
+        return;
+    }
+
+    clib__null_memory(target_hash, sizeof(target_hash));
+    clib__copy_memory(json_hash->valuestring, target_hash, clib__utf8_string_length(json_hash->valuestring), sizeof(target_hash) - 1);
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    sender_client = &g_clients_array[sender_client_id];
+
+    if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE || sender_client->is_admin == FALSE)
+    {
+        goto label_client_msg__process_delete_identity_end;
+    }
+
+    /* if this identity is worn by a connected client right now, strip every tag off them */
+    for (c = 0; c < g_server_settings.max_client_count; c++)
+    {
+        holder = &g_clients_array[c];
+
+        if (holder->is_existing == FALSE || holder->is_authenticated == FALSE || holder->is_music_bot == TRUE)
+        {
+            continue;
+        }
+        if (holder->public_key[0] == 0)
+        {
+            continue;
+        }
+
+        base__hash_password_to_base64(holder->public_key, client_hash, sizeof(client_hash));
+        if (clib__is_string_equal(client_hash, target_hash) == FALSE)
+        {
+            continue;
+        }
+
+        holder_client_id = holder->client_id;
+
+        /* snapshot the tag ids first, then clear them off the client and revoke admin */
+        tags_to_remove_count = 0;
+        for (t = 0; t < cvector_size(holder->tag_ids) && tags_to_remove_count < MAX_TAGS_FOR_SINGLE_CLIENT; t++)
+        {
+            tags_to_remove[tags_to_remove_count] = (uint64)holder->tag_ids[t];
+            tags_to_remove_count++;
+        }
+
+        while (cvector_size(holder->tag_ids) > 0)
+        {
+            cvector_erase(holder->tag_ids, 0);
+        }
+        holder->is_admin = FALSE;
+
+        break;
+    }
+
+    /* drop the identity from the ram store (disk copy stays until the next settings save) */
+    base__delete_identity_from_store_by_hash(target_hash);
+
+    /* tell everyone about each stripped tag (one event per tag; there is no bulk-removal event) */
+    for (t = 0; t < tags_to_remove_count; t++)
+    {
+        server_msg__send_remove_tag_from_client_event_to_all_clients(holder_client_id, tags_to_remove[t]);
+    }
+
+    /* refresh the requesting admin's identity list so the deleted row disappears */
+    server_msg__send_identity_list_to_single_client(sender_client->p_ws_connection, sender_client->dh_shared_secret);
+
+label_client_msg__process_delete_identity_end:
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief admin adds or removes a single tag on a stored identity (by hash), working on offline
+ *        identities too. the store is updated; if the identity's holder is connected right now the
+ *        tag is added/removed live on them and broadcast. persistence to disk waits for the next
+ *        "save server settings". the requesting admin then gets a refreshed identity list. admin-only.
+ *
+ * @param cJSON* json_root -> message.public_key_hash, message.tag_id, message.add (bool)
+ * @param uint64 sender_client_id -> the requesting client
+ *
+ * @return void
+ */
+void client_msg__process_modify_identity_tag(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* sender_client = 0;
+    client_t* holder = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_hash = 0;
+    cJSON* json_tag_id = 0;
+    cJSON* json_add = 0;
+    char target_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    char client_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    uint64 tag_id = 0;
+    boole add = FALSE;
+    uint64 c = 0;
+    int64 tag_index = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_hash = cJSON_GetObjectItemCaseSensitive(json_message_object, "public_key_hash");
+    json_tag_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "tag_id");
+    json_add = cJSON_GetObjectItemCaseSensitive(json_message_object, "add");
+
+    if (cJSON_IsString(json_hash) == FALSE || json_hash->valuestring == NULL_POINTER || cJSON_IsNumber(json_tag_id) == FALSE || cJSON_IsBool(json_add) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_modify_identity_tag: bad fields \n");
+        return;
+    }
+
+    tag_id = (uint64)json_tag_id->valueint;
+    add = (cJSON_IsTrue(json_add) == TRUE) ? TRUE : FALSE;
+
+    clib__null_memory(target_hash, sizeof(target_hash));
+    clib__copy_memory(json_hash->valuestring, target_hash, clib__utf8_string_length(json_hash->valuestring), sizeof(target_hash) - 1);
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__read_lock(&g_tags_global_rwlock_guard);
+
+    sender_client = &g_clients_array[sender_client_id];
+
+    if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE || sender_client->is_admin == FALSE)
+    {
+        goto label_client_msg__process_modify_identity_tag_end;
+    }
+
+    /* adding requires a real tag; the admin tag (0) is real and may be granted/revoked this way */
+    if (add == TRUE && base__is_tag_id_real(tag_id) == FALSE)
+    {
+        goto label_client_msg__process_modify_identity_tag_end;
+    }
+
+    /* update the stored identity */
+    base__modify_identity_tag_in_store(target_hash, tag_id, add);
+
+    /* if the identity is connected right now, mirror the change on the live client + broadcast it */
+    for (c = 0; c < g_server_settings.max_client_count; c++)
+    {
+        holder = &g_clients_array[c];
+
+        if (holder->is_existing == FALSE || holder->is_authenticated == FALSE || holder->is_music_bot == TRUE)
+        {
+            continue;
+        }
+        if (holder->public_key[0] == 0)
+        {
+            continue;
+        }
+
+        base__hash_password_to_base64(holder->public_key, client_hash, sizeof(client_hash));
+        if (clib__is_string_equal(client_hash, target_hash) == FALSE)
+        {
+            continue;
+        }
+
+        tag_index = base__get_index_of_tag_id_of_client(holder->client_id, tag_id);
+
+        if (add == TRUE)
+        {
+            if (tag_index == -1)
+            {
+                cvector_push_back(holder->tag_ids, (int)tag_id);
+                if (tag_id == ADMIN_TAG_ID) { holder->is_admin = TRUE; }
+                server_msg__send_add_tag_to_client_event_to_all_clients(holder->client_id, tag_id);
+            }
+        }
+        else
+        {
+            if (tag_index != -1)
+            {
+                cvector_erase(holder->tag_ids, tag_index);
+                if (tag_id == ADMIN_TAG_ID) { holder->is_admin = FALSE; }
+                server_msg__send_remove_tag_from_client_event_to_all_clients(holder->client_id, tag_id);
+            }
+        }
+
+        break;
+    }
+
+    /* refresh the requesting admin's identity list */
+    server_msg__send_identity_list_to_single_client(sender_client->p_ws_connection, sender_client->dh_shared_secret);
+
+label_client_msg__process_modify_identity_tag_end:
     clib__unlock(&g_tags_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }

@@ -272,6 +272,7 @@ static void _base_internal__serialize_identities(cJSON* json_root)
 
     if (g_server_settings.are_identities_enabled == FALSE)
     {
+        DBG_IDENTITIES log_info("%s", "serialize_identities: identities disabled -> leaving the existing \"identities\" json key untouched \n");
         return;
     }
 
@@ -288,8 +289,11 @@ static void _base_internal__serialize_identities(cJSON* json_root)
             continue;
         }
 
+        DBG_IDENTITIES log_info("%s %llu %s %llu %s %s %s", "serialize_identities: writing store slot", i, "with", (uint64)g_client_stored_data[i].tag_id_count, "tag(s), hash [", &g_client_stored_data[i].public_key[0], "] \n");
+
         json_identity = cJSON_CreateObject();
         cJSON_AddStringToObject(json_identity, "public_key_hash", &g_client_stored_data[i].public_key[0]);
+        cJSON_AddStringToObject(json_identity, "username", &g_client_stored_data[i].username[0]);
 
         json_identity_tag_ids = cJSON_CreateArray();
         for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
@@ -1500,13 +1504,18 @@ void base__restore_identity_tags(client_t* client)
     uint64 i = 0;
     uint64 t = 0;
     uint64 tag_id = 0;
+    boole match_found = FALSE;
+    uint64 restored_count = 0;
 
     if (client == NULL_POINTER)
     {
+        DBG_IDENTITIES log_info("%s", "restore_identity_tags: client is NULL, nothing to restore \n");
         return;
     }
 
     base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
+
+    DBG_IDENTITIES log_info("%s %llu %s %s %s", "restore_identity_tags: client_id", client->client_id, "connecting with identity hash [", identity_hash, "] \n");
 
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
@@ -1519,8 +1528,12 @@ void base__restore_identity_tags(client_t* client)
 
         if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == FALSE)
         {
+            DBG_IDENTITIES log_info("%s %llu %s %s %s", "restore_identity_tags: store slot", i, "holds a different identity [", g_client_stored_data[i].public_key, "] \n");
             continue;
         }
+
+        match_found = TRUE;
+        DBG_IDENTITIES log_info("%s %llu %s %llu %s", "restore_identity_tags: MATCH in store slot", i, "with", (uint64)g_client_stored_data[i].tag_id_count, "stored tag ids \n");
 
         for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
         {
@@ -1529,14 +1542,18 @@ void base__restore_identity_tags(client_t* client)
             /* keep the admin tag (id 0) always; for every other tag, skip it if it no longer exists */
             if (tag_id != ADMIN_TAG_ID && (tag_id >= MAX_TAGS || g_tags_array[tag_id].is_existing == FALSE))
             {
+                DBG_IDENTITIES log_info("%s %llu %s", "restore_identity_tags: skipping stored tag id", tag_id, "- it no longer exists on the server \n");
                 continue;
             }
 
             cvector_push_back(client->tag_ids, (int)tag_id);
+            restored_count++;
+            DBG_IDENTITIES log_info("%s %llu %s", "restore_identity_tags: restored tag id", tag_id, "\n");
 
             if (tag_id == ADMIN_TAG_ID)
             {
                 client->is_admin = TRUE;
+                DBG_IDENTITIES log_info("%s", "restore_identity_tags: admin tag restored -> client re-granted admin \n");
             }
         }
 
@@ -1544,6 +1561,15 @@ void base__restore_identity_tags(client_t* client)
     }
 
     pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    if (match_found == FALSE)
+    {
+        DBG_IDENTITIES log_info("%s %s %s", "restore_identity_tags: NO stored identity matched hash [", identity_hash, "] - client starts with no restored tags (wrong passphrase, or the identity was never saved) \n");
+    }
+    else
+    {
+        DBG_IDENTITIES log_info("%s %llu %s", "restore_identity_tags: done, restored", restored_count, "tag(s) \n");
+    }
 }
 
 /**
@@ -1587,6 +1613,7 @@ void base__snapshot_connected_clients_into_identity_store(void)
         tag_count = cvector_size(client->tag_ids);
         if (tag_count == 0)
         {
+            DBG_IDENTITIES log_info("%s %llu %s", "snapshot_identities: client_id", client->client_id, "has no tags -> not stored \n");
             continue;
         }
 
@@ -1615,11 +1642,13 @@ void base__snapshot_connected_clients_into_identity_store(void)
         }
         if (slot == -1)
         {
+            DBG_IDENTITIES log_info("%s %llu %s", "snapshot_identities: identity store FULL, cannot store client_id", client->client_id, "\n");
             continue; /* store is full */
         }
 
         clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
         clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
+        clib__copy_memory(client->username, &g_client_stored_data[slot].username[0], clib__utf8_string_length(client->username), USERNAME_MAX_LENGTH - 1); /* remember the last-seen username for the admin ui */
 
         g_client_stored_data[slot].tag_id_count = 0;
         for (t = 0; t < tag_count && t < MAX_TAGS_FOR_SINGLE_CLIENT; t++)
@@ -1627,9 +1656,238 @@ void base__snapshot_connected_clients_into_identity_store(void)
             g_client_stored_data[slot].tag_ids[g_client_stored_data[slot].tag_id_count] = (uint64)client->tag_ids[t];
             g_client_stored_data[slot].tag_id_count++;
         }
+
+        DBG_IDENTITIES log_info("%s %llu %s %lld %s %llu %s %s %s", "snapshot_identities: stored client_id", client->client_id, "into slot", slot, "with", (uint64)g_client_stored_data[slot].tag_id_count, "tag(s), hash [", identity_hash, "] \n");
     }
 
     pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
+ * @brief immediately mirrors ONE client's current tags into the in-memory identity store, so a
+ *        reconnecting client gets its tags back within the same server run WITHOUT waiting for an
+ *        admin "save server settings" (that save only adds disk persistence on top). called right
+ *        after any tag change on a client. if the client has tags they overwrite (or create) its
+ *        store entry; if it now has zero tags its entry is cleared, so a fully-untagged identity is
+ *        forgotten. does nothing when identities are disabled.
+ *
+ * @param client_t* client -> the client whose tags just changed
+ *
+ * @note the caller must hold the clients lock (client->tag_ids is read). the store itself is guarded
+ *       by g_client_stored_data_mutex, taken here.
+ *
+ * @return void
+ */
+void base__sync_client_identity_in_store(client_t* client)
+{
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    uint64 tag_count = 0;
+    uint64 t = 0;
+    uint64 j = 0;
+    int64 slot = 0;
+
+    if (g_server_settings.are_identities_enabled == FALSE)
+    {
+        return;
+    }
+
+    if (client == NULL_POINTER || client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
+    {
+        return;
+    }
+
+    if (client->public_key[0] == 0)
+    {
+        return; /* no key yet -> nothing to key the identity on */
+    }
+
+    base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
+
+    tag_count = cvector_size(client->tag_ids);
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    /* find this identity's existing slot (if any) */
+    slot = -1;
+    for (j = 0; j < MAX_CLIENT_STORED_DATA; j++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[j].public_key, identity_hash) == TRUE)
+        {
+            slot = (int64)j;
+            break;
+        }
+    }
+
+    if (tag_count == 0)
+    {
+        /* the identity no longer wears any tag: drop its entry so it is not restored later */
+        if (slot != -1)
+        {
+            clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+            DBG_IDENTITIES log_info("%s %llu %s %lld %s", "sync_identity: client_id", client->client_id, "has no tags left -> cleared store slot", slot, "\n");
+        }
+        pthread_mutex_unlock(&g_client_stored_data_mutex);
+        return;
+    }
+
+    /* has tags but no entry yet: take the first free slot */
+    if (slot == -1)
+    {
+        for (j = 0; j < MAX_CLIENT_STORED_DATA; j++)
+        {
+            if (g_client_stored_data[j].public_key[0] == 0)
+            {
+                slot = (int64)j;
+                break;
+            }
+        }
+    }
+
+    if (slot == -1)
+    {
+        DBG_IDENTITIES log_info("%s %llu %s", "sync_identity: identity store FULL, cannot store client_id", client->client_id, "\n");
+        pthread_mutex_unlock(&g_client_stored_data_mutex);
+        return;
+    }
+
+    clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+    clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
+    clib__copy_memory(client->username, &g_client_stored_data[slot].username[0], clib__utf8_string_length(client->username), USERNAME_MAX_LENGTH - 1); /* remember the last-seen username for the admin ui */
+
+    g_client_stored_data[slot].tag_id_count = 0;
+    for (t = 0; t < tag_count && t < MAX_TAGS_FOR_SINGLE_CLIENT; t++)
+    {
+        g_client_stored_data[slot].tag_ids[g_client_stored_data[slot].tag_id_count] = (uint64)client->tag_ids[t];
+        g_client_stored_data[slot].tag_id_count++;
+    }
+
+    DBG_IDENTITIES log_info("%s %llu %s %lld %s %llu %s %s %s", "sync_identity: client_id", client->client_id, "mirrored into slot", slot, "with", (uint64)g_client_stored_data[slot].tag_id_count, "tag(s), hash [", identity_hash, "] \n");
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
+ * @brief removes one stored identity (by its base64(SHA256(public_key)) hash) from the in-memory
+ *        store. the on-disk copy is untouched until the next "save server settings" re-serializes the
+ *        store without it. stripping the tags off a currently-connected holder is the caller's job.
+ *
+ * @param char* identity_hash -> the base64 hash identifying the identity to drop
+ *
+ * @return boole TRUE if a matching entry was found and cleared
+ *
+ * @note the store is guarded by g_client_stored_data_mutex, taken here (a leaf lock).
+ */
+boole base__delete_identity_from_store_by_hash(char* identity_hash)
+{
+    uint64 i = 0;
+    boole found = FALSE;
+
+    if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
+    {
+        return FALSE;
+    }
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            clib__null_memory(&g_client_stored_data[i], sizeof(client_stored_data_t));
+            found = TRUE;
+            DBG_IDENTITIES log_info("%s %llu %s %s %s", "delete_identity: cleared store slot", i, "for hash [", identity_hash, "] \n");
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    return found;
+}
+
+/**
+ * @brief adds or removes one tag id on a stored identity (by hash), for admin tag management of
+ *        identities that may be offline. removing an identity's last tag clears the whole entry,
+ *        matching how the store never holds tagless identities. disk persistence still waits for the
+ *        next "save server settings". stripping/adding the tag on a currently-connected holder is the
+ *        caller's job.
+ *
+ * @param char* identity_hash -> base64 hash of the identity to modify
+ * @param uint64 tag_id -> the tag id to add or remove
+ * @param boole add -> TRUE to add the tag, FALSE to remove it
+ *
+ * @return boole TRUE if the identity existed (whether or not the tag set actually changed)
+ *
+ * @note the store is guarded by g_client_stored_data_mutex, taken here (a leaf lock).
+ */
+boole base__modify_identity_tag_in_store(char* identity_hash, uint64 tag_id, boole add)
+{
+    uint64 i = 0;
+    uint64 t = 0;
+    boole found_identity = FALSE;
+    boole has_tag = FALSE;
+    uint64 tag_index = 0;
+
+    if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
+    {
+        return FALSE;
+    }
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == FALSE)
+        {
+            continue;
+        }
+
+        found_identity = TRUE;
+
+        for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
+        {
+            if (g_client_stored_data[i].tag_ids[t] == tag_id)
+            {
+                has_tag = TRUE;
+                tag_index = t;
+                break;
+            }
+        }
+
+        if (add == TRUE)
+        {
+            if (has_tag == FALSE && g_client_stored_data[i].tag_id_count < MAX_TAGS_FOR_SINGLE_CLIENT)
+            {
+                g_client_stored_data[i].tag_ids[g_client_stored_data[i].tag_id_count] = tag_id;
+                g_client_stored_data[i].tag_id_count++;
+            }
+        }
+        else
+        {
+            if (has_tag == TRUE)
+            {
+                for (t = tag_index; (t + 1) < g_client_stored_data[i].tag_id_count; t++)
+                {
+                    g_client_stored_data[i].tag_ids[t] = g_client_stored_data[i].tag_ids[t + 1];
+                }
+                g_client_stored_data[i].tag_id_count--;
+
+                /* an identity with no tags left is dropped entirely, like everywhere else */
+                if (g_client_stored_data[i].tag_id_count == 0)
+                {
+                    clib__null_memory(&g_client_stored_data[i], sizeof(client_stored_data_t));
+                }
+            }
+        }
+
+        DBG_IDENTITIES log_info("%s %s %s %llu %s %s %s", "modify_identity_tag:", (add == TRUE) ? "added" : "removed", "tag", tag_id, (add == TRUE) ? "to" : "from", "identity [", identity_hash);
+
+        break;
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    return found_identity;
 }
 
 /**
@@ -2403,6 +2661,18 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "server_settings_delete_tag"))
             {
                 client_msg__process_set_server_settings_delete_tag(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "request_identity_list"))
+            {
+                client_msg__process_request_identity_list(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "delete_identity"))
+            {
+                client_msg__process_delete_identity(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "modify_identity_tag"))
+            {
+                client_msg__process_modify_identity_tag(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "server_settings_delete_icon"))
             {

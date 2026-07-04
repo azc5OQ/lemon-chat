@@ -31,23 +31,40 @@
     </style>
 
 
-    <!-- default theme style -->
-    <style id="style-theme-light" class="style-theme-html-element">
+    <!-- non-default themes start DISABLED (media query that never matches) so the browser never
+         applies them at first paint. without this all four sheets apply for the split second before
+         apply_theme() runs, and the last one (oldschool) wins -> a flash of the wrong theme on every
+         launch. apply_theme() toggles this media attribute to switch themes. -->
+    <!-- light theme style -->
+    <style id="style-theme-light" class="style-theme-html-element" media="(max-width: 1px)">
 /* @@INCLUDE: styles/theme-light.style @@ */
         </style>
-    
+
 
     <!-- default mobile theme style -->
-    <style id="style-theme-default-mobile" class="style-theme-html-element">
+    <style id="style-theme-default-mobile" class="style-theme-html-element" media="(max-width: 1px)">
 /* @@INCLUDE: styles/theme-default-mobile.style @@ */
     </style>
 
 
     <!-- old school theme style -->
-    <style id="style-theme-oldschool" class="style-theme-html-element">
+    <style id="style-theme-oldschool" class="style-theme-html-element" media="(max-width: 1px)">
 /* @@INCLUDE: styles/theme-oldschool.style @@ */
     </style>
 
+
+    <!-- old school variant theme style (a clone of old school, to diverge from over time) -->
+    <style id="style-theme-oldschool-variant" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-oldschool-variant.style @@ */
+    </style>
+
+
+
+    <!-- layout engine bits: always active, NOT a theme sheet. the style-theme-html-element
+         class must stay off this element - apply_theme() disables every sheet carrying it -->
+    <style id="style-layout">
+/* @@INCLUDE: styles/layout.style @@ */
+    </style>
 
     <script type="text/javascript">
 /* @@INCLUDE: scripts/vendor/biginteger.js @@ */
@@ -85,13 +102,17 @@
 
 
     <div id="server-settings-tab">
-        <div class="close-button" id="close-button-server-settings" style="position: absolute; top: 8px; right: 8px; z-index: 3;"></div>
+        <div id="menu-bar-container">
+            <p class="dialog-title">Server Settings</p>
+            <div class="close-button" id="close-button-server-settings"></div>
+        </div>
         <div id="server-settings-tab-subcontainer">
             <ul class="server-settings-tab-ul">
                 <li class="server-settings-tab-li" data-action="0">icons</li>
                 <li class="server-settings-tab-li" data-action="1">tags</li>
                 <li class="server-settings-tab-li" data-action="2">server settings</li>
                 <li class="server-settings-tab-li" data-action="3">bans</li>
+                <li class="server-settings-tab-li" data-action="4">identities</li>
             </ul>
             </div>
             <div id="server-settings-tab-subcontainer2">
@@ -118,7 +139,6 @@
                         <input type="text" placeholder="name" id="server-settings-tab-add-tag-details-input-tag-name">
                         <input type="button" value="add new tag" id="add-new-tag-to-server-button">
                     </div>
-                    <div id="tag-icon-picker-popup" style="display: none;"></div>
                 </div>
                 <div id="server-settings-tab-general-settings">
                     <div id="server-settings-general-settings-container">
@@ -154,6 +174,20 @@
                         <div id="server-settings-bans-list"></div>
                     </div>
                 </div>
+                <div id="server-settings-tab-identities">
+                    <div id="server-settings-identities-container">
+                        <p class="server-settings-general-header">identities</p>
+                        <p style="font-size:11px; opacity:0.7; margin: 0 0 6px 0;">stored identities and the tags they carry. deleting one strips those tags from the holder immediately (persisted on next "save server settings").</p>
+                        <div class="identity-head-p-container">
+                            <p class="identity-head-p">identity (public key hash)</p>
+                            <p class="identity-head-p">last username</p>
+                            <p class="identity-head-p">online</p>
+                            <p class="identity-head-p">tags</p>
+                            <p class="identity-head-p"></p>
+                        </div>
+                        <div id="server-settings-identities-list"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -174,8 +208,11 @@
                 <p class='choose-theme-item' data-name="default" data-mobile="false">default</p>
                 <p class='choose-theme-item' data-name="light-theme" data-mobile="false">light</p>
                 <p class='choose-theme-item' data-name="oldschool" data-mobile="false">old school</p>
+                <p class='choose-theme-item' data-name="oldschool-variant" data-mobile="false">old school variant</p>
                 <p class='choose-theme-item' data-name="default-mobile" data-mobile="true">mobile</p>
             </div>
+            <input type="button" id="layout-edit-button" value="layout" title="re-arrange the panels; click again to lock them in place">
+            <input type="button" id="switch-identity-button" value="identity" title="enter an identity passphrase: disconnects, regenerates the keypair from it and reconnects as that identity">
             <input type="button" id="enter-server-settings">
         </div>
         <div id="verification-system">
@@ -224,6 +261,7 @@
         </div>
         <div id="communication-system-container">
             <div id="space-devider1">
+                <div id="drag-resize-channels"></div>
                 <div id="channel-list-container">
                 </div>
 
@@ -261,6 +299,7 @@
                 </div>
             </div>
             <div id="space-devider-42">
+                <div id="drag-resize-info"></div>
                 <div id="current-channel-description">
                 </div>
                 <div id="current-client-description">
@@ -319,6 +358,10 @@
         </div>
         <div id="background-container">
         </div>
+        <!-- shared icon picker (channel + tag icons). must live at top level: it used to sit
+             inside the server-settings tab, and a display:none ancestor never renders its
+             children, so opening it from the channel-properties dialog showed nothing -->
+        <div id="tag-icon-picker-popup" style="display: none;"></div>
         <div id="channel-properties-edit-container">
             <div id="channel-properties-edit">
                 <div id="menu-bar-container">
@@ -366,7 +409,7 @@
                         </div>
                         <div class="text-input-container-2" id="channel-properties-icon-row">
                             <div id="channel-properties-icon-box" title="click to choose an icon" style="display:inline-block; width:22px; height:22px; background-size:contain; background-repeat:no-repeat; background-position:center; border:1px solid #4a4a4a; border-radius:3px; cursor:pointer; vertical-align:middle;"></div>
-                            <span style="margin-left:8px; font-size:11px; opacity:0.6;">click to choose (or none)</span>
+                            <span id="channel-properties-icon-remove-button" title="remove this channel's icon" style="margin-left:8px; font-size:11px; cursor:pointer; text-decoration:underline;">remove icon</span>
                         </div>
                     </div>
                     <input type="hidden" id="create-channel-hidden-parent-id" value="">
@@ -524,7 +567,7 @@
                         </div>
                         <div>
                             <div class="text-input-container">
-                                <textarea spellcheck="false" id="identity-string-use-textarea" placeholder="passphrase entered here is used to re-create desired identity. In other words to re-create the desired public and private RSA key (2048bit). If you just want to join server and chat, you can ignore this completely. Entering of identity passphrase is needed if you want to preserve some things like tags. Tags or other settings are linked to clients public key. Public key (and private key) is always random at every start of the client.html, because the passphrase is always random at every start of client.html. Public/private RSA key is generated from this random passphrase and so, normally, every time client connects to a server, he has different public key. But in case you want to use the same public/private key as before, so server knows its really you and can assign you saved tags or permissions, it can be re-generated by entering this string passphrase here. Note that, it can be a bit time consuming to generate RSA keypair. Depends on size of key and processor. Server does not know what clients passphrase is" value="confirm"></textarea>
+                                <textarea spellcheck="false" id="identity-string-use-textarea" placeholder="Your identity is your RSA keypair (2048-bit). A fresh random one is created every time client.html starts, so you normally connect with a different public key each time - if you just want to join and chat, ignore this. Tags and permissions, however, are tied to your public key. Entering your identity passphrase here re-creates the exact same keypair, so the server recognizes you and restores them. Generating the keypair may take a moment, depending on your CPU. The passphrase never leaves your device - the server does not know it." value="confirm"></textarea>
                             </div>
                         </div>
                     </div>

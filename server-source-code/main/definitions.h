@@ -56,6 +56,7 @@ typedef const char* cstring;
 #define DBG_FILE_UPLOAD if (0)
 #define DBG_MUSIC_BOT if (0)
 #define DBG_RWLOCKS if (0)
+#define DBG_IDENTITIES if (1)
 
 #endif
 
@@ -79,6 +80,8 @@ typedef const char* cstring;
 #define DBG_FILE_UPLOAD if (0)
 #define DBG_MUSIC_BOT if (0)
 #define DBG_RWLOCKS if (0)
+/* force-on even in a release build: identity-restore debugging (flip to if (0) when done) */
+#define DBG_IDENTITIES if (0)
 #endif
 
 #ifdef DONT_USE_AUDIO_CHANNEL

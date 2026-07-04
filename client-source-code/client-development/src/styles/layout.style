@@ -1,0 +1,164 @@
+/* server-settings dialog: give it a title bar across the top (absolute so it takes no flow space)
+   and shrink the nav + content columns to sit below it. theme-independent so every theme matches. */
+#server-settings-tab > #menu-bar-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 30px;
+    z-index: 4;
+}
+#server-settings-tab > #server-settings-tab-subcontainer,
+#server-settings-tab > #server-settings-tab-subcontainer2 {
+    height: calc(100% - 30px) !important;
+    vertical-align: bottom;
+}
+/* the content column scrolls when a tab (e.g. a long identity list) overflows, instead of
+   spilling out of the dialog */
+#server-settings-tab > #server-settings-tab-subcontainer2 {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+/* let the owner resize the dialog by dragging its bottom-right corner (we are in a browser after
+   all). overflow:hidden is what enables the CSS resize grip; the theme min-width/height caps how
+   small it can get. the resized size is inline so it sticks; re-open still re-centers it. */
+#server-settings-tab {
+    overflow: hidden;
+    resize: both;
+}
+
+#drag-resize-info,
+#drag-resize-channels {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 4px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 3;
+    border-left: 2px dashed transparent;
+}
+#drag-resize-info:hover,
+#drag-resize-channels:hover {
+    border-left: 2px solid #696555;
+}
+/* the layout + identity buttons are styled per-theme (icons in default/light/mobile, text in
+   oldschool). this sheet loads AFTER the themes, so it must NOT set their base appearance/position
+   or it would override the theme rules - it only carries the theme-independent edit-mode indicator.
+   edit-mode indicator: a yellow ring, works on both the text and icon forms */
+body[data-layout-edit="1"] #layout-edit-button {
+    color: #ffd23f;
+    box-shadow: inset 0 0 0 2px #ffd23f;
+    border-radius: 3px;
+}
+body[data-layout-edit="1"] #space-devider1,
+body[data-layout-edit="1"] #space-devider2,
+body[data-layout-edit="1"] #space-devider-42,
+body[data-layout-edit="1"] #space-devider4 {
+    outline: 2px dashed rgba(90, 140, 255, 0.8);
+    outline-offset: -2px;
+    cursor: grab;
+}
+/* children go inert while re-arranging, so a drag can never get eaten by inner widgets;
+    it also makes the hovered panel itself the drop target for elementFromPoint-style hit tests */
+body[data-layout-edit="1"] #space-devider1 *,
+body[data-layout-edit="1"] #space-devider2 *,
+body[data-layout-edit="1"] #space-devider-42 *,
+body[data-layout-edit="1"] #space-devider4 * {
+    pointer-events: none;
+}
+.layout-dragging {
+    opacity: 0.5;
+}
+.layout-drop-target {
+    outline: 2px solid #ffd23f !important;
+    outline-offset: -2px;
+}
+/* every tree row contains its own floats (channel icon, tag icons, mute state are float:right).
+   without this the rows share one block formatting context, so a float poking out of its row
+   pushes the floats of every row below it - icons visibly drifted whenever a user row was
+   added/removed (e.g. someone switching channels) */
+.single-channel,
+.connected-client {
+    overflow: hidden;
+}
+
+/* identity-management tab (server settings). lives here, not in the theme files, so all themes get
+   it; text colours inherit from the themed server-settings panel. hidden until its nav item is picked */
+#server-settings-tab-identities {
+    display: none;
+    height: 100%;
+}
+.identity-head-p-container,
+.identity-entry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 4px;
+}
+.identity-head-p,
+.identity-entry-p {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.identity-head-p {
+    font-weight: bold;
+    opacity: 0.7;
+}
+.identity-delete-button {
+    flex: 0 0 auto;
+    cursor: pointer;
+    border: 0;
+    background: transparent;
+    color: #d05050;
+    font-size: 13px;
+    line-height: 1;
+}
+.identity-delete-button:hover {
+    color: #ff6b6b;
+}
+/* tags column: chips (each removable) plus an "add tag" dropdown */
+.identity-entry-tags {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+.identity-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 5px;
+    border-radius: 9px;
+    background: rgba(120, 140, 180, 0.22);
+    white-space: nowrap;
+}
+.identity-tag-remove {
+    cursor: pointer;
+    color: #d05050;
+    font-size: 10px;
+}
+.identity-tag-remove:hover {
+    color: #ff6b6b;
+}
+.identity-tag-add {
+    font-size: 10px;
+    max-width: 90px;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid rgba(120, 140, 180, 0.4);
+    border-radius: 4px;
+}
+
+.country-flag- {
+    width: 0px !important;
+}

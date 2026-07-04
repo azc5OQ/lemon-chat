@@ -1,4 +1,4 @@
-# ---- Build artifacts (compiler output) ----
+﻿# ---- Build artifacts (compiler output) ----
 *.o
 *.obj
 *.a

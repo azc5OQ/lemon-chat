@@ -11,6 +11,8 @@
 #include "memory_manager.h"
 #include "../third-party/eteran-cvector/cvector.h"
 #include "../third-party/rxi-log/log.h"
+#include "clib/clib_string.h"                 /* clib__is_string_equal (identity online check) */
+#include "../third-party/zhicheng/base64.h"   /* BASE64_ENCODE_OUT_SIZE (identity hash buffer) */
 
 #include "util.h"
 
@@ -558,6 +560,111 @@ void server_msg__send_tag_list_to_single_client(ws_cli_conn_t* websocket, char* 
     }
 
     DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
+
+    ws_sendframe_txt(websocket, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief sends the admin identity-management list: every stored identity as { public_key_hash,
+ *        tag_ids[], is_online }. is_online is TRUE when a currently-connected authenticated client
+ *        hashes to the same identity. admin-only; the caller checks that and holds the clients lock.
+ *
+ * @param ws_cli_conn_t* websocket -> the requesting admin's connection
+ * @param char* ws_connection_dh_shared_secret -> that connection's DH secret for encryption
+ *
+ * @note the caller must hold the clients read lock (g_clients_array is read for online status). the
+ *       identity store is guarded by g_client_stored_data_mutex, taken here.
+ *
+ * @return void
+ */
+void server_msg__send_identity_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret)
+{
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    cJSON* json_identities_array = 0;
+    char client_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    uint64 i = 0;
+    uint64 t = 0;
+    uint64 c = 0;
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_identity_list_to_single_client \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+    json_identities_array = cJSON_CreateArray();
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        cJSON* single_identity_object = NULL_POINTER;
+        cJSON* identity_tag_ids_array = NULL_POINTER;
+        boole is_online = FALSE;
+
+        if (g_client_stored_data[i].public_key[0] == 0 || g_client_stored_data[i].tag_id_count == 0)
+        {
+            continue;
+        }
+
+        single_identity_object = cJSON_CreateObject();
+        cJSON_AddStringToObject(single_identity_object, "public_key_hash", &g_client_stored_data[i].public_key[0]);
+        cJSON_AddStringToObject(single_identity_object, "username", &g_client_stored_data[i].username[0]);
+
+        identity_tag_ids_array = cJSON_CreateArray();
+        for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
+        {
+            cJSON_AddItemToArray(identity_tag_ids_array, cJSON_CreateNumber((double)g_client_stored_data[i].tag_ids[t]));
+        }
+        cJSON_AddItemToObject(single_identity_object, "tag_ids", identity_tag_ids_array);
+
+        /* mark online if any connected authenticated non-bot client hashes to this identity */
+        for (c = 0; c < g_server_settings.max_client_count; c++)
+        {
+            client_t* connected_client = &g_clients_array[c];
+
+            if (connected_client->is_existing == FALSE || connected_client->is_authenticated == FALSE || connected_client->is_music_bot == TRUE)
+            {
+                continue;
+            }
+            if (connected_client->public_key[0] == 0)
+            {
+                continue;
+            }
+
+            base__hash_password_to_base64(connected_client->public_key, client_hash, sizeof(client_hash));
+            if (clib__is_string_equal(client_hash, &g_client_stored_data[i].public_key[0]) == TRUE)
+            {
+                is_online = TRUE;
+                break;
+            }
+        }
+        cJSON_AddItemToObject(single_identity_object, "is_online", cJSON_CreateBool(is_online == TRUE));
+
+        cJSON_AddItemToArray(json_identities_array, single_identity_object);
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    cJSON_AddStringToObject(json_message_object1, "type", "identity_list");
+    cJSON_AddItemToObject(json_message_object1, "identities", json_identities_array);
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, ws_connection_dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
 
     ws_sendframe_txt(websocket, msg_text);
 

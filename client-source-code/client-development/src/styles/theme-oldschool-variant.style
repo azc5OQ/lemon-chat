@@ -1805,7 +1805,7 @@ html {
     height: 100%;
     width: 100%;
     margin: 0px;
-    background: #d4d0c8;
+    background: #f0f0f0;
 }
 
 body {
@@ -1875,12 +1875,13 @@ body, input, button, textarea, select, p, li, label {
     width: 73%;
     left: -4px;
     background: #ffffff;
+    overflow: hidden;
 }
 
 #chat-context-container {
     display: inline-block;
     vertical-align: top;
-    width: 100%;
+    width: 99%;
     overflow-y: auto;
     overflow-x: hidden;
     height: calc(100% - 33px);
@@ -2505,6 +2506,33 @@ body, input, button, textarea, select, p, li, label {
 #microphone-always-broadcasting-audio-button:not(.mic-on) { background-image: url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+PCFET0NUWVBFIHN2ZyBQVUJMSUMgIi0vL1czQy8vRFREIFNWRyAxLjEvL0VOIiAiaHR0cDovL3d3dy53My5vcmcvR3JhcGhpY3MvU1ZHLzEuMS9EVEQvc3ZnMTEuZHRkIj48c3ZnIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIHZpZXdCb3g9IjAgMCAxMjggMTI4IiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHhtbDpzcGFjZT0icHJlc2VydmUiIHN0eWxlPSJmaWxsLXJ1bGU6ZXZlbm9kZDtjbGlwLXJ1bGU6ZXZlbm9kZDtzdHJva2UtbGluZWpvaW46cm91bmQ7c3Ryb2tlLW1pdGVybGltaXQ6MS40MTQyMTsiPjxyZWN0IGlkPSJjYXB0dXJlIiB4PSIwIiB5PSIwIiB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgc3R5bGU9ImZpbGw6bm9uZTsiLz48cGF0aCBkPSJNMTMuNjU0LDExNC4zNDVjNi4xOTksNi4yMDIgMTYuMjQyLDYuMjA3IDIyLjQ1MSwwLjAxNWwtMjIuNDY2LC0yMi40NjRjLTYuMTkxLDYuMjA2IC02LjE4NSwxNi4yNDkgMC4wMTUsMjIuNDQ5WiIgc3R5bGU9ImZpbGw6Izg3OGI4YztmaWxsLXJ1bGU6bm9uemVybzsiLz48cGF0aCBkPSJNNTIuNTU3LDUyLjk3NWwtMy4zMDUsMy4zMDZsLTI5LjUzNCwyOS41MzRsMjIuNDY2LDIyLjQ2NmwyOS41MzMsLTI5LjUzM2wzLjMwOCwtMy4zMDZjLTQuOTUzLC0xLjkzMiAtOS41OTMsLTQuODg1IC0xMy41ODgsLTguODgxYy0zLjk5NCwtMy45OTMgLTYuOTQ4LC04LjYzNSAtOC44OCwtMTMuNTg2WiIgc3R5bGU9ImZpbGw6Izg3OGI4YztmaWxsLXJ1bGU6bm9uemVybzsiLz48cGF0aCBkPSJNMTEwLjM3MSwxNy42M2MtMTEuNTA5LC0xMS41MDcgLTMwLjIzNCwtMTEuNTA2IC00MS43NDMsMC4wMDFjLTExLjUwNSwxMS41MDcgLTExLjUwNSwzMC4yMzEgMCw0MS43MzhjMTEuNTA5LDExLjUwNyAzMC4yMzIsMTEuNTA3IDQxLjc0MSwwLjAwMWMxMS41MDcsLTExLjUwOCAxMS41MDcsLTMwLjIzNCAwLjAwMiwtNDEuNzRaIiBzdHlsZT0iZmlsbDojNDA0NTQ3O2ZpbGwtcnVsZTpub256ZXJvOyIvPjwvc3ZnPg==) !important; }
 #hide-chat-button.chat-hidden { background-image: url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+Cjxzdmcgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgdmlld0JveD0iMCAwIDEyOCAxMjgiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgeG1sbnM6c2VyaWY9Imh0dHA6Ly93d3cuc2VyaWYuY29tLyIgc3R5bGU9ImZpbGwtcnVsZTpldmVub2RkO2NsaXAtcnVsZTpldmVub2RkO3N0cm9rZS1saW5lam9pbjpyb3VuZDtzdHJva2UtbWl0ZXJsaW1pdDoyOyI+CiAgICA8Zz4KICAgICAgICA8cGF0aCBkPSJNMTA0LDlMMjQsOUMxNS43MTYsOSA5LDE1LjcxNiA5LDI0TDksMTA0QzksMTEyLjI4NCAxNS43MTYsMTE5IDI0LDExOUwxMDQsMTE5QzExMi4yODQsMTE5IDExOSwxMTIuMjg0IDExOSwxMDRMMTE5LDI0QzExOSwxNS43MTYgMTEyLjI4NCw5IDEwNCw5WiIgc3R5bGU9ImZpbGw6cmdiKDY2LDk3LDEyOCk7ZmlsbC1ydWxlOm5vbnplcm87Ii8+CiAgICA8L2c+CiAgICA8Zz4KICAgICAgICA8cGF0aCBkPSJNMTA0LDYzLjk5NkMxMDQsODAuMDU3IDg2LjA5OCw5My4wOTUgNjQsOTMuMDk1QzQxLjkwMyw5My4wOTUgMjQsODAuMDU3IDI0LDYzLjk5NkMyNCw0Ny45MjcgNDEuOTAzLDM0LjkxMSA2NCwzNC45MTFDODYuMDk4LDM0LjkxMSAxMDQsNDcuOTI3IDEwNCw2My45OTZaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz4KICAgICAgICA8cGF0aCBkPSJNNDQuMTQyLDc3LjM0NkM0OC40MjgsODMuNzU4IDU1LjcxOSw4Ny45ODIgNjQsODcuOTgyQzcyLjI2Nyw4Ny45ODIgNzkuNTU0LDgzLjc2NyA4My44NDUsNzcuMzYzQzc4LjUyNSw4MC43NzEgNzEuNjA0LDgyLjgzMyA2NC4wNDQsODIuODMzQzU2LjQyOSw4Mi44MzMgNDkuNDc4LDgwLjc2NCA0NC4xNDIsNzcuMzQ2WiIgc3R5bGU9ImZpbGw6cmdiKDIwMSw3LDkpOyIvPgogICAgPC9nPgo8L3N2Zz4K) !important; }
 #hide-chat-button:not(.chat-hidden) { background-image: url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+Cjxzdmcgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgdmlld0JveD0iMCAwIDEyOCAxMjgiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgeG1sbnM6c2VyaWY9Imh0dHA6Ly93d3cuc2VyaWYuY29tLyIgc3R5bGU9ImZpbGwtcnVsZTpldmVub2RkO2NsaXAtcnVsZTpldmVub2RkO3N0cm9rZS1saW5lam9pbjpyb3VuZDtzdHJva2UtbWl0ZXJsaW1pdDoyOyI+CiAgICA8Zz4KICAgICAgICA8cGF0aCBkPSJNMTA0LDlMMjQsOUMxNS43MTYsOSA5LDE1LjcxNiA5LDI0TDksMTA0QzksMTEyLjI4NCAxNS43MTYsMTE5IDI0LDExOUwxMDQsMTE5QzExMi4yODQsMTE5IDExOSwxMTIuMjg0IDExOSwxMDRMMTE5LDI0QzExOSwxNS43MTYgMTEyLjI4NCw5IDEwNCw5WiIgc3R5bGU9ImZpbGw6cmdiKDY2LDk3LDEyOCk7ZmlsbC1ydWxlOm5vbnplcm87Ii8+CiAgICA8L2c+CiAgICA8Zz4KICAgICAgICA8cGF0aCBkPSJNMTA0LDYzLjk5NkMxMDQsODAuMDU3IDg2LjA5OCw5My4wOTUgNjQsOTMuMDk1QzQxLjkwMyw5My4wOTUgMjQsODAuMDU3IDI0LDYzLjk5NkMyNCw0Ny45MjcgNDEuOTAzLDM0LjkxMSA2NCwzNC45MTFDODYuMDk4LDM0LjkxMSAxMDQsNDcuOTI3IDEwNCw2My45OTZaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz4KICAgICAgICA8cGF0aCBkPSJNNzcuOTU3LDQ0LjUzM0M3NC4wMyw0MS42OTMgNjkuMjEsNDAuMDIgNjQsNDAuMDJDNTAuNzk2LDQwLjAyIDQwLjEwNiw1MC43NTEgNDAuMTA2LDY0LjAwOEM0MC4xMDYsNzcuMjQyIDUwLjc5NSw4Ny45ODIgNjQsODcuOTgyQzc3LjE5Niw4Ny45ODIgODcuODk0LDc3LjI0MyA4Ny44OTQsNjQuMDA4Qzg3Ljg5NCw2My42NTUgODcuODg2LDYzLjMwNSA4Ny44NzEsNjIuOTU0Qzg1Ljc2Myw2Ni42NDggODEuODEsNjkuMTM4IDc3LjI4Niw2OS4xMzhDNzAuNTEzLDY5LjEzOCA2NS4wNDUsNjMuNjE2IDY1LjA0NSw1Ni44MjVDNjUuMDQ1LDUwLjAyNSA3MC41MTMsNDQuNTE1IDc3LjI4Niw0NC41MTVDNzcuNTExLDQ0LjUxNSA3Ny43MzUsNDQuNTIxIDc3Ljk1Nyw0NC41MzNaIiBzdHlsZT0iZmlsbDpyZ2IoMjgsMTYwLDU1KTsiLz4KICAgIDwvZz4KPC9zdmc+Cg==) !important; }
+
+/* ---- old school variant only: TeamSpeak-style framed panels ----
+   every grid panel (channels column, chat log, info pane, chat input) gets the SAME 1px sunken
+   frame, so the boxes are even - not just the inner content areas. the old-school single-side
+   column dividers are cleared so nothing doubles up. variant-only; tweak colour/shadow to taste. */
+#space-devider1 { border-right: 0 !important; }
+#chat-window-container { border-left: 0 !important; }
+#space-devider-42 { border-left: 0 !important; }
+
+#space-devider1,
+#space-devider2,
+#space-devider-42,
+#space-devider4 {
+    border: 1px solid #8b929c !important;
+    box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.12);
+    box-sizing: border-box !important;
+}
+
+/* empty gutters between the panels: the layout js sets the grid tracks but never a gap, so adding
+   one here (variant-only) floats each panel as its own box over the window backdrop (the html
+   #f0f0f0 shows through the gaps + padding) - the TeamSpeak look. other themes carry no gap rule,
+   so they stay flush and are unaffected. */
+#communication-system-container {
+    gap: 5px;
+    padding: 5px;
+    box-sizing: border-box;
+}
 
 
 .single-chat-message-content-p {

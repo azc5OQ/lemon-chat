@@ -588,6 +588,13 @@
                             value: msg
                         });
                     }
+                    else if (msg.message.type == "identity_list")
+                    {
+                        global.postMessage({
+                            type: "data_processing_worker__identity_list_from_server",
+                            value: msg
+                        });
+                    }
                     else if (msg.message.type == "icon_add")
                     {
                         global.postMessage({
@@ -948,6 +955,16 @@
                         websocket_worker_WebSocket.send(e.data.value);
                     }
                 }
+
+                else if (e.data.type == "close")
+                {
+                    //deliberate disconnect (identity switch): the onclose event that follows
+                    //drives the normal reset path on the main thread
+                    if (websocket_worker_WebSocket != null)
+                    {
+                        websocket_worker_WebSocket.close();
+                    }
+                }
             }
 
 
@@ -1033,6 +1050,7 @@
 
             var is_microphone_always_on = false;
             var keys_init_status = false;
+            var is_identity_switch_in_progress = false; //deliberate disconnect->new-keypair->reconnect cycle (top bar "identity" button)
             var base64_picture_string_to_send = "" ;
             var verification_message = "welcome";
             var is_websocket_connected = false;
@@ -1314,6 +1332,71 @@
                             target_element.appendChild(node);
                         }
                     }
+                },
+                //renders the admin identity-management list: one row per stored identity - abbreviated
+                //hash (full hash in title + on the controls' data-hash), last-seen username, online dot,
+                //its tags as chips each with a remove ✕, an "add tag" dropdown, and a delete-identity ✕
+                process_identity_list_from_server: function(msg)
+                {
+                    let list = document.getElementById("server-settings-identities-list");
+                    if (list == null) { return; }
+
+                    let identities = (msg && msg.message && msg.message.identities) ? msg.message.identities : [];
+
+                    let tag_display_name = function(tag_id)
+                    {
+                        if (tag_id == 0) { return "admin"; }
+                        let tag = get_tag_by_tag_id(tag_id);
+                        return (tag != null && tag.tag_name) ? tag.tag_name : ("#" + tag_id);
+                    };
+
+                    let html = "";
+                    for (let i = 0; i < identities.length; i++)
+                    {
+                        let identity = identities[i];
+                        let hash = identity.public_key_hash != null ? identity.public_key_hash : "";
+                        let hash_attr = sanitize_string(hash);
+                        let short_hash = hash.length > 18 ? (hash.substring(0, 18) + "…") : hash;
+                        let username = (identity.username != null && identity.username.length > 0) ? identity.username : "—";
+                        let tag_ids = identity.tag_ids != null ? identity.tag_ids : [];
+
+                        //tags as removable chips
+                        let chips = "";
+                        for (let t = 0; t < tag_ids.length; t++)
+                        {
+                            chips += "<span class=\"identity-tag-chip\">" + sanitize_string(tag_display_name(tag_ids[t]))
+                                   + "<span class=\"identity-tag-remove\" data-identity-hash=\"" + hash_attr + "\" data-tag-id=\"" + tag_ids[t] + "\" title=\"remove this tag from the identity\">✕</span></span>";
+                        }
+
+                        //"add tag" dropdown: server tags this identity does not already hold (admin tag excluded)
+                        let add_options = "<option value=\"\">+ tag</option>";
+                        for (let t = 0; t < tags.length; t++)
+                        {
+                            if (tags[t].tag_id == 0) { continue; }
+                            if (tag_ids.indexOf(tags[t].tag_id) != -1) { continue; }
+                            add_options += "<option value=\"" + tags[t].tag_id + "\">" + sanitize_string(tags[t].tag_name) + "</option>";
+                        }
+                        let add_select = "<select class=\"identity-tag-add\" data-identity-hash=\"" + hash_attr + "\" title=\"give this identity a tag\">" + add_options + "</select>";
+
+                        let online_dot = identity.is_online == true
+                            ? "<span title='online' style='color:#4caf50;'>●</span>"
+                            : "<span title='offline' style='color:#888;'>○</span>";
+
+                        html += "<div class=\"identity-entry\">"
+                              + "<p class=\"identity-entry-p\" title=\"" + hash_attr + "\">" + sanitize_string(short_hash) + "</p>"
+                              + "<p class=\"identity-entry-p\" title=\"" + sanitize_string(username) + "\">" + sanitize_string(username) + "</p>"
+                              + "<p class=\"identity-entry-p\">" + online_dot + "</p>"
+                              + "<div class=\"identity-entry-tags\">" + chips + add_select + "</div>"
+                              + "<button class=\"identity-delete-button\" data-identity-hash=\"" + hash_attr + "\" title=\"delete this identity and strip all its tags\">✕</button>"
+                              + "</div>";
+                    }
+
+                    if (identities.length == 0)
+                    {
+                        html = "<p style=\"font-size:11px; opacity:0.6;\">no stored identities yet</p>";
+                    }
+
+                    list.innerHTML = html;
                 },
                 process_icon_list_from_server: function(msg)
                 {
@@ -4998,11 +5081,11 @@
                         document.getElementById("edit-channel-button").style.display = "";
 
                         //editing an existing channel: expose the channel-icon row and paint the current icon.
-                        //clicking the box opens the shared icon picker targeting this channel (admin only)
+                        //the row shows for everyone (clicking the box opens the shared icon picker); the
+                        //server decides whether a set_channel_icon request is actually allowed
                         channel_properties_edit_channel_id = parseInt(selected_channel_id);
-                        let show_icon_row = is_local_client_admin() ? "" : "none";
-                        document.getElementById("channel-properties-icon-label-row").style.display = show_icon_row;
-                        document.getElementById("channel-properties-icon-row").style.display = show_icon_row;
+                        document.getElementById("channel-properties-icon-label-row").style.display = "";
+                        document.getElementById("channel-properties-icon-row").style.display = "";
                         UI.refresh_channel_edit_icon_box(channel_list[index]);
                     }
                     else if (action == 3)
@@ -5554,7 +5637,7 @@
                 {
                     for (let i = 0; i < document.getElementsByClassName("style-theme-html-element").length; i++)
                     {
-                        document.getElementsByClassName("style-theme-html-element")[i].setAttribute("media","max-width: 1px");
+                        document.getElementsByClassName("style-theme-html-element")[i].setAttribute("media","(max-width: 1px)");
                     }
 
                     if (themename == "light-theme")
@@ -5569,9 +5652,20 @@
                     {
                         document.getElementById("style-theme-oldschool").removeAttribute("media");
                     }
+                    else if (themename == "oldschool-variant")
+                    {
+                        document.getElementById("style-theme-oldschool-variant").removeAttribute("media");
+                    }
                     else if (themename == "default-mobile")
                     {
                         document.getElementById("style-theme-default-mobile").removeAttribute("media");
+                    }
+                    else
+                    {
+                        //unknown name (e.g. a theme that was removed but still sits in localStorage):
+                        //fall back to the default sheet instead of leaving the page unstyled
+                        document.getElementById("style-theme-default").removeAttribute("media");
+                        themename = "default";
                     }
 
                     //persist defaults to true (user picks); the server-baked default passes false so it never sticks in localStorage
@@ -5631,22 +5725,23 @@
                     {
                         if (is_chat_hidden == false)
                         {
-                            document.getElementById("space-devider2").style.display = "none";
-                            document.getElementById("space-devider1").style.width = "89%";
-                            document.getElementById("space-devider4").style.display = "none";
+                            //the grid layout hides the chat+input panels and rebalances the columns
+                            //in layout_apply(), called at the end of this function once the flag is set
                             document.getElementById("hide-chat-button").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2RpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozRjA1RkVDNEZDMjIxMUUwQUE3NEQwMjJDRUE1NTVGNyIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozRjA1RkVDM0ZDMjIxMUUwQUE3NEQwMjJDRUE1NTVGNyIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IFdpbmRvd3MiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDoxRjhEQ0Y5MDhFRjNFMDExQTE2NUI2RjQzNUVGQkUzNyIgc3RSZWY6ZG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIvPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PieHf0QAAANvSURBVHja7FbfS1NRHD+7G9PpcAoOJ9Nhom4urg7aY6A4CqHnKIii8D8o6imIpF4SfTSEQhBMXw0mIxwkBD35A6bTKBR/TMTBdOoczk37fE/3rKtOSXSshx343nPO93vO+Xzu98e5V3N0dMRy2SSW45YnkCeQJ5AnkHMCurGxsdx7oKCggFVWVrKioqKsAwosvV7/xwP0sNvt10pLS9sPDw/HZ2ZmgltbW1kBNxqNzOVy2SRJulNeXv45EAiEuAfwRexH1wvDVH19fZtGo8kKAYfDcQMYPwlLq9UOpEOwtLSUUD7LeoPB0FddXa3Pguu1y8vLg5FIhJ+NsTFNYHt7uzMUCqWUtXU1NTXPLRbLhQAofxBKptPpMtpTqZQVYX67sLDgCwaDDEQ61WX4bXFxsQdKsf5NQ0NDB8LB4Kp/Am9ubnZWVFT0ozcLErSXko7m0MfxUi3on8Xj8bswezkBJB4jAcOXSEDf5uYmU3QfcGCv2+02wSOspKRE6E9JVVWVDLCvGD9GCP2yLJsJHMRMyWTSRnPSw95B66xW6y+xV+Pz+dQvYwDbL3jzm2azWejILR+J8cHBwTgRxKEsFotR8vJxNBodaGpqelhcXCz2BGD3zM/P25F4P6D3QyeTgfYh+z8lEokHNNeMjo6e9KgJ0odN92praxnipraFIcQ4SiAUWtIhob6vra35QUJW3SVkvw8ZFuB7e3sEHgS4B9N1TsDr9Z4VWhfkHYjcKisrYyaTiQvKKNPaVyDxPgOJdBPg8GIanF9EFIcz2jTk9s7OjgvSjnELwNtwOC8jcrfqvnhNrkU4PMhwPy4bWU2UQjU3Nxfc398/Bs49MDIycpFq0wt3Kh5Sl0gA+TOBhKsDySllbboK4QE3knwaHjj+MTrHA5laAjKhjCeOHYRSczqdZpTdMCrq5EWmhX6wsbHRMzs7u64mIZ1VWhcRKjkCLywspFKTSbe7u8smJyd5r6xzkh0kLLRe7JUoPpcVm812CpwSDnlxHX3gJAmst4i9EtzFLisrKyvdSDCZxkhYDo55K+Y88YgE6cmOuXN1dbVb7L2SPyIkWBcSLLyxscEQYyq1VuXO4HcHlR7pw+Ew2SPwTFe6CoaGhq7qg0fV8RTyQgWubnS1dkN6lBL/+0NyRY1uvifn2InUo//up/S3AAMAiJlus3so8OYAAAAASUVORK5CYII=)";
                             is_chat_hidden = true;
                         }
                         else
                         {
-                            document.getElementById("space-devider2").style.display = "inline-block";
-                            document.getElementById("space-devider4").style.display = "inline-block";
-                            document.getElementById("space-devider1").style.width = "14%";
-                            document.getElementById("space-devider3").style.width = "14%";
+                            //panel visibility and column sizes come back via layout_apply() below
                             document.getElementById("hide-chat-button").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2RpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDo5MkQ4RDIzRUYzOEUxMUUwOTZDOEQ1RTU1NDQ3N0RBMSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDo5MkQ4RDIzREYzOEUxMUUwOTZDOEQ1RTU1NDQ3N0RBMSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IFdpbmRvd3MiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDo5N0U1MkY5MjhFRjNFMDExQTE2NUI2RjQzNUVGQkUzNyIgc3RSZWY6ZG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIvPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PuSt+6UAAASASURBVHja7FddSFtXHD/xxu9oNBq5Or1Svy0G5joLwsbGoEVxT6W1sD2VwQp9LKwMCn0rfZCWCWMwYaxQkIqZb4JMJx2DjRUigWikLihGo9H4gRqNRqP7/e7OtWmWalc2wqAHfjn3fPw/zv/rnJiOjo5EKpvpjQKpVsA8MjKSUgXSRIqb+Z8SZGZmivT0dL3PyMjQ56LRqNjb2xP7+/t6/68qkJaWJgoLC4XNZtP7rKysM5i2AW8BqtwWBALA2u7u7sz6+rpYW1sT7A8PD19PAbPZLDRNE6qqWvD9EabagA5AO4khFPSXlpYOAkMHBwejwWAwPDc3p1snaRYMDw//bbKiooLC7YqifInhZ4D1ZQKXlpbE5uamKC4u1i2U0DaA72KxWJff7w9SkRMVoF8bGhoUq9X6BYa3AYuxRlPSHfFtenpazM/PP8Tnb8DlxsbGC3a7PdneMHAXinZNTk7G4uPkeJfFYhHNzc0ahD/B8J4hnL4cHx8XqBeRRO1DodAtdNeAHuDi8vJyH+exN0oa0hrsyTM/P/8XysjLy3uuAAsRT+5wOM4hun/H+D3OwWwC2gqPxzMEV3yME8U4Hw/QORPGveyxN0oa0k5MTOj+l3taKaOpqek8Zep7+VNTU6OB4Cd8qxzv7OyIsbGxCPz7KcbtCCwrekuiAtXV1VpOTo7+Dcsxds7INYukaYeVrrhcrg00g06FrB+rqqo0js38yc3N/RZ+0wON/gGBDxa4hKFHWqo+WTplZ2d/A5NewacXYKbcidtXL8u8MxKJuNxu9+OWlhb95AxquPwrrF8ykwCB1MqUk+kXgAnfhdk2DE5gkPGSfD4LTCRbSKCZgeAPwfsPzLF+iEAg8IEerNRydna2OxwO69FLE1VWVr5g7tXV1RnGBNdfBdxLmnge4Gkjb65TFmR+rceAJLg7NTXllQyUoqKi+wUFBccMcZqhxcXF2KsqwL2kMcbkRZ7kzTFkeSjz2AJMGwTJdQSMweQqAqyDqSnX/T6fr2dra+tU4dzDvaQhLXmQF3lynYULsm5QJteVzs7OYyGo3e9A23qWYZPJ1AatnyAWAtI9o8jzDkS3CojEjCBWVlaE1+t143RX4eaDkpISUVtbex4x9QPWs7e3t5naj7DebdCYBgYG4mPHimD5ta6u7qwsFqxgt0DYQ7OisFhQ379H6l2GcvqtyMY8h8+Zvk4ofw0XV7isrEzBvs+xfJ8Jw9SGch7cnO/LEv1XKXY6nYkBrOH0j8vLy1sBWoJzbqAbGASjEMzsYOmFn1WZjrwNnVDaA6F2eWndBByyYrJs0+/t8tZ8fhf09/cnyyKFOQ3/3UZxURhEcc0jaz/bMyPnZd9qCGXjdbywsMDLqhfD69KiL15GfX19J92uZHgHD4823nY0O4PqpMZ4YSwQcM0gprqAn1/3QcKTtsNvKk7yCYHxOVRO/b0gq5pePREbgkGG9hTolQid+iI67cUS9+J5IKEgBt6Wb4Qaue6TgcVYif2nb0IpwCW/R//3r+KUK/Dmr1nKFfhTgAEA1AVXSbHzbjUAAAAASUVORK5CYII=)";
                             is_chat_hidden = false;
                         }
                     }
+
+                    //desktop runs the grid layout: it derives panel visibility and column sizes
+                    //from is_chat_hidden. no-op on touch devices (the grid is inactive there)
+                    layout_apply();
+                    sync_toolbar_state_classes();
                 },
 
                 enter_channel_password_closebutton_onclick: function()
@@ -5861,6 +5956,7 @@
                     document.getElementById("server-settings-tab-tags").style.display = "none";
                     document.getElementById("server-settings-tab-general-settings").style.display = "none";
                     document.getElementById("server-settings-tab-bans").style.display = "none";
+                    document.getElementById("server-settings-tab-identities").style.display = "none";
 
                     if (action == 0)
                     {
@@ -5869,6 +5965,16 @@
                     else if (action == 1)
                     {
                         document.getElementById("server-settings-tab-tags").style.display = "block";
+                    }
+                    else if (action == 4)
+                    {
+                        document.getElementById("server-settings-tab-identities").style.display = "block";
+
+                        /* pull the live identity list from the server (admins only) */
+                        let message_object = { message: { type: "request_identity_list" } };
+                        let message_json_string = process_message_before_sending(message_object);
+                        let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                        websocket_worker_send(data);
                     }
                     else if (action == 2 || action == 3)
                     {
@@ -6119,7 +6225,10 @@
                         let open_picker = document.getElementById("tag-icon-picker-popup");
                         if (open_picker == null || open_picker.style.display == "none") { return; }
                         if (open_picker.contains(event.target)) { return; }
+                        //the clicks that OPEN the picker also bubble here; without these exemptions the
+                        //picker closes again in the same event, before it is ever painted
                         if (event.target.closest(".tag-settings-entry-img") != null) { return; }
+                        if (event.target.closest("#channel-properties-icon-box") != null) { return; }
                         UI.close_tag_icon_picker();
                     });
 
@@ -6169,8 +6278,14 @@
                     {
                         html += "<img class=\"tag-icon-picker-option\" src=\"" + icons[i].base64_icon + "\" data-picker-icon-id=\"" + icons[i].id + "\" title=\"icon " + icons[i].id + "\">";
                     }
+                    if (icons.length == 0)
+                    {
+                        html += "<p style=\"color:#cccccc; font-size:11px; width:100%;\">no icons uploaded yet - add some in server settings</p>";
+                    }
                     popup.innerHTML = html;
-                    //the channel edit form is itself a modal; float the picker above it
+                    //re-parent to <body> so no themed/transformed/hidden ancestor can swallow it,
+                    //and float it above the channel edit modal
+                    document.body.appendChild(popup);
                     popup.style.zIndex = "100001";
                     popup.style.display = "flex";
                 },
@@ -6321,19 +6436,7 @@
 
                 drag_resize_chat_onclick: function(e)
                 {
-                    startX = e.clientX;
-
-                    start_width_space_devider_1 = parseInt(document.defaultView.getComputedStyle(space_devider1).width, 10);
-                    start_width_space_devider_2 = parseInt(document.defaultView.getComputedStyle(space_devider2).width, 10);
-
-                    space_devider2.style.cssText = "width: " + start_width_space_devider_2 + "px";
-                    document.documentElement.addEventListener('mousemove', doDrag, false);
-                    document.documentElement.addEventListener('mouseup', stopDrag, false);
-
-                    if (help_var1 == null)
-                    {
-                        help_var1 = start_width_space_devider_1; //so difference remains same
-                    }
+                    layout_column_drag_start(e, "chat");
                 },
 
                 enter_admin_password_button_onclick: function()
@@ -6429,6 +6532,8 @@
 
                         textarea.value = "";
 
+                        is_rsa_key_generated = false; //so the reconnect below waits for the NEW keypair
+
                         data_processing_worker.postMessage({
                             type: "mainthread__generate_rsa_keypair",
                             from_identity_string: true,
@@ -6439,6 +6544,17 @@
                         document.getElementById("background-container").style.display = "none";
                         document.getElementById("another-buttons-sub-loading-container").style.display = "block";
                         document.getElementById("another-buttons-sub-container").style.display = "none";
+
+                        //invoked while connected (top bar "identity" button): drop the connection and,
+                        //once the socket is down and the new keypair exists, reconnect as that identity.
+                        //is_authenticated is the live "connected" signal - is_websocket_connected is a
+                        //dead flag that is never set true anywhere, do not gate on it
+                        if (is_authenticated == true)
+                        {
+                            is_identity_switch_in_progress = true;
+                            websocket_worker.postMessage({ type: "close" });
+                            reconnect_after_identity_switch();
+                        }
                     }
                 },
 
@@ -6469,9 +6585,25 @@
 
                     console.log("enter_server_settings_onclick");
 
+                    //the button is always visible now, but server settings are admin-only: a
+                    //non-admin click does nothing (the server would reject the requests anyway)
+                    if (is_local_client_admin() == false)
+                    {
+                        return;
+                    }
+
                     if (is_server_settings_tab_visible == false)
                     {
-                        document.getElementById("server-settings-tab").style.display = "block";
+                        //center it on every open (clearing any position left over from a previous drag),
+                        //by measured pixels - the same scheme the popup dialogs use
+                        let tab = document.getElementById("server-settings-tab");
+                        tab.style.position = "fixed";
+                        tab.style.margin = "0";
+                        tab.style.transform = "none";
+                        tab.style.display = "block";
+                        let rect = tab.getBoundingClientRect();
+                        tab.style.left = Math.max(0, Math.round((window.innerWidth - rect.width) / 2)) + "px";
+                        tab.style.top = Math.max(0, Math.round((window.innerHeight - rect.height) / 2)) + "px";
                         is_server_settings_tab_visible = true;
                     }
                     else
@@ -6611,8 +6743,10 @@
                     {
                         Android.JavaExportSetSoundEffectsStatus(are_sound_effects_enabled);
                     }
+
+                    sync_toolbar_state_classes();
                 },
-                
+
                 activate_continous_audio_broadcast_onclick: function()
                 {
                     is_microphone_always_on = !is_microphone_always_on;
@@ -6632,6 +6766,8 @@
                         document.getElementById("microphone-push-to-talk-button-touch-device").style.display = "block";
                         process_stop_sending_audio();
                     }
+
+                    sync_toolbar_state_classes();
                 },
 
                 set_new_username_send_button_onclick: function(event)
@@ -8449,6 +8585,7 @@
                 channel_list.length = 0;
 
                 is_chat_hidden = false;
+                layout_apply(); //re-sync the grid (panel visibility) with the reset flag; no-op on touch
                 local_message_id = 0;
                 selected_font = "custom-font-usage-default";
                 selected_font_color = "#ffffff";
@@ -8783,6 +8920,27 @@
                 return A;
             }
 
+            //identity switch (top bar "identity" button, while connected): wait for the deliberate
+            //disconnect to finish and for the worker to deliver the keypair regenerated from the
+            //entered passphrase, then reconnect - the server then knows us as that public key
+            async function reconnect_after_identity_switch()
+            {
+                //is_authenticated flips false in the websocket_worker_onclose handler, right before
+                //the ui resets to the login screen - that is the moment the old connection is gone
+                while (is_authenticated == true)
+                {
+                    await sleep(200);
+                }
+
+                while (is_rsa_key_generated == false)
+                {
+                    await sleep(200);
+                }
+
+                is_identity_switch_in_progress = false;
+                connect_to_server();
+            }
+
             async function connect_to_server()
             {
                 while (is_rsa_key_generated == false)
@@ -8941,7 +9099,8 @@
                 }
                 else if (e.data.type == "websocket_worker_onclose")
                 {
-                    if (is_authenticated)
+                    //a deliberate close (identity switch) is not a lost connection - no scary alert
+                    if (is_authenticated && is_identity_switch_in_progress == false)
                     {
                         if (is_running_in_android_webview == false)
                         {
@@ -9000,7 +9159,7 @@
 
     
                         document.getElementById('verification-system').style.display = "none";
-                        document.getElementById('communication-system-container').style.display = "block";
+                        document.getElementById('communication-system-container').style.display = (layout_grid_active == true) ? "grid" : "block";
 
                         //people on touch device dont need to see chat by default, current UI isnt suitable for that
                         //most likely they will just want to call with voice
@@ -9141,6 +9300,10 @@
                 else if (e.data.type == "data_processing_worker__tag_list_from_server")
                 {
                     server_msg.process_tag_list_from_server(e.data.value);
+                }
+                else if (e.data.type == "data_processing_worker__identity_list_from_server")
+                {
+                    server_msg.process_identity_list_from_server(e.data.value);
                 }
                 else if (e.data.type == "data_processing_worker__icon_list_from_server")
                 {
@@ -10283,70 +10446,297 @@
             }
 
          
-            //for resizing
-            var start_width_space_devider_1 = null;
-            var start_width_space_devider_2 = null;
-            var startX = null;
-            var space_devider1 = null;
-            var space_devider2 = null;
-            var space_devider3 = null;
-            var space_devider4 = null;
+            //---------------------------------------------------------------
+            //grid layout engine (desktop only): the three columns (channels, chat, info) and the
+            //chat-input row live in one css grid on #communication-system-container. column order
+            //and the input row's column/top-bottom position are re-arrangeable in layout-edit mode
+            //(the "layout" button); column widths are dragged via the two resize handles. the grid
+            //minmax() limits make width overshoot structurally impossible (channels >= 150px, chat
+            //>= 330px) - including on window resize, with no reclamping code. everything persists
+            //in localStorage under "lemon_layout". touch devices keep the legacy inline-block
+            //layout: layout_grid_active stays false there and every entry point below no-ops.
+            //---------------------------------------------------------------
+            var layout_grid_active = false;
+            var layout_edit_active = false;
+            var layout_panels = null;   //name -> panel element, filled at init
+            var layout_drag = null;     //active column-width drag
+            var layout_edit_dragged = null; //panel name being moved in edit mode
 
-            var help_var1 = null;
+            var layout_state = {
+                order: ["channels", "chat", "info"], //left-to-right column order
+                input_col: "chat",                   //which column holds the chat-input row
+                input_pos: "bottom",                 //"top" or "bottom" inside that column
+                col_channels: "15%",                 //channels column width (becomes px after a drag)
+                col_info: "13%"                      //info column width
+            };
 
-            function doDrag(e)
+            function layout_load_saved_state()
             {
-                let difference = help_var1 - parseInt(space_devider1.style.width, 10);
-
-                let width_of_space_devider_1_now = parseInt(document.defaultView.getComputedStyle(space_devider1).width, 10);
-                let width_of_space_devider_2_now = parseInt(document.defaultView.getComputedStyle(space_devider2).width, 10);
-
-                let move_difference = e.clientX - startX;
-
-                //
-                //move_difference width in pixels doesnt reflect reality
-                //doesnt matter, what is needed is only finding out if im trying to drag left or right and if that would cause width to go beyond allowed limit
-                //
-
-                if (move_difference < -1)
+                try
                 {
-                    move_difference = -30;
+                    let raw = localStorage.getItem("lemon_layout");
+                    if (raw == null) { return; }
+                    let saved = JSON.parse(raw);
+                    if (saved != null && Array.isArray(saved.order) && saved.order.length == 3
+                        && saved.order.indexOf("channels") != -1 && saved.order.indexOf("chat") != -1
+                        && saved.order.indexOf("info") != -1 && saved.input_col != null && saved.input_pos != null)
+                    {
+                        //a collapsed info column (saved before the 90px minimum existed) looks like
+                        //the panel was deleted - snap it back to the default width
+                        if (parseInt(saved.col_info, 10) < 90) { saved.col_info = "13%"; }
+                        layout_state = saved;
+                    }
                 }
-                else if (move_difference > 1)
-                {
-                    move_difference = 40;
-                }
-
-                if ((width_of_space_devider_1_now + move_difference) < 150)
-                {
-                    return;
-                }
-
-                if ((width_of_space_devider_2_now - move_difference) < 330)
-                {
-                    return;
-                }
-
-                //console.log("start_width_space_devider_1 => " + start_width_space_devider_1);
-                //console.log("start_width_space_devider_2 => " + start_width_space_devider_2);
-
-                space_devider1.style.width = (start_width_space_devider_1 + e.clientX - startX) + 'px';
-                space_devider3.style.width = (start_width_space_devider_1 + e.clientX - startX) + 'px';
-
-                let width_new = start_width_space_devider_2 - e.clientX + startX;
-
-                //console.log("difference => "+ difference);
-
-                let stringnew = " width: calc(73% + " + difference + "px)";
-
-                space_devider2.style.cssText = stringnew;
-                space_devider4.style.cssText = stringnew;
+                catch (e) {}
             }
 
-            function stopDrag(e)
+            function layout_save_state()
             {
-                document.documentElement.removeEventListener('mousemove', doDrag, false);
-                document.documentElement.removeEventListener('mouseup', stopDrag, false);
+                try { localStorage.setItem("lemon_layout", JSON.stringify(layout_state)); } catch (e) {}
+            }
+
+            //(re)builds the grid templates from layout_state + is_chat_hidden and pins the panels
+            //to their areas. does not touch the container's display - connect/disconnect owns that
+            function layout_apply()
+            {
+                if (layout_grid_active == false) { return; }
+
+                let container = document.getElementById("communication-system-container");
+
+                //fill everything under the head menu: the themes' height:80% left a dead band at
+                //the bottom (the legacy layout covered it only by overflowing past the container)
+                let head_menu = document.getElementById("communication-system-head-menu");
+                container.style.height = "calc(100vh - " + ((head_menu != null) ? head_menu.offsetHeight : 30) + "px)";
+
+                let order = layout_state.order.slice();
+                if (is_chat_hidden == true)
+                {
+                    order = order.filter(function(col) { return col != "chat"; });
+                }
+
+                let row_a = [], row_b = [];
+                for (let i = 0; i < order.length; i++)
+                {
+                    let col = order[i];
+                    let holds_input = (is_chat_hidden == false && layout_state.input_col == col);
+                    row_a.push((holds_input && layout_state.input_pos == "top") ? "input" : col);
+                    row_b.push((holds_input && layout_state.input_pos == "bottom") ? "input" : col);
+                }
+
+                let widths = order.map(function(col) {
+                    if (col == "channels") { return "minmax(150px, " + layout_state.col_channels + ")"; }
+                    if (col == "info") { return "minmax(90px, " + layout_state.col_info + ")"; } //min 90: collapsing to 0 made the panel look deleted
+                    return "minmax(330px, 1fr)"; //chat soaks up the leftover space
+                });
+                if (is_chat_hidden == true && order.indexOf("channels") != -1)
+                {
+                    widths[order.indexOf("channels")] = "minmax(150px, 1fr)"; //chat gone: channels takes the space
+                }
+
+                container.style.gridTemplateAreas = '"' + row_a.join(" ") + '" "' + row_b.join(" ") + '"';
+                container.style.gridTemplateColumns = widths.join(" ");
+                container.style.gridTemplateRows = (layout_state.input_pos == "top") ? "auto minmax(0, 1fr)" : "minmax(0, 1fr) auto";
+
+                layout_panels.channels.style.gridArea = "channels";
+                layout_panels.chat.style.gridArea = "chat";
+                layout_panels.info.style.gridArea = "info";
+                layout_panels.input.style.gridArea = "input";
+
+                //neutralize the legacy inline-block sizing: the grid alone decides the geometry
+                let names = ["channels", "chat", "info", "input"];
+                for (let i = 0; i < names.length; i++)
+                {
+                    let panel = layout_panels[names[i]];
+                    panel.style.width = "auto";
+                    panel.style.minWidth = "0";
+                    panel.style.height = "auto";
+                    panel.style.left = "0px";
+                }
+
+                document.getElementById("space-devider3").style.display = "none"; //legacy spacer row, obsolete in the grid
+
+                layout_panels.chat.style.display = (is_chat_hidden == true) ? "none" : "block";
+                layout_panels.input.style.display = (is_chat_hidden == true) ? "none" : "block";
+            }
+
+            //---- column-width dragging (the 2px line at the chat panel's left edge, and the
+            //---- matching handle at the info panel's left edge) ----
+
+            //the handle sits at a panel's left edge, so the drag moves the boundary between that
+            //panel and its left neighbour: neighbour width += dx, own width -= dx. the elastic
+            //chat column (1fr) has no stored width - when it is one of the pair, adjusting only
+            //the other column achieves the same boundary move (the fr track absorbs the rest)
+            function layout_column_drag_start(e, panel_name)
+            {
+                if (layout_grid_active == false || layout_edit_active == true) { return; }
+
+                let order = layout_state.order;
+                let idx = order.indexOf(panel_name);
+                if (idx == -1 || idx == 0) { return; } //leftmost: no boundary to its left
+
+                let neighbour = order[idx - 1];
+                let width_of = function(name) { return Math.round(layout_panels[name].getBoundingClientRect().width); };
+
+                //dx limits so no column in the pair leaves its minimum (channels 150px, info 0px);
+                //the chat minimum (330px) is guarded by the single-target max computed in the move handler
+                let dx_min = -Infinity, dx_max = Infinity;
+                let targets = [];
+                if (neighbour != "chat")
+                {
+                    let mn = (neighbour == "channels") ? 150 : 90;
+                    targets.push({ name: neighbour, sign: 1, start: width_of(neighbour) });
+                    dx_min = Math.max(dx_min, mn - width_of(neighbour));
+                }
+                if (panel_name != "chat")
+                {
+                    let mn = (panel_name == "channels") ? 150 : 90;
+                    targets.push({ name: panel_name, sign: -1, start: width_of(panel_name) });
+                    dx_max = Math.min(dx_max, width_of(panel_name) - mn);
+                }
+
+                layout_drag = {
+                    targets: targets,
+                    pair_has_chat: (neighbour == "chat" || panel_name == "chat"),
+                    dx_min: dx_min,
+                    dx_max: dx_max,
+                    start_x: e.clientX
+                };
+                document.documentElement.addEventListener("mousemove", layout_column_drag_move, false);
+                document.documentElement.addEventListener("mouseup", layout_column_drag_stop, false);
+                e.preventDefault();
+            }
+
+            function layout_column_drag_move(e)
+            {
+                if (layout_drag == null) { return; }
+
+                let dx = e.clientX - layout_drag.start_x;
+
+                if (layout_drag.pair_has_chat == true && layout_drag.targets.length == 1)
+                {
+                    //chat is the elastic side of the pair: cap the single target so chat keeps >= 330px
+                    let container = document.getElementById("communication-system-container");
+                    let total = container.getBoundingClientRect().width;
+                    let t = layout_drag.targets[0];
+                    let other = (t.name == "channels") ? "info" : "channels";
+                    let other_width = Math.round(layout_panels[other].getBoundingClientRect().width);
+                    let max_width = total - other_width - ((is_chat_hidden == false) ? 330 : 0) - 8;
+                    if (t.sign == 1) { dx = Math.min(dx, max_width - t.start); }
+                    else { dx = Math.max(dx, t.start - max_width); }
+                }
+
+                if (dx < layout_drag.dx_min) { dx = layout_drag.dx_min; }
+                if (dx > layout_drag.dx_max) { dx = layout_drag.dx_max; }
+
+                for (let i = 0; i < layout_drag.targets.length; i++)
+                {
+                    let t = layout_drag.targets[i];
+                    let new_width = t.start + t.sign * dx;
+                    if (t.name == "channels") { layout_state.col_channels = new_width + "px"; }
+                    else { layout_state.col_info = new_width + "px"; }
+                }
+
+                layout_apply();
+            }
+
+            function layout_column_drag_stop()
+            {
+                if (layout_drag != null) { layout_save_state(); }
+                layout_drag = null;
+                document.documentElement.removeEventListener("mousemove", layout_column_drag_move, false);
+                document.documentElement.removeEventListener("mouseup", layout_column_drag_stop, false);
+            }
+
+            //---- layout-edit mode: drag whole panels to re-arrange, then lock ----
+
+            function layout_edit_toggle()
+            {
+                layout_edit_active = !layout_edit_active;
+                document.body.setAttribute("data-layout-edit", layout_edit_active ? "1" : "0");
+                document.getElementById("layout-edit-button").value = layout_edit_active ? "lock layout" : "layout";
+                if (layout_edit_active == false)
+                {
+                    layout_save_state();
+                    layout_edit_clear_highlight();
+                    layout_edit_dragged = null;
+                }
+            }
+
+            function layout_panel_name_from_event(e)
+            {
+                let names = ["channels", "chat", "info", "input"];
+                for (let i = 0; i < names.length; i++)
+                {
+                    if (layout_panels[names[i]].contains(e.target)) { return names[i]; }
+                }
+                return null;
+            }
+
+            function layout_edit_clear_highlight()
+            {
+                let names = ["channels", "chat", "info", "input"];
+                for (let i = 0; i < names.length; i++)
+                {
+                    layout_panels[names[i]].classList.remove("layout-drop-target");
+                    layout_panels[names[i]].classList.remove("layout-dragging");
+                }
+            }
+
+            function layout_edit_mousedown(e)
+            {
+                if (layout_edit_active == false || layout_grid_active == false) { return; }
+                let name = layout_panel_name_from_event(e);
+                if (name == null) { return; }
+                layout_edit_dragged = name;
+                layout_panels[name].classList.add("layout-dragging");
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            function layout_edit_mousemove(e)
+            {
+                if (layout_edit_dragged == null) { return; }
+                let names = ["channels", "chat", "info", "input"];
+                for (let i = 0; i < names.length; i++) { layout_panels[names[i]].classList.remove("layout-drop-target"); }
+                let over = layout_panel_name_from_event(e);
+                if (over != null && over != layout_edit_dragged)
+                {
+                    layout_panels[over].classList.add("layout-drop-target");
+                }
+            }
+
+            function layout_edit_mouseup(e)
+            {
+                if (layout_edit_dragged == null) { return; }
+                let source = layout_edit_dragged;
+                let target = layout_panel_name_from_event(e);
+                layout_edit_dragged = null;
+                layout_edit_clear_highlight();
+                if (target == null || target == source) { return; }
+
+                if (source == "input" || target == "input")
+                {
+                    //moving the input row: dropping it on a column parks it there; dropping it on
+                    //the column it already lives in flips it between top and bottom
+                    let col = (source == "input") ? target : source;
+                    if (layout_state.input_col == col)
+                    {
+                        layout_state.input_pos = (layout_state.input_pos == "top") ? "bottom" : "top";
+                    }
+                    else
+                    {
+                        layout_state.input_col = col;
+                    }
+                }
+                else
+                {
+                    //two columns: swap their places
+                    let a = layout_state.order.indexOf(source);
+                    let b = layout_state.order.indexOf(target);
+                    layout_state.order[a] = target;
+                    layout_state.order[b] = source;
+                }
+                layout_apply();
             }
 
             var show_hide_toggle = false;
@@ -10356,15 +10746,34 @@
                 event.stopPropagation();
             }
 
+            //mirrors the three toggle states onto css classes on their toolbar buttons. themes that
+            //want state-specific icons (oldschool) style .sfx-on / .mic-on / .chat-hidden with
+            //!important, which overrides the inline background-image the default theme sets via js, so
+            //only those themes are affected. safe to call anytime; it just reads the current bools.
+            function sync_toolbar_state_classes()
+            {
+                let sfx = document.getElementById("sound-effects-button");
+                let mic = document.getElementById("microphone-always-broadcasting-audio-button");
+                let hide = document.getElementById("hide-chat-button");
+                if (sfx != null) { sfx.classList.toggle("sfx-on", are_sound_effects_enabled == true); }
+                if (mic != null) { mic.classList.toggle("mic-on", is_microphone_always_on == true); }
+                if (hide != null) { hide.classList.toggle("chat-hidden", is_chat_hidden == true); }
+            }
+
             function activate_microphone()
             {
-                //getUserMedia exists only in a SECURE context (https, or localhost/127.0.0.1). when a phone
-                //reaches a self-hosted server over plain http on a LAN ip, navigator.mediaDevices is
-                //undefined, so touching it throws and the mic silently never activates. detect it and tell
-                //the user, instead of the old dead navigator.getUserMedia shim (which could itself throw)
+                //getUserMedia is only exposed in a "secure context". in practice that means the page was
+                //loaded one of these ways:
+                // 1. over HTTPS with a valid certificate, or
+                // 2. from localhost (http://localhost or http://127.0.0.1), or
+                // 3. straight from disk as a file:// page (yes, opening the .html from the desktop works too)
+                //when the client is instead served over plain HTTP from a remote host the context is not
+                //secure, so navigator.mediaDevices is undefined; accessing it would throw and the mic would
+                //silently never activate. detect that and tell the user, instead of the old dead
+                //navigator.getUserMedia shim (which could itself throw)
                 if (navigator.mediaDevices == null || typeof navigator.mediaDevices.getUserMedia != "function")
                 {
-                    custom_alert("microphone needs a secure connection: open the page over https (or via localhost). plain http on a phone blocks mic access.");
+                    custom_alert("the microphone needs a secure connection: open the client over HTTPS, from localhost, or as a local file. you are most likely loading it over plain HTTP.");
                     return;
                 }
 
@@ -10467,12 +10876,6 @@
 
             function begin_connect_to_server()
             {
-                //diagnostic for the "phone shows a connect button instead of autoconnecting" report: this
-                //prints exactly why. server_config_present=false -> the server did not embed details;
-                //android_webview=true on a plain browser -> a stray global `Android` diverted into the app
-                //path; predefined/autoconnect both true but no connection -> the issue is in connect_to_server
-                console.log("[connect] server_config_present=" + (typeof window !== "undefined" && typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null) + " predefined=" + are_server_details_predefined + " autoconnect=" + is_autoconnect_without_user_action_active + " android_webview=" + is_running_in_android_webview + " touch=" + is_client_running_under_touch_device);
-
                 if (are_server_details_predefined == true && is_autoconnect_without_user_action_active == true)
                 {
                     connect_to_server();
@@ -10529,10 +10932,6 @@
                     };
                     document.getElementById("connect-form-sub-container-1").style.display = "none";
                     document.getElementById("connect-form-sub-container-2").style.display = "none";
-                    //autoconnecting: no manual connect button should be shown (it was left visible on some
-                    //mobile layouts, making it look like the user has to tap it)
-                    document.getElementById("connect-button").style.visibility = "hidden";
-                    document.getElementById("connect-button").style.display = "none";
                 }
 
                 if (is_running_in_android_webview == false)
@@ -10562,10 +10961,39 @@
 
                 textarea_log = document.getElementById("textarea-log");
 
-                space_devider1 = document.getElementById("space-devider1");
-                space_devider2 = document.getElementById("space-devider2");
-                space_devider3 = document.getElementById("space-devider3");
-                space_devider4 = document.getElementById("space-devider4");
+                //grid layout engine: desktop only. touch keeps the legacy inline-block layout,
+                //so there layout_grid_active stays false and every layout_* entry point no-ops
+                layout_panels = {
+                    channels: document.getElementById("space-devider1"),
+                    chat: document.getElementById("space-devider2"),
+                    info: document.getElementById("space-devider-42"),
+                    input: document.getElementById("space-devider4")
+                };
+                if (is_client_running_under_touch_device == false)
+                {
+                    layout_load_saved_state();
+                    layout_grid_active = true;
+                    layout_apply();
+
+                    document.getElementById("layout-edit-button").onclick = layout_edit_toggle;
+                    document.getElementById("drag-resize-info").addEventListener("mousedown", function(e) {
+                        layout_column_drag_start(e, "info");
+                    }, false);
+                    document.getElementById("drag-resize-channels").addEventListener("mousedown", function(e) {
+                        layout_column_drag_start(e, "channels");
+                    }, false);
+
+                    //edit mode: capture-phase so a panel drag wins over every inner click handler
+                    document.getElementById("communication-system-container").addEventListener("mousedown", layout_edit_mousedown, true);
+                    document.addEventListener("mousemove", layout_edit_mousemove, false);
+                    document.addEventListener("mouseup", layout_edit_mouseup, false);
+                }
+                else
+                {
+                    document.getElementById("layout-edit-button").style.display = "none";
+                    document.getElementById("drag-resize-info").style.display = "none";
+                    document.getElementById("drag-resize-channels").style.display = "none";
+                }
 
                 document.addEventListener("keydown", document_onkeydown);
                 document.addEventListener("mousedown", document_onmousedown);
@@ -10603,6 +11031,9 @@
                 document.getElementById("enter-server-settings").onclick = UI.enter_server_settings_onclick;
                 document.getElementById("show-secret-identity-string").onclick = UI.show_secret_identity_string_onclick;
                 document.getElementById("import-identity-button").onclick = UI.import_identity_button_onclick;
+                //top bar: same passphrase dialog; entered while connected it disconnects, regenerates
+                //the keypair from the passphrase and reconnects as that identity (see the confirm handler)
+                document.getElementById("switch-identity-button").onclick = UI.import_identity_button_onclick;
                 document.getElementById("identity-string-use-confirm-button").onclick = UI.identity_string_use_confirm_button;
                 document.getElementById("close-button-poke-client").onclick = UI.close_button_poke_client_onclick;
                 document.getElementById("close-button-client-info").onclick = UI.close_button_client_info_onclick;
@@ -10610,12 +11041,23 @@
                 document.getElementById("close-button-server-settings").onclick = UI.close_button_server_settings_onclick;
                 document.getElementById("poke-client-send-button").onclick = UI.poke_client_send_button_onclick;
 
-                //channel edit form: clicking the icon box opens the shared icon picker for that channel (admin)
+                //channel edit form: clicking the icon box opens the shared icon picker for that channel.
+                //no admin gate here: the picker always opens, the server rejects the request if not allowed
                 document.getElementById("channel-properties-icon-box").onclick = function()
                 {
-                    if (channel_properties_edit_channel_id != null && is_local_client_admin() == true)
+                    if (channel_properties_edit_channel_id != null)
                     {
                         UI.open_channel_icon_picker(channel_properties_edit_channel_id);
+                    }
+                };
+
+                //"remove icon" next to the box: same set_channel_icon request with no icon_id, which the
+                //server treats as clearing it; its broadcast repaints the tree row and the edit form box
+                document.getElementById("channel-properties-icon-remove-button").onclick = function()
+                {
+                    if (channel_properties_edit_channel_id != null)
+                    {
+                        UI.send_set_channel_icon_request(channel_properties_edit_channel_id, "none");
                     }
                 };
 
@@ -10644,6 +11086,7 @@
                 document.getElementById("hide-show-flags-button").onclick = UI.hide_show_flags_button_onclick;
                 document.getElementById("microphone-always-broadcasting-audio-button").onclick = UI.activate_continous_audio_broadcast_onclick;
                 document.getElementById("sound-effects-button").onclick = UI.sound_effects_button_onclick;
+                sync_toolbar_state_classes(); //seed the state classes from the initial bools so oldschool shows the right icons on load
                 document.getElementById("musicbot-management-close-button").onclick = UI.musicbot_management_close_button_onclick;
                 document.getElementById("musicbot-management-background-container-upload-button-confirm").onclick = UI.musicbot_management_confirm_upload_button_onclick;
 
@@ -10667,6 +11110,50 @@
                 {
                     document.getElementsByClassName("server-settings-tab-li")[i].onclick = UI.server_settings_tab_li_onclick;
                 }
+
+                //identity list: delete buttons are rendered dynamically, so delegate their clicks. a
+                //delete sends the identity hash; the server clears it and strips the holder's tags
+                //send an add/remove of a single tag on a stored identity (works offline)
+                let send_modify_identity_tag = function(identity_hash, tag_id, add)
+                {
+                    if (identity_hash == null || identity_hash.length == 0) { return; }
+                    let message_object = { message: { type: "modify_identity_tag", public_key_hash: identity_hash, tag_id: parseInt(tag_id), add: add } };
+                    let message_json_string = process_message_before_sending(message_object);
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                    websocket_worker_send(data);
+                };
+
+                document.getElementById("server-settings-identities-list").addEventListener("click", function(event)
+                {
+                    //remove a single tag from an identity (the chip's ✕)
+                    let tag_remove = event.target.closest(".identity-tag-remove");
+                    if (tag_remove != null)
+                    {
+                        send_modify_identity_tag(tag_remove.getAttribute("data-identity-hash"), tag_remove.getAttribute("data-tag-id"), false);
+                        return;
+                    }
+
+                    //delete the whole identity (the row's ✕)
+                    let button = event.target.closest(".identity-delete-button");
+                    if (button == null) { return; }
+
+                    let identity_hash = button.getAttribute("data-identity-hash");
+                    if (identity_hash == null || identity_hash.length == 0) { return; }
+
+                    let message_object = { message: { type: "delete_identity", public_key_hash: identity_hash } };
+                    let message_json_string = process_message_before_sending(message_object);
+                    let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                    websocket_worker_send(data);
+                });
+
+                //give an identity a tag (the "+ tag" dropdown)
+                document.getElementById("server-settings-identities-list").addEventListener("change", function(event)
+                {
+                    let select = event.target.closest(".identity-tag-add");
+                    if (select == null || select.value === "") { return; }
+                    send_modify_identity_tag(select.getAttribute("data-identity-hash"), select.value, true);
+                    select.value = "";
+                });
 
                 //make the server settings window draggable by its left nav column (tab clicks still work,
                 //since a click without movement does not reposition the window)
@@ -10702,16 +11189,57 @@
                     }
                 })();
 
-                //make every popup draggable by its title bar (#menu-bar-container), like a real window
+                //make every popup draggable by its title bar (#menu-bar-container), like a real window.
+                //dragging pins the dialog with inline position:fixed + left/top; those pins are cleared
+                //again every time the dialog is re-opened, so popups always START centered (the css
+                //margin:auto centering). without the reset a pin lives forever - worst case 0,0 from a
+                //mousedown that landed while the dialog had no layout (hidden = zero rect), which made
+                //every popup open in the top-left corner from then on
                 (function() {
                     let dragging = null, ox = 0, oy = 0;
                     let bars = document.querySelectorAll('[id="menu-bar-container"]');
+
+                    let clear_drag_pin = function(dialog) {
+                        dialog.style.position = "";
+                        dialog.style.margin = "";
+                        dialog.style.left = "";
+                        dialog.style.top = "";
+                    };
+
+                    //recenter on every open: watch each dialog's container for its display flipping on
+                    let recenter_observer = new MutationObserver(function(mutations) {
+                        for (let i = 0; i < mutations.length; i++) {
+                            let container = mutations[i].target;
+                            if (container.style.display == "none" || container.style.display == "") { continue; }
+                            let dialog = container.querySelector('[data-recenter-on-open="true"]');
+                            if (dialog != null)
+                            {
+                                //center by js instead of trusting theme css: some themes (oldschool)
+                                //give the overlay container zero size, which parked dialogs top-left
+                                clear_drag_pin(dialog);
+                                dialog.style.position = "fixed";
+                                dialog.style.margin = "0";
+                                let rect = dialog.getBoundingClientRect();
+                                dialog.style.left = Math.max(0, Math.round((window.innerWidth - rect.width) / 2)) + "px";
+                                dialog.style.top = Math.max(0, Math.round((window.innerHeight - rect.height) / 3)) + "px";
+                            }
+                        }
+                    });
+
                     for (let i = 0; i < bars.length; i++)
                     {
+                        let dialog = bars[i].parentElement;
+                        dialog.setAttribute("data-recenter-on-open", "true");
+                        if (dialog.parentElement != null)
+                        {
+                            recenter_observer.observe(dialog.parentElement, { attributes: true, attributeFilter: ["style"] });
+                        }
+
                         bars[i].addEventListener("mousedown", function(e) {
                             if (e.target.closest(".close-button") != null) { return; }
                             let dialog = this.parentElement;
                             let rect = dialog.getBoundingClientRect();
+                            if (rect.width == 0 && rect.height == 0) { return; } //no layout (hidden): a pin here would stick the dialog to 0,0
                             dragging = dialog;
                             ox = e.clientX - rect.left;
                             oy = e.clientY - rect.top;
@@ -10809,9 +11337,12 @@
 
                 //server-baked default theme (from the injected config); applied unless the user has their own saved choice. persist=false so it never sticks.
                 //on a phone a desktop theme is ignored here so the mobile default set above stays in effect
+                let startup_theme_applied = false;
+
                 if (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.theme && UI.is_theme_allowed_on_this_device(window.__SERVER_CONFIG__.theme))
                 {
                     UI.apply_theme(window.__SERVER_CONFIG__.theme, false);
+                    startup_theme_applied = true;
                 }
 
                 //restore a theme the user previously picked (from the in-app menu); wins over the server default.
@@ -10822,9 +11353,18 @@
                     if (saved_theme != null && UI.is_theme_allowed_on_this_device(saved_theme))
                     {
                         UI.apply_theme(saved_theme, false);
+                        startup_theme_applied = true;
                     }
                 }
                 catch (e) {}
+
+                //no server-baked theme and nothing saved: activate the default sheet explicitly.
+                //without this ALL four theme <style> elements stay active at once and the cascade
+                //mixes them (the last sheet mostly wins), which is never an intended look
+                if (startup_theme_applied == false)
+                {
+                    UI.apply_theme(is_client_running_under_touch_device ? "default-mobile" : "default", false);
+                }
                 
                 if (is_running_in_android_webview)
                 {

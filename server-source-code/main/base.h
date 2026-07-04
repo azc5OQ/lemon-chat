@@ -21,6 +21,9 @@ boole   base__assign_username_for_newly_joined_client(uint64 client_id, cstring 
 boole   base__is_public_key_present_in_client_stored_data(char* public_key);
 void    base__restore_identity_tags(client_t* client);
 void    base__snapshot_connected_clients_into_identity_store(void);
+void    base__sync_client_identity_in_store(client_t* client);
+boole   base__delete_identity_from_store_by_hash(char* identity_hash);
+boole   base__modify_identity_tag_in_store(char* identity_hash, uint64 tag_id, boole add);
 void    base__close_websocket_connection(uint64 client_id, boole use_readlock);
 uint64  base__get_timestamp_ms(void);
 void    base__sleep_for_milliseconds(uint64 milliseconds);
@@ -53,6 +56,7 @@ extern icon_t* g_icons_array;
 extern tag_t* g_tags_array;
 extern ban_entry_t* g_ban_array;
 extern client_stored_data_t* g_client_stored_data;
+extern pthread_mutex_t g_client_stored_data_mutex;
 
 /* global lock ordering goes like this: clients, muggles, channels, icons, tags, bans (bans is always taken last) */
 

@@ -717,6 +717,12 @@ static void _main_internal__load_persisted_state(void)
             clib__null_memory(identity_in_loop, sizeof(client_stored_data_t));
             clib__copy_memory(json_field->valuestring, &identity_in_loop->public_key[0], clib__utf8_string_length(json_field->valuestring), MAX_PUBLIC_KEY_LENGTH - 1);
 
+            json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "username");
+            if (cJSON_IsString(json_field) == TRUE && json_field->valuestring != NULL_POINTER)
+            {
+                clib__copy_memory(json_field->valuestring, &identity_in_loop->username[0], clib__utf8_string_length(json_field->valuestring), USERNAME_MAX_LENGTH - 1);
+            }
+
             identity_in_loop->tag_id_count = 0;
             json_identity_tag_ids = cJSON_GetObjectItemCaseSensitive(json_identity, "tag_ids");
             if (cJSON_IsArray(json_identity_tag_ids) == TRUE)
@@ -738,9 +744,12 @@ static void _main_internal__load_persisted_state(void)
 
             if (identity_in_loop->tag_id_count == 0)
             {
+                DBG_IDENTITIES log_info("%s %s %s", "load_identities: dropping stored identity [", &identity_in_loop->public_key[0], "] - it has no tags \n");
                 clib__null_memory(identity_in_loop, sizeof(client_stored_data_t));
                 continue;
             }
+
+            DBG_IDENTITIES log_info("%s %llu %s %llu %s %s %s", "load_identities: loaded into store slot", identity_slot, "with", (uint64)identity_in_loop->tag_id_count, "tag(s), hash [", &identity_in_loop->public_key[0], "] \n");
 
             identity_slot++;
             loaded_identities++;

@@ -9,6 +9,7 @@ void server_msg__send_channel_list_to_single_client(ws_cli_conn_t* websocket, ch
 void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret, char* local_clients_username, uint64 receiver_client_id);
 void server_msg__send_icon_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret);
 void server_msg__send_tag_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret);
+void server_msg__send_identity_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret);
 void server_msg__send_active_microphone_usage_for_current_channel_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret, uint64 current_channel_id);
 void server_msg__send_client_connect_message_to_all_clients(uint64 connected_client_id);
 void server_msg__send_maintainer_id_to_single_client(client_t* client, uint64 channel_id, uint64 current_channel_maintainer_id);
