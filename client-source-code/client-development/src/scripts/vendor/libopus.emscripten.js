@@ -1575,9 +1575,42 @@
             {
                 ignoredModuleProp('fetchSettings');
             }
+            //minimal wasi/abort stubs. opus 1.5.x links a sliver of stdio for its fatal-error
+            //prints, so the wasm now imports fd_close/fd_write/fd_seek and abort. none of these
+            //run in normal operation - fd_write just swallows the bytes so instantiation succeeds
+            function _stub_fd_close(fd)
+            {
+                return 0;
+            }
+
+            function _stub_fd_write(fd, iov, iovcnt, pnum)
+            {
+                var written = 0;
+                for (var i = 0; i < iovcnt; i++)
+                {
+                    written += HEAPU32[(((iov) + (i * 8 + 4)) >> 2)];
+                }
+                HEAPU32[((pnum) >> 2)] = written;
+                return 0;
+            }
+
+            function _stub_fd_seek(fd, offset_low, offset_high, whence, newOffset)
+            {
+                return 0;
+            }
+
+            function _stub_abort()
+            {
+                abort('native code called abort()');
+            }
+
             var wasmImports = {
                 "emscripten_memcpy_big": _emscripten_memcpy_big,
-                "emscripten_resize_heap": _emscripten_resize_heap
+                "emscripten_resize_heap": _emscripten_resize_heap,
+                "fd_close": _stub_fd_close,
+                "fd_write": _stub_fd_write,
+                "fd_seek": _stub_fd_seek,
+                "abort": _stub_abort
             };
             var asm = null;
             /** @type {function(...*):?} */

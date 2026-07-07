@@ -1223,6 +1223,9 @@
             var audio_queue = {
                 buffer: new Float32Array(0),
 
+                //AUDIO TUNABLE (fallback path only): this queue feeds the ScriptProcessor used when the
+                //AudioWorklet is unavailable. On the normal worklet path the jitter buffer in
+                //LemonPlayerProcessor ("AUDIO WORKLET TUNABLES") governs playback instead.
                 //hard cap on buffered playback (~300 ms of 48 kHz INTERLEAVED STEREO, two floats per frame).
                 //anything beyond this is accumulated delay the listener never catches up with (decode output
                 //outpacing playback after gc pauses, tab throttling, or a sample-rate mismatch). when the
@@ -9666,6 +9669,18 @@
                         this.lanes = new Map();
                         this.pending_lane_gains = new Map(); //volume set before the lane's first pcm arrived
 
+                        /* ================================================================
+                         *  AUDIO WORKLET TUNABLES  -  the per-sender jitter buffer.
+                         * ----------------------------------------------------------------
+                         *  THIS is what sets felt playback latency vs. smoothness on the
+                         *  normal (worklet) path. TARGET_START is the delay each voice
+                         *  adds before it starts playing - lower it for less latency,
+                         *  raise it if choppy on bad networks. All values are in
+                         *  interleaved-stereo floats: 48000 Hz x 2 ch = 96000 floats/sec,
+                         *  so 1 ms = 96 floats and 60 ms = 5760 floats.
+                         *  (The opus decode/PLC knobs are in audio-opus-glue.js under
+                         *   "OPUS AUDIO TUNABLES".)
+                         * ==============================================================*/
                         this.RING_SIZE = 65536;          //interleaved floats per lane (~680 ms), power of two
                         this.RING_MASK = 65535;          //"index & mask" wraps cheaply (replaces % RING_SIZE)
                         this.RING_HARD_CAP = 57600;      //~600 ms; beyond this the oldest samples are dropped

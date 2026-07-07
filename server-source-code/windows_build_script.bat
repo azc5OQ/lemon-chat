@@ -7,19 +7,142 @@
 :: binaries), so the whole build is auditable. The script builds every dependency, then the server.
 ::
 :: Requires:
-::   - w64devkit: a MinGW-based toolchain providing gcc, g++, ld, ninja, make, windres. Used because
+::   - w64devkit: a MinGW-based toolchain providing gcc, g++, ld, make, windres. Used because
 ::     the server must build on both Windows and Linux, so MSVC is not an option.
+::   - ninja (dropped into the w64devkit bin folder; w64devkit itself does not ship it).
 ::   - cmake (installed separately).
 ::
-:: Setup:
-::   1. Download w64devkit (e.g. from its GitHub releases) and unpack it anywhere.
-::   2. Point the MINGWPATH variable below at the w64devkit "bin" folder.
+:: Setup: NONE needed on a fresh machine - the TOOLCHAIN BOOTSTRAP section below detects
+:: missing tools and offers to download each one (asks y/n first, nothing is fetched
+:: without confirmation) into %USERPROFILE%\Downloads using bitsadmin (curl as fallback):
+:: w64devkit self-extracts to Downloads\w64devkit, ninja is unpacked into its bin folder,
+:: and cmake (only if not installed) is unpacked next to them. To use a toolchain you
+:: already have somewhere else, just point MINGWPATH at its bin folder.
 
 
 :: >>> EDIT THIS to point at your own w64devkit "bin" folder <<<
-SET "MINGWPATH=C:\Users\user\Downloads\w64devkit\bin"
+SET "MINGWPATH=%USERPROFILE%\Downloads\w64devkit\bin"
 set "CMAKE_MAKE_PROGRAM=%MINGWPATH%\ninja.exe"
 SET "PATH=%MINGWPATH%;%PATH%"
+
+:: third-party projects still declare ancient cmake_minimum_required versions; CMake 4
+:: refuses those outright unless this floor is set (same fix the linux script uses)
+set "CMAKE_POLICY_VERSION_MINIMUM=3.5"
+
+
+::********************************************************
+::****** TOOLCHAIN BOOTSTRAP (auto-download)        ******
+::********************************************************
+:: every download lands in %USERPROFILE%\Downloads and is skipped when the tool
+:: (or the downloaded file) is already there, so this section is a no-op on a
+:: machine that is already set up. versions are pinned - bump them here.
+
+set "W64DEVKIT_VERSION=2.8.0"
+set "NINJA_VERSION=1.12.1"
+set "CMAKE_VERSION=4.3.1"
+set "TOOLDOWNLOADS=%USERPROFILE%\Downloads"
+
+:: ---- w64devkit (gcc, g++, ld, make, windres) ----
+if exist "%MINGWPATH%\gcc.exe" goto bootstrap_have_w64devkit
+echo.
+echo w64devkit (the gcc toolchain) was not found at %MINGWPATH%
+echo It can be downloaded now using bitsadmin (about 60 MB, from github.com/skeeto/w64devkit)
+echo and unpacked into %TOOLDOWNLOADS%\w64devkit
+set /p dlw64devkit= "download w64devkit v%W64DEVKIT_VERSION%? (y/n): "
+if /i not "%dlw64devkit%"=="y" (
+  echo Cannot build without a toolchain - download w64devkit yourself and point MINGWPATH at its bin folder.
+  pause
+  exit /b 1
+)
+if exist "%TOOLDOWNLOADS%\w64devkit-x64-%W64DEVKIT_VERSION%.7z.exe" goto bootstrap_unpack_w64devkit
+bitsadmin /transfer w64devkit_download /download /priority FOREGROUND "https://github.com/skeeto/w64devkit/releases/download/v%W64DEVKIT_VERSION%/w64devkit-x64-%W64DEVKIT_VERSION%.7z.exe" "%TOOLDOWNLOADS%\w64devkit-x64-%W64DEVKIT_VERSION%.7z.exe"
+if exist "%TOOLDOWNLOADS%\w64devkit-x64-%W64DEVKIT_VERSION%.7z.exe" goto bootstrap_unpack_w64devkit
+echo bitsadmin failed, retrying with curl...
+curl -L -o "%TOOLDOWNLOADS%\w64devkit-x64-%W64DEVKIT_VERSION%.7z.exe" "https://github.com/skeeto/w64devkit/releases/download/v%W64DEVKIT_VERSION%/w64devkit-x64-%W64DEVKIT_VERSION%.7z.exe"
+if exist "%TOOLDOWNLOADS%\w64devkit-x64-%W64DEVKIT_VERSION%.7z.exe" goto bootstrap_unpack_w64devkit
+echo ERROR: could not download w64devkit - get it manually from https://github.com/skeeto/w64devkit/releases
+pause
+exit /b 1
+
+:bootstrap_unpack_w64devkit
+:: the .7z.exe is a self-extractor; -y -o extracts silently, creating %TOOLDOWNLOADS%\w64devkit\
+"%TOOLDOWNLOADS%\w64devkit-x64-%W64DEVKIT_VERSION%.7z.exe" -y -o"%TOOLDOWNLOADS%"
+if not exist "%MINGWPATH%\gcc.exe" (
+  echo ERROR: w64devkit self-extraction failed - unpack %TOOLDOWNLOADS%\w64devkit-x64-%W64DEVKIT_VERSION%.7z.exe by hand.
+  pause
+  exit /b 1
+)
+
+:bootstrap_have_w64devkit
+
+:: ---- ninja (goes into the w64devkit bin folder, where CMAKE_MAKE_PROGRAM expects it) ----
+if exist "%MINGWPATH%\ninja.exe" goto bootstrap_have_ninja
+echo.
+echo ninja (the build tool cmake drives) was not found in %MINGWPATH%
+echo It can be downloaded now using bitsadmin (under 1 MB, from github.com/ninja-build/ninja)
+set /p dlninja= "download ninja v%NINJA_VERSION%? (y/n): "
+if /i not "%dlninja%"=="y" (
+  echo Cannot build without ninja - download ninja-win.zip yourself and unpack it into %MINGWPATH%
+  pause
+  exit /b 1
+)
+if exist "%TOOLDOWNLOADS%\ninja-win.zip" goto bootstrap_unpack_ninja
+bitsadmin /transfer ninja_download /download /priority FOREGROUND "https://github.com/ninja-build/ninja/releases/download/v%NINJA_VERSION%/ninja-win.zip" "%TOOLDOWNLOADS%\ninja-win.zip"
+if exist "%TOOLDOWNLOADS%\ninja-win.zip" goto bootstrap_unpack_ninja
+echo bitsadmin failed, retrying with curl...
+curl -L -o "%TOOLDOWNLOADS%\ninja-win.zip" "https://github.com/ninja-build/ninja/releases/download/v%NINJA_VERSION%/ninja-win.zip"
+if exist "%TOOLDOWNLOADS%\ninja-win.zip" goto bootstrap_unpack_ninja
+echo ERROR: could not download ninja - get ninja-win.zip manually from https://github.com/ninja-build/ninja/releases
+pause
+exit /b 1
+
+:bootstrap_unpack_ninja
+:: tar.exe ships with Windows 10+ and understands zip archives
+tar -xf "%TOOLDOWNLOADS%\ninja-win.zip" -C "%MINGWPATH%"
+if not exist "%MINGWPATH%\ninja.exe" (
+  echo ERROR: could not unpack ninja-win.zip into %MINGWPATH%
+  pause
+  exit /b 1
+)
+
+:bootstrap_have_ninja
+
+:: ---- cmake (only when no cmake is installed at all) ----
+where cmake >nul 2>nul
+if not errorlevel 1 goto bootstrap_have_cmake
+if exist "%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64\bin\cmake.exe" goto bootstrap_path_cmake
+echo.
+echo cmake was not found on this machine
+echo It can be downloaded now using bitsadmin (about 45 MB, from github.com/Kitware/CMake)
+set /p dlcmake= "download cmake v%CMAKE_VERSION%? (y/n): "
+if /i not "%dlcmake%"=="y" (
+  echo Cannot build without cmake - install it manually from https://cmake.org/download/
+  pause
+  exit /b 1
+)
+if exist "%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64.zip" goto bootstrap_unpack_cmake
+bitsadmin /transfer cmake_download /download /priority FOREGROUND "https://github.com/Kitware/CMake/releases/download/v%CMAKE_VERSION%/cmake-%CMAKE_VERSION%-windows-x86_64.zip" "%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64.zip"
+if exist "%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64.zip" goto bootstrap_unpack_cmake
+echo bitsadmin failed, retrying with curl...
+curl -L -o "%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64.zip" "https://github.com/Kitware/CMake/releases/download/v%CMAKE_VERSION%/cmake-%CMAKE_VERSION%-windows-x86_64.zip"
+if exist "%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64.zip" goto bootstrap_unpack_cmake
+echo ERROR: could not download cmake - install it manually from https://cmake.org/download/
+pause
+exit /b 1
+
+:bootstrap_unpack_cmake
+tar -xf "%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64.zip" -C "%TOOLDOWNLOADS%"
+
+:bootstrap_path_cmake
+if not exist "%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64\bin\cmake.exe" (
+  echo ERROR: could not unpack cmake - install it manually from https://cmake.org/download/
+  pause
+  exit /b 1
+)
+set "PATH=%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64\bin;%PATH%"
+
+:bootstrap_have_cmake
+::****************** end of toolchain bootstrap ******************
 
 :: number of parallel build jobs passed to cmake/make (-j); lower it if you run out of RAM
 set "BUILD_JOBS=2"
@@ -48,7 +171,8 @@ set "ROOT_DIRECTORY=%~dp0"
 set "THIRD_PARTY_DIRECTORY=%ROOT_DIRECTORY%third-party"
 
 echo.
-echo You need these tools for building : cmake, w64devkit  [w64devkit provides gcc, g++, ld, ninja, make, windres]
+echo Tools used for building : cmake, ninja, w64devkit  [gcc, g++, ld, make, windres]
+echo Missing ones were just auto-downloaded to %TOOLDOWNLOADS% by the bootstrap above.
 echo The optional stunnel/wss build also needs a full Perl, e.g. Strawberry Perl.
 
 :: ---- show the paths this build will use, and confirm before doing anything ----
