@@ -59,6 +59,12 @@
     </style>
 
 
+    <!-- termix theme style (dark theme; opts into the right-pane member list) -->
+    <style id="style-theme-termix" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-termix.style @@ */
+    </style>
+
+
 
     <!-- layout engine bits: always active, NOT a theme sheet. the style-theme-html-element
          class must stay off this element - apply_theme() disables every sheet carrying it -->
@@ -209,10 +215,12 @@
                 <p class='choose-theme-item' data-name="light-theme" data-mobile="false">light</p>
                 <p class='choose-theme-item' data-name="oldschool" data-mobile="false">old school</p>
                 <p class='choose-theme-item' data-name="oldschool-variant" data-mobile="false">old school variant</p>
+                <p class='choose-theme-item' data-name="termix" data-mobile="false">termix</p>
                 <p class='choose-theme-item' data-name="default-mobile" data-mobile="true">mobile</p>
             </div>
             <input type="button" id="layout-edit-button" value="layout" title="re-arrange the panels; click again to lock them in place">
             <input type="button" id="switch-identity-button" value="identity" title="enter an identity passphrase: disconnects, regenerates the keypair from it and reconnects as that identity">
+            <input type="button" id="channel-flatten-toggle-button" value="flatten" title="toggle the channel tree between nested and a flat, single-level list">
             <input type="button" id="enter-server-settings">
         </div>
         <div id="verification-system">
@@ -311,6 +319,10 @@
                     <p style="padding-left: 7px;font-style: italic;font-weight: bold;font-size: 9px;color: #0f1113;">time active: 0 minutes</p>
                     <div id="current-client-description-tags">
                     </div>
+                </div>
+                <div id="member-list-container">
+                    <div id="member-list-header"></div>
+                    <div id="member-list-body"></div>
                 </div>
             </div>
             <div>

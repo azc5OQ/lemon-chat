@@ -532,6 +532,11 @@ body, input, button, textarea, select, p, li, label {
 }
 
 #current-client-avatar {
+    width: 72px;
+    height: 72px;
+    display: block;
+    margin: 6px auto;
+    background-size: cover;
     border-radius: 50%;
     overflow: hidden;
     background-repeat: no-repeat;

@@ -161,6 +161,9 @@ typedef struct server_settings
     boole is_music_bot_audio_active;
     boole is_logging_of_failed_attempts_active;
     boole are_identities_enabled;
+    boole persist_identity_in_localstorage; /* bake a flag into the served client so it saves/restores the identity passphrase in localStorage; default off */
+    boole allow_avatars;                    /* let each user set an image avatar persisted with their identity; default off */
+    int64 avatar_max_size_bytes;            /* largest accepted raw image size (bytes) for an avatar; larger uploads are silently dropped */
     uint64 chat_cooldown_milliseconds;
     uint64 join_channel_request_cooldown_milliseconds;
     uint64 delete_channel_request_cooldown_milliseconds;
@@ -279,6 +282,7 @@ typedef struct client_t
     char song_name[SONG_NAME_MAX_LENGTH];
     char ip_address[INET6_ADDRSTRLEN]; /* max size of an ipv6 address */
     char country_iso_code[COUNTRY_ISO_CODE_LENGTH];
+    char* base64_avatar; /* heap-allocated on demand (MEMALLOC_AVATAR), NULL when none; the live avatar served to others. persistent copy lives in the identity store */
     int* tag_ids; /* must be int because a function of another library depends on this being int */
     /* int tag_ids_count; */
     music_bot_client_extension_t music_bot_client_extension;
@@ -388,7 +392,8 @@ typedef enum memory_manager_allocation_type_e
     MEMALLOC_FILE_UPLOAD_BY_PARTS,
     MEMALLOC_FILE_UPLOAD_BY_PARTS1,
     MEMALLOC_FILE_UPLOAD_BY_PARTS2,
-    MEMALLOC_FILE_DOWNLOAD_BY_PARTS
+    MEMALLOC_FILE_DOWNLOAD_BY_PARTS,
+    MEMALLOC_AVATAR
 } memory_manager_allocation_type_e;
 
 typedef struct webrtc_peer_t

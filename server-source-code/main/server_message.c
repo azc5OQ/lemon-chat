@@ -1531,6 +1531,141 @@ void server_msg__send_chat_message_to_clients_in_same_channel(uint64 client_send
 }
 
 /**
+ * @brief sends a delete/edit action for a chat message to a SINGLE client (private/direct case). the action
+ *        carries the target server chat id and the requester's public key + admin flag, so the receiver can
+ *        decide for itself whether to honour it (author or admin). for an edit it also carries the new value.
+ *
+ * @param uint64 client_receiver_id -> id of the client to send the action to
+ * @param char* action_type -> "chat_message_delete" or "chat_message_edit"
+ * @param uint64 target_chat_message_id -> server chat id of the message to act on
+ * @param char* requester_public_key -> public key of the client that requested the action
+ * @param boole requester_is_admin -> whether the requester is an admin
+ * @param char* new_message_value -> new text for an edit, or NULL_POINTER for a delete
+ *
+ * @attention this function is used within read lock on clients array
+ *
+ * @return void
+ */
+void server_msg__send_chat_message_action_to_single_client(uint64 client_receiver_id, char* action_type, uint64 target_chat_message_id, char* requester_public_key, boole requester_is_admin, char* new_message_value)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client_receiver = 0;
+
+    client_receiver = &g_clients_array[client_receiver_id];
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", action_type);
+    cJSON_AddNumberToObject(json_message_object1, "chat_message_id", target_chat_message_id);
+    cJSON_AddStringToObject(json_message_object1, "requester_public_key", requester_public_key);
+    cJSON_AddBoolToObject(json_message_object1, "requester_is_admin", requester_is_admin == TRUE);
+    if (new_message_value != NULL_POINTER)
+    {
+        cJSON_AddStringToObject(json_message_object1, "new_message_value", new_message_value);
+    }
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_receiver->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(client_receiver->p_ws_connection, msg_text);
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief sends a delete/edit action for a chat message to every client in a channel (channel case). unlike a
+ *        normal chat broadcast this does NOT skip the requester, so the message updates in their own view too.
+ *
+ * @param uint64 receiving_channel_id -> the channel whose clients receive the action
+ * @param char* action_type -> "chat_message_delete" or "chat_message_edit"
+ * @param uint64 target_chat_message_id -> server chat id of the message to act on
+ * @param char* requester_public_key -> public key of the client that requested the action
+ * @param boole requester_is_admin -> whether the requester is an admin
+ * @param char* new_message_value -> new text for an edit, or NULL_POINTER for a delete
+ *
+ * @attention this function is used within read lock on clients array
+ *
+ * @return void
+ */
+void server_msg__send_chat_message_action_to_clients_in_same_channel(uint64 receiving_channel_id, char* action_type, uint64 target_chat_message_id, char* requester_public_key, boole requester_is_admin, char* new_message_value)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client_in_loop = 0;
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", action_type);
+    cJSON_AddNumberToObject(json_message_object1, "chat_message_id", target_chat_message_id);
+    cJSON_AddStringToObject(json_message_object1, "requester_public_key", requester_public_key);
+    cJSON_AddBoolToObject(json_message_object1, "requester_is_admin", requester_is_admin == TRUE);
+    if (new_message_value != NULL_POINTER)
+    {
+        cJSON_AddStringToObject(json_message_object1, "new_message_value", new_message_value);
+    }
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client_in_loop = &g_clients_array[i];
+
+        if (client_in_loop->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->channel_id != receiving_channel_id)
+        {
+            continue;
+        }
+
+        if (client_in_loop->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
  * @brief sends chat-picture metadata to all clients in the sender's channel
  *
  * @param uint64 client_sender_id -> self explanatory
@@ -2642,6 +2777,112 @@ void server_msg__send_add_tag_to_client_event_to_all_clients(uint64 client_id_of
             DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_add_tag_to_client_event_to_all_clients: msg_text ", msg_text, "\n");
 
             ws_sendframe_txt(client->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief broadcasts a lightweight "this client's avatar changed" event (no image payload) to all
+ *        authenticated non-bot clients, so they can re-request that client's avatar if they show it.
+ *        must be called with the clients lock already held (like the tag-event broadcasts).
+ *
+ * @param uint64 client_id_whose_avatar_changed -> id of the client whose avatar was set/deleted
+ */
+void server_msg__send_avatar_changed_event_to_all_clients(uint64 client_id_whose_avatar_changed)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client = 0;
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "avatar_changed");
+    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client_id_whose_avatar_changed);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        if (client->is_existing == FALSE)
+        {
+            continue;
+        }
+        if (client->is_authenticated == FALSE)
+        {
+            continue;
+        }
+        if (client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief sends one client's avatar (full base64 data-url, or empty string if none) to a single
+ *        requesting client. used for both the profile-pane request and the chunked tree lazy-load,
+ *        so avatars are only ever sent to clients that asked for them.
+ *
+ * @param ws_cli_conn_t* websocket        -> the requester's connection
+ * @param char*          dh_shared_secret -> the requester's shared secret (to encrypt with)
+ * @param uint64         client_id        -> whose avatar this is
+ * @param char*          base64_avatar    -> the avatar data-url, or "" for none
+ */
+void server_msg__send_client_avatar_to_single_client(ws_cli_conn_t* websocket, char* dh_shared_secret, uint64 client_id, char* base64_avatar)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    if (websocket == NULL_POINTER || dh_shared_secret == NULL_POINTER)
+    {
+        return;
+    }
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "client_avatar");
+    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client_id);
+    cJSON_AddStringToObject(json_message_object1, "base64_avatar", (base64_avatar != NULL_POINTER) ? base64_avatar : "");
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    if (json_root_object1_string != NULL_POINTER)
+    {
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(websocket, msg_text);
             memorymanager__free((nuint)msg_text);
         }
     }

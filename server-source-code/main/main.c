@@ -723,6 +723,12 @@ static void _main_internal__load_persisted_state(void)
                 clib__copy_memory(json_field->valuestring, &identity_in_loop->username[0], clib__utf8_string_length(json_field->valuestring), USERNAME_MAX_LENGTH - 1);
             }
 
+            json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "base64_avatar");
+            if (cJSON_IsString(json_field) == TRUE && json_field->valuestring != NULL_POINTER)
+            {
+                clib__copy_memory(json_field->valuestring, &identity_in_loop->base64_avatar[0], clib__utf8_string_length(json_field->valuestring), MAX_CLIENT_AVATAR_LENGTH - 1);
+            }
+
             identity_in_loop->tag_id_count = 0;
             json_identity_tag_ids = cJSON_GetObjectItemCaseSensitive(json_identity, "tag_ids");
             if (cJSON_IsArray(json_identity_tag_ids) == TRUE)
@@ -742,9 +748,9 @@ static void _main_internal__load_persisted_state(void)
                 }
             }
 
-            if (identity_in_loop->tag_id_count == 0)
+            if (identity_in_loop->tag_id_count == 0 && identity_in_loop->base64_avatar[0] == 0)
             {
-                DBG_IDENTITIES log_info("%s %s %s", "load_identities: dropping stored identity [", &identity_in_loop->public_key[0], "] - it has no tags \n");
+                DBG_IDENTITIES log_info("%s %s %s", "load_identities: dropping stored identity [", &identity_in_loop->public_key[0], "] - it has no tags and no avatar \n");
                 clib__null_memory(identity_in_loop, sizeof(client_stored_data_t));
                 continue;
             }
@@ -853,6 +859,9 @@ static void _main_internal__save_server_settings(char plaintext_keys[][256], uin
     cJSON_AddNumberToObject(json_root, "https_port", g_server_settings.https_port);
     cJSON_AddStringToObject(json_root, "default_theme", &g_server_settings.default_theme[0]);
     cJSON_AddItemToObject(json_root, "embed_client_config", cJSON_CreateBool(g_server_settings.embed_client_config == TRUE));
+    cJSON_AddItemToObject(json_root, "persist_identity_in_localstorage", cJSON_CreateBool(g_server_settings.persist_identity_in_localstorage == TRUE));
+    cJSON_AddItemToObject(json_root, "allow_avatars", cJSON_CreateBool(g_server_settings.allow_avatars == TRUE));
+    cJSON_AddNumberToObject(json_root, "avatar_max_size_bytes", (double)g_server_settings.avatar_max_size_bytes);
 
     json_text = cJSON_Print(json_root);
     if (json_text != NULL_POINTER)
@@ -915,6 +924,16 @@ static void _main_internal__build_and_push_client_config(int64 websocket_port, c
     if (g_server_settings.default_theme[0] != 0)
     {
         cJSON_AddStringToObject(config_object, "theme", &g_server_settings.default_theme[0]);
+    }
+
+    /* policy flags the client honours: whether to persist the identity passphrase in localStorage, and
+       whether avatars are allowed (with the accepted max raw image size). always baked so the client
+       knows the server's stance; both default off when this config is absent (page loaded directly) */
+    cJSON_AddBoolToObject(config_object, "persist_identity", g_server_settings.persist_identity_in_localstorage == TRUE);
+    cJSON_AddBoolToObject(config_object, "allow_avatars", g_server_settings.allow_avatars == TRUE);
+    if (g_server_settings.allow_avatars == TRUE)
+    {
+        cJSON_AddNumberToObject(config_object, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
     }
 
     config_json = cJSON_PrintUnformatted(config_object);
@@ -1073,6 +1092,9 @@ static void _main_internal__set_server_settings(void)
     g_server_settings.is_display_admin_tag_active = TRUE;
     g_server_settings.is_idle_mode_allowed = TRUE;
     g_server_settings.are_identities_enabled = TRUE;
+    g_server_settings.persist_identity_in_localstorage = FALSE;
+    g_server_settings.allow_avatars = FALSE;
+    g_server_settings.avatar_max_size_bytes = 51200; /* 50 KB raw image (~68 KB base64, fits MAX_CLIENT_AVATAR_LENGTH) */
 
     /* set the max client/channel counts here too; the JSON path below returns early, so without this the arrays would allocate at size 0 */
     g_server_settings.max_client_count = MAX_CLIENTS;
@@ -1156,6 +1178,12 @@ static void _main_internal__set_server_settings(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.restart_on_crash = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "are_identities_enabled");
                 if (cJSON_IsBool(json_field)) { g_server_settings.are_identities_enabled = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "persist_identity_in_localstorage");
+                if (cJSON_IsBool(json_field)) { g_server_settings.persist_identity_in_localstorage = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_avatars");
+                if (cJSON_IsBool(json_field)) { g_server_settings.allow_avatars = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "avatar_max_size_bytes");
+                if (cJSON_IsNumber(json_field)) { g_server_settings.avatar_max_size_bytes = (int64)json_field->valuedouble; }
 
                 /* optional bundled-stunnel front-end (wss) */
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "use_stunnel");
@@ -1352,6 +1380,31 @@ static void _main_internal__set_server_settings(void)
     }
     clib__null_memory(input, sizeof(input));
 
+    printf("%s %s", g_mark_ask, "Allow users to set an image avatar (persisted with their identity)? (y/n): ");
+    fgets(input, sizeof(input), stdin);
+    clib__sanitize_stdin(input);
+    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+    {
+        g_server_settings.allow_avatars = TRUE;
+        printf("%s %s\n", g_mark_ok, "avatars: on");
+
+        clib__null_memory(input, sizeof(input));
+        printf("%s %s", g_mark_ask, "Max avatar image size in KB (blank = 50, capped at 90): ");
+        fgets(input, sizeof(input), stdin);
+        clib__sanitize_stdin(input);
+        g_server_settings.avatar_max_size_bytes = (int64)strtol(input, 0, 10) * 1024;
+        if (g_server_settings.avatar_max_size_bytes < 1024)
+        {
+            g_server_settings.avatar_max_size_bytes = 51200;
+        }
+        else if (g_server_settings.avatar_max_size_bytes > 92160)
+        {
+            g_server_settings.avatar_max_size_bytes = 92160;
+        }
+        printf("%s %s%lld%s\n", g_mark_ok, "max avatar size: ", (long long)(g_server_settings.avatar_max_size_bytes / 1024), " KB");
+    }
+    clib__null_memory(input, sizeof(input));
+
     _main_internal__prompt_stunnel_setup();
 
 
@@ -1486,6 +1539,16 @@ static void _main_internal__set_server_settings(void)
         else
         {
             printf("%s %s\n", g_mark_info, "no themes detected in client.html; served clients will use their own default");
+        }
+
+        clib__null_memory(input, sizeof(input));
+        printf("%s %s", g_mark_ask, "Store each user's identity string in their browser (localStorage), so they keep the same ID across reloads instead of a fresh random one? (y/n): ");
+        fgets(input, sizeof(input), stdin);
+        clib__sanitize_stdin(input);
+        if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+        {
+            g_server_settings.persist_identity_in_localstorage = TRUE;
+            printf("%s %s\n", g_mark_ok, "identity string stored in browser localStorage: on");
         }
     }
     clib__null_memory(input, sizeof(input));

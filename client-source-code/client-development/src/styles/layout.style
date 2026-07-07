@@ -162,3 +162,14 @@ body[data-layout-edit="1"] #space-devider4 * {
 .country-flag- {
     width: 0px !important;
 }
+
+/* right-pane member list + the flatten toggle are OFF for every theme by default; a theme that wants
+   the "channels left, members right" split (currently termix) overrides these to show
+   them. the list itself is a live clone of the left tree's user rows, kept in sync from js, so it is
+   only populated while it is visible. */
+#member-list-container {
+    display: none;
+}
+#channel-flatten-toggle-button {
+    display: none;
+}

@@ -21,7 +21,13 @@ else()
 endif()
 
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    # Apple clang / ld64 do not accept -static-libgcc/-static-libstdc++ (those are GCC-only).
+    # instead give the executable an rpath so it finds libdatachannel.dylib sitting next to it.
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,@loader_path")
+else()
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+endif()
 
 include_directories(untitled
         PUBLIC
@@ -88,4 +94,30 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_target_properties(datachannel PROPERTIES IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/linkage-files/linux/libdatachannel.so)
     target_link_libraries(chat-server PRIVATE datachannel)
 
+endif()
+
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    target_link_libraries(chat-server
+    PRIVATE
+    ${PROJECT_SOURCE_DIR}/linkage-files/macos/libws.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/macos/libtommath.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/macos/libtomcrypt.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/macos/libviolet.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/macos/libmbedtls.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/macos/libmbedx509.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/macos/libmbedcrypto.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/macos/libmaxminddb.a
+    ${PROJECT_SOURCE_DIR}/linkage-files/macos/libopus.a
+    m
+    )
+    # dlopen lives in libSystem on macOS, so there is no separate -ldl. if the datachannel
+    # link ever reports undefined framework symbols, add e.g. "-framework Security" here.
+
+    # datachannel is the one shared library; it must sit next to chat-server.bin at runtime.
+    # the build script normalises its install_name to @rpath/libdatachannel.dylib, and the
+    # executable gets an @loader_path rpath (above), so it resolves from its own directory.
+    add_library(datachannel SHARED IMPORTED GLOBAL)
+    set_target_properties(datachannel PROPERTIES IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/linkage-files/macos/libdatachannel.dylib)
+    target_link_libraries(chat-server PRIVATE datachannel)
 endif()

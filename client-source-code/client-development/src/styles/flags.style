@@ -42,6 +42,37 @@ deliberately NOT in fonts.style or any single theme sheet. a theme may override 
     display: block;
 }
 
+/* connect-form per-key remove button (shared across every theme, always-on).
+    each added key's value row carries data-key-id; the "X" stays hidden until
+    that key row is hovered, then click removes the key. */
+#connect-form-sub-container-2 .text-input-container[data-key-id] {
+    position: relative;
+}
+.remove-key-button {
+    display: none;
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    line-height: 18px;
+    text-align: center;
+    font-size: 11px;
+    color: #ffffff;
+    background: #8a8f98;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    z-index: 5;
+}
+#connect-form-sub-container-2 .text-input-container[data-key-id]:hover .remove-key-button {
+    display: block;
+}
+.remove-key-button:hover {
+    background: #d83c3e;
+}
+
 /* a tag's icon box is clickable to open the icon picker; it renders its icon when it has one and stays
     visible as a small bordered box when it does not */
 .tag-settings-entry-img {

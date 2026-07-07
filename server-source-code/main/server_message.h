@@ -25,6 +25,8 @@ void server_msg__send_channel_edit_message_to_all_clients(uint64 edited_channel_
 void server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(uint64 client_id, uint64 chat_message_id, uint64 local_message_id);
 void server_msg__send_chat_message_to_single_client(uint64 sender_client_id, uint64 receiver_client_id, uint64 server_chat_message_id, char* chat_message_value);
 void server_msg__send_chat_message_to_clients_in_same_channel(uint64 sender_client_id, uint64 receiving_channel_id, uint64 server_chat_message_id, char* chat_message_value);
+void server_msg__send_chat_message_action_to_single_client(uint64 client_receiver_id, char* action_type, uint64 target_chat_message_id, char* requester_public_key, boole requester_is_admin, char* new_message_value);
+void server_msg__send_chat_message_action_to_clients_in_same_channel(uint64 receiving_channel_id, char* action_type, uint64 target_chat_message_id, char* requester_public_key, boole requester_is_admin, char* new_message_value);
 void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(uint64 sender_client_id, uint64 receiving_channel_id, uint64 server_chat_message_id);
 void server_msg__send_channel_chat_picture_to_clients_in_same_channel(uint64 sender_client_id, uint64 receiving_channel_id, uint64 server_chat_message_id, char* chat_message_value);
 void server_msg__send_image_status_to_single_client(client_t* client, char* status);
@@ -39,6 +41,8 @@ void server_msg__send_audio_state_of_client_to_all_clients(uint64 client_id, uin
 void server_msg__send_start_song_stream_message_to_clients_in_same_channel(client_t* client_that_streams);
 void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client_t* client_that_streams);
 void server_msg__send_add_tag_to_client_event_to_all_clients(uint64 client_id_of_client_that_got_the_new_tag, uint64 tag_id);
+void server_msg__send_avatar_changed_event_to_all_clients(uint64 client_id_whose_avatar_changed);
+void server_msg__send_client_avatar_to_single_client(ws_cli_conn_t* websocket, char* dh_shared_secret, uint64 client_id, char* base64_avatar);
 void server_msg__send_remove_tag_from_client_event_to_all_clients(uint64 client_id_of_client_that_got_tag_removed, uint64 tag_id);
 void server_msg__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char* icon_base64_value);
 void server_msg__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* tag_name, uint64 tag_linked_icon_id, boole has_icon);

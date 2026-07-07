@@ -13,6 +13,8 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
 void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_direct_chat_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_channel_chat_message(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_delete_chat_message_request(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_edit_chat_message_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_channel_chat_picture(uint64 sender_client_id, uint64 local_message_id, char* message_value);
 void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char* message_value);
 void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_client_id);
@@ -26,6 +28,10 @@ void client_msg__process_stop_song_stream_message(cJSON* json_root, uint64 sende
 void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_change_admin_password_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_avatar_upload(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_delete_avatar(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_request_avatar_for_client(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_request_avatars_batch(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_set_server_settings_icon_upload(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_set_server_settings_add_new_tag(cJSON* json_root, uint64 sender_client_id);

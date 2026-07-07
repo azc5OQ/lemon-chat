@@ -2181,6 +2181,13 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
                 DBG_IDENTITIES log_info("%s", "identities: DISABLED on this server (are_identities_enabled=false) -> no tags will be restored on connect \n");
             }
 
+            /* restore this identity's persisted avatar into the live client so others can load it. gated on
+               allow_avatars only (avatars may be enabled without tag-identities) */
+            if (g_server_settings.allow_avatars == TRUE)
+            {
+                base__restore_identity_avatar(current_client);
+            }
+
             server_msg__send_authentication_status_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
             server_msg__send_channel_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
             server_msg__send_client_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret, current_client->username, current_client->client_id);
@@ -2841,6 +2848,137 @@ void client_msg__process_channel_chat_message(cJSON* json_root, uint64 sender_cl
 
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief shared worker for delete/edit chat message requests. the client sends only the target message id
+ *        (+ new value for an edit) and the receiver context; the server keeps no message state, so it just
+ *        rate-limits, stamps the requester's identity, and rebroadcasts the action to the right audience
+ *        (the sender's channel, or the private counterpart plus the requester). each receiving client then
+ *        decides for itself whether to honour it based on the requester's public key / admin flag.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ * @param char* outbound_action_type -> "chat_message_delete" or "chat_message_edit"
+ * @param boole is_edit -> TRUE for edit (reads and validates new_message_value), FALSE for delete
+ *
+ * @return void
+ */
+static void _client_msg_internal__process_chat_message_action(cJSON* json_root, uint64 sender_client_id, char* outbound_action_type, boole is_edit)
+{
+    boole status = FALSE;
+    cJSON* json_message_object = 0;
+    cJSON* json_message_id = 0;
+    cJSON* json_receiver_type = 0;
+    cJSON* json_receiver_id = 0;
+    cJSON* json_new_message_value = 0;
+    char* receiver_type = 0;
+    char* new_message_value = NULL_POINTER;
+    char* requester_public_key = 0;
+    uint64 target_chat_message_id = 0;
+    uint64 channel_id = 0;
+    int64 receiver_id = 0;
+    boole requester_is_admin = FALSE;
+
+    status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
+    if (status == FALSE)
+    {
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == NULL_POINTER)
+    {
+        return;
+    }
+
+    json_message_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "message_id");
+    json_receiver_type = cJSON_GetObjectItemCaseSensitive(json_message_object, "receiver_type");
+
+    if (cJSON_IsNumber(json_message_id) == FALSE || cJSON_IsString(json_receiver_type) == FALSE)
+    {
+        return;
+    }
+
+    target_chat_message_id = (uint64)json_message_id->valuedouble;
+    receiver_type = json_receiver_type->valuestring;
+
+    if (is_edit == TRUE)
+    {
+        json_new_message_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "new_message_value");
+        if (cJSON_IsString(json_new_message_value) == FALSE || json_new_message_value->valuestring == NULL_POINTER)
+        {
+            return;
+        }
+
+        if (clib__utf8_string_length(json_new_message_value->valuestring) == 0)
+        {
+            return;
+        }
+
+        /* same oversize guard a normal chat message gets (see _client_msg_internal__is_json_chat_message_format_valid) */
+        if (clib__utf8_string_length_check_max_length(json_new_message_value->valuestring, (int)((g_server_settings.websocket_message_max_length * 3) / 4 - 2048)) == -1)
+        {
+            return;
+        }
+
+        new_message_value = json_new_message_value->valuestring;
+    }
+
+    clib__read_lock(&g_clients_global_rwlock_guard);
+
+    requester_public_key = g_clients_array[sender_client_id].public_key;
+    requester_is_admin = g_clients_array[sender_client_id].is_admin;
+
+    if (clib__is_string_equal(receiver_type, "user") == TRUE)
+    {
+        json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "receiver_id");
+        if (cJSON_IsNumber(json_receiver_id) == TRUE)
+        {
+            receiver_id = json_receiver_id->valueint;
+            if (receiver_id >= 0 && receiver_id < g_server_settings.max_client_count && g_clients_array[receiver_id].is_authenticated == TRUE)
+            {
+                /* deliver to the private counterpart and back to the requester so both views update */
+                server_msg__send_chat_message_action_to_single_client((uint64)receiver_id, outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
+                server_msg__send_chat_message_action_to_single_client(sender_client_id, outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
+            }
+        }
+    }
+    else
+    {
+        clib__read_lock(&g_channels_global_rwlock_guard);
+        channel_id = g_clients_array[sender_client_id].channel_id;
+        server_msg__send_chat_message_action_to_clients_in_same_channel(channel_id, outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
+        clib__unlock(&g_channels_global_rwlock_guard);
+    }
+
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief processes a request to delete a chat message (rebroadcasts a delete action to the right audience)
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_delete_chat_message_request(cJSON* json_root, uint64 sender_client_id)
+{
+    _client_msg_internal__process_chat_message_action(json_root, sender_client_id, "chat_message_delete", FALSE);
+}
+
+/**
+ * @brief processes a request to edit a chat message (rebroadcasts an edit action to the right audience)
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_edit_chat_message_request(cJSON* json_root, uint64 sender_client_id)
+{
+    _client_msg_internal__process_chat_message_action(json_root, sender_client_id, "chat_message_edit", TRUE);
 }
 
 /**
@@ -3925,6 +4063,239 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
 
     /* send admin status to other clients possibly, or not, do they have to know you are an admin */
 label_client_msg__process_add_tag_to_client_message_end:
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief a client sets its OWN avatar (a base64 image data-url). gated by allow_avatars; oversize
+ *        uploads (per the server's configured max) are SILENTLY dropped. the avatar is stored in the
+ *        identity store keyed by the client's public-key hash (so it persists with their identity), and
+ *        a lightweight avatar_changed event is broadcast so others can re-request it. no admin needed.
+ */
+void client_msg__process_avatar_upload(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* client = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_base64_avatar = 0;
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    uint64 base64_length = 0;
+    uint64 max_base64_length = 0;
+
+    if (g_server_settings.allow_avatars == FALSE)
+    {
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == NULL_POINTER)
+    {
+        return;
+    }
+
+    json_base64_avatar = cJSON_GetObjectItemCaseSensitive(json_message_object, "base64_avatar");
+    if (cJSON_IsString(json_base64_avatar) == FALSE || json_base64_avatar->valuestring == NULL_POINTER)
+    {
+        return;
+    }
+
+    base64_length = clib__utf8_string_length(json_base64_avatar->valuestring);
+
+    /* raw image cap -> base64 is ~4/3 of raw (plus a small data-url prefix). oversize/empty uploads are
+       silently dropped (no error is sent back). also never exceed the store buffer. */
+    max_base64_length = (uint64)((g_server_settings.avatar_max_size_bytes * 4) / 3) + 64;
+    if (base64_length == 0 || base64_length >= MAX_CLIENT_AVATAR_LENGTH || base64_length > max_base64_length)
+    {
+        DBG_IDENTITIES log_info("%s %llu %s", "avatar_upload: dropped empty/oversize avatar from client_id", sender_client_id, "\n");
+        return;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+    if (client->is_authenticated == FALSE || client->is_existing == FALSE || client->is_music_bot == TRUE || client->public_key[0] == 0)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
+
+    /* store the live avatar on the client (heap, freed on disconnect/replace) so it can be served to
+       others without a store lookup; also mirror it into the identity store for cross-session persistence */
+    if (client->base64_avatar != NULL_POINTER)
+    {
+        memorymanager__free((nuint)client->base64_avatar);
+        client->base64_avatar = NULL_POINTER;
+    }
+    client->base64_avatar = (char*)memorymanager__allocate(base64_length + 1, MEMALLOC_AVATAR);
+    if (client->base64_avatar != NULL_POINTER)
+    {
+        clib__copy_memory(json_base64_avatar->valuestring, client->base64_avatar, base64_length, base64_length);
+    }
+
+    base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
+    base__set_identity_avatar_by_hash(identity_hash, json_base64_avatar->valuestring);
+
+    server_msg__send_avatar_changed_event_to_all_clients(client->client_id);
+
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief a client deletes its OWN avatar. clears it from the identity store and broadcasts avatar_changed.
+ */
+void client_msg__process_delete_avatar(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* client = 0;
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+
+    (void)json_root;
+
+    if (g_server_settings.allow_avatars == FALSE)
+    {
+        return;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+    if (client->is_authenticated == FALSE || client->is_existing == FALSE || client->public_key[0] == 0)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
+
+    if (client->base64_avatar != NULL_POINTER)
+    {
+        memorymanager__free((nuint)client->base64_avatar);
+        client->base64_avatar = NULL_POINTER;
+    }
+
+    base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
+    base__set_identity_avatar_by_hash(identity_hash, ""); /* empty string clears it */
+
+    server_msg__send_avatar_changed_event_to_all_clients(client->client_id);
+
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief a client requests ONE other client's avatar (profile pane). responds with a client_avatar
+ *        message (served straight from the target's live client_t->base64_avatar; empty if none).
+ */
+void client_msg__process_request_avatar_for_client(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* sender = 0;
+    client_t* target = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_client_id = 0;
+    uint64 target_client_id = 0;
+
+    if (g_server_settings.allow_avatars == FALSE)
+    {
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == NULL_POINTER)
+    {
+        return;
+    }
+
+    json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
+    if (cJSON_IsNumber(json_client_id) == FALSE)
+    {
+        return;
+    }
+
+    target_client_id = (uint64)json_client_id->valueint;
+    if (target_client_id >= g_server_settings.max_client_count)
+    {
+        return;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    sender = &g_clients_array[sender_client_id];
+    target = &g_clients_array[target_client_id];
+
+    if (sender->is_authenticated == FALSE || sender->is_existing == FALSE || target->is_existing == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
+
+    server_msg__send_client_avatar_to_single_client(sender->p_ws_connection, sender->dh_shared_secret, target_client_id, (target->base64_avatar != NULL_POINTER) ? target->base64_avatar : "");
+
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief a client requests a CHUNK of avatars (client_ids array) for chunked lazy-loading. the server
+ *        sends one client_avatar message per target that actually has an avatar (targets with none are
+ *        skipped, so the client keeps its placeholder). capped per request.
+ */
+void client_msg__process_request_avatars_batch(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* sender = 0;
+    client_t* target = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_client_ids = 0;
+    cJSON* json_id = 0;
+    uint64 target_client_id = 0;
+    uint64 sent = 0;
+
+    if (g_server_settings.allow_avatars == FALSE)
+    {
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == NULL_POINTER)
+    {
+        return;
+    }
+
+    json_client_ids = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_ids");
+    if (cJSON_IsArray(json_client_ids) == FALSE)
+    {
+        return;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    sender = &g_clients_array[sender_client_id];
+    if (sender->is_authenticated == FALSE || sender->is_existing == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
+
+    cJSON_ArrayForEach(json_id, json_client_ids)
+    {
+        if (sent >= 100)
+        {
+            break; /* cap one batch so a single request can't blast unbounded work */
+        }
+        if (cJSON_IsNumber(json_id) == FALSE)
+        {
+            continue;
+        }
+
+        target_client_id = (uint64)json_id->valueint;
+        if (target_client_id >= g_server_settings.max_client_count)
+        {
+            continue;
+        }
+
+        target = &g_clients_array[target_client_id];
+        if (target->is_existing == FALSE || target->base64_avatar == NULL_POINTER)
+        {
+            continue; /* skip clients without a live avatar; the client keeps its placeholder */
+        }
+
+        server_msg__send_client_avatar_to_single_client(sender->p_ws_connection, sender->dh_shared_secret, target_client_id, target->base64_avatar);
+        sent++;
+    }
+
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 

@@ -284,7 +284,8 @@ static void _base_internal__serialize_identities(cJSON* json_root)
 
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
-        if (g_client_stored_data[i].public_key[0] == 0 || g_client_stored_data[i].tag_id_count == 0)
+        /* keep a slot that has EITHER tags or an avatar (avatar-only identities are valid now) */
+        if (g_client_stored_data[i].public_key[0] == 0 || (g_client_stored_data[i].tag_id_count == 0 && g_client_stored_data[i].base64_avatar[0] == 0))
         {
             continue;
         }
@@ -294,6 +295,10 @@ static void _base_internal__serialize_identities(cJSON* json_root)
         json_identity = cJSON_CreateObject();
         cJSON_AddStringToObject(json_identity, "public_key_hash", &g_client_stored_data[i].public_key[0]);
         cJSON_AddStringToObject(json_identity, "username", &g_client_stored_data[i].username[0]);
+        if (g_client_stored_data[i].base64_avatar[0] != 0)
+        {
+            cJSON_AddStringToObject(json_identity, "base64_avatar", &g_client_stored_data[i].base64_avatar[0]);
+        }
 
         json_identity_tag_ids = cJSON_CreateArray();
         for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
@@ -1573,6 +1578,59 @@ void base__restore_identity_tags(client_t* client)
 }
 
 /**
+ * @brief restores a reconnecting identity's persisted avatar (matched by public-key hash) into the live
+ *        client, so it can be served to others immediately without waiting for a re-upload. kept separate
+ *        from tag restore so it can run when avatars are allowed even if tag-identities are disabled.
+ *
+ * @param client_t* client -> the just-authenticated client
+ *
+ * @note takes g_client_stored_data_mutex (a leaf lock). call with the clients lock held (it writes
+ *       client->base64_avatar, a heap block freed on disconnect).
+ */
+void base__restore_identity_avatar(client_t* client)
+{
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    uint64 i = 0;
+    uint64 avatar_len = 0;
+
+    if (client == NULL_POINTER || client->public_key[0] == 0)
+    {
+        return;
+    }
+
+    base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            if (g_client_stored_data[i].base64_avatar[0] != 0)
+            {
+                avatar_len = clib__utf8_string_length(&g_client_stored_data[i].base64_avatar[0]);
+
+                if (client->base64_avatar != NULL_POINTER)
+                {
+                    memorymanager__free((nuint)client->base64_avatar);
+                    client->base64_avatar = NULL_POINTER;
+                }
+
+                client->base64_avatar = (char*)memorymanager__allocate(avatar_len + 1, MEMALLOC_AVATAR);
+                if (client->base64_avatar != NULL_POINTER)
+                {
+                    clib__copy_memory(&g_client_stored_data[i].base64_avatar[0], client->base64_avatar, avatar_len, avatar_len);
+                    DBG_IDENTITIES log_info("%s %llu %s", "restore_identity_avatar: restored avatar for client_id", client->client_id, "\n");
+                }
+            }
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
  * @brief snapshots every connected, authenticated client that currently owns at least one tag into the
  *        in-memory identity store, keyed by base64(SHA256(public_key)). an existing entry for that hash is
  *        overwritten; otherwise the first free slot is used. called at "save server settings" time so the
@@ -1720,11 +1778,21 @@ void base__sync_client_identity_in_store(client_t* client)
 
     if (tag_count == 0)
     {
-        /* the identity no longer wears any tag: drop its entry so it is not restored later */
+        /* the identity no longer wears any tag: drop its entry so it is not restored later - UNLESS it
+           still holds an avatar, in which case keep the slot and just clear the tags */
         if (slot != -1)
         {
-            clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
-            DBG_IDENTITIES log_info("%s %llu %s %lld %s", "sync_identity: client_id", client->client_id, "has no tags left -> cleared store slot", slot, "\n");
+            if (g_client_stored_data[slot].base64_avatar[0] != 0)
+            {
+                g_client_stored_data[slot].tag_id_count = 0;
+                clib__null_memory(&g_client_stored_data[slot].tag_ids[0], sizeof(g_client_stored_data[slot].tag_ids));
+                DBG_IDENTITIES log_info("%s %llu %s %lld %s", "sync_identity: client_id", client->client_id, "has no tags left but keeps an avatar -> cleared tags on slot", slot, "\n");
+            }
+            else
+            {
+                clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+                DBG_IDENTITIES log_info("%s %llu %s %lld %s", "sync_identity: client_id", client->client_id, "has no tags left -> cleared store slot", slot, "\n");
+            }
         }
         pthread_mutex_unlock(&g_client_stored_data_mutex);
         return;
@@ -1750,7 +1818,11 @@ void base__sync_client_identity_in_store(client_t* client)
         return;
     }
 
-    clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+    /* rewrite the identity fields but PRESERVE base64_avatar (nulling the whole slot would wipe a
+       stored avatar). a first-free slot is already fully zeroed, so this is correct for new entries too */
+    clib__null_memory(&g_client_stored_data[slot].public_key[0], MAX_PUBLIC_KEY_LENGTH);
+    clib__null_memory(&g_client_stored_data[slot].username[0], USERNAME_MAX_LENGTH);
+    clib__null_memory(&g_client_stored_data[slot].tag_ids[0], sizeof(g_client_stored_data[slot].tag_ids));
     clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
     clib__copy_memory(client->username, &g_client_stored_data[slot].username[0], clib__utf8_string_length(client->username), USERNAME_MAX_LENGTH - 1); /* remember the last-seen username for the admin ui */
 
@@ -1796,6 +1868,119 @@ boole base__delete_identity_from_store_by_hash(char* identity_hash)
             clib__null_memory(&g_client_stored_data[i], sizeof(client_stored_data_t));
             found = TRUE;
             DBG_IDENTITIES log_info("%s %llu %s %s %s", "delete_identity: cleared store slot", i, "for hash [", identity_hash, "] \n");
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    return found;
+}
+
+/**
+ * @brief stores (or replaces) an identity's avatar in the in-memory store, keyed by its
+ *        base64(SHA256(public_key)) hash. creates an avatar-only slot if the identity has no entry
+ *        yet. pass an empty/NULL base64_avatar to clear it (and drop the slot if it then holds
+ *        neither tags nor an avatar). the on-disk copy follows on the next settings save.
+ *
+ * @note guarded by g_client_stored_data_mutex (a leaf lock).
+ */
+void base__set_identity_avatar_by_hash(char* identity_hash, char* base64_avatar)
+{
+    uint64 i = 0;
+    int64 slot = -1;
+    boole clearing = FALSE;
+
+    if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
+    {
+        return;
+    }
+
+    clearing = (boole)(base64_avatar == NULL_POINTER || base64_avatar[0] == 0);
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            slot = (int64)i;
+            break;
+        }
+    }
+
+    if (slot == -1)
+    {
+        if (clearing == TRUE)
+        {
+            pthread_mutex_unlock(&g_client_stored_data_mutex);
+            return; /* nothing stored to clear */
+        }
+
+        for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+        {
+            if (g_client_stored_data[i].public_key[0] == 0)
+            {
+                slot = (int64)i;
+                break;
+            }
+        }
+
+        if (slot == -1)
+        {
+            DBG_IDENTITIES log_info("%s", "set_identity_avatar: identity store FULL, cannot store avatar \n");
+            pthread_mutex_unlock(&g_client_stored_data_mutex);
+            return;
+        }
+
+        clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+        clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
+    }
+
+    clib__null_memory(&g_client_stored_data[slot].base64_avatar[0], MAX_CLIENT_AVATAR_LENGTH);
+
+    if (clearing == FALSE)
+    {
+        clib__copy_memory(base64_avatar, &g_client_stored_data[slot].base64_avatar[0], clib__utf8_string_length(base64_avatar), MAX_CLIENT_AVATAR_LENGTH - 1);
+    }
+    else if (g_client_stored_data[slot].tag_id_count == 0)
+    {
+        /* cleared the avatar and the slot holds no tags either -> drop it entirely */
+        clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
+ * @brief copies an identity's stored avatar (by hash) into out_buffer. out_buffer is always
+ *        null-terminated. returns TRUE only if a non-empty avatar was found.
+ *
+ * @note guarded by g_client_stored_data_mutex (a leaf lock).
+ */
+boole base__get_identity_avatar_by_hash(char* identity_hash, char* out_buffer, uint64 out_buffer_size)
+{
+    uint64 i = 0;
+    boole found = FALSE;
+
+    if (identity_hash == NULL_POINTER || identity_hash[0] == 0 || out_buffer == NULL_POINTER || out_buffer_size == 0)
+    {
+        return FALSE;
+    }
+
+    out_buffer[0] = 0;
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            if (g_client_stored_data[i].base64_avatar[0] != 0)
+            {
+                clib__copy_memory(&g_client_stored_data[i].base64_avatar[0], out_buffer, clib__utf8_string_length(&g_client_stored_data[i].base64_avatar[0]), out_buffer_size - 1);
+                found = TRUE;
+            }
             break;
         }
     }
@@ -2487,6 +2672,13 @@ void base__process_client_disconnect(uint64 client_index)
             memorymanager__free((nuint)client->file_upload_extension.file_upload_buffer);
         }
 
+        /* free the heap-allocated live avatar before the struct is zeroed, or the pointer would leak */
+        if (client->base64_avatar != NULL_POINTER)
+        {
+            memorymanager__free((nuint)client->base64_avatar);
+            client->base64_avatar = NULL_POINTER;
+        }
+
         clib__null_memory(client, sizeof(client_t));
 
         server_msg__send_client_disconnect_message_to_all_clients(client_index);
@@ -2602,6 +2794,14 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             {
                 client_msg__process_channel_chat_message(json_root, client_index);
             }
+            else if (clib__is_string_equal(message_type, "delete_chat_message_request"))
+            {
+                client_msg__process_delete_chat_message_request(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "edit_chat_message_request"))
+            {
+                client_msg__process_edit_chat_message_request(json_root, client_index);
+            }
             else if (clib__is_string_equal(message_type, "join_channel_request"))
             {
                 client_msg__process_join_channel_request(json_root, client_index);
@@ -2685,6 +2885,22 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "set_channel_icon"))
             {
                 client_msg__process_set_channel_icon(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "avatar_upload"))
+            {
+                client_msg__process_avatar_upload(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "delete_avatar"))
+            {
+                client_msg__process_delete_avatar(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "request_avatar_for_client"))
+            {
+                client_msg__process_request_avatar_for_client(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "request_avatars"))
+            {
+                client_msg__process_request_avatars_batch(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "save_server_settings"))
             {

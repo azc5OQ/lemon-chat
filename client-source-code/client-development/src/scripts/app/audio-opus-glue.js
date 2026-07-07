@@ -322,7 +322,7 @@
                 Module._free(err);
                 if (errNum != 0)
                 {
-                    console.log("there is error");
+                    console.error("opus decoder creation failed, error code " + errNum);
                     return;
                 }
 
@@ -436,6 +436,7 @@
 
                 let worker_url = URL.createObjectURL(new Blob(['(', code, ')();'], { type: 'text/javascript' }));
                 let newly_created_worker = new global.Worker(worker_url);
+                console.log("webworker created: " + worker_name);
                 newly_created_worker.onmessage = mainthread_onmessage;
                 newly_created_worker.worker_name = worker_name;
                 return newly_created_worker;
@@ -560,6 +561,7 @@
 
                     if (oldest_sender == null)
                     {
+                        console.warn("opus decoder pool exhausted: no free/idle decoder for new sender");
                         return null;
                     }
 
