@@ -3,29 +3,13 @@
 # Build the lemon-chat server + bundled stunnel into ../buildresult/ on macOS.
 #   ./macos_build_script.sh
 #
-# Modelled on linux_build_script.sh. macOS differences handled here:
-#   - toolchain is clang/clang++ (Xcode command line tools), not gcc
-#   - shared libs are .dylib, not .so; datachannel's install_name is set to
-#     @rpath/libdatachannel.dylib and the server gets an @loader_path rpath
-#     (see main/CMakeLists.txt), so the dylib just has to sit next to the binary
-#   - static libs go into main/linkage-files/macos/ (the CMakeLists has a Darwin
-#     block that links them)
-#   - the runtime start script uses DYLD_LIBRARY_PATH, not LD_LIBRARY_PATH
 #
-# Prerequisites (this is everything a normal build needs):
+# Prerequisites
 #   xcode-select --install              # clang, make, ld, install_name_tool, otool (Xcode command line tools)
 #   brew install cmake                  # if not already installed
 #   brew install ninja                  # if not already installed
 #   brew install pkg-config             # if not already installed
 #
-#   autoconf / automake / libtool are NOT needed for a normal build - the vendored
-#   ./configure scripts are used as-is. Only if a ./configure step ever fails asking
-#   to regenerate do you also need:  brew install autoconf automake libtool
-#
-# NOTE: this script was authored on Windows and has NOT been run on macOS. The
-# per-library cmake steps mirror the (working) Linux build, but the datachannel
-# dylib naming / install_name and any framework link deps are the most likely
-# spots to need a small tweak on first run.
 
 set -o pipefail
 
