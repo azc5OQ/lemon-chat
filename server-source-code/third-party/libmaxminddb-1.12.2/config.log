@@ -36,6 +36,7 @@ PATH: /bin/
 PATH: /usr/games/
 PATH: /usr/local/games/
 PATH: /usr/lib/wsl/lib/
+PATH: /snap/bin/
 
 
 ## ----------- ##
@@ -1052,7 +1053,7 @@ conftest.c:61:6: warning: conflicting types for built-in function 'fabs'; expect
       |      ^~~~
 conftest.c:1:1: note: 'fabs' is declared in header '<math.h>'
     1 | /* confdefs.h */
-/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccu648nS.o: in function `main':
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccWpBGfd.o: in function `main':
 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/libmaxminddb-1.12.2/conftest.c:65:(.text+0x9): undefined reference to `fabs'
 collect2: error: ld returned 1 exit status
 configure:14836: $? = 1

@@ -36,6 +36,7 @@ PATH: /bin/
 PATH: /usr/games/
 PATH: /usr/local/games/
 PATH: /usr/lib/wsl/lib/
+PATH: /snap/bin/
 
 
 ## ----------- ##
@@ -1886,7 +1887,7 @@ configure:17684: $? = 0
 configure:17706: result: none required
 configure:17715: checking for library containing yp_get_default_domain
 configure:17751: gcc -o conftest -g -O2 -Wno-error=incompatible-pointer-types -pthread -Wall -Wextra -Wpedantic -Wformat=2 -Wconversion -Wno-deprecated-declarations -Wno-unused-command-line-argument -fPIE -fstack-protector-strong -fcf-protection=full -fstack-clash-protection -D_FORTIFY_SOURCE=2   -fPIE -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack conftest.c -lpthread  >&5
-/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccinV2aF.o: in function `main':
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccibYKGO.o: in function `main':
 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/stunnel-5.75/conftest.c:72:(.text.startup+0x9): undefined reference to `yp_get_default_domain'
 collect2: error: ld returned 1 exit status
 configure:17751: $? = 1
@@ -2061,7 +2062,7 @@ configure:17953: $? = 0
 configure:17975: result: none required
 configure:17984: checking for library containing shl_load
 configure:18020: gcc -o conftest -g -O2 -Wno-error=incompatible-pointer-types -pthread -Wall -Wextra -Wpedantic -Wformat=2 -Wconversion -Wno-deprecated-declarations -Wno-unused-command-line-argument -fPIE -fstack-protector-strong -fcf-protection=full -fstack-clash-protection -D_FORTIFY_SOURCE=2   -fPIE -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack conftest.c -lpthread  >&5
-/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccBcSQr6.o: in function `main':
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccZERJe5.o: in function `main':
 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/stunnel-5.75/conftest.c:72:(.text.startup+0x9): undefined reference to `shl_load'
 collect2: error: ld returned 1 exit status
 configure:18020: $? = 1
@@ -2224,7 +2225,7 @@ configure: failed program was:
 configure:18042: result: no
 configure:18052: checking for library containing mi_malloc
 configure:18088: gcc -o conftest -g -O2 -Wno-error=incompatible-pointer-types -pthread -Wall -Wextra -Wpedantic -Wformat=2 -Wconversion -Wno-deprecated-declarations -Wno-unused-command-line-argument -fPIE -fstack-protector-strong -fcf-protection=full -fstack-clash-protection -D_FORTIFY_SOURCE=2   -fPIE -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack conftest.c -lpthread  >&5
-/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cciwz3Fd.o: in function `main':
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccl37gt5.o: in function `main':
 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/stunnel-5.75/conftest.c:72:(.text.startup+0x9): undefined reference to `mi_malloc'
 collect2: error: ld returned 1 exit status
 configure:18088: $? = 1
@@ -2414,7 +2415,7 @@ configure:18142: $? = 0
 configure:18142: result: yes
 configure:18148: checking for _getpty
 configure:18148: gcc -o conftest -g -O2 -Wno-error=incompatible-pointer-types -pthread -Wall -Wextra -Wpedantic -Wformat=2 -Wconversion -Wno-deprecated-declarations -Wno-unused-command-line-argument -fPIE -fstack-protector-strong -fcf-protection=full -fstack-clash-protection -D_FORTIFY_SOURCE=2   -fPIE -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack conftest.c -lpthread  >&5
-/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccWNCC7N.o: in function `main':
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cc4THVF9.o: in function `main':
 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/stunnel-5.75/conftest.c:88:(.text.startup+0x9): undefined reference to `_getpty'
 collect2: error: ld returned 1 exit status
 configure:18148: $? = 1
@@ -2561,7 +2562,7 @@ configure:18228: $? = 0
 configure:18228: result: yes
 configure:18234: checking for __makecontext_v2
 configure:18234: gcc -o conftest -g -O2 -Wno-error=incompatible-pointer-types -pthread -Wall -Wextra -Wpedantic -Wformat=2 -Wconversion -Wno-deprecated-declarations -Wno-unused-command-line-argument -fPIE -fstack-protector-strong -fcf-protection=full -fstack-clash-protection -D_FORTIFY_SOURCE=2   -fPIE -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack conftest.c -lpthread  >&5
-/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccPOlGHz.o: in function `main':
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccnU3t5m.o: in function `main':
 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/stunnel-5.75/conftest.c:100:(.text.startup+0x9): undefined reference to `__makecontext_v2'
 collect2: error: ld returned 1 exit status
 configure:18234: $? = 1
@@ -2709,7 +2710,7 @@ configure:18416: checking whether to enable systemd socket activation support
 configure:18507: result: autodetecting
 configure:18510: checking for library containing sd_listen_fds
 configure:18546: gcc -o conftest -g -O2 -Wno-error=incompatible-pointer-types -pthread -Wall -Wextra -Wpedantic -Wformat=2 -Wconversion -Wno-deprecated-declarations -Wno-unused-command-line-argument -fPIE -fstack-protector-strong -fcf-protection=full -fstack-clash-protection -D_FORTIFY_SOURCE=2   -fPIE -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack conftest.c -lpthread  >&5
-/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccoD52lG.o: in function `main':
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cckoxgqi.o: in function `main':
 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/stunnel-5.75/conftest.c:95:(.text.startup+0x9): undefined reference to `sd_listen_fds'
 collect2: error: ld returned 1 exit status
 configure:18546: $? = 1
@@ -3125,7 +3126,7 @@ configure:18730: checking for TLS directory
 configure:18751: result: /mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/openssl
 configure:18761: checking for FIPS_mode_set
 configure:18761: gcc -o conftest -g -O2 -Wno-error=incompatible-pointer-types -pthread -Wall -Wextra -Wpedantic -Wformat=2 -Wconversion -Wno-deprecated-declarations -Wno-unused-command-line-argument -fPIE -fstack-protector-strong -fcf-protection=full -fstack-clash-protection -D_FORTIFY_SOURCE=2  -I/mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/openssl/include  -fPIE -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack conftest.c -lpthread  -L/mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/openssl/lib64 -L/mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/openssl/lib -lssl -lcrypto >&5
-/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccZlKAia.o: in function `main':
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cciBpoUp.o: in function `main':
 /mnt/c/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/stunnel/stunnel-5.75/conftest.c:109:(.text.startup+0x9): undefined reference to `FIPS_mode_set'
 collect2: error: ld returned 1 exit status
 configure:18761: $? = 1
@@ -3278,8 +3279,10 @@ config.status:1165: creating tools/Makefile
 config.status:1165: creating tests/Makefile
 config.status:1165: creating tests/certs/Makefile
 config.status:1165: creating src/config.h
+config.status:1346: src/config.h is unchanged
 config.status:1394: executing depfiles commands
 config.status:1469: cd src       && sed -e '/# am--include-marker/d' Makefile         | make -f - am--depfiles
+make: Nothing to be done for 'am--depfiles'.
 config.status:1476: $? = 0
 config.status:1394: executing libtool commands
 configure:21125: **************************************** success

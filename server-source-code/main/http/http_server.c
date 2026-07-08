@@ -33,7 +33,14 @@ typedef SOCKET http_socket_t;
 typedef int http_socket_t;
 #define HTTP_INVALID_SOCKET (-1)
 #define http_close_socket close
+/* MSG_NOSIGNAL keeps send() to a closed peer from raising SIGPIPE (which would kill the server).
+   Linux has the flag; macOS/BSD do not - there the SO_NOSIGPIPE socket option is set per connection
+   in _http_server_internal__handle_connection instead, so the send flag is just 0 */
+#ifdef MSG_NOSIGNAL
 #define HTTP_SEND_FLAGS MSG_NOSIGNAL
+#else
+#define HTTP_SEND_FLAGS 0
+#endif
 #endif
 
 #define HTTP_SERVER_REQUEST_BUFFER_SIZE 8192
@@ -524,6 +531,14 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
     clib__null_memory(&recv_timeout, sizeof(recv_timeout));
     recv_timeout.tv_sec = HTTP_SERVER_RECV_TIMEOUT_SECONDS;
     setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&recv_timeout, sizeof(recv_timeout));
+#ifdef SO_NOSIGPIPE
+    /* macOS/BSD have no MSG_NOSIGNAL; suppress SIGPIPE on this socket so a client vanishing
+       mid-send returns EPIPE instead of killing the server. no-op define on Linux */
+    {
+        int nosigpipe_on = 1;
+        setsockopt(client_socket, SOL_SOCKET, SO_NOSIGPIPE, (const char*)&nosigpipe_on, sizeof(nosigpipe_on));
+    }
+#endif
 #endif
 
     clib__null_memory(request_buffer, sizeof(request_buffer));

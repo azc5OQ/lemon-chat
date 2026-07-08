@@ -44,7 +44,13 @@ static const char* g_color_reset = "";
 #include <signal.h>
 #include <sys/wait.h>   /* waitpid (certbot) */
 #include <sys/stat.h>   /* stat (certificate age for the days-of-validity-left estimate) */
-#include <sys/prctl.h>  /* PR_SET_PDEATHSIG (stunnel dies with the server) */
+#ifdef __linux__
+#include <sys/prctl.h>  /* PR_SET_PDEATHSIG (stunnel dies with the server); Linux-only, absent on macOS/BSD */
+#endif
+#if defined(__APPLE__)
+#include <stdlib.h>       /* realpath */
+#include <mach-o/dyld.h>  /* _NSGetExecutablePath (macOS has no /proc/self/exe) */
+#endif
 #endif
 
 static int g_stunnel_pid = 0; /* pid of the optional bundled stunnel child, 0 = none */
@@ -1570,11 +1576,33 @@ static void _main_internal__set_server_settings(void)
  */
 static void _main_internal__executable_dir(char* out_directory, uint64 out_directory_size)
 {
-    int64 link_length = 0;
     char* last_slash = 0;
+#if defined(__APPLE__)
+    uint image_path_size = 0;     /* _NSGetExecutablePath takes a uint32_t* == unsigned int* == uint* */
+    char image_path[4096];        /* raw (possibly relative/symlinked) path from the loader */
+    char resolved_path[4096];     /* realpath output; realpath needs a PATH_MAX-sized buffer */
+#else
+    int64 link_length = 0;
+#endif
 
+#if defined(__APPLE__)
+    /* macOS has no /proc; the dynamic loader hands back the executable's path, then realpath
+       canonicalizes it to an absolute path so sibling files (stunnel.conf, the binary) resolve */
+    image_path_size = (uint)sizeof(image_path);
+    if (_NSGetExecutablePath(image_path, &image_path_size) != 0)
+    {
+        out_directory[0] = 0;
+        return;
+    }
 
+    if (realpath(image_path, resolved_path) == NULL_POINTER)
+    {
+        out_directory[0] = 0;
+        return;
+    }
 
+    snprintf(out_directory, out_directory_size, "%s", resolved_path);
+#else
     link_length = readlink("/proc/self/exe", out_directory, out_directory_size - 1);
     if (link_length <= 0)
     {
@@ -1583,6 +1611,8 @@ static void _main_internal__executable_dir(char* out_directory, uint64 out_direc
     }
 
     out_directory[link_length] = 0;
+#endif
+
     last_slash = strrchr(out_directory, '/');
     if (last_slash != NULL_POINTER)
     {
@@ -1926,7 +1956,10 @@ static void _main_internal__launch_stunnel(void)
     stunnel_pid = fork();
     if (stunnel_pid == 0)
     {
-        prctl(PR_SET_PDEATHSIG, SIGTERM); /* die with the parent server */
+#ifdef __linux__
+        prctl(PR_SET_PDEATHSIG, SIGTERM); /* die with the parent server; Linux-only. on macOS/BSD the
+                                             stale-stunnel pkill above handles a leftover from a hard kill */
+#endif
         execl(stunnel_path, stunnel_path, conf_path, (char* )NULL_POINTER);
         _exit(127); /* exec failed */
     }

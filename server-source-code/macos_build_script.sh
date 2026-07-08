@@ -12,9 +12,15 @@
 #     block that links them)
 #   - the runtime start script uses DYLD_LIBRARY_PATH, not LD_LIBRARY_PATH
 #
-# Prerequisites:
-#   xcode-select --install                      # clang, make, ld, install_name_tool, otool
-#   brew install cmake ninja pkg-config autoconf automake libtool
+# Prerequisites (this is everything a normal build needs):
+#   xcode-select --install              # clang, make, ld, install_name_tool, otool (Xcode command line tools)
+#   brew install cmake                  # if not already installed
+#   brew install ninja                  # if not already installed
+#   brew install pkg-config             # if not already installed
+#
+#   autoconf / automake / libtool are NOT needed for a normal build - the vendored
+#   ./configure scripts are used as-is. Only if a ./configure step ever fails asking
+#   to regenerate do you also need:  brew install autoconf automake libtool
 #
 # NOTE: this script was authored on Windows and has NOT been run on macOS. The
 # per-library cmake steps mirror the (working) Linux build, but the datachannel
@@ -46,6 +52,14 @@ JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
 if ! xcode-select -p >/dev/null 2>&1; then
   warning "Xcode command line tools not found. Run: xcode-select --install"
 fi
+
+# the three brew tools this build relies on; warn (with the exact install line) if any is missing
+for required_tool in cmake ninja pkg-config; do
+  if ! command -v "$required_tool" >/dev/null 2>&1; then
+    warning "$required_tool not found. Install the build tools with:  brew install cmake ninja pkg-config"
+    break
+  fi
+done
 
 rm -f -v -r "$ROOT_DIRECTORY/../buildresult/"
 mkdir -p "$ROOT_DIRECTORY/../buildresult/"
