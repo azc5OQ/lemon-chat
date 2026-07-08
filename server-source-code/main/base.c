@@ -1211,27 +1211,18 @@ void base__free_json_message(cJSON* json_root_object1, char* json_root_object1_s
 uint64 base__get_timestamp_ms(void)
 {
 #ifdef WIN32
-
     uint64 timestamp_msec = GetTickCount64();
     return timestamp_msec;
-#endif
-
-#ifdef __linux__
-    /*static struct timeb timer_msec;
-    static uint64 timestamp_msec;
-    timestamp_msec = 0;
-    if (ftime(&timer_msec) == 0)
-    {
-        timestamp_msec = ((uint64)timer_msec.time) * 1000 + (uint64)timer_msec.millitm;
-    }
-    else
-    {
-        timestamp_msec = -1;
-    }*/
-
+#else
+    /* every non-Windows platform (Linux, macOS, BSD) has POSIX gettimeofday. this MUST have an
+       #else, not an #ifdef __linux__: on macOS __linux__ is undefined, so a linux-only branch left
+       the function with no return - it fell off the end and returned garbage, which made every
+       spam-protected request (channel create/join/delete, chat, etc.) compare against a bogus
+       "now" and get silently rejected while auth (no spam check) still worked */
     struct timeval tv;
+    uint64 timestamp_msec = 0;
     gettimeofday(&tv, NULL_POINTER);
-    uint64 timestamp_msec = (uint64)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+    timestamp_msec = (uint64)tv.tv_sec * 1000 + (uint64)tv.tv_usec / 1000;
     return timestamp_msec;
 #endif
 }

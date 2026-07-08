@@ -137,8 +137,8 @@ int mytypedef__check_data_types_for_consistency(void);
 #include <unistd.h>
 #include "clib/clib_rwlock.h"
 
-#ifdef __linux__
-#include <sys/time.h>
+#ifndef WIN32
+#include <sys/time.h>   /* struct timeval + gettimeofday, used by base__get_timestamp_ms; POSIX (Linux + macOS + BSD), absent on Windows */
 #endif
 
 typedef struct key_data
