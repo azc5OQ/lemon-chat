@@ -46,7 +46,7 @@
 
 
 
-![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/example/pic4.PNG)
+![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/example/pic4.png)
 
 
 ![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/example/pic5.PNG)
