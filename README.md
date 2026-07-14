@@ -44,6 +44,13 @@
 
 ![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/example/test1.PNG)
 
+
+
+![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/example/test4.PNG)
+
+
+![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/example/test5.PNG)
+
 ![](https://raw.githubusercontent.com/azc5OQ/lemon-chat/master/example/android.jpg)
 
 <br>
