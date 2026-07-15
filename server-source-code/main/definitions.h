@@ -125,6 +125,9 @@ int mytypedef__check_data_types_for_consistency(void);
 
 /* debug aid: allow creating several music bots in one channel */
 //#define MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL 1
+
+/* debug aid: assign each connecting client a random real ISO country code instead of doing the GeoIP */
+//#define DEBUG_ASSIGN_RANDOM_COUNTRY_CODE 1
 #define MAX_CLIENT_FILE_UPLOAD_LENGTH 14400000 /* must exceed the base64 of the client musicbot gate: 10*1024*1024 raw -> ~13,981,016 base64 chars. the /400 per-part cap (36000) then exceeds the client's ceil(total/400) part size (~34953), so a full 10MiB upload is not rejected */
 #define MAX_SIMULTANEOUS_FILE_SEND_THREADS 20
 #define CHALLENGE_STRING_SIZE 100
@@ -220,10 +223,7 @@ typedef enum microphone_usage_e
 #define INET6_ADDRSTRLEN 1025
 #endif
 
-/* for now the music_bot_client_extension_t struct will be part of each client_t struct, regardless of whether the client is actually a music bot or not.
-   it is done for simplicity, so the code is less prone to errors.
-   the few extra wasted bytes of memory are negligible in today's world where js bloat wastes hundreds of mb of memory.
-   song data itself is not included; songs won't be part of the client directly, they will be allocated as needed on the heap. */
+
 typedef struct music_bot_single_song_data_t
 {
     boole is_existing;
@@ -232,9 +232,6 @@ typedef struct music_bot_single_song_data_t
     char song_name[SONG_NAME_MAX_LENGTH];
     boole is_this_song_scheduled_for_deletion;
     boole is_currently_playing;
-    /* mp3 data buffer stored on the heap, not pcm, not base64, not opus, just the mp3 buffer as-is.
-       for testing purposes, simply load the mp3 file into the buffer from the file system.
-       the plan is to send it to the server in chunks as base64, then decode that base64 into a buffer stored on the heap. */
     ubyte* mp3_data_buffer;
     uint64 mp3_data_buffer_length;
 } music_bot_single_song_data_t;
@@ -249,7 +246,6 @@ typedef struct music_bot_client_extension_t
 
 typedef struct client_file_upload_extension_t
 {
-    /* file_upload_buffer is the single in-progress signal: non-NULL while a file is buffered, NULL otherwise */
     ubyte* file_upload_buffer; /* stores the base64 content of the file */
     uint64 buffer_cursor;
     uint64 expected_file_length;
@@ -275,6 +271,9 @@ typedef struct client_t
     uint64 timestamp_connected;
     uint64 timestamp_last_action;
     uint64 timestamp_last_maintain_connection_message_received;
+    boole has_pending_maintainer_reset_vote;
+    uint64 maintainer_reset_vote_channel_id;
+    uint64 maintainer_reset_vote_generation;
     char username[USERNAME_MAX_LENGTH];
     char public_key[MAX_PUBLIC_KEY_LENGTH];
     char dh_shared_secret[SHARED_SECRET_LENGTH];
@@ -306,6 +305,9 @@ typedef struct channel
     uint64 max_client_count;
     uint64 type;
     uint64 maintainer_id;
+    uint64 maintainer_generation; /* bumped on EVERY maintainer state change; reset_channel_maintainer votes carry
+                                     the generation they complain about, so a vote fired against a previous
+                                     maintainer can never count against the newly appointed one */
     boole has_channel_icon;
     uint64 icon_id;
     char name[CHANNEL_NAME_MAX_LENGTH];
@@ -420,8 +422,6 @@ typedef struct data_for_file_send_thread_t
 {
     boole is_existing;
     file_send_type_e send_type;
-    /* receiving client ids need to be examined from a historical perspective, not the current one,
-       that is why they are in the array */
     uint64 receiving_client_ids[MAX_CLIENTS];
     uint64 receiving_clients_count;
     uint64 client_receiver_id; /* in case it is sent to a single client */

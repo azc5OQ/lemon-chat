@@ -37,6 +37,8 @@ include_directories(untitled
 
 add_executable(chat-server
         main.c
+        first_time_setup.c
+        settings.c
         base.c
         audio_channel.c
         ../third-party/rxi-log/log.c

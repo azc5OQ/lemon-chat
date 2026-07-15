@@ -18,6 +18,7 @@ void client_msg__process_edit_chat_message_request(cJSON* json_root, uint64 send
 void client_msg__process_channel_chat_picture(uint64 sender_client_id, uint64 local_message_id, char* message_value);
 void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char* message_value);
 void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_poke_client_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_sdp_answer(cJSON* json_root, uint64 sender_client_id);

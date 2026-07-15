@@ -50,21 +50,21 @@ unset(_cmake_expected_targets)
 add_library(MbedTLS::everest STATIC IMPORTED)
 
 set_target_properties(MbedTLS::everest PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/3rdparty/everest/include;C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/include"
+  INTERFACE_INCLUDE_DIRECTORIES "D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/3rdparty/everest/include;D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/include"
 )
 
 # Create imported target MbedTLS::p256m
 add_library(MbedTLS::p256m STATIC IMPORTED)
 
 set_target_properties(MbedTLS::p256m PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/3rdparty/p256-m;C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/3rdparty/p256-m/p256-m;C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/include"
+  INTERFACE_INCLUDE_DIRECTORIES "D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/3rdparty/p256-m;D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/3rdparty/p256-m/p256-m;D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/include"
 )
 
 # Create imported target MbedTLS::mbedcrypto
 add_library(MbedTLS::mbedcrypto STATIC IMPORTED)
 
 set_target_properties(MbedTLS::mbedcrypto PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/include/"
+  INTERFACE_INCLUDE_DIRECTORIES "D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/include/"
   INTERFACE_LINK_LIBRARIES "ws2_32;bcrypt;MbedTLS::everest;MbedTLS::p256m"
 )
 
@@ -72,7 +72,7 @@ set_target_properties(MbedTLS::mbedcrypto PROPERTIES
 add_library(MbedTLS::mbedx509 STATIC IMPORTED)
 
 set_target_properties(MbedTLS::mbedx509 PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/include/"
+  INTERFACE_INCLUDE_DIRECTORIES "D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/include/"
   INTERFACE_LINK_LIBRARIES "ws2_32;bcrypt;MbedTLS::mbedcrypto"
 )
 
@@ -80,7 +80,7 @@ set_target_properties(MbedTLS::mbedx509 PROPERTIES
 add_library(MbedTLS::mbedtls STATIC IMPORTED)
 
 set_target_properties(MbedTLS::mbedtls PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/include/"
+  INTERFACE_INCLUDE_DIRECTORIES "D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/include/"
   INTERFACE_LINK_LIBRARIES "ws2_32;bcrypt;MbedTLS::mbedx509"
 )
 
@@ -88,35 +88,35 @@ set_target_properties(MbedTLS::mbedtls PROPERTIES
 set_property(TARGET MbedTLS::everest APPEND PROPERTY IMPORTED_CONFIGURATIONS RELEASE)
 set_target_properties(MbedTLS::everest PROPERTIES
   IMPORTED_LINK_INTERFACE_LANGUAGES_RELEASE "C"
-  IMPORTED_LOCATION_RELEASE "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/3rdparty/everest/libeverest.a"
+  IMPORTED_LOCATION_RELEASE "D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/3rdparty/everest/libeverest.a"
   )
 
 # Import target "MbedTLS::p256m" for configuration "Release"
 set_property(TARGET MbedTLS::p256m APPEND PROPERTY IMPORTED_CONFIGURATIONS RELEASE)
 set_target_properties(MbedTLS::p256m PROPERTIES
   IMPORTED_LINK_INTERFACE_LANGUAGES_RELEASE "C"
-  IMPORTED_LOCATION_RELEASE "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/3rdparty/p256-m/libp256m.a"
+  IMPORTED_LOCATION_RELEASE "D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/3rdparty/p256-m/libp256m.a"
   )
 
 # Import target "MbedTLS::mbedcrypto" for configuration "Release"
 set_property(TARGET MbedTLS::mbedcrypto APPEND PROPERTY IMPORTED_CONFIGURATIONS RELEASE)
 set_target_properties(MbedTLS::mbedcrypto PROPERTIES
   IMPORTED_LINK_INTERFACE_LANGUAGES_RELEASE "C"
-  IMPORTED_LOCATION_RELEASE "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/library/libmbedcrypto.a"
+  IMPORTED_LOCATION_RELEASE "D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/library/libmbedcrypto.a"
   )
 
 # Import target "MbedTLS::mbedx509" for configuration "Release"
 set_property(TARGET MbedTLS::mbedx509 APPEND PROPERTY IMPORTED_CONFIGURATIONS RELEASE)
 set_target_properties(MbedTLS::mbedx509 PROPERTIES
   IMPORTED_LINK_INTERFACE_LANGUAGES_RELEASE "C"
-  IMPORTED_LOCATION_RELEASE "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/library/libmbedx509.a"
+  IMPORTED_LOCATION_RELEASE "D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/library/libmbedx509.a"
   )
 
 # Import target "MbedTLS::mbedtls" for configuration "Release"
 set_property(TARGET MbedTLS::mbedtls APPEND PROPERTY IMPORTED_CONFIGURATIONS RELEASE)
 set_target_properties(MbedTLS::mbedtls PROPERTIES
   IMPORTED_LINK_INTERFACE_LANGUAGES_RELEASE "C"
-  IMPORTED_LOCATION_RELEASE "C:/Users/babikp/Desktop/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/library/libmbedtls.a"
+  IMPORTED_LOCATION_RELEASE "D:/own/dev/lemon-chat/server-source-code/third-party/mbedtls-3.6.6/library/libmbedtls.a"
   )
 
 # This file does not depend on other imported targets which have

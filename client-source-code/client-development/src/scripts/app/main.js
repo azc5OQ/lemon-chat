@@ -1392,6 +1392,112 @@
             var audio_recorder_gain_node = null;
             var audio_input = null;
 
+            //=============================================================================
+            // channel maintainer reset - last-resort recovery for a channel whose announced
+            // maintainer never delivers usable channel keys (faulty/modified client or a
+            // half-dead connection). whenever this client ends up WAITING for keys (own
+            // channel join, maintainer succession, somebody joining the channel), a timer is
+            // armed; if no valid keys arrive within the timeout, a "reset_channel_maintainer"
+            // vote is sent to the server and re-sent every timeout period while still keyless.
+            // the request carries NO payload - the server does all vote bookkeeping internally
+            // (one vote per client, votes die on maintainer change / channel switch) and once
+            // more than half of the channel's clients have voted, it deposes the maintainer,
+            // announces a new one, and key distribution restarts normally.
+            //=============================================================================
+            var MAINTAINER_KEYS_WAIT_TIMEOUT_MS = 5000;
+            var maintainer_keys_wait_timer = null;
+            var maintainer_keys_wait_channel_id = -1;
+
+            //arms (re-arms) the keys-wait timer for the current channel. no-op when there is
+            //nothing to wait for: no maintainer announced, or the local user IS the maintainer
+            function arm_maintainer_keys_wait_timer()
+            {
+                let channel_index = get_channel_index_in_array_by_channel_id(channel_list, current_channel_id);
+
+                cancel_maintainer_keys_wait_timer();
+
+                if (channel_index == -1)
+                {
+                    return;
+                }
+
+                if (!channel_list[channel_index].has_maintainer)
+                {
+                    return;
+                }
+
+                if (channel_list[channel_index].maintainer_id == local_client_id)
+                {
+                    return;
+                }
+
+                maintainer_keys_wait_channel_id = current_channel_id;
+                maintainer_keys_wait_timer = setTimeout(maintainer_keys_wait_timer_fired, MAINTAINER_KEYS_WAIT_TIMEOUT_MS);
+            }
+
+            function cancel_maintainer_keys_wait_timer()
+            {
+                if (maintainer_keys_wait_timer != null)
+                {
+                    clearTimeout(maintainer_keys_wait_timer);
+                    maintainer_keys_wait_timer = null;
+                }
+            }
+
+            //fires when the maintainer stayed silent for the whole timeout. every condition is
+            //re-checked because the world may have moved on during those seconds: channel switched,
+            //keys arrived (timer normally cancelled, this is belt and suspenders), local user became
+            //the maintainer, or a new maintainer generation was announced (which armed a fresh timer)
+            function maintainer_keys_wait_timer_fired()
+            {
+                maintainer_keys_wait_timer = null;
+
+                if (maintainer_keys_wait_channel_id != current_channel_id)
+                {
+                    return;
+                }
+
+                if (current_channel_keys != null)
+                {
+                    return;
+                }
+
+                let channel_index = get_channel_index_in_array_by_channel_id(channel_list, current_channel_id);
+
+                if (channel_index == -1)
+                {
+                    return;
+                }
+
+                if (!channel_list[channel_index].has_maintainer)
+                {
+                    return;
+                }
+
+                if (channel_list[channel_index].maintainer_id == local_client_id)
+                {
+                    return;
+                }
+
+                console.log("%c no channel keys from maintainer (id " + channel_list[channel_index].maintainer_id + ") after " + MAINTAINER_KEYS_WAIT_TIMEOUT_MS + " ms, sending reset_channel_maintainer vote", "color: red");
+
+                //payload-free: the client just asks for its channel's maintainer to be reset,
+                //the server does all vote bookkeeping (one vote per client, dies on maintainer change)
+                let message_object = {
+                    message: {
+                        type: "reset_channel_maintainer"
+                    }
+                };
+
+                let message_json_string = process_message_before_sending(message_object);
+                let data = encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                websocket_worker_send(data);
+
+                //keep voting while still keyless: the server counts at most one vote per client,
+                //so repeats are harmless and cover a lost request on the way
+                maintainer_keys_wait_timer = setTimeout(maintainer_keys_wait_timer_fired, MAINTAINER_KEYS_WAIT_TIMEOUT_MS);
+            }
+
             var audio_queue = {
                 buffer: new Float32Array(0),
 
@@ -2682,11 +2788,19 @@
                     if (msg.message.has_maintainer && (local_client_id == msg.message.maintainer_id) && (current_channel_id == msg.message.channel_id))
                     {
                         console.log("local user is maintainer of channel '" + channel_list[get_channel_index_in_array_by_channel_id(channel_list, msg.message.channel_id)].name + "'");
+
+                        //local user is the key SENDER now, there is nothing to wait for
+                        cancel_maintainer_keys_wait_timer();
+
                         create_and_send_new_channel_keys();
                     }
                     else if ((current_channel_id == msg.message.channel_id) && (local_client_id != msg.message.maintainer_id))
                     {
                         console.log("%c received channel_maintainer_id " + msg.message.maintainer_id + " for channel: " + msg.message.channel_id, "color: blue");
+
+                        //keys from this maintainer are expected shortly; if none arrive within the
+                        //timeout, the timer votes for a maintainer reset (and keeps re-voting)
+                        arm_maintainer_keys_wait_timer();
                     }
                     else
                     {
@@ -2926,6 +3040,9 @@
                                 type: "mainthread__channel_keys_for_opus_decoder",
                                 value: current_channel_keys
                             });
+
+                            //valid keys arrived from the announced maintainer - stop the reset countdown
+                            cancel_maintainer_keys_wait_timer();
 
                         }
                         else
@@ -3550,6 +3667,10 @@
                                 else
                                 {
                                     console.log("local user is not maintainer of current channel. Waiting for new keys");
+
+                                    //somebody joined -> the maintainer must re-key the whole channel;
+                                    //if the fresh keys never arrive, vote for a maintainer reset
+                                    arm_maintainer_keys_wait_timer();
                                 }
                             }
                         }

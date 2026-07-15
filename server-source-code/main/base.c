@@ -2521,6 +2521,7 @@ void base__destroy_temp_channel(uint64 temp_channel_id)
         }
 
         client_to_move->channel_id = ROOT_CHANNEL_ID;
+        client_to_move->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
 
         /* keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this client
            on the channel-mismatch check after the move to root */
@@ -2548,6 +2549,7 @@ void base__destroy_temp_channel(uint64 temp_channel_id)
         {
             g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present = TRUE;
             g_channel_array[ROOT_CHANNEL_ID].maintainer_id = index_of_new_maintainer;
+            g_channel_array[ROOT_CHANNEL_ID].maintainer_generation++;
             server_msg__send_maintainer_id_to_clients_in_same_channel(ROOT_CHANNEL_ID, g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
         }
     }
@@ -2586,17 +2588,20 @@ void base__move_client_into_channel(uint64 client_id, uint64 destination_channel
         {
             old_channel->is_channel_maintainer_present = TRUE;
             old_channel->maintainer_id = new_maintainer_index;
+            old_channel->maintainer_generation++;
             server_msg__send_maintainer_id_to_clients_in_same_channel(old_channel->channel_id, old_channel->maintainer_id);
         }
         else
         {
             old_channel->is_channel_maintainer_present = FALSE;
             old_channel->maintainer_id = 0;
+            old_channel->maintainer_generation++;
         }
     }
 
     /* move the client and tell everyone (same message order as the delete -> move-to-root path) */
     client->channel_id = destination_channel_id;
+    client->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
     server_msg__send_channel_join_message_to_all_clients(client, new_channel);
     audio_channel__process_client_channel_join(client);
 
@@ -2605,6 +2610,7 @@ void base__move_client_into_channel(uint64 client_id, uint64 destination_channel
     {
         new_channel->maintainer_id = client->client_id;
         new_channel->is_channel_maintainer_present = TRUE;
+        new_channel->maintainer_generation++;
     }
 
     server_msg__send_maintainer_id_to_single_client(client, destination_channel_id, new_channel->maintainer_id);
@@ -2691,6 +2697,7 @@ void base__process_client_disconnect(uint64 client_index)
                 DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "base__process_client_disconnect new maintainer found ", new_maintainer_index, "\n");
                 g_channel_array[channel_id].is_channel_maintainer_present = TRUE;
                 g_channel_array[channel_id].maintainer_id = new_maintainer_index;
+                g_channel_array[channel_id].maintainer_generation++;
 
                 server_msg__send_maintainer_id_to_clients_in_same_channel(channel_id, new_maintainer_index);
             }
@@ -2698,6 +2705,7 @@ void base__process_client_disconnect(uint64 client_index)
             {
                 g_channel_array[channel_id].is_channel_maintainer_present = FALSE;
                 g_channel_array[channel_id].maintainer_id = 0;
+                g_channel_array[channel_id].maintainer_generation++;
                 DBG_CLIENT_DISCONNECT log_info("%s", "base__process_client_disconnect failed to find new maintainer \n");
             }
         }
@@ -2796,6 +2804,10 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "join_channel_request"))
             {
                 client_msg__process_join_channel_request(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "reset_channel_maintainer"))
+            {
+                client_msg__process_reset_channel_maintainer_request(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "delete_channel_request"))
             {

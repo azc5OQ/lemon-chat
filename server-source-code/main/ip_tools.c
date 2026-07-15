@@ -94,6 +94,21 @@ void init_string_buffer(StringBuffer* sb)
  * */
 void ip_tools_load_iso_country_code(char* ip_address_to_resolve, char* out_memory_to_write_country_code_to)
 {
+#ifdef DEBUG_ASSIGN_RANDOM_COUNTRY_CODE
+    /* offline/LAN testing: skip the GeoIP lookup entirely and hand out a random real ISO code (same
+       uppercase 2-char form the MMDB path below writes) so country flags render. see definitions.h */
+    {
+        static const char* debug_iso_codes[] = {
+            "US", "GB", "DE", "FR", "JP", "BR", "CA", "AU", "IN", "IT",
+            "ES", "NL", "SE", "PL", "RU", "CN", "KR", "MX", "ZA", "TR"
+        };
+        const char* picked = debug_iso_codes[rand() % (int)(sizeof(debug_iso_codes) / sizeof(debug_iso_codes[0]))];
+        out_memory_to_write_country_code_to[0] = picked[0];
+        out_memory_to_write_country_code_to[1] = picked[1];
+        out_memory_to_write_country_code_to[2] = 0;
+        return;
+    }
+#endif
     cJSON* json_root_object1 = 0;
     cJSON* json_message_object = 0;
     cJSON* json_country_iso_code = 0;

@@ -2141,6 +2141,7 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
         DBG_AUTHENTICATION log_info("%s %llu %s", "client_msg__process_public_key_challenge_response challenge response string match : client index ", sender_client_id, " \n");
 
         current_client->channel_id = 0;
+        current_client->has_pending_maintainer_reset_vote = FALSE; /* fresh session - no vote can be pending */
         current_client->is_admin = FALSE;
         current_client->is_authenticated = TRUE;
         current_client->timestamp_last_maintain_connection_message_received = base__get_timestamp_ms();
@@ -2204,6 +2205,7 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
             {
                 root_channel->maintainer_id = current_client->client_id;
                 root_channel->is_channel_maintainer_present = TRUE;
+                root_channel->maintainer_generation++;
                 server_msg__send_maintainer_id_to_single_client(current_client, ROOT_CHANNEL_ID, current_client->client_id);
             }
             else
@@ -2509,6 +2511,7 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
                     clib__copy_memory(json_channel_description->valuestring, channel->description, clib__utf8_string_length(json_channel_description->valuestring), CHANNEL_DESCRIPTION_MAX_LENGTH);
                     channel->maintainer_id = -1;
                     channel->is_channel_maintainer_present = FALSE;
+                    channel->maintainer_generation++;
                     is_password_used = (boole)(clib__utf8_string_length(json_channel_password->valuestring) > 0);
                     channel->is_using_password = is_password_used;
                     channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
@@ -3204,6 +3207,7 @@ client_msg__process_join_channel_request_continue:
 
     /* change channel in client struct */
     client_that_is_joining_channel->channel_id = json_channel_id->valueint;
+    client_that_is_joining_channel->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
 
     /* if the client owns this temp channel and is now leaving it, destroy it: any remaining members move
        to root and the channel is freed. old_channel is then zeroed, so the maintainer-handoff code below
@@ -3235,6 +3239,7 @@ client_msg__process_join_channel_request_continue:
             DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_join_channel_request_continue maintainer found ", new_maintainer_index, "\n");
             old_channel->is_channel_maintainer_present = TRUE;
             old_channel->maintainer_id = new_maintainer_index;
+            old_channel->maintainer_generation++;
 
             /* first send join message, then maintainer message for clients in that channel */
             server_msg__send_channel_join_message_to_all_clients(client_that_is_joining_channel, new_channel);
@@ -3278,6 +3283,7 @@ client_msg__process_join_channel_request_continue:
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request_continue maintainer found  FALSE \n");
             old_channel->is_channel_maintainer_present = FALSE;
             old_channel->maintainer_id = 0;
+            old_channel->maintainer_generation++;
             server_msg__send_channel_join_message_to_all_clients(client_that_is_joining_channel, new_channel);
 
             /* client is joining channel that was hidden and clients in it were not visible to him
@@ -3360,6 +3366,7 @@ client_msg__process_join_channel_request_continue:
     {
         new_channel->maintainer_id = client_that_is_joining_channel->client_id;
         new_channel->is_channel_maintainer_present = TRUE;
+        new_channel->maintainer_generation++;
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request_continue client that joined channel is the only one in the channel, he is maintainer of it \n");
     }
 
@@ -3493,6 +3500,7 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
                 DBG_CLIENT_MESSAGE log_info("%s %lld %s", "client_msg__process_delete_channel_request moving client ", client_to_move_maybe->client_id, "to root channel \n");
 
                 client_to_move_maybe->channel_id = ROOT_CHANNEL_ID;
+                client_to_move_maybe->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
 
                 /* keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this
                    client on the channel-mismatch check after the move to root */
@@ -3526,6 +3534,7 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
             {
                 g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present = TRUE;
                 g_channel_array[ROOT_CHANNEL_ID].maintainer_id = index_of_new_maintainer;
+                g_channel_array[ROOT_CHANNEL_ID].maintainer_generation++;
                 server_msg__send_maintainer_id_to_clients_in_same_channel(ROOT_CHANNEL_ID, g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
             }
         }
@@ -5338,6 +5347,178 @@ label_client_msg__process_call_idle_client_message_end:
 }
 
 /**
+ * @brief processes one reset_channel_maintainer vote. this is the last-resort recovery path for a channel
+ *        whose announced maintainer never delivered usable channel keys (faulty or modified client, or a
+ *        connection that half-works): every keyless client keeps re-sending this vote every few seconds,
+ *        and once MORE THAN HALF of the channel's clients have voted against the CURRENT maintainer
+ *        generation, the server deposes the maintainer, picks a new one (excluding the deposed client),
+ *        bumps the generation and broadcasts the new maintainer id - upon which the new maintainer's
+ *        client distributes fresh channel keys exactly like after any other maintainer change.
+ *
+ *        the request carries NO payload - the client only says "i want the current maintainer of my
+ *        channel replaced". all bookkeeping is server-internal: the vote is stamped with the channel's
+ *        CURRENT maintainer_generation when it is recorded, so a vote recorded against a previous
+ *        maintainer can never count against the newly appointed one, and votes die by themselves when
+ *        the voter switches channel or the generation moves on - no vote cleanup anywhere else.
+ *
+ * @param cJSON* json_root -> the parsed client request (unused beyond the already-checked type)
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    uint64 channel_id = 0;
+    channel_t* channel = 0;
+    client_t* sender = 0;
+    client_t* client_in_loop = 0;
+    uint64 channel_member_count = 0;
+    uint64 vote_count = 0;
+    uint64 deposed_maintainer_id = 0;
+    uint64 new_maintainer_index = 0;
+    boole is_maintainer_found = FALSE;
+    uint64 i = 0;
+
+    /* same per-client cooldown gate as every other request. the client re-votes every few seconds
+       for as long as it stays keyless, so a vote swallowed by the cooldown is simply retried */
+    status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
+    if (status == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_reset_channel_maintainer_request base__is_request_allowed_based_on_spam_protection == FALSE \n");
+        return;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_channels_global_rwlock_guard);
+
+    sender = &g_clients_array[sender_client_id];
+
+    if (sender->is_existing == FALSE || sender->is_authenticated == FALSE || sender->is_idle == TRUE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_reset_channel_maintainer_request is_existing == FALSE || is_authenticated == FALSE || is_idle == TRUE \n");
+        goto label_reset_channel_maintainer_end;
+    }
+
+    /* the vote always applies to the channel the sender is CURRENTLY in on the server's books;
+       the request carries no channel id, so a modified client cannot vote into someone else's channel */
+    channel_id = sender->channel_id;
+    if (channel_id >= (uint64)g_server_settings.max_channel_count)
+    {
+        goto label_reset_channel_maintainer_end;
+    }
+
+    channel = &g_channel_array[channel_id];
+
+    if (channel->is_existing == FALSE)
+    {
+        goto label_reset_channel_maintainer_end;
+    }
+
+    /* nobody to depose */
+    if (channel->is_channel_maintainer_present == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_reset_channel_maintainer_request channel has no maintainer \n");
+        goto label_reset_channel_maintainer_end;
+    }
+
+    /* the maintainer cannot vote himself out */
+    if (channel->maintainer_id == sender_client_id)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_reset_channel_maintainer_request sender is the maintainer \n");
+        goto label_reset_channel_maintainer_end;
+    }
+
+    /* record the vote, stamped with the CURRENT generation - re-voting just overwrites the same
+       values. if the maintainer changes before quorum, the stamp stops matching and the vote is dead */
+    sender->has_pending_maintainer_reset_vote = TRUE;
+    sender->maintainer_reset_vote_channel_id = channel_id;
+    sender->maintainer_reset_vote_generation = channel->maintainer_generation;
+
+    /* count channel members and valid votes in one pass. music bots are skipped on both sides:
+       they never hold channel keys (bot audio is not channel-key encrypted) and never vote,
+       so counting them would only inflate the quorum denominator */
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client_in_loop = &g_clients_array[i];
+
+        if (client_in_loop->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->channel_id != channel_id)
+        {
+            continue;
+        }
+
+        channel_member_count++;
+
+        if (client_in_loop->has_pending_maintainer_reset_vote == TRUE
+            && client_in_loop->maintainer_reset_vote_channel_id == channel_id
+            && client_in_loop->maintainer_reset_vote_generation == channel->maintainer_generation)
+        {
+            vote_count++;
+        }
+    }
+
+    DBG_CLIENT_MESSAGE log_info("%s %llu %s %llu %s", "client_msg__process_reset_channel_maintainer_request votes ", vote_count, " of ", channel_member_count, "\n");
+
+    /* quorum rule: MORE THAN HALF of all clients present in the channel */
+    if ((vote_count * 2) <= channel_member_count)
+    {
+        goto label_reset_channel_maintainer_end;
+    }
+
+    deposed_maintainer_id = channel->maintainer_id;
+
+    /* pick a replacement, never handing the role right back to the client that was just voted out */
+    is_maintainer_found = base__find_new_maintainer_for_channel(&new_maintainer_index, channel_id, deposed_maintainer_id, TRUE);
+    if (is_maintainer_found == FALSE)
+    {
+        /* cannot really happen while at least one voter is present in the channel; leave state untouched */
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_reset_channel_maintainer_request no replacement maintainer found \n");
+        goto label_reset_channel_maintainer_end;
+    }
+
+    /* consume the votes that carried this reset so they cannot count a second time */
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client_in_loop = &g_clients_array[i];
+
+        if (client_in_loop->has_pending_maintainer_reset_vote == TRUE && client_in_loop->maintainer_reset_vote_channel_id == channel_id)
+        {
+            client_in_loop->has_pending_maintainer_reset_vote = FALSE;
+        }
+    }
+
+    channel->maintainer_id = new_maintainer_index;
+    channel->is_channel_maintainer_present = TRUE;
+    channel->maintainer_generation++;
+
+    /* always-on log: a majority of a channel just declared its maintainer broken - the operator should see that */
+    log_info("%s %llu %s %llu %s %llu %s", "channel ", channel_id, ": maintainer reset by vote, deposed client ", deposed_maintainer_id, ", new maintainer client ", new_maintainer_index, "\n");
+
+    /* same announcement as any other maintainer change; the new maintainer's client reacts to it
+       by generating and distributing fresh channel keys to everyone in the channel */
+    server_msg__send_maintainer_id_to_clients_in_same_channel(channel_id, channel->maintainer_id);
+
+label_reset_channel_maintainer_end:
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
  * @brief This function processes go to idle more request, its modified version of join channel request
  *
  * @param cJSON* json_root -> the parsed client request
@@ -5395,6 +5576,7 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
     /* change channel id and idle state at this */
     client->is_idle = TRUE;
     client->channel_id = -2; /* -2 marks the client as being in idle mode rather than in a real channel */
+    client->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
 
     if (old_channel->is_channel_maintainer_present == TRUE)
     {
@@ -5414,6 +5596,7 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
             DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_go_to_idle_mode_request maintainer found ", new_maintainer_index, "\n");
             old_channel->is_channel_maintainer_present = TRUE;
             old_channel->maintainer_id = new_maintainer_index;
+            old_channel->maintainer_generation++;
 
             /* first send join message, then maintainer message for clients in that channel */
             server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_id);
@@ -5424,6 +5607,7 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_go_to_idle_mode_request maintainer found  FALSE \n");
             old_channel->is_channel_maintainer_present = FALSE;
             old_channel->maintainer_id = 0;
+            old_channel->maintainer_generation++;
             server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_id);
         }
     }
@@ -5490,6 +5674,7 @@ void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint
 
     client->is_idle = FALSE;
     client->channel_id = channel_to_join->channel_id;
+    client->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
 
     /* keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this client on the
        channel-mismatch check after it returns from idle */
