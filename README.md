@@ -85,60 +85,6 @@ Yes, just follow the instructions when server is started
 <br />
 
 
-## Remote Port Forwarding Setup
-
-This guide shows how to make a local Windows server accessible from the public internet, even if it’s behind a router or firewall. The method uses a cheap VPS as a relay.
-
----
-
-## Requirements
-
-- A VPS (1 CPU core, 500 MB RAM is enough)
-- SSH client (OpenSSH)
-- SSH key pair for authentication
-
-The VPS will act as a public access point for your local server traffic.
-
----
-
-## Step 1: Connect via SSH with Remote Port Forwarding
-
-Run this command from your local Windows server:
-
-```bash
-ssh -i /path/to/private_key -p 2245 -w 0:0 \
-    -R 1234:localhost:1234 \
-    -R 3478:localhost:3478 \
-    -v root@VPS_IP_ADDRESS
-```
-### Explanation of flags:
-
-- `-i /path/to/private_key` → SSH private key for authentication  
-- `-p 2245` → SSH port on the VPS  
-- `-w 0:0` → Creates a TUN/TAP interface (required for some setups)  
-- `-R 1234:localhost:1234` → Forward local WebSocket port 1234 to the VPS  
-- `-R 3478:localhost:3478` → Forward STUN/UDP port 3478 (used for WebRTC data channels)  
-- `-v` → Verbose mode for debugging  
-
-`root@VPS_IP_ADDRESS` → Replace with your VPS root user and IP  
-
----
-
-### Notes
-
-**WebSocket Port (1234):**  
-- Chosen by the admin when starting the server  
-- Used for WebSocket connections  
-
-**STUN/UDP Port (3478):**  
-- Used for creating a non-peer-to-peer WebRTC data channel (UDP-based)  
-- Optional if voice chat or WebRTC isn’t needed  
-
----
-
-✅ With this setup, your local server becomes accessible through the VPS without needing to configure router port forwarding.
-
-
 # Thanks to these projects and people for providing some of the source code this project uses:
 
 ### client:
