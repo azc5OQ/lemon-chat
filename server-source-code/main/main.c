@@ -2,7 +2,7 @@
 
 #include "clib/clib_string.h"
 #include "clib/clib_memory.h"
-#include "../third-party/dave-g-json/cJSON.h" /* needed by base.h */
+#include "../third-party/dave-g-json/cJSON.h" // needed by base.h
 #include "base.h"
 
 #include "../third-party/ITH-sha/sha256.h"
@@ -20,7 +20,7 @@
 
 #ifdef WIN32
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>   /* SetConsoleMode, for enabling ANSI color on the Windows console */
+#include <windows.h>   // SetConsoleMode, for enabling ANSI color on the Windows console
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
 #endif
@@ -38,23 +38,23 @@ static const char* g_color_banner = "";
 static const char* g_color_reset = "";
 
 #ifndef WIN32
-#include <unistd.h>     /* fork, execl, access, readlink, _exit */
-#include <dirent.h>     /* opendir / readdir (Let's Encrypt cert detection) */
+#include <unistd.h>     // fork, execl, access, readlink, _exit
+#include <dirent.h>     // opendir / readdir (Let's Encrypt cert detection)
 #include <signal.h>
-#include <sys/wait.h>   /* waitpid (certbot) */
-#include <sys/stat.h>   /* stat (certificate age for the days-of-validity-left estimate) */
+#include <sys/wait.h>   // waitpid (certbot)
+#include <sys/stat.h>   // stat (certificate age for the days-of-validity-left estimate)
 #ifdef __linux__
-#include <sys/prctl.h>  /* PR_SET_PDEATHSIG (stunnel dies with the server); Linux-only, absent on macOS/BSD */
+#include <sys/prctl.h>  // PR_SET_PDEATHSIG (stunnel dies with the server); Linux-only, absent on macOS/BSD
 #endif
 #if defined(__APPLE__)
-#include <stdlib.h>       /* realpath */
-#include <mach-o/dyld.h>  /* _NSGetExecutablePath (macOS has no /proc/self/exe) */
+#include <stdlib.h>       // realpath
+#include <mach-o/dyld.h>  // _NSGetExecutablePath (macOS has no /proc/self/exe)
 #endif
 #endif
 
-static int g_stunnel_pid = 0; /* pid of the optional bundled stunnel child, 0 = none */
-char g_first_run_admin_password[ADMIN_PASSWORD_MAX_LENGTH]; /* plaintext admin password, kept only through this run's startup summary, then wiped */
-static pthread_mutex_t g_log_mutex = PTHREAD_MUTEX_INITIALIZER; /* serializes console log output across threads */
+static int g_stunnel_pid = 0; // pid of the optional bundled stunnel child, 0 = none
+char g_first_run_admin_password[ADMIN_PASSWORD_MAX_LENGTH]; // plaintext admin password, kept only through this run's startup summary, then wiped
+static pthread_mutex_t g_log_mutex = PTHREAD_MUTEX_INITIALIZER; // serializes console log output across threads
 
 static void _main_internal__renew_certificate_if_due(void);
 static void _main_internal__launch_stunnel(void);
@@ -63,6 +63,10 @@ static void _main_internal__print_debug_information(void);
 static void _main_internal__start_stun_turn_listener_for_webrtc_datachannel(void);
 static void _main_internal__print_startup_summary(void);
 static void _main_internal__log_lock(bool lock, void* udata);
+static void _main_internal__executable_dir(char* out_directory, uint64 out_directory_size);
+static void _main_internal__log_handler(juice_log_level_t level, const char* message);
+static void _main_internal__init_terminal(void);
+static void _main_internal__print_banner(void);
 
 uint64 g_thread_id0 = 0;
 uint64 g_thread_id1 = 0;
@@ -72,14 +76,15 @@ uint64 g_thread_id3 = 0;
 boole g_is_server_running = TRUE;
 
 /**
- * @brief see title
+ * @brief finds which slot of g_clients_array holds a given websocket connection.
  *
  * @param ws_cli_conn_t* p_ws_connection -> websocket connection pointer to look up in the clients array
  *
- * @return int client count
+ * @note takes the clients read lock itself, so it must not be called with that lock already held.
  *
+ * @return int64 -> the client's index, or -1 when the pointer is null or matches no connected client
  */
-int64 _main_internal__get_client_index_by_ws_client_pointer(ws_cli_conn_t* p_ws_connection)
+static int64 _main_internal__get_client_index_by_ws_client_pointer(ws_cli_conn_t* p_ws_connection)
 {
     uint64 i = 0;
     int64 result = -1;
@@ -124,7 +129,7 @@ void onopen(ws_cli_conn_t* client)
 
     clib__write_lock(&g_clients_global_rwlock_guard);
     g_server_settings.client_count = g_server_settings.client_count + 1;
-    /* log_info("%s %d", "client_count , ", g_server_settings.client_count); */
+    // log_info("%s %d", "client_count , ", g_server_settings.client_count);
     DBG_AUTHENTICATION log_info("%s %p %s", "client connected , ", client, "\n");
     index = base__get_new_index_for_client();
 
@@ -150,7 +155,7 @@ void onopen(ws_cli_conn_t* client)
         goto label_onopen_end;
     }
 
-    /* drop banned ips right away, before any client slot is set up */
+    // drop banned ips right away, before any client slot is set up
     if (base__is_ip_banned(ip_address) == TRUE)
     {
         DBG_AUTHENTICATION log_info("%s", "ip address is banned, closing socket");
@@ -185,12 +190,15 @@ label_onopen_end:
 }
 
 /**
- * @brief self explanatory
+ * @brief websocket callback for a closed connection: drops the client count and tears the client
+ *        down through base__process_client_disconnect. an unknown socket is ignored.
  *
  * @param ws_cli_conn_t* websocket -> websocket connection of the client that disconnected
  *
+ * @note holds the clients AND channels write locks for the whole teardown.
+ *
  * @return void
- * */
+ */
 void onclose(ws_cli_conn_t* websocket)
 {
     uint64 i = 0;
@@ -201,7 +209,7 @@ void onclose(ws_cli_conn_t* websocket)
 
     g_server_settings.client_count = g_server_settings.client_count - 1;
 
-    /* log_info("%s %d", "client_count , ", g_server_settings.client_count); */
+    // log_info("%s %d", "client_count , ", g_server_settings.client_count);
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
@@ -227,7 +235,8 @@ label_onclose_end:
 }
 
 /**
- * @brief self explanatory
+ * @brief websocket callback for an incoming frame: decodes and decrypts the payload, then routes it
+ *        to the authenticated or the not-yet-authenticated message handler.
  *
  * @param ws_cli_conn_t* websocket -> websocket connection of the client that sent the message
  * @param unsigned char* base64_to_process_and_decrypt -> received base64 payload to decode and decrypt
@@ -235,7 +244,7 @@ label_onclose_end:
  * @param int type -> websocket frame type of the received message
  *
  * @return void
- * */
+ */
 void onmessage(ws_cli_conn_t* websocket, unsigned char* base64_to_process_and_decrypt, uint64_t size, int type)
 {
     boole is_authenticated = FALSE;
@@ -243,7 +252,7 @@ void onmessage(ws_cli_conn_t* websocket, unsigned char* base64_to_process_and_de
     int64 client_index = 0;
     char* decrypted_metadata_cstring = 0;
 
-    /* will this affect negatively */
+    // will this affect negatively
     client_index = _main_internal__get_client_index_by_ws_client_pointer(websocket);
     if (client_index == -1)
     {
@@ -257,14 +266,14 @@ void onmessage(ws_cli_conn_t* websocket, unsigned char* base64_to_process_and_de
     if (size > g_server_settings.websocket_message_max_length)
     {
         base__close_websocket_connection(client_index, TRUE);
-        /* ws_close_client(websocket); */
+        // ws_close_client(websocket);
         return;
     }
 
     if (size == 0)
     {
         base__close_websocket_connection(client_index, TRUE);
-        /* ws_close_client(websocket); */
+        // ws_close_client(websocket);
         return;
     }
 
@@ -276,7 +285,7 @@ void onmessage(ws_cli_conn_t* websocket, unsigned char* base64_to_process_and_de
         return;
     }
 
-    /* just a simple readlock, nothing expensive */
+    // just a simple readlock, nothing expensive
 
     clib__read_lock(&g_clients_global_rwlock_guard);
 
@@ -308,7 +317,7 @@ void onmessage(ws_cli_conn_t* websocket, unsigned char* base64_to_process_and_de
  * this function calls theldus internal function that handles incoming websocket connections and that takes it from here
  * @return void
  *
- * */
+ */
 void websocket_thread(void)
 {
     struct ws_events evs;
@@ -316,7 +325,7 @@ void websocket_thread(void)
     evs.onopen = &onopen;
     evs.onclose = &onclose;
     evs.onmessage = &onmessage;
-    ws_socket(&evs, g_server_settings.websocket_port, 1, 2000); /* Never returns. */
+    ws_socket(&evs, g_server_settings.websocket_port, 1, 2000); // Never returns.
 }
 
 /**
@@ -324,7 +333,7 @@ void websocket_thread(void)
  * *
  * @return void
  *
- * */
+ */
 void websocket_connection_check_thread(void)
 {
     static uint64 timestamp_now = 0;
@@ -340,7 +349,15 @@ void websocket_connection_check_thread(void)
     {
         timestamp_now = base__get_timestamp_ms();
 
-        /* clib__null_memory(marked_client_ids_for_disconnect, sizeof(int) * g_server_settings.max_client_count); */
+        DBG_CONNECTION_CHECK_THREAD log_info("%s", "websocket_connection_check_thread tick");
+
+        // ws-level liveness: ping every open socket; a client more than 3 pings behind gets its
+        // socket shut down and its own reader thread runs the normal onclose teardown.
+        // (the library's original timeout path destroyed the client's mutexes from this thread,
+        // which crashed the server - fixed in ws.c send_ping_close, see the comment there)
+        ws_ping(0, 3);
+
+        // clib__null_memory(marked_client_ids_for_disconnect, sizeof(int) * g_server_settings.max_client_count);
         number_of_marked_clients = 0;
 
         clib__read_lock(&g_clients_global_rwlock_guard);
@@ -361,7 +378,7 @@ void websocket_connection_check_thread(void)
 
                 timestamp_now = base__get_timestamp_ms();
 
-                /* disconnect client who has not sent maintain_connection_message in given time limit */
+                // disconnect client who has not sent maintain_connection_message in given time limit
                 if (g_clients_array[i].timestamp_last_maintain_connection_message_received + 180000 < timestamp_now)
                 {
                     DBG_CONNECTION_CHECK_THREAD log_info("%s %p %s", "trying to disconnect client. did not receive maintain connection message : ", g_clients_array[i].p_ws_connection, "\n");
@@ -371,7 +388,7 @@ void websocket_connection_check_thread(void)
                 }
             }
 
-            /* remove client who does not authenticate within given time limit */
+            // remove client who does not authenticate within given time limit
             else
             {
                 if (g_clients_array[i].timestamp_connected + 60000 < timestamp_now)
@@ -400,7 +417,9 @@ void websocket_connection_check_thread(void)
             clib__unlock(&g_clients_global_rwlock_guard);
         }
 
-        sleep(60); /* 60 seconds, same in windows and linux */
+        // 15s, same in windows and linux. this interval is ALSO the pong deadline of the
+        // ws_ping above: a dead socket is closed after interval * threshold = 45-60 seconds
+        sleep(15);
     }
 }
 
@@ -418,16 +437,16 @@ static void _main_internal__executable_dir(char* out_directory, uint64 out_direc
 {
     char* last_slash = 0;
 #if defined(__APPLE__)
-    uint image_path_size = 0;     /* _NSGetExecutablePath takes a uint32_t* == unsigned int* == uint* */
-    char image_path[4096];        /* raw (possibly relative/symlinked) path from the loader */
-    char resolved_path[4096];     /* realpath output; realpath needs a PATH_MAX-sized buffer */
+    uint image_path_size = 0;     // _NSGetExecutablePath takes a uint32_t* == unsigned int* == uint*
+    char image_path[4096];        // raw (possibly relative/symlinked) path from the loader
+    char resolved_path[4096];     // realpath output; realpath needs a PATH_MAX-sized buffer
 #else
     int64 link_length = 0;
 #endif
 
 #if defined(__APPLE__)
-    /* macOS has no /proc; the dynamic loader hands back the executable's path, then realpath
-       canonicalizes it to an absolute path so sibling files (stunnel.conf, the binary) resolve */
+    // macOS has no /proc; the dynamic loader hands back the executable's path, then realpath
+    // canonicalizes it to an absolute path so sibling files (stunnel.conf, the binary) resolve
     image_path_size = (uint)sizeof(image_path);
     if (_NSGetExecutablePath(image_path, &image_path_size) != 0)
     {
@@ -481,8 +500,8 @@ static void _main_internal__renew_certificate_if_due(void)
     pid_t certbot_pid = 0;
     int certbot_status = 0;
 
-    /* only certbot-managed certificates can be renewed by certbot; manually entered cert paths
-       outside /etc/letsencrypt/live/ are the operator's own responsibility */
+    // only certbot-managed certificates can be renewed by certbot; manually entered cert paths
+    // outside /etc/letsencrypt/live/ are the operator's own responsibility
     if (g_server_settings.use_stunnel == FALSE
         || g_server_settings.stunnel_domain[0] == 0
         || strncmp(g_server_settings.stunnel_cert_fullchain, "/etc/letsencrypt/live/", 22) != 0)
@@ -495,9 +514,9 @@ static void _main_internal__renew_certificate_if_due(void)
     certbot_pid = fork();
     if (certbot_pid == 0)
     {
-        /* exec certbot directly (no shell) so the stored domain cannot inject commands */
+        // exec certbot directly (no shell) so the stored domain cannot inject commands
         execlp("certbot", "certbot", "renew", "--cert-name", g_server_settings.stunnel_domain, "--non-interactive", (char* )NULL_POINTER);
-        _exit(127); /* exec failed -> certbot is not installed / not on PATH */
+        _exit(127); // exec failed -> certbot is not installed / not on PATH
     }
     else if (certbot_pid > 0)
     {
@@ -562,7 +581,7 @@ static void _main_internal__launch_stunnel(void)
     fprintf(conf_file, "connect = 127.0.0.1:%lld\n", g_server_settings.websocket_port);
     fprintf(conf_file, "cert = %s\n", g_server_settings.stunnel_cert_fullchain);
     fprintf(conf_file, "key = %s\n", g_server_settings.stunnel_cert_privkey);
-    /* the patched-stunnel option key is still "xforwardedfor"; it injects the renamed X-Stunnel-Client-IP header */
+    // the patched-stunnel option key is still "xforwardedfor"; it injects the renamed X-Stunnel-Client-IP header
     fprintf(conf_file, "# inject the real client IP as the X-Stunnel-Client-IP header\n");
     fprintf(conf_file, "xforwardedfor = yes\n");
 
@@ -583,7 +602,7 @@ static void _main_internal__launch_stunnel(void)
         return;
     }
 
-    /* never launch stunnel without a usable cert + key, or it just crash-loops on startup */
+    // never launch stunnel without a usable cert + key, or it just crash-loops on startup
     if (access(g_server_settings.stunnel_cert_privkey, R_OK) != 0 || access(g_server_settings.stunnel_cert_fullchain, R_OK) != 0)
     {
         printf("%s%s%s", "wss disabled: TLS certificate not found at ", g_server_settings.stunnel_cert_privkey, "\n");
@@ -592,8 +611,8 @@ static void _main_internal__launch_stunnel(void)
         return;
     }
 
-    /* a previous run's stunnel may still hold the wss/https ports (e.g. the server was SIGKILLed so
-       PR_SET_PDEATHSIG never fired); kill the one launched with this same conf, then let the ports free */
+    // a previous run's stunnel may still hold the wss/https ports (e.g. the server was SIGKILLed so
+    // PR_SET_PDEATHSIG never fired); kill the one launched with this same conf, then let the ports free
     snprintf(kill_old_stunnel_command, sizeof(kill_old_stunnel_command), "pkill -f '%s' 2>/dev/null", conf_path);
     system(kill_old_stunnel_command);
     usleep(300000);
@@ -602,11 +621,12 @@ static void _main_internal__launch_stunnel(void)
     if (stunnel_pid == 0)
     {
 #ifdef __linux__
-        prctl(PR_SET_PDEATHSIG, SIGTERM); /* die with the parent server; Linux-only. on macOS/BSD the
-                                             stale-stunnel pkill above handles a leftover from a hard kill */
+        // die with the parent server; Linux-only. on macOS/BSD the stale-stunnel pkill above
+        // handles a leftover from a hard kill
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
 #endif
         execl(stunnel_path, stunnel_path, conf_path, (char* )NULL_POINTER);
-        _exit(127); /* exec failed */
+        _exit(127); // exec failed
     }
     else if (stunnel_pid > 0)
     {
@@ -634,10 +654,10 @@ static void _main_internal__print_startup_summary(void)
 #ifndef WIN32
     struct stat certificate_file_info;
 
-    /* estimate the days of validity left on a certbot-managed certificate: Let's Encrypt certs are
-       valid for exactly 90 days from issuance and the fullchain.pem symlink target's modification
-       time is the issuance time. renewal already ran before this summary, so under 30 days here
-       means the renewal did not succeed */
+    // estimate the days of validity left on a certbot-managed certificate: Let's Encrypt certs are
+    // valid for exactly 90 days from issuance and the fullchain.pem symlink target's modification
+    // time is the issuance time. renewal already ran before this summary, so under 30 days here
+    // means the renewal did not succeed
     if (g_stunnel_pid > 0
         && strncmp(g_server_settings.stunnel_cert_fullchain, "/etc/letsencrypt/live/", 22) == 0
         && stat(g_server_settings.stunnel_cert_fullchain, &certificate_file_info) == 0)
@@ -654,12 +674,12 @@ static void _main_internal__print_startup_summary(void)
     printf("  %s%s%s\n", g_color_banner, "lemon-chat is running - services and ports", g_color_reset);
     printf("\n");
 
-    /* the websocket listener is always running */
+    // the websocket listener is always running
     printf("  %s  %-18s port %lld\n", g_mark_ok, "websocket", g_server_settings.websocket_port);
 
-    /* the webrtc datachannel + bundled libviolet STUN/TURN listener (udp 3478) are always up; this is just
-       the transport. whether the server actually forwards audio over it is gated separately for client
-       voice and for music bots, shown on the next two lines */
+    // the webrtc datachannel + bundled libviolet STUN/TURN listener (udp 3478) are always up; this is just
+    // the transport. whether the server actually forwards audio over it is gated separately for client
+    // voice and for music bots, shown on the next two lines
     printf("  %s  %-18s port 3478 (udp)\n", g_mark_ok, "webrtc + stun/turn");
 
     if (is_voice_on == TRUE)
@@ -680,7 +700,7 @@ static void _main_internal__print_startup_summary(void)
         printf("  %s  %-18s off\n", g_mark_off, "music bot audio");
     }
 
-    /* optional bundled http server that serves the client */
+    // optional bundled http server that serves the client
     if (g_server_settings.serve_client_http == TRUE)
     {
         printf("  %s  %-18s port %lld\n", g_mark_ok, "http server", g_server_settings.http_port);
@@ -690,8 +710,8 @@ static void _main_internal__print_startup_summary(void)
         printf("  %s  %-18s not enabled\n", g_mark_off, "http server");
     }
 
-    /* optional bundled stunnel wss front-end; g_stunnel_pid is only set when it actually launched
-       (it does not launch on windows), so this reflects what is really running */
+    // optional bundled stunnel wss front-end; g_stunnel_pid is only set when it actually launched
+    // (it does not launch on windows), so this reflects what is really running
     if (g_stunnel_pid > 0)
     {
         printf("  %s  %-18s port %lld (wss -> ws %lld)\n", g_mark_ok, "stunnel (wss)", g_server_settings.wss_port, g_server_settings.websocket_port);
@@ -737,7 +757,7 @@ static void _main_internal__print_startup_summary(void)
     }
     printf("  ============================================================\n");
 
-    /* do not let the plaintext admin password linger in memory past this one-time summary */
+    // do not let the plaintext admin password linger in memory past this one-time summary
     clib__null_memory(g_first_run_admin_password, sizeof(g_first_run_admin_password));
 
     printf("\n");
@@ -787,19 +807,19 @@ static void _main_internal__start_stun_turn_listener_for_webrtc_datachannel(void
     
     violet_options_init(&vopts);
 
-    /* printf("%s", "[important] start_stun_turn_listener_for_webrtc_datachannel started \n"); */
-    /* char* argv[] = {
-           "violet",
-           "--credentials=usweger123:pw1wegweg23Q --log-level=verbose",
-           0
-       }; */
+    // printf("%s", "[important] start_stun_turn_listener_for_webrtc_datachannel started \n");
+    // char* argv[] = {
+    // "violet",
+    // "--credentials=usweger123:pw1wegweg23Q --log-level=verbose",
+    // 0
+    // };
 
 
-    /* char* argv[] = { "violet", "--log-level=error", 0 }; */
+    // char* argv[] = { "violet", "--log-level=error", 0 };
 
-    /* char* argv[] = { "violet", "--log-level=warn", 0 }; */
-    /* char* argv[] = { "violet", "--log-level=info", 0 }; */
-    /* char* argv[] = { "violet", "--log-level=verbose", 0 }; */
+    // char* argv[] = { "violet", "--log-level=warn", 0 };
+    // char* argv[] = { "violet", "--log-level=info", 0 };
+    // char* argv[] = { "violet", "--log-level=verbose", 0 };
 
     if (violet_options_from_arg(2, argv, &vopts) < 0)
     {
@@ -819,20 +839,24 @@ static void _main_internal__start_stun_turn_listener_for_webrtc_datachannel(void
         goto error;
     }
 
-    /* juice_server_destroy(server); */
-    /* violet_options_destroy(&vopts); */
+    // juice_server_destroy(server);
+    // violet_options_destroy(&vopts);
 
 error:
 
-    /* violet_options_destroy(&vopts); */
+    // violet_options_destroy(&vopts);
     return;
 }
 
 /**
- * @brief prints out debug information at start
+ * @brief prints one "<name> active" line for every debug category that is switched on at compile time
  *
+ *        each DBG_* macro expands to either the following printf or to nothing, so the startup output
+ *        lists exactly the debug categories built into this binary.
+ *
+ * @return void
  */
-void _main_internal__print_debug_information(void)
+static void _main_internal__print_debug_information(void)
 {
     DBG_DLLMAIN printf("%s", "DBG_DLLMAIN active \n");
     DBG_CLIENT_MESSAGE printf("%s", "DBG_CLIENT_MESSAGE active \n");
@@ -868,8 +892,8 @@ static void _main_internal__init_terminal(void)
         HANDLE stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
         DWORD console_mode = 0;
 
-        /* GetConsoleMode only succeeds for a real console (not a redirected file/pipe), which also keeps
-           escape codes out of redirected output. ENABLE_VIRTUAL_TERMINAL_PROCESSING turns on ANSI. */
+        // GetConsoleMode only succeeds for a real console (not a redirected file/pipe), which also keeps
+        // escape codes out of redirected output. ENABLE_VIRTUAL_TERMINAL_PROCESSING turns on ANSI.
         if (stdout_handle != INVALID_HANDLE_VALUE && GetConsoleMode(stdout_handle, &console_mode) != 0)
         {
             if (SetConsoleMode(stdout_handle, console_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0)
@@ -884,12 +908,12 @@ static void _main_internal__init_terminal(void)
 
     if (use_color == TRUE)
     {
-        g_mark_info = "\033[1;36m[*]\033[0m";   /* cyan */
-        g_mark_ok = "\033[1;32m[+]\033[0m";     /* green */
-        g_mark_off = "\033[1;31m[-]\033[0m";    /* red */
-        g_mark_warn = "\033[1;33m[!]\033[0m";   /* yellow */
-        g_mark_ask = "\033[1;36m[?]\033[0m";    /* cyan */
-        g_color_banner = "\033[1;33m";          /* bold yellow */
+        g_mark_info = "\033[1;36m[*]\033[0m";   // cyan
+        g_mark_ok = "\033[1;32m[+]\033[0m";     // green
+        g_mark_off = "\033[1;31m[-]\033[0m";    // red
+        g_mark_warn = "\033[1;33m[!]\033[0m";   // yellow
+        g_mark_ask = "\033[1;36m[?]\033[0m";    // cyan
+        g_color_banner = "\033[1;33m";          // bold yellow
         g_color_reset = "\033[0m";
     }
 }
@@ -941,12 +965,12 @@ int main(void)
     char client_html_path[640];
     FILE* client_html_file = 0;
 
-    /* flush logs line-by-line even when stdout/stderr are piped (tee / file); */
-    /* without this, output is block-buffered and only appears in delayed chunks */
+    // flush logs line-by-line even when stdout/stderr are piped (tee / file);
+    // without this, output is block-buffered and only appears in delayed chunks
     setvbuf(stdout, NULL_POINTER, _IOLBF, 0);
     setvbuf(stderr, NULL_POINTER, _IOLBF, 0);
 
-    /* serialize log output so threads cannot interleave their lines on the console */
+    // serialize log output so threads cannot interleave their lines on the console
     log_set_lock(_main_internal__log_lock, NULL_POINTER);
 
     _main_internal__init_terminal();
@@ -957,7 +981,7 @@ int main(void)
     _main_internal__print_debug_information();
 #endif
 
-    /* run this so rand() gives random output every time */
+    // run this so rand() gives random output every time
     srand(time(0));
 
     clib__rwlock_init(&g_clients_global_rwlock_guard);
@@ -982,14 +1006,22 @@ int main(void)
     g_tags_array = (tag_t*)memorymanager__allocate(sizeof(tag_t) * MAX_TAGS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
     g_ban_array = (ban_entry_t*)memorymanager__allocate(sizeof(ban_entry_t) * MAX_BANS, MEMALLOC_BANS_ARRAY);
     clib__null_memory(g_ban_array, sizeof(ban_entry_t) * MAX_BANS);
+
+    // offline message queue: ram only, allocated once, never persisted. the payloads themselves are
+    // allocated per message, so an empty queue costs only these slot headers
+    if (g_server_settings.allow_offline_messages == TRUE)
+    {
+        g_offline_messages = (offline_chat_message_t*)memorymanager__allocate(sizeof(offline_chat_message_t) * MAX_OFFLINE_MESSAGES, MEMALLOC_OFFLINE_MESSAGES_ARRAY);
+        clib__null_memory(g_offline_messages, sizeof(offline_chat_message_t) * MAX_OFFLINE_MESSAGES);
+    }
     g_webrtc_muggles_array = (webrtc_peer_t*)memorymanager__allocate(sizeof(webrtc_peer_t) * g_server_settings.max_client_count, MEMALLOC_WEBRTC_PEERS);
 
     settings__init_channel_list();
     settings__init_tags_and_icons();
     settings__load_persisted_state();
 
-    /* resolve the http webroot and warn about a missing client.html now (main thread), so this and the
-       startup summary print before any worker thread is launched and cannot interleave on the console */
+    // resolve the http webroot and warn about a missing client.html now (main thread), so this and the
+    // startup summary print before any worker thread is launched and cannot interleave on the console
     if (g_server_settings.serve_client_http == TRUE)
     {
         clib__null_memory(http_webroot_resolved, sizeof(http_webroot_resolved));
@@ -1005,17 +1037,17 @@ int main(void)
         }
 #endif
 
-        /* if nothing resolved (no webroot configured on windows, or the executable-dir lookup failed),
-           serve from the current working directory - the same place server_settings.json lives. without
-           this the served path would be "/client.html", which on windows means the drive root, not the cwd */
+        // if nothing resolved (no webroot configured on windows, or the executable-dir lookup failed),
+        // serve from the current working directory - the same place server_settings.json lives. without
+        // this the served path would be "/client.html", which on windows means the drive root, not the cwd
         if (http_webroot_resolved[0] == 0)
         {
             http_webroot_resolved[0] = '.';
             http_webroot_resolved[1] = 0;
         }
 
-        /* warn loudly if client.html is not where the http server will look for it, so the operator does
-           not get a silent 404 in the browser */
+        // warn loudly if client.html is not where the http server will look for it, so the operator does
+        // not get a silent 404 in the browser
         clib__null_memory(client_html_path, sizeof(client_html_path));
         snprintf(client_html_path, sizeof(client_html_path), "%s/client.html", http_webroot_resolved);
         client_html_file = fopen(client_html_path, "rb");
@@ -1030,14 +1062,14 @@ int main(void)
         }
     }
 
-    /* renew the Let's Encrypt certificate if it is close to expiry. this must run BEFORE stunnel and
-       the http server are started, while port 80 is still free for certbot's standalone challenge -
-       the same window the first issuance used. the /etc/letsencrypt/live/ paths are symlinks to the
-       newest cert, so the stunnel launched right after this automatically picks up a renewed one */
+    // renew the Let's Encrypt certificate if it is close to expiry. this must run BEFORE stunnel and
+    // the http server are started, while port 80 is still free for certbot's standalone challenge -
+    // the same window the first issuance used. the /etc/letsencrypt/live/ paths are symlinks to the
+    // newest cert, so the stunnel launched right after this automatically picks up a renewed one
     _main_internal__renew_certificate_if_due();
 
-    /* launch stunnel (synchronous, main thread; sets g_stunnel_pid) and print the startup summary BEFORE
-       any worker thread is started, so they cannot interleave on the console with thread log output */
+    // launch stunnel (synchronous, main thread; sets g_stunnel_pid) and print the startup summary BEFORE
+    // any worker thread is started, so they cannot interleave on the console with thread log output
     _main_internal__launch_stunnel();
 
     _main_internal__print_startup_summary();
@@ -1045,7 +1077,7 @@ int main(void)
     pthread_create((pthread_t*)&g_thread_id0, 0, (void*)&websocket_thread, 0);
     pthread_create((pthread_t*)&g_thread_id1, 0, (void*)&websocket_connection_check_thread, 0);
 
-    /* http_server__start spawns its own thread and returns immediately (webroot already resolved above) */
+    // http_server__start spawns its own thread and returns immediately (webroot already resolved above)
     if (g_server_settings.serve_client_http == TRUE)
     {
         if (g_server_settings.use_stunnel == TRUE && g_server_settings.serve_https == TRUE)
@@ -1055,8 +1087,8 @@ int main(void)
         http_server__start(g_server_settings.http_port, http_webroot_resolved);
     }
 
-    /* the STUN/TURN + webrtc datachannel listener is always started and kept up; is_voice_chat_active
-       only controls whether the server re-transmits audio between clients (gated in audio_channel.c) */
+    // the STUN/TURN + webrtc datachannel listener is always started and kept up; is_voice_chat_active
+    // only controls whether the server re-transmits audio between clients (gated in audio_channel.c)
     pthread_create((pthread_t*)&g_thread_id2, 0, (void*)&_main_internal__start_stun_turn_listener_for_webrtc_datachannel, 0);
 
     for (;;)

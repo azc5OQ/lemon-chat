@@ -12,11 +12,14 @@
 #include "settings.h"
 #include <string.h>
 
+static void _settings_internal__build_and_push_client_config(int64 websocket_port, char plaintext_keys[][256], uint64 keys_count);
+
 /**
- * @brief self explanatory
- * *
+ * @brief seeds channel slot 0 as the root channel every client lands in: named "root", audio on,
+ *        no parent and no maintainer yet.
+ *
  * @return void
- * */
+ */
 void settings__init_channel_list(void)
 {
     char channel_name[] = "root";
@@ -38,13 +41,18 @@ void settings__init_channel_list(void)
 }
 
 /**
- * @brief if server_settings.json holds a saved channel layout and/or tags+icons, rebuilds them into the
- *        (already allocated) global arrays. each channel/icon/tag is written into the slot matching its
- *        saved id, so id references stay valid (ids are array indices, not opaque handles). runtime-only
- *        fields are reset to their empty defaults. the channel root and the admin tag/icon (id 0) are
- *        seeded separately before this runs and are left in place (this only fills id >= 1 for tags/icons).
- *        a missing or unparseable file is a no-op. must run after the arrays are allocated and before any
- *        client can connect.
+ * @brief rebuilds the saved channels, icons, tags, bans and identities from server_settings.json into the
+ *        already allocated global arrays. a missing or unparseable file is a no-op.
+ *
+ *        each channel/icon/tag is written into the slot matching its saved id, so id references stay valid
+ *        (ids are array indices, not opaque handles). runtime-only fields are reset to their empty defaults.
+ *        the channel root and the admin tag/icon (id 0) are seeded separately before this runs and are left
+ *        in place, so this only fills id >= 1 for tags and icons; the admin tag's saved icon link is
+ *        re-applied at the end, once the icons it may point at are loaded. bans and identities are filled
+ *        sequentially instead, and an identity with no tags, no avatar and no alias is dropped rather than
+ *        occupying a slot.
+ *
+ * @note must run after the arrays are allocated and before any client can connect.
  *
  * @return void
  */
@@ -117,7 +125,7 @@ void settings__load_persisted_state(void)
         return;
     }
 
-    /* channels */
+    // channels
     json_channels = cJSON_GetObjectItemCaseSensitive(json_root, "channels");
     if (cJSON_IsArray(json_channels) == TRUE)
     {
@@ -135,8 +143,8 @@ void settings__load_persisted_state(void)
                 continue;
             }
 
-            /* write into the exact saved slot, never a first-free slot, so channel_id stays stable and
-               parent_channel_id references remain valid across the restart */
+            // write into the exact saved slot, never a first-free slot, so channel_id stays stable and
+            // parent_channel_id references remain valid across the restart
             channel_in_loop = &g_channel_array[channel_id];
             clib__null_memory(channel_in_loop, sizeof(channel_t));
 
@@ -190,7 +198,7 @@ void settings__load_persisted_state(void)
         }
     }
 
-    /* icons (id is the array index; the admin icon id 0 is seeded separately, so skip it) */
+    // icons (id is the array index; the admin icon id 0 is seeded separately, so skip it)
     json_icons = cJSON_GetObjectItemCaseSensitive(json_root, "icons");
     if (cJSON_IsArray(json_icons) == TRUE)
     {
@@ -220,7 +228,7 @@ void settings__load_persisted_state(void)
         }
     }
 
-    /* tags (id is the array index; the admin tag id 0 is seeded separately, so skip it) */
+    // tags (id is the array index; the admin tag id 0 is seeded separately, so skip it)
     json_tags = cJSON_GetObjectItemCaseSensitive(json_root, "tags");
     if (cJSON_IsArray(json_tags) == TRUE)
     {
@@ -248,7 +256,9 @@ void settings__load_persisted_state(void)
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_tag, "has_icon");
             if (cJSON_IsBool(json_field) == TRUE) { tag_in_loop->has_icon = cJSON_IsTrue(json_field); }
-            else { tag_in_loop->has_icon = TRUE; } /* settings written before has_icon existed had a mandatory icon */
+            // settings written before has_icon existed had a mandatory icon, but icon id 0 is the seeded
+            // admin icon - defaulting those to TRUE hands every iconless tag the admin shield
+            else { tag_in_loop->has_icon = (boole)(tag_in_loop->icon_id != 0); }
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_tag, "name");
             if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &tag_in_loop->name[0], clib__utf8_string_length(json_field->valuestring), TAG_MAX_NAME_LENGTH - 1); }
@@ -257,7 +267,7 @@ void settings__load_persisted_state(void)
         }
     }
 
-    /* load the ban list (filled sequentially; ip is required, the rest is optional metadata) */
+    // load the ban list (filled sequentially; ip is required, the rest is optional metadata)
     json_bans = cJSON_GetObjectItemCaseSensitive(json_root, "bans");
     if (cJSON_IsArray(json_bans) == TRUE)
     {
@@ -296,9 +306,9 @@ void settings__load_persisted_state(void)
         }
     }
 
-    /* load the identity store (public-key hash -> tag ids). only consulted on auth when identities are
-       enabled, but always loaded so the data survives a disable/re-enable cycle. entries with no tags are
-       dropped so they don't occupy a slot */
+    // load the identity store (public-key hash -> tag ids). only consulted on auth when identities are
+    // enabled, but always loaded so the data survives a disable/re-enable cycle. entries with no tags are
+    // dropped so they don't occupy a slot
     json_identities = cJSON_GetObjectItemCaseSensitive(json_root, "identities");
     if (cJSON_IsArray(json_identities) == TRUE)
     {
@@ -331,6 +341,26 @@ void settings__load_persisted_state(void)
                 clib__copy_memory(json_field->valuestring, &identity_in_loop->base64_avatar[0], clib__utf8_string_length(json_field->valuestring), MAX_CLIENT_AVATAR_LENGTH - 1);
             }
 
+            json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "last_seen");
+            if (cJSON_IsNumber(json_field) == TRUE)
+            {
+                identity_in_loop->last_seen_unix_seconds = (int64)json_field->valuedouble;
+            }
+
+            json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "alias");
+            if (cJSON_IsString(json_field) == TRUE && json_field->valuestring != NULL_POINTER)
+            {
+                clib__copy_memory(json_field->valuestring, &identity_in_loop->alias[0], clib__utf8_string_length(json_field->valuestring), USERNAME_MAX_LENGTH - 1);
+            }
+
+            // the raw rsa public key, so peers can encrypt to this identity while it is offline.
+            // only meaningful while offline messages are enabled
+            json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "raw_public_key");
+            if (cJSON_IsString(json_field) == TRUE && json_field->valuestring != NULL_POINTER)
+            {
+                clib__copy_memory(json_field->valuestring, &identity_in_loop->raw_public_key[0], clib__utf8_string_length(json_field->valuestring), MAX_PUBLIC_KEY_LENGTH - 1);
+            }
+
             identity_in_loop->tag_id_count = 0;
             json_identity_tag_ids = cJSON_GetObjectItemCaseSensitive(json_identity, "tag_ids");
             if (cJSON_IsArray(json_identity_tag_ids) == TRUE)
@@ -350,9 +380,9 @@ void settings__load_persisted_state(void)
                 }
             }
 
-            if (identity_in_loop->tag_id_count == 0 && identity_in_loop->base64_avatar[0] == 0)
+            if (identity_in_loop->tag_id_count == 0 && identity_in_loop->base64_avatar[0] == 0 && identity_in_loop->alias[0] == 0)
             {
-                DBG_IDENTITIES log_info("%s %s %s", "load_identities: dropping stored identity [", &identity_in_loop->public_key[0], "] - it has no tags and no avatar \n");
+                DBG_IDENTITIES log_info("%s %s %s", "load_identities: dropping stored identity [", &identity_in_loop->public_key[0], "] - it has no tags, no avatar and no alias \n");
                 clib__null_memory(identity_in_loop, sizeof(client_stored_data_t));
                 continue;
             }
@@ -364,9 +394,9 @@ void settings__load_persisted_state(void)
         }
     }
 
-    /* re-apply the admin tag's saved icon link. the admin tag was re-seeded with icon_id 0 before this
-       load ran; its runtime-chosen icon (and has_icon flag) is restored here, now that the icons it may
-       point at have been loaded above */
+    // re-apply the admin tag's saved icon link. the admin tag was re-seeded with icon_id 0 before this
+    // load ran; its runtime-chosen icon (and has_icon flag) is restored here, now that the icons it may
+    // point at have been loaded above
     json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_tag_icon_id");
     if (cJSON_IsNumber(json_field)) { g_tags_array[ADMIN_TAG_ID].icon_id = (uint64)json_field->valuedouble; }
     json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_tag_has_icon");
@@ -381,10 +411,13 @@ void settings__load_persisted_state(void)
 }
 
 /**
- * @brief self explanatory
- * *
+ * @brief seeds the built-in "admin" tag in slot 0 and the shield icon it may be given, at icon id 0.
+ *
+ *        the icon exists but the tag ships with has_icon FALSE - an icon lives at id 0, so anything
+ *        resolving tag_linked_icon_id without checking has_icon paints the shield on every tag.
+ *
  * @return void
- * */
+ */
 void settings__init_tags_and_icons(void)
 {
     char tag_name[] = "admin";
@@ -395,6 +428,9 @@ void settings__init_tags_and_icons(void)
     admin_tag = &g_tags_array[0];
     admin_tag->id = ADMIN_TAG_ID;
     admin_tag->icon_id = 0;
+    // stated outright rather than left to zero-init: the admin tag ships WITHOUT an icon, even though
+    // a real icon lives at id 0, and clients must not paint one until an admin assigns it
+    admin_tag->has_icon = FALSE;
     admin_tag->is_existing = TRUE;
     clib__copy_memory((void*)&tag_name, (void*)&admin_tag->name, strlen(tag_name), TAG_MAX_NAME_LENGTH);
 
@@ -405,12 +441,22 @@ void settings__init_tags_and_icons(void)
 }
 
 /**
- * @brief self explanatory
- * *
+ * @brief builds the window.__SERVER_CONFIG__ script and hands it to the bundled http server, which injects
+ *        it into the client.html it serves so the served page can autoconnect.
+ *
+ *        the connection details (websocket port, the wss port when stunnel is on, and the plaintext connect
+ *        keys) are only baked in when the admin set embed_client_config. the default theme is added when one
+ *        is configured. the client policy flags - whether the identity passphrase may be persisted in
+ *        localStorage, and whether avatars are allowed plus their accepted max raw size - are always baked
+ *        in so the client knows the server's stance; both default off when this config is absent because the
+ *        page was loaded directly.
+ *
+ * @param int64 websocket_port -> the port clients should open the websocket on
+ * @param char plaintext_keys[][256] -> the connect keys in cleartext, one per row
+ * @param uint64 keys_count -> how many rows of plaintext_keys are filled
+ *
  * @return void
- * */
-/* builds the window.__SERVER_CONFIG__ script (websocket port + plaintext connect keys) and hands it to the
-   bundled http server, which injects it into the client.html it serves so the served page can autoconnect */
+ */
 static void _settings_internal__build_and_push_client_config(int64 websocket_port, char plaintext_keys[][256], uint64 keys_count)
 {
     cJSON* config_object = NULL_POINTER;
@@ -425,7 +471,7 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
         return;
     }
 
-    /* only bake the connection details (port + keys) into the served page if the admin opted in */
+    // only bake the connection details (port + keys) into the served page if the admin opted in
     if (g_server_settings.embed_client_config == TRUE)
     {
         cJSON_AddNumberToObject(config_object, "port", (double)websocket_port);
@@ -450,9 +496,9 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
         cJSON_AddStringToObject(config_object, "theme", &g_server_settings.default_theme[0]);
     }
 
-    /* policy flags the client honours: whether to persist the identity passphrase in localStorage, and
-       whether avatars are allowed (with the accepted max raw image size). always baked so the client
-       knows the server's stance; both default off when this config is absent (page loaded directly) */
+    // policy flags the client honours: whether to persist the identity passphrase in localStorage, and
+    // whether avatars are allowed (with the accepted max raw image size). always baked so the client
+    // knows the server's stance; both default off when this config is absent (page loaded directly)
     cJSON_AddBoolToObject(config_object, "persist_identity", g_server_settings.persist_identity_in_localstorage == TRUE);
     cJSON_AddBoolToObject(config_object, "allow_avatars", g_server_settings.allow_avatars == TRUE);
     if (g_server_settings.allow_avatars == TRUE)
@@ -472,6 +518,19 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
     cJSON_Delete(config_object);
 }
 
+/**
+ * @brief fills g_server_settings with the built-in defaults, then overrides them from server_settings.json
+ *        or, when there is no usable file, from the interactive first time setup.
+ *
+ *        the defaults include the max client and channel counts, because the json path returns early and
+ *        the global arrays would otherwise allocate at size 0. any field the json omits keeps its default.
+ *        connect keys are stored as sha256 hashes; the cleartext is kept only in a local buffer, so it can
+ *        be handed to the embedded client config and to the first time setup. a file that exists but does
+ *        not parse is reported and falls through to the interactive setup. either path ends by pushing the
+ *        client config to the bundled http server.
+ *
+ * @return void
+ */
 void settings__load(void)
 {
     char plaintext_keys[100][256];
@@ -506,15 +565,20 @@ void settings__load(void)
     g_server_settings.are_identities_enabled = TRUE;
     g_server_settings.persist_identity_in_localstorage = FALSE;
     g_server_settings.allow_avatars = FALSE;
-    g_server_settings.avatar_max_size_bytes = 51200; /* 50 KB raw image (~68 KB base64, fits MAX_CLIENT_AVATAR_LENGTH) */
+    g_server_settings.allow_alias_registrations = FALSE;
+    g_server_settings.allow_stored_clients_list = FALSE;
+    g_server_settings.allow_last_seen = FALSE;
+    g_server_settings.allow_offline_messages = FALSE;
+    g_server_settings.allow_typing_indicator = FALSE;
+    g_server_settings.avatar_max_size_bytes = 51200;  // 50 KB raw image (~68 KB base64, fits MAX_CLIENT_AVATAR_LENGTH)
 
-    /* set the max client/channel counts here too; the JSON path below returns early, so without this the arrays would allocate at size 0 */
+    // set the max client/channel counts here too; the JSON path below returns early, so without this the arrays would allocate at size 0
     g_server_settings.max_client_count = MAX_CLIENTS;
     g_server_settings.max_channel_count = MAX_CHANNELS;
 
     clib__copy_memory(default_client_name, g_server_settings.default_client_name, strlen(default_client_name), 100);
 
-    /* optional non-interactive setup: if server_settings.json exists, load it and skip the prompts below; any omitted field keeps the default set above */
+    // optional non-interactive setup: if server_settings.json exists, load it and skip the prompts below; any omitted field keeps the default set above
     {
         settings_file = fopen("server_settings.json", "rb");
         if (settings_file != NULL_POINTER)
@@ -594,10 +658,21 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.persist_identity_in_localstorage = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_avatars");
                 if (cJSON_IsBool(json_field)) { g_server_settings.allow_avatars = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_alias_registrations");
+                if (cJSON_IsBool(json_field)) { g_server_settings.allow_alias_registrations = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_stored_clients_list");
+                if (cJSON_IsBool(json_field)) { g_server_settings.allow_stored_clients_list = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_last_seen");
+                if (cJSON_IsBool(json_field)) { g_server_settings.allow_last_seen = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_offline_messages");
+                if (cJSON_IsBool(json_field)) { g_server_settings.allow_offline_messages = cJSON_IsTrue(json_field); }
+
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_typing_indicator");
+                if (cJSON_IsBool(json_field)) { g_server_settings.allow_typing_indicator = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "avatar_max_size_bytes");
                 if (cJSON_IsNumber(json_field)) { g_server_settings.avatar_max_size_bytes = (int64)json_field->valuedouble; }
 
-                /* optional bundled-stunnel front-end (wss) */
+                // optional bundled-stunnel front-end (wss)
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "use_stunnel");
                 if (cJSON_IsBool(json_field)) { g_server_settings.use_stunnel = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "wss_port");
@@ -611,7 +686,7 @@ void settings__load(void)
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "client_html_dest");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &g_server_settings.client_html_dest[0], clib__utf8_string_length(json_field->valuestring), 511); }
 
-                /* optional bundled http server that serves the client (mainly for LAN testing) */
+                // optional bundled http server that serves the client (mainly for LAN testing)
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "serve_client_http");
                 if (cJSON_IsBool(json_field)) { g_server_settings.serve_client_http = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "http_port");

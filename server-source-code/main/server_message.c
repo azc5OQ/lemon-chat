@@ -11,8 +11,9 @@
 #include "memory_manager.h"
 #include "../third-party/eteran-cvector/cvector.h"
 #include "../third-party/rxi-log/log.h"
-#include "clib/clib_string.h"                 /* clib__is_string_equal (identity online check) */
-#include "../third-party/zhicheng/base64.h"   /* BASE64_ENCODE_OUT_SIZE (identity hash buffer) */
+#include "clib/clib_string.h"  // clib__is_string_equal (identity online check)
+#include "clib/clib_memory.h"  // clib__null_memory (clearing a delivered offline message slot)
+#include "../third-party/zhicheng/base64.h"  // BASE64_ENCODE_OUT_SIZE (identity hash buffer)
 
 #include "util.h"
 
@@ -92,12 +93,19 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     cJSON_AddBoolToObject(json_message_object1, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
     cJSON_AddBoolToObject(json_message_object1, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
     cJSON_AddBoolToObject(json_message_object1, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
+    cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
+    // avatars policy travels in-protocol so clients that were NOT served by this server's http
+    // server (the android app loads the page from its assets) still learn it - otherwise they
+    // fall back to "avatars off" and hide the set/delete avatar actions
+    cJSON_AddBoolToObject(json_message_object1, "allow_avatars", g_server_settings.allow_avatars);
+    cJSON_AddBoolToObject(json_message_object1, "allow_typing_indicator", g_server_settings.allow_typing_indicator);
+    cJSON_AddNumberToObject(json_message_object1, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
     cJSON_AddNumberToObject(json_message_object1, "stun_port", 3478);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
-    /* DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n"); */
+    // DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n");
     size_of_allocated_message_buffer = 0;
     msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, ws_connection_dh_shared_secret);
 
@@ -295,6 +303,9 @@ void server_msg__send_channel_list_to_single_client(ws_cli_conn_t* websocket, ch
  * @param ws_cli_conn_t* websocket -> websocket connection
  * @param char* ws_connection_dh_shared_secret -> DH key exchange generated shared secret, that must be used later within this function.
  * @param char* local_clients_username -> username of local client
+ * @param uint64 client_receiver_id -> id of the client that receives the list, used to compare his channel
+ *                                     against every listed client when hiding clients that sit in
+ *                                     password protected channels
  *
  * @attention it doesnt need readlock, already called within writelock in client_message.c
  *
@@ -319,7 +330,7 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
     json_message_object1 = cJSON_CreateObject();
     json_client_array = cJSON_CreateArray();
 
-    /* create array of clients */
+    // create array of clients
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
         cJSON* single_client = NULL_POINTER;
@@ -342,8 +353,8 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
         cJSON_AddStringToObject(single_client, "username", client_in_loop->username);
         cJSON_AddStringToObject(single_client, "public_key", client_in_loop->public_key);
 
-        /* check if client in loop is in different channel that receiving client
-           check if client is in password protected channel */
+        // check if client in loop is in different channel that receiving client
+        // check if client is in password protected channel
         is_hide_client_active = FALSE;
 
         if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE)
@@ -376,8 +387,8 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
 
         audio_state_to_send = client_in_loop->audio_state;
 
-        /* only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
-           privacy reasons */
+        // only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
+        // privacy reasons
         if (client_in_loop->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != ROOT_CHANNEL_ID)
         {
             audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
@@ -398,8 +409,11 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
 
         cJSON_AddBoolToObject(single_client, "is_idle", client_in_loop->is_idle);
 
-        /* property country_iso_code will always be part of response
-           the value will be empty if ip address is from unknown country or if server doesn't display flags */
+        // admin-registered alias (display name); empty string when none
+        cJSON_AddStringToObject(single_client, "alias", &client_in_loop->alias[0]);
+
+        // property country_iso_code will always be part of response
+        // the value will be empty if ip address is from unknown country or if server doesn't display flags
         cJSON_AddStringToObject(single_client, "country_iso_code", client_in_loop->country_iso_code);
 
         cJSON_AddItemToArray(json_client_array, single_client);
@@ -454,7 +468,7 @@ void server_msg__send_icon_list_to_single_client(ws_cli_conn_t* websocket, char*
     json_message_object1 = cJSON_CreateObject();
     json_icons_array = cJSON_CreateArray();
 
-    /* create array of clients */
+    // create array of clients
     for (x = 0; x < MAX_ICONS; x++)
     {
         cJSON* single_client = NULL_POINTER;
@@ -524,7 +538,7 @@ void server_msg__send_tag_list_to_single_client(ws_cli_conn_t* websocket, char* 
     json_message_object1 = cJSON_CreateObject();
     json_tags_array = cJSON_CreateArray();
 
-    /* create array of clients */
+    // create array of clients
     for (x = 0; x < MAX_TAGS; x++)
     {
         cJSON* single_tag_id_object = NULL_POINTER;
@@ -606,7 +620,11 @@ void server_msg__send_identity_list_to_single_client(ws_cli_conn_t* websocket, c
         cJSON* identity_tag_ids_array = NULL_POINTER;
         boole is_online = FALSE;
 
-        if (g_client_stored_data[i].public_key[0] == 0 || g_client_stored_data[i].tag_id_count == 0)
+        // an identity is worth listing when it carries ANYTHING: tags, an alias or an avatar. it used
+        // to require tags, which hid every registered user from the admin - registration grants an
+        // alias, not a tag, so the very people this list is for were the ones missing from it
+        if (g_client_stored_data[i].public_key[0] == 0
+            || (g_client_stored_data[i].tag_id_count == 0 && g_client_stored_data[i].alias[0] == 0 && g_client_stored_data[i].base64_avatar[0] == 0))
         {
             continue;
         }
@@ -614,6 +632,8 @@ void server_msg__send_identity_list_to_single_client(ws_cli_conn_t* websocket, c
         single_identity_object = cJSON_CreateObject();
         cJSON_AddStringToObject(single_identity_object, "public_key_hash", &g_client_stored_data[i].public_key[0]);
         cJSON_AddStringToObject(single_identity_object, "username", &g_client_stored_data[i].username[0]);
+        // the admin-granted display name; empty means this identity is not registered
+        cJSON_AddStringToObject(single_identity_object, "alias", &g_client_stored_data[i].alias[0]);
 
         identity_tag_ids_array = cJSON_CreateArray();
         for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
@@ -622,7 +642,7 @@ void server_msg__send_identity_list_to_single_client(ws_cli_conn_t* websocket, c
         }
         cJSON_AddItemToObject(single_identity_object, "tag_ids", identity_tag_ids_array);
 
-        /* mark online if any connected authenticated non-bot client hashes to this identity */
+        // mark online if any connected authenticated non-bot client hashes to this identity
         for (c = 0; c < g_server_settings.max_client_count; c++)
         {
             client_t* connected_client = &g_clients_array[c];
@@ -699,7 +719,7 @@ void server_msg__send_active_microphone_usage_for_current_channel_to_single_clie
     json_message_object1 = cJSON_CreateObject();
     json_clients_array = cJSON_CreateArray();
 
-    /* create array of clients */
+    // create array of clients
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
         cJSON* single_object = NULL_POINTER;
@@ -720,13 +740,13 @@ void server_msg__send_active_microphone_usage_for_current_channel_to_single_clie
             continue;
         }
 
-        /* have to send even to ourselves
-           if client.client_id == current_client_id {
-               continue;
-           } */
+        // have to send even to ourselves
+        // if client.client_id == current_client_id {
+        // continue;
+        // }
 
-        /* only active mics are relevant since this is "active microphone usage" */
-        /* though */
+        // only active mics are relevant since this is "active microphone usage"
+        // though
         if (client_in_loop->audio_state != AUDIO_STATE__PUSH_TO_TALK_ACTIVE)
         {
             continue;
@@ -817,11 +837,12 @@ void server_msg__send_client_connect_message_to_all_clients(uint64 client_id_of_
 
         json_root_object1 = cJSON_CreateObject();
         json_message_object1 = cJSON_CreateObject();
-        /* carry the connecting client's tags so identity-restored tags show up on join without a page reload */
+        // carry the connecting client's tags so identity-restored tags show up on join without a page reload
         json_tag_ids_array = cJSON_CreateIntArray(new_client->tag_ids, (int)cvector_size(new_client->tag_ids));
 
         cJSON_AddStringToObject(json_message_object1, "type", "client_connect");
         cJSON_AddStringToObject(json_message_object1, "username", new_client->username);
+        cJSON_AddStringToObject(json_message_object1, "alias", new_client->alias);
         cJSON_AddStringToObject(json_message_object1, "public_key", new_client->public_key);
         cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)new_client->channel_id);
         cJSON_AddNumberToObject(json_message_object1, "client_id", (double)new_client->client_id);
@@ -829,8 +850,8 @@ void server_msg__send_client_connect_message_to_all_clients(uint64 client_id_of_
 
         audio_state_to_send = new_client->audio_state;
 
-        /* only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
-           privacy reasons */
+        // only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
+        // privacy reasons
         if (new_client->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != new_client->channel_id)
         {
             audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
@@ -891,7 +912,7 @@ void server_msg__send_maintainer_id_to_single_client(client_t* client, uint64 ch
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
-    /* DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n"); */
+    // DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n");
     size_of_allocated_message_buffer = 0;
     msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
@@ -932,7 +953,7 @@ void server_msg__send_connection_check_response_to_single_client(client_t* clien
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
-    /* DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n"); */
+    // DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n");
     size_of_allocated_message_buffer = 0;
     msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
@@ -1016,15 +1037,6 @@ void server_msg__send_client_rename_message_to_all_clients(uint64 id_of_client_t
 }
 
 /**
- * @brief sends an access-denied message to a single client
- *
- * @param client_t* client -> self explanatory
- *
- * @attention this function is used within acquired readlock within client_message.c , multiple functions
- *
- * @return void
- */
-/**
  * @brief tells a single client it should change the admin password (sent once after the first admin login,
  *        because the initial password was typed in cleartext at setup)
  *
@@ -1063,6 +1075,15 @@ void server_msg__send_force_admin_password_change_to_single_client(client_t* cli
     memorymanager__free((nuint)msg_text);
 }
 
+/**
+ * @brief sends an access-denied message to a single client
+ *
+ * @param client_t* client -> self explanatory
+ *
+ * @attention this function is used within acquired readlock within client_message.c , multiple functions
+ *
+ * @return void
+ */
 void server_msg__send_access_denied_to_single_client(client_t* client)
 {
     char* json_root_object1_string = 0;
@@ -1126,8 +1147,9 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON_AddItemToObject(json_message_object1, "enable_music_bot_audio", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "hide_clients_in_password_channels", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_temp_channels", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
 
-    /* include the current ban list so the admin's bans section can render it */
+    // include the current ban list so the admin's bans section can render it
     json_bans = cJSON_CreateArray();
     cJSON_AddItemToObject(json_message_object1, "bans", json_bans);
     clib__read_lock(&g_bans_global_rwlock_guard);
@@ -1256,6 +1278,8 @@ void server_msg__send_channel_create_message_to_all_clients(uint64 created_chann
  * @brief broadcasts a channel-edited event to all clients
  *
  * @param uint64 edited_channel_index -> self explanatory
+ * @param uint64 channel_editor_id -> id of the client that performed the edit, sent along in the event
+ *                                    so receivers know who changed the channel
  *
  * @attention this function is called within two acquired read locks, clients_global_rwlock_guard and channels_global_rwlock_guard
  *
@@ -1489,7 +1513,7 @@ void server_msg__send_chat_message_to_clients_in_same_channel(uint64 client_send
     {
         client_in_loop = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client_in_loop->is_existing == FALSE)
         {
             continue;
@@ -1708,7 +1732,7 @@ void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(u
     {
         client_in_loop = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client_in_loop->is_existing == FALSE)
         {
             continue;
@@ -1802,7 +1826,7 @@ void server_msg__send_channel_chat_picture_to_clients_in_same_channel(uint64 cli
     {
         client_in_loop = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client_in_loop->is_existing == FALSE)
         {
             continue;
@@ -1847,6 +1871,7 @@ void server_msg__send_channel_chat_picture_to_clients_in_same_channel(uint64 cli
  * @brief This function sends image status to the client that SENT the image so client knows that server received and sent his message to other clients / client
  *
  * @param client_t* client -> self explanatory
+ * @param char* status -> status string that is put into the "value" field of the image_sent_status message
  *
  * @attention thanks for your attention
  *
@@ -1872,7 +1897,7 @@ void server_msg__send_image_status_to_single_client(client_t* client, char* stat
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
-    /* DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n"); */
+    // DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n");
     size_of_allocated_message_buffer = 0;
     msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
@@ -1981,7 +2006,7 @@ void server_msg__send_channel_join_message_to_all_clients(client_t* client_that_
     json_root_object1_client_hidden_type = cJSON_CreateObject();
     json_message_object1_client_hidden_type = cJSON_CreateObject();
 
-    /* clients not in same channel will not receive real time microphone usage information from the client that switched the channel */
+    // clients not in same channel will not receive real time microphone usage information from the client that switched the channel
     is_streaming_song = client_that_switched_channel->is_streaming_song;
     audio_state = client_that_switched_channel->audio_state;
     song_name = client_that_switched_channel->song_name;
@@ -2084,13 +2109,15 @@ label_server_msg__send_channel_join_message_to_all_clients_end:
 }
 
 /**
- * @brief sends channel join message to single_client
+ * @brief sends a channel_join message about one client to one single receiving client
  *
- * @param client_t* client_that_switched_channel -> self explanatory
- * @param channel_t* new_channel -> id of server message
+ *        when the receiving client is not in the same channel as the client that switched, real time
+ *        microphone information is stripped before sending, push to talk active is downgraded to push
+ *        to talk enabled and the streamed song name is cleared.
  *
- * @attention
- * t
+ * @param client_t* client_that_switched_channel -> the client whose channel change is being announced
+ * @param channel_t* new_channel -> the channel that client_that_switched_channel joined
+ * @param client_t* receiving_client -> the single client this message is encrypted for and sent to
  *
  * @return void
  */
@@ -2112,7 +2139,7 @@ void server_msg__send_channel_join_message_to_single_client(client_t* client_tha
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_join_message_to_single_client \n");
 
-    /* clients not in same channel will not receive real time microphone usage information from the client that switched the channel */
+    // clients not in same channel will not receive real time microphone usage information from the client that switched the channel
     is_streaming_song = client_that_switched_channel->is_streaming_song;
     audio_state = client_that_switched_channel->audio_state;
     song_name = client_that_switched_channel->song_name;
@@ -2198,7 +2225,7 @@ void server_msg__send_maintainer_id_to_clients_in_same_channel(uint64 channel_id
     {
         client = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client->is_existing == FALSE)
         {
             continue;
@@ -2425,6 +2452,93 @@ void server_msg__send_poke_to_single_client(client_t* client, uint64 sender_inde
 }
 
 /**
+ * @brief tells the people a client is writing to that he is typing. carries no message content at
+ *        all - only who is typing and which conversation it belongs to, so the receiver can show it
+ *        against the right chat and drop it again when it stops being refreshed.
+ *
+ * @param uint64 sender_client_id -> the client that is typing
+ * @param char* receiver_type -> "channel" or "user", the kind of conversation being written to
+ * @param uint64 receiver_id -> channel id for "channel", target client id for "user"
+ *
+ * @attention the caller must already hold a read lock on clients_global_rwlock_guard
+ *
+ * @return void
+ */
+void server_msg__send_typing_indicator(uint64 sender_client_id, char* receiver_type, uint64 receiver_id)
+{
+    char* json_root_object_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    boole is_direct_message = FALSE;
+    client_t* client_in_loop = 0;
+    client_t* client_sender = 0;
+    cJSON* json_root_object = 0;
+    cJSON* json_message_object = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_typing_indicator \n");
+
+    client_sender = &g_clients_array[sender_client_id];
+    is_direct_message = clib__is_string_equal(receiver_type, "user");
+
+    json_root_object = cJSON_CreateObject();
+    json_message_object = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object, "type", "typing_indicator");
+    cJSON_AddNumberToObject(json_message_object, "client_id", sender_client_id);
+    cJSON_AddStringToObject(json_message_object, "receiver_type", receiver_type);
+    cJSON_AddNumberToObject(json_message_object, "receiver_id", (double)receiver_id);
+
+    cJSON_AddItemToObject(json_root_object, "message", json_message_object);
+
+    json_root_object_string = cJSON_PrintUnformatted(json_root_object);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client_in_loop = &g_clients_array[i];
+
+        if (client_in_loop->is_existing == FALSE || client_in_loop->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->client_id == sender_client_id)
+        {
+            continue;  // he knows he is typing
+        }
+
+        // a direct message goes to that one person, a channel one to whoever stands in the channel
+        if (is_direct_message == TRUE)
+        {
+            if (client_in_loop->client_id != receiver_id)
+            {
+                continue;
+            }
+        }
+        else if (client_in_loop->channel_id != receiver_id)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object, json_root_object_string);
+}
+
+/**
  * @brief sends a WebRTC SDP offer to a single client
  *
  * @param const char* candidate -> the ICE candidate string
@@ -2522,9 +2636,9 @@ void server_msg__send_audio_state_of_client_to_all_clients(uint64 client_whose_a
         {
             if (client->channel_id != g_clients_array[client_whose_audio_to_send].channel_id)
             {
-                /* if channel of receiving client and client that is sending audio state, isn't same
-                   and client that is sending audio state is located in password protected channel
-                   skip client */
+                // if channel of receiving client and client that is sending audio state, isn't same
+                // and client that is sending audio state is located in password protected channel
+                // skip client
                 if (g_channel_array[g_clients_array[client_whose_audio_to_send].channel_id].is_using_password == TRUE)
                 {
                     is_hide_client_active = TRUE;
@@ -2539,7 +2653,7 @@ void server_msg__send_audio_state_of_client_to_all_clients(uint64 client_whose_a
 
         audio_state_to_send = state;
 
-        /* only send microphone active state to clients in same channel as sender */
+        // only send microphone active state to clients in same channel as sender
         if (client->channel_id != g_clients_array[client_whose_audio_to_send].channel_id)
         {
             if (state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE)
@@ -2607,7 +2721,7 @@ void server_msg__send_start_song_stream_message_to_clients_in_same_channel(clien
     {
         client = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client->is_existing == FALSE)
         {
             continue;
@@ -2679,7 +2793,7 @@ void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client
     {
         client = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client->is_existing == FALSE)
         {
             continue;
@@ -2753,7 +2867,7 @@ void server_msg__send_add_tag_to_client_event_to_all_clients(uint64 client_id_of
     {
         client = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client->is_existing == FALSE)
         {
             continue;
@@ -2785,11 +2899,80 @@ void server_msg__send_add_tag_to_client_event_to_all_clients(uint64 client_id_of
 }
 
 /**
+ * @brief broadcasts "this client's alias changed" (with the alias text; empty = cleared) to all
+ *        authenticated non-bot clients. must be called with the clients lock already held
+ *        (like the tag-event broadcasts).
+ *
+ * @param uint64 client_id -> the client whose identity just got the alias
+ * @param char* alias -> the new alias text, empty or NULL when cleared
+ *
+ * @return void
+ */
+void server_msg__send_client_alias_changed_to_all_clients(uint64 client_id, char* alias)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_alias_changed_to_all_clients \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "client_alias_changed");
+    cJSON_AddNumberToObject(json_message_object1, "client_id", client_id);
+    cJSON_AddStringToObject(json_message_object1, "alias", (alias == NULL_POINTER) ? "" : alias);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        // if statements that are most probable to run should be first in loop
+        if (client->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
  * @brief broadcasts a lightweight "this client's avatar changed" event (no image payload) to all
  *        authenticated non-bot clients, so they can re-request that client's avatar if they show it.
- *        must be called with the clients lock already held (like the tag-event broadcasts).
  *
  * @param uint64 client_id_whose_avatar_changed -> id of the client whose avatar was set/deleted
+ *
+ * @note must be called with the clients lock already held (like the tag-event broadcasts)
+ *
+ * @return void
  */
 void server_msg__send_avatar_changed_event_to_all_clients(uint64 client_id_whose_avatar_changed)
 {
@@ -2850,6 +3033,8 @@ void server_msg__send_avatar_changed_event_to_all_clients(uint64 client_id_whose
  * @param char*          dh_shared_secret -> the requester's shared secret (to encrypt with)
  * @param uint64         client_id        -> whose avatar this is
  * @param char*          base64_avatar    -> the avatar data-url, or "" for none
+ *
+ * @return void
  */
 void server_msg__send_client_avatar_to_single_client(ws_cli_conn_t* websocket, char* dh_shared_secret, uint64 client_id, char* base64_avatar)
 {
@@ -2891,6 +3076,222 @@ void server_msg__send_client_avatar_to_single_client(ws_cli_conn_t* websocket, c
 }
 
 /**
+ * @brief sends the stored-identity list to one client, so it can show the people registered on this
+ *        server even while they are offline.
+ *
+ *        every entry carries the alias, the avatar and the tag ids. no identity hash and no username
+ *        is sent: the alias is the only handle, and it is what the client pairs against a live client
+ *        of the same alias. the raw public key is added on top only while allow_offline_messages is
+ *        enabled, since that is what lets a peer encrypt to somebody who is not connected - it is
+ *        public by definition, but it still only goes to registered requesters (the caller checked
+ *        that). last_seen (unix seconds) is added only while allow_last_seen is enabled, so nothing
+ *        leaks while the setting is off. slots with no public key or no alias are skipped - they are
+ *        free, or they have no name to show and nothing to pair on.
+ *
+ * @param ws_cli_conn_t* websocket -> the requesting client's connection
+ * @param char* dh_shared_secret -> that client's shared secret, used for the encryption
+ *
+ * @note the store is guarded by g_client_stored_data_mutex, taken here (a leaf lock), exactly like
+ *       the identity serializer in base.c.
+ *
+ * @return void
+ */
+void server_msg__send_stored_clients_to_single_client(ws_cli_conn_t* websocket, char* dh_shared_secret)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    uint64 t = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    cJSON* json_stored_clients = 0;
+    cJSON* json_stored_client = 0;
+    cJSON* json_tag_ids = 0;
+
+    if (websocket == NULL_POINTER || dh_shared_secret == NULL_POINTER)
+    {
+        return;
+    }
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+    json_stored_clients = cJSON_CreateArray();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "stored_clients_list");
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (g_client_stored_data[i].public_key[0] == 0 || g_client_stored_data[i].alias[0] == 0)
+        {
+            continue; // free slot, or nothing to name and pair it by
+        }
+
+        json_stored_client = cJSON_CreateObject();
+        cJSON_AddStringToObject(json_stored_client, "alias", &g_client_stored_data[i].alias[0]);
+        cJSON_AddStringToObject(json_stored_client, "base64_avatar", &g_client_stored_data[i].base64_avatar[0]);
+
+        // with offline messages on, registered peers also get this identity's public key: it is what
+        // lets them encrypt a message to somebody who is not connected. a public key is public by
+        // definition, but it is still only handed to REGISTERED requesters (the caller checked) and
+        // only while the feature is enabled
+        if (g_server_settings.allow_offline_messages == TRUE && g_client_stored_data[i].raw_public_key[0] != 0)
+        {
+            cJSON_AddStringToObject(json_stored_client, "public_key", &g_client_stored_data[i].raw_public_key[0]);
+        }
+
+        // when the admin enabled last-seen, tell the client when this identity was last connected
+        // (unix seconds). left out entirely while the setting is off, so nothing leaks
+        if (g_server_settings.allow_last_seen == TRUE && g_client_stored_data[i].last_seen_unix_seconds != 0)
+        {
+            cJSON_AddNumberToObject(json_stored_client, "last_seen", (double)g_client_stored_data[i].last_seen_unix_seconds);
+        }
+
+        json_tag_ids = cJSON_CreateArray();
+        for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
+        {
+            cJSON_AddItemToArray(json_tag_ids, cJSON_CreateNumber((double)g_client_stored_data[i].tag_ids[t]));
+        }
+        cJSON_AddItemToObject(json_stored_client, "tag_ids", json_tag_ids);
+
+        cJSON_AddItemToArray(json_stored_clients, json_stored_client);
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    cJSON_AddItemToObject(json_message_object1, "stored_clients", json_stored_clients);
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    if (json_root_object1_string != NULL_POINTER)
+    {
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(websocket, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief delivers everything that was said to this client's identity while it was offline, oldest
+ *        first, then drops the queue for that identity. each message goes out as its own
+ *        offline_chat_message so the client can render them like any other direct message; the
+ *        payload is the sender's ciphertext, untouched (the server never could read it).
+ *
+ * @param client_t* client -> the freshly authenticated client
+ *
+ * @return void
+ *
+ * @note takes g_offline_messages_mutex (leaf lock). caller holds the clients lock.
+ */
+void server_msg__send_queued_offline_messages_to_single_client(client_t* client)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    char recipient_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    uint64 i = 0;
+    uint64 delivered_count = 0;
+    uint64 lowest_sequence_number = 0;
+    int64 next_slot = 0;
+
+    if (g_offline_messages == NULL_POINTER || client == NULL_POINTER || client->public_key[0] == 0)
+    {
+        return;
+    }
+
+    base__hash_password_to_base64(client->public_key, recipient_identity_hash, sizeof(recipient_identity_hash));
+
+    // deliver in the order they were sent: repeatedly pick the lowest sequence number still queued
+    // for this identity. the queue is small and this runs once per connect
+    while (TRUE)
+    {
+        next_slot = -1;
+        lowest_sequence_number = 0;
+
+        pthread_mutex_lock(&g_offline_messages_mutex);
+
+        for (i = 0; i < MAX_OFFLINE_MESSAGES; i++)
+        {
+            if (g_offline_messages[i].is_used == FALSE)
+            {
+                continue;
+            }
+
+            if (clib__is_string_equal(&g_offline_messages[i].recipient_identity_hash[0], recipient_identity_hash) == FALSE)
+            {
+                continue;
+            }
+
+            if (next_slot == -1 || g_offline_messages[i].sequence_number < lowest_sequence_number)
+            {
+                next_slot = (int64)i;
+                lowest_sequence_number = g_offline_messages[i].sequence_number;
+            }
+        }
+
+        if (next_slot == -1)
+        {
+            pthread_mutex_unlock(&g_offline_messages_mutex);
+            break;
+        }
+
+        json_root_object1 = cJSON_CreateObject();
+        json_message_object1 = cJSON_CreateObject();
+
+        cJSON_AddStringToObject(json_message_object1, "type", "offline_chat_message");
+        cJSON_AddStringToObject(json_message_object1, "value", g_offline_messages[next_slot].base64_encrypted_message);
+        cJSON_AddStringToObject(json_message_object1, "sender_alias", &g_offline_messages[next_slot].sender_alias[0]);
+        cJSON_AddNumberToObject(json_message_object1, "queued_unix_seconds", (double)g_offline_messages[next_slot].queued_unix_seconds);
+        cJSON_AddNumberToObject(json_message_object1, "sequence_number", (double)g_offline_messages[next_slot].sequence_number);
+
+        // free this one before sending, so a failing send cannot leave it queued forever
+        if (g_offline_messages[next_slot].base64_encrypted_message != NULL_POINTER)
+        {
+            memorymanager__free((nuint)g_offline_messages[next_slot].base64_encrypted_message);
+        }
+        clib__null_memory(&g_offline_messages[next_slot], sizeof(offline_chat_message_t));
+
+        pthread_mutex_unlock(&g_offline_messages_mutex);
+
+        cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+        json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+        if (json_root_object1_string != NULL_POINTER)
+        {
+            size_of_allocated_message_buffer = 0;
+            msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+            if (msg_text != NULL_POINTER)
+            {
+                ws_sendframe_txt(client->p_ws_connection, msg_text);
+                memorymanager__free((nuint)msg_text);
+            }
+        }
+
+        base__free_json_message(json_root_object1, json_root_object1_string);
+
+        delivered_count++;
+    }
+
+    if (delivered_count > 0)
+    {
+        DBG_SERVER_MESSAGE log_info("%s %llu %s", "delivered", delivered_count, "offline message(s) on connect \n");
+    }
+}
+
+/**
  * @brief broadcasts a tag-removed-from-client event to all clients
  *
  * @param uint64 client_id_of_client_that_got_tag_removed -> id of the client that lost the tag
@@ -2928,7 +3329,7 @@ void server_msg__send_remove_tag_from_client_event_to_all_clients(uint64 client_
     {
         client = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client->is_existing == FALSE)
         {
             continue;
@@ -2995,7 +3396,7 @@ void server_msg__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char
     {
         client = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client->is_existing == FALSE)
         {
             continue;
@@ -3284,6 +3685,8 @@ void server_msg__send_channel_icon_changed_event_to_all_clients(uint64 channel_i
  * @param uint64 tag_id -> id of the new tag
  * @param char* tag_name -> name of the new tag
  * @param uint64 tag_linked_icon_id -> id of the icon linked to the tag
+ * @param boole has_icon -> TRUE when the tag really has an icon, sent as a bool so the client knows
+ *                          whether tag_linked_icon_id is meaningful
  *
  * @return void
  */
@@ -3318,7 +3721,7 @@ void server_msg__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* t
     {
         client = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client->is_existing == FALSE)
         {
             continue;
@@ -3562,7 +3965,7 @@ void server_msg__send_music_bot_song_list_to_single_client(uint64 sender_client_
     json_message_object1 = cJSON_CreateObject();
     json_songs_array = cJSON_CreateArray();
 
-    /* create array of music bot data */
+    // create array of music bot data
     client = &g_clients_array[sender_client_index];
 
     status1 = util__is_client_valid_admin(sender_client_index);
@@ -3575,7 +3978,7 @@ void server_msg__send_music_bot_song_list_to_single_client(uint64 sender_client_
 
     music_bot = &g_clients_array[music_bot_index];
 
-    /* create array of clients */
+    // create array of clients
     for (loop_index = 0; loop_index < MUSIC_BOT_MAX_FILE_COUNT; loop_index++)
     {
         cJSON* song = NULL_POINTER;
@@ -3661,6 +4064,22 @@ void server_msg__send_file_send_completed_status_to_single_client(client_t* clie
     memorymanager__free((nuint)msg_text);
 }
 
+/**
+ * @brief sends one chunk of a file transfer as a file_receive_chunk message to the single receiving
+ *        client, encrypted with that receiver's shared secret.
+ *
+ *        the receiver is looked up by index in g_clients_array. the chunk is passed through as the
+ *        "value" field exactly as given, together with the sender id and the server chat message id so
+ *        the client can append the chunk to the right transfer.
+ *
+ * @param char* chunk -> the already prepared chunk payload, sent as the "value" field
+ * @param uint64 current_size -> size counter of the transfer so far, not written into the message
+ * @param uint64 sender_id -> id of the client that sends the file
+ * @param uint64 receiver_id -> index into g_clients_array of the client this chunk goes to
+ * @param uint64 server_chat_message_id -> id of the chat message this file belongs to
+ *
+ * @return void
+ */
 void server_msg__send_file_by_chunk_to_single_client(char* chunk, uint64 current_size, uint64 sender_id, uint64 receiver_id, uint64 server_chat_message_id)
 {
     char* json_root_object1_string = 0;
@@ -3701,6 +4120,21 @@ void server_msg__send_file_by_chunk_to_single_client(char* chunk, uint64 current
     }
 }
 
+/**
+ * @brief tells one receiving client that a file transfer is finished, as a file_receive_completed
+ *        message encrypted with that receiver's shared secret.
+ *
+ *        sender and receiver are both looked up by index in g_clients_array. the message carries the
+ *        receive type, the sender's client id and the server chat message id, so the client can close
+ *        the right transfer and render it.
+ *
+ * @param data_for_file_send_thread_t* info -> the transfer descriptor, read for client_sender_id and
+ *                                             server_chat_message_id
+ * @param uint64 receiver_id -> index into g_clients_array of the client that gets the notification
+ * @param char* receive_type -> kind of transfer, sent as the "receive_type" field
+ *
+ * @return void
+ */
 void server_msg__send_file_receive_completed_to_single_client(data_for_file_send_thread_t* info, uint64 receiver_id, char* receive_type)
 {
     char* json_root_object1_string = 0;

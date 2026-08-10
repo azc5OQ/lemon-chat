@@ -50,14 +50,14 @@ unset(_cmake_expected_targets)
 add_library(libtommath STATIC IMPORTED)
 
 set_target_properties(libtommath PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "D:/own/dev/lemon-chat/server-source-code/third-party/libtom/libtommath"
+  INTERFACE_INCLUDE_DIRECTORIES "D:/lemon-chat/server-source-code/third-party/libtom/libtommath"
 )
 
 # Import target "libtommath" for configuration "Release"
 set_property(TARGET libtommath APPEND PROPERTY IMPORTED_CONFIGURATIONS RELEASE)
 set_target_properties(libtommath PROPERTIES
   IMPORTED_LINK_INTERFACE_LANGUAGES_RELEASE "C"
-  IMPORTED_LOCATION_RELEASE "D:/own/dev/lemon-chat/server-source-code/third-party/libtom/libtommath/libtommath.a"
+  IMPORTED_LOCATION_RELEASE "D:/lemon-chat/server-source-code/third-party/libtom/libtommath/libtommath.a"
   )
 
 # This file does not depend on other imported targets which have

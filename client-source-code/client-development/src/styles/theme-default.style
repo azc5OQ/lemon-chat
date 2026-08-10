@@ -4,9 +4,7 @@
     position: relative;
 }
 
-/* slim scrollbar — firefox only. scoped so chromium keeps its default overlay scrollbar:
-   setting these standard properties there switches chromium onto the classic squared
-   scrollbar that carries up/down arrow buttons, which we don't want showing. */
+/* slim scrollbar — firefox only */
 
 @supports (-moz-appearance: none) {
     * {
@@ -212,14 +210,6 @@ a-toast:hover {
     background-size: 13px 15px;
 }
 
-.tag-head-p {
-    display: inline-block;
-    vertical-align: top;
-    padding: 20px;
-    color: azure;
-    width: 100px;
-}
-
 #custom-file-upload-button-icon {
     display: inline-block;
     padding: 4px 5px 0px 5px;
@@ -271,7 +261,6 @@ a-toast:hover {
         transform: translate(-100%, 0);
     }
 }
-
 
 #space-devider1 {
     border-right: 1px dotted #161717;
@@ -381,7 +370,6 @@ a-toast:hover {
     background-size: cover;
     background-repeat: no-repeat;
     background-position: center center;
-    background-image: url("data:image/gif;base64,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");
 }
 
 .text-input-container {
@@ -412,16 +400,8 @@ a-toast:hover {
     background-color: #7d8799;
 }
 
-.server-settings-tab-ul {
-    padding: 14px;
-}
-
 .server-settings-tab-li {
     cursor: pointer;
-}
-
-.server-settings-tab-li:hover {
-    background-color: pink;
 }
 
 #server-settings-tab-icons {
@@ -485,8 +465,6 @@ a-toast:hover {
 #server-settings-general-settings-container {
     height: 100%;
     box-sizing: border-box;
-    padding: 18px;
-    background-color: #414f53;
     color: white;
     text-align: left;
     font-family: 'Raleway', sans-serif;
@@ -623,8 +601,6 @@ a-toast:hover {
 #server-settings-bans-container {
     height: 100%;
     box-sizing: border-box;
-    padding: 18px;
-    background-color: #414f53;
     color: white;
     text-align: left;
     font-family: 'Raleway', sans-serif;
@@ -686,8 +662,7 @@ a-toast:hover {
 }
 
 .client-tags {
-    /* display: inline-block; */
-    /* margin-left: 50px; */
+
     float: right;
 }
 
@@ -751,6 +726,9 @@ a-toast:hover {
 #channel-properties-input-container {
     height: auto !important;
     text-align: center;
+
+    box-sizing: border-box;
+    padding: 14px 18px 18px 18px;
 }
 
 #connect-form-sub-container-1, #connect-form-sub-container-2 {
@@ -846,8 +824,13 @@ a-toast:hover {
 
 .channel-list-context-menu-background, .chat-input-container-context-menu-background {
     background-color: #60656f;
-    width: 130px;
-    height: 156px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: auto;
     border-radius: 10px;
     opacity: 0.8;
     background: linear-gradient(180deg,#003d75 0,#232b56 100%);
@@ -863,7 +846,7 @@ a-toast:hover {
 }
 
 .channel-list-context-menu-items {
-    position: absolute;
+    position: relative;
     top: 0px;
     width: 130px;
     overflow: hidden;
@@ -872,7 +855,7 @@ a-toast:hover {
 }
 
 .chat-input-container-context-menu-items {
-    position: absolute;
+    position: relative;
     top: 0px;
     width: 130px;
     height: 154px;
@@ -1000,6 +983,10 @@ a-toast:hover {
 
 .chat-message-context-menu-items p:hover {
     background-color: #b9d436;
+}
+
+.connected-client {
+    padding-left: 19px;
 }
 
 .single-channel {
@@ -1314,6 +1301,31 @@ a-toast:hover {
     height: 50%;
 }
 
+/* dialog colours: layout.style lays out and paints every dialog from these */
+:root {
+
+    --set-font: 'Raleway', sans-serif;
+    --set-panel: #36393f;
+    --set-text: #e6e8ea;
+    --set-muted: rgba(255, 255, 255, 0.45);
+    --set-line: rgba(255, 255, 255, 0.10);
+    --set-line-soft: rgba(255, 255, 255, 0.05);
+    --set-accent: #05a3ff;
+    --set-accent-soft: rgba(5, 163, 255, 0.25);
+    --set-accent-text: #ffffff;
+    --set-field: rgba(255, 255, 255, 0.06);
+    --set-field-text: #e6e8ea;
+    --set-row-hover: rgba(255, 255, 255, 0.05);
+    --set-selected: rgba(5, 163, 255, 0.16);
+    --set-chip: rgba(120, 140, 180, 0.22);
+    --set-radius: 5px;
+    --set-danger: #e06060;
+    --set-danger-soft: rgba(224, 96, 96, 0.16);
+    --set-danger-strong: #ff7b7b;
+
+    --set-button-bg: #0e69a8;
+}
+
 #server-settings-tab {
     position: absolute;
     z-index: 2;
@@ -1323,8 +1335,10 @@ a-toast:hover {
     min-height: 400px;
     height: 50%;
     background-color: #36393f;
-    opacity: 0.92;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+    box-shadow: 0 12px 38px rgba(0, 0, 0, 0.5);
 }
 
 #server-settings-tab-subcontainer {
@@ -1334,16 +1348,17 @@ a-toast:hover {
     height: 100%;
     vertical-align: top;
     color: white;
-    font-family: 'Kavoon';
+
+    font-family: 'Raleway', sans-serif;
+    font-size: 13px;
     cursor: move;
 }
 
 #server-settings-tab-subcontainer2 {
     display: inline-block;
-    background: beige;
     width: calc(100% - 187px);
     height: 100%;
-    font-family: 'Raleway';
+    font-family: 'Raleway', sans-serif;
 }
 
 #custom-file-upload-button-image {
@@ -1901,7 +1916,8 @@ a-toast:hover {
 #poke-client-enter-container-enter, #channel-properties-edit, #channel-password-enter, #admin-password-enter, #secret-identity-string-container-enter {
     top: 25%;
     width: 322px;
-    height: 219px;
+
+    min-height: 219px;
     background-color: #36393f;
     margin: 0 auto;
     border-radius: 13px;
@@ -1974,12 +1990,6 @@ a-toast:hover {
 #microphone-push-to-talk-button-touch-device {
     display: none;
 }
-
-/* create-channel form fix: every row gets one fixed height so the checkbox rows
-   (disable audio / client limit) line up with the text-input label rows, and the
-   container grows (height:auto) so the buttons aren't clipped. Scoped to this dialog.
-   (The added 'client limit' row exposed both: content-height rows let column 2's shorter
-   checkbox rows drift up, and the fixed 153px container clipped the extra row + buttons.) */
 
 #channel-properties-input-container .text-input-container-2 {
     height: 32px !important;

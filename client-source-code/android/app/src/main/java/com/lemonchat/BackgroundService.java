@@ -63,8 +63,11 @@ public class BackgroundService extends Service
 	private NotificationChannel notificationChannelAcceptRefuseCall;
 
 	public static final String CALL_NOTIFICATION_CHANNEL_ID = "com.lemonchat.call_notification";
+	public static final String POKE_NOTIFICATION_CHANNEL_ID = "com.lemonchat.poke_notification";
 
 	private static final int INCOMING_CALL_NOTIFICATION_ID = 2;
+	private static final int POKE_NOTIFICATION_ID = 3;
+	private NotificationChannel notificationChannelPoke = null;
 
 	public static final String ACTION_INCOMING_CALL = "ACTION_INCOMING_CALL";
 	public static final String ACTION_ACCEPT_CALL = "ACTION_ACCEPT_CALL";
@@ -78,6 +81,11 @@ public class BackgroundService extends Service
 	//
 
 	public static boolean isClientInIdleMode = false;
+
+	//set when a call is DECLINED: the next MainActivity resume must not fire the usual
+	//come-back-from-idle request, or declining would still pull the user out of idle into the
+	//root channel - which read as "reject accepted the call anyway"
+	public static boolean suppressNextIdleExit = false;
 
 	Uri callSoundUri;
 
@@ -105,7 +113,9 @@ public class BackgroundService extends Service
 				this.notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID);
 
 				int channelId = intent.getIntExtra("channelId", 0);
-				this.webView.evaluateJavascript("JavascriptJavaBridge__send_come_from_idle_mode_request(" + channelId + ");", null);
+				// typeof guard: a call-accept can race the page load; a bare call there is a
+				// ReferenceError that evaluateJavascript swallows silently
+				this.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_come_from_idle_mode_request === 'function') { JavascriptJavaBridge__send_come_from_idle_mode_request(" + channelId + "); }", null);
 
 				//bring app to foreground by calling startActivity from service context
 				Intent intent1 = new Intent(this, MainActivity.class);
@@ -116,6 +126,7 @@ public class BackgroundService extends Service
 
 			case ACTION_DECLINE_CALL:
 				this.notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID);
+				BackgroundService.suppressNextIdleExit = true;
 				return START_NOT_STICKY;
 			}
 		}
@@ -319,27 +330,6 @@ public class BackgroundService extends Service
 		{
 			BackgroundService.isRunning = true;
 
-			new Thread(new Runnable() {
-				@Override public void run()
-				{
-					int number = 1;
-					while (true)
-					{
-						Log.d("Info", "[lemonchat] hello from service for :" + number + "th time");
-						number++;
-
-						try
-						{
-							Thread.sleep(15000);
-						}
-						catch (InterruptedException ex)
-						{
-							Log.d("Info", "[lemonchat] Service Exception :" + ex.getMessage());
-						}
-					}
-				}
-			}).start();
-
 			this.createWebViewInServiceContext();
 		}
 		if (Build.VERSION.SDK_INT >= 26)
@@ -362,6 +352,13 @@ public class BackgroundService extends Service
 			this.notificationChannelAcceptRefuseCall.setSound(this.callSoundUri, new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build());
 
 			this.notificationManager.createNotificationChannel(this.notificationChannelAcceptRefuseCall);
+
+			// pokes: IMPORTANCE_HIGH is what makes android show it as a banner over whatever is on
+			// screen (the way a messenger message arrives) instead of only in the shade
+			this.notificationChannelPoke = new NotificationChannel(POKE_NOTIFICATION_CHANNEL_ID, "pokes", NotificationManager.IMPORTANCE_HIGH);
+			this.notificationChannelPoke.enableVibration(true);
+			this.notificationChannelPoke.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+			this.notificationManager.createNotificationChannel(this.notificationChannelPoke);
 
 			int notificationId = 1;
 
@@ -426,6 +423,45 @@ public class BackgroundService extends Service
 			notification.flags |= NotificationCompat.FLAG_INSISTENT; //notification should persistent in the status bar until its dismissed
 
 			this.notificationManager.notify(INCOMING_CALL_NOTIFICATION_ID, notification);
+		}
+		catch (Exception ex)
+		{
+			ex.printStackTrace();
+		}
+	}
+
+	/**
+	 * shows a poke as a normal android notification - the banner a messenger message arrives with.
+	 * the web client draws pokes inside the page, which nobody sees while the app sits in the
+	 * background (exactly when a poke is worth sending), so the java side has to surface it.
+	 * tapping it brings the app back up.
+	 */
+	public void showPokeNotification(String senderName, String pokeMessage)
+	{
+		try
+		{
+			if (this.notificationManager == null)
+			{
+				return;
+			}
+
+			Intent openAppIntent = new Intent(this, MainActivity.class);
+			openAppIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+			PendingIntent openAppPendingIntent = PendingIntent.getActivity(this, 3, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+			Notification notification = new NotificationCompat.Builder(this, POKE_NOTIFICATION_CHANNEL_ID)
+							    .setContentTitle(senderName)
+							    .setContentText(pokeMessage)
+							    .setStyle(new NotificationCompat.BigTextStyle().bigText(pokeMessage))
+							    .setSmallIcon(android.R.drawable.ic_dialog_email) //a notification without a small icon is never shown
+							    .setContentIntent(openAppPendingIntent)
+							    .setAutoCancel(true)
+							    .setPriority(NotificationCompat.PRIORITY_HIGH) //pre-26 devices: this is what makes it a banner
+							    .setCategory(Notification.CATEGORY_MESSAGE)
+							    .setDefaults(Notification.DEFAULT_ALL)
+							    .build();
+
+			this.notificationManager.notify(POKE_NOTIFICATION_ID, notification);
 		}
 		catch (Exception ex)
 		{

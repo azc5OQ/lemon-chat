@@ -13,7 +13,6 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
@@ -26,9 +25,12 @@ public class Permissions
 
 	private ActivityResultLauncher<String> requestPermissionLauncher1 = null;
 
-	public boolean permissionsChecked = false;
+	//once-guards for the two DIALOG-based permissions. android auto-denies a repeated request
+	//instantly after enough refusals, and doCheck re-runs on every result - without the guard a
+	//denial would spin request->auto-deny->request forever and the checks after it would never run
+	private boolean notificationPermissionRequestedOnce = false;
 
-	public boolean canAskPermission = true;
+	private boolean audioPermissionRequestedOnce = false;
 
 	public Permissions(MainActivity context)
 	{
@@ -47,7 +49,6 @@ public class Permissions
 	public void beginCheck()
 	{
 		this.doCheck();
-		this.canAskPermission = false;
 	}
 
 	//doCheck is invoked over and over again until all permissions are okay
@@ -55,11 +56,12 @@ public class Permissions
 	{
 		Log.d("Info", "[lemonchat] PermissionChecker doCheck");
 
-		//check notification permission
+		//check notification permission (asked at most once; a denial must not block the checks below)
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
 		{
-			if (ContextCompat.checkSelfPermission(this.context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+			if (ContextCompat.checkSelfPermission(this.context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && this.notificationPermissionRequestedOnce == false)
 			{
+				this.notificationPermissionRequestedOnce = true;
 				this.requestNotificationPermission();
 				return;
 			}
@@ -94,14 +96,25 @@ public class Permissions
 			}
 		}
 
-		//check microphone usage permission
-		if (ContextCompat.checkSelfPermission(this.context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+		//check microphone usage permission (asked at most once; resumeCheck re-enters here with the
+		//user's answer already given, so a denial falls through to the first-run question below)
+		if (ContextCompat.checkSelfPermission(this.context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED && this.audioPermissionRequestedOnce == false)
 		{
+			this.audioPermissionRequestedOnce = true;
 			this.requestAudioPermission();
 			return;
 		}
 
-		this.permissionsChecked = true;
+		// every prompt is done: now our own first-run question can have the screen to itself
+		this.context.promptForAppModeIfNeeded();
+	}
+
+	//re-enters the permission chain after a classic requestPermissions result (the microphone one).
+	//MainActivity.onRequestPermissionsResult calls this instead of asking the first-run question
+	//directly - asking there fired after the FIRST system prompt, not the last
+	public void resumeCheck()
+	{
+		this.doCheck();
 	}
 
 	private void requestNotificationPermission()
@@ -159,8 +172,4 @@ public class Permissions
 		}
 	}
 
-	public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults)
-	{
-		//this.doCheck(); //force running doCheck again
-	}
 }

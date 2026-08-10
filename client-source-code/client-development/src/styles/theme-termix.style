@@ -54,11 +54,6 @@ body {
     text-align: center;
 }
 
-/* manual connect form (shown when the server doesn't embed autoconnect details).
-   two columns: label column (#...-1: "address"/"port"/"key N") beside the value
-   column (#...-2: the real ip/port inputs), so each label lines up with its value
-   on one row. termix fully replaces the default sheet, so without this the two
-   sub-containers fall back to display:block and stack into one jumbled column. */
 #connect-form-sub-container-1,
 #connect-form-sub-container-2 {
     display: inline-block;
@@ -73,9 +68,7 @@ body {
 #connect-form-sub-container-2 .text-input-container {
     padding: 6px 0;
 }
-/* the import-identity button has value="" (icon button); termix lacked its rule
-   so it fell back to a full-width blank blue .button-1 that wrapped below. bound
-   it and give it a key glyph. */
+
 #import-identity-button {
     width: 36px;
     min-width: 0;
@@ -179,6 +172,8 @@ body {
     border: 0;
     outline: none;
     font-weight: 600;
+
+    width: 100px;
 }
 
 #body-container {
@@ -690,7 +685,31 @@ body {
     display: none;
 }
 
+/* dialog colours: layout.style lays out and paints every dialog from these */
+:root {
+
+    --set-font: 'Segoe UI', 'Raleway', sans-serif;
+    --set-panel: var(--tmx-sidebar);
+    --set-text: var(--tmx-text);
+    --set-muted: var(--tmx-muted);
+    --set-line: var(--tmx-line);
+    --set-line-soft: rgba(255, 255, 255, 0.045);
+    --set-accent: var(--tmx-accent);
+    --set-accent-soft: rgba(88, 101, 242, 0.3);
+    --set-accent-text: #ffffff;
+    --set-field: var(--tmx-input);
+    --set-field-text: var(--tmx-text);
+    --set-row-hover: var(--tmx-hover);
+    --set-selected: var(--tmx-active);
+    --set-chip: var(--tmx-input);
+    --set-radius: 4px;
+    --set-danger: var(--tmx-danger);
+    --set-danger-soft: rgba(242, 63, 67, 0.15);
+    --set-danger-strong: #ff5a5e;
+}
+
 #server-settings-tab {
+
     position: absolute;
     z-index: 330;
     display: none;
@@ -726,10 +745,6 @@ body {
 .marquee-music-playing-container { display: none; }
 #stop-song { display: none; }
 
-/* song marquee (music-bot "now playing" scroller). termix was missing every
-   layout rule for this AND the @keyframes, so the "[", the song name and the "]"
-   stacked vertically with no scroll. mirror the default theme: brackets inline,
-   a fixed 100px overflow window, and the animated inner div. */
 @keyframes animate {
     100% { transform: translate(-100%, 0); }
 }
@@ -862,6 +877,13 @@ body {
     transition: box-shadow 0.1s ease;
 }
 .client-audio-state-microphone-active { box-shadow: 0 0 0 2px var(--tmx-green); }
+
+#channel-list-container .client-audio-state[data-has-avatar="1"],
+#idle-clients-container .client-audio-state[data-has-avatar="1"] {
+    background-image: var(--client-avatar);
+    background-size: cover;
+    background-position: center;
+}
 .client-audio-state::after {
     content: "";
     position: absolute;
@@ -891,12 +913,9 @@ body {
     border-radius: 2px;
 }
 
-/* the left tree and the right member list share the .connected-client markup (the member list is a
-   clone of the tree), so they must be styled per container, not by the shared class. left tree: keep
-   each row on a single line so a music bot's marquee overflows/clips instead of wrapping and shoving
-   the next client down, and brighten the names (the shared base is --tmx-muted, too dark). */
 #channel-list-container .connected-client {
     white-space: nowrap;
+    max-height: 29px !important;
 }
 #channel-list-container .connected-client-p,
 .member-list-client .connected-client-p {
@@ -1109,17 +1128,22 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
     overflow: auto;
 }
 
-.chat-context-selector { display: none !important; }
-.chat-context-selector[style*="background-color"] {
-    display: block !important;
+.chat-context-selector {
+    display: inline-block;
     background: transparent !important;
-    padding: 2px 0;
+    padding: 2px 8px;
+    margin-right: 2px;
+    border-radius: 4px;
+    vertical-align: middle;
+    cursor: pointer;
 }
 
-#chat-context-selectors-container:not(:has(.chat-context-selector[style*="background-color"])) .chat-context-selector:last-child {
-    display: block !important;
-    background: transparent !important;
-    padding: 2px 0;
+.chat-context-selector:hover {
+    background: var(--tmx-hover) !important;
+}
+
+.chat-context-selector[style*="background-color"] {
+    box-shadow: inset 0 -2px 0 var(--tmx-accent);
 }
 .chat-context-selector .p-container {
     display: inline-block;
@@ -1186,18 +1210,56 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
     overflow-x: hidden;
     padding: 0 4px 8px 4px;
 }
+
 .member-list-client {
-    margin: 0 4px;
-    padding: 2px 6px;
+    margin: 3px 6px;
+    padding: 8px 10px;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
     cursor: default;
+    border: 1px solid transparent;
 }
 .member-list-client > div:first-child {
     width: 0 !important;
     display: none;
 }
 .member-list-client .connected-client-p-received-messages-number,
-.member-list-client .marquee-music-playing-container {
+.member-list-client .marquee-music-playing-container,
+.member-list-client .connected-client-country-flag {
     display: none;
+}
+
+.member-list-client .client-audio-state {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    background-size: 18px 18px;
+    border: 1px solid var(--tmx-line);
+}
+.member-list-client .client-audio-state[data-has-avatar="1"] {
+    background-image: var(--client-avatar);
+    background-size: cover;
+    background-position: center;
+}
+.member-list-client .connected-client-p,
+.member-list-client #connected-local-client-input {
+    font-size: 14px;
+    font-weight: 600;
+    float: none;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.member-list-client .client-alias {
+    font-size: 14px;
+    font-weight: 600;
+}
+.member-list-client .client-tags {
+    margin-left: auto;
+    float: none;
 }
 #member-list-empty {
     padding: 6px 14px;
@@ -1494,24 +1556,13 @@ input[type="radio"] {
     letter-spacing: 0.2px;
 }
 
-/* ============================================================
-   admin "Server Settings" modal - pane contents
-   layout.style pins #menu-bar-container position:absolute (30px tall)
-   and shrinks the two columns to calc(100% - 30px), so their content
-   starts flush at the top and renders under that floating header. The
-   default theme masked this with per-pane padding; termix's global
-   `* { padding: 0 }` reset strips it, so we re-add a top offset on both
-   columns and style the pane bodies (tags / icons / bans / identities)
-   which otherwise fall back to raw browser defaults.
-   ============================================================ */
+/* admin settings modal; layout.style pins #menu-bar-container position:absolute */
 
-/* push both columns clear of the absolute 30px header */
 #server-settings-tab-subcontainer,
 #server-settings-tab-subcontainer2 {
     padding-top: 30px;
 }
 
-/* ---- server settings (general) tab ---- */
 #server-settings-tab-general-settings {
     height: 100%;
 }
@@ -1564,7 +1615,6 @@ input[type="radio"] {
     background: #4752c4;
 }
 
-/* ---- tags tab ---- */
 #server-settings-tab-add-tag-details-container,
 #server-settings-tab-upload-icon-file-input-container {
     display: flex;
@@ -1648,7 +1698,6 @@ input[type="radio"] {
     cursor: pointer;
 }
 
-/* shared '✕' delete button (tags + icons) */
 .settings-entry-delete-button {
     display: inline-block;
     vertical-align: top;
@@ -1670,7 +1719,6 @@ input[type="radio"] {
     color: #ffffff;
 }
 
-/* ---- icons tab ---- */
 .server-settings-icon-entry {
     display: inline-flex;
     align-items: center;
@@ -1698,14 +1746,12 @@ input[type="radio"] {
     font-size: 0;
 }
 
-/* ---- bans + identities pane wrappers ---- */
 #server-settings-bans-container,
 #server-settings-identities-container {
     box-sizing: border-box;
     padding: 18px;
 }
 
-/* ---- bans tab ---- */
 .ban-entry {
     display: flex;
     align-items: center;
@@ -1754,7 +1800,6 @@ input[type="radio"] {
     filter: brightness(1.1);
 }
 
-/* ---- identities tab ---- */
 .identity-head-p-container {
     display: flex;
     align-items: center;
@@ -1887,16 +1932,6 @@ input[type="radio"] {
     background-image: url(data:application/octet-stream;base64,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);
 }
 
-/* ============================================================
-   termix eye-candy layer - cohesive hover / focus micro-interactions,
-   accent glows, refined borders, and a couple of subtle animations.
-   appended last so it layers over the base rules. accent glow color is
-   rgba(88,101,242,a) == var(--tmx-accent). tree/list rows are
-   overflow:hidden, so those use INSET accent bars and `outline` focus
-   rings (outer glows would clip). the global * { position:relative }
-   reset means every inset/pseudo accent anchors safely.
-   ============================================================ */
-
 @keyframes tmx-speak-pulse {
     0%, 100% { box-shadow: 0 0 0 2px var(--tmx-green); }
     50%      { box-shadow: 0 0 0 2px var(--tmx-green), 0 0 5px 1px rgba(35, 165, 90, 0.75); }
@@ -1910,7 +1945,6 @@ input[type="radio"] {
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* --- chat: input focus ring, message hover accent, smooth remove-x --- */
 #chat-input-file-input-container {
     transition: box-shadow 0.15s ease;
 }
@@ -1927,7 +1961,6 @@ input[type="radio"] {
     transition: opacity 0.12s ease, color 0.12s ease;
 }
 
-/* --- left sidebar: channel rows lift + accent bar; arrows react --- */
 .single-channel {
     transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.15s ease, transform 0.12s ease;
 }
@@ -1945,22 +1978,25 @@ input[type="radio"] {
     transform: scale(1.18);
 }
 
-/* --- left sidebar: pulsing "speaking" ring (only active speakers) --- */
 .client-audio-state-microphone-active {
     animation: tmx-speak-pulse 1.4s ease-in-out infinite;
 }
 
-/* --- right pane: member rows lift + accent bar --- */
 .member-list-client {
-    border-radius: 6px;
-    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    border-radius: 9px;
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 .member-list-client:hover {
     transform: translateY(-1px);
-    box-shadow: inset 3px 0 0 var(--tmx-accent);
+    background: var(--tmx-hover);
+    border-color: var(--tmx-accent);
+    box-shadow: 0 0 0 1px rgba(88, 101, 242, 0.35),
+                0 6px 14px rgba(0, 0, 0, 0.30);
+}
+.member-list-client:hover .client-audio-state {
+    border-color: var(--tmx-accent);
 }
 
-/* --- right pane: hero avatar breathes, scales + glows on hover --- */
 #current-client-avatar {
     cursor: pointer;
     transition: box-shadow 0.2s ease, transform 0.2s ease;
@@ -1974,7 +2010,6 @@ input[type="radio"] {
                 0 6px 16px rgba(88, 101, 242, 0.22);
 }
 
-/* --- right pane: client-info tags become real chips --- */
 .client-description-tag-entry {
     padding: 4px 8px;
     border-radius: 6px;
@@ -1988,12 +2023,10 @@ input[type="radio"] {
     transform: translateY(-1px);
 }
 
-/* --- right pane: member-list header divider --- */
 #member-list-header {
     border-bottom: 1px solid var(--tmx-line);
 }
 
-/* --- global: primary buttons lift + accent glow + press --- */
 .button-1,
 #chat-input-container-send-chat-input,
 #create-channel-button,
@@ -2022,7 +2055,6 @@ input[type="radio"] {
     transition-duration: 0.05s;
 }
 
-/* --- global: input focus glow --- */
 .text-input-pretty,
 #server-settings-tab-add-tag-details-input-tag-name {
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -2039,7 +2071,6 @@ input[type="radio"] {
     box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.22);
 }
 
-/* --- global: menu-bar icon buttons pop on hover, press on click --- */
 #clear-chat-button, #hide-chat-button, #show-admin-password-entry, #show-secret-identity-string,
 #microphone-always-broadcasting-audio-button, #hide-show-flags-button, #sound-effects-button,
 #enter-server-settings, #layout-edit-button, #switch-identity-button, #choose-theme-button,
@@ -2061,7 +2092,6 @@ input[type="radio"] {
     transform: scale(0.92);
 }
 
-/* --- global: context-menu item press --- */
 .chat-message-context-menu-items p, .add-tag-context-menu-items p {
     transition: background-color 0.12s ease, color 0.12s ease, transform 0.08s ease;
 }
@@ -2069,7 +2099,6 @@ input[type="radio"] {
     transform: scale(0.98);
 }
 
-/* --- global: scrollbar thumb polish --- */
 ::-webkit-scrollbar-thumb {
     border-radius: 5px;
 }
@@ -2077,7 +2106,6 @@ input[type="radio"] {
     background: var(--tmx-active);
 }
 
-/* --- global: card / dropdown entrance + top-bar depth --- */
 #container-2 {
     animation: tmx-pop 0.18s ease-out;
     transform-origin: center;
@@ -2090,7 +2118,6 @@ input[type="radio"] {
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
-/* --- keyboard focus rings (outline is clip-safe; no-op until rows are focusable) --- */
 .single-channel:focus-visible,
 .connected-client:focus-visible {
     outline: 2px solid var(--tmx-accent);
@@ -2098,7 +2125,6 @@ input[type="radio"] {
     border-radius: 4px;
 }
 
-/* --- respect reduced-motion: kill the looping animations, keep hover/focus --- */
 @media (prefers-reduced-motion: reduce) {
     .client-audio-state-microphone-active,
     #current-client-avatar {

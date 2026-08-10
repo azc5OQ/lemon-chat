@@ -9,13 +9,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
-import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.text.InputType;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
@@ -24,8 +22,9 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.Switch;
 import android.widget.Toast;
+
+import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -47,6 +46,9 @@ public class MainActivity extends AppCompatActivity
 	private Permissions permissions = null;
 
 	public static int FILE_CHOOSER_RESULT_CODE = 987454;
+
+	// guards the first-run mode dialog so a second permission callback cannot stack another copy on it
+	private boolean isAppModeDialogVisible = false;
 
 	@Override protected void onResume()
 	{
@@ -86,7 +88,16 @@ public class MainActivity extends AppCompatActivity
 	@Override public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults)
 	{
 		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-		this.permissions.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+		// resume the permission chain instead of asking the first-run question here: this callback
+		// fires after EVERY classic permission prompt (the notification one comes first!), so asking
+		// directly popped the mode dialog in the middle of the permission run. only the microphone
+		// request lands here without a launcher callback of its own - resuming for the others too
+		// would run doCheck twice per result and double-launch the settings screens
+		if (requestCode == Permissions.PERMISSIONS_RECORD_AUDIO_REQUEST_CODE)
+		{
+			this.permissions.resumeCheck();
+		}
 	}
 
 	//onActivityResult for file chooser in WebView
@@ -202,6 +213,8 @@ public class MainActivity extends AppCompatActivity
 			this.settings = ChatSettings.getInstance();
 			this.settings.setPreferences(this.preferences);
 
+			this.ensureIdentityAndMode();
+
 			this.permissions = new Permissions(this);
 			this.permissions.beginCheck();
 
@@ -251,54 +264,129 @@ public class MainActivity extends AppCompatActivity
 			this.backgroundService.attachWebViewToInvisibleWindow();
 		}
 
+		// repopulate the fields from the persisted json EVERY time the panel opens. the foreground
+		// service keeps the process alive across an app "close", so a relaunch builds a fresh
+		// activity with blank fields while the one-shot LoadSettings of this process already ran
+		// in the previous activity - saved settings looked lost even though they were on disk
+		this.LoadSettings();
+
 		this.findViewById(R.id.settings_panel).setVisibility(VISIBLE);
 	}
 
-	// Add a key row
+	// Add a key row (inflated from key_field_row.xml: outlined password field + remove button)
 	private void addKeyField(String valueOfThatKeyField)
 	{
-		LinearLayout keysContainer;
+		LinearLayout keysContainer = findViewById(R.id.keys_container);
 
-		keysContainer = findViewById(R.id.keys_container);
+		View row = getLayoutInflater().inflate(R.layout.key_field_row, keysContainer, false);
 
-		LinearLayout row = new LinearLayout(this);
-		row.setOrientation(LinearLayout.HORIZONTAL);
-		row.setPadding(0, 4, 0, 4);
-
-		EditText keyInput = new EditText(this);
-		keyInput.setHint("Key");
-		keyInput.setTextColor(Color.BLACK);
-		keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+		EditText keyInput = row.findViewById(R.id.key_input);
 
 		if (valueOfThatKeyField != null)
 		{
 			keyInput.setText(valueOfThatKeyField);
 		}
-		keyInput.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-		// Remove button
-		Button removeBtn = new Button(this);
-		removeBtn.setText("✕"); // Or use trash icon
-		removeBtn.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-		removeBtn.setOnClickListener(v -> {
-			if (keysContainer.getChildCount() > 1)
-			{
-				keysContainer.removeView(row);
-			}
-			else
-			{
-				CharSequence text = "at least one key is needed";
-				int duration = Toast.LENGTH_LONG;
-				Toast toast = Toast.makeText(this, text, duration);
-				toast.show();
-			}
-		});
-
-		row.addView(keyInput);
-		row.addView(removeBtn);
+		// removing every key row is fine - servers can run without metadata keys
+		row.findViewById(R.id.remove_key).setOnClickListener(v -> keysContainer.removeView(row));
 
 		keysContainer.addView(row);
+	}
+
+	//app-held identity + first-run mode question. the identity seed is generated once and kept in
+	//SharedPreferences (with allowBackup it survives reinstalls); both values are merged into the
+	//stored settings json so the web client receives them with the rest of the settings
+	private void ensureIdentityAndMode()
+	{
+		String identitySeed = this.preferences.getString("identity_seed", "");
+
+		if (identitySeed.equals(""))
+		{
+			identitySeed = ChatSettings.generateIdentitySeed();
+			this.preferences.edit().putString("identity_seed", identitySeed).apply();
+		}
+
+		this.mergeFieldIntoStoredSettings("identity_string", identitySeed);
+
+		// a mode that was already chosen just rides along into the settings json. the first-run
+		// QUESTION is not asked here: it used to be, and it opened underneath the android permission
+		// prompts that start right after this - the flashing seen on some devices.
+		// promptForAppModeIfNeeded() asks once the permission run is over.
+		String appMode = this.preferences.getString("app_mode", "");
+
+		if (appMode.equals("") == false)
+		{
+			this.mergeFieldIntoStoredSettings("app_mode", appMode);
+		}
+	}
+
+	//adds/updates one field of the persisted settings json. it CREATES the json when none exists
+	//yet: the web client only ever learns the app mode (and with it, that simple mode wants the
+	//normie look) from these settings, so a user who picks a mode on first run but never opens the
+	//settings screen used to stay on the default theme forever.
+	private void mergeFieldIntoStoredSettings(String fieldName, String value)
+	{
+		try
+		{
+			String json = this.preferences.getString("settings", "");
+			JSONObject settingsJson = (json.equals("") == false) ? new JSONObject(json) : new JSONObject();
+
+			if (value.equals(settingsJson.optString(fieldName, "")) == false)
+			{
+				settingsJson.put(fieldName, value);
+				this.settings.saveJsonSettings(settingsJson.toString());
+			}
+		}
+		catch (Exception ex)
+		{
+			ex.printStackTrace();
+		}
+	}
+
+	// asked once, and only after the android permission prompts are finished, so our dialog is never
+	// buried under a system one. safe to call repeatedly: it returns immediately once a mode is stored,
+	// while the dialog is already up, or while the activity is going away.
+	public void promptForAppModeIfNeeded()
+	{
+		if (this.preferences == null || this.isAppModeDialogVisible || this.isFinishing())
+		{
+			return;
+		}
+
+		if (this.preferences.getString("app_mode", "").equals("") == false)
+		{
+			return;
+		}
+
+		this.showFirstRunModeDialog();
+	}
+
+	private void showFirstRunModeDialog()
+	{
+		this.isAppModeDialogVisible = true;
+
+		new AlertDialog.Builder(this)
+			.setTitle("Choose mode")
+			.setMessage("Simple: a plain messenger look, set up with defaults.\n\nAdvanced: the full interface with channels and voice controls.\n\nCan be changed later in settings.")
+			.setCancelable(false)
+			.setPositiveButton("Simple", (dialog, which) -> this.storeAppMode("simple"))
+			.setNegativeButton("Advanced", (dialog, which) -> this.storeAppMode("advanced"))
+			.show();
+	}
+
+	private void storeAppMode(String mode)
+	{
+		this.isAppModeDialogVisible = false;
+		this.preferences.edit().putString("app_mode", mode).apply();
+		this.mergeFieldIntoStoredSettings("app_mode", mode);
+
+		// push the choice into the already-loaded page right away - without this the first-run
+		// answer only took effect on the NEXT launch (the page asks for settings before the
+		// dialog is answered), so "simple" appeared to do nothing
+		if (this.backgroundService != null && this.backgroundService.javascriptJavaBridge != null)
+		{
+			this.backgroundService.javascriptJavaBridge.JavaExportRequestCurrentSettingsFromAndroid();
+		}
 	}
 
 	public void handleOnResumeOnCreate()
@@ -345,7 +433,18 @@ public class MainActivity extends AppCompatActivity
 					}
 				}
 
-				this.backgroundService.webView.evaluateJavascript("JavascriptJavaBridge__send_come_from_idle_mode_request();", null);
+				//a just-declined call sets this flag: skip the idle exit ONCE so declining does
+				//not yank the user out of idle into the root channel
+				if (BackgroundService.suppressNextIdleExit)
+				{
+					BackgroundService.suppressNextIdleExit = false;
+				}
+				else
+				{
+					// typeof guard: this can fire while the page is still loading, where a bare
+					// call is a ReferenceError that evaluateJavascript swallows silently
+					this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_come_from_idle_mode_request === 'function') { JavascriptJavaBridge__send_come_from_idle_mode_request(); }", null);
+				}
 			}
 		}
 	}
@@ -356,7 +455,13 @@ public class MainActivity extends AppCompatActivity
 		{
 			Log.d("Info", "[lemonchat] onStop");
 			this.handleOnStopOnDestroyOnPause();
-			//this.backgroundService.webView.evaluateJavascript("JavascriptJavaBridge__send_go_to_idle_mode_request();", null);
+
+			//app left the foreground - enter deep idle. the JS side defers this until authentication
+			//completes (fixes the mid-connect race) and skips it while the client is in a voice channel
+			if (this.backgroundService != null && this.backgroundService.webView != null)
+			{
+				this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function') { JavascriptJavaBridge__send_go_to_idle_mode_request(); }", null);
+			}
 
 			super.onStop();
 		}
@@ -373,7 +478,7 @@ public class MainActivity extends AppCompatActivity
 		{
 			Log.d("Info", "[lemonchat] onDestroy");
 			this.handleOnStopOnDestroyOnPause();
-			this.backgroundService.webView.evaluateJavascript("JavascriptJavaBridge__send_go_to_idle_mode_request();", null);
+			this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function') { JavascriptJavaBridge__send_go_to_idle_mode_request(); }", null);
 
 			super.onDestroy();
 		}
@@ -402,20 +507,26 @@ public class MainActivity extends AppCompatActivity
 
 				JSONObject settingsJson = new JSONObject(json);
 
-				String ipAddress = settingsJson.getString("host");
-				int websocketPort = settingsJson.getInt("port");
-				String defaultUsername = settingsJson.getString("default_username");
-				boolean isMicAlwaysOnEnabled = settingsJson.getBoolean("is_microphone_always_on");
-				boolean isAutoconnectEnabled = settingsJson.getBoolean("is_autoconnect_enabled");
-				boolean isAudioEffectDisabled = settingsJson.getBoolean("is_audio_effect_enabled");
+				// opt* with defaults, never the throwing getters: a json missing ONE newer field
+				// (partial first-run json, or one saved by an older app version) used to abort this
+				// whole method - every settings field stayed blank even though the values were on
+				// disk, and one tap of "save" then overwrote the good json with those blanks
+				String ipAddress = settingsJson.optString("host", "");
+				int websocketPort = settingsJson.optInt("port", 0);
+				String defaultUsername = settingsJson.optString("default_username", "");
+				boolean isMicAlwaysOnEnabled = settingsJson.optBoolean("is_microphone_always_on", false);
+				boolean isAutoconnectEnabled = settingsJson.optBoolean("is_autoconnect_enabled", false);
+				boolean isAudioEffectDisabled = settingsJson.optBoolean("is_audio_effect_enabled", false);
+				boolean isAppLogEnabled = settingsJson.optBoolean("is_app_log_enabled", false);
 
 				LinearLayout keysContainerLinearLayout = findViewById(R.id.keys_container);
 				EditText ipAddressEditText = findViewById(R.id.ip_address);
 				EditText portEditText = findViewById(R.id.websocket_port);
 				EditText defaultUsernameEditText = findViewById(R.id.default_username);
-				Switch audioEnabledSwitch = findViewById(R.id.audio_enabled);
-				Switch autoConnectSwitch = findViewById(R.id.settings_autoconnect_enabled);
-				Switch soundEffectsSwitch = findViewById(R.id.settings_sound_effects_enabled);
+				SwitchMaterial audioEnabledSwitch = findViewById(R.id.audio_enabled);
+				SwitchMaterial autoConnectSwitch = findViewById(R.id.settings_autoconnect_enabled);
+				SwitchMaterial soundEffectsSwitch = findViewById(R.id.settings_sound_effects_enabled);
+				SwitchMaterial showLogSwitch = findViewById(R.id.settings_show_log);
 
 				ipAddressEditText.setText(ipAddress);
 				portEditText.setText(String.valueOf(websocketPort));
@@ -423,17 +534,24 @@ public class MainActivity extends AppCompatActivity
 				audioEnabledSwitch.setChecked(isMicAlwaysOnEnabled);
 				autoConnectSwitch.setChecked(isAutoconnectEnabled);
 				soundEffectsSwitch.setChecked(isAudioEffectDisabled);
+				showLogSwitch.setChecked(isAppLogEnabled);
 
                 //clear out keys first
                 LinearLayout keysContainer = findViewById(R.id.keys_container);
                 keysContainer.removeAllViews();
 
-                JSONArray keys = settingsJson.getJSONArray("metadata_keys");
+                JSONArray keys = settingsJson.optJSONArray("metadata_keys");
 
-				for (int i = 0; i < keys.length(); i++)
+				if (keys != null)
 				{
-					String value = keys.getString(i);
-					this.addKeyField(value);
+					for (int i = 0; i < keys.length(); i++)
+					{
+						String value = keys.optString(i, "");
+						if (!value.isEmpty())
+						{
+							this.addKeyField(value);
+						}
+					}
 				}
 
 				this.settings.setDefaultUsername(defaultUsername);
@@ -453,7 +571,9 @@ public class MainActivity extends AppCompatActivity
 		return result;
 	}
 
-	public void saveSettings(View view)
+	// hides the settings panel and brings the chat webview back to the foreground. shared by Save
+	// and by the Back button - the ONLY difference is Back does not persist the fields
+	private void restoreWebViewToForeground()
 	{
 		FrameLayout frameLayout = this.findViewById(R.id.root_container);
 
@@ -481,15 +601,26 @@ public class MainActivity extends AppCompatActivity
 
 			frameLayout.addView(this.backgroundService.webView, params);
 		}
+	}
+
+	// Back button: leaves settings and returns to chat WITHOUT saving. Save was the only way out
+	public void closeSettings(View view)
+	{
+		this.restoreWebViewToForeground();
+	}
+
+	public void saveSettings(View view)
+	{
+		this.restoreWebViewToForeground();
 
 		// Get UI values
 		LinearLayout keysContainer = findViewById(R.id.keys_container);
 		EditText ipAddress = findViewById(R.id.ip_address);
 		EditText port = findViewById(R.id.websocket_port);
 		EditText defaultUsername = findViewById(R.id.default_username);
-		Switch audioEnabled = findViewById(R.id.audio_enabled);
-		Switch autoConnect = findViewById(R.id.settings_autoconnect_enabled);
-		Switch soundEffects = findViewById(R.id.settings_sound_effects_enabled);
+		SwitchMaterial audioEnabled = findViewById(R.id.audio_enabled);
+		SwitchMaterial autoConnect = findViewById(R.id.settings_autoconnect_enabled);
+		SwitchMaterial soundEffects = findViewById(R.id.settings_sound_effects_enabled);
 
 		String ip = ipAddress.getText().toString().trim();
 		String defaultUsernameString = defaultUsername.getText().toString().trim();
@@ -504,14 +635,15 @@ public class MainActivity extends AppCompatActivity
 			ex.printStackTrace();
 		}
 
+		SwitchMaterial showLog = findViewById(R.id.settings_show_log);
+
 		boolean isContinousAudioBroadcastEnabled = audioEnabled.isChecked();
 		boolean isAutoconnectEnabled = autoConnect.isChecked();
 		boolean isAudioEffectsEnabled = soundEffects.isChecked();
+		boolean isAppLogEnabled = showLog.isChecked();
 
 		// Create the master JSONObject
 		JSONObject settingsJson = new JSONObject();
-
-		boolean isSomeOfServerKeysEmpty = false;
 
 		try
 		{
@@ -522,37 +654,32 @@ public class MainActivity extends AppCompatActivity
 			settingsJson.put("is_microphone_always_on", isContinousAudioBroadcastEnabled);
 			settingsJson.put("is_autoconnect_enabled", isAutoconnectEnabled);
 			settingsJson.put("is_audio_effect_enabled", isAudioEffectsEnabled);
+			settingsJson.put("is_app_log_enabled", isAppLogEnabled);
 
-			// Create a JSONArray for the dynamic keys
+			//app-held identity and mode ride along with every save
+			settingsJson.put("identity_string", this.preferences.getString("identity_seed", ""));
+			settingsJson.put("app_mode", this.preferences.getString("app_mode", "advanced"));
+
+			// Create a JSONArray for the dynamic keys. servers may run with no metadata keys at all,
+			// so an empty row is simply skipped instead of failing the whole save - it just means
+			// "no key here". a server that does use keys rejects the connection on its own.
 			JSONArray keysArray = new JSONArray();
 			for (int i = 0; i < keysContainer.getChildCount(); i++)
 			{
-				LinearLayout row = (LinearLayout)keysContainer.getChildAt(i);
-				EditText keyInput = (EditText)row.getChildAt(0);
+				View row = keysContainer.getChildAt(i);
+				EditText keyInput = row.findViewById(R.id.key_input);
 				String key = keyInput.getText().toString().trim();
 				if (!key.isEmpty())
 				{
 					keysArray.put(key);
 				}
-				else
-				{
-					CharSequence text = "Fail, keys cant be empty";
-					int duration = Toast.LENGTH_LONG;
-					Toast toast = Toast.makeText(this, text, duration);
-					toast.show();
-
-					isSomeOfServerKeysEmpty = true;
-				}
 			}
 
 			settingsJson.put("metadata_keys", keysArray);
 
-			if (isSomeOfServerKeysEmpty == false)
-			{
-				this.settings.saveJsonSettings(settingsJson.toString());
+			this.settings.saveJsonSettings(settingsJson.toString());
 
-				this.backgroundService.javascriptJavaBridge.JavaExportRequestCurrentSettingsFromAndroid();
-			}
+			this.backgroundService.javascriptJavaBridge.JavaExportRequestCurrentSettingsFromAndroid();
 		}
 		catch (JSONException e)
 		{

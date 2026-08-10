@@ -1,7 +1,7 @@
 #ifndef BASE_H
 #define BASE_H
 
-/* everything should be as simple as possible, but not simpler! */
+// everything should be as simple as possible, but not simpler!
 
 int64   base__get_new_index_for_client(void);
 
@@ -27,6 +27,16 @@ boole   base__delete_identity_from_store_by_hash(char* identity_hash);
 boole   base__modify_identity_tag_in_store(char* identity_hash, uint64 tag_id, boole add);
 void    base__set_identity_avatar_by_hash(char* identity_hash, char* base64_avatar);
 boole   base__get_identity_avatar_by_hash(char* identity_hash, char* out_buffer, uint64 out_buffer_size);
+void    base__restore_identity_alias(client_t* client);
+void    base__set_identity_alias_by_hash(char* identity_hash, char* alias);
+void    base__touch_identity_last_seen_by_hash(char* identity_hash);
+boole   base__is_alias_taken_by_another_identity(char* alias, char* identity_hash);
+void    base__store_identity_raw_public_key(char* identity_hash, char* raw_public_key);
+void    base__clear_identity_raw_public_key(char* identity_hash);
+boole   base__get_identity_hash_by_alias(char* alias, char* out_identity_hash, uint64 out_buffer_size);
+boole   base__is_identity_registered_by_hash(char* identity_hash);
+boole   base__queue_offline_message(char* recipient_identity_hash, char* sender_identity_hash, char* sender_alias, char* base64_encrypted_message);
+void    base__free_offline_messages_for_identity(char* identity_hash);
 void    base__close_websocket_connection(uint64 client_id, boole use_readlock);
 uint64  base__get_timestamp_ms(void);
 void    base__sleep_for_milliseconds(uint64 milliseconds);
@@ -60,8 +70,11 @@ extern tag_t* g_tags_array;
 extern ban_entry_t* g_ban_array;
 extern client_stored_data_t* g_client_stored_data;
 extern pthread_mutex_t g_client_stored_data_mutex;
+extern offline_chat_message_t* g_offline_messages;
+extern pthread_mutex_t g_offline_messages_mutex;
+extern uint64 g_offline_message_sequence_counter;
 
-/* global lock ordering goes like this: clients, muggles, channels, icons, tags, bans (bans is always taken last) */
+// global lock ordering goes like this: clients, muggles, channels, icons, tags, bans (bans is always taken last)
 
 extern server_settings_t g_server_settings;
 extern custom_rwlock_t g_clients_global_rwlock_guard;

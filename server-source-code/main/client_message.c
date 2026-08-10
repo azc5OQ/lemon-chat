@@ -21,11 +21,12 @@
 
 #include "util.h"
 
-/* static functions are defined first */
+// static functions are defined first
 static void _client_msg_internal__file_download_thread(data_for_file_send_thread_t* arg);
 
-/* declarations */
+// declarations
 static boole _client_msg_internal__is_add_tag_to_client_valid(cJSON* json_root);
+static boole _client_msg_internal__is_set_alias_request_valid(cJSON* json_root);
 static boole _client_msg_internal__is_remove_tag_from_client_valid(cJSON* json_root);
 static boole _client_msg_internal__is_process_server_settings_icon_upload_message_valid(cJSON* json_root);
 static boole _client_msg_internal__is_process_server_settings_add_new_tag_message_valid(cJSON* json_root);
@@ -40,6 +41,25 @@ static boole _client_msg_internal__is_client_msg_file_send_request_valid(cJSON* 
 static boole _client_msg_internal__is_musicbot_get_song_list_request_valid(cJSON* json_root);
 static boole _client_msg_internal__is_file_send_completed_request_valid(cJSON* json_root);
 static boole _client_msg_internal__is_remove_song_from_music_bot_request_valid(cJSON* json_root);
+static boole _client_msg_internal__is_json_start_song_stream_message_valid(cJSON* json_root);
+static boole _client_msg_internal__is_admin_password_message_valid(cJSON* json_root);
+static boole _client_msg_internal__is_json_process_microphone_usage_valid(cJSON* json_root);
+static boole _client_msg_internal__is_ice_candidate_format_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_internal__is_json_delete_request_format_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_internal__is_json_sdp_answer_format_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_internal__is_json_join_channel_request_format_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_internal__is_username_taken_by_another_client(char* username, uint64 client_id_to_skip);
+static boole _client_msg_internal__is_json_poke_client_request_format_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_internal__is_json_chat_message_format_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_internal__is_json_edit_channel_request_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_internal__is_json_create_channel_request_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_internal__is_public_key_info_message_valid(cJSON* json_root, uint64 client_id);
+static char* _client_msg_internal__get_challenge_string(cJSON* json_root);
+static boole _client_msg_internal__is_public_key_challenge_response_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_internal__is_change_client_username_message_valid(cJSON* json_root, uint64 client_id);
+static void _client_msg_internal__process_chat_message_action(cJSON* json_root, uint64 sender_client_id, char* outbound_action_type, boole is_edit);
+static boole _client_msg_internal__is_offline_chat_message_valid(cJSON* json_root);
+static boole _client_msg_internal__is_set_identity_alias_request_valid(cJSON* json_root);
 
 /**
  * @brief validates an add-tag-to-client request: client id and tag id are present and within range
@@ -153,7 +173,7 @@ static boole _client_msg_internal__is_process_server_settings_icon_upload_messag
 
     base64_icon_length = clib__utf8_string_length(base64_icon_value->valuestring);
 
-    /* don't accept icons too small or too large */
+    // don't accept icons too small or too large
     if (base64_icon_length >= ICON_MAX_LENGTH || base64_icon_length < 128)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "clib__utf8_string_length(base64_icon_value->valuestring) >= ICON_MAX_LENGTH");
@@ -195,7 +215,7 @@ static boole _client_msg_internal__is_process_server_settings_add_new_tag_messag
         return FALSE;
     }
 
-    /* the linked icon is optional; a tag may be created without one. only validate it when present */
+    // the linked icon is optional; a tag may be created without one. only validate it when present
     json_linked_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "linked_icon_id");
     if (json_linked_icon_id != NULL_POINTER)
     {
@@ -251,7 +271,7 @@ static boole _client_msg_internal__is_call_idle_client_message_valid(cJSON* json
  *
  * @param cJSON* json_root -> the parsed client request
  *
- * @return TRUE if the request is valid, FALSE otherwise
+ * @return boole -> TRUE when the request is valid, FALSE otherwise
  */
 static boole _client_msg_internal__is_process_come_back_from_idle_mode_request_valid(cJSON* json_root)
 {
@@ -281,7 +301,7 @@ static boole _client_msg_internal__is_process_come_back_from_idle_mode_request_v
  *
  * @param cJSON* json_root -> the parsed client request
  *
- * @return TRUE always
+ * @return boole -> always TRUE
  */
 static boole _client_msg_internal__is_go_to_idle_mode_request_valid(cJSON* json_root)
 {
@@ -482,6 +502,47 @@ static boole _client_msg_internal__is_json_start_song_stream_message_valid(cJSON
  *
  * @return boole
  */
+/**
+ * @brief tells whether a username is currently worn by some OTHER connected client. usernames are
+ *        the one name a person is shown under, so every path that writes one has to ask this first.
+ *
+ * @param char* username -> the name to look for (exact compare, like the rename path)
+ * @param uint64 client_id_to_skip -> the client the name is meant for, skipped in the scan
+ *
+ * @attention the caller must already hold a lock on clients_global_rwlock_guard
+ *
+ * @return boole TRUE when another connected client already uses this username
+ */
+static boole _client_msg_internal__is_username_taken_by_another_client(char* username, uint64 client_id_to_skip)
+{
+    uint64 i = 0;
+
+    if (username == NULL_POINTER || username[0] == 0)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        if (i == client_id_to_skip)
+        {
+            continue;
+        }
+
+        if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (clib__is_string_equal(g_clients_array[i].username, username) == TRUE)
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
 static boole _client_msg_internal__is_admin_password_message_valid(cJSON* json_root)
 {
     cJSON* json_admin_password = 0;
@@ -581,11 +642,11 @@ static boole _client_msg_internal__is_ice_candidate_format_valid(cJSON* json_roo
         return FALSE;
     }
 
-    /* if (clib__utf8_string_length(json_sdp_message_type->valuestring) == 0)
-       {
-           DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s","client : ", client_id, " clib__utf8_string_length(json_sdp_message_type->valuestring) \n");
-           return FALSE;
-       } */
+    // if (clib__utf8_string_length(json_sdp_message_type->valuestring) == 0)
+    // {
+    // DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s","client : ", client_id, " clib__utf8_string_length(json_sdp_message_type->valuestring) \n");
+    // return FALSE;
+    // }
     json_sdpMid = cJSON_GetObjectItemCaseSensitive(json_value_object, "sdpMid");
     if (cJSON_IsString(json_sdpMid) == FALSE)
     {
@@ -599,11 +660,11 @@ static boole _client_msg_internal__is_ice_candidate_format_valid(cJSON* json_roo
         return FALSE;
     }
 
-    /* if (clib__utf8_string_length(json_sdp_message_value->valuestring) == 0)
-       {
-           DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s","client : ", client_id, " clib__utf8_string_length(json_sdp_message_value->valuestring) \n");
-           return FALSE;
-       } */
+    // if (clib__utf8_string_length(json_sdp_message_value->valuestring) == 0)
+    // {
+    // DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s","client : ", client_id, " clib__utf8_string_length(json_sdp_message_value->valuestring) \n");
+    // return FALSE;
+    // }
     json_sdpMLineIndex = cJSON_GetObjectItemCaseSensitive(json_value_object, "sdpMLineIndex");
     if (cJSON_IsNumber(json_sdpMLineIndex) == FALSE)
     {
@@ -627,10 +688,10 @@ static boole _client_msg_internal__is_json_delete_request_format_valid(cJSON* js
     cJSON* json_channel_id = 0;
     cJSON* json_message_object = 0;
 
-    /* existence of "message" has already been checked at this point */
+    // existence of "message" has already been checked at this point
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
-    /* json_message_object exists, continue validating received json */
+    // json_message_object exists, continue validating received json
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
     if (cJSON_IsNumber(json_channel_id) == FALSE)
     {
@@ -732,10 +793,10 @@ static boole _client_msg_internal__is_json_join_channel_request_format_valid(cJS
     cJSON* json_channel_password = 0;
     cJSON* json_message_object = 0;
 
-    /* existence of "message" has already been checked at this point */
+    // existence of "message" has already been checked at this point
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
-    /* json_message_object exists, continue validating received json */
+    // json_message_object exists, continue validating received json
     json_channel_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_password");
     if (cJSON_IsString(json_channel_password) == FALSE)
     {
@@ -770,7 +831,7 @@ static boole _client_msg_internal__is_json_join_channel_request_format_valid(cJS
  *
  * @param cJSON* json_root -> the parsed client request
  *
- * @return TRUE if the request is valid, FALSE otherwise
+ * @return boole -> TRUE when the request is valid, FALSE otherwise
  */
 static boole _client_msg_internal__is_client_msg_file_send_request_valid(cJSON* json_root)
 {
@@ -840,7 +901,7 @@ static boole _client_msg_internal__is_client_msg_file_send_request_valid(cJSON* 
  *
  * @param cJSON* json_root -> the parsed client request
  *
- * @return TRUE if the request is valid, FALSE otherwise
+ * @return boole -> TRUE when the request is valid, FALSE otherwise
  */
 static boole _client_msg_internal__is_musicbot_get_song_list_request_valid(cJSON* json_root)
 {
@@ -877,7 +938,7 @@ static boole _client_msg_internal__is_musicbot_get_song_list_request_valid(cJSON
  *
  * @param cJSON* json_root -> the parsed client request
  *
- * @return TRUE if the request is valid, FALSE otherwise
+ * @return boole -> TRUE when the request is valid, FALSE otherwise
  */
 static boole _client_msg_internal__is_file_send_completed_request_valid(cJSON* json_root)
 {
@@ -942,7 +1003,7 @@ static boole _client_msg_internal__is_file_send_completed_request_valid(cJSON* j
 
     if (is_intent_allowed == TRUE)
     {
-        /* check more types than musicbot file in future */
+        // check more types than musicbot file in future
         if (clib__is_string_equal(json_file_send_intent->valuestring, "musicbot_file") == TRUE)
         {
             json_song_name = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "song_name");
@@ -1029,7 +1090,7 @@ static boole _client_msg_internal__is_file_send_completed_request_valid(cJSON* j
  *
  * @param cJSON* json_root -> the parsed client request
  *
- * @return TRUE if the request is valid, FALSE otherwise
+ * @return boole -> TRUE when the request is valid, FALSE otherwise
  */
 static boole _client_msg_internal__is_remove_song_from_music_bot_request_valid(cJSON* json_root)
 {
@@ -1118,7 +1179,7 @@ boole client_msg__is_message_correct_at_first_sight_and_get_message_type(cJSON* 
         return FALSE;
     }
 
-    /* json_message_object exists, continue validating received json */
+    // json_message_object exists, continue validating received json
     json_message_type = cJSON_GetObjectItemCaseSensitive(json_message_object, "type");
     if (cJSON_IsString(json_message_type) == FALSE)
     {
@@ -1156,10 +1217,10 @@ static boole _client_msg_internal__is_json_poke_client_request_format_valid(cJSO
     cJSON* json_receiver_id = 0;
     cJSON* json_message_object = 0;
 
-    /* existence of "message" has already been checked at this point */
+    // existence of "message" has already been checked at this point
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
-    /* json_message_object exists, continue validating received json */
+    // json_message_object exists, continue validating received json
     json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
     if (cJSON_IsNumber(json_receiver_id) == FALSE)
     {
@@ -1212,10 +1273,10 @@ static boole _client_msg_internal__is_json_chat_message_format_valid(cJSON* json
     cJSON* json_local_message_id = 0;
     cJSON* json_message_object = 0;
 
-    /* existence of "message" has already been checked at this point */
+    // existence of "message" has already been checked at this point
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
-    /* json_message_object exists, continue validating received json */
+    // json_message_object exists, continue validating received json
     json_chat_message_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
     if (cJSON_IsString(json_chat_message_value) == FALSE)
     {
@@ -1235,10 +1296,10 @@ static boole _client_msg_internal__is_json_chat_message_format_valid(cJSON* json
         return FALSE;
     }
 
-    /* reject an oversized value loudly. the server re-encrypts the forwarded message, and if its base64 output
-       would exceed the websocket frame limit, base__encrypt returns NULL and the send loop silently skips every
-       recipient while the sender still gets a delivery ack. base64 grows ~4/3; leave 2KB for the added sender
-       fields + envelope overhead. derived from the frame limit so it tracks the websocket_message_max_length setting. */
+    // reject an oversized value loudly. the server re-encrypts the forwarded message, and if its base64 output
+    // would exceed the websocket frame limit, base__encrypt returns NULL and the send loop silently skips every
+    // recipient while the sender still gets a delivery ack. base64 grows ~4/3; leave 2KB for the added sender
+    // fields + envelope overhead. derived from the frame limit so it tracks the websocket_message_max_length setting.
     if (clib__utf8_string_length_check_max_length(json_chat_message_value->valuestring, (int)((g_server_settings.websocket_message_max_length * 3) / 4 - 2048)) == -1)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " chat message value too large \n");
@@ -1283,10 +1344,10 @@ static boole _client_msg_internal__is_json_edit_channel_request_valid(cJSON* jso
 
     int64 status = 0;
 
-    /* existence of "message" already checked before */
+    // existence of "message" already checked before
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
-    /* json_message_object exists, continue validating received json */
+    // json_message_object exists, continue validating received json
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
     if (cJSON_IsNumber(json_channel_id) == FALSE)
     {
@@ -1294,7 +1355,7 @@ static boole _client_msg_internal__is_json_edit_channel_request_valid(cJSON* jso
         return FALSE;
     }
 
-    /* cannot edit root channel */
+    // cannot edit root channel
     if (json_channel_id->valueint == 0)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " cJSON_IsNumber(channel_id) \n");
@@ -1407,10 +1468,10 @@ static boole _client_msg_internal__is_json_create_channel_request_valid(cJSON* j
 
     int64 status = 0;
 
-    /* existence of "message" already checked before */
+    // existence of "message" already checked before
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
-    /* json_message_object exists, continue validating received json */
+    // json_message_object exists, continue validating received json
     json_parent_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "parent_channel_id");
     if (cJSON_IsNumber(json_parent_channel_id) == FALSE)
     {
@@ -1516,23 +1577,23 @@ static boole _client_msg_internal__is_public_key_info_message_valid(cJSON* json_
 
     boole status = FALSE;
 
-    /* "message" object is fetched from json_root, again */
+    // "message" object is fetched from json_root, again
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == 0)
     {
-        /* no object is not present under key "message", not valid */
+        // no object is not present under key "message", not valid
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_message_object is null\n");
         return FALSE;
     }
 
     if (cJSON_IsObject(json_message_object) == FALSE)
     {
-        /* message key exists but it does not store object in it, not valid */
+        // message key exists but it does not store object in it, not valid
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " cJSON_IsObject(json_message_object) == false\n");
         return FALSE;
     }
 
-    /* json_message_object exists, continue validating received json */
+    // json_message_object exists, continue validating received json
     json_message_type = cJSON_GetObjectItemCaseSensitive(json_message_object, "type");
     if (cJSON_IsString(json_message_type) == FALSE)
     {
@@ -1560,7 +1621,7 @@ static boole _client_msg_internal__is_public_key_info_message_valid(cJSON* json_
         return FALSE;
     }
 
-    /* type is verified, continue validating received json */
+    // type is verified, continue validating received json
     json_message_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
 
     if (cJSON_IsString(json_message_value) == FALSE)
@@ -1581,7 +1642,7 @@ static boole _client_msg_internal__is_public_key_info_message_valid(cJSON* json_
         return FALSE;
     }
 
-    /* it's verified that json contains client's public key, continue json validation */
+    // it's verified that json contains client's public key, continue json validation
     verification_string = cJSON_GetObjectItemCaseSensitive(json_message_object, "verification_string");
     if (cJSON_IsString(verification_string) == FALSE)
     {
@@ -1601,7 +1662,7 @@ static boole _client_msg_internal__is_public_key_info_message_valid(cJSON* json_
         return FALSE;
     }
 
-    /* it's verified that json contains verification_string, continue json validation */
+    // it's verified that json contains verification_string, continue json validation
     verification_string = cJSON_GetObjectItemCaseSensitive(json_message_object, "dh_public_mix");
     if (cJSON_IsString(verification_string) == FALSE)
     {
@@ -1621,7 +1682,7 @@ static boole _client_msg_internal__is_public_key_info_message_valid(cJSON* json_
         return FALSE;
     }
 
-    /* it's verified that json contains dh_public_mix, json appears to be valid */
+    // it's verified that json contains dh_public_mix, json appears to be valid
     return TRUE;
 }
 
@@ -1640,7 +1701,7 @@ static char* _client_msg_internal__get_challenge_string(cJSON* json_root)
     cJSON* challenge_string = 0;
     char* result = 0;
 
-    /* "message" object is fetched from json_root, again */
+    // "message" object is fetched from json_root, again
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
     challenge_string = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
@@ -1668,7 +1729,7 @@ static boole _client_msg_internal__is_public_key_challenge_response_valid(cJSON*
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == 0)
     {
-        /* no object is not present under key "message", not valid */
+        // no object is not present under key "message", not valid
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_message_object is null\n");
         return FALSE;
     }
@@ -1709,7 +1770,7 @@ static boole _client_msg_internal__is_change_client_username_message_valid(cJSON
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == 0)
     {
-        /* no object is not present under key "message", not valid */
+        // no object is not present under key "message", not valid
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_message_object is null\n");
         return FALSE;
     }
@@ -1774,7 +1835,7 @@ void client_msg__get_public_key_and_verification_string_and_dh_public_mix(cJSON*
     cJSON* json_message_object = 0;
     cJSON* dh_public_mix_json = 0;
 
-    /* "message" object is fetched from json_root, again */
+    // "message" object is fetched from json_root, again
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
     public_key_json = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
@@ -1786,34 +1847,40 @@ void client_msg__get_public_key_and_verification_string_and_dh_public_mix(cJSON*
     *out_dh_mix = dh_public_mix_json->valuestring;
 }
 
-/* safe prime numbers for Diffie-Hellman key exchange , for modulus */
-/* client.html has the same */
-/* replace with your own if you want */
+// safe prime numbers for Diffie-Hellman key exchange , for modulus
+// client.html has the same
+// replace with your own if you want
 
-/* DH_MODULUS_STR is the safe prime for the size chosen by DH_MODULUS_BITS in dh_primes.h (2048, 4096, or 8192) */
+// DH_MODULUS_STR is the safe prime for the size chosen by DH_MODULUS_BITS in dh_primes.h (2048, 4096, or 8192)
 const char* g_dh_known_modulus_str = DH_MODULUS_STR;
 
 /**
- * @brief First message server processes from a new client - handles the full DH key exchange + RSA challenge.
+ * @brief processes the first message a new client sends, running the full diffie-hellman key
+ *        exchange and issuing the rsa challenge
  *
- * This function does the following in order:
- *   1. Validates the incoming message (spam check, JSON structure, verification string)
- *   2. Rejects duplicate public keys (no two connected clients can share one)
- *   3. Stores the client's RSA public key
- *   4. Performs Diffie-Hellman key exchange:
- *      - Loads the shared prime modulus (must match client's)
- *      - Generates a random 256-bit server secret exponent
- *      - Computes shared_secret = client_public_mix ^ server_exponent mod p
- *      - Computes server_public_mix = g ^ server_exponent mod p
- *   5. Generates a random challenge string, encrypts it with the client's RSA public key
- *   6. Sends server_public_mix + encrypted challenge to the client
- *   7. Stores the plaintext challenge so it can be verified when client responds
+ *        the function works in this order:
+ *          1. validates the incoming message (spam check, json structure, verification string)
+ *          2. rejects duplicate public keys (no two connected clients can share one)
+ *          3. stores the client's rsa public key
+ *          4. performs the diffie-hellman key exchange:
+ *             - loads the shared prime modulus (must match the client's)
+ *             - generates a random 256-bit server secret exponent
+ *             - computes shared_secret = client_public_mix ^ server_exponent mod p
+ *             - computes server_public_mix = g ^ server_exponent mod p
+ *          5. generates a random challenge string and encrypts it with the client's rsa public key
+ *          6. sends server_public_mix + the encrypted challenge to the client
+ *          7. stores the plaintext challenge so it can be verified when the client responds
  *
- * After this function, the client must decrypt the challenge and send it back.
- * That is handled by client_msg__process_public_key_challenge_response().
+ *        after this function the client must decrypt the challenge and send it back, which is
+ *        handled by client_msg__process_public_key_challenge_response().
  *
- * @param cJSON* json_root ->     Parsed JSON message from the client
- * @param uint64 sender_client_id ->  Index into clients_array for this client
+ * @param cJSON* json_root -> parsed json message from the client
+ * @param uint64 sender_client_id -> index into g_clients_array for this client
+ *
+ * @note takes the global clients write lock for everything after the initial validation, every
+ *       early exit past that point goes through the goto label so the lock is released
+ *
+ * @return void
  */
 void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_id)
 {
@@ -1821,12 +1888,12 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
     mp_err mp_status = 0;
     size_t mp_written = 0;
 
-    /* data extracted from JSON */
+    // data extracted from JSON
     char* public_key = 0;
     char* verification_string = 0;
     char* dh_received_public_mix_from_client = 0;
 
-    /* DH bignums */
+    // DH bignums
     mp_int bignum_modulus;
     mp_int bignum_server_exponent;
     mp_int bignum_client_public_mix;
@@ -1835,7 +1902,7 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
     mp_int bignum_server_public_mix;
     mp_int bignum_modulus_minus_one;
 
-    /* challenge + server's DH public mix as strings for transmission */
+    // challenge + server's DH public mix as strings for transmission
     char* challenge_string = 0;
     char* challenge_value_for_client = 0;
     char* dh_public_mix_from_server_string_for_client = 0;
@@ -1844,9 +1911,9 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
     unsigned char exponent_random_bytes[DH_EXPONENT_BITS / 8];
     uint64 i = 0;
 
-    /* ──────────────────────────────────────────────────────────────────
-     *  STEP 1: Basic validation (before acquiring write lock)
-     * ────────────────────────────────────────────────────────────────── */
+    // ──────────────────────────────────────────────────────────────────
+    // STEP 1: Basic validation (before acquiring write lock)
+    // ──────────────────────────────────────────────────────────────────
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     if (status == FALSE)
     {
@@ -1862,13 +1929,13 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
         return;
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     *  Acquire write lock for the rest of the function.
-     *  All early exits below use goto to ensure the lock is released.
-     * ────────────────────────────────────────────────────────────────── */
+    // ──────────────────────────────────────────────────────────────────
+    // Acquire write lock for the rest of the function.
+    // All early exits below use goto to ensure the lock is released.
+    // ──────────────────────────────────────────────────────────────────
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    /* Initialize every DH bignum up front */
+    // Initialize every DH bignum up front
     mp_status = mp_init_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int*)NULL_POINTER);
     if (mp_status != MP_OKAY)
     {
@@ -1886,11 +1953,11 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
 
     DBG_AUTHENTICATION log_info("[auth] client %llu: message valid, proceeding with authentication", sender_client_id);
 
-    /* ──────────────────────────────────────────────────────────────────
-     *  STEP 2: Extract and verify fields from JSON
-     *  - verification_string must be "welcome" (protocol handshake)
-     *  - public_key must not already be in use by another client
-     * ────────────────────────────────────────────────────────────────── */
+    // ──────────────────────────────────────────────────────────────────
+    // STEP 2: Extract and verify fields from JSON
+    // - verification_string must be "welcome" (protocol handshake)
+    // - public_key must not already be in use by another client
+    // ──────────────────────────────────────────────────────────────────
     public_key = 0;
     verification_string = 0;
     dh_received_public_mix_from_client = 0;
@@ -1911,29 +1978,29 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     *  STEP 3: Store client's RSA public key
-     * ────────────────────────────────────────────────────────────────── */
+    // ──────────────────────────────────────────────────────────────────
+    // STEP 3: Store client's RSA public key
+    // ──────────────────────────────────────────────────────────────────
     DBG_AUTHENTICATION log_info("[auth] client %llu: storing public key", sender_client_id);
     clib__copy_memory(public_key, &g_clients_array[sender_client_id].public_key[0], clib__utf8_string_length(public_key), 1000);
 
-    /* ──────────────────────────────────────────────────────────────────
-     *  STEP 4: Diffie-Hellman key exchange
-     *
-     *  Both client and server know:
-     *    p = dh_known_modulus_str  (shared prime, defined at top of file)
-     *    g = 2                    (generator)
-     *
-     *  Client sent:   A = g^a mod p   (dh_received_public_mix_from_client)
-     *  Server picks:  b              (random 256-bit secret exponent)
-     *  Server computes:
-     *    shared_secret = A^b mod p   (same value as g^(a*b) mod p)
-     *    B = g^b mod p               (sent back to client)
-     *  Client will compute:
-     *    shared_secret = B^a mod p   (same value as g^(a*b) mod p)
-     * ────────────────────────────────────────────────────────────────── */
+    // ──────────────────────────────────────────────────────────────────
+    // STEP 4: Diffie-Hellman key exchange
+    //
+    // Both client and server know:
+    // p = dh_known_modulus_str  (shared prime, defined at top of file)
+    // g = 2                    (generator)
+    //
+    // Client sent:   A = g^a mod p   (dh_received_public_mix_from_client)
+    // Server picks:  b              (random 256-bit secret exponent)
+    // Server computes:
+    // shared_secret = A^b mod p   (same value as g^(a*b) mod p)
+    // B = g^b mod p               (sent back to client)
+    // Client will compute:
+    // shared_secret = B^a mod p   (same value as g^(a*b) mod p)
+    // ──────────────────────────────────────────────────────────────────
 
-    /* 4a. load the shared prime modulus */
+    // 4a. load the shared prime modulus
     mp_status = mp_read_radix(&bignum_modulus, g_dh_known_modulus_str, 10);
     if (mp_status != MP_OKAY)
     {
@@ -1942,10 +2009,10 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    /* 4b. generate the server's secret exponent (DH_EXPONENT_BITS random bits, sized to the modulus)
-     *     first bit forced to 1 to guarantee the full length, the rest from a cryptographically secure
-     *     RNG. rand() must never be used here: it is a predictable PRNG seeded from the clock, so an
-     *     exponent built from it could be reconstructed by an attacker, breaking the key exchange. */
+    // 4b. generate the server's secret exponent (DH_EXPONENT_BITS random bits, sized to the modulus)
+    // first bit forced to 1 to guarantee the full length, the rest from a cryptographically secure
+    // RNG. rand() must never be used here: it is a predictable PRNG seeded from the clock, so an
+    // exponent built from it could be reconstructed by an attacker, breaking the key exchange.
     {
         if (base__fill_secure_random_bytes(exponent_random_bytes, sizeof(exponent_random_bytes)) == FALSE)
         {
@@ -1973,7 +2040,7 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
     }
     DBG_AUTHENTICATION log_info("[auth] client %llu: generated DH exponent", sender_client_id);
 
-    /* 4c. parse client's public mix: A = g^a mod p (received as decimal string) */
+    // 4c. parse client's public mix: A = g^a mod p (received as decimal string)
     mp_status = mp_read_radix(&bignum_client_public_mix, (char*)dh_received_public_mix_from_client, 10);
     if (mp_status != MP_OKAY)
     {
@@ -1982,9 +2049,9 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    /* 4c-validate: reject a degenerate client public mix before exponentiating. A in {0, 1, p-1} (or outside
-       [2, p-2]) forces a known / tiny shared secret; for a safe prime the only dangerous small-order elements
-       are 1 and p-1, so requiring 2 <= A <= p-2 is sufficient. */
+    // 4c-validate: reject a degenerate client public mix before exponentiating. A in {0, 1, p-1} (or outside
+    // [2, p-2]) forces a known / tiny shared secret; for a safe prime the only dangerous small-order elements
+    // are 1 and p-1, so requiring 2 <= A <= p-2 is sufficient.
     mp_status = mp_sub_d(&bignum_modulus, 1uL, &bignum_modulus_minus_one);
     if (mp_status != MP_OKAY)
     {
@@ -2000,7 +2067,7 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    /* 4d. compute shared_secret = A^b mod p */
+    // 4d. compute shared_secret = A^b mod p
     mp_status = mp_exptmod(&bignum_client_public_mix, &bignum_server_exponent, &bignum_modulus, &bignum_shared_secret);
     if (mp_status != MP_OKAY)
     {
@@ -2008,7 +2075,7 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    /* 4e. store shared secret as decimal string in client slot */
+    // 4e. store shared secret as decimal string in client slot
     mp_status = mp_to_radix(&bignum_shared_secret, g_clients_array[sender_client_id].dh_shared_secret, SHARED_SECRET_LENGTH, &mp_written, 10);
     if (mp_status != MP_OKAY)
     {
@@ -2019,8 +2086,8 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
     g_clients_array[sender_client_id].is_dh_shared_secret_agreed_upon = TRUE;
     DBG_AUTHENTICATION log_info("[auth] client %llu: shared secret computed and stored", sender_client_id);
 
-    /* 4f. compute server's public mix: B = g^b mod p.
-     *     bignum_generator was initialized to 0 above; set it to the generator g = 2. */
+    // 4f. compute server's public mix: B = g^b mod p.
+    // bignum_generator was initialized to 0 above; set it to the generator g = 2.
     mp_set_i64(&bignum_generator, 2);
     mp_status = mp_exptmod(&bignum_generator, &bignum_server_exponent, &bignum_modulus, &bignum_server_public_mix);
     if (mp_status != MP_OKAY)
@@ -2029,7 +2096,7 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    /* 4g. convert B to decimal string for JSON transmission */
+    // 4g. convert B to decimal string for JSON transmission
     dh_public_mix_from_server_string_for_client = (char*)memorymanager__allocate(SHARED_SECRET_LENGTH, MEMALLOC_DHPROCESS);
     mp_status = mp_to_radix(&bignum_server_public_mix, dh_public_mix_from_server_string_for_client, SHARED_SECRET_LENGTH, &mp_written, 10);
     if (mp_status != MP_OKAY)
@@ -2041,13 +2108,13 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
 
     DBG_AUTHENTICATION log_info("[auth] client %llu: server public mix computed", sender_client_id);
 
-    /* ──────────────────────────────────────────────────────────────────
-     *  STEP 5: RSA challenge - prove the client owns the public key
-     *
-     *  Generate a random string, encrypt it with client's RSA public key,
-     *  and send it along with the server's DH public mix.
-     *  Only the real owner of the private key can decrypt the challenge.
-     * ────────────────────────────────────────────────────────────────── */
+    // ──────────────────────────────────────────────────────────────────
+    // STEP 5: RSA challenge - prove the client owns the public key
+    //
+    // Generate a random string, encrypt it with client's RSA public key,
+    // and send it along with the server's DH public mix.
+    // Only the real owner of the private key can decrypt the challenge.
+    // ──────────────────────────────────────────────────────────────────
     challenge_string = (char*)memorymanager__allocate(128, MEMALLOC_TYPE_CHALLENGE);
     if (base__fill_block_of_data_with_ascii_characters(challenge_string, CHALLENGE_STRING_SIZE) == FALSE)
     {
@@ -2060,17 +2127,17 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
 
     DBG_AUTHENTICATION log_info("[auth] client %llu: generated %d-byte challenge", sender_client_id, CHALLENGE_STRING_SIZE);
 
-    /* encrypt challenge with client's RSA public key */
+    // encrypt challenge with client's RSA public key
     challenge_value_for_client = base__encrypt_string_with_public_key(public_key, (unsigned char*)challenge_string, (uint64)clib__utf8_string_length(challenge_string));
 
-    /* send server's DH public mix + encrypted challenge to client */
+    // send server's DH public mix + encrypted challenge to client
     server_msg__send_public_key_challenge_to_single_client(g_clients_array[sender_client_id].p_ws_connection, challenge_value_for_client, dh_public_mix_from_server_string_for_client);
 
     memorymanager__free((nuint)challenge_value_for_client);
 
-    /* ──────────────────────────────────────────────────────────────────
-     *  STEP 6: Store plaintext challenge for verification when client responds
-     * ────────────────────────────────────────────────────────────────── */
+    // ──────────────────────────────────────────────────────────────────
+    // STEP 6: Store plaintext challenge for verification when client responds
+    // ──────────────────────────────────────────────────────────────────
     clib__copy_memory(challenge_string, &g_clients_array[sender_client_id].challenge_string[0], CHALLENGE_STRING_SIZE, 128);
     g_clients_array[sender_client_id].is_public_key_challenge_sent = TRUE;
 
@@ -2080,8 +2147,8 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
     memorymanager__free((nuint)dh_public_mix_from_server_string_for_client);
 
 _label_client_msg__process_public_key_info_end:
-    /* Release every DH bignum. All goto paths land here only after the
-     * mp_init_multi above succeeded, so all six are guaranteed initialized. */
+    // Release every DH bignum. All goto paths land here only after the
+    // mp_init_multi above succeeded, so all six are guaranteed initialized.
     mp_clear_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int*)NULL_POINTER);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -2102,12 +2169,12 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
     channel_t* root_channel = 0;
     client_t* current_client = NULL_POINTER;
 
-    /* status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
-       if (status == FALSE)
-       {
-           DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_public_key_challenge_response base__is_request_allowed_based_on_spam_protection == FALSE \n");
-           return;
-       } */
+    // status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
+    // if (status == FALSE)
+    // {
+    // DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_public_key_challenge_response base__is_request_allowed_based_on_spam_protection == FALSE \n");
+    // return;
+    // }
     status = _client_msg_internal__is_public_key_challenge_response_valid(json_root, sender_client_id);
     if (status == FALSE)
     {
@@ -2118,11 +2185,11 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
 
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    /* client sends public key to server at the time of authentication
-       server generates random string, encrypts that string with the client's public key
-       server then verifies if the client really is the owner of public key by sending client a little challenge
-       "if the public key is really yours, client, please, decrypt and then send back this randomly generated string that I will send you. you will have no problem telling me what I sent you, if it's really your key"
-       something like that */
+    // client sends public key to server at the time of authentication
+    // server generates random string, encrypts that string with the client's public key
+    // server then verifies if the client really is the owner of public key by sending client a little challenge
+    // "if the public key is really yours, client, please, decrypt and then send back this randomly generated string that I will send you. you will have no problem telling me what I sent you, if it's really your key"
+    // something like that
     current_client = &g_clients_array[sender_client_id];
     if (current_client->is_public_key_challenge_sent == FALSE)
     {
@@ -2131,7 +2198,7 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
         goto _label_client_msg__process_public_key_challenge_response_end;
     }
 
-    /* compare the key */
+    // compare the key
     received_challenge_string = _client_msg_internal__get_challenge_string(json_root);
 
     status = clib__is_string_equal(g_clients_array[sender_client_id].challenge_string, received_challenge_string);
@@ -2141,7 +2208,7 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
         DBG_AUTHENTICATION log_info("%s %llu %s", "client_msg__process_public_key_challenge_response challenge response string match : client index ", sender_client_id, " \n");
 
         current_client->channel_id = 0;
-        current_client->has_pending_maintainer_reset_vote = FALSE; /* fresh session - no vote can be pending */
+        current_client->has_pending_maintainer_reset_vote = FALSE; // fresh session - no vote can be pending
         current_client->is_admin = FALSE;
         current_client->is_authenticated = TRUE;
         current_client->timestamp_last_maintain_connection_message_received = base__get_timestamp_ms();
@@ -2160,7 +2227,7 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
             goto _label_client_msg__process_public_key_challenge_response_end;
         }
 
-        /* it's better when readlock is placed here instead of it being placed directly in server_msg__send_channel_list_to_single_client function */
+        // it's better when readlock is placed here instead of it being placed directly in server_msg__send_channel_list_to_single_client function
         clib__write_lock(&g_channels_global_rwlock_guard);
         clib__read_lock(&g_tags_global_rwlock_guard);
         clib__read_lock(&g_icons_global_rwlock_guard);
@@ -2169,9 +2236,9 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
 
         if (status == TRUE)
         {
-            /* restore this client's saved tags from the identity store (matched by public-key hash); the
-               admin tag re-grants admin. runs before the connect broadcast so every client sees the tags.
-               the tags read lock (held above) and clients write lock (held for this handler) cover it */
+            // restore this client's saved tags from the identity store (matched by public-key hash); the
+            // admin tag re-grants admin. runs before the connect broadcast so every client sees the tags.
+            // the tags read lock (held above) and clients write lock (held for this handler) cover it
             if (g_server_settings.are_identities_enabled == TRUE)
             {
                 DBG_IDENTITIES log_info("%s %llu %s", "identities: enabled -> restoring tags for authenticated client_id", current_client->client_id, "\n");
@@ -2182,11 +2249,45 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
                 DBG_IDENTITIES log_info("%s", "identities: DISABLED on this server (are_identities_enabled=false) -> no tags will be restored on connect \n");
             }
 
-            /* restore this identity's persisted avatar into the live client so others can load it. gated on
-               allow_avatars only (avatars may be enabled without tag-identities) */
+            // restore this identity's persisted avatar into the live client so others can load it. gated on
+            // allow_avatars only (avatars may be enabled without tag-identities)
             if (g_server_settings.allow_avatars == TRUE)
             {
                 base__restore_identity_avatar(current_client);
+            }
+
+            // restore the admin-registered alias (display name) for this identity
+            if (g_server_settings.are_identities_enabled == TRUE && g_server_settings.allow_alias_registrations == TRUE)
+            {
+                base__restore_identity_alias(current_client);
+            }
+
+            // an identity the admin gave a registered name to is a REGISTERED user of this server. only
+            // those may list the stored clients - otherwise any guest could join and harvest everyone's
+            // name and avatar. avatars are self-service so they prove nothing; a registered name is
+            // admin-granted
+            current_client->is_registered = (boole)(current_client->alias[0] != 0);
+
+            // the registered name IS the username: pin it over whatever this session connected with,
+            // so a registered person always appears under their one admin-set name (and cannot keep an
+            // old self-chosen username after being registered)
+            // registered names are reserved (the rename path refuses them and registration refuses a
+            // name in use), so this is normally free - but never overwrite into a duplicate if some
+            // older state left the name occupied: he keeps the deduped name assigned on join instead
+            if (current_client->is_registered == TRUE && _client_msg_internal__is_username_taken_by_another_client(current_client->alias, current_client->client_id) == FALSE)
+            {
+                clib__null_memory(&current_client->username[0], USERNAME_MAX_LENGTH);
+                clib__copy_memory(current_client->alias, &current_client->username[0], clib__utf8_string_length(current_client->alias), USERNAME_MAX_LENGTH - 1);
+            }
+
+            // offline messages need peers to be able to encrypt to this identity while it is away,
+            // which means the server must keep its RAW public key (only ever while the feature is on,
+            // and only for REGISTERED identities - unregistered ones cannot be messaged offline)
+            if (g_server_settings.allow_offline_messages == TRUE && current_client->is_registered == TRUE && current_client->public_key[0] != 0 && current_client->is_music_bot == FALSE)
+            {
+                char offline_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+                base__hash_password_to_base64(current_client->public_key, offline_identity_hash, sizeof(offline_identity_hash));
+                base__store_identity_raw_public_key(offline_identity_hash, current_client->public_key);
             }
 
             server_msg__send_authentication_status_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
@@ -2196,6 +2297,13 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
             server_msg__send_tag_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
             server_msg__send_active_microphone_usage_for_current_channel_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret, current_client->channel_id);
             server_msg__send_client_connect_message_to_all_clients(current_client->client_id);
+
+            // hand over anything that was said to this identity while it was away, then forget it.
+            // after the client list, so the receiving client already knows who everybody is
+            if (g_server_settings.allow_offline_messages == TRUE && current_client->is_registered == TRUE && current_client->public_key[0] != 0)
+            {
+                server_msg__send_queued_offline_messages_to_single_client(current_client);
+            }
 
             client_count_in_root_channel = base__get_client_count_for_channel(ROOT_CHANNEL_ID);
 
@@ -2296,17 +2404,27 @@ void client_msg__process_change_client_username(cJSON* json_root, uint64 sender_
 
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    /* check if client has permission to change the username */
+    // check if client has permission to change the username
     client_to_alter = &g_clients_array[json_client_id->valueint];
 
-    /* client that is requesting change for own username, allow it */
+    // client that is requesting change for own username, allow it - UNLESS he is registered.
+    // a registered user's name is admin-controlled (set through the register-username action), so
+    // he cannot rename himself out of it; an admin still can, via that action
     if (json_client_id->valueint == sender_client_id)
     {
-        does_client_have_permission_to_change_username = TRUE;
+        if (client_to_alter->is_registered == TRUE)
+        {
+            DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_id", sender_client_id, "is registered - self username change denied \n");
+            does_client_have_permission_to_change_username = FALSE;
+        }
+        else
+        {
+            does_client_have_permission_to_change_username = TRUE;
+        }
     }
     else
     {
-        /* client that is requesting change for username does not own it, maybe it's admin messing around with music bot? */
+        // client that is requesting change for username does not own it, maybe it's admin messing around with music bot?
         if (client_to_alter->is_music_bot == TRUE && g_clients_array[sender_client_id].is_admin == TRUE)
         {
             does_client_have_permission_to_change_username = TRUE;
@@ -2320,9 +2438,9 @@ void client_msg__process_change_client_username(cJSON* json_root, uint64 sender_
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        /* is_existing needs to be guarded with mutex, while opening client, rwlock is not usable */
+        // is_existing needs to be guarded with mutex, while opening client, rwlock is not usable
         if (g_clients_array[i].is_existing == FALSE)
-        { /* client not is_existing, skip, this needs global lock */
+        { // client not is_existing, skip, this needs global lock
             continue;
         }
 
@@ -2335,9 +2453,24 @@ void client_msg__process_change_client_username(cJSON* json_root, uint64 sender_
 
         if (is_username_taken == TRUE)
         {
-            /* username used by some of the clients, start another loop, with incremented numeric part of client's username */
+            // username used by some of the clients, start another loop, with incremented numeric part of client's username
             DBG_CLIENT_MESSAGE log_info("%s %d %s", "username ", is_username_taken, " already taken \n");
             break;
+        }
+    }
+
+    // registered names are RESERVED: without this a guest could take the name of a registered user
+    // while that user is offline, and the moment he came back there would be two of him. refusing
+    // the registration of a name in use (see the register handler) only holds if this holds too
+    if (is_username_taken == FALSE && client_to_alter->public_key[0] != 0)
+    {
+        char requester_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+        base__hash_password_to_base64(client_to_alter->public_key, requester_identity_hash, sizeof(requester_identity_hash));
+
+        if (base__is_alias_taken_by_another_identity(json_message_value->valuestring, requester_identity_hash) == TRUE)
+        {
+            DBG_CLIENT_MESSAGE log_info("%s %s %s", "username ", json_message_value->valuestring, " is a registered name of another identity \n");
+            is_username_taken = TRUE;
         }
     }
 
@@ -2407,11 +2540,11 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
     channel_t* channel = 0;
     boole status = FALSE;
 
-    /* check timestamp first
-       check if json is valid
-       check access rights
-       check if parent channel id is valid, if parent channel is is_existing
-       finally, create channel */
+    // check timestamp first
+    // check if json is valid
+    // check access rights
+    // check if parent channel id is valid, if parent channel is is_existing
+    // finally, create channel
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     if (status == FALSE)
     {
@@ -2426,12 +2559,12 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
         return;
     }
 
-    /* decide whether this is a normal channel or a guest temp channel:
-       - an admin always creates a normal channel
-       - a non-admin creates a temp channel, but only when temp channels are enabled server-wide and the
-         non-admin does not already own one (a temp channel is destroyed when its creator leaves it - see
-         the join / disconnect / delete paths)
-       - otherwise the request is refused: creating a normal channel is admin-only */
+    // decide whether this is a normal channel or a guest temp channel:
+    // - an admin always creates a normal channel
+    // - a non-admin creates a temp channel, but only when temp channels are enabled server-wide and the
+    // non-admin does not already own one (a temp channel is destroyed when its creator leaves it - see
+    // the join / disconnect / delete paths)
+    // - otherwise the request is refused: creating a normal channel is admin-only
     is_channel_create_allowed = FALSE;
     clib__read_lock(&g_clients_global_rwlock_guard);
     if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
@@ -2451,10 +2584,10 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
 
     if (is_channel_create_allowed == TRUE)
     {
-        /* what is done here:
-           checking if parent channel exists,
-           creating the child channel
-           both need to be wrapper within same write lock because they are tied to one another, */
+        // what is done here:
+        // checking if parent channel exists,
+        // creating the child channel
+        // both need to be wrapper within same write lock because they are tied to one another,
         clib__write_lock(&g_channels_global_rwlock_guard);
         json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
         json_parent_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "parent_channel_id");
@@ -2482,7 +2615,7 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
 
         if (is_parent_channel_id_existing == TRUE && parent_is_temp_channel == TRUE)
         {
-            /* no channel (not even an admin's) may be created under a temp channel */
+            // no channel (not even an admin's) may be created under a temp channel
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_create_channel_request parent is a temp channel, refusing to create a child under it \n");
         }
         else if (is_parent_channel_id_existing == TRUE)
@@ -2495,11 +2628,11 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
 
                 if (channel->is_existing == FALSE)
                 {
-                    /* everything is in order, now create the channel
-                       set is_channel_created_successfully to TRUE so message about channel creation will be sent to all clients
-                       will be initiated later in code */
+                    // everything is in order, now create the channel
+                    // set is_channel_created_successfully to TRUE so message about channel creation will be sent to all clients
+                    // will be initiated later in code
                     channel->is_existing = TRUE;
-                    channel->channel_id = i; /* a channel's id is its index in the channel array */
+                    channel->channel_id = i; // a channel's id is its index in the channel array
                     channel->parent_channel_id = (int64)json_parent_channel_id->valuedouble;
                     channel->is_root_channel = FALSE;
                     clib__copy_memory(json_channel_name->valuestring, channel->name, clib__utf8_string_length(json_channel_name->valuestring), CHANNEL_NAME_MAX_LENGTH);
@@ -2518,9 +2651,9 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
                     channel->is_temp_channel = creating_temp_channel;
                     channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
                     channel->max_client_count = 0;
-                    /* clamp the client-supplied capacity before the double->uint64 cast, which is undefined
-                       for negative / NaN / huge values. NaN fails both comparisons, so the range check
-                       rejects it too. a channel can never hold more clients than the server allows */
+                    // clamp the client-supplied capacity before the double->uint64 cast, which is undefined
+                    // for negative / NaN / huge values. NaN fails both comparisons, so the range check
+                    // rejects it too. a channel can never hold more clients than the server allows
                     if (cJSON_IsNumber(json_max_client_count)
                         && json_max_client_count->valuedouble >= 0
                         && json_max_client_count->valuedouble <= (double)g_server_settings.max_client_count)
@@ -2543,11 +2676,11 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
         }
         clib__unlock(&g_channels_global_rwlock_guard);
 
-        /* okay, channel created successfully, acquire read lock for channels and clients */
+        // okay, channel created successfully, acquire read lock for channels and clients
         if (is_channel_created_successfully == TRUE)
         {
-            /* announce the new channel to everyone first, so it exists in every client's UI before the
-               temp creator is moved into it below */
+            // announce the new channel to everyone first, so it exists in every client's UI before the
+            // temp creator is moved into it below
             clib__read_lock(&g_clients_global_rwlock_guard);
             clib__read_lock(&g_channels_global_rwlock_guard);
 
@@ -2556,9 +2689,9 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
             clib__unlock(&g_channels_global_rwlock_guard);
             clib__unlock(&g_clients_global_rwlock_guard);
 
-            /* a temp channel: mark the creator as its admin/owner (so a second temp channel is refused, and
-               so the join / disconnect / delete paths know whose departure destroys it) and move them into
-               it right away, the same server-side way the delete path moves clients to root */
+            // a temp channel: mark the creator as its admin/owner (so a second temp channel is refused, and
+            // so the join / disconnect / delete paths know whose departure destroys it) and move them into
+            // it right away, the same server-side way the delete path moves clients to root
             if (creating_temp_channel == TRUE)
             {
                 clib__write_lock(&g_clients_global_rwlock_guard);
@@ -2625,8 +2758,8 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
         return;
     }
 
-    /* editing a channel is admin-only, except a temp admin may edit (rename / set password / toggle audio)
-       their own temp channel without admin rights */
+    // editing a channel is admin-only, except a temp admin may edit (rename / set password / toggle audio)
+    // their own temp channel without admin rights
     is_channel_edit_allowed = FALSE;
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
@@ -2681,9 +2814,9 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
             channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
             channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
             channel->max_client_count = 0;
-            /* clamp the client-supplied capacity before the double->uint64 cast, which is undefined
-               for negative / NaN / huge values. NaN fails both comparisons, so the range check
-               rejects it too. a channel can never hold more clients than the server allows */
+            // clamp the client-supplied capacity before the double->uint64 cast, which is undefined
+            // for negative / NaN / huge values. NaN fails both comparisons, so the range check
+            // rejects it too. a channel can never hold more clients than the server allows
             if (cJSON_IsNumber(json_max_client_count)
                 && json_max_client_count->valuedouble >= 0
                 && json_max_client_count->valuedouble <= (double)g_server_settings.max_client_count)
@@ -2697,7 +2830,7 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
 
         clib__unlock(&g_channels_global_rwlock_guard);
 
-        /* channel edited successfully, acquire read lock for channels and clients */
+        // channel edited successfully, acquire read lock for channels and clients
         if (is_channel_edited_successfully == TRUE)
         {
             clib__read_lock(&g_clients_global_rwlock_guard);
@@ -2741,9 +2874,9 @@ void client_msg__process_direct_chat_message(cJSON* json_root, uint64 sender_cli
 
     uint64 server_chat_message_id = 0;
 
-    /* because maintainer of channel sends out channel keys to each client individually,
-       and a maintainer needs to do that as quickly as possible, repeatedly, possibly for hundred clients in everyone is in his channel
-       spam prevention cannot be placed here like in other places, needs to be improved */
+    // because maintainer of channel sends out channel keys to each client individually,
+    // and a maintainer needs to do that as quickly as possible, repeatedly, possibly for hundred clients in everyone is in his channel
+    // spam prevention cannot be placed here like in other places, needs to be improved
     is_message_valid = _client_msg_internal__is_json_chat_message_format_valid(json_root, sender_client_id);
 
     if (is_message_valid == FALSE)
@@ -2767,7 +2900,7 @@ void client_msg__process_direct_chat_message(cJSON* json_root, uint64 sender_cli
 
     clib__read_lock(&g_clients_global_rwlock_guard);
 
-    /* if sender has idle mode active, stop it */
+    // if sender has idle mode active, stop it
     is_receiver_existing = g_clients_array[json_receiver_id->valueint].is_authenticated;
     is_receiver_idle = g_clients_array[json_receiver_id->valueint].is_idle;
     is_receiver_music_bot = g_clients_array[json_receiver_id->valueint].is_music_bot;
@@ -2800,7 +2933,7 @@ void client_msg__process_direct_chat_message(cJSON* json_root, uint64 sender_cli
 void client_msg__process_channel_chat_message(cJSON* json_root, uint64 sender_client_id)
 {
     boole is_channel_existing = FALSE;
-    /* cJSON* json_receiver_id = 0; json contains this ID, but it is not needed. Id of channel is taken from sender's client struct */
+    // cJSON* json_receiver_id = 0; json contains this ID, but it is not needed. Id of channel is taken from sender's client struct
     cJSON* json_local_message_id = 0;
     cJSON* json_chat_message_value = 0;
     cJSON* json_message_object = 0;
@@ -2854,11 +2987,14 @@ void client_msg__process_channel_chat_message(cJSON* json_root, uint64 sender_cl
 }
 
 /**
- * @brief shared worker for delete/edit chat message requests. the client sends only the target message id
- *        (+ new value for an edit) and the receiver context; the server keeps no message state, so it just
- *        rate-limits, stamps the requester's identity, and rebroadcasts the action to the right audience
- *        (the sender's channel, or the private counterpart plus the requester). each receiving client then
- *        decides for itself whether to honour it based on the requester's public key / admin flag.
+ * @brief shared worker for delete/edit chat message requests, it rate-limits, stamps the
+ *        requester's identity and rebroadcasts the action to the right audience
+ *
+ *        the client sends only the target message id (plus the new value for an edit) and the
+ *        receiver context. the server keeps no message state, so the action goes back out either
+ *        to the sender's channel, or to the private counterpart plus the requester. each receiving
+ *        client then decides for itself whether to honour it, based on the requester's public key
+ *        and admin flag.
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -2919,7 +3055,7 @@ static void _client_msg_internal__process_chat_message_action(cJSON* json_root, 
             return;
         }
 
-        /* same oversize guard a normal chat message gets (see _client_msg_internal__is_json_chat_message_format_valid) */
+        // same oversize guard a normal chat message gets (see _client_msg_internal__is_json_chat_message_format_valid)
         if (clib__utf8_string_length_check_max_length(json_new_message_value->valuestring, (int)((g_server_settings.websocket_message_max_length * 3) / 4 - 2048)) == -1)
         {
             return;
@@ -2941,7 +3077,7 @@ static void _client_msg_internal__process_chat_message_action(cJSON* json_root, 
             receiver_id = json_receiver_id->valueint;
             if (receiver_id >= 0 && receiver_id < g_server_settings.max_client_count && g_clients_array[receiver_id].is_authenticated == TRUE)
             {
-                /* deliver to the private counterpart and back to the requester so both views update */
+                // deliver to the private counterpart and back to the requester so both views update
                 server_msg__send_chat_message_action_to_single_client((uint64)receiver_id, outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
                 server_msg__send_chat_message_action_to_single_client(sender_client_id, outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
             }
@@ -3021,9 +3157,9 @@ void client_msg__process_channel_chat_picture(uint64 client_sender_id, uint64 lo
         arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
         clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
         buffer_to_send_total_size = clib__utf8_string_length(message_value);
-        message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); /* old buffer points to file upload buffer, it's freed before download thread finishes sending this, need new one */
+        message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); // old buffer points to file upload buffer, it's freed before download thread finishes sending this, need new one
         clib__copy_memory(message_value, message_copy, buffer_to_send_total_size, buffer_to_send_total_size);
-        message_copy[buffer_to_send_total_size] = 0; /* null terminator */
+        message_copy[buffer_to_send_total_size] = 0; // null terminator
         arg->buffer = message_copy;
         arg->client_sender_id = client_sender_id;
         arg->receiving_clients_count = base__get_other_clients_in_channel(client_sender_id, channel_id, &arg->receiving_client_ids[0]);
@@ -3060,12 +3196,12 @@ void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 rec
     char* message_copy = NULL_POINTER;
     uint64 thread_id = 0;
 
-    /* status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
-       if (status == FALSE)
-       {
-           log_info("%s", " base__is_request_allowed_based_on_spam_protection == FALSE \n");
-           return;
-       } */
+    // status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
+    // if (status == FALSE)
+    // {
+    // log_info("%s", " base__is_request_allowed_based_on_spam_protection == FALSE \n");
+    // return;
+    // }
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_direct_chat_picture got here \n");
 
     if (g_clients_array[receiver_id].is_authenticated == TRUE && g_clients_array[receiver_id].is_idle == FALSE && g_clients_array[receiver_id].is_music_bot == FALSE)
@@ -3079,9 +3215,9 @@ void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 rec
         arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
         clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
         buffer_to_send_total_size = clib__utf8_string_length(message_value);
-        message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); /* old buffer points to file upload buffer, it's freed before download thread finishes sending this, need new one */
+        message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); // old buffer points to file upload buffer, it's freed before download thread finishes sending this, need new one
         clib__copy_memory(message_value, message_copy, buffer_to_send_total_size, buffer_to_send_total_size);
-        message_copy[buffer_to_send_total_size] = 0; /* null terminator */
+        message_copy[buffer_to_send_total_size] = 0; // null terminator
 
         arg->buffer = message_copy;
         arg->client_sender_id = sender_client_id;
@@ -3134,9 +3270,9 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
         return;
     }
 
-    /* whole function is wrapped within write locks.
-       because I do not know how to handle multithreaded environment properly
-       so I wrap code in write locks to avoid any unpredictable behaviour of this server */
+    // whole function is wrapped within write locks.
+    // because I do not know how to handle multithreaded environment properly
+    // so I wrap code in write locks to avoid any unpredictable behaviour of this server
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
@@ -3173,8 +3309,8 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
         goto client_msg__process_join_channel_request_end;
     }
 
-    /* channel capacity: a full channel rejects non-admins. the count excludes music bots already (see
-       base__get_client_count_for_channel); admins bypass the limit */
+    // channel capacity: a full channel rejects non-admins. the count excludes music bots already (see
+    // base__get_client_count_for_channel); admins bypass the limit
     if (new_channel->is_client_limit_active == TRUE
         && client_that_is_joining_channel->is_admin == FALSE
         && (new_channel->max_client_count == 0
@@ -3185,7 +3321,7 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
         goto client_msg__process_join_channel_request_end;
     }
 
-    /* check if password is valid */
+    // check if password is valid
     if (new_channel->is_using_password == TRUE)
     {
         status = base__password_matches(json_channel_password->valuestring, new_channel->password) || client_that_is_joining_channel->is_admin;
@@ -3205,13 +3341,13 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
 client_msg__process_join_channel_request_continue:
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request_continue  \n");
 
-    /* change channel in client struct */
+    // change channel in client struct
     client_that_is_joining_channel->channel_id = json_channel_id->valueint;
-    client_that_is_joining_channel->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
+    client_that_is_joining_channel->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
 
-    /* if the client owns this temp channel and is now leaving it, destroy it: any remaining members move
-       to root and the channel is freed. old_channel is then zeroed, so the maintainer-handoff code below
-       naturally takes the no-old-maintainer path */
+    // if the client owns this temp channel and is now leaving it, destroy it: any remaining members move
+    // to root and the channel is freed. old_channel is then zeroed, so the maintainer-handoff code below
+    // naturally takes the no-old-maintainer path
     if (old_channel->is_temp_channel == TRUE
         && client_that_is_joining_channel->is_temp_admin_channel == TRUE
         && client_that_is_joining_channel->temp_channel_id == old_channel->channel_id)
@@ -3233,19 +3369,19 @@ client_msg__process_join_channel_request_continue:
         is_maintainer_found = base__find_new_maintainer_for_channel(&new_maintainer_index, old_channel->channel_id, sender_client_id, TRUE);
         if (is_maintainer_found == TRUE)
         {
-            /* client that left channel was maintainer of that channel, choose new maintainer
-               then broadcast channel join message
-               then send new maintainer id to clients in that channel so they know who new maintainer is */
+            // client that left channel was maintainer of that channel, choose new maintainer
+            // then broadcast channel join message
+            // then send new maintainer id to clients in that channel so they know who new maintainer is
             DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_join_channel_request_continue maintainer found ", new_maintainer_index, "\n");
             old_channel->is_channel_maintainer_present = TRUE;
             old_channel->maintainer_id = new_maintainer_index;
             old_channel->maintainer_generation++;
 
-            /* first send join message, then maintainer message for clients in that channel */
+            // first send join message, then maintainer message for clients in that channel
             server_msg__send_channel_join_message_to_all_clients(client_that_is_joining_channel, new_channel);
 
-            /* client is joining channel that was hidden and clients in it were not visible to him
-               send clients to him using client_join_channel message */
+            // client is joining channel that was hidden and clients in it were not visible to him
+            // send clients to him using client_join_channel message
             if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE && new_channel->is_using_password == TRUE)
             {
                 for (x = 0; x < g_server_settings.max_client_count; x++)
@@ -3286,8 +3422,8 @@ client_msg__process_join_channel_request_continue:
             old_channel->maintainer_generation++;
             server_msg__send_channel_join_message_to_all_clients(client_that_is_joining_channel, new_channel);
 
-            /* client is joining channel that was hidden and clients in it were not visible to him
-               send clients to him using client_join_channel message */
+            // client is joining channel that was hidden and clients in it were not visible to him
+            // send clients to him using client_join_channel message
             if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE && new_channel->is_using_password == TRUE)
             {
                 for (x = 0; x < g_server_settings.max_client_count; x++)
@@ -3324,8 +3460,8 @@ client_msg__process_join_channel_request_continue:
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request_continue is_client_that_is_leaving_channel_maintainer_of_that_channel FALSE  \n");
         server_msg__send_channel_join_message_to_all_clients(client_that_is_joining_channel, new_channel);
 
-        /* client is joining channel that was hidden and clients in it were not visible to him
-           send clients to him using client_join_channel message */
+        // client is joining channel that was hidden and clients in it were not visible to him
+        // send clients to him using client_join_channel message
         if (g_server_settings.is_hide_clients_in_password_protected_channels_active && new_channel->is_using_password)
         {
             for (x = 0; x < g_server_settings.max_client_count; x++)
@@ -3359,9 +3495,9 @@ client_msg__process_join_channel_request_continue:
 
     audio_channel__process_client_channel_join(client_that_is_joining_channel);
 
-    /* at this point channel is joined
-       but there is still some work to do, find out how many clients are there in newly joined channel,
-       if there is only one client, the newly joined client, he must be the maintainer of it */
+    // at this point channel is joined
+    // but there is still some work to do, find out how many clients are there in newly joined channel,
+    // if there is only one client, the newly joined client, he must be the maintainer of it
     if (base__get_client_count_for_channel(new_channel->channel_id) == 1)
     {
         new_channel->maintainer_id = client_that_is_joining_channel->client_id;
@@ -3420,7 +3556,7 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
         return;
     }
 
-    /* add admin rights check later */
+    // add admin rights check later
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
@@ -3445,7 +3581,7 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
         goto label_client_msg__process_delete_channel_request_end;
     }
 
-    /* deleting a channel is admin-only, except a temp admin may delete their own temp channel */
+    // deleting a channel is admin-only, except a temp admin may delete their own temp channel
     is_channel_delete_allowed = FALSE;
     if (g_clients_array[sender_client_id].is_admin == TRUE)
     {
@@ -3464,14 +3600,14 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
         channel_ids_to_delete[channels_to_delete_count] = json_channel_id->valueint;
         channels_to_delete_count += 1;
 
-        /* json_channel_id->valueint channel id to start marking other child channels from
-           channels_to_delete_count count of marked channels to delete
-           array that stores ids of channels that should be deleted */
+        // json_channel_id->valueint channel id to start marking other child channels from
+        // channels_to_delete_count count of marked channels to delete
+        // array that stores ids of channels that should be deleted
         base__mark_channels_for_deletion(json_channel_id->valueint, &channels_to_delete_count, channel_ids_to_delete);
 
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_delete_channel_request channel ids to delete count ", channels_to_delete_count, "\n");
 
-        /* at this point the channels are marked, loop through marked channel ids, but do not delete them yet, just find out if there are clients there */
+        // at this point the channels are marked, loop through marked channel ids, but do not delete them yet, just find out if there are clients there
         for (marked_channel_index = 0; marked_channel_index < channels_to_delete_count; marked_channel_index++)
         {
             channel_id_to_delete = channel_ids_to_delete[marked_channel_index];
@@ -3496,14 +3632,14 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
                     continue;
                 }
 
-                /* client found */
+                // client found
                 DBG_CLIENT_MESSAGE log_info("%s %lld %s", "client_msg__process_delete_channel_request moving client ", client_to_move_maybe->client_id, "to root channel \n");
 
                 client_to_move_maybe->channel_id = ROOT_CHANNEL_ID;
-                client_to_move_maybe->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
+                client_to_move_maybe->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
 
-                /* keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this
-                   client on the channel-mismatch check after the move to root */
+                // keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this
+                // client on the channel-mismatch check after the move to root
                 audio_channel__process_client_channel_join(client_to_move_maybe);
 
                 server_msg__send_channel_join_message_to_all_clients(client_to_move_maybe, &g_channel_array[ROOT_CHANNEL_ID]);
@@ -3518,7 +3654,7 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
             }
         }
 
-        /* clients are moved, now delete channels */
+        // clients are moved, now delete channels
         for (marked_channel_index = 0; marked_channel_index < channels_to_delete_count; marked_channel_index++)
         {
             channel_id_to_delete = channel_ids_to_delete[marked_channel_index];
@@ -3526,7 +3662,7 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
             clib__null_memory(&g_channel_array[channel_id_to_delete], sizeof(channel_t));
             server_msg__send_channel_delete_message_to_all_clients(channel_id_to_delete, sender_client_id);
         }
-        /* if there is no maintainer in root channel, find new maintainer now */
+        // if there is no maintainer in root channel, find new maintainer now
         if (g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present == FALSE)
         {
             status = base__find_new_maintainer_for_channel(&index_of_new_maintainer, ROOT_CHANNEL_ID, 0, FALSE);
@@ -3539,7 +3675,7 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
             }
         }
 
-        /* if the sender just deleted their own temp channel, they are no longer a temp admin */
+        // if the sender just deleted their own temp channel, they are no longer a temp admin
         if (g_clients_array[sender_client_id].is_temp_admin_channel == TRUE
             && g_clients_array[sender_client_id].temp_channel_id == (uint64)json_channel_id->valueint)
         {
@@ -3604,6 +3740,84 @@ void client_msg__process_poke_client_request(cJSON* json_root, uint64 sender_cli
         server_msg__send_poke_to_single_client(&g_clients_array[json_receiver_id->valueint], sender_client_id, json_poke_message->valuestring);
     }
 
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief passes on "this client is typing" to the conversation he is writing to. the request carries
+ *        no message content and nothing is stored - it is forwarded to whoever is on the other side
+ *        and forgotten. the whole feature is off unless the server allows it.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that is typing
+ *
+ * @attention this function uses read lock on clients_global_rwlock_guard
+ *
+ * @return void
+ */
+void client_msg__process_typing_indicator_request(cJSON* json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    boole is_direct_message = FALSE;
+    cJSON* json_message_object = 0;
+    cJSON* json_receiver_type = 0;
+    cJSON* json_receiver_id = 0;
+
+    if (g_server_settings.allow_typing_indicator == FALSE)
+    {
+        return;
+    }
+
+    status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
+    if (status == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_typing_indicator_request spam protection == FALSE \n");
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == NULL_POINTER)
+    {
+        return;
+    }
+
+    json_receiver_type = cJSON_GetObjectItemCaseSensitive(json_message_object, "receiver_type");
+    json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "receiver_id");
+
+    if (cJSON_IsString(json_receiver_type) == FALSE || json_receiver_type->valuestring == NULL_POINTER)
+    {
+        return;
+    }
+
+    if (cJSON_IsNumber(json_receiver_id) == FALSE || json_receiver_id->valueint < 0)
+    {
+        return;
+    }
+
+    is_direct_message = clib__is_string_equal(json_receiver_type->valuestring, "user");
+
+    if (is_direct_message == FALSE && clib__is_string_equal(json_receiver_type->valuestring, "channel") == FALSE)
+    {
+        return;  // only those two kinds of conversation exist
+    }
+
+    if (is_direct_message == TRUE && (uint64)json_receiver_id->valueint >= g_server_settings.max_client_count)
+    {
+        return;
+    }
+
+    clib__read_lock(&g_clients_global_rwlock_guard);
+
+    // a channel indicator may only be sent into the channel the sender actually stands in, so nobody
+    // can announce himself into a room he is not in
+    if (is_direct_message == FALSE && g_clients_array[sender_client_id].channel_id != (uint64)json_receiver_id->valueint)
+    {
+        goto label_client_msg__process_typing_indicator_request_end;
+    }
+
+    server_msg__send_typing_indicator(sender_client_id, json_receiver_type->valuestring, (uint64)json_receiver_id->valueint);
+
+label_client_msg__process_typing_indicator_request_end:
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -3722,7 +3936,7 @@ void client_msg__process_microphone_usage(cJSON* json_root, uint64 sender_client
 
     received_microphone_usage = json_value->valueint;
 
-    /* only allow changing audio state if audio is not completely disabled */
+    // only allow changing audio state if audio is not completely disabled
     if (client->audio_state != AUDIO_STATE__AUDIO_COMPLETELY_DISABLED)
     {
         if (received_microphone_usage == MICROPHONE_USAGE__KEEP_PUSH_TO_TALK_READY_BUT_DONT_SEND_AUDIO)
@@ -3889,7 +4103,7 @@ void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_
 
         if (g_server_settings.is_display_admin_tag_active == TRUE)
         {
-            /* only add admin tag to client if he doesn't have it */
+            // only add admin tag to client if he doesn't have it
             if (client->tag_ids != NULL_POINTER)
             {
                 for (cvector_loop_index = 0; cvector_loop_index < cvector_size(client->tag_ids); ++cvector_loop_index)
@@ -3910,11 +4124,11 @@ void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_
             server_msg__send_add_tag_to_client_event_to_all_clients(client->client_id, ADMIN_TAG_ID);
         }
 
-        /* tie this identity to its tags in ram right away, so a reconnect restores admin within this
-           server run even before any disk save. persistence to disk still needs a settings save */
+        // tie this identity to its tags in ram right away, so a reconnect restores admin within this
+        // server run even before any disk save. persistence to disk still needs a settings save
         base__sync_client_identity_in_store(client);
 
-        /* the setup admin password was typed in cleartext; on the first admin login, ask for a one-time change */
+        // the setup admin password was typed in cleartext; on the first admin login, ask for a one-time change
         if (g_server_settings.admin_password_is_initial == TRUE)
         {
             server_msg__send_force_admin_password_change_to_single_client(client);
@@ -3923,7 +4137,7 @@ void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_
         }
     }
 
-    /* send admin status to other clients possibly, or not, do they have to know you are an admin */
+    // send admin status to other clients possibly, or not, do they have to know you are an admin
 label_client_msg__process_admin_password_message_end:
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -4000,8 +4214,8 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
 
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    /* check if client that sent the message is valid. If he is connected and he exists.
-       this was checked before but not within write lock like here */
+    // check if client that sent the message is valid. If he is connected and he exists.
+    // this was checked before but not within write lock like here
     client = &g_clients_array[sender_client_id];
 
     if (client->is_authenticated == FALSE || client->is_existing == FALSE)
@@ -4009,7 +4223,7 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
         goto label_client_msg__process_add_tag_to_client_message_end;
     }
 
-    /* check if client that is sending request has permission to add tags */
+    // check if client that is sending request has permission to add tags
     does_sender_have_permissions_to_add_tag = client->is_admin;
 
     if (does_sender_have_permissions_to_add_tag == FALSE)
@@ -4027,7 +4241,7 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
         goto label_client_msg__process_add_tag_to_client_message_end;
     }
 
-    /* check if client whose tag is about to be added exists */
+    // check if client whose tag is about to be added exists
     client_to_add_tag_to = &g_clients_array[json_client_id_to_add_tag_to->valueint];
 
     if (client_to_add_tag_to->is_authenticated == FALSE || client_to_add_tag_to->is_existing == FALSE)
@@ -4035,7 +4249,7 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
         goto label_client_msg__process_add_tag_to_client_message_end;
     }
 
-    /* check if the tag itself that is about to be added exists */
+    // check if the tag itself that is about to be added exists
     status = base__is_tag_id_real(json_tag_id->valueint);
 
     if (status == FALSE)
@@ -4044,7 +4258,7 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
         goto label_client_msg__process_add_tag_to_client_message_end;
     }
 
-    /* now check if the client already has the tag id about to be added */
+    // now check if the client already has the tag id about to be added
     status = base__is_client_already_assigned_this_tag_id(json_client_id_to_add_tag_to->valueint, json_tag_id->valueint);
     if (status == TRUE)
     {
@@ -4052,11 +4266,11 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
         goto label_client_msg__process_add_tag_to_client_message_end;
     }
 
-    /* at this point following is clear
-       - client has a permission to add this tag id
-       - receiving client exists and doesn't have that tag id yet
-       - tag id is valid (exists)
-       - all that is left is to add that tag id to client, and make him admin if tag id happens to be admin */
+    // at this point following is clear
+    // - client has a permission to add this tag id
+    // - receiving client exists and doesn't have that tag id yet
+    // - tag id is valid (exists)
+    // - all that is left is to add that tag id to client, and make him admin if tag id happens to be admin
     cvector_push_back(client_to_add_tag_to->tag_ids, json_tag_id->valueint);
 
     if (json_tag_id->valueint == ADMIN_TAG_ID)
@@ -4066,20 +4280,590 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
 
     server_msg__send_add_tag_to_client_event_to_all_clients(client_to_add_tag_to->client_id, json_tag_id->valueint);
 
-    /* mirror the change into the ram identity store immediately, so the tag survives a reconnect
-       within this server run without needing an admin disk save */
+    // mirror the change into the ram identity store immediately, so the tag survives a reconnect
+    // within this server run without needing an admin disk save
     base__sync_client_identity_in_store(client_to_add_tag_to);
 
-    /* send admin status to other clients possibly, or not, do they have to know you are an admin */
+    // send admin status to other clients possibly, or not, do they have to know you are an admin
 label_client_msg__process_add_tag_to_client_message_end:
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
 /**
- * @brief a client sets its OWN avatar (a base64 image data-url). gated by allow_avatars; oversize
- *        uploads (per the server's configured max) are SILENTLY dropped. the avatar is stored in the
- *        identity store keyed by the client's public-key hash (so it persists with their identity), and
- *        a lightweight avatar_changed event is broadcast so others can re-request it. no admin needed.
+ * @brief validates a set-alias request: client id present and within range, alias present as a string
+ *        and short enough. an empty alias is valid - it clears the registration.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ *
+ * @return boole TRUE when the request is well-formed
+ */
+static boole _client_msg_internal__is_set_alias_request_valid(cJSON* json_root)
+{
+    cJSON* json_client_id = 0;
+    cJSON* json_alias = 0;
+    cJSON* json_message_object = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+    json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
+
+    if (cJSON_IsNumber(json_client_id) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_set_alias_request_valid cJSON_IsNumber(client_id) \n");
+        return FALSE;
+    }
+
+    if (json_client_id->valueint < 0 || json_client_id->valueint >= g_server_settings.max_client_count)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %d %s", "_client_msg_internal__is_set_alias_request_valid json_client_id->valueint is not valid ", json_client_id->valueint, "\n");
+        return FALSE;
+    }
+
+    json_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "alias");
+    if (cJSON_IsString(json_alias) == FALSE || json_alias->valuestring == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_set_alias_request_valid cJSON_IsString(alias) \n");
+        return FALSE;
+    }
+
+    if (clib__utf8_string_length(json_alias->valuestring) >= USERNAME_MAX_LENGTH)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_set_alias_request_valid alias too long \n");
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief validates an offline chat message request: a registered recipient alias and a non-empty
+ *        ciphertext within the queue's per-message cap.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ *
+ * @return boole
+ */
+static boole _client_msg_internal__is_offline_chat_message_valid(cJSON* json_root)
+{
+    cJSON* json_message_object = 0;
+    cJSON* json_recipient_alias = 0;
+    cJSON* json_value = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    json_recipient_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "recipient_alias");
+    if (cJSON_IsString(json_recipient_alias) == FALSE || json_recipient_alias->valuestring == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_offline_chat_message_valid recipient_alias \n");
+        return FALSE;
+    }
+
+    if (clib__utf8_string_length(json_recipient_alias->valuestring) == 0 || clib__utf8_string_length(json_recipient_alias->valuestring) >= USERNAME_MAX_LENGTH)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_offline_chat_message_valid recipient_alias length \n");
+        return FALSE;
+    }
+
+    json_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
+    if (cJSON_IsString(json_value) == FALSE || json_value->valuestring == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_offline_chat_message_valid value \n");
+        return FALSE;
+    }
+
+    if (clib__utf8_string_length(json_value->valuestring) == 0 || clib__utf8_string_length(json_value->valuestring) >= MAX_OFFLINE_MESSAGE_LENGTH)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_internal__is_offline_chat_message_valid value length \n");
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief parks a text message addressed to a registered identity that is not connected, and hands
+ *        it over when that identity comes back
+ *
+ *        the payload arrives already encrypted, so the server never sees plaintext: the sender
+ *        encrypted it with the recipient's public key, which it took from the stored-clients list.
+ *        the message is parked in ram, keyed by identity hash rather than by alias.
+ *
+ *        the request is refused unless the feature is on, identities and the stored-clients list
+ *        are on, the SENDER is registered, the recipient alias belongs to a registered identity,
+ *        and that identity is not connected right now (if it is, the client should send a normal
+ *        direct message instead).
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_offline_chat_message(cJSON* json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    boole queued = FALSE;
+    boole is_recipient_connected = FALSE;
+    client_t* sender = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_recipient_alias = 0;
+    cJSON* json_value = 0;
+    char sender_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    char recipient_identity_hash[IDENTITY_HASH_MAX_LENGTH];
+    char sender_alias[USERNAME_MAX_LENGTH];
+    char* message_value = 0;
+    uint64 i = 0;
+
+    if (g_server_settings.are_identities_enabled == FALSE || g_server_settings.allow_stored_clients_list == FALSE || g_server_settings.allow_offline_messages == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_offline_chat_message offline messages are not enabled \n");
+        return;
+    }
+
+    status = _client_msg_internal__is_offline_chat_message_valid(json_root);
+    if (status == FALSE)
+    {
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_recipient_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "recipient_alias");
+    json_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
+
+    clib__null_memory(&sender_identity_hash[0], sizeof(sender_identity_hash));
+    clib__null_memory(&recipient_identity_hash[0], sizeof(recipient_identity_hash));
+    clib__null_memory(&sender_alias[0], sizeof(sender_alias));
+
+    // read the sender out of the clients array, then release: queueing takes its own leaf lock
+    clib__read_lock(&g_clients_global_rwlock_guard);
+
+    sender = &g_clients_array[sender_client_id];
+
+    if (sender->is_existing == FALSE || sender->is_authenticated == FALSE || sender->is_music_bot == TRUE || sender->public_key[0] == 0)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
+
+    // only a registered user may leave messages, so an anonymous guest cannot spam the queue
+    if (sender->is_registered == FALSE || sender->alias[0] == 0)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_offline_chat_message sender", sender_client_id, "is not registered \n");
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
+
+    base__hash_password_to_base64(sender->public_key, sender_identity_hash, sizeof(sender_identity_hash));
+    clib__copy_memory(&sender->alias[0], &sender_alias[0], clib__utf8_string_length(&sender->alias[0]), USERNAME_MAX_LENGTH - 1);
+
+    // if the recipient is connected right now there is nothing to queue - the sender should have
+    // used a normal direct message. checked while the clients lock is held
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (g_clients_array[i].alias[0] == 0)
+        {
+            continue;
+        }
+
+        if (clib__is_string_equal(&g_clients_array[i].alias[0], json_recipient_alias->valuestring) == TRUE)
+        {
+            is_recipient_connected = TRUE;
+            break;
+        }
+    }
+
+    clib__unlock(&g_clients_global_rwlock_guard);
+
+    if (is_recipient_connected == TRUE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_offline_chat_message recipient is online, not queueing \n");
+        return;
+    }
+
+    // resolve the alias to the identity that owns it: the queue is keyed by identity, so moving an
+    // alias to somebody else later cannot hand them messages meant for the original owner
+    if (base__get_identity_hash_by_alias(json_recipient_alias->valuestring, &recipient_identity_hash[0], sizeof(recipient_identity_hash)) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_offline_chat_message no identity carries that alias \n");
+        return;
+    }
+
+    message_value = json_value->valuestring;
+
+    queued = base__queue_offline_message(&recipient_identity_hash[0], &sender_identity_hash[0], &sender_alias[0], message_value);
+
+    if (queued == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_offline_chat_message could not queue the message \n");
+    }
+}
+
+/**
+ * @brief validates an admin's set-identity-alias request: a stored identity hash and an alias string
+ *
+ *        the public_key_hash must be a non-empty string shorter than MAX_PUBLIC_KEY_LENGTH. the
+ *        alias must be a string shorter than USERNAME_MAX_LENGTH, and an empty one is allowed -
+ *        that is how an alias is cleared, unregistering the identity.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ *
+ * @return boole -> TRUE when the request is valid, FALSE otherwise
+ */
+static boole _client_msg_internal__is_set_identity_alias_request_valid(cJSON* json_root)
+{
+    cJSON* json_message_object = 0;
+    cJSON* json_public_key_hash = 0;
+    cJSON* json_alias = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    json_public_key_hash = cJSON_GetObjectItemCaseSensitive(json_message_object, "public_key_hash");
+    if (cJSON_IsString(json_public_key_hash) == FALSE || json_public_key_hash->valuestring == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    if (clib__utf8_string_length(json_public_key_hash->valuestring) == 0 || clib__utf8_string_length(json_public_key_hash->valuestring) >= MAX_PUBLIC_KEY_LENGTH)
+    {
+        return FALSE;
+    }
+
+    json_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "alias");
+    if (cJSON_IsString(json_alias) == FALSE || json_alias->valuestring == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    if (clib__utf8_string_length(json_alias->valuestring) >= USERNAME_MAX_LENGTH)
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief admin registers (or clears) an alias on a STORED identity, addressed by its hash rather
+ *        than by a connected client id
+ *
+ *        that is the difference from client_msg__process_set_alias_request: this one works while
+ *        the owner is offline, which is what the identity list in server settings needs. the
+ *        request is refused unless identities and alias registrations are enabled, the sender is a
+ *        valid admin, and the alias is not already taken by another identity. if the owner happens
+ *        to be connected, their live client row is updated, the change is broadcast to everyone,
+ *        and a newly registered owner is handed the stored-clients roster without reconnecting.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @note takes the clients read lock for the admin check, then the clients write lock while the
+ *       live client row is updated
+ *
+ * @return void
+ */
+void client_msg__process_set_identity_alias_request(cJSON* json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    boole is_sender_admin = FALSE;
+    client_t* client = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_public_key_hash = 0;
+    cJSON* json_alias = 0;
+    char connected_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    uint64 i = 0;
+
+    if (g_server_settings.are_identities_enabled == FALSE || g_server_settings.allow_alias_registrations == FALSE)
+    {
+        return;
+    }
+
+    status = _client_msg_internal__is_set_identity_alias_request_valid(json_root);
+    if (status == FALSE)
+    {
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_public_key_hash = cJSON_GetObjectItemCaseSensitive(json_message_object, "public_key_hash");
+    json_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "alias");
+
+    clib__read_lock(&g_clients_global_rwlock_guard);
+    is_sender_admin = util__is_client_valid_admin(sender_client_id);
+    clib__unlock(&g_clients_global_rwlock_guard);
+
+    if (is_sender_admin == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_set_identity_alias_request sender is not an admin \n");
+        return;
+    }
+
+    // aliases are the handle offline entries are paired by, so two identities must never share one
+    if (json_alias->valuestring[0] != 0 && base__is_alias_taken_by_another_identity(json_alias->valuestring, json_public_key_hash->valuestring) == TRUE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_set_identity_alias_request alias is already taken \n");
+        return;
+    }
+
+    base__set_identity_alias_by_hash(json_public_key_hash->valuestring, json_alias->valuestring);
+
+    // the owner may be connected right now: keep their live row and everyone else's view in step
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE || client->public_key[0] == 0)
+        {
+            continue;
+        }
+
+        base__hash_password_to_base64(client->public_key, connected_identity_hash, sizeof(connected_identity_hash));
+
+        if (clib__is_string_equal(connected_identity_hash, json_public_key_hash->valuestring) == FALSE)
+        {
+            continue;
+        }
+
+        clib__null_memory(&client->alias[0], USERNAME_MAX_LENGTH);
+        clib__copy_memory(json_alias->valuestring, &client->alias[0], clib__utf8_string_length(json_alias->valuestring), USERNAME_MAX_LENGTH - 1);
+        client->is_registered = (boole)(client->alias[0] != 0);
+
+        server_msg__send_client_alias_changed_to_all_clients(client->client_id, &client->alias[0]);
+
+        // just became registered: hand over the offline roster without making them reconnect
+        if (client->is_registered == TRUE && g_server_settings.allow_stored_clients_list == TRUE)
+        {
+            server_msg__send_stored_clients_to_single_client(client->p_ws_connection, client->dh_shared_secret);
+        }
+        break;
+    }
+
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief admin registers (or clears, with an empty string) an alias - a display name - on another
+ *        connected client's identity
+ *
+ *        the alias lands on the live client and in the identity store, so it survives reconnects
+ *        within the run; disk persistence follows on the next settings save. the change is then
+ *        broadcast to everyone. requires identities and alias registrations to be enabled.
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_set_alias_request(cJSON* json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    client_t* client = 0;
+    client_t* client_to_alias = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_client_id = 0;
+    cJSON* json_alias = 0;
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+
+    if (g_server_settings.are_identities_enabled == FALSE || g_server_settings.allow_alias_registrations == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_set_alias_request alias registrations are not enabled \n");
+        return;
+    }
+
+    status = _client_msg_internal__is_set_alias_request_valid(json_root);
+    if (status == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_set_alias_request _client_msg_internal__is_set_alias_request_valid == FALSE \n");
+        return;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+
+    if (client->is_authenticated == FALSE || client->is_existing == FALSE)
+    {
+        goto label_client_msg__process_set_alias_request_end;
+    }
+
+    if (client->is_admin == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "sender with sender_client_id", sender_client_id, "does not have permission to set alias \n");
+        goto label_client_msg__process_set_alias_request_end;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
+    json_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "alias");
+
+    client_to_alias = &g_clients_array[json_client_id->valueint];
+
+    if (client_to_alias->is_authenticated == FALSE || client_to_alias->is_existing == FALSE || client_to_alias->is_music_bot == TRUE)
+    {
+        goto label_client_msg__process_set_alias_request_end;
+    }
+
+    if (client_to_alias->public_key[0] == 0)
+    {
+        goto label_client_msg__process_set_alias_request_end;  // no identity to attach the alias to
+    }
+
+    base__hash_password_to_base64(client_to_alias->public_key, identity_hash, sizeof(identity_hash));
+
+    // aliases are the handle the stored-clients list is keyed by and what clients pair offline
+    // entries against, so two identities must never share one (compared ignoring ascii case)
+    if (base__is_alias_taken_by_another_identity(json_alias->valuestring, identity_hash) == TRUE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__process_set_alias_request alias [", json_alias->valuestring, "] is already taken by another identity \n");
+        goto label_client_msg__process_set_alias_request_end;
+    }
+
+    // a registered name BECOMES the username, so it must be free among the people connected right
+    // now too - the check above only sees stored identities and would happily hand out a name a
+    // guest is wearing, leaving two people on screen under one name. refuse instead
+    if (_client_msg_internal__is_username_taken_by_another_client(json_alias->valuestring, client_to_alias->client_id) == TRUE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__process_set_alias_request username [", json_alias->valuestring, "] is in use by a connected client \n");
+        goto label_client_msg__process_set_alias_request_end;
+    }
+
+    // the registered name is a username as well, so hold it to the same length limit the rename
+    // path enforces - it used to accept anything up to the buffer size
+    if (clib__utf8_string_length_check_max_length(json_alias->valuestring, 50) == -1)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__process_set_alias_request alias [", json_alias->valuestring, "] length is not acceptable \n");
+        goto label_client_msg__process_set_alias_request_end;
+    }
+
+    // live client
+    clib__null_memory(&client_to_alias->alias[0], USERNAME_MAX_LENGTH);
+    clib__copy_memory(json_alias->valuestring, &client_to_alias->alias[0], clib__utf8_string_length(json_alias->valuestring), USERNAME_MAX_LENGTH - 1);
+
+    // identity store, keyed by the identity hash, so the name survives reconnects
+    base__set_identity_alias_by_hash(identity_hash, json_alias->valuestring);
+
+    // holding a registered name IS being registered - keep it live so the user does not have to
+    // reconnect (and loses the right again the moment the admin clears it)
+    client_to_alias->is_registered = (boole)(client_to_alias->alias[0] != 0);
+
+    // the registered name IS the username now: mirror it into the live username and tell everyone,
+    // so there is ONE name on screen instead of a username plus a separate alias. on unregister the
+    // name stays put (the person keeps it) but self-rename unlocks again
+    if (client_to_alias->is_registered == TRUE)
+    {
+        clib__null_memory(&client_to_alias->username[0], USERNAME_MAX_LENGTH);
+        clib__copy_memory(client_to_alias->alias, &client_to_alias->username[0], clib__utf8_string_length(client_to_alias->alias), USERNAME_MAX_LENGTH - 1);
+        server_msg__send_client_rename_message_to_all_clients(client_to_alias->client_id, client_to_alias->username);
+    }
+
+    // this is the moment an identity BECOMES registered, so it is also the moment its raw public key
+    // has to be kept - offline messages are encrypted with it while the person is away. it used to be
+    // collected only at authentication (skipped here: he was still unregistered when he connected) and
+    // at an admin settings save (only sweeps who is connected at that instant). a user aliased mid
+    // session and then leaving was therefore listed as an offline contact WITHOUT a key, and everyone
+    // trying to write to him got "this server does not keep messages for people who are offline"
+    // until he reconnected once. same guards as the authentication path
+    if (g_server_settings.allow_offline_messages == TRUE && client_to_alias->is_registered == TRUE && client_to_alias->public_key[0] != 0 && client_to_alias->is_music_bot == FALSE)
+    {
+        base__store_identity_raw_public_key(identity_hash, client_to_alias->public_key);
+    }
+
+    // alias taken away: he is not registered anymore, so nobody may write to him while he is away -
+    // drop the key that would allow it instead of leaving it lying in the identity store
+    if (client_to_alias->is_registered == FALSE)
+    {
+        base__clear_identity_raw_public_key(identity_hash);
+    }
+
+    server_msg__send_client_alias_changed_to_all_clients(client_to_alias->client_id, &client_to_alias->alias[0]);
+
+    // just became registered: hand him the roster now instead of making him reconnect for it
+    if (client_to_alias->is_registered == TRUE && g_server_settings.allow_stored_clients_list == TRUE)
+    {
+        server_msg__send_stored_clients_to_single_client(client_to_alias->p_ws_connection, client_to_alias->dh_shared_secret);
+    }
+
+label_client_msg__process_set_alias_request_end:
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief sends the requester the identities this server has stored, so it can show people that are
+ *        registered here even while they are offline
+ *
+ *        the response carries only alias, avatar and tags - never public keys, identity hashes or
+ *        usernames. it is gated by identities + allow_stored_clients_list, and the requester must
+ *        itself be REGISTERED (carry an admin-granted alias), so a random guest cannot join and
+ *        harvest everyone's name and face. every client sends this request on connect and a denial
+ *        is simply silence. the request itself has no payload.
+ *
+ * @param cJSON* json_root -> the parsed client request (unused, the request carries no fields)
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_request_stored_clients(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* client = 0;
+
+    (void)json_root; // the request has no fields to read
+
+    if (g_server_settings.are_identities_enabled == FALSE || g_server_settings.allow_stored_clients_list == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_request_stored_clients stored clients list is not enabled \n");
+        return;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+
+    if (client->is_authenticated == FALSE || client->is_existing == FALSE || client->is_music_bot == TRUE)
+    {
+        goto label_client_msg__process_request_stored_clients_end;
+    }
+
+    // only people the admin registered may see the roster of registered people
+    if (client->is_registered == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_request_stored_clients client_id", sender_client_id, "is not registered, denying \n");
+        goto label_client_msg__process_request_stored_clients_end;
+    }
+
+    server_msg__send_stored_clients_to_single_client(client->p_ws_connection, client->dh_shared_secret);
+
+label_client_msg__process_request_stored_clients_end:
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief a client sets its OWN avatar, a base64 image data-url, no admin rights needed
+ *
+ *        gated by allow_avatars. empty and oversize uploads (per the server's configured max, and
+ *        never past MAX_CLIENT_AVATAR_LENGTH) are SILENTLY dropped, no error goes back. the image
+ *        is kept on the live client_t so it can be served without a store lookup, and mirrored into
+ *        the identity store keyed by the client's public-key hash so it persists with their
+ *        identity. a lightweight avatar_changed event is then broadcast so others can re-request it.
+ *
+ * @param cJSON* json_root -> the parsed client request, carries message.base64_avatar
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @note takes the clients write lock while the live avatar and the identity store are updated
+ *
+ * @return void
  */
 void client_msg__process_avatar_upload(cJSON* json_root, uint64 sender_client_id)
 {
@@ -4109,8 +4893,8 @@ void client_msg__process_avatar_upload(cJSON* json_root, uint64 sender_client_id
 
     base64_length = clib__utf8_string_length(json_base64_avatar->valuestring);
 
-    /* raw image cap -> base64 is ~4/3 of raw (plus a small data-url prefix). oversize/empty uploads are
-       silently dropped (no error is sent back). also never exceed the store buffer. */
+    // raw image cap -> base64 is ~4/3 of raw (plus a small data-url prefix). oversize/empty uploads are
+    // silently dropped (no error is sent back). also never exceed the store buffer.
     max_base64_length = (uint64)((g_server_settings.avatar_max_size_bytes * 4) / 3) + 64;
     if (base64_length == 0 || base64_length >= MAX_CLIENT_AVATAR_LENGTH || base64_length > max_base64_length)
     {
@@ -4127,8 +4911,8 @@ void client_msg__process_avatar_upload(cJSON* json_root, uint64 sender_client_id
         return;
     }
 
-    /* store the live avatar on the client (heap, freed on disconnect/replace) so it can be served to
-       others without a store lookup; also mirror it into the identity store for cross-session persistence */
+    // store the live avatar on the client (heap, freed on disconnect/replace) so it can be served to
+    // others without a store lookup; also mirror it into the identity store for cross-session persistence
     if (client->base64_avatar != NULL_POINTER)
     {
         memorymanager__free((nuint)client->base64_avatar);
@@ -4149,7 +4933,18 @@ void client_msg__process_avatar_upload(cJSON* json_root, uint64 sender_client_id
 }
 
 /**
- * @brief a client deletes its OWN avatar. clears it from the identity store and broadcasts avatar_changed.
+ * @brief a client deletes its OWN avatar
+ *
+ *        frees the live avatar on the client_t, clears the entry in the identity store (an empty
+ *        string is what clears it) and broadcasts avatar_changed so everyone drops their copy.
+ *        gated by allow_avatars. the request carries no fields.
+ *
+ * @param cJSON* json_root -> the parsed client request (unused, the request carries no fields)
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @note takes the clients write lock while the live avatar and the identity store are updated
+ *
+ * @return void
  */
 void client_msg__process_delete_avatar(cJSON* json_root, uint64 sender_client_id)
 {
@@ -4179,7 +4974,7 @@ void client_msg__process_delete_avatar(cJSON* json_root, uint64 sender_client_id
     }
 
     base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
-    base__set_identity_avatar_by_hash(identity_hash, ""); /* empty string clears it */
+    base__set_identity_avatar_by_hash(identity_hash, "");  // empty string clears it
 
     server_msg__send_avatar_changed_event_to_all_clients(client->client_id);
 
@@ -4187,8 +4982,18 @@ void client_msg__process_delete_avatar(cJSON* json_root, uint64 sender_client_id
 }
 
 /**
- * @brief a client requests ONE other client's avatar (profile pane). responds with a client_avatar
- *        message (served straight from the target's live client_t->base64_avatar; empty if none).
+ * @brief a client requests ONE other client's avatar, as the profile pane needs
+ *
+ *        responds with a single client_avatar message, served straight from the target's live
+ *        client_t->base64_avatar, or an empty string when the target has none. gated by
+ *        allow_avatars, and the requested client id must be in range.
+ *
+ * @param cJSON* json_root -> the parsed client request, carries message.client_id
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @note takes the clients write lock while the target is read and the response is sent
+ *
+ * @return void
  */
 void client_msg__process_request_avatar_for_client(cJSON* json_root, uint64 sender_client_id)
 {
@@ -4238,9 +5043,19 @@ void client_msg__process_request_avatar_for_client(cJSON* json_root, uint64 send
 }
 
 /**
- * @brief a client requests a CHUNK of avatars (client_ids array) for chunked lazy-loading. the server
- *        sends one client_avatar message per target that actually has an avatar (targets with none are
- *        skipped, so the client keeps its placeholder). capped per request.
+ * @brief a client requests a CHUNK of avatars, a client_ids array, for lazy-loading
+ *
+ *        the server sends one client_avatar message per target that actually has a live avatar.
+ *        targets with none are skipped so the client keeps its placeholder. no more than 100
+ *        avatars go out per request, so a single call cannot blast unbounded work. gated by
+ *        allow_avatars.
+ *
+ * @param cJSON* json_root -> the parsed client request, carries the message.client_ids array
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @note takes the clients write lock for the whole batch loop
+ *
+ * @return void
  */
 void client_msg__process_request_avatars_batch(cJSON* json_root, uint64 sender_client_id)
 {
@@ -4282,7 +5097,7 @@ void client_msg__process_request_avatars_batch(cJSON* json_root, uint64 sender_c
     {
         if (sent >= 100)
         {
-            break; /* cap one batch so a single request can't blast unbounded work */
+            break; // cap one batch so a single request can't blast unbounded work
         }
         if (cJSON_IsNumber(json_id) == FALSE)
         {
@@ -4298,7 +5113,7 @@ void client_msg__process_request_avatars_batch(cJSON* json_root, uint64 sender_c
         target = &g_clients_array[target_client_id];
         if (target->is_existing == FALSE || target->base64_avatar == NULL_POINTER)
         {
-            continue; /* skip clients without a live avatar; the client keeps its placeholder */
+            continue;  // skip clients without a live avatar; the client keeps its placeholder
         }
 
         server_msg__send_client_avatar_to_single_client(sender->p_ws_connection, sender->dh_shared_secret, target_client_id, target->base64_avatar);
@@ -4336,8 +5151,8 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
 
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    /* check if client that sent the message is valid. If he is connected and he exists.
-       this was checked before but not within write lock like here */
+    // check if client that sent the message is valid. If he is connected and he exists.
+    // this was checked before but not within write lock like here
     client = &g_clients_array[sender_client_id];
 
     if (client->is_authenticated == FALSE || client->is_existing == FALSE)
@@ -4345,7 +5160,7 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
         goto label_client_msg__process_remove_tag_from_client_message_end;
     }
 
-    /* check if client that is sending request has permission to remove tags */
+    // check if client that is sending request has permission to remove tags
     does_sender_have_permissions_to_remove_tag = client->is_admin;
 
     if (does_sender_have_permissions_to_remove_tag == FALSE)
@@ -4358,13 +5173,13 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
     json_client_id_to_remove_tag_id_from = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
     json_tag_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "tag_id");
 
-    /* check if tag happens to be admin tag */
+    // check if tag happens to be admin tag
     if (g_server_settings.is_display_admin_tag_active == FALSE && json_tag_id->valueint == ADMIN_TAG_ID)
     {
         goto label_client_msg__process_remove_tag_from_client_message_end;
     }
 
-    /* check if client whose tag is about to be removed exists */
+    // check if client whose tag is about to be removed exists
     client_to_remove_tag_id_from = &g_clients_array[json_client_id_to_remove_tag_id_from->valueint];
 
     if (client_to_remove_tag_id_from->is_authenticated == FALSE || client_to_remove_tag_id_from->is_existing == FALSE)
@@ -4372,7 +5187,7 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
         goto label_client_msg__process_remove_tag_from_client_message_end;
     }
 
-    /* check if the tag itself that is about to be removed exists */
+    // check if the tag itself that is about to be removed exists
     status = base__is_tag_id_real(json_tag_id->valueint);
 
     if (status == FALSE)
@@ -4381,7 +5196,7 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
         goto label_client_msg__process_remove_tag_from_client_message_end;
     }
 
-    /* now check if the client actually has the tag id about to be removed */
+    // now check if the client actually has the tag id about to be removed
     status = base__is_client_already_assigned_this_tag_id(json_client_id_to_remove_tag_id_from->valueint, json_tag_id->valueint);
     if (status == FALSE)
     {
@@ -4389,11 +5204,11 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
         goto label_client_msg__process_remove_tag_from_client_message_end;
     }
 
-    /* at this point following is clear
-       - client has a permission to remove this tag id
-       - receiving client exists and has that tag id
-       - tag id is valid (exists)
-       - all that is left is to remove that tag id from client, and revoke admin if tag id happens to be admin */
+    // at this point following is clear
+    // - client has a permission to remove this tag id
+    // - receiving client exists and has that tag id
+    // - tag id is valid (exists)
+    // - all that is left is to remove that tag id from client, and revoke admin if tag id happens to be admin
     tag_id_index = base__get_index_of_tag_id_of_client(json_client_id_to_remove_tag_id_from->valueint, json_tag_id->valueint);
 
     if (tag_id_index != -1)
@@ -4407,8 +5222,8 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
 
         server_msg__send_remove_tag_from_client_event_to_all_clients(client_to_remove_tag_id_from->client_id, json_tag_id->valueint);
 
-        /* mirror the removal into the ram identity store immediately (drops the identity entirely
-           if it now wears no tags), so a reconnect does not resurrect a tag that was just removed */
+        // mirror the removal into the ram identity store immediately (drops the identity entirely
+        // if it now wears no tags), so a reconnect does not resurrect a tag that was just removed
         base__sync_client_identity_in_store(client_to_remove_tag_id_from);
     }
 
@@ -4454,8 +5269,8 @@ void client_msg__process_set_server_settings_icon_upload(cJSON* json_root, uint6
         goto label_client_msg__process_server_settings_icon_upload_end;
     }
 
-    /* sender has necessary permission to upload new icon.
-       find out if there is free slot for icon in the array */
+    // sender has necessary permission to upload new icon.
+    // find out if there is free slot for icon in the array
     for (icon_index = 0; icon_index < MAX_ICONS; icon_index++)
     {
         icon_t* icon = &g_icons_array[icon_index];
@@ -4476,8 +5291,8 @@ void client_msg__process_set_server_settings_icon_upload(cJSON* json_root, uint6
         goto label_client_msg__process_server_settings_icon_upload_end;
     }
 
-    /* everything is checked
-       write new icon and notify users */
+    // everything is checked
+    // write new icon and notify users
     server_msg__send_add_new_icon_event_to_all_clients(found_icon->id, &found_icon->base64[0]);
 
 label_client_msg__process_server_settings_icon_upload_end:
@@ -4519,8 +5334,8 @@ void client_msg__process_set_server_settings_add_new_tag(cJSON* json_root, uint6
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_tags_global_rwlock_guard);
 
-    /* the linked icon is optional. when one is given it must reference an existing icon (id equals icon index,
-       range already checked in the validator); when none is given the tag is created without an icon */
+    // the linked icon is optional. when one is given it must reference an existing icon (id equals icon index,
+    // range already checked in the validator); when none is given the tag is created without an icon
     if (json_linked_icon_id != NULL_POINTER)
     {
         status = g_icons_array[json_linked_icon_id->valueint].is_existing;
@@ -4532,7 +5347,7 @@ void client_msg__process_set_server_settings_add_new_tag(cJSON* json_root, uint6
         }
     }
 
-    /* check if client that is sending request has permission to create new server tags */
+    // check if client that is sending request has permission to create new server tags
     does_sender_have_permissions_to_add_new_tag_to_server = util__is_client_valid_admin(sender_client_id);
 
     if (does_sender_have_permissions_to_add_new_tag_to_server == FALSE)
@@ -4541,7 +5356,7 @@ void client_msg__process_set_server_settings_add_new_tag(cJSON* json_root, uint6
         goto label_client_msg__process_server_settings_add_new_tag_end;
     }
 
-    /* do not allow creation of new tag if tag with same name already exists */
+    // do not allow creation of new tag if tag with same name already exists
     for (tag_index = 0; tag_index < MAX_TAGS; tag_index++)
     {
         tag_in_loop = &g_tags_array[tag_index];
@@ -4563,9 +5378,9 @@ void client_msg__process_set_server_settings_add_new_tag(cJSON* json_root, uint6
         goto label_client_msg__process_server_settings_add_new_tag_end;
     }
 
-    /* at this point client is verified, icon id is correct, newly_added_tag length is correct */
-    /* start at index 1: id 0 is ADMIN_TAG_ID (reserved for the admin tag). a user tag at id 0 would collide
-       with it - adding it would grant admin, and adding/removing it would add/strip the admin tag. */
+    // at this point client is verified, icon id is correct, newly_added_tag length is correct
+    // start at index 1: id 0 is ADMIN_TAG_ID (reserved for the admin tag). a user tag at id 0 would collide
+    // with it - adding it would grant admin, and adding/removing it would add/strip the admin tag.
     for (tag_index = 1; tag_index < MAX_TAGS; tag_index++)
     {
         tag_in_loop = &g_tags_array[tag_index];
@@ -4645,7 +5460,7 @@ void client_msg__process_set_server_settings_delete_tag(cJSON* json_root, uint64
         goto label_client_msg__process_set_server_settings_delete_tag_end;
     }
 
-    /* the admin tag lives in slot 0 and is never a deletable pool tag */
+    // the admin tag lives in slot 0 and is never a deletable pool tag
     if (tag_id == ADMIN_TAG_ID)
     {
         goto label_client_msg__process_set_server_settings_delete_tag_end;
@@ -4656,7 +5471,7 @@ void client_msg__process_set_server_settings_delete_tag(cJSON* json_root, uint64
         goto label_client_msg__process_set_server_settings_delete_tag_end;
     }
 
-    /* strip the tag from every client that currently holds it, so server state stays consistent */
+    // strip the tag from every client that currently holds it, so server state stays consistent
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client = &g_clients_array[i];
@@ -4673,7 +5488,7 @@ void client_msg__process_set_server_settings_delete_tag(cJSON* json_root, uint64
         }
     }
 
-    /* free the tag's pool slot (a tag id equals its index in g_tags_array) */
+    // free the tag's pool slot (a tag id equals its index in g_tags_array)
     g_tags_array[tag_id].is_existing = FALSE;
     g_tags_array[tag_id].icon_id = 0;
     clib__null_memory(&g_tags_array[tag_id].name[0], TAG_MAX_NAME_LENGTH);
@@ -4714,11 +5529,12 @@ label_client_msg__process_request_identity_list_end:
 }
 
 /**
- * @brief admin deletes one stored identity (by public-key hash). the identity leaves the RAM store,
- *        and if its holder is currently connected their tags are stripped and each removal is
- *        broadcast (there is no multi-tag-removal event, so one remove event is sent per tag), and
- *        admin is revoked. the on-disk copy is only dropped on the next "save server settings".
- *        the requesting admin then gets a refreshed identity list. admin-only.
+ * @brief admin-only, deletes one stored identity addressed by its public-key hash
+ *
+ *        the identity leaves the RAM store. if its holder is connected right now, their tags are
+ *        stripped and admin is revoked on the live client, and each removal is broadcast one event
+ *        at a time because there is no multi-tag-removal event. the on-disk copy is only dropped on
+ *        the next "save server settings". the requesting admin then gets a refreshed identity list.
  *
  * @param cJSON* json_root -> the parsed request; message.public_key_hash identifies the identity
  * @param uint64 sender_client_id -> the requesting client
@@ -4760,7 +5576,7 @@ void client_msg__process_delete_identity(cJSON* json_root, uint64 sender_client_
         goto label_client_msg__process_delete_identity_end;
     }
 
-    /* if this identity is worn by a connected client right now, strip every tag off them */
+    // if this identity is worn by a connected client right now, strip every tag off them
     for (c = 0; c < g_server_settings.max_client_count; c++)
     {
         holder = &g_clients_array[c];
@@ -4782,7 +5598,7 @@ void client_msg__process_delete_identity(cJSON* json_root, uint64 sender_client_
 
         holder_client_id = holder->client_id;
 
-        /* snapshot the tag ids first, then clear them off the client and revoke admin */
+        // snapshot the tag ids first, then clear them off the client and revoke admin
         tags_to_remove_count = 0;
         for (t = 0; t < cvector_size(holder->tag_ids) && tags_to_remove_count < MAX_TAGS_FOR_SINGLE_CLIENT; t++)
         {
@@ -4799,16 +5615,16 @@ void client_msg__process_delete_identity(cJSON* json_root, uint64 sender_client_
         break;
     }
 
-    /* drop the identity from the ram store (disk copy stays until the next settings save) */
+    // drop the identity from the ram store (disk copy stays until the next settings save)
     base__delete_identity_from_store_by_hash(target_hash);
 
-    /* tell everyone about each stripped tag (one event per tag; there is no bulk-removal event) */
+    // tell everyone about each stripped tag (one event per tag; there is no bulk-removal event)
     for (t = 0; t < tags_to_remove_count; t++)
     {
         server_msg__send_remove_tag_from_client_event_to_all_clients(holder_client_id, tags_to_remove[t]);
     }
 
-    /* refresh the requesting admin's identity list so the deleted row disappears */
+    // refresh the requesting admin's identity list so the deleted row disappears
     server_msg__send_identity_list_to_single_client(sender_client->p_ws_connection, sender_client->dh_shared_secret);
 
 label_client_msg__process_delete_identity_end:
@@ -4816,10 +5632,12 @@ label_client_msg__process_delete_identity_end:
 }
 
 /**
- * @brief admin adds or removes a single tag on a stored identity (by hash), working on offline
- *        identities too. the store is updated; if the identity's holder is connected right now the
- *        tag is added/removed live on them and broadcast. persistence to disk waits for the next
- *        "save server settings". the requesting admin then gets a refreshed identity list. admin-only.
+ * @brief admin-only, adds or removes a single tag on a stored identity addressed by its hash,
+ *        working on offline identities too
+ *
+ *        the store is updated, and if the identity's holder is connected right now the tag is
+ *        added or removed live on them and broadcast. persistence to disk waits for the next
+ *        "save server settings". the requesting admin then gets a refreshed identity list.
  *
  * @param cJSON* json_root -> message.public_key_hash, message.tag_id, message.add (bool)
  * @param uint64 sender_client_id -> the requesting client
@@ -4868,16 +5686,16 @@ void client_msg__process_modify_identity_tag(cJSON* json_root, uint64 sender_cli
         goto label_client_msg__process_modify_identity_tag_end;
     }
 
-    /* adding requires a real tag; the admin tag (0) is real and may be granted/revoked this way */
+    // adding requires a real tag; the admin tag (0) is real and may be granted/revoked this way
     if (add == TRUE && base__is_tag_id_real(tag_id) == FALSE)
     {
         goto label_client_msg__process_modify_identity_tag_end;
     }
 
-    /* update the stored identity */
+    // update the stored identity
     base__modify_identity_tag_in_store(target_hash, tag_id, add);
 
-    /* if the identity is connected right now, mirror the change on the live client + broadcast it */
+    // if the identity is connected right now, mirror the change on the live client + broadcast it
     for (c = 0; c < g_server_settings.max_client_count; c++)
     {
         holder = &g_clients_array[c];
@@ -4921,7 +5739,7 @@ void client_msg__process_modify_identity_tag(cJSON* json_root, uint64 sender_cli
         break;
     }
 
-    /* refresh the requesting admin's identity list */
+    // refresh the requesting admin's identity list
     server_msg__send_identity_list_to_single_client(sender_client->p_ws_connection, sender_client->dh_shared_secret);
 
 label_client_msg__process_modify_identity_tag_end:
@@ -4971,7 +5789,7 @@ void client_msg__process_set_server_settings_delete_icon(cJSON* json_root, uint6
         goto label_client_msg__process_set_server_settings_delete_icon_end;
     }
 
-    /* free the icon's pool slot (an icon id equals its index in g_icons_array) */
+    // free the icon's pool slot (an icon id equals its index in g_icons_array)
     g_icons_array[icon_id].is_existing = FALSE;
     clib__null_memory(&g_icons_array[icon_id].base64[0], ICON_MAX_LENGTH);
 
@@ -5034,7 +5852,7 @@ void client_msg__process_set_server_settings_set_tag_icon(cJSON* json_root, uint
 
     if (wants_icon == TRUE)
     {
-        /* the assigned icon must exist (an icon id equals its index) */
+        // the assigned icon must exist (an icon id equals its index)
         if (icon_id >= MAX_ICONS || g_icons_array[icon_id].is_existing == FALSE)
         {
             goto label_client_msg__process_set_server_settings_set_tag_icon_end;
@@ -5045,7 +5863,7 @@ void client_msg__process_set_server_settings_set_tag_icon(cJSON* json_root, uint
     }
     else
     {
-        /* no icon_id in the request -> clear the tag's icon */
+        // no icon_id in the request -> clear the tag's icon
         g_tags_array[tag_id].has_icon = FALSE;
         g_tags_array[tag_id].icon_id = 0;
     }
@@ -5098,7 +5916,7 @@ void client_msg__process_set_channel_icon(cJSON* json_root, uint64 sender_client
         icon_id = (uint64)json_icon_id->valueint;
     }
 
-    /* lock order: clients -> channels -> icons */
+    // lock order: clients -> channels -> icons
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
     clib__read_lock(&g_icons_global_rwlock_guard);
@@ -5117,7 +5935,7 @@ void client_msg__process_set_channel_icon(cJSON* json_root, uint64 sender_client
 
     if (wants_icon == TRUE)
     {
-        /* the assigned icon must exist (an icon id equals its index) */
+        // the assigned icon must exist (an icon id equals its index)
         if (icon_id >= MAX_ICONS || g_icons_array[icon_id].is_existing == FALSE)
         {
             goto label_client_msg__process_set_channel_icon_end;
@@ -5128,7 +5946,7 @@ void client_msg__process_set_channel_icon(cJSON* json_root, uint64 sender_client
     }
     else
     {
-        /* no icon_id in the request -> clear the channel's icon */
+        // no icon_id in the request -> clear the channel's icon
         g_channel_array[channel_id].has_channel_icon = FALSE;
         g_channel_array[channel_id].icon_id = 0;
     }
@@ -5142,11 +5960,16 @@ label_client_msg__process_set_channel_icon_end:
 }
 
 /**
- * @brief processes an admin request to apply and persist server settings: the general-settings toggles
- *        the admin sent (country flags, server-wide audio, hide-in-password-channels) are applied to
- *        g_server_settings, then everything persistable (those toggles plus the channel layout and the
- *        tags/icons) is written into server_settings.json. only an authenticated admin may do this.
- *        music bots and channel maintainers are runtime state and are never written.
+ * @brief processes an admin request to apply and persist server settings, only an authenticated
+ *        admin may do this
+ *
+ *        the general-settings toggles the admin sent (country flags, server-wide audio, music bot
+ *        audio, hide-in-password-channels, temp channels) are applied to g_server_settings, each
+ *        only when present and boolean. then everything persistable - those toggles plus the
+ *        channel layout, the tags/icons and the identity snapshot - is written into
+ *        server_settings.json. music bots and channel maintainers are runtime state and are never
+ *        written. if the file cannot be written the toggles are rolled back to their previous
+ *        values, so the running state stays consistent with what is on disk.
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -5173,8 +5996,8 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         return;
     }
 
-    /* admin check only reads the sender's client slot, so a read lock is enough and it is released
-       before applying/persisting */
+    // admin check only reads the sender's client slot, so a read lock is enough and it is released
+    // before applying/persisting
     clib__read_lock(&g_clients_global_rwlock_guard);
     does_sender_have_permission_to_save_settings = util__is_client_valid_admin(sender_client_id);
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -5185,14 +6008,14 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         return;
     }
 
-    /* snapshot the current toggles so they can be rolled back if the persist fails */
+    // snapshot the current toggles so they can be rolled back if the persist fails
     previous_display_country_flags = g_server_settings.is_display_country_flags_active;
     previous_voice_chat_active = g_server_settings.is_voice_chat_active;
     previous_music_bot_audio_active = g_server_settings.is_music_bot_audio_active;
     previous_hide_clients_in_password_channels = g_server_settings.is_hide_clients_in_password_protected_channels_active;
     previous_temp_channel_creation_allowed = g_server_settings.is_temp_channel_creation_allowed;
 
-    /* apply the general-settings toggles the admin sent (each only when present and boolean) */
+    // apply the general-settings toggles the admin sent (each only when present and boolean)
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "display_country_flags");
@@ -5219,15 +6042,21 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         g_server_settings.is_hide_clients_in_password_protected_channels_active = cJSON_IsTrue(json_field);
     }
 
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "allow_typing_indicator");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.allow_typing_indicator = cJSON_IsTrue(json_field);
+    }
+
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "allow_temp_channels");
     if (cJSON_IsBool(json_field))
     {
         g_server_settings.is_temp_channel_creation_allowed = cJSON_IsTrue(json_field);
     }
 
-    /* persist everything into server_settings.json. the save reads channels, icons, tags and bans, so take
-       those read locks in lock order (bans is always last). the clients read lock is taken first (clients
-       before channels, matching the auth path) so the identity snapshot can read each client's tag list */
+    // persist everything into server_settings.json. the save reads channels, icons, tags and bans, so take
+    // those read locks in lock order (bans is always last). the clients read lock is taken first (clients
+    // before channels, matching the auth path) so the identity snapshot can read each client's tag list
     clib__read_lock(&g_clients_global_rwlock_guard);
     clib__read_lock(&g_channels_global_rwlock_guard);
     clib__read_lock(&g_icons_global_rwlock_guard);
@@ -5243,8 +6072,8 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 
-    /* if the file could not be written, roll the toggles back so the running state stays consistent with
-       what is on disk (which is what the next restart will load) */
+    // if the file could not be written, roll the toggles back so the running state stays consistent with
+    // what is on disk (which is what the next restart will load)
     if (save_succeeded == FALSE)
     {
         g_server_settings.is_display_country_flags_active = previous_display_country_flags;
@@ -5278,7 +6107,7 @@ void client_msg__process_load_server_settings_request(cJSON* json_root, uint64 s
         return;
     }
 
-    /* the reply is sent under the clients read lock, which also covers reading the sender's slot */
+    // the reply is sent under the clients read lock, which also covers reading the sender's slot
     clib__read_lock(&g_clients_global_rwlock_guard);
 
     does_sender_have_permission_to_read_settings = util__is_client_valid_admin(sender_client_id);
@@ -5323,8 +6152,8 @@ void client_msg__process_call_idle_client_message(cJSON* json_root, uint64 sende
 
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    /* check if client that sent the message is valid. If he is connected and he exists.
-       this was checked before but not within write lock like here */
+    // check if client that sent the message is valid. If he is connected and he exists.
+    // this was checked before but not within write lock like here
     caller = &g_clients_array[sender_client_id];
 
     if (caller->is_authenticated == FALSE || caller->is_existing == FALSE)
@@ -5332,7 +6161,7 @@ void client_msg__process_call_idle_client_message(cJSON* json_root, uint64 sende
         goto label_client_msg__process_call_idle_client_message_end;
     }
 
-    /* check if he is idle too later */
+    // check if he is idle too later
     callee = &g_clients_array[json_callee_client_id->valueint];
 
     if (callee->is_authenticated == FALSE || callee->is_existing == FALSE)
@@ -5347,19 +6176,23 @@ label_client_msg__process_call_idle_client_message_end:
 }
 
 /**
- * @brief processes one reset_channel_maintainer vote. this is the last-resort recovery path for a channel
- *        whose announced maintainer never delivered usable channel keys (faulty or modified client, or a
- *        connection that half-works): every keyless client keeps re-sending this vote every few seconds,
- *        and once MORE THAN HALF of the channel's clients have voted against the CURRENT maintainer
- *        generation, the server deposes the maintainer, picks a new one (excluding the deposed client),
- *        bumps the generation and broadcasts the new maintainer id - upon which the new maintainer's
- *        client distributes fresh channel keys exactly like after any other maintainer change.
+ * @brief processes one reset_channel_maintainer vote, the last-resort recovery path for a channel
+ *        whose announced maintainer never delivered usable channel keys
+ *
+ *        that happens with a faulty or modified client, or a connection that half-works. every
+ *        keyless client keeps re-sending this vote every few seconds, and once MORE THAN HALF of
+ *        the channel's clients have voted against the CURRENT maintainer generation, the server
+ *        deposes the maintainer, picks a new one (excluding the deposed client), bumps the
+ *        generation and broadcasts the new maintainer id - upon which the new maintainer's client
+ *        distributes fresh channel keys exactly like after any other maintainer change.
  *
  *        the request carries NO payload - the client only says "i want the current maintainer of my
- *        channel replaced". all bookkeeping is server-internal: the vote is stamped with the channel's
- *        CURRENT maintainer_generation when it is recorded, so a vote recorded against a previous
- *        maintainer can never count against the newly appointed one, and votes die by themselves when
- *        the voter switches channel or the generation moves on - no vote cleanup anywhere else.
+ *        channel replaced". all bookkeeping is server-internal: the vote is stamped with the
+ *        channel's CURRENT maintainer_generation when it is recorded, so a vote recorded against a
+ *        previous maintainer can never count against the newly appointed one, and votes die by
+ *        themselves when the voter switches channel or the generation moves on - no vote cleanup
+ *        anywhere else. music bots are skipped on both sides of the count, they never hold channel
+ *        keys and never vote, so counting them would only inflate the quorum denominator.
  *
  * @param cJSON* json_root -> the parsed client request (unused beyond the already-checked type)
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -5380,8 +6213,8 @@ void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint
     boole is_maintainer_found = FALSE;
     uint64 i = 0;
 
-    /* same per-client cooldown gate as every other request. the client re-votes every few seconds
-       for as long as it stays keyless, so a vote swallowed by the cooldown is simply retried */
+    // same per-client cooldown gate as every other request. the client re-votes every few seconds
+    // for as long as it stays keyless, so a vote swallowed by the cooldown is simply retried
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     if (status == FALSE)
     {
@@ -5400,8 +6233,8 @@ void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint
         goto label_reset_channel_maintainer_end;
     }
 
-    /* the vote always applies to the channel the sender is CURRENTLY in on the server's books;
-       the request carries no channel id, so a modified client cannot vote into someone else's channel */
+    // the vote always applies to the channel the sender is CURRENTLY in on the server's books;
+    // the request carries no channel id, so a modified client cannot vote into someone else's channel
     channel_id = sender->channel_id;
     if (channel_id >= (uint64)g_server_settings.max_channel_count)
     {
@@ -5415,29 +6248,29 @@ void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint
         goto label_reset_channel_maintainer_end;
     }
 
-    /* nobody to depose */
+    // nobody to depose
     if (channel->is_channel_maintainer_present == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_reset_channel_maintainer_request channel has no maintainer \n");
         goto label_reset_channel_maintainer_end;
     }
 
-    /* the maintainer cannot vote himself out */
+    // the maintainer cannot vote himself out
     if (channel->maintainer_id == sender_client_id)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_reset_channel_maintainer_request sender is the maintainer \n");
         goto label_reset_channel_maintainer_end;
     }
 
-    /* record the vote, stamped with the CURRENT generation - re-voting just overwrites the same
-       values. if the maintainer changes before quorum, the stamp stops matching and the vote is dead */
+    // record the vote, stamped with the CURRENT generation - re-voting just overwrites the same
+    // values. if the maintainer changes before quorum, the stamp stops matching and the vote is dead
     sender->has_pending_maintainer_reset_vote = TRUE;
     sender->maintainer_reset_vote_channel_id = channel_id;
     sender->maintainer_reset_vote_generation = channel->maintainer_generation;
 
-    /* count channel members and valid votes in one pass. music bots are skipped on both sides:
-       they never hold channel keys (bot audio is not channel-key encrypted) and never vote,
-       so counting them would only inflate the quorum denominator */
+    // count channel members and valid votes in one pass. music bots are skipped on both sides:
+    // they never hold channel keys (bot audio is not channel-key encrypted) and never vote,
+    // so counting them would only inflate the quorum denominator
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client_in_loop = &g_clients_array[i];
@@ -5474,7 +6307,7 @@ void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint
 
     DBG_CLIENT_MESSAGE log_info("%s %llu %s %llu %s", "client_msg__process_reset_channel_maintainer_request votes ", vote_count, " of ", channel_member_count, "\n");
 
-    /* quorum rule: MORE THAN HALF of all clients present in the channel */
+    // quorum rule: MORE THAN HALF of all clients present in the channel
     if ((vote_count * 2) <= channel_member_count)
     {
         goto label_reset_channel_maintainer_end;
@@ -5482,16 +6315,16 @@ void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint
 
     deposed_maintainer_id = channel->maintainer_id;
 
-    /* pick a replacement, never handing the role right back to the client that was just voted out */
+    // pick a replacement, never handing the role right back to the client that was just voted out
     is_maintainer_found = base__find_new_maintainer_for_channel(&new_maintainer_index, channel_id, deposed_maintainer_id, TRUE);
     if (is_maintainer_found == FALSE)
     {
-        /* cannot really happen while at least one voter is present in the channel; leave state untouched */
+        // cannot really happen while at least one voter is present in the channel; leave state untouched
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_reset_channel_maintainer_request no replacement maintainer found \n");
         goto label_reset_channel_maintainer_end;
     }
 
-    /* consume the votes that carried this reset so they cannot count a second time */
+    // consume the votes that carried this reset so they cannot count a second time
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client_in_loop = &g_clients_array[i];
@@ -5506,11 +6339,11 @@ void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint
     channel->is_channel_maintainer_present = TRUE;
     channel->maintainer_generation++;
 
-    /* always-on log: a majority of a channel just declared its maintainer broken - the operator should see that */
+    // always-on log: a majority of a channel just declared its maintainer broken - the operator should see that
     log_info("%s %llu %s %llu %s %llu %s", "channel ", channel_id, ": maintainer reset by vote, deposed client ", deposed_maintainer_id, ", new maintainer client ", new_maintainer_index, "\n");
 
-    /* same announcement as any other maintainer change; the new maintainer's client reacts to it
-       by generating and distributing fresh channel keys to everyone in the channel */
+    // same announcement as any other maintainer change; the new maintainer's client reacts to it
+    // by generating and distributing fresh channel keys to everyone in the channel
     server_msg__send_maintainer_id_to_clients_in_same_channel(channel_id, channel->maintainer_id);
 
 label_reset_channel_maintainer_end:
@@ -5538,8 +6371,8 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
     boole is_existing = FALSE;
     boole is_idle = FALSE;
 
-    /* this is modified version of join channel request
-       no password verification, no checking if idle channel has maintainer (it's not a channel really) */
+    // this is modified version of join channel request
+    // no password verification, no checking if idle channel has maintainer (it's not a channel really)
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     if (status == FALSE)
     {
@@ -5573,10 +6406,10 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
 
     old_channel = &g_channel_array[client->channel_id];
 
-    /* change channel id and idle state at this */
+    // change channel id and idle state at this
     client->is_idle = TRUE;
-    client->channel_id = -2; /* -2 marks the client as being in idle mode rather than in a real channel */
-    client->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
+    client->channel_id = -2; // -2 marks the client as being in idle mode rather than in a real channel
+    client->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
 
     if (old_channel->is_channel_maintainer_present == TRUE)
     {
@@ -5590,15 +6423,15 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
         is_maintainer_found = base__find_new_maintainer_for_channel(&new_maintainer_index, old_channel->channel_id, sender_client_id, TRUE);
         if (is_maintainer_found == TRUE)
         {
-            /* client that left channel was maintainer of that channel, choose new maintainer
-               then broadcast channel join message
-               then send new maintainer id to clients in that channel so they know who new maintainer is */
+            // client that left channel was maintainer of that channel, choose new maintainer
+            // then broadcast channel join message
+            // then send new maintainer id to clients in that channel so they know who new maintainer is
             DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_go_to_idle_mode_request maintainer found ", new_maintainer_index, "\n");
             old_channel->is_channel_maintainer_present = TRUE;
             old_channel->maintainer_id = new_maintainer_index;
             old_channel->maintainer_generation++;
 
-            /* first send join message, then maintainer message for clients in that channel */
+            // first send join message, then maintainer message for clients in that channel
             server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_id);
             server_msg__send_maintainer_id_to_clients_in_same_channel(old_channel->channel_id, old_channel->maintainer_id);
         }
@@ -5617,9 +6450,14 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
         server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_id);
     }
 
-    /* keep the webrtc peer's channel in sync: while idle (channel_id -2) the relay's channel-mismatch
-       check correctly delivers no channel audio to this client */
-    audio_channel__process_client_channel_join(client);
+    // the client closes its end of the datachannel right after sending this request; drop the server
+    // side too - a slot left "connected" on a dead transport made the re-create request on resume be
+    // refused until the ICE consent timeout noticed, tens of seconds without working audio
+    audio_channel__process_client_disconnect(client);
+
+    // the transport is gone, say so; the fresh peer built on resume re-announces the real state
+    client->audio_state = AUDIO_STATE__AUDIO_COMPLETELY_DISABLED;
+    server_msg__send_audio_state_of_client_to_all_clients(client->client_id, AUDIO_STATE__AUDIO_COMPLETELY_DISABLED);
 
 label_go_to_idle_mode_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -5655,8 +6493,8 @@ void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
-    /* check if client that sent the message is valid. If he is connected and he exists.
-       this was checked before but not within write lock like here */
+    // check if client that sent the message is valid. If he is connected and he exists.
+    // this was checked before but not within write lock like here
     client = &g_clients_array[sender_client_id];
 
     if (client->is_authenticated == FALSE || client->is_existing == FALSE)
@@ -5674,13 +6512,27 @@ void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint
 
     client->is_idle = FALSE;
     client->channel_id = channel_to_join->channel_id;
-    client->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
+    client->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
 
-    /* keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this client on the
-       channel-mismatch check after it returns from idle */
+    // keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this client on the
+    // channel-mismatch check after it returns from idle
     audio_channel__process_client_channel_join(client);
 
     server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(sender_client_id, channel_to_join->channel_id);
+
+    // parity with the normal join tail: alone in the channel means the returner IS its maintainer,
+    // and the returner must always be told the maintainer id - without both it never received (or
+    // never produced) channel keys until it manually switched channels
+    if (base__get_client_count_for_channel(channel_to_join->channel_id) == 1)
+    {
+        channel_to_join->maintainer_id = client->client_id;
+        channel_to_join->is_channel_maintainer_present = TRUE;
+        channel_to_join->maintainer_generation++;
+    }
+
+    server_msg__send_maintainer_id_to_single_client(client, channel_to_join->channel_id, channel_to_join->maintainer_id);
+
+    server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client->p_ws_connection, client->dh_shared_secret, client->channel_id);
 
 label_client_msg__process_come_back_from_idle_mode_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -5703,10 +6555,10 @@ void client_msg__process_create_new_webrtc_datachannel_connection(cJSON* json_ro
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
-    /* check if client that sent the message is valid. If he is connected and he exists.
-       this was checked before but not within write lock like here */
+    // check if client that sent the message is valid. If he is connected and he exists.
+    // this was checked before but not within write lock like here
 
-    /* log_info("%s", "client_msg__process_create_new_webrtc_datachannel_connection"); */
+    // log_info("%s", "client_msg__process_create_new_webrtc_datachannel_connection");
     client = &g_clients_array[sender_client_id];
 
     if (client->is_authenticated == FALSE || client->is_existing == FALSE)
@@ -5714,7 +6566,7 @@ void client_msg__process_create_new_webrtc_datachannel_connection(cJSON* json_ro
         goto label_process_create_new_webrtc_datachannel_connection_end;
     }
 
-    /* server will ignore the request only if these 3 are off */
+    // server will ignore the request only if these 3 are off
     peer = &g_webrtc_muggles_array[sender_client_id];
 
     if (peer->is_existing == TRUE && peer->connected == TRUE && client->audio_state != AUDIO_STATE__AUDIO_COMPLETELY_DISABLED)
@@ -5722,7 +6574,7 @@ void client_msg__process_create_new_webrtc_datachannel_connection(cJSON* json_ro
         goto label_process_create_new_webrtc_datachannel_connection_end;
     }
 
-    /* log_info("%s", "attempting reconnect"); */
+    // log_info("%s", "attempting reconnect");
     audio_channel__initialize_webrtc_datachannel_connection(client);
 
 label_process_create_new_webrtc_datachannel_connection_end:
@@ -5759,8 +6611,8 @@ void client_msg__process_kick_request(cJSON* json_root, uint64 sender_client_id)
 
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    /* check if client that sent the message is valid. If he is connected and he exists.
-       this was checked before but not within write lock like here */
+    // check if client that sent the message is valid. If he is connected and he exists.
+    // this was checked before but not within write lock like here
     admin = &g_clients_array[sender_client_id];
 
     if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
@@ -5817,8 +6669,8 @@ void client_msg__process_ban_request(cJSON* json_root, uint64 sender_client_id)
 
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    /* check if client that sent the message is valid. If he is connected and he exists.
-       this was checked before but not within write lock like here */
+    // check if client that sent the message is valid. If he is connected and he exists.
+    // this was checked before but not within write lock like here
     admin = &g_clients_array[sender_client_id];
 
     if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
@@ -5832,7 +6684,7 @@ void client_msg__process_ban_request(cJSON* json_root, uint64 sender_client_id)
         goto label_client_msg__process_ban_request_end;
     }
 
-    /* snapshot the target's identifying data while we hold the clients lock, then disconnect them */
+    // snapshot the target's identifying data while we hold the clients lock, then disconnect them
     clib__copy_memory(&receiver->ip_address[0], banned_ip, clib__utf8_string_length(&receiver->ip_address[0]), BAN_IP_MAX_LENGTH - 1);
     clib__copy_memory(&receiver->country_iso_code[0], banned_country, clib__utf8_string_length(&receiver->country_iso_code[0]), COUNTRY_ISO_CODE_LENGTH - 1);
     clib__copy_memory(&receiver->public_key[0], banned_identity, clib__utf8_string_length(&receiver->public_key[0]), MAX_PUBLIC_KEY_LENGTH - 1);
@@ -5843,8 +6695,8 @@ void client_msg__process_ban_request(cJSON* json_root, uint64 sender_client_id)
 label_client_msg__process_ban_request_end:
     clib__unlock(&g_clients_global_rwlock_guard);
 
-    /* record + persist the ban outside the clients lock. lock order puts bans last, so take channels,
-       icons and tags (read, for the save) before the bans write lock */
+    // record + persist the ban outside the clients lock. lock order puts bans last, so take channels,
+    // icons and tags (read, for the save) before the bans write lock
     if (should_ban == TRUE)
     {
         clib__read_lock(&g_channels_global_rwlock_guard);
@@ -5994,8 +6846,8 @@ void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sende
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
-    /* check if client that sent the message is valid. If he is connected and he exists.
-       this was checked before but not within write lock like here */
+    // check if client that sent the message is valid. If he is connected and he exists.
+    // this was checked before but not within write lock like here
     admin = &g_clients_array[sender_client_id];
 
     if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
@@ -6004,33 +6856,33 @@ void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sende
         goto label_client_msg__process_create_music_bot_end;
     }
 
-    /* check if channel exists */
+    // check if channel exists
     if (g_channel_array[json_channel_id->valueint].is_existing == FALSE)
     {
         goto label_client_msg__process_create_music_bot_end;
     }
 
 #ifndef MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL
-    /* one music bot per channel. define MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL (definitions.h)
-       to lift this limit - debug aid only: several bots give several simultaneous audio senders for
-       testing multi-speaker mixing without needing several people. everything downstream (per-bot frame
-       ids, per-bot decoders, delete-all-bots-in-channel) works in both modes */
+    // one music bot per channel. define MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL (definitions.h)
+    // to lift this limit - debug aid only: several bots give several simultaneous audio senders for
+    // testing multi-speaker mixing without needing several people. everything downstream (per-bot frame
+    // ids, per-bot decoders, delete-all-bots-in-channel) works in both modes
     if (g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel == TRUE)
     {
         goto label_client_msg__process_create_music_bot_end;
     }
 #endif
 
-    /* music bots are not allowed in temp channels */
+    // music bots are not allowed in temp channels
     if (g_channel_array[json_channel_id->valueint].is_temp_channel == TRUE)
     {
         goto label_client_msg__process_create_music_bot_end;
     }
 
-    /* load mp3 file on server side from disk. don't upload it yet, that will on on the end */
+    // load mp3 file on server side from disk. don't upload it yet, that will on on the end
 
-    /* first create client */
-    /* assign him some random keys (client will be music client, messaging to him won't be possible), he will get channel keys but he won't get public key */
+    // first create client
+    // assign him some random keys (client will be music client, messaging to him won't be possible), he will get channel keys but he won't get public key
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_create_music_bot_request \n");
 
     new_music_bot_index = base__get_new_index_for_client();
@@ -6103,8 +6955,8 @@ void client_msg__process_delete_music_bot_request(cJSON* json_root, uint64 sende
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
-    /* check if client that sent the message is valid. If he is connected and he exists.
-       this was checked before but not within write lock like here */
+    // check if client that sent the message is valid. If he is connected and he exists.
+    // this was checked before but not within write lock like here
     admin = &g_clients_array[sender_client_id];
 
     if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
@@ -6113,23 +6965,23 @@ void client_msg__process_delete_music_bot_request(cJSON* json_root, uint64 sende
         goto label_client_msg__process_delete_music_bot_end;
     }
 
-    /* check if channel exists */
+    // check if channel exists
     if (g_channel_array[json_channel_id->valueint].is_existing == FALSE)
     {
         goto label_client_msg__process_delete_music_bot_end;
     }
 
-    /* check if there is at least one music bot in the channel */
+    // check if there is at least one music bot in the channel
     if (g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel == FALSE)
     {
         goto label_client_msg__process_delete_music_bot_end;
     }
 
-    /* tear down EVERY music bot in the channel (there can be several since multi-bot was allowed).
-       nothing is freed here: musicbot__begin_delete only signals the bot's stream thread and hides the
-       bot; a detached reaper thread joins the stream thread and THEN frees the songs and the slot.
-       freeing inline here was a use-after-free against the stream/preload threads, and nulling the
-       client_t made the slot reusable while the old bot thread still wrote into it */
+    // tear down EVERY music bot in the channel (there can be several since multi-bot was allowed).
+    // nothing is freed here: musicbot__begin_delete only signals the bot's stream thread and hides the
+    // bot; a detached reaper thread joins the stream thread and THEN frees the songs and the slot.
+    // freeing inline here was a use-after-free against the stream/preload threads, and nulling the
+    // client_t made the slot reusable while the old bot thread still wrote into it
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_delete_music_bot_request \n");
 
     for (bot_loop_index = 0; bot_loop_index < g_server_settings.max_client_count; bot_loop_index++)
@@ -6177,9 +7029,9 @@ void client_msg__process_file_send_request(cJSON* json_root, uint64 sender_clien
     client_t* client_sender = 0;
     int64 data_part_length = 0;
 
-    /* idea, don't provide upload file reason in upload file request, simply send the upload reason to server in separate message, after server signals the client that the file upload is done.
-       "hey client, I'm done receiving the file, what should I do with it"
-       that makes checking it easier and doesn't change much of existing logic */
+    // idea, don't provide upload file reason in upload file request, simply send the upload reason to server in separate message, after server signals the client that the file upload is done.
+    // "hey client, I'm done receiving the file, what should I do with it"
+    // that makes checking it easier and doesn't change much of existing logic
     status = _client_msg_internal__is_client_msg_file_send_request_valid(json_root);
     if (status == FALSE)
     {
@@ -6202,14 +7054,14 @@ void client_msg__process_file_send_request(cJSON* json_root, uint64 sender_clien
     json_message_is_new_file = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_new_file");
     json_message_data_part_base64 = cJSON_GetObjectItemCaseSensitive(json_message_object, "data_part_base64");
 
-    /* if appending another chunk could overflow the upload buffer, force this part to start a fresh file */
+    // if appending another chunk could overflow the upload buffer, force this part to start a fresh file
     if ((client_sender->file_upload_extension.buffer_cursor + MAX_CLIENT_FILE_UPLOAD_LENGTH / 400) > MAX_CLIENT_FILE_UPLOAD_LENGTH)
     {
         DBG_FILE_UPLOAD log_info("%s", "max file buffer size beyond limit, setting this upload as new file");
         json_message_is_new_file->valueint = 1;
     }
 
-    /* a new file (re)allocates or clears the upload buffer and resets the cursor; a continuation appends to it */
+    // a new file (re)allocates or clears the upload buffer and resets the cursor; a continuation appends to it
     if (json_message_is_new_file->valueint == 1)
     {
         DBG_FILE_UPLOAD log_info("%s", "json_message_is_new_file->valueint == 1");
@@ -6244,11 +7096,11 @@ void client_msg__process_file_send_request(cJSON* json_root, uint64 sender_clien
         }
     }
 
-    /* append this base64 chunk at the cursor, then advance the cursor by its length */
+    // append this base64 chunk at the cursor, then advance the cursor by its length
     data_part_length = clib__utf8_string_length(json_message_data_part_base64->valuestring);
 
-    /* never let the accumulated upload exceed the client-declared length: bounds per-client buffer
-       growth and keeps the accumulated base64 consistent with what was declared */
+    // never let the accumulated upload exceed the client-declared length: bounds per-client buffer
+    // growth and keeps the accumulated base64 consistent with what was declared
     if (client_sender->file_upload_extension.buffer_cursor + data_part_length > client_sender->file_upload_extension.expected_file_length)
     {
         DBG_FILE_UPLOAD log_info("%s", "upload chunk would exceed declared file length, aborting upload");
@@ -6302,8 +7154,8 @@ void client_msg__process_musicbot_get_song_list_request(cJSON* json_root, uint64
 
     clib__read_lock(&g_clients_global_rwlock_guard);
 
-    /* check if client that sent the message is valid. If he is connected and he exists.
-       this was checked before but not within read lock like here */
+    // check if client that sent the message is valid. If he is connected and he exists.
+    // this was checked before but not within read lock like here
     client = &g_clients_array[sender_client_id];
 
     if (client->is_authenticated == FALSE || client->is_existing == FALSE)
@@ -6374,7 +7226,7 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
 
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    /* pull the file-send intent and its extra data from the message */
+    // pull the file-send intent and its extra data from the message
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_file_send_intent = cJSON_GetObjectItemCaseSensitive(json_message_object, "file_send_intent");
     json_file_send_intent_extra_data = cJSON_GetObjectItemCaseSensitive(json_message_object, "file_send_intent_extra_data");
@@ -6387,10 +7239,10 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
         goto label_client_msg__process_file_send_completed_request_end;
     }
 
-    /* an upload must actually be in progress. file_upload_buffer is NULL on a fresh connection and after a
-       prior upload completes (it is freed and zeroed below), so without this guard the intent handlers pass a
-       NULL buffer to clib__utf8_string_length / the picture handlers, dereferencing address 0 and crashing the
-       whole server. the buffer pointer is the single source of truth for whether an upload is in progress. */
+    // an upload must actually be in progress. file_upload_buffer is NULL on a fresh connection and after a
+    // prior upload completes (it is freed and zeroed below), so without this guard the intent handlers pass a
+    // NULL buffer to clib__utf8_string_length / the picture handlers, dereferencing address 0 and crashing the
+    // whole server. the buffer pointer is the single source of truth for whether an upload is in progress.
     if (sender_client->file_upload_extension.file_upload_buffer == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_file_send_completed_request: no upload in progress, ignoring");
@@ -6415,12 +7267,12 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
             goto label_client_msg__process_file_send_completed_request_end;
         }
 
-        /* decode base64 mp3 data to normal mp3 data
-           free the base64 mp3 data
-           pass the normal mp3 data to musicbot__add_song
-           music bot is responsible for freeing the final mp3 data buffer when it gets deleted */
-        /* size the decode output from the ACTUAL base64 length, never the client-declared expected_file_length:
-           base64 decodes to ~3/4 of its length, so a buffer of the base64 length always holds the result and cannot overflow */
+        // decode base64 mp3 data to normal mp3 data
+        // free the base64 mp3 data
+        // pass the normal mp3 data to musicbot__add_song
+        // music bot is responsible for freeing the final mp3 data buffer when it gets deleted
+        // size the decode output from the ACTUAL base64 length, never the client-declared expected_file_length:
+        // base64 decodes to ~3/4 of its length, so a buffer of the base64 length always holds the result and cannot overflow
         mp3_data_buffer = (void*)memorymanager__allocate(clib__utf8_string_length(sender_client->file_upload_extension.file_upload_buffer) + 1, MEMALLOC_MUSICBOT_SONG);
 
         if (mp3_data_buffer == NULL_POINTER)
@@ -6430,8 +7282,8 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
 
         mp3_data_buffer_length = zchg_base64_decode(sender_client->file_upload_extension.file_upload_buffer, clib__utf8_string_length(sender_client->file_upload_extension.file_upload_buffer), mp3_data_buffer);
 
-        /* copy of song name must be initialized here because by the time the add_music_bot thread gets to it
-           main thread deletes the json holding the song name */
+        // copy of song name must be initialized here because by the time the add_music_bot thread gets to it
+        // main thread deletes the json holding the song name
         arguments = (musicbot_add_song_arg_struct_t*)memorymanager__allocate(sizeof(musicbot_add_song_arg_struct_t), MEMALLOC_MUSICBOT_SONG);
         clib__null_memory(arguments, sizeof(musicbot_add_song_arg_struct_t));
 
@@ -6457,8 +7309,8 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
         client_msg__process_channel_chat_picture(sender_client_id, json_local_message_id->valueint, sender_client->file_upload_extension.file_upload_buffer);
     }
 
-    /* no matter what the reason for calling client_msg__process_file_send_completed_request was
-       it got called, so free the file */
+    // no matter what the reason for calling client_msg__process_file_send_completed_request was
+    // it got called, so free the file
     if (sender_client->file_upload_extension.file_upload_buffer != NULL_POINTER)
     {
         memorymanager__free((nuint)sender_client->file_upload_extension.file_upload_buffer);
@@ -6525,7 +7377,7 @@ void client_msg__process_remove_song_from_music_bot_request(cJSON* json_root, ui
         goto label_client_msg__process_remove_song_from_music_bot_request_end;
     }
 
-    /* questionable thread safety */
+    // questionable thread safety
     musicbot__remove_song(music_bot, json_song_id->valueint);
 
     server_msg__send_music_bot_song_list_to_single_client(sender_client_id, music_bot->client_id);
@@ -6561,10 +7413,10 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
 
     if (arg->send_type == FILE_SEND_TYPE_TO_CLIENT)
     {
-        /* Compute chunk size (ceil division) */
+        // Compute chunk size (ceil division)
         chunk_size = (arg->size + parts_count - 1) / parts_count;
 
-        /* modify so it loops through clients based on their count */
+        // modify so it loops through clients based on their count
         while (offset < arg->size)
         {
             remaining = arg->size - offset;
@@ -6601,7 +7453,7 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
         if (is_sender_valid == TRUE && is_receiver_valid == TRUE)
         {
             server_msg__send_file_receive_completed_to_single_client(arg, arg->client_receiver_id, "direct_chat_picture");
-            server_msg__send_image_status_to_single_client(&g_clients_array[arg->client_sender_id], "success"); /* this is for client that sent it */
+            server_msg__send_image_status_to_single_client(&g_clients_array[arg->client_sender_id], "success"); // this is for client that sent it
             server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(arg->client_sender_id, arg->server_chat_message_id, arg->local_chat_message_id);
         }
 
@@ -6612,10 +7464,10 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
     }
     else if (arg->send_type == FILE_SEND_TYPE_TO_CHANNEL)
     {
-        /* Compute chunk size (ceil division) */
+        // Compute chunk size (ceil division)
         chunk_size = (arg->size + parts_count - 1) / parts_count;
 
-        /* modify so it loops through clients based on their count */
+        // modify so it loops through clients based on their count
         while (offset < arg->size)
         {
             remaining = arg->size - offset;
@@ -6641,7 +7493,7 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
 
                 clib__unlock(&g_clients_global_rwlock_guard);
 
-                /* base__sleep_for_milliseconds(10); */
+                // base__sleep_for_milliseconds(10);
             }
 
             clib__null_memory(chunk, current_size + 1);
@@ -6662,7 +7514,7 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
             if (is_sender_valid == TRUE && is_receiver_valid == TRUE)
             {
                 server_msg__send_file_receive_completed_to_single_client(arg, client_receiver_id, "channel_chat_picture");
-                server_msg__send_image_status_to_single_client(&g_clients_array[arg->client_sender_id], "success"); /* this is for client that sent it */
+                server_msg__send_image_status_to_single_client(&g_clients_array[arg->client_sender_id], "success"); // this is for client that sent it
                 server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(arg->client_sender_id, arg->server_chat_message_id, arg->local_chat_message_id);
             }
 

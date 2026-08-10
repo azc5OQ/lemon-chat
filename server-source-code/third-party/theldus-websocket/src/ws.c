@@ -191,6 +191,29 @@ static void close_socket(int fd)
 }
 
 /**
+ * @brief Shuts a socket down for reading and writing WITHOUT closing the
+ * file descriptor or touching any client state.
+ *
+ * Used by the ping-timeout path: it wakes the client's own connection
+ * thread out of recv(), which then leaves its read loop, fires the onclose
+ * event and runs the normal close_client() teardown on its own thread -
+ * the same code path as a protocol-level close.
+ *
+ * @param fd Socket file descriptor to be shut down.
+ *
+ * @attention This is part of the internal API and is documented just
+ * for completeness.
+ */
+static void shutdown_socket(int fd)
+{
+#ifndef _WIN32
+	shutdown(fd, SHUT_RDWR);
+#else
+	shutdown(fd, SD_BOTH);
+#endif
+}
+
+/**
  * @brief Returns the current client state for a given
  * client @p client.
  *
@@ -653,6 +676,10 @@ static void send_ping_close(ws_cli_conn_t *cli, int threshold, int lock)
 {
 	uint8_t ping_msg[4];
 
+	/* kept for API compatibility; the timeout path no longer needs the global
+	 * mutex because it only shuts the socket down (see below) */
+	(void)lock;
+
 	if (!CLIENT_VALID(cli) || get_client_state(cli) != WS_STATE_OPEN)
 	{
 		return;
@@ -667,9 +694,21 @@ static void send_ping_close(ws_cli_conn_t *cli, int threshold, int lock)
 		/* Send PING. */
 		ws_sendframe(cli, (const char*)ping_msg, sizeof(ping_msg), WS_FR_OP_PING);
 
-		/* Check previous PONG: if greater than threshold, abort. */
+		/* Check previous PONG: if greater than threshold, abort.
+		 *
+		 * DO NOT call close_client() here: it destroys this client's mutexes -
+		 * including mtx_ping, which this very function is still holding - and
+		 * rips the state out from under the connection thread (blocked in
+		 * recv) and any concurrent sender. Both are undefined behavior; in
+		 * practice the first real timeout crashed the whole server.
+		 *
+		 * Only shut the socket down instead. The client's own connection
+		 * thread wakes from recv(), leaves its read loop, fires onclose and
+		 * runs the normal close_client() teardown on its own thread, exactly
+		 * like a protocol-level close. Repeat shutdowns from later ping
+		 * rounds (until that thread has cleaned the slot) are harmless no-ops. */
 		if ((cli->current_ping_id - cli->last_pong_id) > threshold)
-			close_client(cli, lock);
+			shutdown_socket(cli->client_sock);
 
 	pthread_mutex_unlock(&cli->mtx_ping);
 	/* clang-format on */

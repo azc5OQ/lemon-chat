@@ -24,11 +24,16 @@ client-development/
    ├─ scripts/
    │  ├─ vendor/       # third-party libs, one file each (aes-js, jsbn, rsa,
    │  │                # cryptico, js-sha256, libopus, minimp3, ...)
-   │  └─ app/          # our code (utils, encoding, audio glue, main, ...)
+   │  └─ app/          # our code (utils, encoding, audio glue, audio, sounds, messages, ui, main, ...)
    └─ wasm/            # *.wasm  -> real binaries (libopus, mp3_decoder)
 ```
 
-`scripts/app/main.js` is the bulk of the application. `styles/fonts.style` is
+The application splits across four files, all sharing one closure (see the
+Editing section): `scripts/app/main.js` is the spine (startup, workers,
+dispatchers, crypto helpers, app lifecycle), `scripts/app/messages.js` is the
+protocol layer (`server_msg` handlers + `client_msg` builders), `scripts/app/ui.js`
+is the `UI` object (rendering, themes, menus, dialogs), and `scripts/app/audio.js`
+is the audio engine (worklets, playback/capture graphs). `styles/fonts.style` is
 large because the fonts are base64-embedded.
 
 ## Building
@@ -80,6 +85,15 @@ mid-string-literal, because that is where the base64 sits in the library code:
 - To add a new source file: create it under `src/scripts/...`, then add a
   `/* @@INCLUDE: scripts/path/to/file.js @@ */` line in `template.html` at the
   spot it should load. Order matters — files are concatenated top to bottom.
+- **The includes share one closure, not just one `<script>` tag.** A wrapper
+  opens inside `scripts/vendor/aes-js.js` and closes at the very END of
+  `scripts/app/main.js` (its final `}));`). Every file spliced between those two
+  lives inside that closure and sees `main.js`'s variables (that is how
+  `audio.js` works); a file placed outside that range silently sees none of
+  them. Corollary: nothing in the app is a `window` global — `typeof X` in
+  devtools says `undefined` for everything, which is normal, not breakage. Also
+  never brace-balance-check one file alone; only the whole assembled script
+  element parses.
 - To replace a wasm binary: drop the new `.wasm` into `src/wasm/` and rebuild.
 
 ## Key configuration & state (`scripts/app/main.js`)
@@ -91,26 +105,29 @@ lines 922–1018). Start here when wiring the client to a server.
 
 | variable | meaning |
 | --- | --- |
-| `are_server_details_predefined` | `true` = use `autoconnect_details` below instead of prompting the user for host/port/keys. |
-| `is_autoconnect_without_user_action_active` | `true` = connect on page load with no click. Caveat: browsers block audio until a user gesture, so if you open `client.html` straight from disk and the mic/AudioContext fails, set this to `false` (a single click on Connect is enough). Not an issue in Android WebView / Electron / embedded pages. |
-| `is_reconnect_active` | `true` = keep retrying / reconnecting after a drop. |
-| `autoconnect_details` | the predefined target: `{ host, port, keys: [...] }` (channel keys). |
+| `g_are_server_details_predefined` | `true` = use `g_autoconnect_details` below instead of prompting the user for host/port/keys. |
+| `g_is_autoconnect_without_user_action_active` | `true` = connect on page load with no click. Caveat: browsers block audio until a user gesture, so if you open `client.html` straight from disk and the mic/AudioContext fails, set this to `false` (a single click on Connect is enough). Not an issue in Android WebView / Electron / embedded pages. |
+| `g_is_reconnect_active` | `true` = keep retrying / reconnecting after a drop. |
+| `g_autoconnect_details` | the predefined target: `{ host, port, keys: [...] }` (channel keys). |
 
 **Core data structures (the live state of the app):**
 
 | variable | meaning |
 | --- | --- |
-| `client_list[]` | connected clients |
-| `channel_list[]` | channels |
-| `icons[]`, `tags[]` | server icons and tags |
-| `map_client_id_to_array_index` | `Map` from a client id to its index in `client_list` |
+| `g_client_list[]` | connected clients |
+| `g_channel_list[]` | channels |
+| `g_icons[]`, `g_tags[]` | server icons and tags |
+| `g_map_client_id_to_array_index` | `Map` from a client id to its index in `g_client_list` |
 
-**Identity / crypto:** `dh_generator` / `dh_modulus` (2048-bit safe prime) for
-Diffie-Hellman key exchange, and `my_rsa_key_object` / `rsa_public_key_string`
+**Identity / crypto:** `g_dh_generator` / `g_dh_modulus` (2048-bit safe prime) for
+Diffie-Hellman key exchange, and `g_my_rsa_key_object` / `g_rsa_public_key_string`
 for the client's RSA identity.
 
 Below these, the same block declares the rest of the per-session state
-(`is_websocket_connected`, `local_username`, `current_channel_id`, …).
+(`g_is_websocket_connected`, `local_username`, `current_channel_id`, …). A few
+globals deliberately stay unprefixed: names that also appear as message-object
+keys or as locals elsewhere (`local_username`, `current_channel_id`, `host`,
+`port`, …) — renaming those was judged riskier than the inconsistency.
 
 ## Notes
 

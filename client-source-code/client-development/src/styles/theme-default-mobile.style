@@ -4,9 +4,7 @@
     position: relative;
 }
 
-/* slim scrollbar — firefox only. scoped so chromium keeps its default overlay scrollbar:
-   setting these standard properties there switches chromium onto the classic squared
-   scrollbar that carries up/down arrow buttons, which we don't want showing. */
+/* slim scrollbar — firefox only */
 
 @supports (-moz-appearance: none) {
     * {
@@ -33,10 +31,6 @@ body {
     min-height: 100vh;
     text-align: center;
 }
-
-/* connect button is hidden by default, like every other theme; the JS only reveals it (sets
-   visibility:visible) when a MANUAL connect is needed. without this rule the mobile theme showed
-   the button even while autoconnecting from server-embedded details */
 
 #connect-button {
     visibility: hidden;
@@ -85,17 +79,18 @@ a-toast {
 
 #android-settings-button {
     display: none;
-    width: 36px;
-    height: 30px;
-    position: absolute;
-    z-index: 1;
-    float: left;
+    width: 26px;
+    height: 24px;
+    position: fixed;
+    z-index: 31;
     background-color: transparent;
-    top: 15%;
-    left: 20%;
+    top: 3px;
+    left: 6px;
     border: 0px;
+    border-radius: 4px;
     background-repeat: no-repeat;
-    background-size: 32px 32px;
+    background-position: center;
+    background-size: 20px 20px;
     background-position: center;
     background-image: url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0Ij4KPHBhdGggZD0iTTAgMCBDMy4xNjkxMTU3NSAxLjgxNTc4MDkyIDUuNTUxMDQ2OTkgMy44MTM0ODEzMyA2Ljg3NSA3LjMxMjUgQzYuOTE2MjUgNy44NjkzNzUgNi45NTc1IDguNDI2MjUgNyA5IEM4LjcwMTU2MjUgOC45NjkwNjI1IDguNzAxNTYyNSA4Ljk2OTA2MjUgMTAuNDM3NSA4LjkzNzUgQzE0IDkgMTQgOSAxNSAxMCBDMTUuMTI1IDEyLjUgMTUuMTI1IDEyLjUgMTUgMTUgQzE0IDE2IDE0IDE2IDEwLjQzNzUgMTYuMDYyNSBDOS4zMDMxMjUgMTYuMDQxODc1IDguMTY4NzUgMTYuMDIxMjUgNyAxNiBDNi43NzMxMjUgMTYuNzQyNSA2LjU0NjI1IDE3LjQ4NSA2LjMxMjUgMTguMjUgQzQuNjcyMTYzNCAyMS42ODY4OTU3NCAzLjI1NDk2NjUxIDIzLjAxODcxNjA0IDAgMjUgQy00LjE1MTQyMTU4IDI2LjI1ODI2NTkyIC03LjEzNDYwMTk1IDI2LjI5OTU2MDg2IC0xMS4yNSAyNC44NzUgQy0xNC4xOTE3NDYxIDIyLjg2OTI2NDAyIC0xNi4wMjkzMTEwNiAyMC45NTYwMzM0MSAtMTggMTggQy0xOCAxNy4zNCAtMTggMTYuNjggLTE4IDE2IEMtMTguOTAzNTUyMjUgMTYuMDA1MjM2ODIgLTE5LjgwNzEwNDQ5IDE2LjAxMDQ3MzYzIC0yMC43MzgwMzcxMSAxNi4wMTU4NjkxNCBDLTI0LjA3OTUxNDg5IDE2LjAzMjg3Njg2IC0yNy40MjA5NDY5MiAxNi4wNDU0MzMzMyAtMzAuNzYyNDUxMTcgMTYuMDU0OTMxNjQgQy0zMi4yMTA3MDA3MyAxNi4wNTk5NzEwMSAtMzMuNjU4OTQ1MTcgMTYuMDY2ODAyNTMgLTM1LjEwNzE3NzczIDE2LjA3NTQzOTQ1IEMtMzcuMTg0NzQ1ODggMTYuMDg3NTIyNDcgLTM5LjI2MjI0Njk3IDE2LjA5MzIzMjExIC00MS4zMzk4NDM3NSAxNi4wOTc2NTYyNSBDLTQyLjU5MTQ0Mjg3IDE2LjEwMjg5MzA3IC00My44NDMwNDE5OSAxNi4xMDgxMjk4OCAtNDUuMTMyNTY4MzYgMTYuMTEzNTI1MzkgQy00OCAxNiAtNDggMTYgLTQ5IDE1IEMtNDkuMTI1IDEyLjUgLTQ5LjEyNSAxMi41IC00OSAxMCBDLTQ4IDkgLTQ4IDkgLTQ1LjEzMjU2ODM2IDguODg2NDc0NjEgQy00My44ODA5NjkyNCA4Ljg5MTcxMTQzIC00Mi42MjkzNzAxMiA4Ljg5Njk0ODI0IC00MS4zMzk4NDM3NSA4LjkwMjM0Mzc1IEMtNDAuMzQzMTQ0MTUgOC45MDQ0NjYxNyAtNDAuMzQzMTQ0MTUgOC45MDQ0NjYxNyAtMzkuMzI2MzA5MiA4LjkwNjYzMTQ3IEMtMzcuMTk2NjYxMDEgOC45MTIyNDQ4MiAtMzUuMDY3MTE2NjEgOC45MjQ3OTk0NiAtMzIuOTM3NSA4LjkzNzUgQy0zMS40OTY3NDYzMSA4Ljk0MjUxMzI5IC0zMC4wNTU5OTA5NyA4Ljk0NzA3NjQ5IC0yOC42MTUyMzQzOCA4Ljk1MTE3MTg4IEMtMjUuMDc2Nzg4OTggOC45NjIyMTg1NSAtMjEuNTM4NDA0NjEgOC45Nzk0OTIwOCAtMTggOSBDLTE3LjcyMDI3MzQ0IDguMjIxNDA2MjUgLTE3LjQ0MDU0Njg3IDcuNDQyODEyNSAtMTcuMTUyMzQzNzUgNi42NDA2MjUgQy0xNS43MDg1MDExMyAzLjMzMjAyMjkzIC0xMy45NTM3Mjg2IDIuMDE3MTgwNTEgLTExIDAgQy03LjEzMDkwNzg2IC0xLjI4OTY5NzM4IC0zLjg3NTY0MzQ0IC0xLjA3NDk0MjYxIDAgMCBaIE0tMTAgOCBDLTExLjU1ODU0MTgyIDExLjExNzA4MzY1IC0xMC42ODc4NDY0NCAxMy42ODU4MzA4IC0xMCAxNyBDLTUuNDAxNDU3MjMgMTguMTIzMTk0MTMgLTUuNDAxNDU3MjMgMTguMTIzMTk0MTMgLTEgMTcgQzAuNTU4NTQxODIgMTMuODgyOTE2MzUgLTAuMzEyMTUzNTYgMTEuMzE0MTY5MiAtMSA4IEMtNS41OTg1NDI3NyA2Ljg3NjgwNTg3IC01LjU5ODU0Mjc3IDYuODc2ODA1ODcgLTEwIDggWiAiIGZpbGw9IiNGREZERkQiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDQ5LDUpIi8+CjxwYXRoIGQ9Ik0wIDAgQzIuNTkyNTIwMjcgMi4wMzE5NzUzNSA0LjQzOTI4NTgxIDQuMTA2NzQ2MTggNi4zMTI1IDYuODEyNSBDNi4zMTI1IDcuNDcyNSA2LjMxMjUgOC4xMzI1IDYuMzEyNSA4LjgxMjUgQzcuNjY3ODI4MzcgOC44MDQ2NDQ3OCA3LjY2NzgyODM3IDguODA0NjQ0NzggOS4wNTA1MzcxMSA4Ljc5NjYzMDg2IEMxMi4zOTIwMTQ4OSA4Ljc3OTYyMzE0IDE1LjczMzQ0NjkyIDguNzY3MDY2NjcgMTkuMDc0OTUxMTcgOC43NTc1NjgzNiBDMjAuNTIzMjAwNzMgOC43NTI1Mjg5OSAyMS45NzE0NDUxNyA4Ljc0NTY5NzQ3IDIzLjQxOTY3NzczIDguNzM3MDYwNTUgQzI1LjQ5NzI0NTg4IDguNzI0OTc3NTMgMjcuNTc0NzQ2OTcgOC43MTkyNjc4OSAyOS42NTIzNDM3NSA4LjcxNDg0Mzc1IEMzMC45MDM5NDI4NyA4LjcwOTYwNjkzIDMyLjE1NTU0MTk5IDguNzA0MzcwMTIgMzMuNDQ1MDY4MzYgOC42OTg5NzQ2MSBDMzYuMzEyNSA4LjgxMjUgMzYuMzEyNSA4LjgxMjUgMzcuMzEyNSA5LjgxMjUgQzM3LjQzNzUgMTIuMzEyNSAzNy40Mzc1IDEyLjMxMjUgMzcuMzEyNSAxNC44MTI1IEMzNi4zMTI1IDE1LjgxMjUgMzYuMzEyNSAxNS44MTI1IDMzLjQ0NTA2ODM2IDE1LjkyNjAyNTM5IEMzMi4xOTM0NjkyNCAxNS45MjA3ODg1NyAzMC45NDE4NzAxMiAxNS45MTU1NTE3NiAyOS42NTIzNDM3NSAxNS45MTAxNTYyNSBDMjguNjU1NjQ0MTUgMTUuOTA4MDMzODMgMjguNjU1NjQ0MTUgMTUuOTA4MDMzODMgMjcuNjM4ODA5MiAxNS45MDU4Njg1MyBDMjUuNTA5MTYxMDEgMTUuOTAwMjU1MTggMjMuMzc5NjE2NjEgMTUuODg3NzAwNTQgMjEuMjUgMTUuODc1IEMxOS44MDkyNDYzMSAxNS44Njk5ODY3MSAxOC4zNjg0OTA5NyAxNS44NjU0MjM1MSAxNi45Mjc3MzQzOCAxNS44NjEzMjgxMiBDMTMuMzg5Mjg4OTggMTUuODUwMjgxNDUgOS44NTA5MDQ2MSAxNS44MzMwMDc5MiA2LjMxMjUgMTUuODEyNSBDNi4wMzUzNTE1NiAxNi41ODk4MDQ2OSA1Ljc1ODIwMzEzIDE3LjM2NzEwOTM3IDUuNDcyNjU2MjUgMTguMTY3OTY4NzUgQzMuODE2MDExODggMjEuOTQ0MjI1NDQgMS45OTMxNTU4IDIzLjAwNTYzMjYgLTEuNjg3NSAyNC44MTI1IEMtNi40NDczODgyNyAyNS42NTU0ODU1OCAtOS43NzQ0MzIyMyAyNS4yNjA3MzMyNyAtMTQuMTI1IDIzLjEyNSBDLTE2Ljc2MDExNDggMjAuNzQ2OTY5NTcgLTE3Ljc0Nzc2ODAyIDE5LjE5NTUzNTE0IC0xOC42ODc1IDE1LjgxMjUgQy0yMC4zODkwNjI1IDE1Ljg0MzQzNzUgLTIwLjM4OTA2MjUgMTUuODQzNDM3NSAtMjIuMTI1IDE1Ljg3NSBDLTI1LjY4NzUgMTUuODEyNSAtMjUuNjg3NSAxNS44MTI1IC0yNi42ODc1IDE0LjgxMjUgQy0yNi44MTI1IDEyLjMxMjUgLTI2LjgxMjUgMTIuMzEyNSAtMjYuNjg3NSA5LjgxMjUgQy0yNS42ODc1IDguODEyNSAtMjUuNjg3NSA4LjgxMjUgLTIyLjEyNSA4Ljc1IEMtMjAuOTkwNjI1IDguNzcwNjI1IC0xOS44NTYyNSA4Ljc5MTI1IC0xOC42ODc1IDguODEyNSBDLTE4LjUwMTg3NSA3LjkwNSAtMTguMzE2MjUgNi45OTc1IC0xOC4xMjUgNi4wNjI1IEMtMTYuNTU1MjgzNTYgMi41MTM1NzU4OCAtMTUuMDgzNjY4NzcgMS4yMjQzOTU3MSAtMTEuNjIxMDkzNzUgLTAuNDk2MDkzNzUgQy03LjQyNDQ0MzM3IC0xLjk5NjcxNDE5IC00LjAzMTA3NTk1IC0xLjc4MTE3MzA5IDAgMCBaIE0tMTEuNjg3NSA4LjgxMjUgQy0xMi4wMjEyMjggMTEuOTQ5NTQzMTYgLTEyLjIxNTk5MDI4IDEzLjk3ODA0MTY2IC0xMC41IDE2LjY4NzUgQy04LjAzMjQyODkyIDE4LjIxOTA5NTg0IC02LjU0MjMwMTY5IDE4LjI0MDcyMDI1IC0zLjY4NzUgMTcuODEyNSBDLTEuNjY3OTg5MzggMTYuODc2NTI2ODUgLTEuNjY3OTg5MzggMTYuODc2NTI2ODUgLTAuNjg3NSAxNC44MTI1IEMtMC43MzgxNjYyIDEwLjQ2NzQwNzg0IC0wLjczODE2NjIgMTAuNDY3NDA3ODQgLTIuNjg3NSA2LjgxMjUgQy03LjcxMjU5MzE2IDYuMjY4MzQyNjYgLTcuNzEyNTkzMTYgNi4yNjgzNDI2NiAtMTEuNjg3NSA4LjgxMjUgWiAiIGZpbGw9IiNGQkZCRkIiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI2LjY4NzUsMzQuMTg3NSkiLz4KPC9zdmc+Cg==);
 }
@@ -302,7 +297,6 @@ a-toast:hover {
     border-right: 1px dotted #0c4e5d !important;
 }
 
-
 #space-devider-42 {
     display: none !important;
     width: 13%;
@@ -383,7 +377,6 @@ a-toast:hover {
 #current-client-avatar {
     background-repeat: no-repeat;
     background-position: center center;
-    background-image: url("data:image/gif;base64,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");
 }
 
 .text-input-container {
@@ -682,8 +675,7 @@ a-toast:hover {
 }
 
 .client-tags {
-    /* display: inline-block; */
-    /* margin-left: 50px; */
+
     float: right;
 }
 
@@ -845,8 +837,13 @@ a-toast:hover {
 
 .channel-list-context-menu-background, .chat-input-container-context-menu-background {
     background-color: #60656f;
-    width: 130px;
-    height: 156px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: auto;
     border-radius: 10px;
     opacity: 0.8;
     background: linear-gradient(180deg,#003d75 0,#232b56 100%);
@@ -862,7 +859,7 @@ a-toast:hover {
 }
 
 .channel-list-context-menu-items {
-    position: absolute;
+    position: relative;
     top: 0px;
     width: 130px;
     overflow: hidden;
@@ -871,7 +868,7 @@ a-toast:hover {
 }
 
 .chat-input-container-context-menu-items {
-    position: absolute;
+    position: relative;
     top: 0px;
     width: 130px;
     height: 154px;
@@ -1308,7 +1305,33 @@ a-toast:hover {
     font-size: 6px;
 }
 
+/* dialog colours: layout.style lays out and paints every dialog from these */
+:root {
+
+    --set-font: 'Raleway', sans-serif;
+    --set-panel: #36393f;
+    --set-text: #e6e8ea;
+    --set-muted: rgba(255, 255, 255, 0.45);
+    --set-line: rgba(255, 255, 255, 0.10);
+    --set-line-soft: rgba(255, 255, 255, 0.05);
+    --set-accent: #05a3ff;
+    --set-accent-soft: rgba(5, 163, 255, 0.25);
+    --set-accent-text: #ffffff;
+    --set-field: rgba(255, 255, 255, 0.06);
+    --set-field-text: #e6e8ea;
+    --set-row-hover: rgba(255, 255, 255, 0.05);
+    --set-selected: rgba(5, 163, 255, 0.16);
+    --set-chip: rgba(120, 140, 180, 0.22);
+    --set-radius: 5px;
+    --set-danger: #e06060;
+    --set-danger-soft: rgba(224, 96, 96, 0.16);
+    --set-danger-strong: #ff7b7b;
+
+    --set-button-bg: #0e69a8;
+}
+
 #server-settings-tab {
+
     position: absolute;
     z-index: 2;
     display: none;
@@ -1317,8 +1340,9 @@ a-toast:hover {
     min-height: 400px;
     height: 50%;
     background-color: #36393f;
-    opacity: 0.92;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+    box-shadow: 0 12px 38px rgba(0, 0, 0, 0.5);
 }
 
 #server-settings-tab-subcontainer {
@@ -1328,16 +1352,16 @@ a-toast:hover {
     height: 100%;
     vertical-align: top;
     color: white;
-    font-family: 'Kavoon';
+    font-family: 'Raleway', sans-serif;
+    font-size: 13px;
     cursor: move;
 }
 
 #server-settings-tab-subcontainer2 {
     display: inline-block;
-    background: beige;
     width: calc(100% - 187px);
     height: 100%;
-    font-family: 'Raleway';
+    font-family: 'Raleway', sans-serif;
 }
 
 #custom-file-upload-button-image {
@@ -1535,19 +1559,19 @@ a-toast:hover {
 }
 
 #show-hide-log-button {
-    position: absolute;
-    z-index: 1;
+    position: fixed;
+    z-index: 31;
     bottom: 0;
     right: 0;
     width: 38px;
     height: 22px;
     border: 0px;
     transition: 0.3s ease;
-    border-radius: 3px;
+    border-radius: 3px 0 0 0;
     color: white;
     cursor: pointer;
     background: #7d8799;
-    display: none;
+    opacity: 0.45;
 }
 
 #hide-chat-button {
@@ -1987,12 +2011,6 @@ a-toast:hover {
     background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAE30lEQVR4Xu2ae+jfUxjHX2MyImxJ5hKSrLX5T/xpNZeUkcsfiCSstTFrbRTij03mtpFEolzKJffLpqTUUlptjBqR27BFsdxyp3c7nzy/0/f3+5znfM75RPuc/z7f33Oe5znv53p+55lEv+twYB5wOnAEcGgQ/wXwKfAS8DywtS+1JvUk6BDgBuBSYPcWmX8BTwPLAihVVewDgDOBR4B9nCf5AbgQeMG5z0VeG4CrgDuA3Vxa/Ussb7gauCtzf+u2mgDI8nLl3MM3yguEs2p5Qi0AlNy2ZLj9eBZTOBwLfNVqUidBLQAeBC5x6tJG/gBwWRuR9+81AFCp+zgh23t1/TOUTpXMYqsGAFcCa4ppOJbRQuCekrxrALAWOLWkkobXK6GJKsa+BgAfAkcX03Asow9CMizGvgYAytjepif1QD8C+6YSp9DVAODvFMEdaIrqXJRZONQAQAfrpmwtarSizAYP2InAEAIpftyBpqjXFmU2hMAQAkMOGJLgUAV2gTIY1/m4kvTdB7TpM2HFzSmDbQIHADo0OSlb2zzOZVQX8TiNTptCKYfy0LTJc53JRTwAMLrTa7OIx7optG3yXEZ1EQ8e8N/zgMnA75HbuIzqIg6CfgP2MEKnAL+a75r/FP0e2M/IOjh6LpNue6bEUUOTA8B3wP5GyEHA1+Zb/7o+xqOEg/Z9YIahnw28Y76/BaY5+JEDwHvATCPkBOAt893nw4heoJ81st8FBEryygFAAiW4WVcA95tvPV/dnayBj3ABcK/ZshrQDEKzngHO9rDMAeBaYKUR8hRwnvk+DPikwuPoH8CRgH0cfRs4zsheDqyqDcCJwJtGiBLTdOAn85uesjUPVHLdB8w3DBWGcnlrxOOBDR6hOR6giQ9NcenQ44WBhqI0IFHqGUsga0Bim5EpQC433/IMPc27LmM5AEimJr5uMsI1D6DsrDLUrNOAFwuEgkZklHPEq1kqfx8Be5vfrgNWeKwv2lwApgKfRY+g1wC3RApoVuDODnNCOvziEUn1SeBcI0u9h6y/oy8AJOd2YIkRqGZIMbg5UuIM4NGMcJDbXxCGJy1LDVo+F8m4NcwVes+f7QESpGZIh1XWb5amPZUkt0eaHAjIRVXG1L5OtGT1xwBldBvz2jMLeAM4wDD4MvyuBs29ckOgETQXeDUKJYFyyggQtEfTY82orEqaHZVVHnk5jMONmgM6ClgPKP6bpYR3MvCa++RhQ1cAxEYxrji1S4c5B9iUq1i0bw7wOCBPskuybRi6xZUAQLO/DwPnR9J/AW4MANnq4FFyL2BpqDpx6ChMLgY0PZa9SgAg4VJOCtmOsFFK5eq2MC/8c6KmKm8XAddH/Uaz/YmQIDsdXsxKAdCAoDosi40aj9V8jy5KrwMbQzP1Tbi+aqZIOUEXGY3SK7fI+vFSglSrK2DUGndeJQFolFG8ajrcdoqdFQ1Xbrn8uhLMGh41ABBv3cmVnBZl1P/4fOoHdLvU1Lnu+0VXLQAaJdUx6rqquWHbL6Qc4nPgoTAqX/zgtT0gPqCAVpd4EnBzy+l13Vae0K3OdbFJQXWUYjn7uuxpO1Rtrxyje6/CguQBgBb36dUovQobPGAnAkMIDCEwMQK9hmWvwnaVHNAW4116CO0tarSizBItPADQEYGiRivK7P/oAf8Ae0zZQdfLrKYAAAAASUVORK5CYII=);
 }
 
-/* create-channel form fix: every row gets one fixed height so the checkbox rows
-   (disable audio / client limit) line up with the text-input label rows, and the
-   container grows (height:auto) so the buttons aren't clipped. Scoped to this dialog.
-   (The added 'client limit' row exposed both: content-height rows let column 2's shorter
-   checkbox rows drift up, and the fixed 153px container clipped the extra row + buttons.) */
-
 #channel-properties-input-container .text-input-container-2 {
     height: 32px !important;
     line-height: 32px !important;
@@ -2006,4 +2024,124 @@ a-toast:hover {
 
 .single-channel-icon {
     float: right;
+}
+
+body.android-app #verification-system {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: calc(10vh + 44px);
+}
+
+body.android-app #verification-system::before {
+    content: "not connected";
+    order: 1;
+    display: block;
+    font-size: 22px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+body.android-app #verification-system::after {
+    content: "open server settings below, set the address, then connect";
+    order: 2;
+    display: block;
+    margin: 10px 32px 34px 32px;
+    max-width: 280px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+body.android-app #verification-system > div[style*="25vmin"] {
+    display: none;
+}
+
+body.android-app #container-2 {
+    order: 3;
+    min-width: 0 !important;
+}
+
+body.android-app #another-buttons-sub-container > div {
+    display: block !important;
+    width: auto !important;
+    text-align: center !important;
+}
+
+body.android-app #connect-button {
+    width: auto;
+    height: auto;
+    background: #24a3be;
+    color: #ffffff;
+    border: 0;
+    border-radius: 22px;
+    padding: 12px 44px;
+    font-size: 16px;
+    margin-top: 10px;
+}
+
+body.android-app #android-server-settings-button {
+    width: auto;
+    height: auto;
+    background: transparent;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 22px;
+    padding: 10px 30px;
+    font-size: 14px;
+    margin-top: 14px;
+}
+
+/* phone-width fixes: these dialogs came from the desktop theme carrying desktop sizes */
+@media (max-width: 700px) {
+
+    #server-settings-tab {
+        width: 96vw !important;
+        min-width: 0 !important;
+        max-width: 96vw !important;
+        height: 80vh !important;
+        min-height: 0 !important;
+        /* !important also beats the drag code's inline pins; nothing to drag at this width */
+        left: 2vw !important;
+        top: 6vh !important;
+    }
+
+    #server-settings-tab-subcontainer {
+        width: 104px !important;
+        font-size: 11px !important;
+    }
+
+    #server-settings-tab > #server-settings-tab-subcontainer2 {
+        width: calc(100% - 104px) !important;
+    }
+
+    #channel-properties-edit,
+    #channel-password-enter,
+    #admin-password-enter,
+    #poke-client-enter,
+    #set-alias-enter,
+    #adjust-volume-card,
+    #set-new-username-enter,
+    #client-info-enter,
+    #identity-string-use-container-enter,
+    #secret-identity-string-container-enter {
+        max-width: 94vw !important;
+        max-height: 82vh !important;
+        overflow-y: auto !important;
+        box-sizing: border-box !important;
+    }
+
+    #channel-properties-edit input[type="text"],
+    #channel-password-enter input,
+    #admin-password-enter input,
+    #poke-client-enter input,
+    #set-alias-enter input,
+    #set-new-username-enter input,
+    #identity-string-use-container-enter textarea,
+    #secret-identity-string-container-enter textarea,
+    #server-settings-tab input[type="text"],
+    #server-settings-tab textarea {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
 }

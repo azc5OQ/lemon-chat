@@ -1,11 +1,11 @@
 #include "definitions.h"
 
-/* use forward slashes "/" when specifying paths, not backward slashes "\" linux environment has trouble finding files that way
-   windows compiler will work with both */
+// use forward slashes "/" when specifying paths, not backward slashes "\" linux environment has trouble finding files that way
+// windows compiler will work with both
 
 #include "clib/clib_string.h"
 #include "clib/clib_memory.h"
-#include "../third-party/dave-g-json/cJSON.h" /* needed by base.h */
+#include "../third-party/dave-g-json/cJSON.h" // needed by base.h
 #include "base.h"
 
 #include "util.h"
@@ -17,7 +17,7 @@
  *
  * client id and client_index are the same in the server's context
  * @return boole
- * */
+ */
 boole util__is_client_valid(int client_id)
 {
     boole status0 = (boole)(client_id >= 0 && client_id < MAX_CLIENTS);
@@ -35,6 +35,20 @@ boole util__is_client_valid(int client_id)
     }
 }
 
+/**
+ * @brief tells whether the client id belongs to a usable human client, meaning a real
+ *        connected and authenticated client that is not a music bot.
+ *
+ *        checks the id is inside the clients array range, the slot is existing, the client is
+ *        authenticated, the websocket connection pointer is set, and the is_music_bot flag is
+ *        FALSE. all five have to hold, otherwise FALSE is returned.
+ *
+ * @param int client_id -> index into g_clients_array, client id and client index are the same in the server's context
+ *
+ * @note ment to be used within acquired lock on clients
+ *
+ * @return boole -> TRUE when the client is valid and is not a music bot, FALSE otherwise
+ */
 boole util__is_client_valid_and_not_music_bot(int client_id)
 {
     boole status0 = (boole)(client_id >= 0 && client_id < MAX_CLIENTS);
@@ -53,6 +67,19 @@ boole util__is_client_valid_and_not_music_bot(int client_id)
     }
 }
 
+/**
+ * @brief tells whether the client id belongs to a valid client that also holds admin rights.
+ *
+ *        checks the id is inside the clients array range, the slot is existing, the client is
+ *        authenticated, the websocket connection pointer is set, and the is_admin flag is set.
+ *        all five have to hold, otherwise FALSE is returned.
+ *
+ * @param int client_id -> index into g_clients_array, client id and client index are the same in the server's context
+ *
+ * @note ment to be used within acquired lock on clients
+ *
+ * @return boole -> TRUE when the client is valid and is an admin, FALSE otherwise
+ */
 boole util__is_client_valid_admin(int client_id)
 {
     boole status0 = (boole)(client_id >= 0 && client_id < MAX_CLIENTS);
@@ -71,6 +98,19 @@ boole util__is_client_valid_admin(int client_id)
     }
 }
 
+/**
+ * @brief tells whether the client id belongs to an existing music bot client.
+ *
+ *        checks the id is inside the clients array range, the slot is existing, and the
+ *        is_music_bot flag is set. unlike the human client checks this one does not require
+ *        authentication or a websocket connection pointer, since a music bot has neither.
+ *
+ * @param int client_id -> index into g_clients_array, client id and client index are the same in the server's context
+ *
+ * @note ment to be used within acquired lock on clients
+ *
+ * @return boole -> TRUE when the slot holds an existing music bot, FALSE otherwise
+ */
 boole util__is_client_valid_musicbot(int client_id)
 {
     boole status0 = (boole)(client_id >= 0 && client_id < MAX_CLIENTS);
@@ -87,6 +127,20 @@ boole util__is_client_valid_musicbot(int client_id)
     }
 }
 
+/**
+ * @brief tells whether the client id belongs to an existing music bot that still has room for
+ *        one more song.
+ *
+ *        checks the id is inside the clients array range, the slot is existing, the is_music_bot
+ *        flag is set, and music_bot_client_extension.music_bot_songs_count has not reached
+ *        MUSIC_BOT_MAX_FILE_COUNT. all four have to hold, otherwise FALSE is returned.
+ *
+ * @param int client_id -> index into g_clients_array, client id and client index are the same in the server's context
+ *
+ * @note ment to be used within acquired lock on clients
+ *
+ * @return boole -> TRUE when the slot holds an existing music bot with a free song slot, FALSE otherwise
+ */
 boole util__is_music_bot_and_song_slot_valid(int client_id)
 {
     boole status0 = (boole)(client_id >= 0 && client_id < MAX_CLIENTS);

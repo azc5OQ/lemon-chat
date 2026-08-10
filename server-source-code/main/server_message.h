@@ -1,4 +1,4 @@
-/* Created by user on 4/1/2024. */
+// Created by user on 4/1/2024.
 
 #ifndef TEST0S_SOLUTION_SERVER_MESSAGE_H
 #define TEST0S_SOLUTION_SERVER_MESSAGE_H
@@ -37,12 +37,16 @@ void server_msg__send_maintainer_id_to_clients_in_same_channel(uint64 channel_id
 void server_msg__send_channel_delete_message_to_all_clients(uint64 deleted_channel_id, uint64 channel_deletor_client_id);
 void server_msg__send_client_disconnect_message_to_all_clients(uint64 client_id);
 void server_msg__send_poke_to_single_client(client_t* client, uint64 sender_client_id, char* poke_message);
+void server_msg__send_typing_indicator(uint64 sender_client_id, char* receiver_type, uint64 receiver_id);
 void server_msg__send_audio_state_of_client_to_all_clients(uint64 client_id, uint64 audio_state);
 void server_msg__send_start_song_stream_message_to_clients_in_same_channel(client_t* client_that_streams);
 void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client_t* client_that_streams);
 void server_msg__send_add_tag_to_client_event_to_all_clients(uint64 client_id_of_client_that_got_the_new_tag, uint64 tag_id);
+void server_msg__send_client_alias_changed_to_all_clients(uint64 client_id, char* alias);
 void server_msg__send_avatar_changed_event_to_all_clients(uint64 client_id_whose_avatar_changed);
 void server_msg__send_client_avatar_to_single_client(ws_cli_conn_t* websocket, char* dh_shared_secret, uint64 client_id, char* base64_avatar);
+void server_msg__send_stored_clients_to_single_client(ws_cli_conn_t* websocket, char* dh_shared_secret);
+void server_msg__send_queued_offline_messages_to_single_client(client_t* client);
 void server_msg__send_remove_tag_from_client_event_to_all_clients(uint64 client_id_of_client_that_got_tag_removed, uint64 tag_id);
 void server_msg__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char* icon_base64_value);
 void server_msg__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* tag_name, uint64 tag_linked_icon_id, boole has_icon);
@@ -58,7 +62,7 @@ void server_msg__send_file_send_completed_status_to_single_client(client_t* clie
 void server_msg__send_file_by_chunk_to_single_client(char* chunk, uint64 current_size, uint64 sender_client_id, uint64 receiver_client_id, uint64 server_chat_message_id);
 void server_msg__send_file_receive_completed_to_single_client(data_for_file_send_thread_t* info, uint64 receiver_client_id, char* receive_type);
 
-/* audio related */
+// audio related
 void server_msg__send_webrtc_sdp_offer_to_single_client(const char* cand, const char* mid, client_t* client);
 
-#endif /* TEST0S_SOLUTION_SERVER_MESSAGE_H */
+#endif // TEST0S_SOLUTION_SERVER_MESSAGE_H

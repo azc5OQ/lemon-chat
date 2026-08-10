@@ -1,9 +1,9 @@
 
-        //some globals for dev console
+        // some globals for dev console
         var g_client_list = null;
         var g_channel_list = null
     
-        //Android javascript java bridge functions, used in WebView
+        // Android javascript java bridge functions, used in WebView
         var g_send_go_to_idle_mode_request = null;
         var g_send_come_from_idle_mode_request = null;
         var g_activate_continous_audio_broadcast = null;
@@ -20,7 +20,7 @@
             g_send_come_from_idle_mode_request(channelId);
         }
         
-        //set to true if microphone should send audio by default
+        // set to true if microphone should send audio by default
         function JavascriptJavaBridge__activate_continous_audio_broadcast()
         {
             g_activate_continous_audio_broadcast();

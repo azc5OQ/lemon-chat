@@ -16,24 +16,28 @@
 #include "server_message.h"
 #include "util.h"
 
-/* result of preparing one song for streaming: 48 kHz int16 PCM ready for the opus encoder */
+// result of preparing one song for streaming: 48 kHz int16 PCM ready for the opus encoder
 typedef struct musicbot_prepared_song_t
 {
     boole is_valid;
     int64 song_index;
     opus_int16* pcm_int16;
-    uint64 frame_count; /* frames at 48 kHz */
+    uint64 frame_count; // frames at 48 kHz
     uint64 channels;
     uint64 song_length_seconds;
 } musicbot_prepared_song_t;
 
-/* argument/result carrier for the preload thread; owned (allocated, joined, freed) by the bot thread */
+// argument/result carrier for the preload thread; owned (allocated, joined, freed) by the bot thread
 typedef struct musicbot_prepare_arg_t
 {
     client_t* music_bot_client;
     int64 song_index;
     musicbot_prepared_song_t result;
 } musicbot_prepare_arg_t;
+
+static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 song_index, musicbot_prepared_song_t* out_prepared);
+static void* _musicbot_internal__prepare_thread(void* arg_void);
+static void* _musicbot_internal__reaper_thread(void* arg_void);
 
 /**
  * @brief decodes one uploaded mp3 into 48 kHz int16 PCM ready for the opus encoder: full mp3 decode,
@@ -80,9 +84,9 @@ static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 s
     clib__null_memory((void*)out_prepared, sizeof(musicbot_prepared_song_t));
     out_prepared->song_index = song_index;
 
-    /* snapshot the mp3 into our own buffer under the clients read lock: remove-song and delete-bot free
-       the slot's buffer under the write lock, so the (long) decode below must never touch the shared
-       buffer directly - it works on this private copy */
+    // snapshot the mp3 into our own buffer under the clients read lock: remove-song and delete-bot free
+    // the slot's buffer under the write lock, so the (long) decode below must never touch the shared
+    // buffer directly - it works on this private copy
     clib__read_lock(&g_clients_global_rwlock_guard);
 
     song = &music_bot_client->music_bot_client_extension.songs[song_index];
@@ -106,13 +110,13 @@ static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 s
 
     clib__unlock(&g_clients_global_rwlock_guard);
 
-    /* decode the whole mp3 into float PCM */
+    // decode the whole mp3 into float PCM
     clib__null_memory((void*)&mp3_decoder, sizeof(drmp3));
     drmp3_init_memory(&mp3_decoder, mp3_copy, mp3_copy_length, NULL_POINTER);
 
     decoded_frame_count = drmp3_get_pcm_frame_count(&mp3_decoder);
 
-    /* reject files dr_mp3 could not make sense of (also avoids a division by zero below) */
+    // reject files dr_mp3 could not make sense of (also avoids a division by zero below)
     if (decoded_frame_count == 0 || mp3_decoder.sampleRate == 0 || mp3_decoder.channels == 0 || mp3_decoder.channels > 2)
     {
         drmp3_uninit(&mp3_decoder);
@@ -126,7 +130,7 @@ static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 s
     out_prepared->channels = mp3_decoder.channels;
     out_prepared->song_length_seconds = decoded_frame_count / mp3_decoder.sampleRate;
 
-    /* reject songs that are empty or unreasonably long */
+    // reject songs that are empty or unreasonably long
     if (out_prepared->song_length_seconds == 0 || out_prepared->song_length_seconds > 1000)
     {
         memorymanager__free((nuint)decoded_pcm);
@@ -135,8 +139,8 @@ static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 s
         return;
     }
 
-    /* resample to 48 kHz if the source rate differs. catmull-rom cubic over 4 taps: audibly cleaner
-       high end than the linear interpolation used before, still cheap and dependency-free */
+    // resample to 48 kHz if the source rate differs. catmull-rom cubic over 4 taps: audibly cleaner
+    // high end than the linear interpolation used before, still cheap and dependency-free
     resampled_pcm = decoded_pcm;
     resampled_frame_count = decoded_frame_count;
 
@@ -175,7 +179,7 @@ static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 s
         }
     }
 
-    /* convert the float PCM to clipped int16, which is what Opus encodes */
+    // convert the float PCM to clipped int16, which is what Opus encodes
     out_prepared->pcm_int16 = (opus_int16*)memorymanager__allocate(resampled_frame_count * mp3_decoder.channels * sizeof(opus_int16), MEMALLOC_MUSICBOT_SONG);
 
     for (sample_index = 0; sample_index < resampled_frame_count * mp3_decoder.channels; sample_index++)
@@ -223,11 +227,14 @@ static void* _musicbot_internal__prepare_thread(void* arg_void)
 }
 
 /**
- * @brief reaper thread for a deleted music bot: waits (holding no locks) for the bot's stream thread to
- *        exit - which itself joins its preload thread - and only then frees the song buffers and nulls
- *        the client_t, releasing the slot for reuse. freeing any of this earlier was a use-after-free:
- *        the stream/preload threads could still be reading the buffers, and nulling the client_t made the
- *        slot immediately reusable by a new connection while the old bot thread still wrote into it.
+ * @brief reaper thread for a deleted music bot: waits for the bot's stream thread to exit, then frees
+ *        the song buffers and nulls the client_t, releasing the slot for reuse
+ *
+ *        the wait holds no locks, and the stream thread itself joins its preload thread, so by the time
+ *        this thread proceeds nothing is left reading the bot's data. freeing any of it earlier was a
+ *        use-after-free: the stream/preload threads could still be reading the buffers, and nulling the
+ *        client_t made the slot immediately reusable by a new connection while the old bot thread still
+ *        wrote into it.
  *
  * @param void* arg_void -> the music bot's client_t (slot stays reserved until this thread nulls it)
  *
@@ -241,7 +248,7 @@ static void* _musicbot_internal__reaper_thread(void* arg_void)
 
     pthread_join((pthread_t)music_bot_client->music_bot_client_extension.music_bot_pthread_handle, NULL_POINTER);
 
-    /* the stream and preload threads are gone; nothing else touches a bot's songs */
+    // the stream and preload threads are gone; nothing else touches a bot's songs
     clib__write_lock(&g_clients_global_rwlock_guard);
 
     for (song_slot_index = 0; song_slot_index < MUSIC_BOT_MAX_FILE_COUNT; song_slot_index++)
@@ -280,7 +287,7 @@ void musicbot__begin_delete(client_t* music_bot_client)
 
     music_bot_client->music_bot_client_extension.is_music_bot_running = FALSE;
 
-    /* hidden from client lists and every relay loop, but the slot stays reserved for the reaper */
+    // hidden from client lists and every relay loop, but the slot stays reserved for the reaper
     music_bot_client->is_existing = FALSE;
 
     if (pthread_create(&reaper_thread, 0, _musicbot_internal__reaper_thread, (void*)music_bot_client) == 0)
@@ -313,21 +320,32 @@ void musicbot__remove_song(client_t* music_bot, uint64 song_id)
         music_bot->music_bot_client_extension.songs[song_id].mp3_data_buffer = 0;
     }
 
-    /* null out single music_bot_single_song_data_t entry */
+    // null out single music_bot_single_song_data_t entry
     clib__null_memory((void*)&music_bot->music_bot_client_extension.songs[song_id], sizeof(music_bot_single_song_data_t));
 
     music_bot->music_bot_client_extension.music_bot_songs_count--;
 }
 
 /**
- * @brief adds song to music bot, it is used within write lock on clients array
- * @attention can cause future problems with tread safety
- * *
+ * @brief adds an uploaded song to a music bot: claims the first free song slot, decodes the mp3 just far
+ *        enough to get its length in seconds, commits the slot and sends the updated song list back to
+ *        the uploader
+ *
+ *        the slot is reserved with is_being_uploaded before the lock is dropped, so a second upload
+ *        cannot claim the same slot while this one decodes. the decode runs unlocked because
+ *        drmp3_init_memory is slow, and the bot is revalidated under the write lock afterwards; if it
+ *        disappeared in the meantime the mp3 buffer and the argument struct are freed and the function
+ *        gives up. on success the song slot owns the mp3 buffer and only the argument struct is freed.
+ *
+ * @param musicbot_add_song_arg_struct_t* arg -> the upload: target bot, mp3 buffer and its length, song
+ *                                               name, and the client_id of the uploader to answer. this
+ *                                               function takes ownership of it and of the mp3 buffer
+ *
+ * @attention questionable thread safety; a client validity check macro should be added so the bot is
+ *            verified before every access to it
+ *
  * @return void
- * */
-
-/* add client check macro that checks if client is valid before every access to it */
-
+ */
 void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
 {
     music_bot_single_song_data_t* song_in_loop = NULL_POINTER;
@@ -340,14 +358,14 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
     drmp3_uint64 frameCount = 0;
     uint64 seconds_length = 0;
     
-    /* find free song index */
+    // find free song index
     for (i = 0; i < MUSIC_BOT_MAX_FILE_COUNT; i++)
     {
         frameCount = 0;
         seconds_length = 0;
         
-        /* lock clients array and do all the checks if music bot is valid, if it song slot is valid */
-        /* if all checks are passed assign buffer to the song                                       */
+        // lock clients array and do all the checks if music bot is valid, if it song slot is valid
+        // if all checks are passed assign buffer to the song
         
         clib__write_lock(&g_clients_global_rwlock_guard);
 
@@ -368,23 +386,23 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
             continue;
         }
 
-        song_in_loop->is_being_uploaded = TRUE; /* so other thread won't start uploading to the same slot */
+        song_in_loop->is_being_uploaded = TRUE; // so other thread won't start uploading to the same slot
         song_in_loop->mp3_data_buffer = arg->mp3_data_buffer;
         song_in_loop->mp3_data_buffer_length = arg->mp3_data_buffer_length;
         DBG_MUSIC_BOT log_info("%s %s %s", "musicbot__add_song added song -> ", arg->song_name, "\n");
         clib__copy_memory((void*)arg->song_name, song_in_loop->song_name, clib__utf8_string_length(arg->song_name), SONG_NAME_MAX_LENGTH);
         clib__null_memory((void*)&mp3, sizeof(drmp3));
 
-        /* Decode MP3 */
+        // Decode MP3
         mp3_data_buffer1 = song_in_loop->mp3_data_buffer;
         mp3_data_buffer_length1 = song_in_loop->mp3_data_buffer_length;
 
         clib__unlock(&g_clients_global_rwlock_guard);
 
-        /* unlock write lock here because drmp3_init_memory is very time consuming
-           it's called because I wanted to find out what is the length of the mp3 in seconds */
+        // unlock write lock here because drmp3_init_memory is very time consuming
+        // it's called because I wanted to find out what is the length of the mp3 in seconds
 
-        /* add is being_processed to song in loop so other song won't screw it */
+        // add is being_processed to song in loop so other song won't screw it
 
         drmp3_init_memory(&mp3, mp3_data_buffer1, mp3_data_buffer_length1, NULL_POINTER);
         frameCount = drmp3_get_pcm_frame_count(&mp3);
@@ -392,7 +410,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
         DBG_MUSIC_BOT log_info("%s", "music bot add song success");
         drmp3_uninit(&mp3);
 
-        /* do check here, again */
+        // do check here, again
         clib__write_lock(&g_clients_global_rwlock_guard);
 
         status = util__is_client_valid_musicbot(arg->music_bot->client_id);
@@ -405,7 +423,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
             break;
         }
 
-        /* at this point read lock is still active */
+        // at this point read lock is still active
         song_in_loop = &arg->music_bot->music_bot_client_extension.songs[i];
         if (song_in_loop->is_existing == TRUE)
         {
@@ -429,7 +447,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
     {
         clib__read_lock(&g_clients_global_rwlock_guard);
 
-        /* server_msg__send_music_bot_song_list_to_single_client checks validity of client */
+        // server_msg__send_music_bot_song_list_to_single_client checks validity of client
         server_msg__send_music_bot_song_list_to_single_client(arg->sender_client_id, arg->music_bot->client_id);
 
         clib__unlock(&g_clients_global_rwlock_guard);
@@ -451,24 +469,24 @@ void musicbot__threadstart(client_t* music_bot_client)
 {
     music_bot_single_song_data_t* current_song = 0;
     int64 song_index = 0;
-    const int64 frame_size = 960;         /* samples per frame, 20 ms @ 48 kHz */
+    const int64 frame_size = 960;         // samples per frame, 20 ms @ 48 kHz
 
-    musicbot_prepared_song_t prepared_song;              /* the song currently being streamed */
-    musicbot_prepare_arg_t* preload_arg = NULL_POINTER;  /* in-flight preparation of the next song */
+    musicbot_prepared_song_t prepared_song;              // the song currently being streamed
+    musicbot_prepare_arg_t* preload_arg = NULL_POINTER;  // in-flight preparation of the next song
     pthread_t preload_thread = 0;
     boole is_preload_running = FALSE;
     int64 preload_song_index = 0;
 
     OpusEncoder* opus_encoder = NULL_POINTER;
-    int opus_error = 0; /* opus_encoder_create writes an int through this */
-    unsigned char opus_packet[2048];      /* holds one encoded frame */
-    opus_int16 frame_samples[960 * 2];    /* exactly frame_size samples, up to 2 channels */
+    int opus_error = 0; // opus_encoder_create writes an int through this
+    unsigned char opus_packet[2048];      // holds one encoded frame
+    opus_int16 frame_samples[960 * 2];    // exactly frame_size samples, up to 2 channels
     int64 encoded_byte_count = 0;
 
     uint64 streamed_song_length_seconds = 0;
     uint64 sleep_slice_ms = 0;
-    /* per-bot-lifetime frame sequence (16 bits, wraps); continues across songs so receivers never see a
-       false counter restart at a song boundary */
+    // per-bot-lifetime frame sequence (16 bits, wraps); continues across songs so receivers never see a
+    // false counter restart at a song boundary
     uint64 song_stream_sequence_number = 0;
     uint64 timestamp_started_playing = 0;
     uint64 timestamp_stopped_playing = 0;
@@ -479,7 +497,7 @@ void musicbot__threadstart(client_t* music_bot_client)
     boole is_stop_reason_sudden_song_deletion = FALSE;
     drmp3_uint64 available_samples = 0;
 
-    /* pacing diagnostic (DBG_MUSIC_BOT): whether the bot keeps up with real time */
+    // pacing diagnostic (DBG_MUSIC_BOT): whether the bot keeps up with real time
     uint64 probe_song_start = 0;
     uint64 probe_frames_sent = 0;
     uint64 probe_elapsed = 0;
@@ -495,7 +513,7 @@ void musicbot__threadstart(client_t* music_bot_client)
 
         for (song_index = 0; song_index < music_bot_client->music_bot_client_extension.music_bot_songs_count; song_index++)
         {
-            /* stop promptly if the bot was shut down (e.g. deleted) while looping */
+            // stop promptly if the bot was shut down (e.g. deleted) while looping
             if (music_bot_client->music_bot_client_extension.is_music_bot_running == FALSE)
             {
                 break;
@@ -510,9 +528,9 @@ void musicbot__threadstart(client_t* music_bot_client)
                 break;
             }
 
-            /* collect the preloaded PCM if it is for this exact song, otherwise prepare it right here.
-               the preload was started while the previous song streamed, so on the happy path this join
-               returns immediately and playback continues with no decode gap between songs */
+            // collect the preloaded PCM if it is for this exact song, otherwise prepare it right here.
+            // the preload was started while the previous song streamed, so on the happy path this join
+            // returns immediately and playback continues with no decode gap between songs
             if (is_preload_running == TRUE)
             {
                 pthread_join(preload_thread, NULL_POINTER);
@@ -525,7 +543,7 @@ void musicbot__threadstart(client_t* music_bot_client)
             }
             else
             {
-                /* stale or failed preload (song list changed since it was started); drop it and prepare inline */
+                // stale or failed preload (song list changed since it was started); drop it and prepare inline
                 if (preload_arg != NULL_POINTER && preload_arg->result.pcm_int16 != NULL_POINTER)
                 {
                     memorymanager__free((nuint)preload_arg->result.pcm_int16);
@@ -539,7 +557,7 @@ void musicbot__threadstart(client_t* music_bot_client)
                 preload_arg = NULL_POINTER;
             }
 
-            /* unusable song (empty, corrupt or too long); skip it */
+            // unusable song (empty, corrupt or too long); skip it
             if (prepared_song.is_valid == FALSE)
             {
                 clib__null_memory((void*)&prepared_song, sizeof(musicbot_prepared_song_t));
@@ -548,7 +566,7 @@ void musicbot__threadstart(client_t* music_bot_client)
 
             DBG_MUSIC_BOT log_info("%s %llu %s", "seconds length is ->", prepared_song.song_length_seconds, "\n");
 
-            /* start preparing the NEXT song in the rotation while this one streams */
+            // start preparing the NEXT song in the rotation while this one streams
             if (music_bot_client->music_bot_client_extension.music_bot_songs_count > 0)
             {
                 preload_song_index = (song_index + 1) % music_bot_client->music_bot_client_extension.music_bot_songs_count;
@@ -576,8 +594,8 @@ void musicbot__threadstart(client_t* music_bot_client)
                 }
             }
 
-            /* create the Opus encoder for this song. 160 kbps + full complexity: the old 96 kbps was
-               audibly below the source quality for music */
+            // create the Opus encoder for this song. 160 kbps + full complexity: the old 96 kbps was
+            // audibly below the source quality for music
             opus_error = 0;
             opus_encoder = opus_encoder_create(48000, (int)prepared_song.channels, OPUS_APPLICATION_AUDIO, &opus_error);
             if (opus_error != OPUS_OK)
@@ -590,7 +608,7 @@ void musicbot__threadstart(client_t* music_bot_client)
             opus_encoder_ctl(opus_encoder, OPUS_SET_BITRATE(160000));
             opus_encoder_ctl(opus_encoder, OPUS_SET_COMPLEXITY(10));
 
-            /* announce the song, then stream it frame by frame */
+            // announce the song, then stream it frame by frame
             clib__null_memory(opus_packet, sizeof(opus_packet));
             timestamp_started_playing = base__get_timestamp_ms();
 
@@ -608,14 +626,14 @@ void musicbot__threadstart(client_t* music_bot_client)
 
             for (drmp3_uint64 frame_offset = 0; frame_offset < prepared_song.frame_count; frame_offset += frame_size)
             {
-                /* stop mid-song if the bot was shut down or the song was deleted */
+                // stop mid-song if the bot was shut down or the song was deleted
                 if (music_bot_client->music_bot_client_extension.is_music_bot_running == FALSE || music_bot_client->music_bot_client_extension.songs[song_index].is_existing == FALSE)
                 {
                     is_stop_reason_sudden_song_deletion = TRUE;
                     break;
                 }
 
-                /* always encode exactly frame_size samples, zero-padding the last frame */
+                // always encode exactly frame_size samples, zero-padding the last frame
                 clib__null_memory(frame_samples, sizeof(frame_samples));
 
                 available_samples = prepared_song.frame_count - frame_offset;
@@ -637,9 +655,9 @@ void musicbot__threadstart(client_t* music_bot_client)
                 song_stream_sequence_number = (song_stream_sequence_number + 1) & 0xffff;
                 DBG_MUSIC_BOT probe_frames_sent++;
 
-                /* pace to real time: after sending frame K we should be at started + (K+1)*20ms.
-                   sleep only if we are ahead; if behind, send the next frame immediately to catch up.
-                   this self-corrects sleep overshoot / load instead of accumulating drift like a fixed sleep did */
+                // pace to real time: after sending frame K we should be at started + (K+1)*20ms.
+                // sleep only if we are ahead; if behind, send the next frame immediately to catch up.
+                // this self-corrects sleep overshoot / load instead of accumulating drift like a fixed sleep did
                 frames_done = (frame_offset / frame_size) + 1;
                 pacing_target_ms = timestamp_started_playing + frames_done * 20;
                 pacing_now_ms = base__get_timestamp_ms();
@@ -649,8 +667,8 @@ void musicbot__threadstart(client_t* music_bot_client)
                 }
             }
 
-            /* pacing diagnostic (DBG_MUSIC_BOT): each frame is 20 ms of audio, so if wall-clock
-               exceeds the audio duration the bot is streaming slower than real time */
+            // pacing diagnostic (DBG_MUSIC_BOT): each frame is 20 ms of audio, so if wall-clock
+            // exceeds the audio duration the bot is streaming slower than real time
             DBG_MUSIC_BOT
             {
                 probe_elapsed = base__get_timestamp_ms() - probe_song_start;
@@ -658,15 +676,15 @@ void musicbot__threadstart(client_t* music_bot_client)
                 log_info("%s %llu %s %llu %s %llu %s %s %s", "MUSICBOT PACING frames", probe_frames_sent, "audio_ms", probe_audio_ms, "wall_ms", probe_elapsed, "status", probe_elapsed > probe_audio_ms ? "behind" : "ok", "\n");
             }
 
-            /* release this song's buffers and encoder */
+            // release this song's buffers and encoder
             streamed_song_length_seconds = prepared_song.song_length_seconds;
             memorymanager__free((nuint)prepared_song.pcm_int16);
             clib__null_memory((void*)&prepared_song, sizeof(musicbot_prepared_song_t));
             opus_encoder_destroy(opus_encoder);
             opus_encoder = NULL_POINTER;
 
-            /* if the song ended early, sleep out the rest of its real duration before the next one.
-               sliced sleep so a delete request stops the bot within ~100 ms instead of after minutes */
+            // if the song ended early, sleep out the rest of its real duration before the next one.
+            // sliced sleep so a delete request stops the bot within ~100 ms instead of after minutes
             timestamp_stopped_playing = base__get_timestamp_ms();
             if (streamed_song_length_seconds > 0 && is_stop_reason_sudden_song_deletion == FALSE)
             {
@@ -686,7 +704,7 @@ void musicbot__threadstart(client_t* music_bot_client)
         }
     }
 
-    /* the bot is shutting down: collect and drop any preparation still in flight so nothing leaks */
+    // the bot is shutting down: collect and drop any preparation still in flight so nothing leaks
     if (is_preload_running == TRUE)
     {
         pthread_join(preload_thread, NULL_POINTER);

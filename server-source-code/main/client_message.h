@@ -1,4 +1,4 @@
-/* Created by user on 4/1/2024. */
+// Created by user on 4/1/2024.
 
 #ifndef TEST0S_SOLUTION_CLIENT_MESSAGE_H
 #define TEST0S_SOLUTION_CLIENT_MESSAGE_H
@@ -21,6 +21,7 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
 void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_poke_client_request(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_typing_indicator_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_sdp_answer(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_ice_candidate(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_microphone_usage(cJSON* json_root, uint64 sender_client_id);
@@ -29,6 +30,10 @@ void client_msg__process_stop_song_stream_message(cJSON* json_root, uint64 sende
 void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_change_admin_password_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_set_alias_request(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_request_stored_clients(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_offline_chat_message(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_set_identity_alias_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_avatar_upload(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_delete_avatar(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_request_avatar_for_client(cJSON* json_root, uint64 sender_client_id);
@@ -60,4 +65,4 @@ void client_msg__process_remove_song_from_music_bot_request(cJSON* json_root, ui
 void client_msg__process_file_send_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 sender_client_id);
 
-#endif /* TEST0S_SOLUTION_CLIENT_MESSAGE_H */
+#endif // TEST0S_SOLUTION_CLIENT_MESSAGE_H

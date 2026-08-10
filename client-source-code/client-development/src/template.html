@@ -65,6 +65,17 @@
     </style>
 
 
+    <!-- simpledark theme style (messenger look; flat channel list, avatar strip via the member-list mirror) -->
+    <style id="style-theme-simpledark" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-simpledark.style @@ */
+    </style>
+
+    <!-- bluebell theme style (simpledark's polished sibling: gradients, glows, softer edges) -->
+    <style id="style-theme-bluebell" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-bluebell.style @@ */
+    </style>
+
+
 
     <!-- layout engine bits: always active, NOT a theme sheet. the style-theme-html-element
          class must stay off this element - apply_theme() disables every sheet carrying it -->
@@ -91,13 +102,18 @@
 /* @@INCLUDE: scripts/vendor/js-sha256.js @@ */
 /* @@INCLUDE: scripts/vendor/libopus.emscripten.js @@ */
 /* @@INCLUDE: scripts/app/audio-opus-glue.js @@ */
+/* @@INCLUDE: scripts/app/worker-entry.js @@ */
 /* @@INCLUDE: scripts/vendor/minimp3.js @@ */
 /* @@INCLUDE: scripts/app/minimp3-worker.js @@ */
+/* @@INCLUDE: scripts/app/audio.js @@ */
+/* @@INCLUDE: scripts/app/sounds.js @@ */
+/* @@INCLUDE: scripts/app/messages.js @@ */
+/* @@INCLUDE: scripts/app/ui.js @@ */
 /* @@INCLUDE: scripts/app/main.js @@ */
     </script>
 
     <script>
-/* @@INCLUDE: scripts/app/dev-android.js @@ */
+/* @@INCLUDE: scripts/app/android-bridge.js @@ */
     </script>
 
 </head>
@@ -128,7 +144,7 @@
                     <div id="server-settings-tab-upload-icon-file-input-container">
                         <label class="custom-file-upload-button" id="custom-file-upload-button-icon">
                             choose icon
-                            <input id="choose_icon_input" type="file" accept=".png,.jpeg,.jpg" multiple style="display: none">
+                            <input id="choose_icon_input" onclick="this.value=null;" type="file" accept=".png,.jpeg,.jpg" multiple style="display: none">
                         </label>
                     </div>
                 </div>
@@ -138,7 +154,8 @@
                             <p class="tag-head-p">tag id</p>
                             <p class="tag-head-p">name</p>
                             <p class="tag-head-p">icon id</p>
-                            <p class="tag-head-p">icon</p>
+                            <p class="tag-head-p tag-head-p-icon">icon</p>
+                            <p class="tag-head-p tag-head-p-delete"></p>
                         </div>
                     </div>
                     <div id="server-settings-tab-add-tag-details-container">
@@ -170,6 +187,10 @@
                             <input type="checkbox" id="server-settings-general-allow-temp-channels-checkbox">
                             <span>allow creation of temp channels by guests</span>
                         </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-typing-indicator-checkbox">
+                            <span>show when somebody is typing</span>
+                        </label>
 
                         <input type="button" value="save server settings" id="save-server-settings-button">
                     </div>
@@ -185,18 +206,19 @@
                         <p class="server-settings-general-header">identities</p>
                         <p style="font-size:11px; opacity:0.7; margin: 0 0 6px 0;">stored identities and the tags they carry. deleting one strips those tags from the holder immediately (persisted on next "save server settings").</p>
                         <div class="identity-head-p-container">
-                            <p class="identity-head-p">identity (public key hash)</p>
-                            <p class="identity-head-p">last username</p>
-                            <p class="identity-head-p">online</p>
+                            <p class="identity-head-p">identity</p>
+                            <p class="identity-head-p">username</p>
+                            <p class="identity-head-p identity-head-p-online">online</p>
+                            <p class="identity-head-p identity-head-p-registered">registered</p>
+                            <p class="identity-head-p identity-head-p-alias">alias</p>
                             <p class="identity-head-p">tags</p>
-                            <p class="identity-head-p"></p>
+                            <p class="identity-head-p identity-head-p-delete"></p>
                         </div>
                         <div id="server-settings-identities-list"></div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
 
     <a-toast style="visibility:hidden"></a-toast>
 
@@ -217,6 +239,8 @@
                 <p class='choose-theme-item' data-name="oldschool-variant" data-mobile="false">old school variant</p>
                 <p class='choose-theme-item' data-name="termix" data-mobile="false">termix</p>
                 <p class='choose-theme-item' data-name="default-mobile" data-mobile="true">mobile</p>
+                <p class='choose-theme-item' data-name="simpledark" data-mobile="true">simpledark</p>
+                <p class='choose-theme-item' data-name="bluebell" data-mobile="true">bluebell</p>
             </div>
             <input type="button" id="layout-edit-button" value="layout" title="re-arrange the panels; click again to lock them in place">
             <input type="button" id="switch-identity-button" value="identity" title="enter an identity passphrase: disconnects, regenerates the keypair from it and reconnects as that identity">
@@ -262,6 +286,9 @@
                             <p id="another-buttons-loading-container-p">waiting for chat app .....</p>
                         </div>
                     </div>
+                    <div id="android-server-settings-container" style="display: none;">
+                        <input type="button" class="button-1" id="android-server-settings-button" value="server settings">
+                    </div>
                 </div>
             </div>
             <div style="height: 25vmin;">
@@ -305,6 +332,7 @@
                         </div>
                     </div>
                 </div>
+                <div id="typing-indicator-container"></div>
             </div>
             <div id="space-devider-42">
                 <div id="drag-resize-info"></div>
@@ -382,52 +410,45 @@
                     </div>
                 </div>
                 <div id="channel-properties-input-container">
-                    <div style="display: inline-block;">
-                        <div class="text-input-container-2">
-                            <input type="text" disabled="" class="text-input-not-pretty-2" value="name">
-                        </div>
-                        <div class="text-input-container-2">
-                            <input type="text" disabled="" class="text-input-not-pretty-2" value="description">
-                        </div>
-                        <div class="text-input-container-2">
-                            <input type="text" disabled="" class="text-input-not-pretty-2" value="password">
-                        </div>
-                        <div class="text-input-container-2">
-                            <input type="text" disabled="" class="text-input-not-pretty-2" value="disable audio">
-                        </div>
-                        <div class="text-input-container-2">
-                            <input type="text" disabled="" class="text-input-not-pretty-2" value="client limit">
-                        </div>
-                        <div class="text-input-container-2" id="channel-properties-icon-label-row">
-                            <input type="text" disabled="" class="text-input-not-pretty-2" value="channel icon">
-                        </div>
-                    </div>
-                    <div id="channel-properties-input-container-enter" style="display: inline-block; vertical-align: top;">
-                        <div class="text-input-container-2">
+                    <!-- label/field pairs in one grid. the labels used to be disabled <input> boxes in a
+                         separate column, so nothing held a label level with its own control -->
+                    <div class="dialog-form-grid" id="channel-properties-input-container-enter">
+                        <label class="dialog-form-label" for="channel-properties-input-channel-name">name</label>
+                        <div class="dialog-form-field">
                             <input class="text-input-not-pretty-2" id="channel-properties-input-channel-name" type="text" value="">
                         </div>
-                        <div class="text-input-container-2">
+
+                        <label class="dialog-form-label" for="channel-properties-input-channel-description">description</label>
+                        <div class="dialog-form-field">
                             <input class="text-input-not-pretty-2" id="channel-properties-input-channel-description" type="text" value="">
                         </div>
-                        <div class="text-input-container-2">
+
+                        <label class="dialog-form-label" for="channel-properties-input-channel-password">password</label>
+                        <div class="dialog-form-field">
                             <input class="text-input-not-pretty-2" id="channel-properties-input-channel-password" type="text" value="">
                         </div>
-                        <div class="text-input-container-2">
+
+                        <label class="dialog-form-label" for="channel-properties-disable-audio-checkbox">disable audio</label>
+                        <div class="dialog-form-field">
                             <input type="checkbox" id="channel-properties-disable-audio-checkbox">
                         </div>
-                        <div class="text-input-container-2">
+
+                        <label class="dialog-form-label" for="channel-properties-limit-clients-checkbox">client limit</label>
+                        <div class="dialog-form-field">
                             <input type="checkbox" id="channel-properties-limit-clients-checkbox">
-                            <input class="text-input-not-pretty-2" id="channel-properties-input-max-clients" type="number" min="1" placeholder="max" value="" style="display: none; width: 70px; margin-left: 8px;">
+                            <input class="text-input-not-pretty-2" id="channel-properties-input-max-clients" type="number" min="1" placeholder="max" value="" style="display: none;">
                         </div>
-                        <div class="text-input-container-2" id="channel-properties-icon-row">
-                            <div id="channel-properties-icon-box" title="click to choose an icon" style="display:inline-block; width:22px; height:22px; background-size:contain; background-repeat:no-repeat; background-position:center; border:1px solid #4a4a4a; border-radius:3px; cursor:pointer; vertical-align:middle;"></div>
-                            <span id="channel-properties-icon-remove-button" title="remove this channel's icon" style="margin-left:8px; font-size:11px; cursor:pointer; text-decoration:underline;">remove icon</span>
+
+                        <label class="dialog-form-label" id="channel-properties-icon-label-row">channel icon</label>
+                        <div class="dialog-form-field" id="channel-properties-icon-row">
+                            <div id="channel-properties-icon-box" title="click to choose an icon"></div>
+                            <span id="channel-properties-icon-remove-button" title="remove this channel's icon">remove icon</span>
                         </div>
                     </div>
                     <input type="hidden" id="create-channel-hidden-parent-id" value="">
-                    <div style="text-align: right;">
-                        <input type="button" id="create-channel-button" class="button-1" value="create" style="right: 20px;">
-                        <input type="button" id="edit-channel-button" class="button-1" value="edit" style="right: 20px;">
+                    <div class="dialog-form-actions">
+                        <input type="button" id="create-channel-button" class="button-1" value="create">
+                        <input type="button" id="edit-channel-button" class="button-1" value="edit">
                     </div>
                 </div>
             </div>
@@ -507,8 +528,45 @@
             </div>
         </div>
 
+        <div id="set-alias-enter-container">
+            <div id="set-alias-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Register Username</p>
+                    <div class="close-button" id="close-button-set-alias">
+                    </div>
+                </div>
+                <div id="set-alias-input-container">
+                    <div style="display: inline-block;">
+                        <div style="display: inline-block;">
+                            <div class="text-input-container">
+                                <input class="text-input-not-pretty" placeholder="username (empty unregisters)" style="width: 263px;" id="input-set-alias" type="text" value="">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <input type="button" id="set-alias-send-button" class="button-1" value="register" style="right: 20px;">
+                </div>
+            </div>
+        </div>
+
+        <div id="android-settings-warning-container">
+            <div id="android-settings-warning">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Server Settings</p>
+                    <div class="close-button" id="close-button-android-settings-warning">
+                    </div>
+                </div>
+                <p id="android-settings-warning-text">You are connected right now. These settings hold the address and keys of the server you are on - changing them affects this connection.</p>
+                <div style="text-align: right;">
+                    <input type="button" id="android-settings-warning-cancel-button" class="button-1" value="cancel">
+                    <input type="button" id="android-settings-warning-continue-button" class="button-1" value="continue">
+                </div>
+            </div>
+        </div>
+
         <div id="adjust-volume-container" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.45); z-index:100000;">
-            <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); min-width:300px; background:#262626; color:#e0e0e0; border:1px solid #4a4a4a; border-radius:5px; box-shadow:0 4px 20px rgba(0,0,0,0.5);">
+            <div id="adjust-volume-card" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); min-width:300px;">
                 <div id="menu-bar-container">
                     <p class="dialog-title">Adjust Volume</p>
                     <div class="close-button" id="close-button-adjust-volume"></div>
@@ -681,7 +739,7 @@
                         gap: 10px;
                     ">
 
-                        <input id="musicbot-management-background-container-file-input" type="file" accept="audio/mpeg" style="
+                        <input id="musicbot-management-background-container-file-input" onclick="this.value=null;" type="file" accept="audio/mpeg" style="
                         font-size: 14px;
                         ">
 

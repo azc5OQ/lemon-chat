@@ -5,16 +5,16 @@
 
 #include "../third-party/rxi-log/log.h"
 
-/* guards stamped into each block's header. LIVE marks a tracked block; FREED is written on free
-   so an immediate double-free is caught before the memory is handed back to libc. */
+// guards stamped into each block's header. LIVE marks a tracked block; FREED is written on free
+// so an immediate double-free is caught before the memory is handed back to libc.
 #define MEMORYMANAGER_GUARD_LIVE 0xA110C0DEu
 #define MEMORYMANAGER_GUARD_FREED 0xDEADBEEFu
 
-/* bookkeeping header stored immediately before the bytes returned to the caller:
-   [ header | user bytes ... ]. the caller receives (header + 1). prev/next thread every live
-   block into one doubly-linked list, so allocate links and free unlinks in O(1) with no table scan.
-   type is kept in 4 bytes (not uint64) so the header stays 32 bytes and the user region keeps
-   16-byte alignment; the MEMALLOC_* tags are small, so 4 bytes is ample. */
+// bookkeeping header stored immediately before the bytes returned to the caller:
+// [ header | user bytes ... ]. the caller receives (header + 1). prev/next thread every live
+// block into one doubly-linked list, so allocate links and free unlinks in O(1) with no table scan.
+// type is kept in 4 bytes (not uint64) so the header stays 32 bytes and the user region keeps
+// 16-byte alignment; the MEMALLOC_* tags are small, so 4 bytes is ample.
 typedef struct memorymanager_header_t
 {
     struct memorymanager_header_t* prev;   // 0x0
@@ -28,9 +28,9 @@ static memorymanager_header_t* g_memorymanager_head = 0;
 static uint64 g_memorymanager_live_count = 0;
 static pthread_mutex_t g_memorymanager_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/* static functions are defined first */
+// static functions are defined first
 
-/* declarations */
+// declarations
 static memorymanager_header_t* _memorymanager_internal__header_of(nuint address);
 static void _memorymanager_internal__link(memorymanager_header_t* header);
 static void _memorymanager_internal__unlink(memorymanager_header_t* header);
@@ -144,7 +144,7 @@ nuint memorymanager__allocate(uint64 size, uint64 type)
 
     result = (nuint)(header + 1);
 
-    /* hand back zeroed memory, matching the old calloc-backed contract callers rely on */
+    // hand back zeroed memory, matching the old calloc-backed contract callers rely on
     clib__null_memory((void*)result, size);
 
     pthread_mutex_lock(&g_memorymanager_lock);
@@ -210,7 +210,7 @@ nuint memorymanager__realloc(nuint address, uint64 newsize)
 
     if (new_header == NULL_POINTER)
     {
-        /* realloc failed, so the original block is still valid; relink it and report failure */
+        // realloc failed, so the original block is still valid; relink it and report failure
         old_header->prev = prev;
         old_header->next = next;
 
@@ -307,7 +307,7 @@ boole memorymanager__free(nuint address)
 
     DBG_MEMORY_MANAGER log_info("%s %p %s %llu %s", "memorymanager__free address ", (void*)address, " size ", size, "\n");
 
-    /* zero the caller's bytes before returning the block to libc, matching the old contract */
+    // zero the caller's bytes before returning the block to libc, matching the old contract
     clib__null_memory((void*)address, size);
     free((void*)header);
 

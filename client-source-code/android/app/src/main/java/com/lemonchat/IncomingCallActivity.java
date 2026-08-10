@@ -34,14 +34,24 @@ public class IncomingCallActivity extends AppCompatActivity
 
 	public void onDeclineCall(View view)
 	{
+		//route through the service like the notification's decline button: cancels the call
+		//notification and flags the next resume to stay idle instead of rejoining a channel
+		Intent declineIntent = new Intent(this, BackgroundService.class);
+		declineIntent.setAction(BackgroundService.ACTION_DECLINE_CALL);
+		this.startService(declineIntent);
+
 		finish(); //cancel IncomingCallActivity
 	}
 
 	public void onAcceptCall(View view)
 	{
-		Intent intent1 = new Intent(this, MainActivity.class);
-		intent1.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); //needed flag
-		this.startActivity(intent1); //go to MainActivity that has html client
+		//route through the service like the notification's accept button: it joins the
+		//CALLER'S channel (this activity never did, so accepting here landed in root) and
+		//brings MainActivity to the front itself
+		Intent acceptIntent = new Intent(this, BackgroundService.class);
+		acceptIntent.setAction(BackgroundService.ACTION_ACCEPT_CALL);
+		acceptIntent.putExtra("channelId", this.channelId);
+		this.startService(acceptIntent);
 
 		finish(); //cancel IncomingCallActivity
 	}

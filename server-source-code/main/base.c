@@ -1,7 +1,7 @@
 #include "definitions.h"
 
-/* use forward slashes "/" when specifying paths, not backward slashes "\" linux environment has trouble finding files that way
-   windows compiler will work with both */
+// use forward slashes "/" when specifying paths, not backward slashes "\" linux environment has trouble finding files that way
+// windows compiler will work with both
 
 #include "clib/clib_string.h"
 #include "clib/clib_memory.h"
@@ -50,10 +50,16 @@ custom_rwlock_t g_bans_global_rwlock_guard;
 
 pthread_mutex_t g_chat_message_id_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* guards the identity store (g_client_stored_data). taken as the innermost lock so restore-on-auth and the
-   snapshot at save time never tear each other's reads/writes; the save handler only holds the tags read lock,
-   which does not exclude a concurrent restore reader */
+// guards the identity store (g_client_stored_data). taken as the innermost lock so restore-on-auth and the
+// snapshot at save time never tear each other's reads/writes; the save handler only holds the tags read lock,
+// which does not exclude a concurrent restore reader
 pthread_mutex_t g_client_stored_data_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// guards the offline message queue (g_offline_messages). a leaf lock like the identity store one:
+// never take another lock while holding it
+pthread_mutex_t g_offline_messages_mutex = PTHREAD_MUTEX_INITIALIZER;
+offline_chat_message_t* g_offline_messages = NULL_POINTER;
+uint64 g_offline_message_sequence_counter = 0;
 
 uint64 g_chat_message_id;
 client_t* g_clients_array;
@@ -63,6 +69,12 @@ icon_t* g_icons_array;
 tag_t* g_tags_array;
 ban_entry_t* g_ban_array;
 server_settings_t g_server_settings;
+
+static void _base_internal__serialize_identities(cJSON* json_root);
+static boole _base_internal__derive_keys_from_shared_secret(char* dh_shared_secret, unsigned char* out_enc_key, unsigned char* out_mac_key);
+static boole _base_internal__compute_metadata_tag(unsigned char* mac_key, char* iv_base64, char* data_base64, unsigned char* out_tag);
+static boole _base_internal__constant_time_str_equal(char* a, char* b);
+static boole _base_internal__are_strings_equal_ignoring_ascii_case(char* string1, char* string2);
 
 /**
  * @brief writes contents to path atomically: it writes a temp file, flushes it to disk, then atomically
@@ -107,7 +119,7 @@ boole base__write_file_atomically(char* path, char* contents)
     }
 
 #ifdef WIN32
-    /* rename() on windows fails if the destination already exists, so use MoveFileEx with replace */
+    // rename() on windows fails if the destination already exists, so use MoveFileEx with replace
     if (MoveFileExA(tmp_path, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0)
     {
         remove(tmp_path);
@@ -187,7 +199,7 @@ boole base__add_ban(char* ip_address, char* country_iso_code, char* identity, ch
         {
             if (clib__is_string_equal(g_ban_array[i].ip_address, ip_address) == TRUE)
             {
-                return FALSE; /* already banned */
+                return FALSE; // already banned
             }
         }
         else if (free_index == -1)
@@ -284,8 +296,8 @@ static void _base_internal__serialize_identities(cJSON* json_root)
 
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
-        /* keep a slot that has EITHER tags or an avatar (avatar-only identities are valid now) */
-        if (g_client_stored_data[i].public_key[0] == 0 || (g_client_stored_data[i].tag_id_count == 0 && g_client_stored_data[i].base64_avatar[0] == 0))
+        // keep a slot that has tags, an avatar or an alias (any of them makes the identity worth storing)
+        if (g_client_stored_data[i].public_key[0] == 0 || (g_client_stored_data[i].tag_id_count == 0 && g_client_stored_data[i].base64_avatar[0] == 0 && g_client_stored_data[i].alias[0] == 0))
         {
             continue;
         }
@@ -298,6 +310,22 @@ static void _base_internal__serialize_identities(cJSON* json_root)
         if (g_client_stored_data[i].base64_avatar[0] != 0)
         {
             cJSON_AddStringToObject(json_identity, "base64_avatar", &g_client_stored_data[i].base64_avatar[0]);
+        }
+        if (g_client_stored_data[i].alias[0] != 0)
+        {
+            cJSON_AddStringToObject(json_identity, "alias", &g_client_stored_data[i].alias[0]);
+        }
+        // only ever written while the admin keeps last-seen enabled: switching the setting off stops
+        // recording AND stops the recorded values from being carried into the next save
+        if (g_server_settings.allow_last_seen == TRUE && g_client_stored_data[i].last_seen_unix_seconds != 0)
+        {
+            cJSON_AddNumberToObject(json_identity, "last_seen", (double)g_client_stored_data[i].last_seen_unix_seconds);
+        }
+        // same rule for the raw public key: written only while offline messages are enabled, so
+        // turning the feature off also stops carrying the keys into the next save
+        if (g_server_settings.allow_offline_messages == TRUE && g_client_stored_data[i].raw_public_key[0] != 0)
+        {
+            cJSON_AddStringToObject(json_identity, "raw_public_key", &g_client_stored_data[i].raw_public_key[0]);
         }
 
         json_identity_tag_ids = cJSON_CreateArray();
@@ -315,13 +343,16 @@ static void _base_internal__serialize_identities(cJSON* json_root)
 
 /**
  * @brief persists the runtime-editable server state into server_settings.json: the general-settings
- *        toggles, the channel layout, the tags/icons and the ban list. it READS the existing file first
- *        and only updates the keys it manages, so ports, operator keys and every other setting stay
- *        untouched. if the file is missing or cannot be parsed it aborts WITHOUT writing, so a transient
- *        error can never destroy a good settings file. the admin icon/tag (id 0) are re-seeded on every
- *        start and are not written. caller holds the channels, icons, tags and bans locks for reading.
+ *        toggles, the channel layout, the tags/icons and the ban list.
  *
- * @return boole TRUE if the file was written
+ *        it READS the existing file first and only updates the keys it manages, so ports, operator keys
+ *        and every other setting stay untouched. if the file is missing or cannot be parsed it aborts
+ *        WITHOUT writing, so a transient error can never destroy a good settings file. the admin
+ *        icon/tag (id 0) are re-seeded on every start and are not written.
+ *
+ * @note caller holds the channels, icons, tags and bans locks for reading
+ *
+ * @return boole -> TRUE if the file was written
  */
 boole base__save_server_settings_to_file(void)
 {
@@ -346,7 +377,7 @@ boole base__save_server_settings_to_file(void)
     uint64 i = 0;
     boole write_succeeded = FALSE;
 
-    /* read the existing settings file first so keys / ports / other settings stay untouched */
+    // read the existing settings file first so keys / ports / other settings stay untouched
     settings_file = fopen("server_settings.json", "rb");
     if (settings_file == NULL_POINTER)
     {
@@ -382,7 +413,7 @@ boole base__save_server_settings_to_file(void)
         return FALSE;
     }
 
-    /* update the general-settings toggles (delete-then-add so a value already present is replaced) */
+    // update the general-settings toggles (delete-then-add so a value already present is replaced)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_display_country_flags_active");
     cJSON_AddItemToObject(json_root, "is_display_country_flags_active", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_voice_chat_active");
@@ -393,6 +424,9 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "is_hide_clients_in_password_protected_channels_active", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_temp_channel_creation_allowed");
     cJSON_AddItemToObject(json_root, "is_temp_channel_creation_allowed", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
+
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_typing_indicator");
+    cJSON_AddItemToObject(json_root, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_password");
     cJSON_AddStringToObject(json_root, "admin_password", &g_server_settings.admin_password[0]);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_password_is_initial");
@@ -400,7 +434,7 @@ boole base__save_server_settings_to_file(void)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "are_identities_enabled");
     cJSON_AddItemToObject(json_root, "are_identities_enabled", cJSON_CreateBool(g_server_settings.are_identities_enabled == TRUE));
 
-    /* rebuild the channel layout (persistent fields only; runtime state like maintainer/occupants is skipped) */
+    // rebuild the channel layout (persistent fields only; runtime state like maintainer/occupants is skipped)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "channels");
     json_channels = cJSON_CreateArray();
     cJSON_AddItemToObject(json_root, "channels", json_channels);
@@ -412,7 +446,7 @@ boole base__save_server_settings_to_file(void)
             continue;
         }
 
-        /* temp channels are disposable and never persisted */
+        // temp channels are disposable and never persisted
         if (channel_in_loop->is_temp_channel == TRUE)
         {
             continue;
@@ -435,7 +469,7 @@ boole base__save_server_settings_to_file(void)
         cJSON_AddItemToArray(json_channels, json_channel);
     }
 
-    /* rebuild icons (skip the admin icon id 0, which is re-seeded on every start) */
+    // rebuild icons (skip the admin icon id 0, which is re-seeded on every start)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "icons");
     json_icons = cJSON_CreateArray();
     cJSON_AddItemToObject(json_root, "icons", json_icons);
@@ -453,7 +487,7 @@ boole base__save_server_settings_to_file(void)
         cJSON_AddItemToArray(json_icons, json_icon);
     }
 
-    /* rebuild tags (skip the admin tag id 0, re-seeded on every start) */
+    // rebuild tags (skip the admin tag id 0, re-seeded on every start)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "tags");
     json_tags = cJSON_CreateArray();
     cJSON_AddItemToObject(json_root, "tags", json_tags);
@@ -473,15 +507,15 @@ boole base__save_server_settings_to_file(void)
         cJSON_AddItemToArray(json_tags, json_tag);
     }
 
-    /* the admin tag (id 0) itself is re-seeded on every start and skipped by the tags loop above, but its
-       icon IS runtime-editable, so persist just that link (icon id + has_icon) here and re-apply it after
-       the seed on load. without this the admin's chosen icon reverts to the default on every restart */
+    // the admin tag (id 0) itself is re-seeded on every start and skipped by the tags loop above, but its
+    // icon IS runtime-editable, so persist just that link (icon id + has_icon) here and re-apply it after
+    // the seed on load. without this the admin's chosen icon reverts to the default on every restart
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_tag_icon_id");
     cJSON_AddNumberToObject(json_root, "admin_tag_icon_id", (double)g_tags_array[ADMIN_TAG_ID].icon_id);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_tag_has_icon");
     cJSON_AddItemToObject(json_root, "admin_tag_has_icon", cJSON_CreateBool(g_tags_array[ADMIN_TAG_ID].has_icon == TRUE));
 
-    /* rebuild the ban list (matching is by ip; country/identity/extra data are recorded for the admin) */
+    // rebuild the ban list (matching is by ip; country/identity/extra data are recorded for the admin)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "bans");
     json_bans = cJSON_CreateArray();
     cJSON_AddItemToObject(json_root, "bans", json_bans);
@@ -502,7 +536,7 @@ boole base__save_server_settings_to_file(void)
         cJSON_AddItemToArray(json_bans, json_ban);
     }
 
-    /* rebuild the identity store (public-key hash -> tag ids); left untouched when identities are disabled */
+    // rebuild the identity store (public-key hash -> tag ids); left untouched when identities are disabled
     _base_internal__serialize_identities(json_root);
 
     json_text = cJSON_Print(json_root);
@@ -846,7 +880,7 @@ boole base__is_public_key_present_in_client_stored_data(char* public_key)
  *
  * @note this is used function in situation where client leaves the channel for whatever reason and he happens to be the maintainer of it
  *
- * @return TRUE if maintainer is found, FALSE if not
+ * @return boole -> TRUE if a maintainer was found and written to _out__new_index_of_maintainer, FALSE if not
  *
  * @attention bad code
  */
@@ -860,12 +894,12 @@ boole base__find_new_maintainer_for_channel(uint64* _out__new_index_of_maintaine
     int random_index = 0;
 
     possible_new_maintainers = (uint64*)memorymanager__allocate(sizeof(uint64) * g_server_settings.max_client_count, MEMALLOC_FIND_MAINTAINER);
-    /* maintainer will be randomly chosen */
+    // maintainer will be randomly chosen
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client->is_existing == FALSE)
         {
             continue;
@@ -932,12 +966,12 @@ client_t* base__find_music_bot_in_channel(uint64 channel_id)
 
     client_t* result = NULL_POINTER;
 
-    /* maintainer will be randomly chosen */
+    // maintainer will be randomly chosen
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client_in_loop = &g_clients_array[i];
 
-        /* if statements that are most probable to run should be first in loop */
+        // if statements that are most probable to run should be first in loop
         if (client_in_loop->is_existing == FALSE)
         {
             continue;
@@ -998,11 +1032,11 @@ boole base__assign_username_for_newly_joined_client(uint64 client_index, cstring
     else
     {
         DBG_AUTHENTICATION log_info("%s", "public key not present \n");
-        /* two assumptions for safe operation */
-        /* default name won't be too long */
-        /* max number of clients will fit into 16 digits (easy), edge cases will have 3 digits, extremely edge cases 4 */
+        // two assumptions for safe operation
+        // default name won't be too long
+        // max number of clients will fit into 16 digits (easy), edge cases will have 3 digits, extremely edge cases 4
 
-        /* try "<default_name><n>" for n = 0, 1, 2, ... until a username no client is using is found */
+        // try "<default_name><n>" for n = 0, 1, 2, ... until a username no client is using is found
         for (username_suffix_number = 0; username_suffix_number < g_server_settings.max_client_count; username_suffix_number++)
         {
             uint64 default_name_length = 0;
@@ -1010,10 +1044,10 @@ boole base__assign_username_for_newly_joined_client(uint64 client_index, cstring
             clib__null_memory(candidate_username, USERNAME_MAX_LENGTH);
             clib__copy_memory(g_server_settings.default_client_name, candidate_username, clib__utf8_string_length(g_server_settings.default_client_name), USERNAME_MAX_LENGTH);
 
-            /* as long as I know what I'm doing, shouldn't be dangerous */
+            // as long as I know what I'm doing, shouldn't be dangerous
             clib__null_memory(index_suffix_buffer, 16);
 
-            /* itoa(username_suffix_number, index_suffix_buffer, 10); gcc on linux does not support itoa so I'm using sprintf */
+            // itoa(username_suffix_number, index_suffix_buffer, 10); gcc on linux does not support itoa so I'm using sprintf
             sprintf(index_suffix_buffer, "%llu", username_suffix_number);
 
             default_name_length = clib__utf8_string_length(candidate_username);
@@ -1024,12 +1058,12 @@ boole base__assign_username_for_newly_joined_client(uint64 client_index, cstring
 
             for (i = 0; i < g_server_settings.max_client_count; i++)
             {
-                /* is_existing needs to be guarded with mutex, while opening client, rwlock is not usable */
+                // is_existing needs to be guarded with mutex, while opening client, rwlock is not usable
 
-                /* log_info("%s %s %d %s", "trying username -> ", candidate_username , i, "\n"); */
+                // log_info("%s %s %d %s", "trying username -> ", candidate_username , i, "\n");
 
                 if (g_clients_array[i].is_existing == FALSE)
-                { /* client not is_existing, skip, this needs global lock */
+                { // client not is_existing, skip, this needs global lock
                     goto final_check;
                 }
 
@@ -1039,14 +1073,14 @@ boole base__assign_username_for_newly_joined_client(uint64 client_index, cstring
                 }
 
                 if (i == client_index)
-                { /* skip current client */
+                { // skip current client
                     goto final_check;
                 }
 
                 status = clib__is_string_equal(g_clients_array[i].username, candidate_username);
 
                 if (status == TRUE)
-                { /* username used by some of the clients, start another loop, with incremented numeric part of client's username */
+                { // username used by some of the clients, start another loop, with incremented numeric part of client's username
                     DBG_AUTHENTICATION log_info("%s %s %s", "username ", candidate_username, " it is not available \n");
                     break;
                 }
@@ -1054,19 +1088,19 @@ boole base__assign_username_for_newly_joined_client(uint64 client_index, cstring
 final_check:
 
                 if ((i + 1) == g_server_settings.max_client_count)
-                { /* if loop reached its end and username currently used in this loop was found to not be used by any of the clients */
-                    /* go to end_loop where this newly found username will be assigned to client */
+                { // if loop reached its end and username currently used in this loop was found to not be used by any of the clients
+                    // go to end_loop where this newly found username will be assigned to client
                     DBG_AUTHENTICATION log_info("%s", "(i + 1) == g_server_settings.max_client_count goto end_loop \n");
                     result = TRUE;
                     goto end_loop;
                 }
 
-                /* still some clients that need to be checked, not needed , included just for */
+                // still some clients that need to be checked, not needed , included just for
             }
         }
     }
 
-    return result; /* either code jumps to end_loop or it returns false here */
+    return result; // either code jumps to end_loop or it returns false here
 
 end_loop:
     clib__copy_memory(&candidate_username[0], &g_clients_array[client_index].username[0], clib__utf8_string_length(candidate_username), USERNAME_MAX_LENGTH);
@@ -1191,7 +1225,7 @@ void base__free_json_message(cJSON* json_root_object1, char* json_root_object1_s
 {
     if (json_root_object1 != NULL_POINTER)
     {
-        /* log_info("base__free_json_message() cJSON_Delete(json_root_object1); \n"); */
+        // log_info("base__free_json_message() cJSON_Delete(json_root_object1); \n");
         cJSON_Delete(json_root_object1);
     }
 
@@ -1203,10 +1237,14 @@ void base__free_json_message(cJSON* json_root_object1, char* json_root_object1_s
 
 /**
  * @brief returns timestamp in milliseconds
- * *
- * @return void
+ *
+ *        on windows this is GetTickCount64 (milliseconds since boot), everywhere else it is
+ *        gettimeofday (milliseconds since the unix epoch). only differences between two readings
+ *        are meaningful, the absolute value is not comparable across platforms.
  *
  * @attention should work on windows and linux
+ *
+ * @return uint64 -> the current timestamp in milliseconds
  */
 uint64 base__get_timestamp_ms(void)
 {
@@ -1214,11 +1252,11 @@ uint64 base__get_timestamp_ms(void)
     uint64 timestamp_msec = GetTickCount64();
     return timestamp_msec;
 #else
-    /* every non-Windows platform (Linux, macOS, BSD) has POSIX gettimeofday. this MUST have an
-       #else, not an #ifdef __linux__: on macOS __linux__ is undefined, so a linux-only branch left
-       the function with no return - it fell off the end and returned garbage, which made every
-       spam-protected request (channel create/join/delete, chat, etc.) compare against a bogus
-       "now" and get silently rejected while auth (no spam check) still worked */
+    // every non-Windows platform (Linux, macOS, BSD) has POSIX gettimeofday. this MUST have an
+    // #else, not an #ifdef __linux__: on macOS __linux__ is undefined, so a linux-only branch left
+    // the function with no return - it fell off the end and returned garbage, which made every
+    // spam-protected request (channel create/join/delete, chat, etc.) compare against a bogus
+    // "now" and get silently rejected while auth (no spam check) still worked
     struct timeval tv;
     uint64 timestamp_msec = 0;
     gettimeofday(&tv, NULL_POINTER);
@@ -1237,13 +1275,13 @@ uint64 base__get_timestamp_ms(void)
 #ifdef WIN32
 #include <windows.h>
 #elif _POSIX_C_SOURCE >= 199309L
-#include <time.h> /* for nanosleep */
+#include <time.h> // for nanosleep
 #else
-#include <unistd.h> /* for usleep */
+#include <unistd.h> // for usleep
 #endif
 
 void base__sleep_for_milliseconds(uint64 milliseconds)
-{ /* cross-platform sleep function */
+{ // cross-platform sleep function
 #ifdef WIN32
     Sleep(milliseconds);
 #elif _POSIX_C_SOURCE >= 199309L
@@ -1314,7 +1352,7 @@ boole base__is_there_a_client_with_same_ip_address(cstring ip_address)
             continue;
         }
 
-        /* doesn't have to be authenticated */
+        // doesn't have to be authenticated
         if (clib__is_string_equal(g_clients_array[i].ip_address, ip_address))
         {
             result = TRUE;
@@ -1535,7 +1573,7 @@ void base__restore_identity_tags(client_t* client)
         {
             tag_id = g_client_stored_data[i].tag_ids[t];
 
-            /* keep the admin tag (id 0) always; for every other tag, skip it if it no longer exists */
+            // keep the admin tag (id 0) always; for every other tag, skip it if it no longer exists
             if (tag_id != ADMIN_TAG_ID && (tag_id >= MAX_TAGS || g_tags_array[tag_id].is_existing == FALSE))
             {
                 DBG_IDENTITIES log_info("%s %llu %s", "restore_identity_tags: skipping stored tag id", tag_id, "- it no longer exists on the server \n");
@@ -1577,6 +1615,8 @@ void base__restore_identity_tags(client_t* client)
  *
  * @note takes g_client_stored_data_mutex (a leaf lock). call with the clients lock held (it writes
  *       client->base64_avatar, a heap block freed on disconnect).
+ *
+ * @return void
  */
 void base__restore_identity_avatar(client_t* client)
 {
@@ -1622,11 +1662,55 @@ void base__restore_identity_avatar(client_t* client)
 }
 
 /**
+ * @brief restores an identity's admin-registered alias (by public-key hash) into the live client.
+ *        fixed-size copy, no allocation. does nothing when no alias is stored.
+ *
+ * @param client_t* client -> the just-authenticated client whose alias is being restored
+ *
+ * @note guarded by g_client_stored_data_mutex (a leaf lock).
+ *
+ * @return void
+ */
+void base__restore_identity_alias(client_t* client)
+{
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    uint64 i = 0;
+
+    if (client == NULL_POINTER || client->public_key[0] == 0)
+    {
+        return;
+    }
+
+    base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            if (g_client_stored_data[i].alias[0] != 0)
+            {
+                clib__null_memory(&client->alias[0], USERNAME_MAX_LENGTH);
+                clib__copy_memory(&g_client_stored_data[i].alias[0], &client->alias[0], clib__utf8_string_length(&g_client_stored_data[i].alias[0]), USERNAME_MAX_LENGTH - 1);
+                DBG_IDENTITIES log_info("%s %llu %s", "restore_identity_alias: restored alias for client_id", client->client_id, "\n");
+            }
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
  * @brief snapshots every connected, authenticated client that currently owns at least one tag into the
- *        in-memory identity store, keyed by base64(SHA256(public_key)). an existing entry for that hash is
- *        overwritten; otherwise the first free slot is used. called at "save server settings" time so the
- *        store mirrors the tags people currently wear, without persisting on every tag change. does nothing
- *        when identities are disabled.
+ *        in-memory identity store, keyed by base64(SHA256(public_key)).
+ *
+ *        an existing entry for that hash is overwritten; otherwise the first free slot is used. called at
+ *        "save server settings" time so the store mirrors the tags people currently wear, without
+ *        persisting on every tag change. does nothing when identities are disabled. while offline
+ *        messages are enabled it also captures the raw public key of every connected registered client,
+ *        before the tagless skip, so keys are not missed for users who wear no tags.
  *
  * @note the caller must hold the clients read lock (g_clients_array and each client->tag_ids are read).
  *       the store itself is guarded by g_client_stored_data_mutex.
@@ -1659,6 +1743,29 @@ void base__snapshot_connected_clients_into_identity_store(void)
             continue;
         }
 
+        // an admin save is when the file is brought up to date, so collect the raw public keys of
+        // everybody connected right now - BEFORE the tagless skip below. capturing only at
+        // authentication missed every identity that was already connected when the feature was
+        // switched on, and a registered user with no tags (the normal case) was skipped entirely,
+        // so the key never reached the file at all
+        if (g_server_settings.allow_offline_messages == TRUE && client->is_registered == TRUE && client->public_key[0] != 0)
+        {
+            char offline_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+            base__hash_password_to_base64(client->public_key, offline_identity_hash, sizeof(offline_identity_hash));
+
+            // the store mutex is already held here; the by-hash helper takes it too, so write
+            // through the slot directly instead of calling it (that would self-deadlock)
+            for (j = 0; j < MAX_CLIENT_STORED_DATA; j++)
+            {
+                if (clib__is_string_equal(g_client_stored_data[j].public_key, offline_identity_hash) == TRUE)
+                {
+                    clib__null_memory(&g_client_stored_data[j].raw_public_key[0], MAX_PUBLIC_KEY_LENGTH);
+                    clib__copy_memory(client->public_key, &g_client_stored_data[j].raw_public_key[0], clib__utf8_string_length(client->public_key), MAX_PUBLIC_KEY_LENGTH - 1);
+                    break;
+                }
+            }
+        }
+
         tag_count = cvector_size(client->tag_ids);
         if (tag_count == 0)
         {
@@ -1668,7 +1775,7 @@ void base__snapshot_connected_clients_into_identity_store(void)
 
         base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
 
-        /* find an existing entry for this identity, else the first free slot */
+        // find an existing entry for this identity, else the first free slot
         slot = -1;
         for (j = 0; j < MAX_CLIENT_STORED_DATA; j++)
         {
@@ -1692,12 +1799,16 @@ void base__snapshot_connected_clients_into_identity_store(void)
         if (slot == -1)
         {
             DBG_IDENTITIES log_info("%s %llu %s", "snapshot_identities: identity store FULL, cannot store client_id", client->client_id, "\n");
-            continue; /* store is full */
+            continue; // store is full
         }
 
-        clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+        // rewrite the identity fields but PRESERVE base64_avatar and alias - nulling the whole slot
+        // would wipe them (sync_client_identity_in_store already preserves them the same way)
+        clib__null_memory(&g_client_stored_data[slot].public_key[0], MAX_PUBLIC_KEY_LENGTH);
+        clib__null_memory(&g_client_stored_data[slot].username[0], USERNAME_MAX_LENGTH);
+        clib__null_memory(&g_client_stored_data[slot].tag_ids[0], sizeof(g_client_stored_data[slot].tag_ids));
         clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
-        clib__copy_memory(client->username, &g_client_stored_data[slot].username[0], clib__utf8_string_length(client->username), USERNAME_MAX_LENGTH - 1); /* remember the last-seen username for the admin ui */
+        clib__copy_memory(client->username, &g_client_stored_data[slot].username[0], clib__utf8_string_length(client->username), USERNAME_MAX_LENGTH - 1); // remember the last-seen username for the admin ui
 
         g_client_stored_data[slot].tag_id_count = 0;
         for (t = 0; t < tag_count && t < MAX_TAGS_FOR_SINGLE_CLIENT; t++)
@@ -1715,10 +1826,12 @@ void base__snapshot_connected_clients_into_identity_store(void)
 /**
  * @brief immediately mirrors ONE client's current tags into the in-memory identity store, so a
  *        reconnecting client gets its tags back within the same server run WITHOUT waiting for an
- *        admin "save server settings" (that save only adds disk persistence on top). called right
- *        after any tag change on a client. if the client has tags they overwrite (or create) its
- *        store entry; if it now has zero tags its entry is cleared, so a fully-untagged identity is
- *        forgotten. does nothing when identities are disabled.
+ *        admin "save server settings" (that save only adds disk persistence on top).
+ *
+ *        called right after any tag change on a client. if the client has tags they overwrite (or
+ *        create) its store entry; if it now has zero tags its entry is cleared, so a fully-untagged
+ *        identity is forgotten - unless the slot still holds an avatar or an alias, in which case only
+ *        the tags are cleared. does nothing when identities are disabled.
  *
  * @param client_t* client -> the client whose tags just changed
  *
@@ -1747,7 +1860,7 @@ void base__sync_client_identity_in_store(client_t* client)
 
     if (client->public_key[0] == 0)
     {
-        return; /* no key yet -> nothing to key the identity on */
+        return; // no key yet -> nothing to key the identity on
     }
 
     base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
@@ -1756,7 +1869,7 @@ void base__sync_client_identity_in_store(client_t* client)
 
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
-    /* find this identity's existing slot (if any) */
+    // find this identity's existing slot (if any)
     slot = -1;
     for (j = 0; j < MAX_CLIENT_STORED_DATA; j++)
     {
@@ -1769,11 +1882,11 @@ void base__sync_client_identity_in_store(client_t* client)
 
     if (tag_count == 0)
     {
-        /* the identity no longer wears any tag: drop its entry so it is not restored later - UNLESS it
-           still holds an avatar, in which case keep the slot and just clear the tags */
+        // the identity no longer wears any tag: drop its entry so it is not restored later - UNLESS it
+        // still holds an avatar or an alias, in which case keep the slot and just clear the tags
         if (slot != -1)
         {
-            if (g_client_stored_data[slot].base64_avatar[0] != 0)
+            if (g_client_stored_data[slot].base64_avatar[0] != 0 || g_client_stored_data[slot].alias[0] != 0)
             {
                 g_client_stored_data[slot].tag_id_count = 0;
                 clib__null_memory(&g_client_stored_data[slot].tag_ids[0], sizeof(g_client_stored_data[slot].tag_ids));
@@ -1789,7 +1902,7 @@ void base__sync_client_identity_in_store(client_t* client)
         return;
     }
 
-    /* has tags but no entry yet: take the first free slot */
+    // has tags but no entry yet: take the first free slot
     if (slot == -1)
     {
         for (j = 0; j < MAX_CLIENT_STORED_DATA; j++)
@@ -1809,13 +1922,13 @@ void base__sync_client_identity_in_store(client_t* client)
         return;
     }
 
-    /* rewrite the identity fields but PRESERVE base64_avatar (nulling the whole slot would wipe a
-       stored avatar). a first-free slot is already fully zeroed, so this is correct for new entries too */
+    // rewrite the identity fields but PRESERVE base64_avatar (nulling the whole slot would wipe a
+    // stored avatar). a first-free slot is already fully zeroed, so this is correct for new entries too
     clib__null_memory(&g_client_stored_data[slot].public_key[0], MAX_PUBLIC_KEY_LENGTH);
     clib__null_memory(&g_client_stored_data[slot].username[0], USERNAME_MAX_LENGTH);
     clib__null_memory(&g_client_stored_data[slot].tag_ids[0], sizeof(g_client_stored_data[slot].tag_ids));
     clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
-    clib__copy_memory(client->username, &g_client_stored_data[slot].username[0], clib__utf8_string_length(client->username), USERNAME_MAX_LENGTH - 1); /* remember the last-seen username for the admin ui */
+    clib__copy_memory(client->username, &g_client_stored_data[slot].username[0], clib__utf8_string_length(client->username), USERNAME_MAX_LENGTH - 1); // remember the last-seen username for the admin ui
 
     g_client_stored_data[slot].tag_id_count = 0;
     for (t = 0; t < tag_count && t < MAX_TAGS_FOR_SINGLE_CLIENT; t++)
@@ -1872,9 +1985,14 @@ boole base__delete_identity_from_store_by_hash(char* identity_hash)
  * @brief stores (or replaces) an identity's avatar in the in-memory store, keyed by its
  *        base64(SHA256(public_key)) hash. creates an avatar-only slot if the identity has no entry
  *        yet. pass an empty/NULL base64_avatar to clear it (and drop the slot if it then holds
- *        neither tags nor an avatar). the on-disk copy follows on the next settings save.
+ *        neither tags nor an alias). the on-disk copy follows on the next settings save.
+ *
+ * @param char* identity_hash -> base64(SHA256(public_key)) of the identity, the store's key
+ * @param char* base64_avatar -> the base64 avatar to store, or NULL/empty to clear it
  *
  * @note guarded by g_client_stored_data_mutex (a leaf lock).
+ *
+ * @return void
  */
 void base__set_identity_avatar_by_hash(char* identity_hash, char* base64_avatar)
 {
@@ -1905,7 +2023,7 @@ void base__set_identity_avatar_by_hash(char* identity_hash, char* base64_avatar)
         if (clearing == TRUE)
         {
             pthread_mutex_unlock(&g_client_stored_data_mutex);
-            return; /* nothing stored to clear */
+            return; // nothing stored to clear
         }
 
         for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
@@ -1934,9 +2052,550 @@ void base__set_identity_avatar_by_hash(char* identity_hash, char* base64_avatar)
     {
         clib__copy_memory(base64_avatar, &g_client_stored_data[slot].base64_avatar[0], clib__utf8_string_length(base64_avatar), MAX_CLIENT_AVATAR_LENGTH - 1);
     }
-    else if (g_client_stored_data[slot].tag_id_count == 0)
+    else if (g_client_stored_data[slot].tag_id_count == 0 && g_client_stored_data[slot].alias[0] == 0)
     {
-        /* cleared the avatar and the slot holds no tags either -> drop it entirely */
+        // cleared the avatar and the slot holds neither tags nor an alias -> drop it entirely
+        clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
+ * @brief compares two strings ignoring ascii case. used for alias clash detection so "Ada" cannot be
+ *        registered next to "ada" and impersonate it in a contact list. non-ascii bytes compare as-is.
+ *
+ * @param char* string1 -> the first null-terminated string
+ * @param char* string2 -> the second null-terminated string
+ *
+ * @return boole -> TRUE when the strings match case-insensitively, FALSE otherwise or when either is NULL
+ */
+static boole _base_internal__are_strings_equal_ignoring_ascii_case(char* string1, char* string2)
+{
+    uint64 i = 0;
+    char character1 = 0;
+    char character2 = 0;
+
+    if (string1 == NULL_POINTER || string2 == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    while (string1[i] != 0 && string2[i] != 0)
+    {
+        character1 = string1[i];
+        character2 = string2[i];
+
+        if (character1 >= 'A' && character1 <= 'Z') { character1 = (char)(character1 + 32); }
+        if (character2 >= 'A' && character2 <= 'Z') { character2 = (char)(character2 + 32); }
+
+        if (character1 != character2)
+        {
+            return FALSE;
+        }
+
+        i++;
+    }
+
+    return (boole)(string1[i] == 0 && string2[i] == 0);
+}
+
+/**
+ * @brief tells whether an alias is already registered on a DIFFERENT identity. the alias is the only
+ *        handle the stored-clients list exposes and the key clients pair offline entries by, so two
+ *        identities must never share one. an identity re-registering its own alias is not a clash, and
+ *        an empty alias (clearing) never clashes.
+ *
+ * @param char* alias -> the alias about to be registered
+ * @param char* identity_hash -> the identity it would be registered on
+ *
+ * @return boole TRUE when another identity already holds this alias
+ *
+ * @note guarded by g_client_stored_data_mutex, taken here (a leaf lock).
+ */
+boole base__is_alias_taken_by_another_identity(char* alias, char* identity_hash)
+{
+    uint64 i = 0;
+    boole taken = FALSE;
+
+    if (alias == NULL_POINTER || alias[0] == 0 || identity_hash == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (g_client_stored_data[i].public_key[0] == 0 || g_client_stored_data[i].alias[0] == 0)
+        {
+            continue;
+        }
+
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            continue; // the identity's own entry - renaming itself is allowed
+        }
+
+        if (_base_internal__are_strings_equal_ignoring_ascii_case(&g_client_stored_data[i].alias[0], alias) == TRUE)
+        {
+            taken = TRUE;
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    return taken;
+}
+
+/**
+ * @brief stamps "this identity was connected just now" onto its stored entry, as a unix-seconds
+ *        timestamp.
+ *
+ *        only REGISTERED identities are tracked - an entry exists and carries an alias - so a random
+ *        guest passing through is never timestamped. also requires identities to be enabled and the
+ *        admin to have switched allow_last_seen on; with either off no timestamp is ever recorded or
+ *        served. like every stored-data write, the value reaches disk on the next settings save.
+ *
+ * @param char* identity_hash -> base64 hash of the client's public key
+ *
+ * @return void
+ */
+void base__touch_identity_last_seen_by_hash(char* identity_hash)
+{
+    uint64 i = 0;
+
+    if (g_server_settings.are_identities_enabled == FALSE || g_server_settings.allow_last_seen == FALSE)
+    {
+        return;
+    }
+
+    if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
+    {
+        return;
+    }
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            if (g_client_stored_data[i].alias[0] != 0) // registered = carries an admin-granted alias
+            {
+                g_client_stored_data[i].last_seen_unix_seconds = (int64)time(NULL_POINTER);
+            }
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
+ * @brief remembers an identity's RAW rsa public key, so peers can encrypt to it while its owner is
+ *        offline. only does anything while allow_offline_messages is on - with the feature off the
+ *        server keeps nothing but the hash, exactly as before. creates the slot if the identity has
+ *        none yet (a first-time visitor with no tags/avatar/alias).
+ *
+ * @param char* identity_hash -> base64 hash of the public key (the store's key)
+ * @param char* raw_public_key -> the public key itself
+ *
+ * @return void
+ */
+void base__store_identity_raw_public_key(char* identity_hash, char* raw_public_key)
+{
+    uint64 i = 0;
+    int64 slot = -1;
+
+    if (g_server_settings.are_identities_enabled == FALSE || g_server_settings.allow_offline_messages == FALSE)
+    {
+        return;
+    }
+
+    if (identity_hash == NULL_POINTER || identity_hash[0] == 0 || raw_public_key == NULL_POINTER || raw_public_key[0] == 0)
+    {
+        return;
+    }
+
+    if (clib__utf8_string_length(raw_public_key) >= MAX_PUBLIC_KEY_LENGTH)
+    {
+        return;
+    }
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            slot = (int64)i;
+            break;
+        }
+    }
+
+    if (slot == -1)
+    {
+        for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+        {
+            if (g_client_stored_data[i].public_key[0] == 0)
+            {
+                slot = (int64)i;
+                break;
+            }
+        }
+
+        if (slot == -1)
+        {
+            DBG_IDENTITIES log_info("%s", "store_identity_raw_public_key: identity store FULL \n");
+            pthread_mutex_unlock(&g_client_stored_data_mutex);
+            return;
+        }
+
+        clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+        clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
+    }
+
+    clib__null_memory(&g_client_stored_data[slot].raw_public_key[0], MAX_PUBLIC_KEY_LENGTH);
+    clib__copy_memory(raw_public_key, &g_client_stored_data[slot].raw_public_key[0], clib__utf8_string_length(raw_public_key), MAX_PUBLIC_KEY_LENGTH - 1);
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
+ * @brief forgets the stored raw public key of one identity. called when an admin takes an alias away:
+ *        the identity stops being registered, so it can no longer be written to while offline and
+ *        there is no reason to keep the key that would allow it.
+ *
+ * @param char* identity_hash -> hash identifying the stored identity
+ *
+ * @return void
+ */
+void base__clear_identity_raw_public_key(char* identity_hash)
+{
+    uint64 i = 0;
+
+    if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
+    {
+        return;
+    }
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            clib__null_memory(&g_client_stored_data[i].raw_public_key[0], MAX_PUBLIC_KEY_LENGTH);
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+}
+
+/**
+ * @brief resolves a REGISTERED alias to the identity hash that currently owns it. aliases are unique
+ *        across identities (the set-alias handler enforces that), so this is a 1:1 lookup.
+ *
+ * @param char* alias -> the alias to look up (compared ignoring ascii case, like the uniqueness check)
+ * @param char* out_identity_hash -> receives the hash
+ * @param uint64 out_buffer_size -> size of out_identity_hash
+ *
+ * @return boole TRUE when an identity carries this alias
+ */
+boole base__get_identity_hash_by_alias(char* alias, char* out_identity_hash, uint64 out_buffer_size)
+{
+    uint64 i = 0;
+    boole found = FALSE;
+
+    if (alias == NULL_POINTER || alias[0] == 0 || out_identity_hash == NULL_POINTER || out_buffer_size == 0)
+    {
+        return FALSE;
+    }
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (g_client_stored_data[i].public_key[0] == 0 || g_client_stored_data[i].alias[0] == 0)
+        {
+            continue;
+        }
+
+        if (_base_internal__are_strings_equal_ignoring_ascii_case(&g_client_stored_data[i].alias[0], alias) == TRUE)
+        {
+            clib__null_memory(out_identity_hash, out_buffer_size);
+            clib__copy_memory(&g_client_stored_data[i].public_key[0], out_identity_hash, clib__utf8_string_length(&g_client_stored_data[i].public_key[0]), out_buffer_size - 1);
+            found = TRUE;
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    return found;
+}
+
+/**
+ * @brief TRUE when this identity is REGISTERED on the server, meaning an admin gave it an alias.
+ *
+ * @param char* identity_hash -> base64 hash of the public key
+ *
+ * @return boole
+ */
+boole base__is_identity_registered_by_hash(char* identity_hash)
+{
+    uint64 i = 0;
+    boole registered = FALSE;
+
+    if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
+    {
+        return FALSE;
+    }
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            registered = (boole)(g_client_stored_data[i].alias[0] != 0);
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    return registered;
+}
+
+/**
+ * @brief parks one text message for an identity that is not connected right now. the payload is
+ *        copied onto the heap and is never inspected: it arrived encrypted with the RECIPIENT's
+ *        public key, so the server cannot read it and neither can anybody else.
+ *
+ * @param char* recipient_identity_hash -> who it is for (the identity, not the alias)
+ * @param char* sender_identity_hash -> who sent it
+ * @param char* sender_alias -> the sender's registered name, for display on delivery
+ * @param char* base64_encrypted_message -> opaque ciphertext
+ *
+ * @return boole TRUE when the message was queued
+ *
+ * @note takes g_offline_messages_mutex (leaf lock)
+ */
+boole base__queue_offline_message(char* recipient_identity_hash, char* sender_identity_hash, char* sender_alias, char* base64_encrypted_message)
+{
+    uint64 i = 0;
+    uint64 message_length = 0;
+    uint64 messages_for_recipient = 0;
+    int64 free_slot = -1;
+    int64 oldest_slot = -1;
+    uint64 oldest_sequence_number = 0;
+    char* message_copy = NULL_POINTER;
+
+    if (g_offline_messages == NULL_POINTER || recipient_identity_hash == NULL_POINTER || base64_encrypted_message == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    message_length = clib__utf8_string_length(base64_encrypted_message);
+    if (message_length == 0 || message_length >= MAX_OFFLINE_MESSAGE_LENGTH)
+    {
+        DBG_IDENTITIES log_info("%s", "queue_offline_message: empty or oversize message dropped \n");
+        return FALSE;
+    }
+
+    pthread_mutex_lock(&g_offline_messages_mutex);
+
+    // one pass: count what this recipient already has waiting, find a free slot, and remember the
+    // oldest entry of this recipient in case the per-identity limit is reached
+    for (i = 0; i < MAX_OFFLINE_MESSAGES; i++)
+    {
+        if (g_offline_messages[i].is_used == FALSE)
+        {
+            if (free_slot == -1) { free_slot = (int64)i; }
+            continue;
+        }
+
+        if (clib__is_string_equal(&g_offline_messages[i].recipient_identity_hash[0], recipient_identity_hash) == TRUE)
+        {
+            messages_for_recipient++;
+
+            if (oldest_slot == -1 || g_offline_messages[i].sequence_number < oldest_sequence_number)
+            {
+                oldest_slot = (int64)i;
+                oldest_sequence_number = g_offline_messages[i].sequence_number;
+            }
+        }
+    }
+
+    // recipient is at their personal limit: drop their oldest to make room, so a busy conversation
+    // keeps the most recent messages instead of refusing new ones forever
+    if (messages_for_recipient >= MAX_OFFLINE_MESSAGES_PER_IDENTITY && oldest_slot != -1)
+    {
+        if (g_offline_messages[oldest_slot].base64_encrypted_message != NULL_POINTER)
+        {
+            memorymanager__free((nuint)g_offline_messages[oldest_slot].base64_encrypted_message);
+        }
+        clib__null_memory(&g_offline_messages[oldest_slot], sizeof(offline_chat_message_t));
+        free_slot = oldest_slot;
+    }
+
+    if (free_slot == -1)
+    {
+        DBG_IDENTITIES log_info("%s", "queue_offline_message: queue FULL, message refused \n");
+        pthread_mutex_unlock(&g_offline_messages_mutex);
+        return FALSE;
+    }
+
+    message_copy = (char*)memorymanager__allocate(message_length + 1, MEMALLOC_OFFLINE_MESSAGE);
+    if (message_copy == NULL_POINTER)
+    {
+        pthread_mutex_unlock(&g_offline_messages_mutex);
+        return FALSE;
+    }
+
+    clib__null_memory(&g_offline_messages[free_slot], sizeof(offline_chat_message_t));
+    clib__copy_memory(base64_encrypted_message, message_copy, message_length, message_length);
+
+    g_offline_messages[free_slot].is_used = TRUE;
+    g_offline_messages[free_slot].base64_encrypted_message = message_copy;
+    g_offline_messages[free_slot].message_length = message_length;
+    g_offline_messages[free_slot].queued_unix_seconds = (int64)time(NULL_POINTER);
+    g_offline_message_sequence_counter++;
+    g_offline_messages[free_slot].sequence_number = g_offline_message_sequence_counter;
+
+    clib__copy_memory(recipient_identity_hash, &g_offline_messages[free_slot].recipient_identity_hash[0], clib__utf8_string_length(recipient_identity_hash), IDENTITY_HASH_MAX_LENGTH - 1);
+
+    if (sender_identity_hash != NULL_POINTER)
+    {
+        clib__copy_memory(sender_identity_hash, &g_offline_messages[free_slot].sender_identity_hash[0], clib__utf8_string_length(sender_identity_hash), IDENTITY_HASH_MAX_LENGTH - 1);
+    }
+
+    if (sender_alias != NULL_POINTER)
+    {
+        clib__copy_memory(sender_alias, &g_offline_messages[free_slot].sender_alias[0], clib__utf8_string_length(sender_alias), USERNAME_MAX_LENGTH - 1);
+    }
+
+    DBG_IDENTITIES log_info("%s %llu %s", "queue_offline_message: queued as sequence", g_offline_messages[free_slot].sequence_number, "\n");
+
+    pthread_mutex_unlock(&g_offline_messages_mutex);
+
+    return TRUE;
+}
+
+/**
+ * @brief drops every queued message for one identity, freeing their payloads. used after delivery
+ *        and when an identity is deleted from the store.
+ *
+ * @param char* identity_hash -> whose messages to drop
+ *
+ * @return void
+ *
+ * @note takes g_offline_messages_mutex (leaf lock)
+ */
+void base__free_offline_messages_for_identity(char* identity_hash)
+{
+    uint64 i = 0;
+
+    if (g_offline_messages == NULL_POINTER || identity_hash == NULL_POINTER || identity_hash[0] == 0)
+    {
+        return;
+    }
+
+    pthread_mutex_lock(&g_offline_messages_mutex);
+
+    for (i = 0; i < MAX_OFFLINE_MESSAGES; i++)
+    {
+        if (g_offline_messages[i].is_used == TRUE && clib__is_string_equal(&g_offline_messages[i].recipient_identity_hash[0], identity_hash) == TRUE)
+        {
+            if (g_offline_messages[i].base64_encrypted_message != NULL_POINTER)
+            {
+                memorymanager__free((nuint)g_offline_messages[i].base64_encrypted_message);
+            }
+            clib__null_memory(&g_offline_messages[i], sizeof(offline_chat_message_t));
+        }
+    }
+
+    pthread_mutex_unlock(&g_offline_messages_mutex);
+}
+
+/**
+ * @brief stores (or replaces) an identity's admin-registered alias in the in-memory store, keyed by
+ *        its base64(SHA256(public_key)) hash. creates an alias-only slot if the identity has no entry
+ *        yet. pass an empty/NULL alias to clear it (and drop the slot if it then holds neither tags
+ *        nor an avatar). the on-disk copy follows on the next settings save.
+ *
+ * @param char* identity_hash -> base64(SHA256(public_key)) of the identity, the store's key
+ * @param char* alias -> the alias to store, or NULL/empty to clear it
+ *
+ * @note guarded by g_client_stored_data_mutex (a leaf lock).
+ *
+ * @return void
+ */
+void base__set_identity_alias_by_hash(char* identity_hash, char* alias)
+{
+    uint64 i = 0;
+    int64 slot = -1;
+    boole clearing = FALSE;
+
+    if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
+    {
+        return;
+    }
+
+    clearing = (boole)(alias == NULL_POINTER || alias[0] == 0);
+
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            slot = (int64)i;
+            break;
+        }
+    }
+
+    if (slot == -1)
+    {
+        if (clearing == TRUE)
+        {
+            pthread_mutex_unlock(&g_client_stored_data_mutex);
+            return; // nothing stored to clear
+        }
+
+        for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+        {
+            if (g_client_stored_data[i].public_key[0] == 0)
+            {
+                slot = (int64)i;
+                break;
+            }
+        }
+
+        if (slot == -1)
+        {
+            DBG_IDENTITIES log_info("%s", "set_identity_alias: identity store FULL, cannot store alias \n");
+            pthread_mutex_unlock(&g_client_stored_data_mutex);
+            return;
+        }
+
+        clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
+        clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
+    }
+
+    clib__null_memory(&g_client_stored_data[slot].alias[0], USERNAME_MAX_LENGTH);
+
+    if (clearing == FALSE)
+    {
+        clib__copy_memory(alias, &g_client_stored_data[slot].alias[0], clib__utf8_string_length(alias), USERNAME_MAX_LENGTH - 1);
+    }
+    else if (g_client_stored_data[slot].tag_id_count == 0 && g_client_stored_data[slot].base64_avatar[0] == 0)
+    {
+        // cleared the alias and the slot holds neither tags nor an avatar -> drop it entirely
         clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
     }
 
@@ -1945,9 +2604,15 @@ void base__set_identity_avatar_by_hash(char* identity_hash, char* base64_avatar)
 
 /**
  * @brief copies an identity's stored avatar (by hash) into out_buffer. out_buffer is always
- *        null-terminated. returns TRUE only if a non-empty avatar was found.
+ *        null-terminated, and the copy is truncated to out_buffer_size - 1 bytes.
+ *
+ * @param char* identity_hash -> base64(SHA256(public_key)) of the identity to look up
+ * @param char* out_buffer -> receives the stored base64 avatar, emptied first
+ * @param uint64 out_buffer_size -> size of out_buffer in bytes, including the null terminator
  *
  * @note guarded by g_client_stored_data_mutex (a leaf lock).
+ *
+ * @return boole -> TRUE only if the identity was found and held a non-empty avatar
  */
 boole base__get_identity_avatar_by_hash(char* identity_hash, char* out_buffer, uint64 out_buffer_size)
 {
@@ -1983,16 +2648,17 @@ boole base__get_identity_avatar_by_hash(char* identity_hash, char* out_buffer, u
 
 /**
  * @brief adds or removes one tag id on a stored identity (by hash), for admin tag management of
- *        identities that may be offline. removing an identity's last tag clears the whole entry,
- *        matching how the store never holds tagless identities. disk persistence still waits for the
- *        next "save server settings". stripping/adding the tag on a currently-connected holder is the
- *        caller's job.
+ *        identities that may be offline.
+ *
+ *        removing an identity's last tag clears the whole entry, matching how the store never holds
+ *        tagless identities. disk persistence still waits for the next "save server settings".
+ *        stripping/adding the tag on a currently-connected holder is the caller's job.
  *
  * @param char* identity_hash -> base64 hash of the identity to modify
  * @param uint64 tag_id -> the tag id to add or remove
  * @param boole add -> TRUE to add the tag, FALSE to remove it
  *
- * @return boole TRUE if the identity existed (whether or not the tag set actually changed)
+ * @return boole -> TRUE if the identity existed (whether or not the tag set actually changed)
  *
  * @note the store is guarded by g_client_stored_data_mutex, taken here (a leaf lock).
  */
@@ -2048,7 +2714,7 @@ boole base__modify_identity_tag_in_store(char* identity_hash, uint64 tag_id, boo
                 }
                 g_client_stored_data[i].tag_id_count--;
 
-                /* an identity with no tags left is dropped entirely, like everywhere else */
+                // an identity with no tags left is dropped entirely, like everywhere else
                 if (g_client_stored_data[i].tag_id_count == 0)
                 {
                     clib__null_memory(&g_client_stored_data[i], sizeof(client_stored_data_t));
@@ -2108,7 +2774,7 @@ char* base__encrypt_cstring_and_convert_to_base64(char* string_to_encrypt, int64
 
     DBG_ENCRYPTION log_info("%s %lld %s", "base__encrypt_cstring_and_convert_to_base64() string length, ", passed_string_length, "\n");
 
-    /* why is this done this way? */
+    // why is this done this way?
     if (passed_string_length < 1026)
     {
         encryption_buffer_size = 1026;
@@ -2122,15 +2788,15 @@ char* base__encrypt_cstring_and_convert_to_base64(char* string_to_encrypt, int64
 
     base64_out_string_size += 4;
 
-    /* check size */
+    // check size
     if (base64_out_string_size > g_server_settings.websocket_message_max_length)
     {
         DBG_ENCRYPTION log_info("%s", "base__encrypt_cstring_and_convert_to_base64()  base64_out_string_size > g_server_settings.websocket_message_max_length) returning null \n");
         return 0;
     }
 
-    /* fresh random IV for this message; it seeds every metadata layer's AES-CTR counter and travels on the
-       wire as the plaintext "iv" field of the JSON envelope (an IV is not secret, only unique-per-message) */
+    // fresh random IV for this message; it seeds every metadata layer's AES-CTR counter and travels on the
+    // wire as the plaintext "iv" field of the JSON envelope (an IV is not secret, only unique-per-message)
     if (base__fill_secure_random_bytes(message_iv, sizeof(message_iv)) == FALSE)
     {
         return 0;
@@ -2151,8 +2817,8 @@ char* base__encrypt_cstring_and_convert_to_base64(char* string_to_encrypt, int64
         AES_CTR_xcrypt_buffer(&ctx, encryption_buffer, encryption_buffer_size);
     }
 
-    /* if a shared secret has been established, add a layer encrypted with an HKDF-derived AES key (same
-       per-message IV), and keep the HKDF-derived MAC key for the authentication tag computed after base64 below */
+    // if a shared secret has been established, add a layer encrypted with an HKDF-derived AES key (same
+    // per-message IV), and keep the HKDF-derived MAC key for the authentication tag computed after base64 below
     if (dh_shared_secret != NULL_POINTER)
     {
         if (_base_internal__derive_keys_from_shared_secret(dh_shared_secret, enc_key, mac_key) == FALSE)
@@ -2170,8 +2836,8 @@ char* base__encrypt_cstring_and_convert_to_base64(char* string_to_encrypt, int64
     zchg_base64_encode(encryption_buffer, encryption_buffer_size, base64_out_string);
     zchg_base64_encode(message_iv, sizeof(message_iv), iv_base64);
 
-    /* encrypt-then-MAC: tag = HMAC-SHA256(mac_key, iv_base64 || data_base64). only present once a shared
-       secret has been established; the receiver then requires it, which blocks a tag-stripping downgrade. */
+    // encrypt-then-MAC: tag = HMAC-SHA256(mac_key, iv_base64 || data_base64). only present once a shared
+    // secret has been established; the receiver then requires it, which blocks a tag-stripping downgrade.
     if (has_shared_secret_layer == TRUE)
     {
         if (_base_internal__compute_metadata_tag(mac_key, iv_base64, base64_out_string, metadata_tag) == FALSE)
@@ -2188,9 +2854,9 @@ char* base__encrypt_cstring_and_convert_to_base64(char* string_to_encrypt, int64
         memorymanager__free((nuint)encryption_buffer);
     }
 
-    /* wrap the ciphertext and its (public, per-message) IV in a JSON envelope { "iv":..., "data":... }.
-       cJSON_PrintUnformatted returns a malloc'd string, so copy it into a memorymanager buffer (the caller
-       frees the return with memorymanager__free) and free the cJSON string with free(). */
+    // wrap the ciphertext and its (public, per-message) IV in a JSON envelope { "iv":..., "data":... }.
+    // cJSON_PrintUnformatted returns a malloc'd string, so copy it into a memorymanager buffer (the caller
+    // frees the return with memorymanager__free) and free the cJSON string with free().
     envelope_object = cJSON_CreateObject();
     cJSON_AddStringToObject(envelope_object, "iv", iv_base64);
     cJSON_AddStringToObject(envelope_object, "data", base64_out_string);
@@ -2213,8 +2879,8 @@ char* base__encrypt_cstring_and_convert_to_base64(char* string_to_encrypt, int64
 
     printed_envelope_length = (int64)clib__utf8_string_length(printed_envelope);
 
-    /* the envelope (not the bare ciphertext) is what goes on the wire, so enforce the same size cap the
-       receiver applies in onmessage against the FULL envelope length, including the iv field + scaffolding */
+    // the envelope (not the bare ciphertext) is what goes on the wire, so enforce the same size cap the
+    // receiver applies in onmessage against the FULL envelope length, including the iv field + scaffolding
     if (printed_envelope_length > g_server_settings.websocket_message_max_length)
     {
         free(printed_envelope);
@@ -2246,7 +2912,7 @@ char* base__encrypt_cstring_and_convert_to_base64(char* string_to_encrypt, int64
  */
 void base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64_string, unsigned char* out_buffer, int64 out_buffer_length)
 {
-    int64 base64_decoded_size = 0; /* 25 percent smaller */
+    int64 base64_decoded_size = 0; // 25 percent smaller
     int64 iv_decoded_size = 0;
     client_t* client = &g_clients_array[client_id];
     struct AES_ctx ctx;
@@ -2267,8 +2933,8 @@ void base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64_st
     clib__null_memory(expected_tag, sizeof(expected_tag));
     clib__null_memory(expected_tag_base64, sizeof(expected_tag_base64));
 
-    /* the wire payload is a JSON envelope { "iv": <base64>, "data": <base64 ciphertext> }. the per-message
-       IV is public and seeds every metadata layer's AES-CTR counter, mirroring the encrypt side. */
+    // the wire payload is a JSON envelope { "iv": <base64>, "data": <base64 ciphertext> }. the per-message
+    // IV is public and seeds every metadata layer's AES-CTR counter, mirroring the encrypt side.
     envelope = cJSON_Parse(base64_string);
     if (envelope == NULL_POINTER)
     {
@@ -2286,8 +2952,8 @@ void base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64_st
         return;
     }
 
-    /* the iv field is attacker-controlled: bound its length, then require it to decode to exactly 16 bytes,
-       so the fixed message_iv buffer can never overflow (16 bytes -> 24 base64 chars). */
+    // the iv field is attacker-controlled: bound its length, then require it to decode to exactly 16 bytes,
+    // so the fixed message_iv buffer can never overflow (16 bytes -> 24 base64 chars).
     if (strlen(iv_item->valuestring) > 24)
     {
         DBG_ENCRYPTION log_info("%s", "base__get_data_from_base64_and_decrypt_it: iv field too long\n");
@@ -2303,9 +2969,9 @@ void base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64_st
         return;
     }
 
-    /* once a shared secret has been agreed, this message MUST carry a valid HMAC tag (encrypt-then-MAC).
-       derive the enc + mac keys via HKDF, then verify the tag over iv_base64 || data_base64 BEFORE decoding
-       or decrypting. requiring the tag whenever a shared secret exists blocks an attacker stripping it (downgrade). */
+    // once a shared secret has been agreed, this message MUST carry a valid HMAC tag (encrypt-then-MAC).
+    // derive the enc + mac keys via HKDF, then verify the tag over iv_base64 || data_base64 BEFORE decoding
+    // or decrypting. requiring the tag whenever a shared secret exists blocks an attacker stripping it (downgrade).
     if (client != NULL_POINTER && client->is_existing == TRUE && client->is_dh_shared_secret_agreed_upon == TRUE)
     {
         if (_base_internal__derive_keys_from_shared_secret(client->dh_shared_secret, enc_key, mac_key) == FALSE)
@@ -2338,8 +3004,8 @@ void base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64_st
         }
     }
 
-    /* the data field is attacker-controlled; guard its decode against out_buffer_length (the caller's buffer
-       size) so this function is self-defending regardless of caller, mirroring the iv guard above */
+    // the data field is attacker-controlled; guard its decode against out_buffer_length (the caller's buffer
+    // size) so this function is self-defending regardless of caller, mirroring the iv guard above
     if ((int64)(strlen(data_item->valuestring) / 4 * 3) > out_buffer_length)
     {
         DBG_ENCRYPTION log_info("%s", "base__get_data_from_base64_and_decrypt_it: data field too large for buffer\n");
@@ -2349,7 +3015,7 @@ void base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64_st
 
     base64_decoded_size = zchg_base64_decode(data_item->valuestring, strlen(data_item->valuestring), out_buffer);
 
-    /* one per-message IV drives every layer; key order does not matter because layered CTR keystreams XOR */
+    // one per-message IV drives every layer; key order does not matter because layered CTR keystreams XOR
     if (client != NULL_POINTER && client->is_existing == TRUE && client->is_dh_shared_secret_agreed_upon == TRUE)
     {
         for (i = (g_server_settings.keys_count - 1); i >= 0; i--)
@@ -2358,7 +3024,7 @@ void base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64_st
             AES_CTR_xcrypt_buffer(&ctx, out_buffer, base64_decoded_size);
         }
 
-        /* enc_key was derived (and the tag already verified) in the validation block above */
+        // enc_key was derived (and the tag already verified) in the validation block above
         AES_init_ctx_iv(&ctx, enc_key, message_iv);
         AES_CTR_xcrypt_buffer(&ctx, out_buffer, base64_decoded_size);
     }
@@ -2422,20 +3088,20 @@ char* base__encrypt_string_with_public_key(char* public_key_modulus, unsigned ch
         DBG_ENCRYPTION log_info("%s %d", "failed\n  ! mbedtls_ctr_drbg_seed returned ", ret);
     }
 
-    /* modulus and exponent; others are not needed for successful import */
+    // modulus and exponent; others are not needed for successful import
     mbedtls_mpi_init(&N);
     mbedtls_mpi_read_binary(&N, public_key_modulus_binary, buffer_modulus_bin_outsize);
-    /* status = mbedtls_mpi_read_string(&N, 64, public_key_modulus_base64); */
-    /* N -> modulus */
+    // status = mbedtls_mpi_read_string(&N, 64, public_key_modulus_base64);
+    // N -> modulus
     if (status != 0)
     {
         DBG_ENCRYPTION log_info("%s %d %s", " mbedtls_mpi_read_string N failed ", status, "\n");
     }
 
     mbedtls_mpi_init(&E);
-    /* E -> exponent */
+    // E -> exponent
 
-    /* load exponent from string (3) */
+    // load exponent from string (3)
     status = mbedtls_mpi_read_string(&E, 10, "3");
 
     if (status != 0)
@@ -2458,8 +3124,8 @@ char* base__encrypt_string_with_public_key(char* public_key_modulus, unsigned ch
 
     status = mbedtls_rsa_pkcs1_encrypt(&rsa, mbedtls_ctr_drbg_random, &ctr_drbg, buffer_length, inputbuffer, outbuffer);
 
-    /* status = mbedtls_rsa_public(&rsa, inputbuffer, outbuffer); */
-    /* mbedtls_rsa_pkcs1_encrypt() */
+    // status = mbedtls_rsa_public(&rsa, inputbuffer, outbuffer);
+    // mbedtls_rsa_pkcs1_encrypt()
     if (status != 0)
     {
         DBG_ENCRYPTION log_info("%s %X %s", "[!] base__encrypt_string_with_public_key failed ", status, " \n");
@@ -2502,7 +3168,7 @@ void base__destroy_temp_channel(uint64 temp_channel_id)
     boole status = FALSE;
     client_t* client_to_move = NULL_POINTER;
 
-    /* move any remaining members of the temp channel to the root channel */
+    // move any remaining members of the temp channel to the root channel
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client_to_move = &g_clients_array[i];
@@ -2521,10 +3187,10 @@ void base__destroy_temp_channel(uint64 temp_channel_id)
         }
 
         client_to_move->channel_id = ROOT_CHANNEL_ID;
-        client_to_move->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
+        client_to_move->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
 
-        /* keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this client
-           on the channel-mismatch check after the move to root */
+        // keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this client
+        // on the channel-mismatch check after the move to root
         audio_channel__process_client_channel_join(client_to_move);
 
         server_msg__send_channel_join_message_to_all_clients(client_to_move, &g_channel_array[ROOT_CHANNEL_ID]);
@@ -2537,11 +3203,11 @@ void base__destroy_temp_channel(uint64 temp_channel_id)
         server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client_to_move->p_ws_connection, client_to_move->dh_shared_secret, ROOT_CHANNEL_ID);
     }
 
-    /* free the channel slot and tell everyone the channel is gone */
+    // free the channel slot and tell everyone the channel is gone
     clib__null_memory(&g_channel_array[temp_channel_id], sizeof(channel_t));
     server_msg__send_channel_delete_message_to_all_clients(temp_channel_id, 0);
 
-    /* the root channel may have just gained members and have no maintainer; pick one */
+    // the root channel may have just gained members and have no maintainer; pick one
     if (g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present == FALSE)
     {
         status = base__find_new_maintainer_for_channel(&index_of_new_maintainer, ROOT_CHANNEL_ID, 0, FALSE);
@@ -2580,7 +3246,7 @@ void base__move_client_into_channel(uint64 client_id, uint64 destination_channel
     old_channel = &g_channel_array[client->channel_id];
     new_channel = &g_channel_array[destination_channel_id];
 
-    /* if the client was the maintainer of the channel they are leaving, hand it off to someone still there */
+    // if the client was the maintainer of the channel they are leaving, hand it off to someone still there
     if (old_channel->is_channel_maintainer_present == TRUE && old_channel->maintainer_id == client->client_id)
     {
         status = base__find_new_maintainer_for_channel(&new_maintainer_index, old_channel->channel_id, client_id, TRUE);
@@ -2599,13 +3265,13 @@ void base__move_client_into_channel(uint64 client_id, uint64 destination_channel
         }
     }
 
-    /* move the client and tell everyone (same message order as the delete -> move-to-root path) */
+    // move the client and tell everyone (same message order as the delete -> move-to-root path)
     client->channel_id = destination_channel_id;
-    client->has_pending_maintainer_reset_vote = FALSE; /* channel changed - a pending reset vote belongs to the old channel */
+    client->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
     server_msg__send_channel_join_message_to_all_clients(client, new_channel);
     audio_channel__process_client_channel_join(client);
 
-    /* if the client is now the only member of the channel, they become its maintainer */
+    // if the client is now the only member of the channel, they become its maintainer
     if (base__get_client_count_for_channel(destination_channel_id) == 1)
     {
         new_channel->maintainer_id = client->client_id;
@@ -2644,6 +3310,14 @@ void base__process_client_disconnect(uint64 client_index)
     {
         DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "base__process_client_disconnect is_existing TRUE ", client_index, "\n");
 
+        // remember when this identity was last here, while the client struct still holds its key
+        if (g_server_settings.allow_last_seen == TRUE && client->public_key[0] != 0 && client->is_music_bot == FALSE)
+        {
+            char last_seen_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+            base__hash_password_to_base64(client->public_key, last_seen_identity_hash, sizeof(last_seen_identity_hash));
+            base__touch_identity_last_seen_by_hash(last_seen_identity_hash);
+        }
+
         audio_channel__process_client_disconnect(client);
 
         channel_id = g_clients_array[client_index].channel_id;
@@ -2660,16 +3334,16 @@ void base__process_client_disconnect(uint64 client_index)
             cvector_free(client->tag_ids);
         }
 
-        /* tag_ids are the only thing stored in vector */
-        /* if vector is NULL, that's okay */
+        // tag_ids are the only thing stored in vector
+        // if vector is NULL, that's okay
 
-        /* clear out file upload buffer */
+        // clear out file upload buffer
         if (client->file_upload_extension.file_upload_buffer != NULL_POINTER)
         {
             memorymanager__free((nuint)client->file_upload_extension.file_upload_buffer);
         }
 
-        /* free the heap-allocated live avatar before the struct is zeroed, or the pointer would leak */
+        // free the heap-allocated live avatar before the struct is zeroed, or the pointer would leak
         if (client->base64_avatar != NULL_POINTER)
         {
             memorymanager__free((nuint)client->base64_avatar);
@@ -2682,8 +3356,8 @@ void base__process_client_disconnect(uint64 client_index)
 
         if (owns_temp_channel == TRUE)
         {
-            /* the client owned a temp channel (their current channel); destroy it instead of handing the
-               maintainer role off to someone else */
+            // the client owned a temp channel (their current channel); destroy it instead of handing the
+            // maintainer role off to someone else
             base__destroy_temp_channel(owned_temp_channel_id);
         }
         else if (is_client_also_channel_maintainer == TRUE)
@@ -2720,7 +3394,7 @@ void base__process_client_disconnect(uint64 client_index)
  * @param char* decrypted_metadata_cstring -> the decrypted message json
  *
  * @return void
- * */
+ */
 void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64 client_index, char* decrypted_metadata_cstring)
 {
     cJSON* json_root = 0;
@@ -2730,14 +3404,14 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
 
     boole is_sender_idle = FALSE;
 
-    /* DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %s %s", "base__process_authenticated_client_message message : ", decrypted_metadata_cstring, "\n"); */
+    // DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %s %s", "base__process_authenticated_client_message message : ", decrypted_metadata_cstring, "\n");
     json_root = cJSON_Parse(decrypted_metadata_cstring);
 
     if (json_root == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %llu %s", "client : ", client_index, " json_root is null \n");
         ws_close_client(websocket);
-        /* there is no json object to call cJSON_Delete on so just disconnect the client */
+        // there is no json object to call cJSON_Delete on so just disconnect the client
         return;
     }
 
@@ -2757,9 +3431,9 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     is_sender_idle = g_clients_array[client_index].is_idle;
     clib__unlock(&g_clients_global_rwlock_guard);
 
-    /* todo, ignore audio related messages if audio is completely disabled by server */
+    // todo, ignore audio related messages if audio is completely disabled by server
 
-    /* first two messages are the ones where it doesn't matter if client is in idle state or not */
+    // first two messages are the ones where it doesn't matter if client is in idle state or not
     if (clib__is_string_equal(message_type, "client_connection_check"))
     {
         client_msg__process_client_connection_check(json_root, client_index);
@@ -2770,7 +3444,7 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     }
     else
     {
-        /* else block checks messages where it matters if client is in idle state or not */
+        // else block checks messages where it matters if client is in idle state or not
         if (is_sender_idle == FALSE)
         {
             if (clib__is_string_equal(message_type, "change_client_username"))
@@ -2788,6 +3462,10 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "direct_chat_message"))
             {
                 client_msg__process_direct_chat_message(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "offline_chat_message"))
+            {
+                client_msg__process_offline_chat_message(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "channel_chat_message"))
             {
@@ -2812,6 +3490,10 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "delete_channel_request"))
             {
                 client_msg__process_delete_channel_request(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "typing_indicator_request"))
+            {
+                client_msg__process_typing_indicator_request(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "poke_client"))
             {
@@ -2852,6 +3534,18 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "remove_tag_from_client"))
             {
                 client_msg__process_remove_tag_from_client_message(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "set_alias_request"))
+            {
+                client_msg__process_set_alias_request(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "set_identity_alias_request"))
+            {
+                client_msg__process_set_identity_alias_request(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "request_stored_clients"))
+            {
+                client_msg__process_request_stored_clients(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "server_settings_icon_upload"))
             {
@@ -2965,10 +3659,10 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             }
             else if (clib__is_string_equal(message_type, "file_send_completed"))
             {
-                /* client_msg__process_direct_chat_picture
-                   and
-                   client_msg__process_channel_chat_picture
-                   gets called by client_msg__process_file_send_completed_request if needed */
+                // client_msg__process_direct_chat_picture
+                // and
+                // client_msg__process_channel_chat_picture
+                // gets called by client_msg__process_file_send_completed_request if needed
 
                 client_msg__process_file_send_completed_request(json_root, client_index);
             }
@@ -3000,7 +3694,7 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
  * @param char* decrypted_metadata_cstring -> the decrypted message json
  *
  * @return void
- * */
+ */
 void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, uint64 index, char* decrypted_metadata_cstring)
 {
     cJSON* json_root = 0;
@@ -3011,9 +3705,9 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
     DBG_AUTHENTICATION log_info("%s %p %s", "[i] authenticating client ", websocket, "\n");
     DBG_AUTHENTICATION log_info("%s %s %s", "decrypted client verification message : ", decrypted_metadata_cstring, "\n");
 
-    /* drop oversized unauth messages. the cap must hold public_key_info: the 8192-bit DH public mix
-       (< SHARED_SECRET_LENGTH digits) + the RSA public key (< MAX_PUBLIC_KEY_LENGTH) + JSON scaffolding,
-       so it is derived from those constants rather than hardcoded, to survive future modulus/key bumps */
+    // drop oversized unauth messages. the cap must hold public_key_info: the 8192-bit DH public mix
+    // (< SHARED_SECRET_LENGTH digits) + the RSA public key (< MAX_PUBLIC_KEY_LENGTH) + JSON scaffolding,
+    // so it is derived from those constants rather than hardcoded, to survive future modulus/key bumps
     checked_message_length = clib__utf8_string_length_check_max_length(decrypted_metadata_cstring, UNAUTH_HANDSHAKE_MAX_LENGTH);
 
     if (checked_message_length == -1)
@@ -3031,7 +3725,7 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
     {
         DBG_AUTHENTICATION log_info("%s %llu %s", "client : ", index, " json_root is null \n");
         ws_close_client(websocket);
-        /* there is no json object to cJSON_Delete, since it's 0 */
+        // there is no json object to cJSON_Delete, since it's 0
         return;
     }
 
@@ -3060,6 +3754,23 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
     json_root = 0;
 }
 
+/**
+ * @brief collects the ids of every valid client sitting in channel_id, except one, into
+ *        out_receiving_client_ids.
+ *
+ *        used to build the recipient list when something has to be broadcast to a channel without
+ *        echoing it back to the client that caused it. validity is util__is_client_valid, so
+ *        free/unauthenticated slots are skipped. out_receiving_client_ids must have room for
+ *        max_client_count entries - the function does no bounds checking of its own.
+ *
+ * @param int client_to_ignore -> index of the client to leave out, pass a value no slot can have to include everyone
+ * @param uint64 channel_id -> id of the channel to collect clients from
+ * @param int64* out_receiving_client_ids -> receives the matching client indexes
+ *
+ * @note the caller must hold the clients read lock (g_clients_array is read)
+ *
+ * @return uint64 -> how many client ids were written into out_receiving_client_ids
+ */
 uint64 base__get_other_clients_in_channel(int client_to_ignore, uint64 channel_id, int64* out_receiving_client_ids)
 {
     uint64 count = 0;

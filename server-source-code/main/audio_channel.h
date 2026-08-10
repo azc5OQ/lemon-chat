@@ -4,7 +4,7 @@
 
 extern webrtc_peer_t* g_webrtc_muggles_array;
 
-/* handles for one disconnected peer's libdatachannel objects, passed to the detached teardown thread */
+// handles for one disconnected peer's libdatachannel objects, passed to the detached teardown thread
 typedef struct webrtc_teardown_arg_t
 {
     int peer_connection_handle;   // 0x0

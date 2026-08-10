@@ -13,85 +13,130 @@
         android:layout_height="match_parent"
         >
 
-        <!-- 3️⃣ Native settings panel -->
+        <!-- Native settings panel -->
 
         <ScrollView
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:orientation="vertical"
             android:fillViewport="true">
-
 
             <LinearLayout
                 android:id="@+id/settings_panel"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-
+                android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:background="@android:color/white"
-                android:padding="16dp">
+                android:background="?attr/colorSurface"
+                android:padding="24dp">
 
-                <TextView
-                    android:textColor="#36393f"
-                    android:text="Settings"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-
-                <EditText
-                    android:id="@+id/ip_address"
-                    android:textColorHint="#36393f"
-                    android:textColor="#000000"
-                    android:hint="ip address / domain"
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
-                <EditText
-                    android:id="@+id/websocket_port"
-                    android:hint="websocket port"
-                    android:textColorHint="#36393f"
-                    android:inputType="number"
-                    android:textColor="#000000"
+                    <TextView
+                        android:text="Settings"
+                        android:textAppearance="?attr/textAppearanceHeadline5"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/close_settings"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:text="Back"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:onClick="closeSettings"
+                        />
+
+                </LinearLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:hint="ip address / domain">
 
-                <EditText
-                    android:id="@+id/default_username"
-                    android:hint="default username"
-                    android:textColorHint="#36393f"
-                    android:textColor="#000000"
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/ip_address"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textUri"
+                        android:maxLines="1" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="websocket port">
 
-                <Switch
-                    android:textColor="@color/black"
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/websocket_port"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="number"
+                        android:maxLines="1" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="default username">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/default_username"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:maxLines="1" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/audio_enabled"
                     android:text="Keep microphone always on"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:paddingVertical="8dp" />
 
-
-                <Switch
-                    android:textColor="@color/black"
+                <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/settings_autoconnect_enabled"
                     android:text="Enable autoconnect"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="8dp" />
 
-                <Switch
-                    android:textColor="@color/black"
+                <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/settings_sound_effects_enabled"
                     android:text="Enable sound effects"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="8dp" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/settings_show_log"
+                    android:text="Show app log button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="8dp" />
 
                 <!-- Keys section -->
                 <TextView
-                    android:text="Server Keys"
+                    android:text="Server keys"
+                    android:textAppearance="?attr/textAppearanceSubtitle1"
                     android:textStyle="bold"
-                    android:textColor="#36393f"
-                    android:layout_marginTop="12dp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginTop="20dp"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
 
@@ -99,29 +144,29 @@
                     android:id="@+id/keys_container"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
                     android:orientation="vertical" />
 
-                <!-- Add a key -->
-                <Button
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/add_key"
-                    android:text="Add Key"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:text="Add key"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" />
 
-
-                <Button
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/save_settings"
                     android:text="Save"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
                     android:onClick="saveSettings"
                     />
+
             </LinearLayout>
 
-
         </ScrollView>
-
-
 
     </FrameLayout>
 
