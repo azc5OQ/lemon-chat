@@ -138,7 +138,7 @@ int mytypedef__check_data_types_for_consistency(void);
 // #define MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL 1
 
 // debug aid: assign each connecting client a random real ISO country code instead of doing the GeoIP
-#define DEBUG_ASSIGN_RANDOM_COUNTRY_CODE 1
+// #define DEBUG_ASSIGN_RANDOM_COUNTRY_CODE 1
 #define MAX_CLIENT_FILE_UPLOAD_LENGTH 14400000 // must exceed the base64 of the client musicbot gate: 10*1024*1024 raw -> ~13,981,016 base64 chars. the /400 per-part cap (36000) then exceeds the client's ceil(total/400) part size (~34953), so a full 10MiB upload is not rejected
 #define MAX_SIMULTANEOUS_FILE_SEND_THREADS 20
 #define CHALLENGE_STRING_SIZE 100
