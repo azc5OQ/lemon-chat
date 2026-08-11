@@ -3142,7 +3142,8 @@ void client_msg__process_channel_chat_picture(uint64 client_sender_id, uint64 lo
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_channel_chat_picture got here \n");
 
     channel_id = g_clients_array[client_sender_id].channel_id;
-    is_channel_existing = g_channel_array[channel_id].is_existing;
+    // bounds check, channel_id is not validated anywhere
+    is_channel_existing = (channel_id < g_server_settings.max_channel_count) && g_channel_array[channel_id].is_existing;
 
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_channel_chat_picture got here \n");
 
@@ -7057,7 +7058,7 @@ void client_msg__process_file_send_request(cJSON* json_root, uint64 sender_clien
     // if appending another chunk could overflow the upload buffer, force this part to start a fresh file
     if ((client_sender->file_upload_extension.buffer_cursor + MAX_CLIENT_FILE_UPLOAD_LENGTH / 400) > MAX_CLIENT_FILE_UPLOAD_LENGTH)
     {
-        DBG_FILE_UPLOAD log_info("%s", "max file buffer size beyond limit, setting this upload as new file");
+        log_info("%s %llu %s", "upload restarted: buffer full at cursor", client_sender->file_upload_extension.buffer_cursor, "\n");
         json_message_is_new_file->valueint = 1;
     }
 
@@ -7249,6 +7250,14 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
         goto label_client_msg__process_file_send_completed_request_end;
     }
 
+    // not all parts arrived
+    if (sender_client->file_upload_extension.expected_file_length == 0
+        || sender_client->file_upload_extension.buffer_cursor != sender_client->file_upload_extension.expected_file_length)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_file_send_completed_request: upload incomplete, discarding");
+        goto label_client_msg__process_file_send_completed_request_end;
+    }
+
     if (clib__is_string_equal(json_file_send_intent->valuestring, "musicbot_file") == TRUE)
     {
         json_song_name = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "song_name");
@@ -7281,6 +7290,14 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
         }
 
         mp3_data_buffer_length = zchg_base64_decode(sender_client->file_upload_extension.file_upload_buffer, clib__utf8_string_length(sender_client->file_upload_extension.file_upload_buffer), mp3_data_buffer);
+
+        // decoder returns 0 and writes nothing on bad base64
+        if (mp3_data_buffer_length == 0)
+        {
+            DBG_CLIENT_MESSAGE log_info("%s", "musicbot_file: base64 decode failed, discarding upload");
+            memorymanager__free((nuint)mp3_data_buffer);
+            goto label_client_msg__process_file_send_completed_request_end;
+        }
 
         // copy of song name must be initialized here because by the time the add_music_bot thread gets to it
         // main thread deletes the json holding the song name

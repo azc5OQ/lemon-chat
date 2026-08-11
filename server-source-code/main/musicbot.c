@@ -406,6 +406,29 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
 
         drmp3_init_memory(&mp3, mp3_data_buffer1, mp3_data_buffer_length1, NULL_POINTER);
         frameCount = drmp3_get_pcm_frame_count(&mp3);
+
+        // sampleRate is 0 when no frame header was found, dividing by it kills the server
+        if (frameCount == 0 || mp3.sampleRate == 0)
+        {
+            DBG_MUSIC_BOT log_info("%s", "musicbot__add_song: undecodable mp3, rejecting song \n");
+            drmp3_uninit(&mp3);
+
+            // release the slot claimed above, it would stay burned otherwise
+            clib__write_lock(&g_clients_global_rwlock_guard);
+            if (util__is_client_valid_musicbot(arg->music_bot->client_id) == TRUE)
+            {
+                song_in_loop->is_being_uploaded = FALSE;
+                song_in_loop->mp3_data_buffer = NULL_POINTER;
+                song_in_loop->mp3_data_buffer_length = 0;
+                clib__null_memory(song_in_loop->song_name, SONG_NAME_MAX_LENGTH);
+            }
+            clib__unlock(&g_clients_global_rwlock_guard);
+
+            memorymanager__free((nuint)arg->mp3_data_buffer);
+            memorymanager__free((nuint)arg);
+            break;
+        }
+
         seconds_length = frameCount / mp3.sampleRate;
         DBG_MUSIC_BOT log_info("%s", "music bot add song success");
         drmp3_uninit(&mp3);

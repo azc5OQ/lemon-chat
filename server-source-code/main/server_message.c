@@ -361,7 +361,10 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
         {
             if (g_clients_array[client_receiver_id].channel_id != client_in_loop->channel_id)
             {
-                if (g_channel_array[client_in_loop->channel_id].is_using_password == TRUE)
+                // bounds check, channel_id is not validated anywhere
+                if (client_in_loop->channel_id < g_server_settings.max_channel_count
+                    && g_channel_array[client_in_loop->channel_id].is_existing == TRUE
+                    && g_channel_array[client_in_loop->channel_id].is_using_password == TRUE)
                 {
                     is_hide_client_active = TRUE;
                 }
@@ -2639,7 +2642,9 @@ void server_msg__send_audio_state_of_client_to_all_clients(uint64 client_whose_a
                 // if channel of receiving client and client that is sending audio state, isn't same
                 // and client that is sending audio state is located in password protected channel
                 // skip client
-                if (g_channel_array[g_clients_array[client_whose_audio_to_send].channel_id].is_using_password == TRUE)
+                if (g_clients_array[client_whose_audio_to_send].channel_id < g_server_settings.max_channel_count
+                    && g_channel_array[g_clients_array[client_whose_audio_to_send].channel_id].is_existing == TRUE
+                    && g_channel_array[g_clients_array[client_whose_audio_to_send].channel_id].is_using_password == TRUE)
                 {
                     is_hide_client_active = TRUE;
                 }
