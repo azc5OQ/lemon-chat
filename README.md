@@ -111,8 +111,3 @@ mbedtls -> https://github.com/Mbed-TLS/mbedtls
 libtom -> https://github.com/libtom/libtomcrypt
 
 
-Its worth noting that there is also a rust version that is older and not in development
-https://github.com/azc5OQ/lemon-chat-rust-version
-
-
-
