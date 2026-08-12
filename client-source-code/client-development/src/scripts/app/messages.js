@@ -1831,6 +1831,8 @@
                     }
                     else
                     {
+                        // our own chat messages render from g_local_username, so keep it in sync
+                        g_local_username = sanitize_string(msg.message.new_username);
                         document.getElementById("connected-local-client-input").value = msg.message.new_username;
                     }
 

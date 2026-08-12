@@ -3526,7 +3526,8 @@
 
                     client_msg.send_change_client_username_request(new_username, parseInt(selected_client_id));
 
-                    if (get_client_by_client_id(selected_client_id).is_local_client == true)
+                    // client objects have no is_local_client field, so this never fired
+                    if (parseInt(selected_client_id) == local_client_id)
                     {
                         let index = get_client_index_in_array_by_client_id(local_client_id);
                         g_client_list[index].username = new_username;
