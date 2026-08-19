@@ -18,11 +18,17 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.RadioGroup;
+import android.widget.Spinner;
 import android.widget.Toast;
+
+import java.util.ArrayList;
 
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
@@ -50,6 +56,9 @@ public class MainActivity extends AppCompatActivity
 	// guards the first-run mode dialog so a second permission callback cannot stack another copy on it
 	private boolean isAppModeDialogVisible = false;
 
+	// the permission run starts on the first onResume, not in onCreate, and only once per process
+	private boolean hasBegunPermissionChain = false;
+
 	@Override protected void onResume()
 	{
 		Log.d("Info", "[lemonchat] onResume");
@@ -69,6 +78,16 @@ public class MainActivity extends AppCompatActivity
 			Log.d("Info", "[lemonchat] onResume Exception: " + ex.getMessage());
 			ex.printStackTrace();
 		}
+
+		//the activity is on screen now, so a system dialog has something to sit on. the guard keeps
+		//every later resume (returning from the prompts themselves included) from restarting the run
+		if (this.permissions != null && this.hasBegunPermissionChain == false)
+		{
+			this.hasBegunPermissionChain = true;
+			this.permissions.beginCheck();
+		}
+
+		// no handover on resume: node keeps the server connection, the webview only re-renders
 	}
 
 	@Override protected void onPause()
@@ -83,6 +102,32 @@ public class MainActivity extends AppCompatActivity
 		}
 
 		super.onPause();
+	}
+
+	//fires when the call notification's accept button reuses an existing instance (single_top)
+	@Override protected void onNewIntent(Intent intent)
+	{
+		super.onNewIntent(intent);
+
+		this.forwardAcceptCallToService(intent);
+	}
+
+	//the accept action targets this activity because android 12+ forbids the old route of the
+	//service starting an activity off a notification tap; the accept plumbing stays in the service
+	private void forwardAcceptCallToService(Intent intent)
+	{
+		if (intent == null || BackgroundService.ACTION_ACCEPT_CALL.equals(intent.getAction()) == false)
+		{
+			return;
+		}
+
+		Intent acceptIntent = new Intent(this, BackgroundService.class);
+		acceptIntent.setAction(BackgroundService.ACTION_ACCEPT_CALL);
+		acceptIntent.putExtra("channelId", intent.getIntExtra("channelId", 0));
+		this.startService(acceptIntent);
+
+		//clear the action so a relaunch of this activity cannot re-accept the call
+		intent.setAction(null);
 	}
 
 	@Override public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults)
@@ -180,6 +225,9 @@ public class MainActivity extends AppCompatActivity
 	{
 		MainActivity.instance = null;
 
+		//nobody is looking any more, so node may go back to idle
+		this.reportUiVisibility(false);
+
 		Log.d("Info", "[lemonchat] handleOnStopOnDestroyOnPause");
 		if (this.backgroundService != null)
 		{
@@ -211,12 +259,16 @@ public class MainActivity extends AppCompatActivity
 
 			this.preferences = this.getPreferences(Context.MODE_PRIVATE);
 			this.settings = ChatSettings.getInstance();
-			this.settings.setPreferences(this.preferences);
+			//ChatSettings resolves its own preferences from this context now, so the service can
+			//read them at boot with no activity around
+			ChatSettings.attachContext(this);
 
 			this.ensureIdentityAndMode();
 
+			//registering must happen here, but ASKING must not: a permission dialog launched from
+			//onCreate has no started activity to attach to and the system drops it, which is why the
+			//notification prompt only turned up on the second launch. onResume starts the chain.
 			this.permissions = new Permissions(this);
-			this.permissions.beginCheck();
 
 			//	sometimes onCreate is called if service is not running, sometimes its called when service is already running
 			//	handle both cases
@@ -228,6 +280,9 @@ public class MainActivity extends AppCompatActivity
 			{
 				this.handleOnResumeOnCreate();
 			}
+
+			//the notification's accept button may have created this activity from scratch
+			this.forwardAcceptCallToService(this.getIntent());
 
 			try
 			{
@@ -241,6 +296,8 @@ public class MainActivity extends AppCompatActivity
 					addKeyBtn.setOnClickListener(v -> this.addKeyField(null));
 					this.addKeyField(null);
 				}
+
+				this.wireServerBookmarks();
 			}
 			catch (Exception ex)
 			{
@@ -271,6 +328,219 @@ public class MainActivity extends AppCompatActivity
 		this.LoadSettings();
 
 		this.findViewById(R.id.settings_panel).setVisibility(VISIBLE);
+	}
+
+	//saved server configurations, kept beside the settings json under their own preference key so
+	//that saving settings can never disturb them: [{ name, host, port, metadata_keys }]
+	private JSONArray loadServerBookmarks()
+	{
+		try { return new JSONArray(this.preferences.getString("server_bookmarks", "[]")); }
+		catch (Exception ex) { return new JSONArray(); }
+	}
+
+	private void storeServerBookmarks(JSONArray bookmarks)
+	{
+		this.preferences.edit().putString("server_bookmarks", bookmarks.toString()).apply();
+	}
+
+	//row 0 is the placeholder, so bookmark N is row N + 1
+	private void refreshServerBookmarkSpinner()
+	{
+		Spinner spinner = this.findViewById(R.id.bookmark_spinner);
+
+		if (spinner == null)
+		{
+			return;
+		}
+
+		JSONArray bookmarks = this.loadServerBookmarks();
+		ArrayList<String> labels = new ArrayList<>();
+		labels.add(bookmarks.length() > 0 ? "saved servers" : "no saved servers");
+
+		for (int i = 0; i < bookmarks.length(); i++)
+		{
+			JSONObject bookmark = bookmarks.optJSONObject(i);
+
+			if (bookmark == null)
+			{
+				continue;
+			}
+
+			labels.add(bookmark.optString("name") + " (" + bookmark.optString("host") + ":" + bookmark.optInt("port") + ")");
+		}
+
+		ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
+		adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+		spinner.setAdapter(adapter);
+	}
+
+	//the key rows currently on screen, which belong to whichever server is in the fields
+	private JSONArray readKeyFields()
+	{
+		JSONArray keysArray = new JSONArray();
+		LinearLayout keysContainer = this.findViewById(R.id.keys_container);
+
+		for (int i = 0; i < keysContainer.getChildCount(); i++)
+		{
+			EditText keyInput = keysContainer.getChildAt(i).findViewById(R.id.key_input);
+			String key = keyInput.getText().toString().trim();
+
+			if (key.isEmpty() == false)
+			{
+				keysArray.put(key);
+			}
+		}
+
+		return keysArray;
+	}
+
+	private void wireServerBookmarks()
+	{
+		Spinner spinner = this.findViewById(R.id.bookmark_spinner);
+
+		if (spinner == null)
+		{
+			return;
+		}
+
+		this.refreshServerBookmarkSpinner();
+
+		spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener()
+		{
+			@Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id)
+			{
+				if (position == 0)
+				{
+					return;
+				}
+
+				JSONObject bookmark = MainActivity.this.loadServerBookmarks().optJSONObject(position - 1);
+
+				if (bookmark == null)
+				{
+					return;
+				}
+
+				((EditText) MainActivity.this.findViewById(R.id.ip_address)).setText(bookmark.optString("host"));
+				((EditText) MainActivity.this.findViewById(R.id.websocket_port)).setText(String.valueOf(bookmark.optInt("port")));
+				((EditText) MainActivity.this.findViewById(R.id.bookmark_name)).setText(bookmark.optString("name"));
+
+				//the metadata keys are part of the server, so they travel with it
+				LinearLayout keysContainer = MainActivity.this.findViewById(R.id.keys_container);
+				keysContainer.removeAllViews();
+
+				JSONArray keys = bookmark.optJSONArray("metadata_keys");
+
+				if (keys != null)
+				{
+					for (int i = 0; i < keys.length(); i++)
+					{
+						String value = keys.optString(i, "");
+
+						if (value.isEmpty() == false)
+						{
+							MainActivity.this.addKeyField(value);
+						}
+					}
+				}
+
+				//a server with no keys still needs the one empty row the screen normally starts with
+				if (keysContainer.getChildCount() == 0)
+				{
+					MainActivity.this.addKeyField(null);
+				}
+			}
+
+			@Override public void onNothingSelected(AdapterView<?> parent) { }
+		});
+
+		this.findViewById(R.id.bookmark_save).setOnClickListener(v -> this.saveCurrentServerAsBookmark());
+		this.findViewById(R.id.bookmark_delete).setOnClickListener(v -> this.deleteSelectedServerBookmark());
+	}
+
+	private void saveCurrentServerAsBookmark()
+	{
+		String name = ((EditText) this.findViewById(R.id.bookmark_name)).getText().toString().trim();
+		String host = ((EditText) this.findViewById(R.id.ip_address)).getText().toString().trim();
+		String port = ((EditText) this.findViewById(R.id.websocket_port)).getText().toString().trim();
+
+		if (name.isEmpty())
+		{
+			Toast.makeText(this, "name this server first", Toast.LENGTH_SHORT).show();
+			return;
+		}
+
+		if (host.isEmpty())
+		{
+			Toast.makeText(this, "fill in the address first", Toast.LENGTH_SHORT).show();
+			return;
+		}
+
+		int portNumber = 0;
+		try { portNumber = Integer.parseInt(port); } catch (Exception ex) { }
+
+		try
+		{
+			JSONObject entry = new JSONObject();
+			entry.put("name", name);
+			entry.put("host", host);
+			entry.put("port", portNumber);
+			entry.put("metadata_keys", this.readKeyFields());
+
+			JSONArray bookmarks = this.loadServerBookmarks();
+			int existing = -1;
+
+			for (int i = 0; i < bookmarks.length(); i++)
+			{
+				JSONObject stored = bookmarks.optJSONObject(i);
+
+				if (stored != null && stored.optString("name").equalsIgnoreCase(name))
+				{
+					existing = i;
+				}
+			}
+
+			//saving under a name that already exists overwrites it, so this doubles as "update"
+			if (existing == -1) { bookmarks.put(entry); }
+			else { bookmarks.put(existing, entry); }
+
+			this.storeServerBookmarks(bookmarks);
+			this.refreshServerBookmarkSpinner();
+
+			Toast.makeText(this, "saved " + name, Toast.LENGTH_SHORT).show();
+		}
+		catch (Exception ex)
+		{
+			Log.e("lemonchat", "saving a server bookmark failed", ex);
+		}
+	}
+
+	private void deleteSelectedServerBookmark()
+	{
+		Spinner spinner = this.findViewById(R.id.bookmark_spinner);
+		int position = spinner.getSelectedItemPosition();
+
+		if (position <= 0)
+		{
+			Toast.makeText(this, "pick a saved server to delete", Toast.LENGTH_SHORT).show();
+			return;
+		}
+
+		JSONArray bookmarks = this.loadServerBookmarks();
+		JSONArray remaining = new JSONArray();
+
+		for (int i = 0; i < bookmarks.length(); i++)
+		{
+			if (i != position - 1)
+			{
+				remaining.put(bookmarks.opt(i));
+			}
+		}
+
+		this.storeServerBookmarks(remaining);
+		this.refreshServerBookmarkSpinner();
+
+		((EditText) this.findViewById(R.id.bookmark_name)).setText("");
 	}
 
 	// Add a key row (inflated from key_field_row.xml: outlined password field + remove button)
@@ -389,8 +659,37 @@ public class MainActivity extends AppCompatActivity
 		}
 	}
 
+	//tells node if the user is looking at the app. being connected is not the same as being on
+	//screen, and mixing the two up is why opening the app used to leave the client idle
+	private void reportUiVisibility(boolean isVisible)
+	{
+		if (this.backgroundService == null || this.backgroundService.nodeBridge == null)
+		{
+			return;
+		}
+
+		//a file picker is another app sitting on top of ours, not the user walking away.
+		//without this check, picking a file would send the client to idle
+		if (isVisible == false && this.backgroundService.fileChooserCallback != null)
+		{
+			return;
+		}
+
+		//the user just declined a call, so he should stay idle. the flag is cleared further down
+		//in this same resume, so we look at it here and leave the clearing to that code
+		if (isVisible == true && BackgroundService.suppressNextIdleExit)
+		{
+			return;
+		}
+
+		this.backgroundService.nodeBridge.sendUiVisible(isVisible);
+	}
+
 	public void handleOnResumeOnCreate()
 	{
+		//both entry points: resume, and service connect for when the activity beat the binding
+		this.reportUiVisibility(true);
+
 		//check if WebView is attached to invisible window of background service
 		if (this.backgroundService != null)
 		{
@@ -456,9 +755,12 @@ public class MainActivity extends AppCompatActivity
 			Log.d("Info", "[lemonchat] onStop");
 			this.handleOnStopOnDestroyOnPause();
 
-			//app left the foreground - enter deep idle. the JS side defers this until authentication
-			//completes (fixes the mid-connect race) and skips it while the client is in a voice channel
-			if (this.backgroundService != null && this.backgroundService.webView != null)
+			// node owns the server connection at all times; backgrounding only asks for idle mode,
+			// and that request rides the loopback through node like any other.
+			// the file picker is another app on top of ours, so this fired and dropped the user
+			// into idle just for opening it - a pending chooser callback means we are still "in"
+			if (this.backgroundService != null && this.backgroundService.webView != null
+				&& this.backgroundService.fileChooserCallback == null)
 			{
 				this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function') { JavascriptJavaBridge__send_go_to_idle_mode_request(); }", null);
 			}
@@ -477,6 +779,14 @@ public class MainActivity extends AppCompatActivity
 		try
 		{
 			Log.d("Info", "[lemonchat] onDestroy");
+
+			//the window is closing, so a file picker it opened will never answer. cleared before
+			//the line below, which refuses to report anything while a picker is remembered
+			if (this.backgroundService != null)
+			{
+				this.backgroundService.abandonPendingFileChooser();
+			}
+
 			this.handleOnStopOnDestroyOnPause();
 			this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function') { JavascriptJavaBridge__send_go_to_idle_mode_request(); }", null);
 
@@ -515,7 +825,7 @@ public class MainActivity extends AppCompatActivity
 				int websocketPort = settingsJson.optInt("port", 0);
 				String defaultUsername = settingsJson.optString("default_username", "");
 				boolean isMicAlwaysOnEnabled = settingsJson.optBoolean("is_microphone_always_on", false);
-				boolean isAutoconnectEnabled = settingsJson.optBoolean("is_autoconnect_enabled", false);
+				boolean isAutoconnectEnabled = settingsJson.optBoolean("is_autoconnect_enabled", true);
 				boolean isAudioEffectDisabled = settingsJson.optBoolean("is_audio_effect_enabled", false);
 				boolean isAppLogEnabled = settingsJson.optBoolean("is_app_log_enabled", false);
 
@@ -523,18 +833,15 @@ public class MainActivity extends AppCompatActivity
 				EditText ipAddressEditText = findViewById(R.id.ip_address);
 				EditText portEditText = findViewById(R.id.websocket_port);
 				EditText defaultUsernameEditText = findViewById(R.id.default_username);
-				SwitchMaterial audioEnabledSwitch = findViewById(R.id.audio_enabled);
 				SwitchMaterial autoConnectSwitch = findViewById(R.id.settings_autoconnect_enabled);
-				SwitchMaterial soundEffectsSwitch = findViewById(R.id.settings_sound_effects_enabled);
-				SwitchMaterial showLogSwitch = findViewById(R.id.settings_show_log);
 
 				ipAddressEditText.setText(ipAddress);
 				portEditText.setText(String.valueOf(websocketPort));
 				defaultUsernameEditText.setText(defaultUsername);
-				audioEnabledSwitch.setChecked(isMicAlwaysOnEnabled);
+
+				//mic mode, sound effects and the app-log toggle live in the client's local settings
+				//now; their stored values are carried through the save untouched
 				autoConnectSwitch.setChecked(isAutoconnectEnabled);
-				soundEffectsSwitch.setChecked(isAudioEffectDisabled);
-				showLogSwitch.setChecked(isAppLogEnabled);
 
                 //clear out keys first
                 LinearLayout keysContainer = findViewById(R.id.keys_container);
@@ -553,6 +860,9 @@ public class MainActivity extends AppCompatActivity
 						}
 					}
 				}
+
+				//the saved list can have grown since the screen was last built
+				this.refreshServerBookmarkSpinner();
 
 				this.settings.setDefaultUsername(defaultUsername);
 				this.settings.setWebsocketPort(websocketPort);
@@ -611,16 +921,15 @@ public class MainActivity extends AppCompatActivity
 
 	public void saveSettings(View view)
 	{
-		this.restoreWebViewToForeground();
+		// read the form BEFORE restoring the webview - reading after the teardown is what a
+		// half-saved settings screen looks like
 
 		// Get UI values
 		LinearLayout keysContainer = findViewById(R.id.keys_container);
 		EditText ipAddress = findViewById(R.id.ip_address);
 		EditText port = findViewById(R.id.websocket_port);
 		EditText defaultUsername = findViewById(R.id.default_username);
-		SwitchMaterial audioEnabled = findViewById(R.id.audio_enabled);
 		SwitchMaterial autoConnect = findViewById(R.id.settings_autoconnect_enabled);
-		SwitchMaterial soundEffects = findViewById(R.id.settings_sound_effects_enabled);
 
 		String ip = ipAddress.getText().toString().trim();
 		String defaultUsernameString = defaultUsername.getText().toString().trim();
@@ -635,12 +944,16 @@ public class MainActivity extends AppCompatActivity
 			ex.printStackTrace();
 		}
 
-		SwitchMaterial showLog = findViewById(R.id.settings_show_log);
+		//these three moved into the client's local settings; carry the stored values through
+		//untouched so saving connection details cannot silently reset them
+		JSONObject previousSettings = null;
+		try { previousSettings = new JSONObject(this.settings.getJsonSettings()); }
+		catch (Exception noPrevious) { previousSettings = new JSONObject(); }
 
-		boolean isContinousAudioBroadcastEnabled = audioEnabled.isChecked();
+		boolean isContinousAudioBroadcastEnabled = previousSettings.optBoolean("is_microphone_always_on", false);
+		boolean isAudioEffectsEnabled = previousSettings.optBoolean("is_audio_effect_enabled", false);
+		boolean isAppLogEnabled = previousSettings.optBoolean("is_app_log_enabled", false);
 		boolean isAutoconnectEnabled = autoConnect.isChecked();
-		boolean isAudioEffectsEnabled = soundEffects.isChecked();
-		boolean isAppLogEnabled = showLog.isChecked();
 
 		// Create the master JSONObject
 		JSONObject settingsJson = new JSONObject();
@@ -679,11 +992,14 @@ public class MainActivity extends AppCompatActivity
 
 			this.settings.saveJsonSettings(settingsJson.toString());
 
-			this.backgroundService.javascriptJavaBridge.JavaExportRequestCurrentSettingsFromAndroid();
+			// pushing to node and the webview is the save hook's job (ChatSettings.onSettingsSaved)
 		}
-		catch (JSONException e)
+		catch (Exception e)
 		{
-			e.printStackTrace();
+			// Exception, not JSONException: an NPE here used to silently discard the whole save
+			Log.e("lemonchat", "saveSettings failed", e);
 		}
+
+		this.restoreWebViewToForeground();
 	}
 }

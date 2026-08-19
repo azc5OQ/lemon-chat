@@ -427,6 +427,10 @@ boole base__save_server_settings_to_file(void)
 
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_typing_indicator");
     cJSON_AddItemToObject(json_root, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_sending_text_to_idle_clients_allowed");
+    cJSON_AddItemToObject(json_root, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_private_messages");
+    cJSON_AddItemToObject(json_root, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_password");
     cJSON_AddStringToObject(json_root, "admin_password", &g_server_settings.admin_password[0]);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_password_is_initial");

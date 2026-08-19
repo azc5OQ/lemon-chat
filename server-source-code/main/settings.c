@@ -562,6 +562,8 @@ void settings__load(void)
     g_server_settings.is_display_country_flags_active = FALSE;
     g_server_settings.is_display_admin_tag_active = TRUE;
     g_server_settings.is_idle_mode_allowed = TRUE;
+    g_server_settings.is_sending_text_to_idle_clients_allowed = TRUE;
+    g_server_settings.allow_private_messages = TRUE;
     g_server_settings.are_identities_enabled = TRUE;
     g_server_settings.persist_identity_in_localstorage = FALSE;
     g_server_settings.allow_avatars = FALSE;
@@ -701,6 +703,10 @@ void settings__load(void)
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &g_server_settings.default_theme[0], clib__utf8_string_length(json_field->valuestring), 31); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "embed_client_config");
                 if (cJSON_IsBool(json_field)) { g_server_settings.embed_client_config = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_sending_text_to_idle_clients_allowed");
+                if (cJSON_IsBool(json_field)) { g_server_settings.is_sending_text_to_idle_clients_allowed = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_private_messages");
+                if (cJSON_IsBool(json_field)) { g_server_settings.allow_private_messages = cJSON_IsTrue(json_field); }
 
                 _settings_internal__build_and_push_client_config(g_server_settings.websocket_port, plaintext_keys, g_server_settings.keys_count);
 

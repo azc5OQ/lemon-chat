@@ -86,6 +86,19 @@ def main():
           (n_inc, n_wasm[0], os.path.relpath(OUT, HERE),
            len(assembled.encode("utf-8"))))
 
+    # 5. the chat server serves its own copy from <root>/buildresult - refresh it too, or every
+    #    served client keeps loading a stale build (only when the directory exists in this tree)
+    buildresult_dir = os.path.abspath(os.path.join(HERE, "..", "..", "buildresult"))
+    if os.path.isdir(buildresult_dir):
+        served_copy = os.path.join(buildresult_dir, "client.html")
+        with open(OUT, "r", encoding="utf-8", newline="") as src_file:
+            content = src_file.read()
+        with open(served_copy, "w", encoding="utf-8", newline="") as dst_file:
+            dst_file.write(content)
+        print("copied to server dir: %s" % served_copy)
+    else:
+        print("no buildresult dir next to client-source-code, server copy skipped")
+
 
 if __name__ == "__main__":
     main()

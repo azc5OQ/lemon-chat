@@ -109,6 +109,9 @@
 /* @@INCLUDE: scripts/app/sounds.js @@ */
 /* @@INCLUDE: scripts/app/messages.js @@ */
 /* @@INCLUDE: scripts/app/ui.js @@ */
+/* @@INCLUDE: scripts/app/node-runtime.js @@ */
+/* @@INCLUDE: scripts/app/connection-driver.js @@ */
+/* @@INCLUDE: scripts/app/android-webview.js @@ */
 /* @@INCLUDE: scripts/app/main.js @@ */
     </script>
 
@@ -191,6 +194,14 @@
                             <input type="checkbox" id="server-settings-general-allow-typing-indicator-checkbox">
                             <span>show when somebody is typing</span>
                         </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-text-to-idle-clients-checkbox">
+                            <span>allow sending messages to idle clients</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-private-messages-checkbox">
+                            <span>allow private messages between clients</span>
+                        </label>
 
                         <input type="button" value="save server settings" id="save-server-settings-button">
                     </div>
@@ -231,6 +242,120 @@
             <input type="button" id="microphone-always-broadcasting-audio-button">
             <input type="button" id="hide-show-flags-button">
             <input type="button" id="sound-effects-button">
+            <input type="button" id="local-settings-button" value="local" title="settings stored only on this device, no admin involved">
+            <div id="local-settings-container" style="display: none;">
+                <div id="menu-bar-container"><p id="local-settings-title">local settings</p><div class="close-button" id="local-settings-x-button"></div></div>
+                <div id="local-settings-scroll">
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">show avatars</span>
+                            <span class="local-settings-hint">draws each person's picture beside their messages</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-show-avatars">
+                    </label>
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">read receipts</span>
+                            <span class="local-settings-hint">shows an eye on a private message once the other person has read it</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-seen-indicator">
+                    </label>
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">tell others when you read</span>
+                            <span class="local-settings-hint">sends the eye back, so people can see you have read their private message</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-send-seen">
+                    </label>
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">sound effects</span>
+                            <span class="local-settings-hint">a short sound when someone joins, leaves or writes</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-sound-effects">
+                    </label>
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">country flags</span>
+                            <span class="local-settings-hint">shows the flag of the country each person connects from</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-country-flags">
+                    </label>
+                    <div class="local-settings-row local-settings-row-select">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">microphone</span>
+                            <span class="local-settings-hint">whether you hold the mic to speak or leave it running</span>
+                        </span>
+                        <select id="local-settings-mic-mode">
+                            <option value="push-to-talk">push to talk</option>
+                            <option value="continuous">continuous</option>
+                        </select>
+                        <!-- touch themes use these instead of the select: an android webview cancels a
+                             native dropdown as soon as an ancestor animates, so the list never opened -->
+                        <div id="local-settings-mic-mode-segmented">
+                            <input type="button" class="local-settings-segment" data-mic-mode="push-to-talk" value="hold">
+                            <input type="button" class="local-settings-segment" data-mic-mode="continuous" value="hands free">
+                        </div>
+                    </div>
+                    <div class="local-settings-row local-settings-row-select" id="local-settings-ptt-key-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">push-to-talk key</span>
+                            <span class="local-settings-hint">the keyboard key you hold down while speaking</span>
+                        </span>
+                        <input type="button" id="local-settings-ptt-key" value="Q">
+                    </div>
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">hide the microphone button</span>
+                            <span class="local-settings-hint">removes the round mic button from the chat screen entirely</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-hide-mic">
+                    </label>
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">app log button</span>
+                            <span class="local-settings-hint">adds a toolbar button that opens the connection log</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-show-log">
+                    </label>
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">write a debug log file</span>
+                            <span class="local-settings-hint">records what the app does, so a fault can be looked at afterwards</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-file-logging">
+                    </label>
+                    <label class="local-settings-row local-settings-row-strip">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">people on the side</span>
+                            <span class="local-settings-hint">moves the people strip from the top to the left edge</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-strip-vertical">
+                    </label>
+                    <label class="local-settings-row local-settings-row-strip">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">only my channel</span>
+                            <span class="local-settings-hint">hides everyone who is not in the channel you are in</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-strip-neighbors">
+                    </label>
+                    <label class="local-settings-row local-settings-row-strip">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">show who has audio off</span>
+                            <span class="local-settings-hint">marks people who cannot receive audio at all, so you know before you speak</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-audio-availability">
+                    </label>
+                    <div class="local-settings-row local-settings-row-select">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">avatar and account</span>
+                            <span class="local-settings-hint">change your picture, alias and stored identity</span>
+                        </span>
+                        <input type="button" id="local-settings-avatar-button" value="open">
+                    </div>
+                </div>
+                <input type="button" id="local-settings-close-button" value="save">
+            </div>
             <input type="button" id="choose-theme-button" value="theme">
             <div id="choose-theme-button-list">
                 <p class='choose-theme-item' data-name="default" data-mobile="false">default</p>
@@ -250,6 +375,16 @@
         <div id="verification-system">
             <div style="height: 25vmin;"></div>
             <div id="container-2" style="min-width: 330px;">
+                <!-- saved servers: picking one fills the address and port below. android hides the
+                     whole connect form, so this rides with it -->
+                <div id="server-bookmarks-container">
+                    <select id="server-bookmark-select">
+                        <option value="">saved servers</option>
+                    </select>
+                    <input type="text" id="server-bookmark-name" maxlength="40" placeholder="name this server">
+                    <input type="button" class="button-1" id="server-bookmark-save" value="save">
+                    <input type="button" class="button-1" id="server-bookmark-delete" value="delete">
+                </div>
                 <div id="connect-form-sub-container-1">
                     <div class="text-input-container">
                         <input type="text" disabled class="text-input-pretty" value="address">
@@ -279,11 +414,21 @@
                             <input type="button" class="button-1" id="import-identity-button" value="">
                         </div>
                     </div>
-                    <div id="another-buttons-sub-loading-container">
-                        <div id="another-buttons-loading-container" style="width: 64px; height: 40px; display: inline-block; background-repeat: no-repeat; display: inline-block;">
+                    <!-- one section: what the connection is doing, and the detail behind it. the
+                         wrapper is what lets the mobile themes draw them as a single panel -->
+                    <div id="connect-status-section">
+                        <div id="another-buttons-sub-loading-container">
+                            <div id="another-buttons-loading-container" style="width: 64px; height: 40px; display: inline-block; background-repeat: no-repeat; display: inline-block;">
+                            </div>
+                            <div style="height: 32px; top: 5px; color: white; font-family: sans-serif; display: inline-block; vertical-align: top;">
+                                <p id="another-buttons-loading-container-p">waiting for chat app .....</p>
+                            </div>
                         </div>
-                        <div style="height: 32px; top: 5px; color: white; font-family: sans-serif; display: inline-block; vertical-align: top;">
-                            <p id="another-buttons-loading-container-p">waiting for chat app .....</p>
+                        <!-- live connection detail; hidden by default, the mobile themes reveal it -->
+                        <div id="connection-status-extra">
+                            <p id="connection-status-reason"></p>
+                            <p id="connection-status-countdown"></p>
+                            <p id="connection-status-lastseen"></p>
                         </div>
                     </div>
                     <div id="android-server-settings-container" style="display: none;">
@@ -325,6 +470,7 @@
                         </div>
                     </div>
                     <div id="chat-context-container">
+                        <div id="chat-seen-indicator" title="your last message has been read"></div>
                         <div class="chat-context" id="chat-context-channel-0">
                             <div class="single-server-message">
                                 now talking channel: root
@@ -339,12 +485,11 @@
                 <div id="current-channel-description">
                 </div>
                 <div id="current-client-description">
-                    <div style="height:20px;"></div>
                     <div id="current-client-avatar">
                     </div>
                     <p style="padding-left: 7px; padding-top: 7px;">connected client</p>
                     <p id="current-client-description-client-name"></p>
-                    <p style="padding-left: 7px;font-style: italic;font-weight: bold;font-size: 9px;color: #0f1113;">time active: 0 minutes</p>
+                    <p id="current-client-description-meta" style="padding-left: 7px;font-style: italic;font-weight: bold;font-size: 9px;"></p>
                     <div id="current-client-description-tags">
                     </div>
                 </div>

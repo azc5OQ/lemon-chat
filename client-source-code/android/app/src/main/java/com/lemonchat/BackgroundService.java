@@ -47,6 +47,10 @@ public class BackgroundService extends Service
 
 	public static volatile boolean isRunning = false;
 
+	// a copy of the log setting, because it is checked on every single printed line.
+	// the saved one lives in ChatSettings and is loaded into here when the service starts
+	public static volatile boolean isFileLoggingEnabled = true;
+
 	private final IBinder binder = new LocalBinder();
 
 	public boolean isWebViewAttachedToHiddenWindow = false;
@@ -58,12 +62,19 @@ public class BackgroundService extends Service
 	//its recommended to create separate notification channels for notifications of different purpose
 	private NotificationChannel notificationChannelAppRunningInBackground;
 
-	public static final String RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID = "com.lemonchat.running_in_background_notification";
+	// v2: android locks a channel's importance once it exists, so demoting it needs a new id
+	public static final String RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID = "com.lemonchat.running_in_background_notification_v2";
+	private static final String RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID_OLD = "com.lemonchat.running_in_background_notification";
 
 	private NotificationChannel notificationChannelAcceptRefuseCall;
 
 	public static final String CALL_NOTIFICATION_CHANNEL_ID = "com.lemonchat.call_notification";
 	public static final String POKE_NOTIFICATION_CHANNEL_ID = "com.lemonchat.poke_notification";
+
+	// messages noticed by the background node runtime while the app is closed
+	public static final String MESSAGE_NOTIFICATION_CHANNEL_ID = "com.lemonchat.message_notification";
+	private static final int MESSAGE_NOTIFICATION_ID = 5;
+	private static final int UNREAD_BADGE_NOTIFICATION_ID = 7;
 
 	private static final int INCOMING_CALL_NOTIFICATION_ID = 2;
 	private static final int POKE_NOTIFICATION_ID = 3;
@@ -93,12 +104,26 @@ public class BackgroundService extends Service
 
 	@Nullable @Override public IBinder onBind(Intent intent)
 	{
+		//the webview is UI and nothing else now: node owns the connection and every protocol
+		//action, so it is built when a ui actually binds and never for a headless start.
+		//(it still lives in the service rather than the activity so it survives rotation and
+		//the activity being recreated - the overlay it once needed is long gone)
+		if (this.webView == null)
+		{
+			this.createWebViewInServiceContext();
+		}
+
 		return this.binder;
 	}
 
 	public WebView webView;
 
 	JavascriptJavaBridge javascriptJavaBridge;
+
+	NodeBridge nodeBridge = null;
+
+	// keeps the cpu ticking so node's heartbeat fires while the screen is off
+	private android.os.PowerManager.WakeLock nodeWakeLock = null;
 
 	///this function is not for initialization, thats what onCreate is for
 	///every time intent is passed to this service, onStartCommand gets run
@@ -113,13 +138,20 @@ public class BackgroundService extends Service
 				this.notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID);
 
 				int channelId = intent.getIntExtra("channelId", 0);
-				// typeof guard: a call-accept can race the page load; a bare call there is a
-				// ReferenceError that evaluateJavascript swallows silently
-				this.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_come_from_idle_mode_request === 'function') { JavascriptJavaBridge__send_come_from_idle_mode_request(" + channelId + "); }", null);
+
+				// through node, not the webview: node holds the connection, and after a boot
+				// start there is no webview to call into (this used to be an NPE waiting for
+				// the first incoming call - exactly what autostart is for)
+				if (this.nodeBridge != null)
+				{
+					this.nodeBridge.sendComeFromIdle(channelId);
+				}
 
 				//bring app to foreground by calling startActivity from service context
+				//single_top so an already visible MainActivity is reused instead of stacked;
+				//when the notification's accept lands here MainActivity is already coming up
 				Intent intent1 = new Intent(this, MainActivity.class);
-				intent1.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); //needed flag
+				intent1.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
 				this.startActivity(intent1);
 
 				return START_NOT_STICKY;
@@ -134,8 +166,101 @@ public class BackgroundService extends Service
 		return START_STICKY;
 	}
 
+	/** the user swiped the app out of the recent apps list. the service keeps running, so we
+	    have to tell node ourselves that nobody is looking any more. */
+	@Override public void onTaskRemoved(Intent rootIntent)
+	{
+		Log.d("Info", "[lemonchat] onTaskRemoved: task swiped away, reporting the ui as gone");
+
+		MainActivity.instance = null;
+
+		//the app is gone, so a file picker it opened will never answer
+		this.abandonPendingFileChooser();
+
+		if (this.nodeBridge != null)
+		{
+			this.nodeBridge.sendUiVisible(false);
+		}
+
+		super.onTaskRemoved(rootIntent);
+	}
+
+	/** launcher-icon badge: a silent notification carrying the count is how android exposes it.
+	    zero cancels it. launchers that do not support badges simply ignore the number. */
+	public void showUnreadBadge(int unreadCount)
+	{
+		try
+		{
+			if (this.notificationManager == null)
+			{
+				return;
+			}
+
+			if (unreadCount <= 0)
+			{
+				this.notificationManager.cancel(UNREAD_BADGE_NOTIFICATION_ID);
+				return;
+			}
+
+			Intent openAppIntent = new Intent(this, MainActivity.class);
+			openAppIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+			PendingIntent openAppPendingIntent = PendingIntent.getActivity(this, 7, openAppIntent,
+				PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+			Notification badge = new NotificationCompat.Builder(this, MESSAGE_NOTIFICATION_CHANNEL_ID)
+				.setContentTitle("lemon chat")
+				.setContentText(unreadCount + (unreadCount == 1 ? " unread message" : " unread messages"))
+				.setSmallIcon(android.R.drawable.ic_dialog_email)
+				.setContentIntent(openAppPendingIntent)
+				.setNumber(unreadCount)
+				.setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
+				.setOnlyAlertOnce(true)
+				.setSilent(true)
+				.setAutoCancel(true)
+				.build();
+
+			this.notificationManager.notify(UNREAD_BADGE_NOTIFICATION_ID, badge);
+		}
+		catch (Exception badgeFailed)
+		{
+			Log.w("lemonchat", "unread badge failed", badgeFailed);
+		}
+	}
+
+	/** does the device have ANY usable network right now (wifi, mobile data, ethernet) */
+	public boolean isNetworkAvailable()
+	{
+		try
+		{
+			android.net.ConnectivityManager connectivity =
+				(android.net.ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+
+			return connectivity != null && connectivity.getActiveNetwork() != null;
+		}
+		catch (Exception cannotTell)
+		{
+			return true; // unknown: never claim the network is down
+		}
+	}
+
 	public void attachWebViewToInvisibleWindow()
 	{
+		// THE OVERLAY IS DISABLED. it existed only to keep the webview's javascript timers alive while
+		// the app was in the background, and it is what forced SYSTEM_ALERT_WINDOW and the permanent
+		// "displaying over other apps" notice. the background connection belongs to the embedded node
+		// runtime now, which needs no window.
+		//
+		// the webview is simply left detached while backgrounded. android may throttle or suspend its
+		// timers, and that is FINE as long as node owns the socket - but it is exactly the thing to
+		// watch for if messages stop arriving while the app is closed.
+		//
+		// everything below is kept, unreachable, so restoring the old behaviour is deleting this return.
+		if (true)
+		{
+			this.isWebViewAttachedToHiddenWindow = false;
+			return;
+		}
+
 		try
 		{
 			if (this.windowManager == null)
@@ -243,6 +368,21 @@ public class BackgroundService extends Service
 
 	public ValueCallback<Uri[]> fileChooserCallback;
 
+	/** forgets a file picker that is never going to come back with an answer. while one is
+	    remembered the app refuses to go idle, so a forgotten one blocks idle forever. */
+	public void abandonPendingFileChooser()
+	{
+		if (this.fileChooserCallback == null)
+		{
+			return;
+		}
+
+		Log.d("Info", "[lemonchat] releasing an unanswered file chooser callback");
+
+		this.fileChooserCallback.onReceiveValue(null);
+		this.fileChooserCallback = null;
+	}
+
 	public void createWebViewInServiceContext()
 	{
 		this.javascriptJavaBridge = new JavascriptJavaBridge(this, ChatSettings.getInstance(), this);
@@ -271,6 +411,19 @@ public class BackgroundService extends Service
 			//			public void onPermissionRequest(final PermissionRequest request) {
 			//				request.grant(request.getResources());
 			//			}
+
+			//anything the page prints gets handed to node, which writes it to the log file.
+			//without this the webview's half of a problem is not saved anywhere
+			@Override public boolean onConsoleMessage(android.webkit.ConsoleMessage message)
+			{
+				if (BackgroundService.isFileLoggingEnabled && BackgroundService.this.nodeBridge != null)
+				{
+					BackgroundService.this.nodeBridge.sendLogLine(message.message()
+						+ "  (" + message.sourceId() + ":" + message.lineNumber() + ")");
+				}
+
+				return true;
+			}
 
 			//so WebView allows user to select file form disk..
 			@Override public boolean onShowFileChooser(WebView vw, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams)
@@ -330,16 +483,106 @@ public class BackgroundService extends Service
 		{
 			BackgroundService.isRunning = true;
 
-			this.createWebViewInServiceContext();
+			// no webview here at all: starting the service means "run the client", which is
+			// node's job. a ui gets one when it binds (onBind), so a boot start stays headless
+
+			// ChatSettings only ever got its preferences from MainActivity, so a boot start left
+			// it empty: sendSettings() found no json, logged "no settings to hand to node yet",
+			// and node sat connected to nothing until the user opened the app
+			ChatSettings.attachContext(this);
+
+			//read the saved log setting now, before anything has a chance to print
+			BackgroundService.isFileLoggingEnabled = ChatSettings.getInstance().isFileLoggingEnabled();
+
+			// without this the cpu naps, node's heartbeat timers stop, and the server times the
+			// socket out. the old overlay window kept the webview's timers alive by accident;
+			// this is the honest version of the same thing
+			android.os.PowerManager powerManager = (android.os.PowerManager)this.getSystemService(Context.POWER_SERVICE);
+			this.nodeWakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "lemonchat:node");
+			this.nodeWakeLock.acquire();
+
+			// the bridge first (node needs its port and token), then node itself. node owns the
+			// server connection permanently; the webview renders via the loopback
+			this.nodeBridge = new NodeBridge(this);
+
+			if (this.nodeBridge.start())
+			{
+				NodeRuntime.start(this.getApplicationContext(), this.nodeBridge.getPort(), this.nodeBridge.getToken());
+			}
+
+			// tell node whether the device has ANY network, now and whenever it changes. without
+			// this a wifi-off phone reported "the server probably rejected the keys"
+			try
+			{
+				android.net.ConnectivityManager connectivity =
+					(android.net.ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+
+				if (connectivity != null)
+				{
+					final BackgroundService networkOwner = this;
+
+					connectivity.registerDefaultNetworkCallback(new android.net.ConnectivityManager.NetworkCallback()
+					{
+						public void onAvailable(android.net.Network network)
+						{
+							if (networkOwner.nodeBridge != null) { networkOwner.nodeBridge.sendNetworkState(true); }
+						}
+
+						public void onLost(android.net.Network network)
+						{
+							if (networkOwner.nodeBridge != null) { networkOwner.nodeBridge.sendNetworkState(false); }
+						}
+					});
+
+					// the callbacks only fire on CHANGE; the current answer is stated again the
+					// moment node attaches to the bridge (this early one is usually dropped)
+					this.nodeBridge.sendNetworkState(connectivity.getActiveNetwork() != null);
+				}
+			}
+			catch (Exception networkWatchFailed)
+			{
+				Log.w("lemonchat", "network state watch unavailable", networkWatchFailed);
+			}
+
+			// every settings save, from any path, reaches BOTH sides - per-path pushes kept missing one
+			final BackgroundService service = this;
+			ChatSettings.onSettingsSaved = new Runnable()
+			{
+				public void run()
+				{
+					if (service.nodeBridge != null)
+					{
+						service.nodeBridge.sendSettings();
+					}
+
+					if (service.javascriptJavaBridge != null)
+					{
+						service.javascriptJavaBridge.JavaExportRequestCurrentSettingsFromAndroid();
+					}
+				}
+			};
 		}
 		if (Build.VERSION.SDK_INT >= 26)
 		{
 			this.notificationManager = (NotificationManager)getSystemService(Context.NOTIFICATION_SERVICE);
 
-			this.notificationChannelAppRunningInBackground = new NotificationChannel(RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID, "lemon chat", NotificationManager.IMPORTANCE_DEFAULT);
+			// the system will not let this notification go away, but IMPORTANCE_MIN keeps it silent and
+			// parks it at the bottom of the shade instead of showing an ongoing card near the top
+			this.notificationManager.deleteNotificationChannel(RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID_OLD);
+
+			this.notificationChannelAppRunningInBackground = new NotificationChannel(RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID, "lemon chat", NotificationManager.IMPORTANCE_MIN);
+			this.notificationChannelAppRunningInBackground.setShowBadge(false);
+			this.notificationChannelAppRunningInBackground.setSound(null, null);
+			this.notificationChannelAppRunningInBackground.enableVibration(false);
 			this.notificationManager.createNotificationChannel(this.notificationChannelAppRunningInBackground);
 
-			Notification notification = new NotificationCompat.Builder(this, RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID).setContentTitle("lemon chat").setSilent(true).setContentText("running in background").build();
+			Notification notification = new NotificationCompat.Builder(this, RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID)
+				.setContentTitle("lemon chat")
+				.setContentText("running in background")
+				.setSilent(true)
+				.setPriority(NotificationCompat.PRIORITY_MIN)
+				.setOngoing(true)
+				.build();
 
 			//sound will be default selected android system ringtone
 			this.callSoundUri = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_RINGTONE);
@@ -360,6 +603,12 @@ public class BackgroundService extends Service
 			this.notificationChannelPoke.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
 			this.notificationManager.createNotificationChannel(this.notificationChannelPoke);
 
+			// messages the background node runtime notices while the app is closed
+			NotificationChannel messageChannel = new NotificationChannel(MESSAGE_NOTIFICATION_CHANNEL_ID, "messages", NotificationManager.IMPORTANCE_HIGH);
+			messageChannel.enableVibration(true);
+			messageChannel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+			this.notificationManager.createNotificationChannel(messageChannel);
+
 			int notificationId = 1;
 
 			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -375,18 +624,40 @@ public class BackgroundService extends Service
 		super.onCreate();
 	}
 
+	// which call we last rang for, and when. node and the webview both hear about the same call,
+	// so without this the phone would ring twice for one caller
+	private String lastIncomingCallKey = "";
+	private long lastIncomingCallTimestamp = 0;
+
 	public void showIncomingCall(String callerName, int channelid)
 	{
 		try
 		{
+			//ring once per call. a second one would restart the ringtone and pop the call
+			//screen open again on top of the one already showing
+			String callKey = callerName + "@" + channelid;
+			long now = android.os.SystemClock.elapsedRealtime();
+
+			if (callKey.equals(this.lastIncomingCallKey) && (now - this.lastIncomingCallTimestamp) < 5000)
+			{
+				Log.d("Info", "[lemonchat] duplicate incoming call ignored: " + callKey);
+				return;
+			}
+
+			this.lastIncomingCallKey = callKey;
+			this.lastIncomingCallTimestamp = now;
+
 			//these intents get send to onStartCommand
 			//basically app sends intents to itself
 
-			// 3️⃣ Accept action PendingIntent → handled by service
-			Intent acceptIntent = new Intent(this, BackgroundService.class);
+			// 3️⃣ Accept action PendingIntent → launches MainActivity, which forwards to the service.
+			// android 12+ blocks a service tapped from a notification from starting an activity
+			// (trampoline ban), so accepting used to run the js but never bring the app forward
+			Intent acceptIntent = new Intent(this, MainActivity.class);
 			acceptIntent.setAction(ACTION_ACCEPT_CALL);
 			acceptIntent.putExtra("channelId", channelid);
-			PendingIntent acceptPendingIntent = PendingIntent.getService(this, 1, acceptIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+			acceptIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+			PendingIntent acceptPendingIntent = PendingIntent.getActivity(this, 1, acceptIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
 			// 4️⃣ Decline action PendingIntent → handled by service
 			Intent declineIntent = new Intent(this, BackgroundService.class);
@@ -397,7 +668,9 @@ public class BackgroundService extends Service
 			Intent fullScreenIntentActivity = new Intent(this, IncomingCallActivity.class);
 			fullScreenIntentActivity.putExtra("channelId", channelid);
 			fullScreenIntentActivity.putExtra("callerName", callerName);
-			fullScreenIntentActivity.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+			// NEW_TASK only: CLEAR_TOP pulled this into the chat's task, so declining revealed
+			// the chat instead of returning the user to where they were
+			fullScreenIntentActivity.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 			PendingIntent fullScreenIntent = PendingIntent.getActivity(this, 0, fullScreenIntentActivity, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
 			androidx.core.app.Person caller = new androidx.core.app.Person.Builder().setName(callerName).setImportant(true).build();
@@ -436,6 +709,39 @@ public class BackgroundService extends Service
 	 * background (exactly when a poke is worth sending), so the java side has to surface it.
 	 * tapping it brings the app back up.
 	 */
+	// raised by the node bridge for messages that arrive while the app is closed
+	public void showMessageNotification(String senderName, String messageText)
+	{
+		try
+		{
+			if (this.notificationManager == null)
+			{
+				return;
+			}
+
+			Intent openAppIntent = new Intent(this, MainActivity.class);
+			openAppIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+			PendingIntent openAppPendingIntent = PendingIntent.getActivity(this, 5, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+			Notification notification = new NotificationCompat.Builder(this, MESSAGE_NOTIFICATION_CHANNEL_ID)
+							    .setContentTitle(senderName)
+							    .setContentText(messageText)
+							    .setSmallIcon(android.R.drawable.ic_dialog_email)
+							    .setContentIntent(openAppPendingIntent)
+							    .setAutoCancel(true)
+							    .setPriority(NotificationCompat.PRIORITY_HIGH)
+							    .setCategory(Notification.CATEGORY_MESSAGE)
+							    .setDefaults(Notification.DEFAULT_ALL)
+							    .build();
+
+			this.notificationManager.notify(MESSAGE_NOTIFICATION_ID, notification);
+		}
+		catch (Exception ex)
+		{
+			ex.printStackTrace();
+		}
+	}
+
 	public void showPokeNotification(String senderName, String pokeMessage)
 	{
 		try

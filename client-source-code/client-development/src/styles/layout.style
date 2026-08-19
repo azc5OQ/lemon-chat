@@ -1066,3 +1066,374 @@ body[data-layout-edit="1"] #space-devider4 * {
 #space-devider2 {
     position: relative;
 }
+
+
+/* mic is hot: glowing aura on whichever mic control is visible */
+.mic-transmitting {
+    box-shadow: 0 0 6px 2px rgba(120, 230, 140, 0.9), 0 0 16px 6px rgba(120, 230, 140, 0.45);
+    border-radius: 50%;
+}
+
+/* optional avatar circle next to chat messages (local setting); the sibling rule only
+   changes the name's layout when an avatar is actually rendered before it */
+.chat-message-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-right: 6px;
+    vertical-align: middle;
+    display: inline-block;
+}
+
+.chat-message-avatar + p {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* the local-settings panel. it borrows the server-settings dialog's --set-* palette, which every
+   theme already declares, so it matches whatever theme is active instead of being one hardcoded look */
+#local-settings-container {
+    position: absolute;
+    z-index: 60;
+    background: var(--set-panel, #2f3136);
+    color: var(--set-text, #e8e8e8);
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.09));
+    border-radius: var(--set-radius, 4px);
+    padding: 0 0 10px 0;
+    font-family: var(--set-font, 'Raleway', sans-serif);
+    font-size: 13px;
+    text-align: left;
+    min-width: 300px;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+}
+
+/* the panel's own title bar: themes style menu-bar-container for the big dialogs, so this
+   scoped rule overrides that inheritance and gives the drag handle a real grabbable surface */
+#local-settings-container div#menu-bar-container {
+    display: block;
+    position: relative;
+    width: auto;
+    height: auto;
+    padding: 0 10px;
+    margin: 0 0 10px 0;
+    background: transparent;
+    border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.09));
+    border-radius: var(--set-radius, 4px) var(--set-radius, 4px) 0 0;
+    cursor: move;
+    text-align: left;
+}
+
+#local-settings-title {
+    margin: 0;
+    display: block;
+    line-height: 30px;
+    padding-right: 30px;
+    font-family: var(--set-font, 'Raleway', sans-serif);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--set-text, #e8e8e8);
+}
+
+/* the label sits on the left and the control on the right edge, so every control lines up in one
+   column no matter how long the label is. the control is last in the markup, which is what does it */
+.local-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 16px 12px 16px;
+    padding: 4px 0;
+    cursor: pointer;
+    text-align: left;
+    font-family: var(--set-font, 'Raleway', sans-serif);
+    color: var(--set-text, #e8e8e8);
+    border-radius: var(--set-radius, 4px);
+    transition: color 0.12s ease;
+}
+
+.local-settings-row:hover {
+    background: var(--set-row-hover, rgba(255, 255, 255, 0.05));
+}
+
+/* this panel is the local twin of the server-settings dialog, so its controls are built from the
+   same --set-* variables. left to the browser they were a different blue and a different font */
+#local-settings-container .local-settings-row input[type="checkbox"] {
+    flex: 0 0 auto;
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    accent-color: var(--set-accent, #5a8cff);
+    cursor: pointer;
+}
+
+/* this file is included after every theme, so the segments are excluded by name - otherwise these
+   would outrank the touch themes' own segment rules and paint the unselected half as selected */
+#local-settings-container input[type="button"]:not(.local-settings-segment) {
+    box-sizing: border-box;
+    padding: 6px 13px;
+    width: auto;
+    height: auto;
+    color: var(--set-button-text, var(--set-accent-text, #ffffff));
+    background: var(--set-button-bg, var(--set-accent, #5a8cff));
+    border: var(--set-button-border, 1px solid transparent);
+    border-radius: var(--set-radius, 4px);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: filter 0.12s ease;
+}
+
+#local-settings-container input[type="button"]:not(.local-settings-segment):hover {
+    filter: var(--set-button-hover-filter, brightness(1.14));
+}
+
+#local-settings-container input[type="button"]:not(.local-settings-segment):active {
+    filter: brightness(0.92);
+    border: var(--set-button-border-active, var(--set-button-border, 1px solid transparent));
+}
+
+#local-settings-container select {
+    box-sizing: border-box;
+    padding: 4px 7px;
+    color: var(--set-field-text, inherit);
+    background: var(--set-field, rgba(255, 255, 255, 0.06));
+    border: var(--set-field-border, 1px solid var(--set-line, rgba(255, 255, 255, 0.14)));
+    border-radius: var(--set-radius, 4px);
+    font-family: inherit;
+    font-size: 11px;
+    outline: none;
+    cursor: pointer;
+}
+
+#local-settings-container select:focus {
+    border-color: var(--set-accent, #5a8cff);
+    box-shadow: 0 0 0 2px var(--set-accent-soft, rgba(90, 140, 255, 0.25));
+}
+
+/* the server-settings rows are 12px; the label matches them and the hint sits a step below */
+.local-settings-label {
+    font-size: 12px;
+}
+
+/* takes the slack so the control is pushed right; min-width lets long hints wrap instead of
+   stretching the panel */
+.local-settings-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.local-settings-hint {
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--set-muted, rgba(255, 255, 255, 0.45));
+}
+
+.local-settings-row > input,
+.local-settings-row > select,
+.local-settings-row > #local-settings-mic-mode-segmented {
+    flex: 0 0 auto;
+}
+
+/* the panel can outgrow the window once every row carries a description */
+#local-settings-scroll {
+    max-height: 62vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* the touch-only replacement for the mic-mode select; the mobile themes reveal it */
+#local-settings-mic-mode-segmented {
+    display: none;
+}
+
+/* the profile avatar is a fixed circle, so with no picture it left a hole in the card. it carries
+   the first letter of the name until one arrives - every theme sizes the circle itself */
+#current-client-avatar.avatar-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--set-panel-2, rgba(255, 255, 255, 0.07));
+    box-shadow: inset 0 0 0 1px var(--set-line, rgba(255, 255, 255, 0.12));
+    color: var(--set-text, #e8e8e8);
+    font-family: var(--set-font, 'Raleway', sans-serif);
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+    overflow: hidden;
+}
+
+#current-client-description-meta:empty {
+    display: none;
+}
+
+/* the X borrows the dialog's close-button look (glyph included, via ::before) */
+#local-settings-container .close-button {
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: var(--set-radius, 4px);
+    color: var(--set-muted, rgba(255, 255, 255, 0.45));
+    font-size: 13px;
+    line-height: 22px;
+    text-align: center;
+}
+
+#local-settings-container .close-button::before {
+    content: "\2715";
+}
+
+#local-settings-container .close-button:hover {
+    background: var(--set-danger-soft, rgba(208, 80, 80, 0.16));
+    color: var(--set-danger-strong, #ff6b6b);
+}
+
+#local-settings-close-button {
+    margin: 2px 14px 0 14px;
+}
+
+/* every theme sizes this icon itself, and this file is included last - a base size here would
+   outrank all of them and blow the button out of its 25px slot */
+
+/* live connection status detail on the login page - hidden by default, mobile themes reveal it */
+#connection-status-extra {
+    display: none;
+}
+
+/* saved servers, above the address/port fields on the login page */
+#server-bookmarks-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 0 12px 0;
+}
+
+#server-bookmark-select,
+#server-bookmark-name {
+    box-sizing: border-box;
+    padding: 5px 7px;
+    color: var(--set-field-text, inherit);
+    background: var(--set-field, rgba(255, 255, 255, 0.06));
+    border: var(--set-field-border, 1px solid var(--set-line, rgba(255, 255, 255, 0.14)));
+    border-radius: var(--set-radius, 4px);
+    font-family: var(--set-font, 'Raleway', sans-serif);
+    font-size: 12px;
+    outline: none;
+}
+
+#server-bookmark-select {
+    max-width: 190px;
+    cursor: pointer;
+}
+
+#server-bookmark-name {
+    width: 128px;
+}
+
+#server-bookmark-save,
+#server-bookmark-delete {
+    padding: 5px 11px;
+    width: auto;
+    min-width: 0;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+/* mic button feedback: pressed while push-to-talk is held, pulsing while continuous is live.
+   the shift keeps whatever centring the theme applied - a bare scale() would drop it and the
+   button would jump sideways on every press. themes that do not centre leave the shift at 0 */
+#microphone-push-to-talk-button-touch-device.ptt-pressed {
+    transform: translateX(var(--mic-center-shift, 0px)) scale(0.9);
+    filter: brightness(1.6);
+}
+
+/* transmitting: the button goes red. a glow around it was easy to miss */
+#microphone-push-to-talk-button-touch-device.mic-continuous-active {
+    background-color: #d03a3a;
+    border-radius: 50%;
+}
+
+/* desktop mic label gets the same pressed feel */
+#toggle-microphone-label:active {
+    transform: scale(0.92);
+    filter: brightness(1.5);
+}
+/* the X sits at the bar's right edge; the bar is the drag handle so the button must not drag */
+#local-settings-container div#menu-bar-container {
+    position: relative;
+}
+
+#local-settings-container #local-settings-x-button {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+}
+
+/* fade out, matching the mobile fade in - display:none alone made it disappear abruptly */
+div#local-settings-container.closing {
+    animation: local-settings-fade-out 0.2s ease forwards;
+}
+
+@keyframes local-settings-fade-out {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: translateY(14px); }
+}
+/* per-channel unread counter: hidden by default, the mobile themes reveal it (it does not suit
+   the desktop channel tree). the inline style="display:none" is the zero-count state */
+.single-channel-unread-number {
+    display: none !important;
+}
+/* the people-strip rows only mean anything in the strip themes (simpledark / bluebell),
+   which reveal them again; elsewhere there is no strip to orient or filter */
+.local-settings-row-strip {
+    display: none !important;
+}
+/* rows that hold a control rather than a checkbox */
+.local-settings-row-select {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+/* the "cannot receive audio" badge on a strip circle. only simpledark and bluebell draw it, and
+   only while the local setting is on - everywhere else it stays out of the way */
+.client-audio-availability {
+    display: none;
+}
+
+/* "your last private message has been read": one eye in the corner of the conversation, not one
+   per bubble. hidden again the moment you send something new */
+#chat-seen-indicator {
+    display: none;
+    position: absolute;
+    right: 10px;
+    bottom: 6px;
+    width: 15px;
+    height: 15px;
+    opacity: 0.65;
+    pointer-events: none;
+    z-index: 5;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 15px 15px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2'%3E%3Cpath d='M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+}
+
+#chat-seen-indicator.chat-seen-visible {
+    display: block;
+}
+
+/* audio is not available yet. shown rather than hidden, so tapping it can explain why */
+#microphone-push-to-talk-button-touch-device.mic-unavailable {
+    filter: grayscale(1) brightness(0.65);
+    opacity: 0.55;
+}

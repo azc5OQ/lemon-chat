@@ -14,6 +14,7 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 
 public class Permissions
@@ -56,28 +57,22 @@ public class Permissions
 	{
 		Log.d("Info", "[lemonchat] PermissionChecker doCheck");
 
-		//check notification permission (asked at most once; a denial must not block the checks below)
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+		//notifications off is the thing to fix, whatever the api level. asked at most once, and a
+		//refusal must not block the checks below
+		if (this.notificationPermissionRequestedOnce == false
+			&& NotificationManagerCompat.from(this.context).areNotificationsEnabled() == false)
 		{
-			if (ContextCompat.checkSelfPermission(this.context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && this.notificationPermissionRequestedOnce == false)
-			{
-				this.notificationPermissionRequestedOnce = true;
-				this.requestNotificationPermission();
-				return;
-			}
-		}
-
-		//check draw over other apps permisison
-		if (Settings.canDrawOverlays(this.context) == false && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-		{
-			CharSequence text = "You must enable drawing over other apps! ";
-			int duration = Toast.LENGTH_LONG;
-			Toast toast = Toast.makeText(this.context, text, duration);
-			toast.show();
-
-			this.requestDrawingOverOtherAppsPermission(); //so app can work even when in background
+			this.notificationPermissionRequestedOnce = true;
+			this.requestNotificationPermission();
 			return;
 		}
+
+		// draw-over-other-apps is NO LONGER REQUESTED. it only ever existed so the service could park
+		// the webview in a 0x0 overlay window and keep its javascript timers running in the background.
+		// the background connection is moving into the embedded node runtime (NodeRuntime), which needs
+		// no window at all, so the permission - and the "displaying over other apps" notice that comes
+		// with it - is gone. requestDrawingOverOtherAppsPermission() is left in place, unused, so this
+		// is one line to put back if the overlay ever has to return.
 
 		//check disable doze mode permission
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
@@ -120,7 +115,21 @@ public class Permissions
 	private void requestNotificationPermission()
 	{
 		Log.d("Info", "[lemonchat] PermissionChecker requestNotificationPermission");
-		this.requestPermissionLauncher1.launch(Manifest.permission.POST_NOTIFICATIONS);
+
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+			&& this.context.getApplicationInfo().targetSdkVersion >= Build.VERSION_CODES.TIRAMISU)
+		{
+			this.requestPermissionLauncher1.launch(Manifest.permission.POST_NOTIFICATIONS);
+			return;
+		}
+
+		Toast.makeText(this.context, "please allow notifications, calls and messages are announced through them", Toast.LENGTH_LONG).show();
+
+		Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+		intent.putExtra(Settings.EXTRA_APP_PACKAGE, this.context.getPackageName());
+
+		//the same launcher the battery-optimisation screen uses, so returning re-enters doCheck
+		requestPermissionLauncher.launch(intent);
 	}
 
 	private void requestDisableBatteryOptimizationsPermission()

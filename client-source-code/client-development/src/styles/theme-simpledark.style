@@ -123,10 +123,13 @@ body.msgr-neighbors-only #msgr-neighbors-button {
     background-color: #2b5278;
 }
 
+/* the bar packs against the right edge - theme 6, settings 76, session 112, clear 148, slider 184 -
+   so the leftover room ends up as one clear space on the left instead of a hole in the middle */
 #msgr-scale-slider {
     display: inline-block !important;
     position: absolute;
-    left: 14px;
+    left: auto;
+    right: 184px;
     top: 14px;
     width: 90px;
     height: 16px;
@@ -1016,7 +1019,7 @@ body.android-app #verification-system::before {
 }
 
 body.android-app #verification-system::after {
-    content: "open server settings below, set the address, then connect";
+    content: "set the address in server settings, then connect";
     order: 2;
     position: static;
     margin: 10px 32px 34px 32px;
@@ -1032,6 +1035,134 @@ body.android-app #verification-system > div[style*="25vmin"] {
 body.android-app #container-2 {
     order: 3;
     min-width: 0 !important;
+}
+
+/* ===========================================================================
+   the login page as labelled sections rather than loose labels around a button
+   =========================================================================== */
+body.android-app #another-buttons-container {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    max-width: 340px;
+    margin: 0 auto;
+    text-align: left;
+}
+
+/* flat here on purpose: this theme states its surfaces plainly, bluebell is the one that graduates */
+body.android-app #another-buttons-container > div {
+    box-sizing: border-box;
+    padding: 14px 16px 16px 16px;
+    border-radius: 16px;
+    background: #2b2f36;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+body.android-app #another-buttons-container > div::before {
+    display: block;
+    padding: 0 0 10px 0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #8b9199;
+}
+
+body.android-app #connect-status-section {
+    order: 1;
+}
+
+body.android-app #connect-status-section {
+    position: relative;
+}
+
+body.android-app #connect-status-section::before {
+    content: "status";
+}
+
+/* the page-wide "not connected" banner moves in here and closes the section off at the bottom */
+body.android-app #connect-status-section::after {
+    content: "not connected";
+    display: block;
+    padding-top: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #e6e6e6;
+}
+
+body.android-app #another-buttons-sub-loading-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0;
+}
+
+/* the text wrapper carries an inline height that clips the added line */
+body.android-app #another-buttons-sub-loading-container > div:nth-child(2) {
+    height: auto !important;
+}
+
+body.android-app #another-buttons-loading-container-p {
+    margin: 0;
+}
+
+/* the big page banner is gone - the state now rides on the STATUS line above */
+body.android-app #verification-system::before {
+    display: none;
+}
+
+/* the detail lines belong to the status panel, so they carry no panel of their own */
+body.android-app #connect-status-section #connection-status-extra {
+    display: block;
+    margin: 0 !important;
+    padding: 0;
+    max-width: none !important;
+    background: none;
+    box-shadow: none;
+    text-align: left;
+}
+
+/* on the lighter section panel the old translucent white read as switched-off text */
+body.android-app #connect-status-section #connection-status-extra p {
+    text-align: left;
+    color: #b3b9c1;
+}
+
+body.android-app #connect-status-section #connection-status-reason {
+    color: #ffb48c !important;
+}
+
+body.android-app #another-buttons-sub-container {
+    order: 2;
+}
+
+body.android-app #another-buttons-sub-container::before {
+    content: "connection";
+}
+
+body.android-app #android-server-settings-container {
+    order: 3;
+}
+
+body.android-app #android-server-settings-container::before {
+    content: "server";
+}
+
+/* the buttons fill their section instead of floating in the middle of the page */
+body.android-app #connect-button,
+body.android-app #android-server-settings-button {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+body.android-app #verification-system {
+    padding-top: calc(6vh + 44px);
+}
+
+body.android-app #verification-system::before {
+    font-size: 19px;
 }
 
 body.android-app #another-buttons-sub-container > div {
@@ -1061,21 +1192,28 @@ body.android-app #another-buttons-sub-container > div {
     font-size: 13px;
 }
 
+/* same filled circle as the icons on the other end of the bar, so the row reads as one set.
+   the dots inside the glyph are painted in the circle's colour, not the page's */
 #android-settings-button {
     display: none;
     position: fixed;
-    top: 6px;
+    top: 8px;
     left: 8px;
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     z-index: 31;
     border: 0;
-    border-radius: 50%;
-    background-color: transparent;
+    border-radius: 14px;
+    background-color: #242f3d;
     background-repeat: no-repeat;
     background-position: center;
-    background-size: 20px 20px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aebdcc' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M4 7h16M4 12h16M4 17h16'/%3E%3Ccircle cx='9' cy='7' r='2.5' fill='%2317212b'/%3E%3Ccircle cx='15' cy='12' r='2.5' fill='%2317212b'/%3E%3Ccircle cx='8' cy='17' r='2.5' fill='%2317212b'/%3E%3C/svg%3E");
+    background-size: 16px 16px;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aebdcc' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M4 7h16M4 12h16M4 17h16'/%3E%3Ccircle cx='9' cy='7' r='2.5' fill='%23242f3d'/%3E%3Ccircle cx='15' cy='12' r='2.5' fill='%23242f3d'/%3E%3Ccircle cx='8' cy='17' r='2.5' fill='%23242f3d'/%3E%3C/svg%3E");
+}
+
+#android-settings-button:active {
+    background-color: #31363d;
 }
 
 a-toast {
@@ -1410,7 +1548,8 @@ a-toast {
 
 #client-info-enter[style*="position: fixed"],
 #channel-password-enter[style*="position: fixed"],
-#admin-password-enter[style*="position: fixed"] {
+#admin-password-enter[style*="position: fixed"],
+#android-settings-warning[style*="position: fixed"] {
     animation: msgr-pop-in-pinned 0.16s ease-out;
 }
 
@@ -1478,6 +1617,7 @@ a-toast {
     #client-info-enter,
     #channel-password-enter,
     #admin-password-enter,
+    #android-settings-warning,
     #choose-theme-button-list,
     .channel-list-context-menu-items,
     .chat-input-container-context-menu-items,
@@ -1523,7 +1663,7 @@ a-toast {
     display: inline-block !important;
     position: absolute;
     top: 8px;
-    right: 184px;
+    right: 112px;
     width: 28px;
     height: 28px;
     border-radius: 14px;
@@ -1566,7 +1706,7 @@ a-toast {
 
 #clear-chat-button {
     position: absolute;
-    right: 221px;
+    right: 148px;
     top: 8px;
     height: 28px;
     width: 28px;
@@ -1580,4 +1720,415 @@ a-toast {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aebdcc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6'/%3E%3C/svg%3E");
     cursor: pointer;
     visibility: visible;
+}
+
+
+/* live connection status detail: revealed in this theme */
+div#connection-status-extra {
+    display: block;
+    margin: 14px auto 0 auto;
+    max-width: 340px;
+    text-align: center;
+    font-family: sans-serif;
+    animation: connection-status-fade-in 0.6s ease;
+}
+
+#connection-status-extra p {
+    margin: 4px 0;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+#connection-status-extra p:empty {
+    display: none;
+}
+
+#connection-status-reason {
+    color: rgba(255, 180, 140, 0.85) !important;
+}
+
+#connection-status-countdown {
+    animation: connection-status-pulse 2s ease-in-out infinite;
+}
+
+@keyframes connection-status-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes connection-status-pulse {
+    0%, 100% { opacity: 0.9; }
+    50% { opacity: 0.5; }
+}
+
+/* local settings: full-screen sheet on mobile (div# outranks the layout.style panel rules) */
+div#local-settings-container {
+    position: fixed;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    box-sizing: border-box;
+    animation: local-settings-slide-in 0.25s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+div#local-settings-container div#menu-bar-container {
+    cursor: default;
+    padding: 18px 20px;
+    margin: 0 0 14px 0;
+    border-radius: 0;
+    font-size: 18px;
+}
+
+div#local-settings-container #local-settings-title {
+    font-size: 18px;
+}
+
+div#local-settings-container .local-settings-row {
+    font-size: 16px;
+}
+
+/* the rows scroll, the title bar and the save button stay put. min-height:0 is what makes it
+   scroll at all - without it the flex item refuses to shrink under its content and just overflows,
+   which pushed the save button off the screen */
+div#local-settings-container #local-settings-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 2px 0 8px 0;
+}
+
+div#local-settings-container #local-settings-close-button {
+    flex: 0 0 auto;
+    margin: 10px 20px 26px 20px;
+    padding: 12px 0;
+    width: calc(100% - 40px);
+    font-size: 16px;
+}
+
+@keyframes local-settings-slide-in {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* per-channel unread counter: shown in this theme. the .hidden-by-count class is what the
+   renderer toggles, so a zero count still disappears */
+p.single-channel-unread-number {
+    display: inline-block !important;
+    margin: 0 6px 0 auto;
+    padding: 0 6px;
+    min-width: 17px;
+    height: 17px;
+    line-height: 17px;
+    border-radius: 9px;
+    background: var(--set-accent, #5a8cff);
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    vertical-align: middle;
+}
+
+p.single-channel-unread-number.unread-empty {
+    display: none !important;
+}
+
+/* orientation, neighbours and avatar moved into local settings: drop their toolbar circles and
+   give that slot to the local-settings button, styled as one of them */
+#msgr-orientation-button,
+#msgr-neighbors-button,
+#msgr-me-button {
+    display: none !important;
+}
+
+input#local-settings-button {
+    display: inline-block !important;
+    position: absolute;
+    top: 8px;
+    right: 76px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    min-width: 0;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px;
+    background-color: #23262b;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
+    /* the button carries value="local"; zero out the text so only the glyph shows */
+    font-size: 0;
+    color: transparent;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aebdcc' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E");
+}
+
+input#local-settings-button:active {
+    background-color: #31363d;
+}
+
+/* ===========================================================================
+   local settings, in this theme's own language: gradient surfaces, a gradient
+   border (padding-box/border-box), and real checkboxes instead of the browser's
+   =========================================================================== */
+div#local-settings-container {
+    background: #1e2126;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+    color: #e4e6e8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+}
+
+div#local-settings-container div#menu-bar-container {
+    background: #24272d;
+    border-bottom: 1px solid rgba(255,255,255,0.10);
+}
+
+div#local-settings-container #local-settings-title {
+    background: linear-gradient(100deg, #e6e6e6 0%, #b8b8b8 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+/* the row separates itself from the page by being a lighter gradient than it, not by an outline */
+div#local-settings-container .local-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    margin: 0 16px 10px 16px;
+    border: 0;
+    border-radius: 14px;
+    background: linear-gradient(160deg, #363a42 0%, #2c3037 55%, #24272d 100%);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    color: #dcdee1;
+    transition: filter 0.14s ease;
+}
+
+/* a control needs the full width on a phone, so it drops under its label instead of squeezing it */
+div#local-settings-container .local-settings-row-select {
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+div#local-settings-container .local-settings-row-select .local-settings-text {
+    flex: 1 1 100%;
+}
+
+div#local-settings-container .local-settings-row-select > select,
+div#local-settings-container .local-settings-row-select > input[type="button"],
+div#local-settings-container #local-settings-mic-mode-segmented {
+    margin-left: auto;
+}
+
+/* brightness, not transform: a transform on an ancestor makes the android webview drop a native
+   dropdown the moment you touch it, which is why the mic-mode list never opened */
+div#local-settings-container .local-settings-row:active {
+    filter: brightness(1.18);
+}
+
+div#local-settings-container .local-settings-label {
+    font-size: 15px;
+    font-weight: 600;
+    color: #e8eaed;
+}
+
+div#local-settings-container .local-settings-hint {
+    font-size: 11px;
+    line-height: 1.35;
+    color: #9aa0a8;
+}
+
+/* the browser checkbox is replaced by a rounded box that fills with the accent gradient */
+div#local-settings-container .local-settings-row input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    margin: 0;
+    border: 0;
+    border-radius: 8px;
+    background: linear-gradient(160deg, #1d2024 0%, #141619 100%);
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.55);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.16s ease;
+}
+
+div#local-settings-container .local-settings-row input[type="checkbox"]:checked {
+    background: linear-gradient(135deg, #57b06d 0%, #3f8a52 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+/* the tick is drawn, not a glyph, so it scales cleanly */
+div#local-settings-container .local-settings-row input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 9px;
+    top: 4px;
+    width: 6px;
+    height: 12px;
+    border: solid #ffffff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+/* the one full-width button in the panel */
+div#local-settings-container #local-settings-close-button {
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #4a9d5f 0%, #3f8a52 100%) padding-box,
+                linear-gradient(135deg, #4a9d5f, #57b06d) border-box;
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 12px 18px;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+
+
+/* the unread counter on the channel circle in the strip */
+.member-list-channel-unread {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    margin: 0;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 5px;
+    line-height: 19px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #4a9d5f 0%, #3f8a52 100%);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+    z-index: 3;
+}
+
+.member-list-channel-unread.unread-empty {
+    display: none;
+}
+
+.member-list-channel {
+    position: relative;
+}
+/* this theme HAS the people strip, so its two rows belong in local settings */
+div#local-settings-container .local-settings-row-strip {
+    display: flex !important;
+}
+
+/* a keyboard key cannot be held on a phone - here the mic is an on-screen button */
+div#local-settings-container #local-settings-ptt-key-row {
+    display: none !important;
+}
+
+/* the segments replace the select on touch */
+div#local-settings-container #local-settings-mic-mode {
+    display: none;
+}
+
+div#local-settings-container #local-settings-mic-mode-segmented {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 0, 0, 0.6);
+    background: linear-gradient(180deg, #141619 0%, #1d2024 100%);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+div#local-settings-container .local-settings-segment {
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #9aa0a8;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+div#local-settings-container .local-settings-segment.segment-selected {
+    background: linear-gradient(180deg, #5cb173 0%, #3f8a52 100%);
+    color: #ffffff;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* the small action button on the right of a row (avatar) */
+div#local-settings-container .local-settings-row-select input[type="button"]:not(.local-settings-segment) {
+    flex: 0 0 auto;
+    padding: 9px 16px;
+    border: 1px solid rgba(0, 0, 0, 0.6);
+    border-radius: 10px;
+    background: linear-gradient(180deg, #4a4e55 0%, #2a2d33 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    color: #e4e6e8;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* the mic must say what it is doing without being read: a green ring while you hold it,
+   a red one while it transmits on its own */
+#microphone-push-to-talk-button-touch-device.ptt-pressed {
+    border-radius: 50%;
+    filter: brightness(1.7) saturate(1.25);
+    box-shadow: 0 0 0 4px rgba(92, 177, 115, 0.55), 0 0 20px 7px rgba(92, 177, 115, 0.5);
+}
+
+#microphone-push-to-talk-button-touch-device.mic-continuous-active {
+    background-color: #d05050;
+    box-shadow: none;
+}
+/* "this person cannot receive audio": a muted speaker opposite the presence dot, so the two are
+   never confused. only drawn while the local setting is on and the client's audio is off */
+body.msgr-audio-availability #member-list-body .client-audio-state-completely-disabled .client-audio-availability {
+    display: block;
+    position: absolute;
+    right: -1px;
+    top: -1px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 2px solid #1e2126;
+    background-color: #d05050;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 9px 9px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M4 9v6h4l5 4V5L8 9H4z'/%3E%3Cline x1='17' y1='9' x2='23' y2='15'/%3E%3Cline x1='23' y1='9' x2='17' y2='15'/%3E%3C/svg%3E");
+    z-index: 4;
+}
+
+/* centred horizontally so it stops sitting on top of the seen indicator. the height is unchanged.
+   the shift variable is what the pressed state in layout.style reuses to stay centred */
+#microphone-push-to-talk-button-touch-device {
+    --mic-center-shift: -50%;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
 }

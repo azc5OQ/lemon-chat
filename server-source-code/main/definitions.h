@@ -29,7 +29,7 @@ typedef signed char boole; // 1 byte always (George Boole)
 typedef unsigned char ubyte; // 1 byte always
 typedef unsigned int uint; // 4 bytes always
 typedef unsigned short ushort; // 2 bytes always
-typedef unsigned long long uint64; // 8 bytes always
+typedef unsigned long long uint64; // 8 bytes always+
 typedef unsigned long long nuint; // size of an address, native unsigned integer (memory manager / raw addresses only)
 typedef signed long long int64; // 8 bytes always
 typedef unsigned long long timestamp; // 8 bytes always
@@ -37,13 +37,13 @@ typedef const char* cstring;
 // typedef wchar_t* wstring;
 
 #ifdef DEBUG_ACTIVE
-#define DBG_DLLMAIN if (1)
+#define DBG_DLLMAIN if (0)
 #define DBG_CLIENT_MESSAGE if (0)
 #define DBG_CLIENT_MESSAGE_MAIN_FUNCTION if (0)
 #define DBG_AUTHENTICATION if (0)
 #define DBG_ENCRYPTION if (0)
 #define DBG_SERVER_MESSAGE if (0)
-#define DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE if (1)
+#define DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE if (0)
 #define DBG_CLOSE_CONNECTION if (0)
 #define DBG_ONMESSAGE if (0)
 #define DBG_MEMORY_MANAGER if (0)
@@ -56,7 +56,7 @@ typedef const char* cstring;
 #define DBG_FILE_UPLOAD if (0)
 #define DBG_MUSIC_BOT if (0)
 #define DBG_RWLOCKS if (0)
-#define DBG_IDENTITIES if (1)
+#define DBG_IDENTITIES if (0)
 
 #endif
 
@@ -77,8 +77,8 @@ typedef const char* cstring;
 #define DBG_VIOLET if (0)
 #define DBG_DBG_MEMORY_ALLOCATIONS if (0)
 #define DBG_IP_TOOLS if (0)
-#define DBG_FILE_UPLOAD if (1)
-#define DBG_MUSIC_BOT if (1)
+#define DBG_FILE_UPLOAD if (0)
+#define DBG_MUSIC_BOT if (0)
 #define DBG_RWLOCKS if (0)
 // force-on even in a release build: identity-restore debugging (flip to if (0) when done)
 #define DBG_IDENTITIES if (0)
@@ -217,6 +217,8 @@ typedef struct server_settings
     int64 https_port;
     char default_theme[32];
     boole embed_client_config;
+    boole is_sending_text_to_idle_clients_allowed;  // deliver direct text chat to idle clients; their websocket stays open in idle, so delivery works; default on
+    boole allow_private_messages;  // clients may send direct text chat to each other at all; off makes this a channels-only server; default on
 } server_settings_t;
 
 typedef enum audio_state_e

@@ -1151,6 +1151,8 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON_AddItemToObject(json_message_object1, "hide_clients_in_password_channels", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_temp_channels", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
 
     // include the current ban list so the admin's bans section can render it
     json_bans = cJSON_CreateArray();

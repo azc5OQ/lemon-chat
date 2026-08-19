@@ -53,6 +53,64 @@
 
                 </LinearLayout>
 
+                <!-- saved servers: picking one fills in every field below it, and "save server"
+                     stores whatever is in those fields under a name -->
+                <TextView
+                    android:text="Saved servers"
+                    android:textAppearance="?attr/textAppearanceSubtitle1"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginTop="20dp"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+                <Spinner
+                    android:id="@+id/bookmark_spinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="name for this server">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/bookmark_name"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:maxLines="1" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/bookmark_save"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:text="Save server"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/bookmark_delete"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:text="Delete"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:layout_height="wrap_content" />
+
+                </LinearLayout>
+
                 <com.google.android.material.textfield.TextInputLayout
                     style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                     android:layout_width="match_parent"
@@ -101,31 +159,12 @@
 
                 </com.google.android.material.textfield.TextInputLayout>
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/audio_enabled"
-                    android:text="Keep microphone always on"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="20dp"
-                    android:paddingVertical="8dp" />
+                <!-- microphone mode, sound effects and the app-log toggle moved into the client's
+                     own local settings panel; only connection-level settings belong here -->
 
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/settings_autoconnect_enabled"
                     android:text="Enable autoconnect"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingVertical="8dp" />
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/settings_sound_effects_enabled"
-                    android:text="Enable sound effects"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingVertical="8dp" />
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/settings_show_log"
-                    android:text="Show app log button"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingVertical="8dp" />

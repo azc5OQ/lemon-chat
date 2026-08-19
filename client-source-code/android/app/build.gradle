@@ -2,9 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
-//Min SDK Version: The min sdk version is the earliest release of the Android SDK that your application can run on. If you set your minsSdkVersion to 21 then the app can be installed on Android 5.0 (Lollipop) and above. Users with older devices, such as those running Android 4.4 (KitKat), won’t be able to install your app.
+//Min SDK Version: The min sdk version is the earliest release of the Android SDK that your application can run on. If you set your minsSdkVersion to 21 then the app can be installed on Android 5.0 (Lollipop) and above. Users with older devices, such as those running Android 4.4 (KitKat), wonâ€™t be able to install your app.
 //Target SDK Version: The version your application was targeted to run on. By setting the targetSdkVersion to 33, your app will behave as if it is optimized for Android 13 features when it is running on devices with Android 13. It may run on earlier or later releases, but this is what you were aiming for.
-//Compile SDK Version: This is the version of the Android SDK that the build system (like Gradle) uses to compile your app’s source code into an APK (or AAB). It dictates which APIs are available during the compilation of your code. The version of Android used by your IDE to build your app into an APK. This means you can use Android API features included in that version of the API (as well as all previous versions). If you try and use API 34 features but set compileSdkVersion to 33, you will get a compilation error. If you set compileSdkVersion to 34 you can still run the app on a API 33 device.
+//Compile SDK Version: This is the version of the Android SDK that the build system (like Gradle) uses to compile your appâ€™s source code into an APK (or AAB). It dictates which APIs are available during the compilation of your code. The version of Android used by your IDE to build your app into an APK. This means you can use Android API features included in that version of the API (as well as all previous versions). If you try and use API 34 features but set compileSdkVersion to 33, you will get a compilation error. If you set compileSdkVersion to 34 you can still run the app on a API 33 device.
 //jklminSdkVersion <= targetSdkVersion <= compileSdkVersion
 
 android {
@@ -20,6 +20,41 @@ android {
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // the embedded node runtime ships one prebuilt libnode.so per abi, and they are ~59 MB each
+        // uncompressed - so ship only the abis that are actually wanted. anything not listed here
+        // gets no libnode.so and NodeRuntime logs an UnsatisfiedLinkError rather than crashing
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+
+        externalNativeBuild {
+            cmake {
+                // libnode.so is built against the SHARED libc++, so libc++_shared.so has to be in the
+                // apk next to it. building our own glue with the same stl is what makes the ndk package
+                // it. without this the device fails at System.loadLibrary("node") with
+                //   dlopen failed: library "libc++_shared.so" not found
+                // which no amount of desktop testing would have shown.
+                arguments '-DANDROID_STL=c++_shared'
+            }
+        }
+    }
+
+    // builds liblemonchatnode.so, the jni glue that calls node::Start
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    ndkVersion '27.2.12479018'
+
+    packagingOptions {
+        // libnode.so is a prebuilt from the nodejs-mobile release; there is nothing to strip and
+        // letting the strip task at a 59 MB binary only risks breaking it
+        doNotStrip '*/arm64-v8a/libnode.so'
+        doNotStrip '*/armeabi-v7a/libnode.so'
     }
 
     buildTypes {
@@ -34,12 +69,104 @@ android {
     }
 }
 
+// finds a working python 3 no matter how this machine names it: the windows launcher, plain
+// python, or python3. also rejects the microsoft store's fake python.exe alias (nonzero exit)
+// and a bare python 2. the build scripts themselves run on any python 3.
+def resolvePython() {
+    def candidates = ['python', 'py', 'python3']
+
+    for (candidate in candidates) {
+        try {
+            def probe = [candidate, '--version'].execute()
+            def output = probe.inputStream.text + probe.errorStream.text
+            probe.waitFor()
+
+            if (probe.exitValue() == 0 && output.contains('Python 3')) {
+                return candidate
+            }
+        } catch (Exception notFound) { }
+    }
+
+    throw new GradleException("no python 3 found on PATH (tried: " + candidates.join(', ') + ")")
+}
+
+def pythonExe = resolvePython()
+
+// the apk build runs both python builders itself: client.html first, then the node bundle, then
+// packaging. declared inputs/outputs let gradle skip them when nothing changed.
+task buildClientHtml(type: Exec) {
+    workingDir "${rootDir}/../client-development"
+    commandLine pythonExe, 'build.py'
+    inputs.dir "${rootDir}/../client-development/src"
+    outputs.file "${rootDir}/../client.html"
+}
+
+task buildNodeBundle(type: Exec) {
+    workingDir "${rootDir}/../nodejs-client"
+    commandLine pythonExe, 'build-node.py'
+    inputs.dir "${rootDir}/../client-development/src/scripts"
+    inputs.files "${rootDir}/../nodejs-client/dom-shim.js",
+                 "${rootDir}/../nodejs-client/node-template.js",
+                 "${rootDir}/../nodejs-client/build-node.py"
+    outputs.file "${rootDir}/../nodejs-client/bundle.js"
+    mustRunAfter buildClientHtml
+}
+
 task copyExternalHtml(type: Copy) {
+    dependsOn buildClientHtml
     from "${rootDir}/../client.html"
     into "${projectDir}/src/main/assets"
 }
 
+// safety net behind buildNodeBundle: fails the build if the bundle somehow ends up stale anyway.
+// its own always-running task, because gradle skips a Copy it considers up to date.
+task checkNodeBundleFresh {
+    mustRunAfter buildNodeBundle
+
+    doLast {
+        def bundle = file("${rootDir}/../nodejs-client/bundle.js")
+
+        if (!bundle.exists()) {
+            throw new GradleException(
+                "nodejs-client/bundle.js is missing - run 'python build-node.py' in " +
+                "client-source-code/nodejs-client before building the apk")
+        }
+
+        // a stale bundle fails invisibly on device. the sweep is wider than the real include list
+        // (ui.js false-triggers it), but a false positive only costs the second build-node.py takes.
+        def newestSource = 0L
+        (fileTree("${rootDir}/../client-development/src/scripts") +
+         files("${rootDir}/../nodejs-client/dom-shim.js",
+               "${rootDir}/../nodejs-client/node-template.js",
+               "${rootDir}/../nodejs-client/build-node.py")).each { sourceFile ->
+            if (sourceFile.lastModified() > newestSource) { newestSource = sourceFile.lastModified() }
+        }
+
+        if (newestSource > bundle.lastModified()) {
+            throw new GradleException(
+                "nodejs-client/bundle.js is STALE (a client source is newer) - run " +
+                "'python build-node.py' in client-source-code/nodejs-client, then rebuild")
+        }
+    }
+}
+
+task copyNodeProject(type: Copy) {
+    dependsOn buildNodeBundle
+    dependsOn checkNodeBundleFresh
+
+    from("${rootDir}/../nodejs-client") {
+        include 'bundle.js'
+        include 'load-bundle.js'
+        include 'android-main.js'
+        include 'android-bridge-client.js'
+        include 'loopback-ui-server.js'
+        include 'mini-ws.js'
+    }
+    into "${projectDir}/src/main/assets/nodejs-project"
+}
+
 preBuild.dependsOn copyExternalHtml
+preBuild.dependsOn copyNodeProject
 
 dependencies {
 

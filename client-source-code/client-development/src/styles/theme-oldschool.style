@@ -1366,7 +1366,7 @@ a-toast:hover {
     position: absolute;
     z-index: 1;
     top: 0;
-    right: 284px;
+    right: 228px;
     width: 25px;
     height: 99%;
     border: 0px;
@@ -1399,7 +1399,7 @@ a-toast:hover {
     position: absolute;
     z-index: 1;
     top: 24px;
-    right: 200px;
+    right: 116px;
     font: 16px sans-serif;
     font-family: 'Raleway';
     cursor: default;
@@ -1651,7 +1651,7 @@ a-toast:hover {
     position: absolute;
     z-index: 1;
     top: 0;
-    right: 200px;
+    right: 116px;
     width: 25px;
     height: 99%;
     border: 0px;
@@ -1670,7 +1670,7 @@ a-toast:hover {
     position: absolute;
     z-index: 1;
     top: 0;
-    right: 228px;
+    right: 172px;
     width: 25px;
     height: 99%;
     border: 0px;
@@ -1689,7 +1689,7 @@ a-toast:hover {
     position: absolute;
     z-index: 1;
     top: 0;
-    right: 256px;
+    right: 200px;
     width: 25px;
     height: 99%;
     border: 0px;
@@ -2543,4 +2543,34 @@ body, input, button, textarea, select, p, li, label {
     color: #000000;
     font-size: 9px !important;
     font-family: Tahoma !important;
+}
+
+/* sound effects, country flags and always-on mic moved into local settings; this button
+   takes the first freed slot and the buttons to its right slid back by two slots */
+/* 116px is the always-broadcasting mic button's slot; this sat exactly on top of it */
+#local-settings-button {
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    right: 144px;
+    width: 25px;
+    height: 99%;
+    border: 0px;
+    transition: 0.3s ease;
+    border-radius: 3px;
+    cursor: pointer;
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-color: transparent;
+    background-size: 17px 17px;
+    /* the button carries value="local": hide the text so only the glyph shows */
+    font-size: 0;
+    color: transparent;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23303030' stroke-width='2' stroke-linecap='round'%3E%3Cline x1='4' y1='7' x2='20' y2='7'/%3E%3Cline x1='4' y1='12' x2='20' y2='12'/%3E%3Cline x1='4' y1='17' x2='20' y2='17'/%3E%3Ccircle cx='9' cy='7' r='2.2'/%3E%3Ccircle cx='15' cy='12' r='2.2'/%3E%3Ccircle cx='8' cy='17' r='2.2'/%3E%3C/svg%3E");
+}
+
+/* the other toolbar icons hover through one shared id list; this one was added later
+   and was the only icon that stayed flat under the cursor */
+#local-settings-button:hover {
+    background-color: #c0ccd8 !important;
 }

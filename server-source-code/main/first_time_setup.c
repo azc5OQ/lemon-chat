@@ -16,11 +16,148 @@
 #include <unistd.h>    // fork, execlp, access, _exit, R_OK
 #include <dirent.h>    // opendir / readdir (Let's Encrypt cert detection)
 #include <sys/wait.h>  // waitpid (certbot)
+#include <termios.h>   // tcgetattr / tcsetattr (hiding the admin password while it is typed)
 #endif
 
 static void _first_time_setup_internal__save_server_settings(char plaintext_keys[][256], uint64 keys_count);
 static int64 _first_time_setup_internal__scan_client_themes(char* client_html_path, char out_themes[][32], int64 max_themes);
 static void _first_time_setup_internal__prompt_stunnel_setup(void);
+static boole _first_time_setup_internal__ask_yes_no(const char* question, boole default_answer);
+static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, uint64 out_capacity);
+
+/**
+ * @brief asks one yes/no question and returns the answer
+ *
+ *        every question in the wizard goes through here so they all behave the same way. the
+ *        prompt ends in (Y/n) or (y/N) to show which way a bare Enter goes, and "y", "yes", "n"
+ *        and "no" are accepted in any capitalisation. anything else repeats the question instead
+ *        of being silently counted as a no, which is what the old per-question "y" test did.
+ *
+ * @param const char* question -> the question text, without the trailing (y/n)
+ * @param boole default_answer -> TRUE or FALSE; what a blank line means
+ *
+ * @return boole -> TRUE or FALSE
+ */
+static boole _first_time_setup_internal__ask_yes_no(const char* question, boole default_answer)
+{
+    char input[256];
+    uint64 i = 0;
+
+    while (TRUE)
+    {
+        clib__null_memory(input, sizeof(input));
+        printf("%s %s %s", g_mark_ask, question, (default_answer == TRUE) ? "(Y/n): " : "(y/N): ");
+
+        if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
+        {
+            return default_answer;
+        }
+
+        clib__sanitize_stdin(input);
+
+        // lowercase in place, so "Y", "Yes" and "YES" are one answer and not three
+        for (i = 0; input[i] != 0; i++)
+        {
+            if ((input[i] >= 'A') && (input[i] <= 'Z'))
+            {
+                input[i] = (char)(input[i] + 32);
+            }
+        }
+
+        if (input[0] == 0)
+        {
+            return default_answer;
+        }
+        if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "yes") == TRUE))
+        {
+            return TRUE;
+        }
+        if ((clib__is_string_equal(input, "n") == TRUE) || (clib__is_string_equal(input, "no") == TRUE))
+        {
+            return FALSE;
+        }
+
+        printf("%s %s\n", g_mark_warn, "please answer y or n, or press Enter for the default");
+    }
+}
+
+/**
+ * @brief reads the admin password twice, with the terminal echo turned off
+ *
+ *        a mistyped admin password is only recoverable by deleting server_settings.json and
+ *        redoing the whole setup, so it is entered twice and an empty one is refused. on windows
+ *        there is no termios, and the password is read the old way and echoes as it is typed.
+ *
+ * @param char* out_plaintext -> receives the accepted password
+ * @param uint64 out_capacity -> size of out_plaintext in bytes
+ *
+ * @return void
+ */
+static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, uint64 out_capacity)
+{
+    char first[256];
+    char second[256];
+#ifndef WIN32
+    struct termios terminal_before;
+    struct termios terminal_quiet;
+    boole echo_is_off = FALSE;
+#endif
+
+    while (TRUE)
+    {
+        clib__null_memory(first, sizeof(first));
+        clib__null_memory(second, sizeof(second));
+
+#ifndef WIN32
+        echo_is_off = FALSE;
+
+        if (tcgetattr(STDIN_FILENO, &terminal_before) == 0)
+        {
+            terminal_quiet = terminal_before;
+            terminal_quiet.c_lflag = terminal_quiet.c_lflag & ~((tcflag_t)ECHO);
+
+            if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal_quiet) == 0)
+            {
+                echo_is_off = TRUE;
+            }
+        }
+#endif
+
+        printf("%s %s", g_mark_ask, "Admin password (max 50 chars, not shown as you type): ");
+        fgets(first, sizeof(first), stdin);
+        clib__sanitize_stdin(first);
+        printf("\n");
+
+        printf("%s %s", g_mark_ask, "Repeat the admin password: ");
+        fgets(second, sizeof(second), stdin);
+        clib__sanitize_stdin(second);
+        printf("\n");
+
+#ifndef WIN32
+        if (echo_is_off == TRUE)
+        {
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal_before);
+        }
+#endif
+
+        if (first[0] == 0)
+        {
+            printf("%s %s\n", g_mark_warn, "the admin password cannot be empty");
+            continue;
+        }
+
+        if (clib__is_string_equal(first, second) == FALSE)
+        {
+            printf("%s %s\n", g_mark_warn, "the two entries did not match, try again");
+            continue;
+        }
+
+        clib__copy_memory(first, out_plaintext, clib__utf8_string_length(first), out_capacity - 1);
+        clib__null_memory(first, sizeof(first));
+        clib__null_memory(second, sizeof(second));
+        return;
+    }
+}
 
 /**
  * @brief writes the current settings back to server_settings.json so the next start
@@ -91,6 +228,8 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     cJSON_AddItemToObject(json_root, "allow_last_seen", cJSON_CreateBool(g_server_settings.allow_last_seen == TRUE));
     cJSON_AddItemToObject(json_root, "allow_offline_messages", cJSON_CreateBool(g_server_settings.allow_offline_messages == TRUE));
     cJSON_AddItemToObject(json_root, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
+    cJSON_AddItemToObject(json_root, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
+    cJSON_AddItemToObject(json_root, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
 
     json_text = cJSON_Print(json_root);
     if (json_text != NULL_POINTER)
@@ -453,7 +592,10 @@ void first_time_setup__run(char plaintext_keys[][256])
     ITH_SHA256_CTX ctx;
     int64 requested_key_count = 0;
 
-    printf("\n%s %s\n\n", g_mark_info, "First-time setup (answers are saved to server_settings.json; delete that file to redo)");
+    printf("\n%s %s\n", g_mark_info, "First-time setup (answers are saved to server_settings.json; delete that file to redo)");
+    printf("%s %s\n", "   ", "each question shows its default in brackets - (Y/n) takes yes on Enter, (y/N) takes no.");
+
+    printf("\n%s %s\n\n", g_mark_info, "1/4  Server basics - the port and the two passwords.");
 
     printf("%s %s", g_mark_ask, "WebSocket port: ");
     fgets(input, sizeof(input), stdin);
@@ -461,14 +603,15 @@ void first_time_setup__run(char plaintext_keys[][256])
     g_server_settings.websocket_port = strtol(input, 0, 10);
     clib__null_memory(input, sizeof(input));
 
-    printf("%s %s", g_mark_ask, "Add extra metadata encryption keys? A shared password clients must know to connect that also encrypts traffic on top of the existing per-client encryption (y/n): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
+    // one name for this thing throughout: "connect password". the prompt, the confirmation and
+    // the else branch used to call it three different things
+    printf("%s %s\n", "   ", "a connect password is one shared secret everybody needs to get in. it also encrypts");
+    printf("%s %s\n", "   ", "traffic on top of the per-client encryption. leave it off for an open server.");
 
-    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y") == TRUE))
+    if (_first_time_setup_internal__ask_yes_no("Set a connect password?", FALSE) == TRUE)
     {
         clib__null_memory(input, sizeof(input));
-        printf("%s %s", g_mark_ask, "How many keys? (1-100): ");
+        printf("%s %s", g_mark_ask, "How many connect passwords? Any one of them lets a client in (1-100): ");
         fgets(input, sizeof(input), stdin);
         clib__sanitize_stdin(input);
 
@@ -489,7 +632,7 @@ void first_time_setup__run(char plaintext_keys[][256])
         for (i = 0; i < g_server_settings.keys_count; i++)
         {
             clib__null_memory(input, sizeof(input));
-            printf("%s%s%llu%s", g_mark_ask, " key ", i + 1, ": ");
+            printf("%s%s%llu%s", g_mark_ask, " connect password ", i + 1, ": ");
             fgets(input, sizeof(input), stdin);
             clib__sanitize_stdin(input);
 
@@ -500,12 +643,19 @@ void first_time_setup__run(char plaintext_keys[][256])
             ith_sha256_final(&ctx, g_server_settings.keys[i].key_value);
         }
 
-        printf("%s %llu %s\n", g_mark_ok, g_server_settings.keys_count, "extra metadata key(s) set");
+        if (g_server_settings.keys_count == 1)
+        {
+            printf("%s %s\n", g_mark_ok, "connect password: set");
+        }
+        else
+        {
+            printf("%s %llu %s\n", g_mark_ok, g_server_settings.keys_count, "connect passwords set");
+        }
     }
     else
     {
         g_server_settings.keys_count = 0;
-        printf("%s %s\n", g_mark_info, "no extra metadata keys (no connect password; traffic still uses the per-client encryption layer)");
+        printf("%s %s\n", g_mark_info, "no connect password: anybody who knows the address can join (traffic is still encrypted per client)");
     }
 
     clib__null_memory(input, sizeof(input));
@@ -537,87 +687,66 @@ void first_time_setup__run(char plaintext_keys[][256])
     // return;
     // }
 
-    printf("%s %s", g_mark_ask, "Admin password (max 50 chars): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
+    _first_time_setup_internal__ask_admin_password(input, sizeof(input));
     base__hash_password_to_base64(input, &g_server_settings.admin_password[0], ADMIN_PASSWORD_MAX_LENGTH);
     g_server_settings.admin_password_is_initial = TRUE;
     // keep the plaintext only for this run's startup summary (shown once, then wiped)
     clib__copy_memory(input, &g_first_run_admin_password[0], clib__utf8_string_length(input), ADMIN_PASSWORD_MAX_LENGTH - 1);
     clib__null_memory(input, sizeof(input));
 
-    printf("%s %s", g_mark_ask, "Disable voice chat? (y/n): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
-    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+    printf("\n%s %s\n\n", g_mark_info, "2/4  Moderation and uptime.");
+
+    // from here on every question is phrased so yes means on. the wizard used to mix "Disable x?"
+    // in among the "Allow x?" ones, so a straight run of y answers switched features OFF
+    if (_first_time_setup_internal__ask_yes_no("Enable voice chat?", TRUE) == FALSE)
     {
         g_server_settings.is_voice_chat_active = FALSE;
         printf("%s %s\n", g_mark_off, "voice chat: off");
     }
-    clib__null_memory(input, sizeof(input));
 
-    printf("%s %s", g_mark_ask, "Block multiple clients from the same IP address? (y/n): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
-    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+    if (_first_time_setup_internal__ask_yes_no("Allow several people to connect from the same IP address?", TRUE) == FALSE)
     {
         g_server_settings.is_same_ip_address_allowed = FALSE;
         printf("%s %s\n", g_mark_ok, "same-IP clients: blocked");
     }
-    clib__null_memory(input, sizeof(input));
 
-    printf("%s %s", g_mark_ask, "Show country flags next to clients? (y/n): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
-    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
-    {
-        g_server_settings.is_display_country_flags_active = TRUE;
-        printf("%s %s\n", g_mark_ok, "country flags: on");
-    }
-    clib__null_memory(input, sizeof(input));
-
-    printf("%s %s", g_mark_ask, "Disable idle clients? (y/n): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
-    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
-    {
-        g_server_settings.is_idle_mode_allowed = FALSE;
-        printf("%s %s\n", g_mark_off, "idle clients: off");
-    }
-    clib__null_memory(input, sizeof(input));
-
-    printf("%s %s", g_mark_ask, "Auto-restart the server on crash? (y/n): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
-    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+    if (_first_time_setup_internal__ask_yes_no("Restart the server automatically if it crashes?", FALSE) == TRUE)
     {
         g_server_settings.restart_on_crash = TRUE;
         printf("%s %s\n", g_mark_ok, "auto-restart: on (relaunches on crash; times logged to crashes.txt)");
     }
-    clib__null_memory(input, sizeof(input));
-
-    printf("%s %s", g_mark_ask, "Disable identities (remembering each user's tags across reconnects)? (y/n): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
-    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
-    {
-        g_server_settings.are_identities_enabled = FALSE;
-        printf("%s %s\n", g_mark_off, "identities: off");
-    }
-    clib__null_memory(input, sizeof(input));
 
     // the questions below all serve the same thing: they are what makes the app feel like a normal
     // messenger (faces, names, people you can see and write to while they are away, "is typing").
-    // announced as one group so the operator knows they belong together and what saying yes buys him
-    printf("\n%s %s\n", g_mark_info, "The next questions are the app comfort options.");
-    printf("%s %s\n", "   ", "they are what makes the phone app pleasant to use: avatars, display names,");
-    printf("%s %s\n", "   ", "seeing people who are offline, writing to them, and \"x is typing ...\".");
-    printf("%s %s\n\n", "   ", "answering yes to all of them gives the best app experience. none of them is required.");
+    // identities leads the group because the four questions after it are only asked when it is on -
+    // it used to be asked earlier, so turning it off silently swallowed features promised right here
+    printf("\n%s %s\n", g_mark_info, "3/4  App comfort - what makes the phone app pleasant to use.");
+    printf("%s %s\n", "   ", "avatars, display names, staying connected in your pocket, seeing people who are");
+    printf("%s %s\n", "   ", "offline, writing to them, and \"x is typing ...\".");
+    printf("%s %s\n", "   ", "yes to all of them gives the best app experience. none of them is required.");
+    printf("%s %s\n", "   ", "the first question is the one most of the others depend on.");
+    printf("%s %s\n\n", "   ", "all of these are changeable later in server settings, except where a question says otherwise.");
 
-    printf("%s %s", g_mark_ask, "Allow users to set an image avatar (persisted with their identity)? (y/n): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
-    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+    if (_first_time_setup_internal__ask_yes_no("Remember identities, so each user keeps their tags across reconnects?", TRUE) == FALSE)
+    {
+        g_server_settings.are_identities_enabled = FALSE;
+        printf("%s %s\n", g_mark_off, "identities: off");
+        printf("%s %s\n", "   ", "display names, the people list, last seen and offline messages all need identities - skipping those");
+    }
+
+    if (_first_time_setup_internal__ask_yes_no("Allow idle clients, so the phone app can hold its connection in the background?", TRUE) == FALSE)
+    {
+        g_server_settings.is_idle_mode_allowed = FALSE;
+        printf("%s %s\n", g_mark_off, "idle clients: off");
+    }
+
+    if (_first_time_setup_internal__ask_yes_no("Show country flags next to clients?", FALSE) == TRUE)
+    {
+        g_server_settings.is_display_country_flags_active = TRUE;
+        printf("%s %s\n", g_mark_ok, "country flags: on");
+    }
+
+    if (_first_time_setup_internal__ask_yes_no("Allow users to set an image avatar, kept with their identity?", FALSE) == TRUE)
     {
         g_server_settings.allow_avatars = TRUE;
         printf("%s %s\n", g_mark_ok, "avatars: on");
@@ -642,57 +771,53 @@ void first_time_setup__run(char plaintext_keys[][256])
     // aliases ride on identities - without them there is nothing persistent to attach the name to
     if (g_server_settings.are_identities_enabled == TRUE)
     {
-        printf("%s %s", g_mark_ask, "Allow admins to register aliases (display names) for identities? (y/n): ");
-        fgets(input, sizeof(input), stdin);
-        clib__sanitize_stdin(input);
-        if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+
+        if (_first_time_setup_internal__ask_yes_no("Allow admins to register aliases (display names) for identities?", FALSE) == TRUE)
         {
             g_server_settings.allow_alias_registrations = TRUE;
             printf("%s %s\n", g_mark_ok, "alias registrations: on");
         }
-        clib__null_memory(input, sizeof(input));
+        else
+        {
+            printf("%s %s\n", "   ", "the people list, last seen and offline messages are labelled by alias - skipping those");
+        }
 
         // the stored-clients list is keyed and labelled by alias, so it is only useful with aliases on
         if (g_server_settings.allow_alias_registrations == TRUE)
         {
-            printf("%s %s", g_mark_ask, "Let users list people registered on this server (alias + avatar + tags) so they see them while offline? (y/n): ");
-            fgets(input, sizeof(input), stdin);
-            clib__sanitize_stdin(input);
-            if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+
+            if (_first_time_setup_internal__ask_yes_no("Let users list the people registered here (alias, avatar, tags), so they see them while offline?", FALSE) == TRUE)
             {
                 g_server_settings.allow_stored_clients_list = TRUE;
                 printf("%s %s\n", g_mark_ok, "stored clients list: on");
             }
-            clib__null_memory(input, sizeof(input));
+            else
+            {
+                printf("%s %s\n", "   ", "last seen and offline messages both hang off that list - skipping those");
+            }
 
             // last seen only makes sense next to that list - it labels the offline entries
             if (g_server_settings.allow_stored_clients_list == TRUE)
             {
-                printf("%s %s", g_mark_ask, "Record when each identity was last connected, so users see \"last seen\" on offline people? (y/n): ");
-                fgets(input, sizeof(input), stdin);
-                clib__sanitize_stdin(input);
-                if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+
+                if (_first_time_setup_internal__ask_yes_no("Record when each identity last connected, so users see \"last seen\" on offline people?", FALSE) == TRUE)
                 {
                     g_server_settings.allow_last_seen = TRUE;
                     printf("%s %s\n", g_mark_ok, "last seen: on");
                 }
-                clib__null_memory(input, sizeof(input));
 
                 // offline messages ride on that same list. this one is asked ONCE, here, and is not
                 // editable later: saying yes makes the server keep each identity's raw public key
                 // (a peer cannot encrypt to somebody who is not connected without it)
-                printf("%s %s", g_mark_ask, "Allow users to send messages to registered people who are offline? \n");
-                printf("%s %s", "  ", "the server holds them in ram and delivers them on reconnect (lost if the server restarts),\n");
-                printf("%s %s", "  ", "and it stores each identity's public key so senders can encrypt to them while away.\n");
-                printf("%s %s", "  ", "this cannot be changed later. (y/n): ");
-                fgets(input, sizeof(input), stdin);
-                clib__sanitize_stdin(input);
-                if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+                printf("%s %s\n", "   ", "the server holds them in ram and delivers them on reconnect (lost if the server restarts),");
+                printf("%s %s\n", "   ", "and it keeps each identity's public key so senders can encrypt to them while away.");
+                printf("%s %s\n", "   ", "NOT changeable later - this is the one answer you are stuck with.");
+
+                if (_first_time_setup_internal__ask_yes_no("Allow users to send messages to registered people who are offline?", FALSE) == TRUE)
                 {
                     g_server_settings.allow_offline_messages = TRUE;
                     printf("%s %s\n", g_mark_ok, "offline messages: on");
                 }
-                clib__null_memory(input, sizeof(input));
             }
         }
     }
@@ -700,25 +825,21 @@ void first_time_setup__run(char plaintext_keys[][256])
     // typing indicator: no message content ever leaves with it, only "this person is writing to you",
     // but it does tell others when somebody is at the keyboard - so it stays a choice. editable later
     // in the server settings tab, unlike the offline-message question above
-    printf("%s %s", g_mark_ask, "Show people when somebody is typing to them? \n");
-    printf("%s %s", "  ", "clients may send a short-lived \"x is typing ...\" to the channel or person they write to.\n");
-    printf("%s %s", "  ", "no message content is sent with it. can be changed later in server settings. (y/n): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
-    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+    printf("%s %s\n", "   ", "clients send a short-lived \"x is typing ...\" to the channel or person they write to.");
+    printf("%s %s\n", "   ", "no message content goes with it.");
+
+    if (_first_time_setup_internal__ask_yes_no("Show people when somebody is typing to them?", FALSE) == TRUE)
     {
         g_server_settings.allow_typing_indicator = TRUE;
         printf("%s %s\n", g_mark_ok, "typing indicator: on");
     }
-    clib__null_memory(input, sizeof(input));
+
+    printf("\n%s %s\n\n", g_mark_info, "4/4  Web access - optional, for joining from a browser instead of the app.");
 
     _first_time_setup_internal__prompt_stunnel_setup();
 
 
-    printf("%s %s", g_mark_ask, "Use built-in HTTP server to users to join from browser ? (y/n): ");
-    fgets(input, sizeof(input), stdin);
-    clib__sanitize_stdin(input);
-    if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y") == TRUE))
+    if (_first_time_setup_internal__ask_yes_no("Serve the web client from this server, so people can join from a browser?", FALSE) == TRUE)
     {
         g_server_settings.serve_client_http = TRUE;
 
@@ -757,11 +878,7 @@ void first_time_setup__run(char plaintext_keys[][256])
 
         if (g_server_settings.use_stunnel == TRUE)
         {
-            clib__null_memory(input, sizeof(input));
-            printf("%s %s", g_mark_ask, "Also serve this page over HTTPS here (stunnel), so you don't need apache/nginx? (y/n): ");
-            fgets(input, sizeof(input), stdin);
-            clib__sanitize_stdin(input);
-            if (input[0] == 'y' || input[0] == 'Y')
+            if (_first_time_setup_internal__ask_yes_no("Also serve this page over HTTPS here (stunnel), so you don't need apache/nginx?", FALSE) == TRUE)
             {
                 g_server_settings.serve_https = TRUE;
                 if (g_server_settings.https_port == 0)
@@ -798,11 +915,7 @@ void first_time_setup__run(char plaintext_keys[][256])
             }
         }
 
-        clib__null_memory(input, sizeof(input));
-        printf("%s %s", g_mark_ask, "Embed connection details so the served page connects automatically? (y/n): ");
-        fgets(input, sizeof(input), stdin);
-        clib__sanitize_stdin(input);
-        if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y") == TRUE))
+        if (_first_time_setup_internal__ask_yes_no("Embed connection details so the served page connects automatically?", FALSE) == TRUE)
         {
             g_server_settings.embed_client_config = TRUE;
             printf("%s %s\n", g_mark_ok, "autoconnect on: the served page carries the connection details");
@@ -848,17 +961,35 @@ void first_time_setup__run(char plaintext_keys[][256])
             printf("%s %s\n", g_mark_info, "no themes detected in client.html; served clients will use their own default");
         }
 
-        clib__null_memory(input, sizeof(input));
-        printf("%s %s", g_mark_ask, "Store each user's identity string in their browser (localStorage), so they keep the same ID across reloads instead of a fresh random one? (y/n): ");
-        fgets(input, sizeof(input), stdin);
-        clib__sanitize_stdin(input);
-        if ((clib__is_string_equal(input, "y") == TRUE) || (clib__is_string_equal(input, "Y")) == TRUE)
+        printf("%s %s\n", "   ", "browser users get a fresh random ID on every reload unless this is on, which means");
+        printf("%s %s\n", "   ", "their tags, alias and avatar do not survive a refresh.");
+
+        if (_first_time_setup_internal__ask_yes_no("Store each user's identity string in their browser (localStorage)?", FALSE) == TRUE)
         {
             g_server_settings.persist_identity_in_localstorage = TRUE;
             printf("%s %s\n", g_mark_ok, "identity string stored in browser localStorage: on");
         }
     }
     clib__null_memory(input, sizeof(input));
+
+    // read the answers back before writing them: the file is only redone by deleting it, so a
+    // wrong answer noticed here saves the operator that round trip
+    printf("\n%s %s\n", g_mark_info, "Setup summary:");
+    printf("      %s%lld\n", "websocket port ....... ", g_server_settings.websocket_port);
+    printf("      %s%s\n", "connect password ..... ", (g_server_settings.keys_count > 0) ? "set" : "none");
+    printf("      %s%s\n", "voice chat ........... ", (g_server_settings.is_voice_chat_active == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "same-IP clients ...... ", (g_server_settings.is_same_ip_address_allowed == TRUE) ? "allowed" : "blocked");
+    printf("      %s%s\n", "auto-restart ......... ", (g_server_settings.restart_on_crash == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "identities ........... ", (g_server_settings.are_identities_enabled == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "idle clients ......... ", (g_server_settings.is_idle_mode_allowed == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "country flags ........ ", (g_server_settings.is_display_country_flags_active == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "avatars .............. ", (g_server_settings.allow_avatars == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "display names ........ ", (g_server_settings.allow_alias_registrations == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "people list .......... ", (g_server_settings.allow_stored_clients_list == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "last seen ............ ", (g_server_settings.allow_last_seen == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "offline messages ..... ", (g_server_settings.allow_offline_messages == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "typing indicator ..... ", (g_server_settings.allow_typing_indicator == TRUE) ? "on" : "off");
+    printf("      %s%s\n\n", "browser access ....... ", (g_server_settings.serve_client_http == TRUE) ? "on" : "off");
 
     _first_time_setup_internal__save_server_settings(plaintext_keys, g_server_settings.keys_count);
 }

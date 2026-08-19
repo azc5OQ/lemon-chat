@@ -40,9 +40,18 @@ public class JavascriptJavaBridge
 		this.settings.JavascriptJavaBridgeOnSaveSettings();
 	}
 
+	//total unread messages (channels + private). launchers show it on the app icon
+	@JavascriptInterface public void JavaExportSetUnreadBadge(int unreadCount)
+	{
+		if (this.backgroundServiceInstance != null)
+		{
+			this.backgroundServiceInstance.showUnreadBadge(unreadCount);
+		}
+	}
+
 	//gets ran at the moment client connects to server
-	//sets username, sets if microphone should be on be turned on by default or not
-	//sets if sound effects should be active or not
+	//sets the default username. the microphone and sound effect settings used to be sent from
+	//here too, but they belong to the local settings panel now and arrive with the settings
 	@JavascriptInterface public void JavaExportOnConnected()
 	{
 		//will throw exception if not called inside webView thread
@@ -53,22 +62,12 @@ public class JavascriptJavaBridge
 		this.backgroundServiceInstance.webView.post(new Runnable() {
 			@Override public void run()
 			{
-				if (JavascriptJavaBridge.this.settings.isMicrophoneAlwayson())
-				{
-					JavascriptJavaBridge.this.backgroundServiceInstance.webView.evaluateJavascript("JavascriptJavaBridge__activate_continous_audio_broadcast();", null);
-				}
-
 				String defaultUsername = JavascriptJavaBridge.this.settings.getDefaultUsername();
 				if (defaultUsername.length() > 0)
 				{
 					//JSONObject.quote, not '...' concat: one apostrophe in a username made the
 					//injected line a syntax error that evaluateJavascript swallowed silently
 					JavascriptJavaBridge.this.backgroundServiceInstance.webView.evaluateJavascript("JavascriptJavaBridge__set_username_on_connect(" + JSONObject.quote(defaultUsername) + ");", null);
-				}
-
-				if (JavascriptJavaBridge.this.settings.getAreAudioEffectsEnabled() == false)
-				{
-					JavascriptJavaBridge.this.backgroundServiceInstance.webView.evaluateJavascript("JavascriptJavaBridge__set_audio_effects_status();", null);
 				}
 			}
 		});
@@ -79,6 +78,21 @@ public class JavascriptJavaBridge
 		Log.d("Info", "[lemonchat] received call request from " + callerName);
 		IBinder service;
 		this.backgroundServiceInstance.showIncomingCall(callerName, channelId);
+	}
+
+	/** the single on/off switch for the log file, used by the checkbox in local settings. */
+	@JavascriptInterface public void JavaExportSetFileLogging(boolean isEnabled)
+	{
+		Log.d("Info", "[lemonchat] JavaExportSetFileLogging " + isEnabled);
+
+		//save it first, then update the fast copy the console hook reads on every line
+		this.settings.setFileLoggingEnabled(isEnabled);
+		BackgroundService.isFileLoggingEnabled = isEnabled;
+
+		if (this.backgroundServiceInstance.nodeBridge != null)
+		{
+			this.backgroundServiceInstance.nodeBridge.sendLoggingEnabled(isEnabled);
+		}
 	}
 
 	@JavascriptInterface public void JavaExportGoToSettings()
@@ -93,6 +107,10 @@ public class JavascriptJavaBridge
 	}
 
 	public static boolean settingsAlreadyLoaded = false;
+
+	// guards the one-shot fallback that answers the settings request without loopback fields
+	// if node never announces (crashed) - the webview then connects directly as a degraded mode
+	public static boolean settingsDeferFallbackArmed = false;
 
 	/**
 	 * a poke arrived. the page shows its own alert, but that is invisible while the app is in the
@@ -129,6 +147,43 @@ public class JavascriptJavaBridge
 				}
 
 				String jsonSettings = JavascriptJavaBridge.this.settings.getJsonSettings();
+
+				// node is the connection authority: when its loopback is up, point the webview at it.
+				// the real host stays in the json - client.html still needs it for stun/turn
+				NodeBridge nodeBridge = JavascriptJavaBridge.this.backgroundServiceInstance.nodeBridge;
+
+				// the webview must never connect directly while node is coming up - that made two
+				// connections with one identity and the server kicked one. defer until the loopback
+				// announce re-invokes this; the one-shot fallback covers a node that never comes up
+				if (nodeBridge != null && nodeBridge.getLoopbackPort() == 0 && JavascriptJavaBridge.settingsDeferFallbackArmed == false)
+				{
+					JavascriptJavaBridge.settingsDeferFallbackArmed = true;
+
+					JavascriptJavaBridge.this.backgroundServiceInstance.webView.postDelayed(new Runnable() {
+						@Override public void run()
+						{
+							JavascriptJavaBridge.this.JavaExportRequestCurrentSettingsFromAndroid();
+						}
+					}, 8000);
+
+					Log.i("Info", "[lemonchat] deferring settings until node announces its loopback");
+					return;
+				}
+
+				if (jsonSettings.length() > 0 && nodeBridge != null && nodeBridge.getLoopbackPort() > 0)
+				{
+					try
+					{
+						JSONObject augmented = new JSONObject(jsonSettings);
+						augmented.put("loopback_port", nodeBridge.getLoopbackPort());
+						augmented.put("loopback_token", nodeBridge.getLoopbackToken());
+						jsonSettings = augmented.toString();
+					}
+					catch (Exception augmentFailed)
+					{
+						Log.e("Info", "[lemonchat] could not add loopback fields to settings", augmentFailed);
+					}
+				}
 
 				if (jsonSettings.length() > 0)
 				{

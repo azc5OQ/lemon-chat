@@ -1355,13 +1355,8 @@ static boole _client_msg_internal__is_json_edit_channel_request_valid(cJSON* jso
         return FALSE;
     }
 
-    // cannot edit root channel
-    if (json_channel_id->valueint == 0)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " cJSON_IsNumber(channel_id) \n");
-        return FALSE;
-    }
-
+    // the root channel IS editable (renaming it, description, audio): only deleting it is
+    // forbidden, and that goes through a different request
     if (json_channel_id->valueint < 0 || (json_channel_id->valueint >= (g_server_settings.max_channel_count - 1)))
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_channel_id->valueint < 0 || (json_channel_id->valueint >= (g_server_settings.max_channel_count - 1)) \n");
@@ -2803,25 +2798,39 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
             clib__null_memory(channel->description, CHANNEL_DESCRIPTION_MAX_LENGTH);
 
             clib__copy_memory(json_channel_name->valuestring, channel->name, clib__utf8_string_length(json_channel_name->valuestring), CHANNEL_NAME_MAX_LENGTH);
-            if (clib__utf8_string_length(json_channel_password->valuestring) > 0)
+
+            // the root channel must never carry a password: every client lands there on login,
+            // so one would lock the whole server out. its other properties are editable
+            if (channel->is_root_channel == FALSE && clib__utf8_string_length(json_channel_password->valuestring) > 0)
             {
                 base__hash_password_to_base64(json_channel_password->valuestring, channel->password, CHANNEL_PASSWORD_MAX_LENGTH);
             }
             clib__copy_memory(json_channel_description->valuestring, channel->description, clib__utf8_string_length(json_channel_description->valuestring), CHANNEL_DESCRIPTION_MAX_LENGTH);
 
-            is_password_used = (boole)(clib__utf8_string_length(json_channel_password->valuestring) > 0);
+            is_password_used = (boole)(channel->is_root_channel == FALSE && clib__utf8_string_length(json_channel_password->valuestring) > 0);
             channel->is_using_password = is_password_used;
             channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
-            channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
-            channel->max_client_count = 0;
-            // clamp the client-supplied capacity before the double->uint64 cast, which is undefined
-            // for negative / NaN / huge values. NaN fails both comparisons, so the range check
-            // rejects it too. a channel can never hold more clients than the server allows
-            if (cJSON_IsNumber(json_max_client_count)
-                && json_max_client_count->valuedouble >= 0
-                && json_max_client_count->valuedouble <= (double)g_server_settings.max_client_count)
+
+            // the root channel is always unlimited: every client lands there on login, and a
+            // capacity (like a password) would leave people with nowhere to go
+            if (channel->is_root_channel == TRUE)
             {
-                channel->max_client_count = (uint64)json_max_client_count->valuedouble;
+                channel->is_client_limit_active = FALSE;
+                channel->max_client_count = 0;
+            }
+            else
+            {
+                channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
+                channel->max_client_count = 0;
+                // clamp the client-supplied capacity before the double->uint64 cast, which is undefined
+                // for negative / NaN / huge values. NaN fails both comparisons, so the range check
+                // rejects it too. a channel can never hold more clients than the server allows
+                if (cJSON_IsNumber(json_max_client_count)
+                    && json_max_client_count->valuedouble >= 0
+                    && json_max_client_count->valuedouble <= (double)g_server_settings.max_client_count)
+                {
+                    channel->max_client_count = (uint64)json_max_client_count->valuedouble;
+                }
             }
 
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_edit_channel_request channel is_existing TRUE \n");
@@ -2898,6 +2907,15 @@ void client_msg__process_direct_chat_message(cJSON* json_root, uint64 sender_cli
         return;
     }
 
+    // private messaging can be switched off server-wide, making this a channels-only server.
+    // music bots are addressed the same way, so they keep working regardless
+    if (g_server_settings.allow_private_messages == FALSE
+        && g_clients_array[json_receiver_id->valueint].is_music_bot == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_direct_chat_message client : ", sender_client_id, " private messages are disabled on this server \n");
+        return;
+    }
+
     clib__read_lock(&g_clients_global_rwlock_guard);
 
     // if sender has idle mode active, stop it
@@ -2905,7 +2923,10 @@ void client_msg__process_direct_chat_message(cJSON* json_root, uint64 sender_cli
     is_receiver_idle = g_clients_array[json_receiver_id->valueint].is_idle;
     is_receiver_music_bot = g_clients_array[json_receiver_id->valueint].is_music_bot;
 
-    if (is_receiver_existing == TRUE && is_receiver_idle == FALSE && is_receiver_music_bot == FALSE)
+    // an idle client keeps its websocket open, so text can still reach it; the admin may allow that by config
+    if (is_receiver_existing == TRUE
+        && (is_receiver_idle == FALSE || g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE)
+        && is_receiver_music_bot == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %d %s", "client_msg__process_direct_chat_message receiver is_existing: ", json_receiver_id->valueint, "\n");
 
@@ -6047,6 +6068,18 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     if (cJSON_IsBool(json_field))
     {
         g_server_settings.allow_typing_indicator = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_sending_text_to_idle_clients_allowed");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.is_sending_text_to_idle_clients_allowed = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "allow_private_messages");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.allow_private_messages = cJSON_IsTrue(json_field);
     }
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "allow_temp_channels");

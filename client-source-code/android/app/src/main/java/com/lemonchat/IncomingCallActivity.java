@@ -40,7 +40,9 @@ public class IncomingCallActivity extends AppCompatActivity
 		declineIntent.setAction(BackgroundService.ACTION_DECLINE_CALL);
 		this.startService(declineIntent);
 
-		finish(); //cancel IncomingCallActivity
+		//remove the whole task, not just this screen: a plain finish() dropped the user into
+		//whatever was behind it, which is how a declined call still opened the chat
+		finishAndRemoveTask();
 	}
 
 	public void onAcceptCall(View view)
