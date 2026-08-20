@@ -31,6 +31,7 @@ char* state_print(rtcState state);
 char* rtcGatheringState_print(rtcGatheringState state);
 
 static void* _audio_channel_internal__webrtc_teardown_thread(void* arg_void);
+static void _audio_channel_internal__spawn_webrtc_teardown(int peer_connection_handle, int data_channel_handle);
 
 /**
  * @brief error callback
@@ -375,19 +376,56 @@ void RTC_API datachannel_on_open_callback(int id, void* ptr)
 void RTC_API datachannel_on_closed_callback(int id, void* ptr)
 {
     webrtc_peer_t* peer = 0;
+    client_t* client = 0;
+    int peer_connection_handle = 0;
+    int data_channel_handle = 0;
+    uint64 client_id = 0;
+    boole status = FALSE;
 
     DBG_AUDIOCHANNEL_WEBRTC log_info("%s %s", "datachannel_on_closed_callback", "\n");
 
+    clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_webrtc_muggles_rwlock_guard);
 
     peer = (webrtc_peer_t*)ptr;
 
     if (peer != NULL_POINTER && peer->data_channel_handle == id)
     {
+        // this close can beat the go_to_idle / disconnect paths, which then find an empty slot
+        // and skip their teardown - so the dying pair must be detached and deleted from here
+        peer_connection_handle = peer->peer_connection_handle;
+        data_channel_handle = peer->data_channel_handle;
+        client_id = peer->client_id;
+
+        if (data_channel_handle != 0)
+        {
+            rtcSetUserPointer(data_channel_handle, NULL_POINTER);
+        }
+        if (peer_connection_handle != 0)
+        {
+            rtcSetUserPointer(peer_connection_handle, NULL_POINTER);
+        }
+
         clib__null_memory(peer, sizeof(webrtc_peer_t));
+
+        // the transport is gone, say so - the statechange callback skips wiped slots, so a client
+        // still believing it is connected would otherwise never learn and never re-create
+        status = util__is_client_valid(client_id);
+
+        if (status == TRUE && g_clients_array[client_id].audio_state != AUDIO_STATE__AUDIO_COMPLETELY_DISABLED)
+        {
+            client = &g_clients_array[client_id];
+            client->audio_state = AUDIO_STATE__AUDIO_COMPLETELY_DISABLED;
+            server_msg__send_audio_state_of_client_to_all_clients(client_id, AUDIO_STATE__AUDIO_COMPLETELY_DISABLED);
+        }
     }
 
     clib__unlock(&g_webrtc_muggles_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+
+    // deleting inline would deadlock: rtcDelete* blocks on libdatachannel threads whose
+    // callbacks take the locks used above
+    _audio_channel_internal__spawn_webrtc_teardown(peer_connection_handle, data_channel_handle);
 }
 
 /**
@@ -608,6 +646,47 @@ static void* _audio_channel_internal__webrtc_teardown_thread(void* arg_void)
 }
 
 /**
+ * @brief hands a detached pc/dc pair to the detached teardown thread for deletion
+ *
+ * @param int peer_connection_handle -> peer connection to delete, 0 for none
+ * @param int data_channel_handle -> data channel to delete, 0 for none
+ *
+ * @attention the handles must already be detached from their slot (user pointer NULLed);
+ *            call this while holding no locks the libdatachannel callbacks may want
+ *
+ * @return void
+ */
+static void _audio_channel_internal__spawn_webrtc_teardown(int peer_connection_handle, int data_channel_handle)
+{
+    webrtc_teardown_arg_t* teardown_arg = NULL_POINTER;
+    pthread_t teardown_thread = 0;
+
+    if (peer_connection_handle == 0 && data_channel_handle == 0)
+    {
+        return;
+    }
+
+    teardown_arg = (webrtc_teardown_arg_t*)memorymanager__allocate(sizeof(webrtc_teardown_arg_t), MEMALLOC_WEBRTC_PEERS);
+
+    if (teardown_arg == NULL_POINTER)
+    {
+        return;
+    }
+
+    teardown_arg->peer_connection_handle = peer_connection_handle;
+    teardown_arg->data_channel_handle = data_channel_handle;
+
+    if (pthread_create(&teardown_thread, 0, _audio_channel_internal__webrtc_teardown_thread, (void*)teardown_arg) == 0)
+    {
+        pthread_detach(teardown_thread);
+    }
+    else
+    {
+        memorymanager__free((nuint)teardown_arg);
+    }
+}
+
+/**
  * @brief tears down a client's webrtc peer when the client disconnects
  *
  * @param client_t* client -> the client that disconnected
@@ -617,10 +696,8 @@ static void* _audio_channel_internal__webrtc_teardown_thread(void* arg_void)
 void audio_channel__process_client_disconnect(client_t* client)
 {
     webrtc_peer_t* peer = NULL_POINTER;
-    webrtc_teardown_arg_t* teardown_arg = NULL_POINTER;
     int peer_connection_handle = 0;
     int data_channel_handle = 0;
-    pthread_t teardown_thread = 0;
 
     DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "audio_channel__process_client_disconnect \n");
 
@@ -659,27 +736,8 @@ void audio_channel__process_client_disconnect(client_t* client)
 
     // delete the libdatachannel objects on a detached thread that holds no locks. rtcDeletePeerConnection
     // blocks until libdatachannel's threads finish, and those callbacks need locks this disconnect path's
-    // callers hold, so deleting inline deadlocked (the original code commented these out and leaked). doing
-    // it off-thread, with nobody waiting on it, stops both the freeze and the per-disconnect leak
-    if (peer_connection_handle != 0 || data_channel_handle != 0)
-    {
-        teardown_arg = (webrtc_teardown_arg_t*)memorymanager__allocate(sizeof(webrtc_teardown_arg_t), MEMALLOC_WEBRTC_PEERS);
-
-        if (teardown_arg != NULL_POINTER)
-        {
-            teardown_arg->peer_connection_handle = peer_connection_handle;
-            teardown_arg->data_channel_handle = data_channel_handle;
-
-            if (pthread_create(&teardown_thread, 0, _audio_channel_internal__webrtc_teardown_thread, (void*)teardown_arg) == 0)
-            {
-                pthread_detach(teardown_thread);
-            }
-            else
-            {
-                memorymanager__free((nuint)teardown_arg);
-            }
-        }
-    }
+    // callers hold, so deleting inline deadlocked (the original code commented these out and leaked)
+    _audio_channel_internal__spawn_webrtc_teardown(peer_connection_handle, data_channel_handle);
 }
 
 /**
@@ -822,24 +880,23 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t* client)
     rtcDataChannelInit init;
     int old_peer_connection_handle = 0;
     int old_data_channel_handle = 0;
-    webrtc_teardown_arg_t* teardown_arg = NULL_POINTER;
-    pthread_t teardown_thread = 0;
+    int failed_peer_connection_handle = 0;
     const char* iceServers[1] = { "127.0.0.1:3478" }; // using our own stun server! (violet)
 
     DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "audio_channel__initialize_webrtc_datachannel_connection \n");
 
+    // these two run before the muggles lock is taken, so they must return directly - the shared
+    // exit label unlocks, and unlocking a lock that was never taken is undefined behavior
     if (client == NULL_POINTER)
     {
         DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "client == NULL_POINTER");
-        result = FALSE;
-        goto label_audio_channel__initialize_webrtc_datachannel_connection_end;
+        return FALSE;
     }
 
     if (client->is_existing == FALSE || client->is_authenticated == FALSE)
     {
-        result = FALSE;
         DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "client->is_existing == FALSE || client->is_authenticated == FALSE");
-        goto label_audio_channel__initialize_webrtc_datachannel_connection_end;
+        return FALSE;
     }
 
     // rtcInitLogger(RTC_LOG_VERBOSE, NULL); If something doesn't work, uncomment!
@@ -888,12 +945,14 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t* client)
     clib__null_memory(peer->dh_shared_secret, SHARED_SECRET_LENGTH);
     clib__copy_memory(client->dh_shared_secret, peer->dh_shared_secret, clib__utf8_string_length(client->dh_shared_secret), SHARED_SECRET_LENGTH);
 
-    if (peer->peer_connection_handle == NULL_POINTER)
+    // the c api returns a NEGATIVE error code on failure, never 0 - the old == 0 check let a
+    // failed create through as a "live" slot that could never send an offer
+    if (peer->peer_connection_handle <= 0)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "peer->peer_connection_handle == NULL_POINTER");
+        log_info("%s %d %s", "rtcCreatePeerConnection failed with", peer->peer_connection_handle, "\n");
+        peer->peer_connection_handle = 0;
         peer->is_existing = FALSE;
         goto label_audio_channel__initialize_webrtc_datachannel_connection_end;
-        result = FALSE;
     }
 
     rtcSetUserPointer(peer->peer_connection_handle, peer); // binds created peer connection to my own custom struct. Nice that this library has this
@@ -919,6 +978,19 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t* client)
 
     peer->data_channel_handle = rtcCreateDataChannelEx(peer->peer_connection_handle, "testQQQ", &init);
 
+    // negative means creation failed - roll the slot back to empty so the client's next
+    // retry re-inits, and hand the half-built peer connection to the teardown thread
+    if (peer->data_channel_handle <= 0)
+    {
+        log_info("%s %d %s", "rtcCreateDataChannelEx failed with", peer->data_channel_handle, "\n");
+        failed_peer_connection_handle = peer->peer_connection_handle;
+        rtcSetUserPointer(failed_peer_connection_handle, NULL_POINTER);
+        peer->peer_connection_handle = 0;
+        peer->data_channel_handle = 0;
+        peer->is_existing = FALSE;
+        goto label_audio_channel__initialize_webrtc_datachannel_connection_end;
+    }
+
     result = TRUE;
 
     rtcSetOpenCallback(peer->data_channel_handle, datachannel_on_open_callback);
@@ -931,25 +1003,8 @@ label_audio_channel__initialize_webrtc_datachannel_connection_end:
 
     // delete the detached orphans on the teardown thread; deleting inline would deadlock (rtcDelete*
     // blocks on libdatachannel threads whose callbacks take the locks our callers hold)
-    if (old_peer_connection_handle != 0 || old_data_channel_handle != 0)
-    {
-        teardown_arg = (webrtc_teardown_arg_t*)memorymanager__allocate(sizeof(webrtc_teardown_arg_t), MEMALLOC_WEBRTC_PEERS);
-
-        if (teardown_arg != NULL_POINTER)
-        {
-            teardown_arg->peer_connection_handle = old_peer_connection_handle;
-            teardown_arg->data_channel_handle = old_data_channel_handle;
-
-            if (pthread_create(&teardown_thread, 0, _audio_channel_internal__webrtc_teardown_thread, (void*)teardown_arg) == 0)
-            {
-                pthread_detach(teardown_thread);
-            }
-            else
-            {
-                memorymanager__free((nuint)teardown_arg);
-            }
-        }
-    }
+    _audio_channel_internal__spawn_webrtc_teardown(old_peer_connection_handle, old_data_channel_handle);
+    _audio_channel_internal__spawn_webrtc_teardown(failed_peer_connection_handle, 0);
 
     DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "audio_channel__initialize_webrtc_datachannel_connection end \n");
 

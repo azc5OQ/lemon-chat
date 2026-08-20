@@ -55,6 +55,12 @@ var OPUS_PLC_MAX_CONCEAL_FRAMES = 2;
 // stale invented audio
 var OPUS_PLC_MAX_GAP_TO_CONCEAL = 25;
 
+// every talk-spurt start (press, song start) jumps the outgoing sequence by this much;
+// receivers scrub that sender's decoder at half this delta. must be well above any real
+// in-mapping loss run (~160 frames before idle release) and stay under 32768 for the
+// 16-bit wrap arithmetic. the sender's encoder is reset at the same boundary
+var OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP = 1000;
+
 // --- fallback mixer (only when AudioWorklet is unavailable) ---------------
 // used on insecure contexts / old browsers. the worklet path ignores all of
 // this and mixes on the audio clock instead.
@@ -472,13 +478,8 @@ function opus_encoder_worker_onmessage(e)
     }
     else if (e.data.type == "clear_opus_encoder_buffer")
     {
-        // was a stub: the half-filled frame survived across push-to-talk sessions and
-        // replayed old speech on the next press. dropping it is what fixes that.
-        //
-        // OPUS_CTL_RESET_STATE is deliberately NOT called here. it holds no audio, only the
-        // codec's prediction memory, and the listener's decoder has no matching reset - the
-        // two would fall out of step and the first frames of each press decode from the last
-        // press's memory, which is heard as a scrap of the previous sentence
+        // drops the half-filled frame (it used to survive across push-to-talk sessions
+        // and replay old speech on the next press)
         if (g_encoder != null)
         {
             g_encoder.bufPos = 0;
@@ -491,6 +492,10 @@ function opus_encoder_worker_onmessage(e)
                 g_encoder.resampler = new SpeexResampler(g_encoder.channels, g_encoder.originalRate, g_encoder.sampleRate);
                 old_resampler.destroy();
             }
+
+            // codec predictor reset - one half of a pair with the receivers' spurt-start scrub
+            // (triggered by the sequence jump); unpaired, spurt heads decode as a loud squelch
+            try { _opus_encoder_ctl(g_encoder.handle, OPUS_CTL_RESET_STATE); } catch (reset_err) { console.log("encoder reset_state failed: " + reset_err); }
         }
     }
     else if (e.data.type == "encode_mp3_chunk")
@@ -674,6 +679,18 @@ function opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, 
             {
                 return null;
             }
+
+            // a restarted counter means the sender's codec restarted too: scrub, or its
+            // fresh stream decodes through the dead session's predictor state
+            _opus_decoder_ctl(sender_decoder.handle, OPUS_CTL_RESET_STATE);
+            sender_decoder.last_decoded_frame_size = 0;
+        }
+        else if (sequence_delta - 1 >= (OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP >> 1))
+        {
+            // the sender's deliberate spurt-start jump (its encoder was reset at the same
+            // boundary): scrub so both predictors begin from zero. not loss, so not counted
+            _opus_decoder_ctl(sender_decoder.handle, OPUS_CTL_RESET_STATE);
+            sender_decoder.last_decoded_frame_size = 0;
         }
         else if (sequence_delta > 1)
         {
@@ -681,7 +698,7 @@ function opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, 
 
             if (lost_now > 250)
             {
-                lost_now = 250; // a jump this big is a resync, not real loss; keep the stat sane
+                lost_now = 250; // keep the stat sane on an extreme burst
             }
 
             opus_decoder_worker_lost_frame_count = opus_decoder_worker_lost_frame_count + lost_now;

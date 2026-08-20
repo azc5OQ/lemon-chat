@@ -3832,6 +3832,15 @@ var webrtc = {
     // and activates the microphone right away if always-on mode is enabled
     peerconnection_on_datachannel_receive: function(event)
     {
+        // only the current peer connection may install the channel: a replaced pc finishing
+        // its handshake late used to hijack g_datachannel and fake the connected flag
+        if (event.currentTarget !== g_peer_connection_with_server)
+        {
+            console.log("datachannel from a replaced peer connection ignored");
+            try { event.channel.close(); } catch (stale_channel_close_error) { }
+            return;
+        }
+
         g_datachannel = event.channel;
         console.log(`"DataChannel received with label "${event.channel.label}"`);
         event.channel.onopen = webrtc.datachannel_onopen;
@@ -3888,15 +3897,33 @@ var webrtc = {
 
     },
 
-    // hides the microphone controls when the datachannel closes
-    datachannel_onclose: function()
+    // hides the microphone controls when the datachannel closes, drops the connected flag
+    // and restarts the connection check so a silent server-side teardown cannot strand us
+    datachannel_onclose: function(event)
     {
         console.log("daatachannel_onclose");
-        // custom_alert("daatachannel_onclose");
+
+        // a replaced or already-torn-down channel closing late must not touch current state
+        // (enter_deep_idle and pc replacement both null g_datachannel before closing)
+        if (event != null && event.target !== g_datachannel)
+        {
+            return;
+        }
 
         g_is_microphone_available = false;
         update_microphone_button();
         document.getElementById("toggle-microphone-label").style.display = "none";
+
+        // the server's disabled-audio broadcast was the only recovery trigger here, and that
+        // edge can be lost when the server slot is wiped first - recover from our own close too
+        g_is_webrtc_datachannel_connected = false;
+
+        if (g_is_voice_chat_allowed_by_server == true && g_is_deep_idle == false
+            && g_is_webrtc_datachannel_check_running == false)
+        {
+            g_is_webrtc_datachannel_check_running = true;
+            webrtc_datachannel_connection_check(true);
+        }
     },
 
     // this is the very important handler that receives UDP audio data voice / music! from webrtc datahcannel!

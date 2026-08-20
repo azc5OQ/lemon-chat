@@ -1547,6 +1547,7 @@ function mark_come_from_idle_in_flight()
         g_come_from_idle_in_flight_timer = null;
         g_is_come_from_idle_in_flight = false;
         console.log("connect-path: come-from-idle was never confirmed, idle allowed again");
+        apply_pending_deep_idle_if_any();
     }, 20000);
 }
 
@@ -1559,6 +1560,20 @@ function clear_come_from_idle_in_flight()
     }
 
     g_is_come_from_idle_in_flight = false;
+
+    apply_pending_deep_idle_if_any();
+}
+
+// runs an idle entry that enter_deep_idle deferred while a come-from-idle was unconfirmed.
+// exit_deep_idle cancels the pending flag, so a foregrounded app never re-enters idle here
+function apply_pending_deep_idle_if_any()
+{
+    if (g_is_deep_idle_pending == true && g_is_deep_idle == false)
+    {
+        g_is_deep_idle_pending = false;
+        console.log("connect-path: running deferred idle entry");
+        enter_deep_idle();
+    }
 }
 var g_connection_check_interval_ms = 10 * 1000;
 // three missed 10s heartbeats + slack. the old 120s left the ui sitting in a
@@ -2309,6 +2324,10 @@ function process_start_sending_audio()
         return;
     }
 
+    // spurt-start marker: receivers scrub this sender's decoder on the jump, pairing with
+    // the encoder reset that the capture-start clear below performs
+    g_voice_send_sequence_number = (g_voice_send_sequence_number + OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP) & 0xffff;
+
     set_microphone_capture_active(true);
     set_mic_transmitting_visual(true);
 
@@ -2366,7 +2385,7 @@ function process_stop_sending_audio()
     }, g_ptt_release_hangover_ms);
 }
 
-// the actual stop: disables the mic track, disconnects the recorder chain and
+// the actual stop: disables the mic track (capture graph stays wired) and
 // reports microphone_usage=2 to the server
 function process_stop_sending_audio_now()
 {
@@ -2402,12 +2421,8 @@ function process_stop_sending_audio_now()
 
     g_local_audio_stream.getTracks()[0].enabled = false;
 
-    try {
-        g_audio_recorder_gain_node.disconnect(g_microphone_recorder);
-    } catch (e) {
-        console.log("audio_recorder_gain_node.disconnect" + e.message);
-    }
-    // g_microphone_recorder.disconnect(audio_context.destination);
+    // no edge of the capture graph may ever be disconnected: an unpulled mic source freezes stale
+    // speech in chromium's stream fifo, and the next press replays it. the worklet gate mutes alone
 
     g_is_microphone_active = false;
     let message_object = {
@@ -2525,11 +2540,13 @@ function enter_deep_idle()
         return;
     }
 
-    // there was a 5 second block here once, but it threw away real requests too.
-    // this only waits while we are still coming back from idle
+    // an unconfirmed come-from-idle blocks idle entry, but the request must not be thrown
+    // away: dropping it left the page awake while the server considered the client idle,
+    // and every datachannel handshake attempted from that split state was doomed
     if (g_is_come_from_idle_in_flight == true)
     {
-        console.log("connect-path: idle refused, a come-from-idle is still unconfirmed");
+        console.log("connect-path: idle deferred, a come-from-idle is still unconfirmed");
+        g_is_deep_idle_pending = true;
         return;
     }
 
@@ -2769,9 +2786,11 @@ function probe_webrtc_udp_and_warn()
 
 async function webrtc_datachannel_connection_check(is_this_reconnect = false)
 {
-    // voice lives in the webview only; node has no webrtc and must never enter this
+    // voice lives in the webview only; node has no webrtc and must never enter this.
+    // the caller set the running flag, so it must be dropped here too
     if (typeof RTCPeerConnection === "undefined")
     {
+        g_is_webrtc_datachannel_check_running = false;
         return;
     }
 
@@ -2786,15 +2805,25 @@ async function webrtc_datachannel_connection_check(is_this_reconnect = false)
 
         if (g_is_voice_chat_allowed_by_server == true && g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
         {
-            create_new_peer_connection_object_for_use(is_this_reconnect);
+            // one throw here must not kill the loop: a dead loop leaves the running flag
+            // stranded true, which blocks every future re-create until the app restarts
+            try
+            {
+                create_new_peer_connection_object_for_use(is_this_reconnect);
 
-            let message_object = {
-                message: {
-                    type: "create_new_webrtc_datachannel_connection",
-                }
-            };
+                let message_object = {
+                    message: {
+                        type: "create_new_webrtc_datachannel_connection",
+                    }
+                };
 
-            send_message_object(message_object);
+                send_message_object(message_object);
+            }
+            catch (datachannel_attempt_error)
+            {
+                console.error("webrtc datachannel attempt failed: "
+                    + (datachannel_attempt_error != null && datachannel_attempt_error.stack ? datachannel_attempt_error.stack : datachannel_attempt_error));
+            }
 
             await sleep(10000);
 
@@ -3596,13 +3625,45 @@ function send_file_by_parts(parts, total_bytes_length, delay_ms) {
 }
 
 // replaces g_peer_connection_with_server with a fresh RTCPeerConnection wired to the
-// webrtc handlers; on a first connect it also pushes the TURN server into g_iceconfig
+// webrtc handlers; makes sure g_iceconfig carries the TURN server exactly once
 function create_new_peer_connection_object_for_use(is_this_reconnect = false)
 {
+    // close the replaced pc: an abandoned-but-open pc kept its ice agent and its
+    // 'datachannel' listener alive, hijacking state with zombie events and slowly
+    // eating into the browser's peer connection cap
+    if (g_peer_connection_with_server != null)
+    {
+        try
+        {
+            g_peer_connection_with_server.removeEventListener('datachannel', webrtc.peerconnection_on_datachannel_receive);
+            g_peer_connection_with_server.close();
+        }
+        catch (peer_connection_close_error)
+        {
+            console.log("closing replaced peer connection failed: " + peer_connection_close_error.message);
+        }
+    }
+
     g_datachannel = null;
     g_peer_connection_with_server = null;
 
-    if (is_this_reconnect == false)
+    // added when missing rather than keyed on is_this_reconnect: the audio_enabled handler
+    // rebuilds g_iceconfig without it, and retries used to push a duplicate every 10s
+    let is_turn_server_present = false;
+
+    for (let i = 0; i < g_iceconfig.iceServers.length; i++)
+    {
+        let ice_server_urls = g_iceconfig.iceServers[i].urls;
+
+        if ((typeof ice_server_urls === "string" && ice_server_urls.indexOf("turn:") == 0)
+            || (Array.isArray(ice_server_urls) && ice_server_urls.length > 0 && String(ice_server_urls[0]).indexOf("turn:") == 0))
+        {
+            is_turn_server_present = true;
+            break;
+        }
+    }
+
+    if (is_turn_server_present == false)
     {
         let turn_server = {
             urls: [
@@ -4917,6 +4978,9 @@ function process_audio_state_of_single_client(client)
                 g_is_webrtc_datachannel_connected = false;
                 if (g_is_webrtc_datachannel_check_running == false)
                 {
+                    // claim the flag like every other starter - without this the loop ran
+                    // unregistered and later triggers stacked concurrent loops on top of it
+                    g_is_webrtc_datachannel_check_running = true;
                     webrtc_datachannel_connection_check(true);
                 }
             }
@@ -5768,8 +5832,14 @@ function mainthread_onmessage(e)
         try
         {
             console.log("create_new_peer_connection_object_for_use");
-            g_is_webrtc_datachannel_check_running = true;
-            webrtc_datachannel_connection_check(false);
+
+            // a re-login burst can arrive while a previous check loop is still sleeping;
+            // that loop will pick the fresh config up itself, a second one just fights it
+            if (g_is_webrtc_datachannel_check_running == false)
+            {
+                g_is_webrtc_datachannel_check_running = true;
+                webrtc_datachannel_connection_check(false);
+            }
         }
         catch (Exception)
         {
@@ -6267,6 +6337,11 @@ function get_file_extension(filename)
 // server sends stop_song_stream, otherwise announces the song end after the last chunk
 async function stream_local_mp3_file_to_other_clients(data_chunks, mp3_sample_rate)
 {
+    // a song stream is a fresh spurt like a press: reset the encoder and mark the
+    // boundary, so receivers scrub this sender's decoder before the first music frame
+    g_opus_encoder_worker.postMessage({ type: "clear_opus_encoder_buffer" });
+    g_voice_send_sequence_number = (g_voice_send_sequence_number + OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP) & 0xffff;
+
     for (var i = 0; i < data_chunks.length; i++)
     {
         let message = {

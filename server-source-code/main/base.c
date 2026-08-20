@@ -3437,7 +3437,8 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
 
     // todo, ignore audio related messages if audio is completely disabled by server
 
-    // first two messages are the ones where it doesn't matter if client is in idle state or not
+    // idle-exempt messages: the heartbeat plus the whole webrtc handshake - the server offers
+    // to idle clients (create is allowed while idle), so their answers and candidates must pass too
     if (clib__is_string_equal(message_type, "client_connection_check"))
     {
         client_msg__process_client_connection_check(json_root, client_index);
@@ -3445,6 +3446,14 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     else if (clib__is_string_equal(message_type, "create_new_webrtc_datachannel_connection"))
     {
         client_msg__process_create_new_webrtc_datachannel_connection(json_root, client_index);
+    }
+    else if (clib__is_string_equal(message_type, "sdp_answer"))
+    {
+        client_msg__process_sdp_answer(json_root, client_index);
+    }
+    else if (clib__is_string_equal(message_type, "ice_candidate"))
+    {
+        client_msg__process_ice_candidate(json_root, client_index);
     }
     else
     {
@@ -3502,14 +3511,6 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "poke_client"))
             {
                 client_msg__process_poke_client_request(json_root, client_index);
-            }
-            else if (clib__is_string_equal(message_type, "sdp_answer"))
-            {
-                client_msg__process_sdp_answer(json_root, client_index);
-            }
-            else if (clib__is_string_equal(message_type, "ice_candidate"))
-            {
-                client_msg__process_ice_candidate(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "microphone_usage"))
             {
