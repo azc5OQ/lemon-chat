@@ -196,6 +196,12 @@ public class JavascriptJavaBridge
 
 					JavascriptJavaBridge.this.backgroundServiceInstance.webView.evaluateJavascript(
 						"JavascriptJavaBridge__accept_current_settings_from_android(" + javascript_argument + ");", null);
+
+					//the phase node reported before this page loaded (e.g. key generation)
+					if (nodeBridge != null)
+					{
+						nodeBridge.pushConnectionPhaseToWebview();
+					}
 				}
 			}
 		});

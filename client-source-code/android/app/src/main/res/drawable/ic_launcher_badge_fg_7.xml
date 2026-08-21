@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- generated: the launcher lemon (shrunk to make room) with the unread badge for "7" (gen-badge-icons3.py) -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@mipmap/ic_launcher_foreground"
+        android:width="92dp" android:height="92dp" android:gravity="center" />
+    <item>
+        <vector android:width="108dp" android:height="108dp"
+            android:viewportWidth="108" android:viewportHeight="108">
+            <path android:pathData="M 78.0,17.5 h 0.0 a 12.5,12.5 0 0 1 0,25.0 h -0.0 a 12.5,12.5 0 0 1 0,-25.0 z"
+                android:fillColor="#e53935" />
+            <path android:pathData="M82.9302649930265 24.7768479776848Q81.99302649930264 26.465829846582984 81.2510460251046 27.944909344490934Q80.50906555090656 29.423988842398884 79.94281729428172 30.864016736401673Q79.3765690376569 32.30404463040446 78.976290097629 33.79288702928871Q78.57601115760112 35.281729428172945 78.32217573221757 37.0H75.10041841004184Q75.37377963737796 35.36959553695955 75.82287308228732 33.85634588563459Q76.27196652719665 32.34309623430963 76.8626220362622 30.922594142259417Q77.45327754532775 29.502092050209207 78.17085076708507 28.154811715481173Q78.88842398884239 26.80753138075314 79.68898186889818 25.518828451882847H73.18688981868898V23.0H82.9302649930265Z" android:fillColor="#ffffff" />
+        </vector>
+    </item>
+</layer-list>

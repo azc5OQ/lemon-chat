@@ -7,10 +7,12 @@ var g_channel_list = null
 var g_send_go_to_idle_mode_request = null;
 var g_send_come_from_idle_mode_request = null;
 var g_accept_current_settings_from_android = null;
+var g_nudge_loopback_reattach = null;
+var g_show_connection_phase = null;
 
-function JavascriptJavaBridge__send_go_to_idle_mode_request()
+function JavascriptJavaBridge__send_go_to_idle_mode_request(is_forced)
 {
-    g_send_go_to_idle_mode_request();
+    g_send_go_to_idle_mode_request(is_forced);
 }
 
 function JavascriptJavaBridge__send_come_from_idle_mode_request(channelId)
@@ -21,6 +23,24 @@ function JavascriptJavaBridge__send_come_from_idle_mode_request(channelId)
 function JavascriptJavaBridge__set_username_on_connect(username)
 {
     g_set_username_on_connect(username);
+}
+
+// java calls this on app resume and when node reports "connected"
+function JavascriptJavaBridge__nudge_loopback_reattach()
+{
+    if (typeof g_nudge_loopback_reattach === "function" && g_nudge_loopback_reattach != null)
+    {
+        g_nudge_loopback_reattach();
+    }
+}
+
+// java relays node's connection phase, so the page can show it before the loopback attaches
+function JavascriptJavaBridge__show_connection_phase(state, reason)
+{
+    if (typeof g_show_connection_phase === "function" && g_show_connection_phase != null)
+    {
+        g_show_connection_phase(state, reason);
+    }
 }
 
 // java can push before window_onload wires the bridge; losing that push left the page

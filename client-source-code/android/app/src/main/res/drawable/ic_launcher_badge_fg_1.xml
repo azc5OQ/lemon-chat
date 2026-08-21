@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- generated: the launcher lemon (shrunk to make room) with the unread badge for "1" (gen-badge-icons3.py) -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@mipmap/ic_launcher_foreground"
+        android:width="92dp" android:height="92dp" android:gravity="center" />
+    <item>
+        <vector android:width="108dp" android:height="108dp"
+            android:viewportWidth="108" android:viewportHeight="108">
+            <path android:pathData="M 78.0,17.5 h 0.0 a 12.5,12.5 0 0 1 0,25.0 h -0.0 a 12.5,12.5 0 0 1 0,-25.0 z"
+                android:fillColor="#e53935" />
+            <path android:pathData="M80.3723849372385 22.687587168758718V37.0H77.2970711297071V26.163179916317993Q77.04323570432356 26.387726638772662 76.69665271966527 26.58786610878661Q76.35006973500697 26.788005578800558 75.95955369595536 26.949093444909344Q75.56903765690376 27.11018131101813 75.14923291492329 27.22245467224547Q74.72942817294282 27.334728033472803 74.31938633193863 27.383542538354256V24.786610878661087Q75.52022315202231 24.435146443514647 76.58437935843793 23.8884239888424Q77.64853556485355 23.341701534170156 78.50767085076708 22.687587168758718Z" android:fillColor="#ffffff" />
+        </vector>
+    </item>
+</layer-list>

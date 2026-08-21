@@ -15,10 +15,12 @@ public class StartOnBootReceiver extends BroadcastReceiver
 		String action = (intent != null) ? intent.getAction() : null;
 
 		// QUICKBOOT_POWERON is the same event under a different name on some devices; it was in
-		// the manifest filter but never matched here, so those phones did nothing
+		// the manifest filter but never matched here, so those phones did nothing.
+		// MY_PACKAGE_REPLACED restarts the service after every apk update
 		if (Intent.ACTION_BOOT_COMPLETED.equals(action) == false
 			&& "android.intent.action.QUICKBOOT_POWERON".equals(action) == false
-			&& "android.intent.action.LOCKED_BOOT_COMPLETED".equals(action) == false)
+			&& "android.intent.action.LOCKED_BOOT_COMPLETED".equals(action) == false
+			&& Intent.ACTION_MY_PACKAGE_REPLACED.equals(action) == false)
 		{
 			return;
 		}

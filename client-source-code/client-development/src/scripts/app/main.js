@@ -638,6 +638,41 @@ function mainthread__process_received_websocket_message_continue(e)
         return;
     }
 
+    // handled before the auth gate, so a login replay is never dropped
+    // (a stale "already authenticated" worker used to swallow it)
+    if (msg.message.type == "authentication_status")
+    {
+        if (msg.message.value == "success")
+        {
+            g_is_authenticated = true;
+
+            global.postMessage({
+                type: "data_processing_worker__authentication_status",
+                is_idle_mode_allowed: msg.message.is_idle_mode_allowed,
+                is_alias_registration_allowed: msg.message.is_alias_registration_allowed,
+                allow_typing_indicator: msg.message.allow_typing_indicator,
+                allow_avatars: msg.message.allow_avatars,
+                avatar_max_size: msg.message.avatar_max_size,
+                value: "success"
+            });
+
+            // set up the audio datachannel whenever audio is on for EITHER clients or music bots:
+            // the datachannel is the path the server uses to push music-bot audio to this client,
+            // so it must exist even when client voice is disabled. whether this client may
+            // transmit its own mic is a separate flag (client_voice_allowed) honoured below
+            if (msg.message.is_voice_chat_active == true || msg.message.is_music_bot_audio_active == true)
+            {
+                global.postMessage({
+                    type: "data_processing_worker__audio_enabled",
+                    value: true,
+                    client_voice_allowed: msg.message.is_voice_chat_active == true,
+                    stun_port: msg.message.stun_port
+                });
+            }
+        }
+        return;
+    }
+
     if (g_is_authenticated == false)
     {
         if (msg.message.type == "public_key_challenge")
@@ -651,37 +686,6 @@ function mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
 
-        }
-        else if (msg.message.type == "authentication_status")
-        {
-            if (msg.message.value == "success")
-            {
-                g_is_authenticated = true;
-
-                global.postMessage({
-                    type: "data_processing_worker__authentication_status",
-                    is_idle_mode_allowed: msg.message.is_idle_mode_allowed,
-                    is_alias_registration_allowed: msg.message.is_alias_registration_allowed,
-                    allow_typing_indicator: msg.message.allow_typing_indicator,
-                    allow_avatars: msg.message.allow_avatars,
-                    avatar_max_size: msg.message.avatar_max_size,
-                    value: "success"
-                });
-
-                // set up the audio datachannel whenever audio is on for EITHER clients or music bots:
-                // the datachannel is the path the server uses to push music-bot audio to this client,
-                // so it must exist even when client voice is disabled. whether this client may
-                // transmit its own mic is a separate flag (client_voice_allowed) honoured below
-                if (msg.message.is_voice_chat_active == true || msg.message.is_music_bot_audio_active == true)
-                {
-                    global.postMessage({
-                        type: "data_processing_worker__audio_enabled",
-                        value: true,
-                        client_voice_allowed: msg.message.is_voice_chat_active == true,
-                        stun_port: msg.message.stun_port
-                    });
-                }
-            }
         }
         else
         {
@@ -1197,6 +1201,9 @@ function mainthread__process_received_websocket_message_continue(e)
 // here are variables dedicated to g_websocket_worker thread
 var g_websocket_instance = null;
 
+// counts sockets ever created. events from an old (replaced) socket are ignored
+var g_websocket_generation = 0;
+
 // websocket worker message handler: creates the socket (relaying its events to the
 // main thread), sends data when the socket is open, and closes it on request
 function websocket_worker_onmessage(e)
@@ -1204,10 +1211,19 @@ function websocket_worker_onmessage(e)
 
     if (e.data.type == "create_websocket_object")
     {
+        let generation = ++g_websocket_generation;
+
+        // a replaced socket is closed, and its events below are ignored as stale
+        if (g_websocket_instance != null)
+        {
+            try { g_websocket_instance.close(); } catch (close_error) { }
+        }
+
         g_websocket_instance = new WebSocket(e.data.value.connection_string);
 
         g_websocket_instance.addEventListener('message', function (event)
         {
+            if (generation != g_websocket_generation) { return; }
 
             global.postMessage({
                 type: "websocket_worker_onmessage",
@@ -1217,6 +1233,8 @@ function websocket_worker_onmessage(e)
 
         g_websocket_instance.onclose = function ()
         {
+            if (generation != g_websocket_generation) { return; }
+
             console.log("websocket closed");
             global.postMessage({
                 type: "websocket_worker_onclose"
@@ -1225,6 +1243,8 @@ function websocket_worker_onmessage(e)
 
         g_websocket_instance.onerror = function (error)
         {
+            if (generation != g_websocket_generation) { return; }
+
             // node hands us the real socket error; its code says WHY (no network vs
             // refused vs timeout), which is the difference between a useful message
             // and a guess. a browser gives an opaque event and no code - that is fine
@@ -1239,6 +1259,8 @@ function websocket_worker_onmessage(e)
 
         g_websocket_instance.onopen = function ()
         {
+            if (generation != g_websocket_generation) { return; }
+
             g_websocket_instance.send(e.data.value.onopen_data);
         }
     }
@@ -2530,7 +2552,7 @@ function connection_check_sleep(ms)
 
 // deep idle: entered when the android app goes to background. keeps the websocket alive on a slow
 // heartbeat and shuts down everything else (audio graph, opus g_decoder tick, webrtc datachannel)
-function enter_deep_idle()
+function enter_deep_idle(is_forced)
 {
     // every refusal below says so. a silent one is indistinguishable from the request
     // never arriving, which is what made this so hard to pin down
@@ -2559,16 +2581,20 @@ function enter_deep_idle()
         return;
     }
 
-    // backgrounding mid-call must not kill the call: going idle would pull the client out of his
-    // channel, so idle only engages while the client sits in the root channel
-    let local_client = get_client_by_client_id(local_client_id);
-    if (local_client != null && local_client.channel_id != 0)
+    // backgrounding (home) keeps an in-channel session alive - music and calls continue.
+    // only a swipe-away forces idle from any channel (is_forced, from onTaskRemoved)
+    if (is_forced != true)
     {
-        console.log("connect-path: idle refused, in channel " + local_client.channel_id + " not root");
-        return;
+        let local_client = get_client_by_client_id(local_client_id);
+
+        if (local_client != null && local_client.channel_id != 0)
+        {
+            console.log("connect-path: idle refused, in channel " + local_client.channel_id + " not root");
+            return;
+        }
     }
 
-    console.log("connect-path: going idle");
+    console.log("connect-path: going idle" + (is_forced == true ? " (forced)" : ""));
 
     g_is_deep_idle = true;
 
@@ -4727,6 +4753,7 @@ function reset_chat_app_keep_identity()
     document.getElementById("another-buttons-sub-container").style.display = "";
     document.getElementById("another-buttons-sub-loading-container").style.display = "none";
     document.getElementById("another-buttons-loading-container-p").innerHTML = "loading...";
+    set_connect_button_pending(false);
     g_is_microphone_available = false;
 
     document.getElementById('verification-system').style.display = "block";
@@ -5121,9 +5148,43 @@ var g_is_microphone_available = false;
 // the one place that decides how the mic button looks. it used to vanish when audio was
 // unavailable, which left no way to tell that from "this build has no mic button"
 // launching the webview onto a node that is already logged in used to show the connect
-// page for a moment before the burst arrived. it is held back until we know which way
-// this goes, and revealed only if node turns out not to be connected
-var g_is_holding_back_connect_page = false;
+// page for a moment before the burst arrived. the page STARTS held back (the spinner is
+// the first page); it is revealed only when connecting turns out to fail or stall
+var g_is_holding_back_connect_page = true;
+
+// the spinner that covers the held-back connect page, so the user never stares at a blank screen
+function set_connect_holdback_loader_visible(is_visible)
+{
+    let loader = document.getElementById("connect-holdback-loader");
+
+    if (loader != null)
+    {
+        // opaque, in the theme's color when one paints body/html; some themes (bluebell)
+        // paint only inner containers, then a dark fallback keeps page one solid
+        if (is_visible == true && typeof getComputedStyle === "function")
+        {
+            let page_background = getComputedStyle(document.body).backgroundColor;
+
+            if (page_background === "rgba(0, 0, 0, 0)" || page_background === "transparent")
+            {
+                page_background = getComputedStyle(document.documentElement).backgroundColor;
+            }
+
+            if (page_background === "rgba(0, 0, 0, 0)" || page_background === "transparent")
+            {
+                page_background = "#12151c";
+            }
+
+            loader.style.backgroundColor = page_background;
+        }
+
+        loader.style.display = (is_visible == true) ? "flex" : "none";
+    }
+}
+
+// the spinner's reveal deadline; node's "still connecting" reports push it out
+var g_connect_holdback_deadline = 0;
+var g_connect_holdback_started = 0;
 
 function hold_back_connect_page()
 {
@@ -5132,11 +5193,53 @@ function hold_back_connect_page()
         return;
     }
 
-    g_is_holding_back_connect_page = true;
-    document.getElementById("verification-system").style.visibility = "hidden";
+    if (g_is_holding_back_connect_page == false)
+    {
+        g_is_holding_back_connect_page = true;
+        g_connect_holdback_started = new Date().valueOf();
+        document.getElementById("verification-system").style.visibility = "hidden";
+        set_connect_holdback_loader_visible(true);
+
+        setTimeout(connect_holdback_check, 250);
+    }
 
     // nothing arrives at all if node is wedged, so the page cannot stay blank forever
-    setTimeout(function() { reveal_connect_page(); }, 2500);
+    g_connect_holdback_deadline = new Date().valueOf() + 2500;
+}
+
+// node reporting "still working on it" keeps the spinner up a little longer, capped
+// so a looping connect attempt can never hide the page forever
+function extend_connect_page_holdback()
+{
+    if (g_is_holding_back_connect_page == false)
+    {
+        return;
+    }
+
+    let now = new Date().valueOf();
+
+    if (now - g_connect_holdback_started > 12000)
+    {
+        return;
+    }
+
+    g_connect_holdback_deadline = now + 4000;
+}
+
+function connect_holdback_check()
+{
+    if (g_is_holding_back_connect_page == false)
+    {
+        return;
+    }
+
+    if (new Date().valueOf() >= g_connect_holdback_deadline)
+    {
+        reveal_connect_page();
+        return;
+    }
+
+    setTimeout(connect_holdback_check, 250);
 }
 
 function reveal_connect_page()
@@ -5148,6 +5251,7 @@ function reveal_connect_page()
 
     g_is_holding_back_connect_page = false;
     document.getElementById("verification-system").style.visibility = "";
+    set_connect_holdback_loader_visible(false);
 }
 
 function update_microphone_button()
@@ -5361,11 +5465,30 @@ function get_public_mix()
 
 // one dial, driven only by connection_driver(): builds the ws/wss connection string
 // and has the websocket worker open the socket with the right opening frame
+// fades the connect button while an attempt runs; hiding rows caused a layout flicker
+function set_connect_button_pending(is_pending)
+{
+    let button = document.getElementById("connect-button");
+
+    if (button != null && button.classList != null)
+    {
+        button.classList.toggle("connect-attempt-pending", is_pending == true);
+    }
+}
+
 async function attempt_connection(target, identity)
 {
-    document.getElementById("another-buttons-sub-container").style.display = "none";
-    document.getElementById("another-buttons-sub-loading-container").style.display = "";
-    document.getElementById("another-buttons-loading-container-p").innerHTML = "connecting to server...";
+    if (is_ui_only_runtime())
+    {
+        // the page stays exactly as it is; only the button signals the running attempt
+        set_connect_button_pending(true);
+    }
+    else
+    {
+        document.getElementById("another-buttons-sub-container").style.display = "none";
+        document.getElementById("another-buttons-sub-loading-container").style.display = "";
+        document.getElementById("another-buttons-loading-container-p").innerHTML = "connecting to server...";
+    }
 
     // a new attempt is in flight - the failure text only shows after this one resolves
     g_last_connect_attempt_failed = false;
@@ -5380,10 +5503,12 @@ async function attempt_connection(target, identity)
         let loopback_connection_string = "ws://127.0.0.1:" + target.port + "/";
         console.log("connection_string -> " + loopback_connection_string + " (loopback)");
 
-        // name the SERVER being joined, not the local hop to node - the loopback port is an
-        // implementation detail, and "connecting locally" told the user nothing
+        // name the SERVER being joined, not the local hop to node - and never print an
+        // unknown one ("connecting to :0" when the settings have not landed yet)
         document.getElementById("another-buttons-loading-container-p").innerHTML =
-            "connecting to " + sanitize_string(host) + ":" + sanitize_string("" + port);
+            (typeof host === "string" && host.length > 0)
+                ? "connecting to " + sanitize_string(host) + ":" + sanitize_string("" + port)
+                : "connecting...";
 
         g_websocket_worker.postMessage({
             type: "create_websocket_object",
@@ -5609,6 +5734,13 @@ function mainthread_onmessage(e)
         g_rsa_public_key_string = e.data.value;
         console.log("public key string -> " + g_rsa_public_key_string);
         g_is_rsa_key_generated = true;
+
+        // the keygen phase is over: stop claiming it. when nothing will dial on its own the
+        // status goes idle (empty), otherwise the driver's "connecting" replaces it right away
+        if (g_is_authenticated == false && g_is_autoconnect_without_user_action_active == false)
+        {
+            report_connection_status("idle", "");
+        }
         document.getElementById("another-buttons-sub-loading-container").style.display = "none";
         document.getElementById("another-buttons-sub-container").style.display = "";
         identity_string = e.data.identity_string;
@@ -5628,7 +5760,12 @@ function mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__loopback_status")
     {
-        if (e.data.value.state != "connected")
+        // node still working keeps the spinner; a failed or idle state shows the page
+        if (e.data.value.state == "connecting" || e.data.value.state == "connected")
+        {
+            extend_connect_page_holdback();
+        }
+        else
         {
             reveal_connect_page();
         }
@@ -5711,6 +5848,8 @@ function mainthread_onmessage(e)
             // the connected ui is up, so the hold has served its purpose
             g_is_holding_back_connect_page = false;
             document.getElementById('verification-system').style.visibility = "";
+            set_connect_holdback_loader_visible(false);
+            set_connect_button_pending(false);
 
             document.getElementById('verification-system').style.display = "none";
             document.getElementById('communication-system-container').style.display = (g_layout_grid_active == true) ? "grid" : "block";
@@ -8171,6 +8310,8 @@ async function window_onload()
         g_send_come_from_idle_mode_request = android_js_bridge.send_come_from_idle_mode_request_android;
         g_set_username_on_connect = android_js_bridge.set_username_on_connect_android;
         g_accept_current_settings_from_android = android_js_bridge.accept_current_settings_from_android;
+        g_nudge_loopback_reattach = android_js_bridge.nudge_loopback_reattach_android;
+        g_show_connection_phase = android_js_bridge.show_connection_phase_android;
 
         // a push that raced ahead of this wiring was held by the page shim - use it now
         if (typeof g_pending_android_settings === "string" && g_pending_android_settings != null)
@@ -8226,15 +8367,24 @@ async function window_onload()
 
         // the settings callback sets the connection target; the driver takes it from there
     }
-    else if (g_are_server_details_predefined == true && g_is_autoconnect_without_user_action_active == true)
+    else if (g_are_server_details_predefined == true)
     {
-        // website with baked-in config: connect without a button press
-        g_target_slot.set({
-            kind: "server",
-            host: g_autoconnect_details.host,
-            port: g_autoconnect_details.port,
-            wss_port: g_autoconnect_details.wss_port
-        });
+        // website with baked-in config: request_connect dials it under autoconnect
+        request_connect("settings");
+    }
+
+    // the page loads with the spinner up (see the template); arm its reveal deadline so a
+    // client that connects to nothing still shows the connect page after a moment.
+    // the setter call paints the theme's background onto it (opaque page one)
+    set_connect_holdback_loader_visible(true);
+    g_connect_holdback_started = new Date().valueOf();
+    g_connect_holdback_deadline = g_connect_holdback_started + 2500;
+    setTimeout(connect_holdback_check, 250);
+
+    // a browser client in manual mode knows at load that nothing will dial: no spinner
+    if (g_is_running_in_android_webview == false && g_is_autoconnect_without_user_action_active == false)
+    {
+        reveal_connect_page();
     }
 
     start_connection_status_ticker();
@@ -8281,10 +8431,10 @@ return {
         g_node_frame_listener = (typeof callback === "function") ? callback : null;
     },
 
-    // callback(status) on every connection status change - feeds the login page
+    // callback(status) on every connection status change - additive, every caller gets called
     set_connection_status_listener: function(callback)
     {
-        g_connection_status_listener = (typeof callback === "function") ? callback : null;
+        if (typeof callback === "function") { g_connection_status_listeners.push(callback); }
     },
 
     // callback(total) whenever the unread count changes - drives the app icon badge
@@ -8357,25 +8507,14 @@ return {
         return g_connection_status;
     },
 
-    // a ui attached to the loopback: it wants to be online. covers autoconnect-off,
-    // where nothing else ever hands the driver a target
+    // a ui attached to the loopback: it wants to be online. an attach is always the
+    // downstream of an authorized decision, so request_connect dials for it
     node_connect_intent: function()
     {
-        // never make a target out of a partial settings json (no host yet)
-        if (g_target_slot.is_set == false && g_have_received_android_settings == true
-            && typeof g_autoconnect_details.host === "string" && g_autoconnect_details.host.length > 0
-            && parseInt(g_autoconnect_details.port) > 0)
+        if (g_have_received_android_settings == true)
         {
-            console.log("connect-path: ui attach supplies the target");
-            g_target_slot.set({
-                kind: "server",
-                host: g_autoconnect_details.host,
-                port: g_autoconnect_details.port,
-                wss_port: g_autoconnect_details.wss_port
-            });
+            request_connect("attach");
         }
-
-        nudge_connection_driver();
     },
 
     // the auth frame, whenever it arrived - replay leads with it regardless of start order

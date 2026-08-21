@@ -92,10 +92,11 @@ function start(bundle, on_ready)
             }
         }
 
-        // a deferred burst fires only after the client_list handler RAN, so the state it is
-        // rebuilt from is complete - on the auth frame the channels and clients are not in yet
+        // a deferred burst fires once node's login is COMPLETE (client_list processed),
+        // so the state it is rebuilt from is whole
         if (ui_socket != null && ui_needs_burst === true
-            && message_type === "data_processing_worker__client_list_from_server")
+            && (cached_auth_frame != null || bundle.get_auth_frame() != null)
+            && bundle.read_state().g_is_client_list_retrieved === true)
         {
             send_burst(ui_socket);
         }
@@ -247,16 +248,19 @@ function start(bundle, on_ready)
                     bundle.node_connect_intent();
                 }
 
-                // auth frame first - the ui drops everything until it is authenticated. if node
-                // has not logged in yet, the frame listener sends the burst on arrival
-                if (cached_auth_frame != null || bundle.get_auth_frame() != null)
+                // send only when node's login is COMPLETE (client_list processed) - an auth
+                // frame alone means the lists are not in yet, the burst would replay empty ones
+                let is_login_state_complete = false;
+                try { is_login_state_complete = (bundle.read_state().g_is_client_list_retrieved === true); } catch (e) { }
+
+                if (is_login_state_complete === true && (cached_auth_frame != null || bundle.get_auth_frame() != null))
                 {
                     send_burst(socket);
                 }
                 else
                 {
                     ui_needs_burst = true;
-                    console.log("loopback ui: node not logged in yet, burst deferred");
+                    console.log("loopback ui: node login not complete yet, burst deferred");
                 }
 
                 return;
@@ -271,6 +275,11 @@ function start(bundle, on_ready)
             if (ui_socket === socket)
             {
                 ui_socket = null;
+
+                // a burst owed to this ui is owed to nobody now; the next attach re-decides
+                ui_needs_burst = false;
+                pre_burst_frames = [];
+
                 console.log("loopback ui: ui detached");
 
                 // nobody is looking any more: node counts unread again, for the icon badge

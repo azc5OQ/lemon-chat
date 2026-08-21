@@ -33,8 +33,9 @@ Some of the problems include
 
 How problem was approached
 
-
-
+The background connection moved out of the WebView into a Node.js runtime embedded in the apk.
+Who talks to whom (WebView / Java / Node / server) is explained plainly in COMMUNICATION.md here.
+Why Node was chosen is explained in client-source-code/nodejs-client/README.md.
 
 
 Other Android things

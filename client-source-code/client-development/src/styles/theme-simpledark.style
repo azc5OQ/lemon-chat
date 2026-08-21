@@ -1007,7 +1007,9 @@ body.msgr-vertical #current-client-description {
 }
 
 body.android-app #verification-system {
-    display: flex;
+    /* !important: the reset path stamps inline display:block, which killed the flex
+       ordering and dropped the ::after headline below the cards */
+    display: flex !important;
     flex-direction: column;
     align-items: center;
     padding-top: calc(10vh + 44px);
@@ -1035,6 +1037,10 @@ body.android-app #verification-system > div[style*="25vmin"] {
 body.android-app #container-2 {
     order: 3;
     min-width: 0 !important;
+    /* stable width: without it the flex column sizes by content, so the page went
+       narrow whenever the status text emptied and wide when it filled */
+    width: 100%;
+    max-width: 340px;
 }
 
 /* ===========================================================================
@@ -1153,7 +1159,10 @@ body.android-app #android-server-settings-container::before {
 /* the buttons fill their section instead of floating in the middle of the page */
 body.android-app #connect-button,
 body.android-app #android-server-settings-button {
+    display: block;
     width: 100%;
+    max-width: 210px;
+    margin: 0 auto;
     box-sizing: border-box;
 }
 
@@ -1764,6 +1773,8 @@ div#connection-status-extra {
 /* local settings: full-screen sheet on mobile (div# outranks the layout.style panel rules) */
 div#local-settings-container {
     position: fixed;
+    /* above every bar button (the gear is 31), below context menus and toasts */
+    z-index: 38;
     left: 0;
     top: 0;
     right: 0;
@@ -2131,4 +2142,26 @@ body.msgr-audio-availability #member-list-body .client-audio-state-completely-di
     right: auto;
     left: 50%;
     transform: translateX(-50%);
+}
+
+/* soft fade when the connect page and the chat swap places */
+#verification-system, #communication-system-container {
+    animation: lemon-page-fade 0.28s ease;
+}
+
+@keyframes lemon-page-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* the legacy loading gif: the phase/status lines own the story on the phone */
+body.android-app #another-buttons-loading-container {
+    display: none !important;
+}
+
+
+/* the open local-settings panel lives INSIDE the top bar's stacking context, so the bar
+   must outrank the corner gear (31) while the panel is open - otherwise the gear floats */
+#communication-system-head-menu:has(#local-settings-container[style*="display: block"]) {
+    z-index: 39;
 }

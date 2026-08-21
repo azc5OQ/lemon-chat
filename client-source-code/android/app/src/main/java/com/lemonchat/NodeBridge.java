@@ -36,6 +36,10 @@ public class NodeBridge
 	private volatile int loopbackPort = 0;
 	private volatile String loopbackToken = "";
 
+	// last connection phase from node, replayed to a page that loads later
+	private volatile String lastPhaseState = "";
+	private volatile String lastPhaseReason = "";
+
 	public int getLoopbackPort()
 	{
 		return this.loopbackPort;
@@ -178,6 +182,31 @@ public class NodeBridge
 					this.backgroundService.javascriptJavaBridge.JavaExportRequestCurrentSettingsFromAndroid();
 				}
 			}
+			else if (type.equals("status_text"))
+			{
+				//the connect page's live phase line (key generation, connecting, retrying).
+				//java carries it because node's thread is frozen during the key derive
+				this.lastPhaseState = event.optString("state", "");
+				this.lastPhaseReason = event.optString("reason", "");
+				this.pushConnectionPhaseToWebview();
+			}
+			else if (type.equals("status"))
+			{
+				//node just (re)connected: tell the page, so it reattaches right away
+				//instead of waiting out its retry countdown
+				if (event.optBoolean("connected", false) && this.backgroundService.webView != null)
+				{
+					final android.webkit.WebView webView = this.backgroundService.webView;
+
+					webView.post(new Runnable()
+					{
+						public void run()
+						{
+							webView.evaluateJavascript("if (typeof JavascriptJavaBridge__nudge_loopback_reattach === 'function') { JavascriptJavaBridge__nudge_loopback_reattach(); }", null);
+						}
+					});
+				}
+			}
 			else if (type.equals("unread"))
 			{
 				// node counts while nobody is looking, so the icon is right even when the app
@@ -275,6 +304,27 @@ public class NodeBridge
 	public void sendComeFromIdle(int channelId)
 	{
 		this.send("{\"type\":\"come_from_idle\",\"channel_id\":" + channelId + "}");
+	}
+
+	/** shows node's current phase on the connect page; safe no-op until the page is loaded. */
+	public void pushConnectionPhaseToWebview()
+	{
+		if (this.lastPhaseState.length() == 0 || this.backgroundService.webView == null)
+		{
+			return;
+		}
+
+		final android.webkit.WebView webView = this.backgroundService.webView;
+		final String javascript = "if (typeof JavascriptJavaBridge__show_connection_phase === 'function') { JavascriptJavaBridge__show_connection_phase("
+			+ JSONObject.quote(this.lastPhaseState) + ", " + JSONObject.quote(this.lastPhaseReason) + "); }";
+
+		webView.post(new Runnable()
+		{
+			public void run()
+			{
+				webView.evaluateJavascript(javascript, null);
+			}
+		});
 	}
 
 	/** hands one line the webview printed over to node, so it ends up in the log file. */

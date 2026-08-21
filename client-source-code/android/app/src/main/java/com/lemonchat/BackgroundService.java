@@ -125,6 +125,10 @@ public class BackgroundService extends Service
 	// keeps the cpu ticking so node's heartbeat fires while the screen is off
 	private android.os.PowerManager.WakeLock nodeWakeLock = null;
 
+	// keeps the WIFI RADIO awake - without it wifi power save batches incoming
+	// audio into 100-400ms clumps and voice stutters (the cpu lock does not cover this)
+	private android.net.wifi.WifiManager.WifiLock nodeWifiLock = null;
+
 	///this function is not for initialization, thats what onCreate is for
 	///every time intent is passed to this service, onStartCommand gets run
 	///for example the ACTION_ACCEPT_CALL, basically app passes intent to itself
@@ -174,6 +178,13 @@ public class BackgroundService extends Service
 
 		MainActivity.instance = null;
 
+		//swiping the app away means stop everything audible: FORCED idle, from any channel
+		//(home/backgrounding stays gentle so in-channel music keeps playing there)
+		if (this.webView != null)
+		{
+			this.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function') { JavascriptJavaBridge__send_go_to_idle_mode_request(true); }", null);
+		}
+
 		//the app is gone, so a file picker it opened will never answer
 		this.abandonPendingFileChooser();
 
@@ -189,6 +200,9 @@ public class BackgroundService extends Service
 	    zero cancels it. launchers that do not support badges simply ignore the number. */
 	public void showUnreadBadge(int unreadCount)
 	{
+		// the count on the launcher icon itself (alias switch), next to the notification badge
+		LauncherIconBadge.apply(this, unreadCount);
+
 		try
 		{
 			if (this.notificationManager == null)
@@ -479,6 +493,13 @@ public class BackgroundService extends Service
 
 	@Override public void onCreate()
 	{
+		// android kills a foreground service that shows no notification within 5 seconds, and a
+		// just-booted phone is slow - so the notification comes first, node startup after
+		this.announceForegroundService();
+
+		// the second autostart path, independent of the boot broadcast (see scheduleRestartJob)
+		this.scheduleRestartJob();
+
 		if (BackgroundService.isRunning == false)
 		{
 			BackgroundService.isRunning = true;
@@ -500,6 +521,27 @@ public class BackgroundService extends Service
 			android.os.PowerManager powerManager = (android.os.PowerManager)this.getSystemService(Context.POWER_SERVICE);
 			this.nodeWakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "lemonchat:node");
 			this.nodeWakeLock.acquire();
+
+			// low latency exists since android 10 and needs foreground + screen on to bite;
+			// high perf is the strongest mode older versions have
+			try
+			{
+				android.net.wifi.WifiManager wifiManager = (android.net.wifi.WifiManager)this.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+
+				if (wifiManager != null)
+				{
+					int wifiLockMode = (Build.VERSION.SDK_INT >= 29)
+						? android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+						: android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+
+					this.nodeWifiLock = wifiManager.createWifiLock(wifiLockMode, "lemonchat:wifi");
+					this.nodeWifiLock.acquire();
+				}
+			}
+			catch (Exception wifiLockFailed)
+			{
+				Log.w("lemonchat", "wifi lock not acquired", wifiLockFailed);
+			}
 
 			// the bridge first (node needs its port and token), then node itself. node owns the
 			// server connection permanently; the webview renders via the loopback
@@ -562,6 +604,13 @@ public class BackgroundService extends Service
 				}
 			};
 		}
+		super.onCreate();
+	}
+
+	// the ongoing notification, every channel, then startForeground - moved out of onCreate's
+	// tail so the 5 second foreground deadline is met before any slow node startup
+	private void announceForegroundService()
+	{
 		if (Build.VERSION.SDK_INT >= 26)
 		{
 			this.notificationManager = (NotificationManager)getSystemService(Context.NOTIFICATION_SERVICE);
@@ -620,8 +669,37 @@ public class BackgroundService extends Service
 				this.startForeground(notificationId, notification);
 			}
 		}
+	}
 
-		super.onCreate();
+	// job id of the restart job, any fixed number unique inside this app
+	private static final int RESTART_JOB_ID = 1001;
+
+	// registers a persisted periodic job: the system remembers it across reboots and runs it a
+	// few minutes after boot even when the boot broadcast never reaches this app (huawei)
+	private void scheduleRestartJob()
+	{
+		try
+		{
+			android.app.job.JobScheduler jobScheduler = (android.app.job.JobScheduler)this.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+
+			if (jobScheduler == null || jobScheduler.getPendingJob(RESTART_JOB_ID) != null)
+			{
+				return;
+			}
+
+			android.app.job.JobInfo restartJob = new android.app.job.JobInfo.Builder(RESTART_JOB_ID,
+				new android.content.ComponentName(this, RestartJobService.class))
+				.setPeriodic(15 * 60 * 1000)
+				.setPersisted(true)
+				.build();
+
+			jobScheduler.schedule(restartJob);
+			Log.i("lemonchat", "restart job registered");
+		}
+		catch (Exception scheduleFailed)
+		{
+			Log.w("lemonchat", "restart job registration failed", scheduleFailed);
+		}
 	}
 
 	// which call we last rang for, and when. node and the webview both hear about the same call,

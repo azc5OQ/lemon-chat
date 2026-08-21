@@ -108,6 +108,16 @@ function start(bundle, loopback_info)
         debounce_timer = setTimeout(report_state_changes, DEBOUNCE_MS);
     });
 
+    // connection phase for the webview, routed through java: while node derives the identity
+    // key its whole thread is frozen and the loopback cannot deliver anything
+    if (typeof bundle.set_connection_status_listener === "function")
+    {
+        bundle.set_connection_status_listener(function(status)
+        {
+            send_event({ type: "status_text", state: status.state, reason: status.reason });
+        });
+    }
+
     // the launcher icon badge. node is the only side that is always alive - the webview may be
     // gone (idle, closed, or a headless boot start), which is exactly when a badge matters
     let previous_unread_total = -1;

@@ -10,7 +10,7 @@ let log_file = path.join(__dirname, "node-log.txt");
 let LOG_CAP_BYTES = 1024 * 1024;
 
 // whether we write the log file at all. java tells us, so one setting covers the whole app
-let is_file_logging_enabled = true;
+let is_file_logging_enabled = false;
 
 global.lemonchat_set_file_logging = function(is_enabled)
 {

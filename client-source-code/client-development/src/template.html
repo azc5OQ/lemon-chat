@@ -372,7 +372,28 @@
             <input type="button" id="channel-flatten-toggle-button" value="flatten" title="toggle the channel tree between nested and a flat, single-level list">
             <input type="button" id="enter-server-settings">
         </div>
-        <div id="verification-system">
+        <!-- shown while the connect page is held back, so the wait is a spinner, not a blank screen -->
+        <style>
+            /* visible by default: the spinner IS the first page, until connected or revealed.
+               the theme's body color is painted onto it at show time (js), making it opaque */
+            #connect-holdback-loader { display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 50; flex-direction: column; align-items: center; justify-content: center; }
+            #connect-holdback-spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(128,128,128,0.28); border-top-color: rgba(128,128,128,0.85); animation: connect-holdback-spin 0.9s linear infinite; }
+            @keyframes connect-holdback-spin { to { transform: rotate(360deg); } }
+            /* a running attempt fades the connect button - still there, just disabled;
+               hiding rows or pages on click caused layout flicker */
+            #connect-button { transition: opacity 0.25s; }
+            #connect-button.connect-attempt-pending { opacity: 0.35; pointer-events: none; }
+            /* status lines pop in and out and can be long; reserved height plus a width cap
+               (wrap instead of widening) stops the connect form from jumping around */
+            #connection-status-reason, #connection-status-countdown, #connection-status-lastseen, #another-buttons-loading-container-p {
+                min-height: 1.3em; max-width: 330px; overflow-wrap: anywhere; margin-left: auto; margin-right: auto;
+            }
+            #another-buttons-loading-container-p { min-height: 2.6em; }
+        </style>
+        <div id="connect-holdback-loader">
+            <div id="connect-holdback-spinner"></div>
+        </div>
+        <div id="verification-system" style="visibility: hidden;">
             <div style="height: 25vmin;"></div>
             <div id="container-2" style="min-width: 330px;">
                 <!-- saved servers: picking one fills the address and port below. android hides the

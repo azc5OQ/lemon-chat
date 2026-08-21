@@ -257,7 +257,9 @@ public class MainActivity extends AppCompatActivity
 
 			MainActivity.instance = this;
 
-			this.preferences = this.getPreferences(Context.MODE_PRIVATE);
+			//named file, NOT getPreferences(): since the launcher aliases, getPreferences() names
+			//the file after the launching alias and split the settings away from ChatSettings
+			this.preferences = this.getSharedPreferences("MainActivity", Context.MODE_PRIVATE);
 			this.settings = ChatSettings.getInstance();
 			//ChatSettings resolves its own preferences from this context now, so the service can
 			//read them at boot with no activity around
@@ -730,6 +732,17 @@ public class MainActivity extends AppCompatActivity
 					{
 						frameLayout.addView(this.backgroundService.webView);
 					}
+				}
+
+				//node may have (re)connected while the page's retry timers were throttled in the
+				//background; poke it so reattaching starts now instead of waiting out a countdown
+				this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__nudge_loopback_reattach === 'function') { JavascriptJavaBridge__nudge_loopback_reattach(); }", null);
+
+				//re-deliver node's current phase: a push lost while the page was busy or detached
+				//left the status frozen (the stuck "generating the identity key" episode)
+				if (this.backgroundService.nodeBridge != null)
+				{
+					this.backgroundService.nodeBridge.pushConnectionPhaseToWebview();
 				}
 
 				//a just-declined call sets this flag: skip the idle exit ONCE so declining does

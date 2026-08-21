@@ -4,12 +4,12 @@
             // inside moduleFactory's scope, and node reaches it through the export seam.
 
             var android_js_bridge = {
-                send_go_to_idle_mode_request_android: function()
+                send_go_to_idle_mode_request_android: function(is_forced)
                 {
                     // enter_deep_idle sends the go-to-idle request to the server itself and additionally
-                    // shuts down audio, the opus tick and the webrtc datachannel; it defers while the
-                    // connect is in progress and skips entirely while the client is in a voice channel
-                    enter_deep_idle();
+                    // shuts down audio, the opus tick and the webrtc datachannel. gentle (home) keeps an
+                    // in-channel session alive; forced (swipe-away) idles from any channel
+                    enter_deep_idle(is_forced === true);
                 },
 
                 send_come_from_idle_mode_request_android: function(channelId = null)
@@ -47,6 +47,51 @@
 
                     g_local_username = username;
                     { let rename_input = document.getElementById('connected-local-client-input'); if (rename_input != null) { rename_input.setAttribute('value', g_local_username); } }
+                },
+
+                // node's phase relayed by java: feed the page's own status machinery (the
+                // ticker keeps repainting it) and keep the spinner up while node works
+                show_connection_phase_android: function(state, reason)
+                {
+                    if (g_is_authenticated == true)
+                    {
+                        return;
+                    }
+
+                    g_connection_status.state = state;
+                    g_connection_status.reason = (reason != null) ? reason : "";
+                    render_connection_status();
+
+                    if (state === "connecting" || state === "connected")
+                    {
+                        extend_connect_page_holdback();
+                    }
+                    else
+                    {
+                        reveal_connect_page();
+                    }
+                },
+
+                // java says "node is connected (or the app came to front)". the dial decision
+                // belongs to request_connect; this only self-heals a lost settings push first
+                nudge_loopback_reattach_android: function()
+                {
+                    if (g_is_authenticated == true)
+                    {
+                        return;
+                    }
+
+                    // no loopback details yet means a settings push got lost - ask again
+                    if (g_loopback_port <= 0)
+                    {
+                        if (typeof Android !== "undefined")
+                        {
+                            Android.JavaExportRequestCurrentSettingsFromAndroid();
+                        }
+                        return;
+                    }
+
+                    request_connect("resume");
                 },
 
                 accept_current_settings_from_android: function(json_current_settings)
@@ -149,8 +194,13 @@
                     {
                         document.getElementById("another-buttons-sub-container").style.display = "";
                         document.getElementById("another-buttons-sub-loading-container").style.display = "none";
+                        // explicit visible is needed (a stylesheet default hides it); the spinner
+                        // page has an opaque background now, so it cannot float through anymore
                         document.getElementById("connect-button").style.visibility = "visible";
                         document.getElementById("import-identity-button").style.display = "none";
+
+                        // nothing dials on its own: no spinner, the connect page IS the page
+                        reveal_connect_page();
                     }
 
                     if (g_are_sound_effects_enabled == true)
@@ -194,8 +244,8 @@
 
                     g_loopback_token = (typeof settings_from_android.loopback_token === "string") ? settings_from_android.loopback_token : "";
 
-                    // node is the one connecting, so the connect page waits until we know it failed
-                    hold_back_connect_page();
+                    // no unconditional hold here: request_connect raises the spinner only when
+                    // it actually dials - a save with autoconnect off changes nothing on screen
 
                     // the data worker has its own copy of the flag and encrypts outgoing direct
                     // messages itself - it must skip that in loopback mode too
@@ -218,46 +268,13 @@
                         g_websocket_worker.postMessage({ type: "close" });
                     }
 
-                    if (is_ui_only_runtime())
+                    // node also derives its identity from the settings; the dial decision itself
+                    // is request_connect's, in both runtimes
+                    if (is_ui_only_runtime() == false)
                     {
-                        // webview: node owns identity and connection; the ui just attaches to the loopback.
-                        // with autoconnect off the connect button sets the flag instead
-                        if (g_loopback_port > 0 && (g_is_autoconnect_without_user_action_active || g_ui_connect_requested))
-                        {
-                            g_ui_connect_requested = false;
-                            g_target_slot.set({ kind: "loopback", port: g_loopback_port, token: g_loopback_token });
-                            nudge_connection_driver();
-                        }
-                    }
-                    else
-                    {
-                        // node: the settings carry both the identity seed and the server details
                         request_identity(settings_from_android.identity_string);
-
-                        // a fresh install pushes a partial json with no host yet - that must never
-                        // become a target (node dialed ws://undefined and wedged)
-                        let has_server_details = (typeof g_autoconnect_details.host === "string"
-                            && g_autoconnect_details.host.length > 0
-                            && parseInt(g_autoconnect_details.port) > 0);
-
-                        if (has_server_details == false)
-                        {
-                            console.log("connect-path: settings have no server details yet, waiting");
-                        }
-                        else if (g_is_autoconnect_without_user_action_active)
-                        {
-                            g_target_slot.set({
-                                kind: "server",
-                                host: g_autoconnect_details.host,
-                                port: g_autoconnect_details.port,
-                                wss_port: g_autoconnect_details.wss_port
-                            });
-                            nudge_connection_driver();
-                        }
-                        else
-                        {
-                            console.log("connect-path: autoconnect off, waiting for the ui to ask");
-                        }
                     }
+
+                    request_connect("settings");
                 }
             }

@@ -3226,10 +3226,11 @@ var UI = {
             // dead flag that is never set true anywhere, do not gate on it
             if (g_is_authenticated == true)
             {
-                // deliberate close; the driver redials once the new identity slot fills
+                // deliberate close; the user asked for this reconnect, so it is a button-class
+                // request and redials once the new identity slot fills
                 g_is_identity_switch_in_progress = true;
                 g_websocket_worker.postMessage({ type: "close" });
-                nudge_connection_driver();
+                request_connect("button");
             }
         }
     },
@@ -3954,6 +3955,12 @@ var webrtc = {
             }
 
             if (g_client_list[client_index].is_muted_by_local_client == true || g_client_list[client_index].is_ignored_by_local_client == true)
+            {
+                return;
+            }
+
+            // audio from a channel we are not in is a stale straggler (e.g. after a switch): discard
+            if (g_client_list[client_index].channel_id != current_channel_id)
             {
                 return;
             }

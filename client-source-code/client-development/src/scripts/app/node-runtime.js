@@ -199,10 +199,8 @@ function node_set_connection_wanted(is_wanted)
         g_websocket_worker.postMessage({ type: "close" });
     }
 
-    if (g_node_connection_wanted == true && g_is_authenticated == false)
-    {
-        nudge_connection_driver();
-    }
+    // re-dialing after a re-arm rides the settings push (request_connect("settings"));
+    // this function only owns the wanted flag and the park
 }
 
 // contains a throw from any handler. the loopback workers run in-process and node cannot

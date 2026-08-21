@@ -83,6 +83,9 @@
                     from_identity_string: requested_key !== "(random)",
                     identity_passphrase_string: requested_key === "(random)" ? null : requested_key
                 });
+
+                // the derive can take minutes on a phone; say what the wait actually is
+                report_connection_status("connecting", "generating the identity key (takes a while on first start)");
             }
 
             // resolved by the websocket close/error handlers - the driver awaits this while a
@@ -205,49 +208,107 @@
 
                         if (g_is_authenticated == false)
                         {
+                            // loopback socket is fine, node just has not logged in yet.
+                            // redialing now would kill a healthy attach - keep waiting
+                            if (target.kind === "loopback")
+                            {
+                                console.log("connect-path: loopback attached, still waiting for node's login");
+                                continue;
+                            }
+
                             console.log("connect-path: no login within 45s, treating the attempt as failed");
                             break;
                         }
                     }
 
-                    if (g_is_authenticated == false && g_is_reconnect_active == false)
+                    if (g_is_authenticated == false
+                        && (g_is_reconnect_active == false || g_is_autoconnect_without_user_action_active == false))
                     {
-                        // manual mode: hold until the connect button nudges
-                        report_connection_status("idle", g_last_disconnect_reason);
+                        // manual mode: one attempt per button press - state the failure and
+                        // hold until the connect button nudges, no countdown
+                        set_connect_button_pending(false);
+                        report_connection_status("idle",
+                            (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
                         await new Promise(function(resolve) { g_driver_nudge_resolver = resolve; });
                         continue;
                     }
 
+                    // dialing node on this device is free, so the loopback redials fast; the 30s
+                    // pace is for a remote server that may be down
+                    let retry_seconds = (target.kind === "loopback") ? 2 : 30;
+
                     if (g_is_authenticated == false)
                     {
-                        g_connection_status.next_retry_at = new Date().valueOf() + 30000;
+                        g_connection_status.next_retry_at = new Date().valueOf() + retry_seconds * 1000;
                         report_connection_status("waiting_retry",
                             (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
                     }
 
-                    await driver_retry_wait(30);
+                    await driver_retry_wait(retry_seconds);
                 }
             }
 
-            // the connect button: derive the target from where we run and what the page knows.
-            // pressing it during a countdown also skips the wait
-            function submit_connection_target_from_ui()
+            // ===============================================================
+            // THE ONE PLACE that may start a connection. every trigger routes
+            // through here; this table is the entire dial policy:
+            //   "button"   the user asked - always dial
+            //   "attach"   a ui attached to node - downstream of an authorized
+            //              decision, so always dial
+            //   "settings" | "resume" | "retry"  dial only under autoconnect;
+            //              "resume" additionally reattaches when node already
+            //              holds a session (rendering it is not connecting)
+            // nothing else in the codebase may set the target or nudge the driver.
+            // ===============================================================
+            function request_connect(trigger)
             {
+                let is_wanted =
+                    (trigger === "button")
+                    || (trigger === "attach")
+                    || (g_is_autoconnect_without_user_action_active == true)
+                    || (g_ui_connect_requested == true)
+                    || (trigger === "resume" && g_connection_status.state === "connected");
+
+                console.log("connect-path: request_connect(" + trigger + ") -> " + (is_wanted ? "dial" : "ignored"));
+
+                if (is_wanted == false)
+                {
+                    return;
+                }
+
+                // derive the target from where we run and what the page knows
                 if (is_ui_only_runtime())
                 {
-                    if (g_loopback_port > 0)
+                    if (g_loopback_port <= 0)
                     {
-                        g_target_slot.set({ kind: "loopback", port: g_loopback_port, token: g_loopback_token });
+                        // node has not announced yet; the settings push that follows finishes this
+                        if (trigger === "button")
+                        {
+                            g_ui_connect_requested = true;
+                            document.getElementById("another-buttons-loading-container-p").innerHTML = "waiting for app runtime...";
+                        }
+                        return;
                     }
-                    else
+
+                    g_ui_connect_requested = false;
+                    g_target_slot.set({ kind: "loopback", port: g_loopback_port, token: g_loopback_token });
+
+                    // a button press keeps the page exactly as it is (the button itself fades);
+                    // every other trigger connects behind the spinner page
+                    if (trigger !== "button")
                     {
-                        // node has not announced yet; the settings push that follows will set the target
-                        g_ui_connect_requested = true;
-                        document.getElementById("another-buttons-loading-container-p").innerHTML = "waiting for app runtime...";
+                        hold_back_connect_page();
                     }
                 }
                 else if (g_are_server_details_predefined == true)
                 {
+                    // a partial first-run json has no host yet - that must never become a target
+                    if (typeof g_autoconnect_details.host !== "string" || g_autoconnect_details.host.length == 0
+                        || (parseInt(g_autoconnect_details.port) > 0) == false)
+                    {
+                        console.log("connect-path: no server details yet, waiting");
+                        return;
+                    }
+
                     g_target_slot.set({
                         kind: "server",
                         host: g_autoconnect_details.host,
@@ -267,6 +328,12 @@
                 nudge_connection_driver();
             }
 
+            // the connect button; kept as its own name for the onclick wiring
+            function submit_connection_target_from_ui()
+            {
+                request_connect("button");
+            }
+
             // webview only: connect pressed before node announced its loopback port
             var g_ui_connect_requested = false;
 
@@ -279,8 +346,9 @@
                 last_connected_at: 0    // ms timestamp the server connection last existed, 0 = never
             };
 
-            // set by the loopback host through the seam; receives every status change
-            var g_connection_status_listener = null;
+            // set through the seam; every listener receives every status change
+            // (two exist under node: the loopback ui and the java bridge)
+            var g_connection_status_listeners = [];
 
             // filled by the close/error handlers, consumed by the driver for the retry status
             var g_last_disconnect_reason = "";
@@ -329,9 +397,9 @@
                 g_connection_status.state = state;
                 g_connection_status.reason = (reason != null) ? reason : "";
 
-                if (g_connection_status_listener != null)
+                for (let i = 0; i < g_connection_status_listeners.length; i++)
                 {
-                    try { g_connection_status_listener(g_connection_status); } catch (e) { }
+                    try { g_connection_status_listeners[i](g_connection_status); } catch (e) { }
                 }
 
                 render_connection_status();
