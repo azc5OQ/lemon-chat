@@ -4,12 +4,11 @@
     position: relative;
 }
 
-/* slim scrollbar — firefox only */
-
+/* slim scrollbars for firefox, because it ignores the ::-webkit-scrollbar rules below */
 @supports (-moz-appearance: none) {
     * {
-        scrollbar-width: thin;  /* firefox: slim bar instead of the chunky os default */
-        scrollbar-color: rgba(255, 255, 255, 0.25) transparent;  /* firefox: thumb colour, track colour */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
     }
 }
 
@@ -374,8 +373,7 @@ a-toast:hover {
     opacity: 0.8;
 }
 
-/* the circle every other theme gives it. without a size the monogram fallback stretches into a
-   full-width bar across the info panel */
+/* the avatar gets a fixed 72px, because without a size the monogram fallback stretches full width */
 #current-client-avatar {
     width: 72px;
     height: 72px;
@@ -1313,7 +1311,7 @@ a-toast:hover {
     font-size: 6px;
 }
 
-/* dialog colours: layout.style lays out and paints every dialog from these */
+/* this theme's --set-* dialog palette, because layout.style lays out and paints every dialog from these variables */
 :root {
 
     --set-font: 'Raleway', sans-serif;
@@ -1655,8 +1653,6 @@ a-toast:hover {
     background-size: 16px 16px;
 }
 
-/* the always-broadcasting mic button at 116px is hidden on touch (its setting moved into local
-   settings), so everything to its left closes up one slot and the row has no hole in it */
 #choose-theme-button {
     position: absolute;
     z-index: 1;
@@ -1966,7 +1962,6 @@ a-toast:hover {
     float: right;
     border-bottom-left-radius: 16px;
     border-top-right-radius: 16px;
-    cursor: pointer;
 }
 
 .close-button:hover {
@@ -2102,7 +2097,6 @@ body.android-app #android-server-settings-button {
     margin-top: 14px;
 }
 
-/* phone-width fixes: these dialogs came from the desktop theme carrying desktop sizes */
 @media (max-width: 700px) {
 
     #server-settings-tab {
@@ -2111,7 +2105,7 @@ body.android-app #android-server-settings-button {
         max-width: 96vw !important;
         height: 80vh !important;
         min-height: 0 !important;
-        /* !important also beats the drag code's inline pins; nothing to drag at this width */
+        /* left/top need !important, because the drag code pins the dialog with inline left/top */
         left: 2vw !important;
         top: 6vh !important;
     }
@@ -2157,7 +2151,8 @@ body.android-app #android-server-settings-button {
 }
 
 
-/* local settings: full-screen sheet on mobile (div# outranks the layout.style panel rules) */
+/* the local-settings panel goes fullscreen in this theme; div# is needed because it outranks
+   layout.style's panel rules, which load later */
 div#local-settings-container {
     position: fixed;
     left: 0;
@@ -2197,9 +2192,8 @@ div#local-settings-container .local-settings-row input[type="checkbox"] {
     transform: scale(1.35);
 }
 
-/* the rows scroll, the title bar and the save button stay put. min-height:0 is what makes it
-   scroll at all - without it the flex item refuses to shrink under its content and just overflows,
-   which pushed the save button off the screen */
+/* the settings-rows area scrolls; min-height:0 is needed because a flex item does not shrink below
+   content size by default, which would push the save button off-screen */
 div#local-settings-container #local-settings-scroll {
     flex: 1 1 auto;
     min-height: 0;
@@ -2209,13 +2203,12 @@ div#local-settings-container #local-settings-scroll {
     overscroll-behavior: contain;
 }
 
-/* a keyboard key cannot be held on a phone - here the mic is an on-screen button */
 div#local-settings-container #local-settings-ptt-key-row {
     display: none !important;
 }
 
-/* the segments replace the select on touch: an android webview cancels a native dropdown
-   as soon as an ancestor animates, so the list never opened */
+/* the mic-mode <select> is hidden and segment buttons replace it, because an android webview
+   cancels a native dropdown when an ancestor animates */
 div#local-settings-container #local-settings-mic-mode {
     display: none;
 }
@@ -2242,8 +2235,6 @@ div#local-settings-container #local-settings-close-button {
     from { opacity: 0; transform: translateY(24px); }
     to { opacity: 1; transform: none; }
 }
-/* sound effects, country flags and always-on mic moved into local settings; this button
-   takes the first freed slot and the buttons to its right slid back by two slots */
 #local-settings-button {
     position: absolute;
     z-index: 1;
@@ -2259,14 +2250,11 @@ div#local-settings-container #local-settings-close-button {
     background-position: center center;
     background-color: #000000;
     background-size: 17px 17px;
-    /* the button carries value="local": hide the text so only the glyph shows */
     font-size: 0;
     color: transparent;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cfd6dd' stroke-width='2' stroke-linecap='round'%3E%3Cline x1='4' y1='7' x2='20' y2='7'/%3E%3Cline x1='4' y1='12' x2='20' y2='12'/%3E%3Cline x1='4' y1='17' x2='20' y2='17'/%3E%3Ccircle cx='9' cy='7' r='2.2'/%3E%3Ccircle cx='15' cy='12' r='2.2'/%3E%3Ccircle cx='8' cy='17' r='2.2'/%3E%3C/svg%3E");
 }
 
-/* the other toolbar icons hover through one shared id list; this one was added later
-   and was the only icon that stayed flat under the cursor */
 #local-settings-button:hover {
     background-color: #36393f;
 }

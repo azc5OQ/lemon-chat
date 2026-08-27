@@ -10,6 +10,7 @@
 #include "clib/clib_memory.h"
 
 #include "server_message.h"
+#include "server_logs.h"
 #include "audio_channel.h"
 #include "ip_tools.h"
 #include "musicbot.h"
@@ -60,6 +61,68 @@ static boole _client_msg_internal__is_change_client_username_message_valid(cJSON
 static void _client_msg_internal__process_chat_message_action(cJSON* json_root, uint64 sender_client_id, char* outbound_action_type, boole is_edit);
 static boole _client_msg_internal__is_offline_chat_message_valid(cJSON* json_root);
 static boole _client_msg_internal__is_set_identity_alias_request_valid(cJSON* json_root);
+static uint64 _client_msg_internal__get_max_chat_file_encrypted_length(void);
+static uint64 _client_msg_internal__get_max_chat_picture_encrypted_length(void);
+static uint64 _client_msg_internal__get_max_file_upload_length(void);
+
+/**
+ * @brief the longest encrypted chat file body the server accepts, derived from the admin's raw-byte limit
+ *
+ * @note raw bytes -> base64 data (4/3) -> json wrapper -> aes -> base64 again (4/3). the constant covers
+ *       the json field names, the mime/name strings and the rsa-wrapped keys of a direct chat file
+ *
+ * @return uint64 -> length in base64 chars
+ */
+static uint64 _client_msg_internal__get_max_chat_file_encrypted_length(void)
+{
+    return (((uint64)g_server_settings.file_upload_max_size_bytes * 16) / 9) + 16384;
+}
+
+/**
+ * @brief the longest encrypted inline picture the server accepts, derived from the admin's raw-byte limit
+ *
+ * @note same expansion as a chat file, without the name/mime header
+ *
+ * @return uint64 -> length in base64 chars
+ */
+static uint64 _client_msg_internal__get_max_chat_picture_encrypted_length(void)
+{
+    return (((uint64)g_server_settings.chat_picture_max_size_bytes * 16) / 9) + 16384;
+}
+
+/**
+ * @brief the biggest upload a client may declare: a musicbot song, a chat file, or an inline
+ *        picture - whichever of the enabled ones is largest
+ *
+ * @return uint64 -> length in base64 chars
+ */
+static uint64 _client_msg_internal__get_max_file_upload_length(void)
+{
+    uint64 longest = MAX_CLIENT_FILE_UPLOAD_LENGTH;
+    uint64 candidate = 0;
+
+    if (g_server_settings.allow_file_uploads == TRUE)
+    {
+        candidate = _client_msg_internal__get_max_chat_file_encrypted_length();
+
+        if (candidate > longest)
+        {
+            longest = candidate;
+        }
+    }
+
+    if (g_server_settings.allow_chat_pictures == TRUE)
+    {
+        candidate = _client_msg_internal__get_max_chat_picture_encrypted_length();
+
+        if (candidate > longest)
+        {
+            longest = candidate;
+        }
+    }
+
+    return longest;
+}
 
 /**
  * @brief validates an add-tag-to-client request: client id and tag id are present and within range
@@ -855,7 +918,7 @@ static boole _client_msg_internal__is_client_msg_file_send_request_valid(cJSON* 
         return FALSE;
     }
 
-    if (json_message_total_length->valueint <= 4096 || json_message_total_length->valueint >= MAX_CLIENT_FILE_UPLOAD_LENGTH)
+    if (json_message_total_length->valueint <= 4096 || (uint64)json_message_total_length->valueint >= _client_msg_internal__get_max_file_upload_length())
     {
         DBG_CLIENT_MESSAGE log_info("%s", "json_message_total_length->valueint out of allowed range \n");
         return FALSE;
@@ -874,7 +937,8 @@ static boole _client_msg_internal__is_client_msg_file_send_request_valid(cJSON* 
         return FALSE;
     }
 
-    if (clib__utf8_string_length(json_message_data_part_base64->valuestring) > (MAX_CLIENT_FILE_UPLOAD_LENGTH / 400))
+    // clients split an upload into 400 parts, so one part is at most ceil(max / 400)
+    if (clib__utf8_string_length(json_message_data_part_base64->valuestring) > (_client_msg_internal__get_max_file_upload_length() / 400) + 1)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "data_part_base64->valuestring length too large \n");
         return FALSE;
@@ -951,6 +1015,9 @@ static boole _client_msg_internal__is_file_send_completed_request_valid(cJSON* j
     int64 song_name_length = 0;
     cJSON* json_receiver_id = 0;
     cJSON* json_local_message_id = 0;
+    cJSON* json_file_header = 0;
+    int64 file_header_length = 0;
+    boole is_chat_file_intent = FALSE;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_file_send_intent = cJSON_GetObjectItemCaseSensitive(json_message_object, "file_send_intent");
@@ -991,14 +1058,49 @@ static boole _client_msg_internal__is_file_send_completed_request_valid(cJSON* j
         is_intent_allowed = TRUE;
     }
 
-    if (clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_picture_file") == TRUE)
+    // inline pictures can be switched off by the admin; honest clients refuse locally before uploading
+    if (g_server_settings.allow_chat_pictures == TRUE)
     {
-        is_intent_allowed = TRUE;
+        if (clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_picture_file") == TRUE)
+        {
+            is_intent_allowed = TRUE;
+        }
+
+        if (clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_picture_file") == TRUE)
+        {
+            is_intent_allowed = TRUE;
+        }
     }
 
-    if (clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_picture_file") == TRUE)
+    if (clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_file") == TRUE)
     {
         is_intent_allowed = TRUE;
+        is_chat_file_intent = TRUE;
+    }
+
+    if (clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_file") == TRUE)
+    {
+        is_intent_allowed = TRUE;
+        is_chat_file_intent = TRUE;
+    }
+
+    // a chat file carries its encrypted name/size header next to the body; opaque here, only bounded
+    if (is_chat_file_intent == TRUE)
+    {
+        json_file_header = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "file_header");
+
+        if (json_file_header == NULL_POINTER || cJSON_IsString(json_file_header) == FALSE || json_file_header->valuestring == NULL_POINTER)
+        {
+            DBG_CLIENT_MESSAGE log_info("%s", "chat file: file_header missing or not a string \n");
+            return FALSE;
+        }
+
+        file_header_length = clib__utf8_string_length_check_max_length(json_file_header->valuestring, FILE_HEADER_MAX_LENGTH);
+        if (file_header_length == -1 || file_header_length == 0)
+        {
+            DBG_CLIENT_MESSAGE log_info("%s", "chat file: file_header has wrong length \n");
+            return FALSE;
+        }
     }
 
     if (is_intent_allowed == TRUE)
@@ -1046,7 +1148,7 @@ static boole _client_msg_internal__is_file_send_completed_request_valid(cJSON* j
                 return FALSE;
             }
         }
-        else if ((clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_picture_file") == TRUE) || clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_picture_file") == TRUE)
+        else if ((clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_picture_file") == TRUE) || clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_picture_file") == TRUE || is_chat_file_intent == TRUE)
         {
             json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "receiver_id");
             json_local_message_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "local_message_id");
@@ -2208,9 +2310,39 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
         current_client->is_authenticated = TRUE;
         current_client->timestamp_last_maintain_connection_message_received = base__get_timestamp_ms();
 
+        // identity ban: the ip check at socket open cannot see the key yet, so a banned identity
+        // arriving from a fresh ip is caught here - the challenge just proved he really holds it
+        if (base__is_identity_banned(current_client->public_key) == TRUE)
+        {
+            log_info("%s %s %s", "join refused: banned identity (ip", current_client->ip_address, ") \n");
+            server_logs__join_refused("banned identity", current_client->ip_address);
+            base__close_websocket_connection(sender_client_id, FALSE);
+            goto _label_client_msg__process_public_key_challenge_response_end;
+        }
+
         if (g_server_settings.is_display_country_flags_active == TRUE)
         {
             ip_tools_load_iso_country_code(current_client->ip_address, current_client->country_iso_code);
+        }
+
+        // country blocking: the join is refused here, before the client gets a username or any
+        // lists. evaluated per connection, so the same person from an allowed country gets in.
+        // resolves the country itself when the flags feature (above) has not already done it
+        if (g_server_settings.is_country_blocking_active == TRUE)
+        {
+            if (current_client->country_iso_code[0] == 0)
+            {
+                ip_tools_load_iso_country_code(current_client->ip_address, current_client->country_iso_code);
+            }
+
+            if (base__is_country_blocked(current_client->country_iso_code) == TRUE)
+            {
+                // an abrupt close with no explanation, by design - exactly what a wrong key gets
+                log_info("%s %s %s %s %s", "join refused: country", current_client->country_iso_code, "is blocked (ip", current_client->ip_address, ") \n");
+                server_logs__join_refused_country(current_client->country_iso_code, current_client->ip_address);
+                base__close_websocket_connection(sender_client_id, FALSE);
+                goto _label_client_msg__process_public_key_challenge_response_end;
+            }
         }
 
         status = base__assign_username_for_newly_joined_client(sender_client_id, g_server_settings.default_client_name);
@@ -2285,6 +2417,9 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
                 base__store_identity_raw_public_key(offline_identity_hash, current_client->public_key);
             }
 
+            // the join is complete and the username is final (deduped / alias-pinned) here
+            server_logs__client_joined(current_client);
+
             server_msg__send_authentication_status_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
             server_msg__send_channel_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
             server_msg__send_client_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret, current_client->username, current_client->client_id);
@@ -2324,6 +2459,7 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
     else
     {
         DBG_AUTHENTICATION log_info("%s", " challenge string not equal \n");
+        server_logs__join_refused("challenge response mismatch", current_client->ip_address);
         base__close_websocket_connection(sender_client_id, FALSE);
     }
 
@@ -2482,6 +2618,8 @@ void client_msg__process_change_client_username(cJSON* json_root, uint64 sender_
             }
             else if (new_username_length > 0)
             {
+                server_logs__username_changed(client_to_alter->username, json_message_value->valuestring);
+
                 clib__null_memory(client_to_alter->username, USERNAME_MAX_LENGTH);
                 clib__copy_memory(json_message_value->valuestring, client_to_alter->username, new_username_length, USERNAME_MAX_LENGTH);
                 is_change_success = TRUE;
@@ -2706,7 +2844,7 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
         clib__read_lock(&g_clients_global_rwlock_guard);
         if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
         {
-            server_msg__send_access_denied_to_single_client(&g_clients_array[sender_client_id]);
+            server_msg__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         }
         clib__unlock(&g_clients_global_rwlock_guard);
     }
@@ -2856,7 +2994,7 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
         clib__read_lock(&g_clients_global_rwlock_guard);
         if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
         {
-            server_msg__send_access_denied_to_single_client(&g_clients_array[sender_client_id]);
+            server_msg__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         }
         clib__unlock(&g_clients_global_rwlock_guard);
     }
@@ -3174,11 +3312,11 @@ void client_msg__process_channel_chat_picture(uint64 client_sender_id, uint64 lo
 
         server_chat_message_id = base__get_chat_message_id();
         base__increment_chat_message_id();
-        server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(client_sender_id, channel_id, server_chat_message_id);
+        buffer_to_send_total_size = clib__utf8_string_length(message_value);
+        server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(client_sender_id, channel_id, server_chat_message_id, buffer_to_send_total_size);
 
         arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
         clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
-        buffer_to_send_total_size = clib__utf8_string_length(message_value);
         message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); // old buffer points to file upload buffer, it's freed before download thread finishes sending this, need new one
         clib__copy_memory(message_value, message_copy, buffer_to_send_total_size, buffer_to_send_total_size);
         message_copy[buffer_to_send_total_size] = 0; // null terminator
@@ -3189,6 +3327,7 @@ void client_msg__process_channel_chat_picture(uint64 client_sender_id, uint64 lo
         arg->size = clib__utf8_string_length(message_value);
         arg->server_chat_message_id = server_chat_message_id;
         arg->local_chat_message_id = local_message_id;
+        clib__copy_memory("channel_chat_picture", &arg->receive_type[0], clib__utf8_string_length("channel_chat_picture"), sizeof(arg->receive_type) - 1);
 
         pthread_create((pthread_t*)&thread_id, 0, (void*)&_client_msg_internal__file_download_thread, arg);
     }
@@ -3232,11 +3371,11 @@ void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 rec
 
         server_chat_message_id = base__get_chat_message_id();
         base__increment_chat_message_id();
-        server_msg__send_chat_picture_metadata_to_single_client(sender_client_id, receiver_id, server_chat_message_id);
+        buffer_to_send_total_size = clib__utf8_string_length(message_value);
+        server_msg__send_chat_picture_metadata_to_single_client(sender_client_id, receiver_id, server_chat_message_id, buffer_to_send_total_size);
 
         arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
         clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
-        buffer_to_send_total_size = clib__utf8_string_length(message_value);
         message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); // old buffer points to file upload buffer, it's freed before download thread finishes sending this, need new one
         clib__copy_memory(message_value, message_copy, buffer_to_send_total_size, buffer_to_send_total_size);
         message_copy[buffer_to_send_total_size] = 0; // null terminator
@@ -3248,9 +3387,124 @@ void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 rec
         arg->size = clib__utf8_string_length(message_value);
         arg->server_chat_message_id = server_chat_message_id;
         arg->local_chat_message_id = local_message_id;
+        clib__copy_memory("direct_chat_picture", &arg->receive_type[0], clib__utf8_string_length("direct_chat_picture"), sizeof(arg->receive_type) - 1);
 
         pthread_create((pthread_t*)&thread_id, 0, (void*)&_client_msg_internal__file_download_thread, arg);
     }
+}
+
+/**
+ * @brief relays an uploaded chat file to everybody in the sender's channel: the encrypted header goes
+ *        out in the metadata right away, the encrypted body follows in chunks from the relay thread
+ *
+ * @param uint64 client_sender_id -> id of the client that sent the file
+ * @param uint64 local_message_id -> the client-side message id of the file
+ * @param char* message_value -> the encrypted file body (base64) to send to the channel
+ * @param char* file_header -> the encrypted name/size/mime header, forwarded as is
+ *
+ * @attention called within write lock on clients array, same as the picture version
+ *
+ * @return void
+ */
+void client_msg__process_channel_chat_file(uint64 client_sender_id, uint64 local_message_id, char* message_value, char* file_header)
+{
+    boole is_channel_existing = FALSE;
+    uint64 channel_id = 0;
+    uint64 server_chat_message_id = 0;
+    data_for_file_send_thread_t* arg = NULL_POINTER;
+    uint64 buffer_to_send_total_size = 0;
+    char* message_copy = NULL_POINTER;
+    uint64 thread_id = 0;
+
+    channel_id = g_clients_array[client_sender_id].channel_id;
+    is_channel_existing = (channel_id < g_server_settings.max_channel_count) && g_channel_array[channel_id].is_existing;
+
+    if (is_channel_existing == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_channel_chat_file receiving channel does not exist: ", channel_id, "\n");
+        server_msg__send_file_send_error_to_single_client(&g_clients_array[client_sender_id], "receiver_unavailable", local_message_id);
+        return;
+    }
+
+    buffer_to_send_total_size = clib__utf8_string_length(message_value);
+
+    server_chat_message_id = base__get_chat_message_id();
+    base__increment_chat_message_id();
+    server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel(client_sender_id, channel_id, server_chat_message_id, file_header, buffer_to_send_total_size);
+
+    arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+    clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
+    message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); // the upload buffer is freed before the relay thread finishes, so it gets its own copy
+    clib__copy_memory(message_value, message_copy, buffer_to_send_total_size, buffer_to_send_total_size);
+    message_copy[buffer_to_send_total_size] = 0;
+    arg->buffer = message_copy;
+    arg->client_sender_id = client_sender_id;
+    arg->receiving_clients_count = base__get_other_clients_in_channel(client_sender_id, channel_id, &arg->receiving_client_ids[0]);
+    arg->send_type = FILE_SEND_TYPE_TO_CHANNEL;
+    arg->size = buffer_to_send_total_size;
+    arg->server_chat_message_id = server_chat_message_id;
+    arg->local_chat_message_id = local_message_id;
+    clib__copy_memory("channel_chat_file", &arg->receive_type[0], clib__utf8_string_length("channel_chat_file"), sizeof(arg->receive_type) - 1);
+
+    pthread_create((pthread_t*)&thread_id, 0, (void*)&_client_msg_internal__file_download_thread, arg);
+}
+
+/**
+ * @brief relays an uploaded chat file to one client. idle receivers are refused (a phone with no ui
+ *        attached is idle), and the refusal is reported back to the sender instead of dropped
+ *
+ * @param uint64 sender_client_id -> id of the client that sent the file
+ * @param uint64 receiver_id -> id of the client that receives the file
+ * @param uint64 local_message_id -> the client-side message id of the file
+ * @param char* message_value -> the encrypted file body (base64) to send to the receiver
+ * @param char* file_header -> the encrypted name/size/mime header, forwarded as is
+ *
+ * @attention called within write lock on clients array, same as the picture version
+ *
+ * @return void
+ */
+void client_msg__process_direct_chat_file(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char* message_value, char* file_header)
+{
+    uint64 server_chat_message_id = 0;
+    data_for_file_send_thread_t* arg = NULL_POINTER;
+    uint64 buffer_to_send_total_size = 0;
+    char* message_copy = NULL_POINTER;
+    uint64 thread_id = 0;
+
+    if (g_server_settings.allow_private_messages == FALSE)
+    {
+        server_msg__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "private_messages_disabled", local_message_id);
+        return;
+    }
+
+    if (g_clients_array[receiver_id].is_authenticated == FALSE || g_clients_array[receiver_id].is_idle == TRUE || g_clients_array[receiver_id].is_music_bot == TRUE || receiver_id == sender_client_id)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_direct_chat_file receiver unavailable: ", receiver_id, "\n");
+        server_msg__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "receiver_unavailable", local_message_id);
+        return;
+    }
+
+    buffer_to_send_total_size = clib__utf8_string_length(message_value);
+
+    server_chat_message_id = base__get_chat_message_id();
+    base__increment_chat_message_id();
+    server_msg__send_chat_file_metadata_to_single_client(sender_client_id, receiver_id, server_chat_message_id, file_header, buffer_to_send_total_size);
+
+    arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+    clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
+    message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); // the upload buffer is freed before the relay thread finishes, so it gets its own copy
+    clib__copy_memory(message_value, message_copy, buffer_to_send_total_size, buffer_to_send_total_size);
+    message_copy[buffer_to_send_total_size] = 0;
+    arg->buffer = message_copy;
+    arg->client_sender_id = sender_client_id;
+    arg->client_receiver_id = receiver_id;
+    arg->send_type = FILE_SEND_TYPE_TO_CLIENT;
+    arg->size = buffer_to_send_total_size;
+    arg->server_chat_message_id = server_chat_message_id;
+    arg->local_chat_message_id = local_message_id;
+    clib__copy_memory("direct_chat_file", &arg->receive_type[0], clib__utf8_string_length("direct_chat_file"), sizeof(arg->receive_type) - 1);
+
+    pthread_create((pthread_t*)&thread_id, 0, (void*)&_client_msg_internal__file_download_thread, arg);
 }
 
 /**
@@ -3355,7 +3609,7 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
         else
         {
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request wrong password \n");
-            server_msg__send_access_denied_to_single_client(client_that_is_joining_channel);
+            server_msg__send_access_denied_to_single_client(client_that_is_joining_channel, NULL_POINTER);
             goto client_msg__process_join_channel_request_end;
         }
     }
@@ -3709,7 +3963,7 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
     {
         if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
         {
-            server_msg__send_access_denied_to_single_client(&g_clients_array[sender_client_id]);
+            server_msg__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         }
     }
 
@@ -4116,6 +4370,7 @@ void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_
     if (status == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", sender_client_id, "admin password is not correct \n");
+        server_logs__admin_password_failed(client->username, client->ip_address, admin_password->valuestring);
         goto label_client_msg__process_admin_password_message_end;
     }
 
@@ -4305,6 +4560,8 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
     // mirror the change into the ram identity store immediately, so the tag survives a reconnect
     // within this server run without needing an admin disk save
     base__sync_client_identity_in_store(client_to_add_tag_to);
+
+    server_logs__tag_added(json_tag_id->valueint, client_to_add_tag_to->username, client->username);
 
     // send admin status to other clients possibly, or not, do they have to know you are an admin
 label_client_msg__process_add_tag_to_client_message_end:
@@ -6010,6 +6267,11 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     boole previous_temp_channel_creation_allowed = FALSE;
     cJSON* json_message_object = NULL_POINTER;
     cJSON* json_field = NULL_POINTER;
+    cJSON* json_country_entry = NULL_POINTER;
+
+    // for the admin log line; captured under the same read lock as the admin check
+    char sender_username[USERNAME_MAX_LENGTH];
+    sender_username[0] = 0;
 
     status = _client_msg_internal__is_save_server_settings_request_valid(json_root);
     if (status == FALSE)
@@ -6022,6 +6284,10 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     // before applying/persisting
     clib__read_lock(&g_clients_global_rwlock_guard);
     does_sender_have_permission_to_save_settings = util__is_client_valid_admin(sender_client_id);
+    if (does_sender_have_permission_to_save_settings == TRUE)
+    {
+        snprintf(sender_username, sizeof(sender_username), "%s", g_clients_array[sender_client_id].username);
+    }
     clib__unlock(&g_clients_global_rwlock_guard);
 
     if (does_sender_have_permission_to_save_settings == FALSE)
@@ -6088,6 +6354,151 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         g_server_settings.is_temp_channel_creation_allowed = cJSON_IsTrue(json_field);
     }
 
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "allow_file_uploads");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.allow_file_uploads = cJSON_IsTrue(json_field);
+    }
+
+    // sent in whole megabytes; clamped to the same bounds the setup prompt uses
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "file_upload_max_size_mb");
+    if (cJSON_IsNumber(json_field) && json_field->valueint > 0)
+    {
+        g_server_settings.file_upload_max_size_bytes = (int64)json_field->valueint * 1024 * 1024;
+
+        if (g_server_settings.file_upload_max_size_bytes < FILE_UPLOAD_MIN_SIZE_BYTES)
+        {
+            g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_MIN_SIZE_BYTES;
+        }
+        else if (g_server_settings.file_upload_max_size_bytes > FILE_UPLOAD_MAX_SIZE_BYTES)
+        {
+            g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_MAX_SIZE_BYTES;
+        }
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "allow_chat_pictures");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.allow_chat_pictures = cJSON_IsTrue(json_field);
+    }
+
+    // sent in whole megabytes, same as the file limit
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "chat_picture_max_size_mb");
+    if (cJSON_IsNumber(json_field) && json_field->valueint > 0)
+    {
+        g_server_settings.chat_picture_max_size_bytes = (int64)json_field->valueint * 1024 * 1024;
+
+        if (g_server_settings.chat_picture_max_size_bytes < PICTURE_MIN_SIZE_BYTES)
+        {
+            g_server_settings.chat_picture_max_size_bytes = PICTURE_MIN_SIZE_BYTES;
+        }
+        else if (g_server_settings.chat_picture_max_size_bytes > PICTURE_MAX_SIZE_BYTES)
+        {
+            g_server_settings.chat_picture_max_size_bytes = PICTURE_MAX_SIZE_BYTES;
+        }
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_same_ip_address_allowed");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.is_same_ip_address_allowed = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_country_blocking_active");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.is_country_blocking_active = cJSON_IsTrue(json_field);
+    }
+
+    // the block list is replaced as a whole; entries must look like iso codes (2 letters, any case)
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "blocked_countries");
+    if (cJSON_IsArray(json_field))
+    {
+        g_server_settings.blocked_countries_count = 0;
+
+        cJSON_ArrayForEach(json_country_entry, json_field)
+        {
+            if (g_server_settings.blocked_countries_count >= MAX_BLOCKED_COUNTRIES)
+            {
+                break;
+            }
+
+            if (util__normalize_country_code(json_country_entry, &g_server_settings.blocked_countries[g_server_settings.blocked_countries_count][0]) == TRUE)
+            {
+                g_server_settings.blocked_countries_count++;
+            }
+        }
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "log_client_joins");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.log_client_joins = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "log_username_changes");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.log_username_changes = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "log_tag_changes");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.log_tag_changes = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "log_server_settings_updates");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.log_server_settings_updates = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "log_kicks_and_bans");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.log_kicks_and_bans = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "log_client_disconnects");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.log_client_disconnects = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "log_failed_attempts");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.log_failed_attempts = cJSON_IsTrue(json_field);
+    }
+
+    // sent in whole megabytes
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "admin_log_max_size_mb");
+    if (cJSON_IsNumber(json_field) && json_field->valueint > 0)
+    {
+        g_server_settings.admin_log_max_size_bytes = (int64)json_field->valueint * 1024 * 1024;
+
+        if (g_server_settings.admin_log_max_size_bytes < ADMIN_LOG_MIN_SIZE_BYTES)
+        {
+            g_server_settings.admin_log_max_size_bytes = ADMIN_LOG_MIN_SIZE_BYTES;
+        }
+        else if (g_server_settings.admin_log_max_size_bytes > ADMIN_LOG_MAX_SIZE_BYTES)
+        {
+            g_server_settings.admin_log_max_size_bytes = ADMIN_LOG_MAX_SIZE_BYTES;
+        }
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "admin_log_retention_days");
+    if (cJSON_IsNumber(json_field) && json_field->valueint > 0)
+    {
+        g_server_settings.admin_log_retention_days = json_field->valueint;
+
+        if (g_server_settings.admin_log_retention_days > ADMIN_LOG_MAX_RETENTION_DAYS)
+        {
+            g_server_settings.admin_log_retention_days = ADMIN_LOG_MAX_RETENTION_DAYS;
+        }
+    }
+
     // persist everything into server_settings.json. the save reads channels, icons, tags and bans, so take
     // those read locks in lock order (bans is always last). the clients read lock is taken first (clients
     // before channels, matching the auth path) so the identity snapshot can read each client's tag list
@@ -6117,6 +6528,16 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         g_server_settings.is_temp_channel_creation_allowed = previous_temp_channel_creation_allowed;
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_save_server_settings_request: save failed, rolled back the general-settings toggles");
     }
+
+    // connected clients learn policy changes right away, not only on their next join
+    if (save_succeeded == TRUE)
+    {
+        clib__read_lock(&g_clients_global_rwlock_guard);
+        server_msg__send_policy_update_to_all_clients();
+        clib__unlock(&g_clients_global_rwlock_guard);
+    }
+
+    server_logs__server_settings_updated(sender_username, save_succeeded);
 }
 
 /**
@@ -6152,6 +6573,70 @@ void client_msg__process_load_server_settings_request(cJSON* json_root, uint64 s
     else
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_load_server_settings_request sender with sender_client_id", sender_client_id, "does not have permission to read server settings");
+    }
+
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief processes an admin request to read the admin log: replies with every stored line, oldest
+ *        first. only an authenticated admin gets a reply - anyone else is silently ignored
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_admin_log_request(cJSON* json_root, uint64 sender_client_id)
+{
+    boole is_sender_admin = FALSE;
+
+    (void)json_root; // the request has no fields to read
+
+    // the reply is sent under the clients read lock, which also covers reading the sender's slot
+    clib__read_lock(&g_clients_global_rwlock_guard);
+
+    is_sender_admin = util__is_client_valid_admin(sender_client_id);
+    if (is_sender_admin == TRUE)
+    {
+        server_msg__send_admin_log_to_single_client(&g_clients_array[sender_client_id]);
+    }
+    else
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_admin_log_request sender with sender_client_id", sender_client_id, "is not an admin");
+    }
+
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief processes an admin request to clear the admin log. the wipe itself becomes the first line
+ *        of the fresh log, so with several admins it stays visible who emptied it. the refreshed
+ *        log is sent back right away. non-admin requests are silently ignored
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_admin_log_clear(cJSON* json_root, uint64 sender_client_id)
+{
+    boole is_sender_admin = FALSE;
+
+    (void)json_root; // the request has no fields to read
+
+    clib__read_lock(&g_clients_global_rwlock_guard);
+
+    is_sender_admin = util__is_client_valid_admin(sender_client_id);
+    if (is_sender_admin == TRUE)
+    {
+        server_logs__cleared_by(g_clients_array[sender_client_id].username);
+
+        server_msg__send_admin_log_to_single_client(&g_clients_array[sender_client_id]);
+    }
+    else
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_admin_log_clear sender with sender_client_id", sender_client_id, "is not an admin");
     }
 
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -6660,6 +7145,8 @@ void client_msg__process_kick_request(cJSON* json_root, uint64 sender_client_id)
         goto label_client_msg__process_kick_request_end;
     }
 
+    server_logs__client_kicked(receiver->username, admin->username);
+
     ws_close_client(receiver->p_ws_connection);
 
 label_client_msg__process_kick_request_end:
@@ -6723,6 +7210,8 @@ void client_msg__process_ban_request(cJSON* json_root, uint64 sender_client_id)
     clib__copy_memory(&receiver->country_iso_code[0], banned_country, clib__utf8_string_length(&receiver->country_iso_code[0]), COUNTRY_ISO_CODE_LENGTH - 1);
     clib__copy_memory(&receiver->public_key[0], banned_identity, clib__utf8_string_length(&receiver->public_key[0]), MAX_PUBLIC_KEY_LENGTH - 1);
     should_ban = TRUE;
+
+    server_logs__client_banned(receiver->username, &receiver->ip_address[0], admin->username);
 
     ws_close_client(receiver->p_ws_connection);
 
@@ -6886,7 +7375,7 @@ void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sende
 
     if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
     {
-        server_msg__send_access_denied_to_single_client(admin);
+        server_msg__send_access_denied_to_single_client(admin, NULL_POINTER);
         goto label_client_msg__process_create_music_bot_end;
     }
 
@@ -6995,7 +7484,7 @@ void client_msg__process_delete_music_bot_request(cJSON* json_root, uint64 sende
 
     if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
     {
-        server_msg__send_access_denied_to_single_client(admin);
+        server_msg__send_access_denied_to_single_client(admin, NULL_POINTER);
         goto label_client_msg__process_delete_music_bot_end;
     }
 
@@ -7066,6 +7555,27 @@ void client_msg__process_file_send_request(cJSON* json_root, uint64 sender_clien
     // idea, don't provide upload file reason in upload file request, simply send the upload reason to server in separate message, after server signals the client that the file upload is done.
     // "hey client, I'm done receiving the file, what should I do with it"
     // that makes checking it easier and doesn't change much of existing logic
+
+    // a new file over the upload cap is refused with a reason, not just dropped by the validator below
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_message_total_length = cJSON_GetObjectItemCaseSensitive(json_message_object, "total_bytes_length");
+    json_message_is_new_file = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_new_file");
+
+    if (cJSON_IsNumber(json_message_total_length) == TRUE && cJSON_IsTrue(json_message_is_new_file) == TRUE
+        && json_message_total_length->valueint > 0
+        && (uint64)json_message_total_length->valueint >= _client_msg_internal__get_max_file_upload_length())
+    {
+        clib__read_lock(&g_clients_global_rwlock_guard);
+
+        if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
+        {
+            server_msg__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "file_too_large", 0);
+        }
+
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
+
     status = _client_msg_internal__is_client_msg_file_send_request_valid(json_root);
     if (status == FALSE)
     {
@@ -7083,44 +7593,44 @@ void client_msg__process_file_send_request(cJSON* json_root, uint64 sender_clien
         goto label_client_msg__process_file_send_request_end;
     }
 
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    json_message_total_length = cJSON_GetObjectItemCaseSensitive(json_message_object, "total_bytes_length");
-    json_message_is_new_file = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_new_file");
     json_message_data_part_base64 = cJSON_GetObjectItemCaseSensitive(json_message_object, "data_part_base64");
 
-    // if appending another chunk could overflow the upload buffer, force this part to start a fresh file
-    if ((client_sender->file_upload_extension.buffer_cursor + MAX_CLIENT_FILE_UPLOAD_LENGTH / 400) > MAX_CLIENT_FILE_UPLOAD_LENGTH)
-    {
-        log_info("%s %llu %s", "upload restarted: buffer full at cursor", client_sender->file_upload_extension.buffer_cursor, "\n");
-        json_message_is_new_file->valueint = 1;
-    }
-
-    // a new file (re)allocates or clears the upload buffer and resets the cursor; a continuation appends to it
+    // a new file gets a buffer of exactly its declared length (already checked against the upload cap),
+    // so the per-client cost is the file, not the cap. a continuation appends to the upload in progress
     if (json_message_is_new_file->valueint == 1)
     {
         DBG_FILE_UPLOAD log_info("%s", "json_message_is_new_file->valueint == 1");
 
-        if (client_sender->file_upload_extension.file_upload_buffer == NULL_POINTER)
+        if (client_sender->file_upload_extension.file_upload_buffer != NULL_POINTER)
         {
-            client_sender->file_upload_extension.file_upload_buffer = (ubyte*)memorymanager__allocate(MAX_CLIENT_FILE_UPLOAD_LENGTH, MEMALLOC_FILE_UPLOAD_BY_PARTS);
-        }
-        else
-        {
-            clib__null_memory((void*)client_sender->file_upload_extension.file_upload_buffer, MAX_CLIENT_FILE_UPLOAD_LENGTH);
+            memorymanager__free((nuint)client_sender->file_upload_extension.file_upload_buffer);
+            client_sender->file_upload_extension.file_upload_buffer = NULL_POINTER;
         }
 
+        // +1 keeps the null terminator the intent handlers read the buffer up to
+        client_sender->file_upload_extension.file_upload_buffer = (ubyte*)memorymanager__allocate((uint64)json_message_total_length->valueint + 1, MEMALLOC_FILE_UPLOAD_BY_PARTS);
         client_sender->file_upload_extension.buffer_cursor = 0;
+        client_sender->file_upload_extension.expected_file_length = 0;
+
+        if (client_sender->file_upload_extension.file_upload_buffer == NULL_POINTER)
+        {
+            log_info("%s %d %s", "upload buffer allocation failed for", json_message_total_length->valueint, "bytes \n");
+            goto label_client_msg__process_file_send_request_end;
+        }
+
         client_sender->file_upload_extension.expected_file_length = json_message_total_length->valueint;
     }
     else
     {
-        if (client_sender->file_upload_extension.expected_file_length != json_message_total_length->valueint)
+        if (client_sender->file_upload_extension.file_upload_buffer == NULL_POINTER
+            || client_sender->file_upload_extension.expected_file_length != json_message_total_length->valueint)
         {
             DBG_FILE_UPLOAD log_info("%s", "expected length of file and what user is sending is not the same, aborting upload of this file");
 
-            if (client_sender->file_upload_extension.file_upload_buffer == NULL_POINTER)
+            if (client_sender->file_upload_extension.file_upload_buffer != NULL_POINTER)
             {
-                client_sender->file_upload_extension.file_upload_buffer = (ubyte*)memorymanager__allocate(MAX_CLIENT_FILE_UPLOAD_LENGTH, MEMALLOC_FILE_UPLOAD_BY_PARTS);
+                memorymanager__free((nuint)client_sender->file_upload_extension.file_upload_buffer);
+                client_sender->file_upload_extension.file_upload_buffer = NULL_POINTER;
             }
 
             client_sender->file_upload_extension.buffer_cursor = 0;
@@ -7133,17 +7643,18 @@ void client_msg__process_file_send_request(cJSON* json_root, uint64 sender_clien
     // append this base64 chunk at the cursor, then advance the cursor by its length
     data_part_length = clib__utf8_string_length(json_message_data_part_base64->valuestring);
 
-    // never let the accumulated upload exceed the client-declared length: bounds per-client buffer
-    // growth and keeps the accumulated base64 consistent with what was declared
+    // never let the accumulated upload exceed the client-declared length: the buffer is exactly that big
     if (client_sender->file_upload_extension.buffer_cursor + data_part_length > client_sender->file_upload_extension.expected_file_length)
     {
         DBG_FILE_UPLOAD log_info("%s", "upload chunk would exceed declared file length, aborting upload");
+        memorymanager__free((nuint)client_sender->file_upload_extension.file_upload_buffer);
+        client_sender->file_upload_extension.file_upload_buffer = NULL_POINTER;
         client_sender->file_upload_extension.buffer_cursor = 0;
         client_sender->file_upload_extension.expected_file_length = 0;
         goto label_client_msg__process_file_send_request_end;
     }
 
-    clib__copy_memory(json_message_data_part_base64->valuestring, client_sender->file_upload_extension.file_upload_buffer + client_sender->file_upload_extension.buffer_cursor, data_part_length, MAX_CLIENT_FILE_UPLOAD_LENGTH / 400);
+    clib__copy_memory(json_message_data_part_base64->valuestring, client_sender->file_upload_extension.file_upload_buffer + client_sender->file_upload_extension.buffer_cursor, data_part_length, data_part_length);
 
     client_sender->file_upload_extension.buffer_cursor += data_part_length;
 
@@ -7201,7 +7712,7 @@ void client_msg__process_musicbot_get_song_list_request(cJSON* json_root, uint64
     if (client->is_admin == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client->is_admin == FALSE goto label_client_msg__process_musicbot_get_song_list_request_end end");
-        server_msg__send_access_denied_to_single_client(client);
+        server_msg__send_access_denied_to_single_client(client, NULL_POINTER);
         goto label_client_msg__process_musicbot_get_song_list_request_end;
     }
 
@@ -7246,6 +7757,9 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
     uint64 thread_id = 0;
     cJSON* json_receiver_id = 0;
     cJSON* json_local_message_id = 0;
+    cJSON* json_file_header = 0;
+    boole is_direct_chat_file = FALSE;
+    boole is_channel_chat_file = FALSE;
 
     status = _client_msg_internal__is_file_send_completed_request_valid(json_root);
     if (status == FALSE)
@@ -7358,6 +7872,37 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
         json_local_message_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "local_message_id");
         client_msg__process_channel_chat_picture(sender_client_id, json_local_message_id->valueint, sender_client->file_upload_extension.file_upload_buffer);
     }
+    else
+    {
+        is_direct_chat_file = clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_file");
+        is_channel_chat_file = clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_file");
+
+        // chat files: the policy gates answer the sender with a reason; the client also checks both
+        // before uploading, so these only fire for a changed setting or a tampered client
+        if (is_direct_chat_file == TRUE || is_channel_chat_file == TRUE)
+        {
+            json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "receiver_id");
+            json_local_message_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "local_message_id");
+            json_file_header = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "file_header");
+
+            if (g_server_settings.allow_file_uploads == FALSE)
+            {
+                server_msg__send_file_send_error_to_single_client(sender_client, "file_uploads_disabled", json_local_message_id->valueint);
+            }
+            else if (sender_client->file_upload_extension.buffer_cursor > _client_msg_internal__get_max_chat_file_encrypted_length())
+            {
+                server_msg__send_file_send_error_to_single_client(sender_client, "file_too_large", json_local_message_id->valueint);
+            }
+            else if (is_direct_chat_file == TRUE)
+            {
+                client_msg__process_direct_chat_file(sender_client_id, json_receiver_id->valueint, json_local_message_id->valueint, sender_client->file_upload_extension.file_upload_buffer, json_file_header->valuestring);
+            }
+            else
+            {
+                client_msg__process_channel_chat_file(sender_client_id, json_local_message_id->valueint, sender_client->file_upload_extension.file_upload_buffer, json_file_header->valuestring);
+            }
+        }
+    }
 
     // no matter what the reason for calling client_msg__process_file_send_completed_request was
     // it got called, so free the file
@@ -7423,7 +7968,7 @@ void client_msg__process_remove_song_from_music_bot_request(cJSON* json_root, ui
     if (sender_client->is_admin == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "sender is not admin");
-        server_msg__send_access_denied_to_single_client(sender_client);
+        server_msg__send_access_denied_to_single_client(sender_client, NULL_POINTER);
         goto label_client_msg__process_remove_song_from_music_bot_request_end;
     }
 
@@ -7502,7 +8047,7 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
 
         if (is_sender_valid == TRUE && is_receiver_valid == TRUE)
         {
-            server_msg__send_file_receive_completed_to_single_client(arg, arg->client_receiver_id, "direct_chat_picture");
+            server_msg__send_file_receive_completed_to_single_client(arg, arg->client_receiver_id, &arg->receive_type[0]);
             server_msg__send_image_status_to_single_client(&g_clients_array[arg->client_sender_id], "success"); // this is for client that sent it
             server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(arg->client_sender_id, arg->server_chat_message_id, arg->local_chat_message_id);
         }
@@ -7563,13 +8108,23 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
 
             if (is_sender_valid == TRUE && is_receiver_valid == TRUE)
             {
-                server_msg__send_file_receive_completed_to_single_client(arg, client_receiver_id, "channel_chat_picture");
-                server_msg__send_image_status_to_single_client(&g_clients_array[arg->client_sender_id], "success"); // this is for client that sent it
-                server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(arg->client_sender_id, arg->server_chat_message_id, arg->local_chat_message_id);
+                server_msg__send_file_receive_completed_to_single_client(arg, client_receiver_id, &arg->receive_type[0]);
             }
 
             clib__unlock(&g_clients_global_rwlock_guard);
         }
+
+        // the sender's ack, once. it used to sit inside the loop above: an empty channel never acked
+        // (the local card stayed dimmed) and a full one acked once per receiver
+        clib__read_lock(&g_clients_global_rwlock_guard);
+
+        if (util__is_client_valid_and_not_music_bot(arg->client_sender_id) == TRUE)
+        {
+            server_msg__send_image_status_to_single_client(&g_clients_array[arg->client_sender_id], "success");
+            server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(arg->client_sender_id, arg->server_chat_message_id, arg->local_chat_message_id);
+        }
+
+        clib__unlock(&g_clients_global_rwlock_guard);
 
         memorymanager__free((nuint)arg->buffer);
         memorymanager__free((nuint)arg);

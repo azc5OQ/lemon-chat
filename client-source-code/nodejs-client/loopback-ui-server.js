@@ -1,16 +1,15 @@
-// The loopback websocket the ui (client.html) connects to instead of the real server. Node holds
-// the one real connection; when a ui attaches, node replays the login sequence from held state, in
-// the same wire format the server uses - so client.html receives what it already knows how to read.
-//
-// "BURST" = that replayed login sequence. A real server greets a fresh login with a fixed run of
-// frames: authentication_status, channel_list, client_list, channel_maintainer_id per channel,
-// tag_list, icon_list, then the channel keys arrive as a direct message. The ui here logs in long
-// after node did, so node rebuilds that exact run from its own state and sends it in one burst the
-// moment a ui attaches (or, if node is not logged in yet, as soon as its own login state is
-// complete). To the ui a burst is indistinguishable from a real server login.
-//
-// Plaintext on purpose: this never leaves the device. The token is required as the first frame,
-// because 127.0.0.1 is reachable by every app on the device.
+// loopback-ui-server.js is the loopback websocket the ui (client.html) connects to instead of the
+// real server. node holds the one real connection; when a ui attaches, node replays the login
+// sequence from held state, in the same wire format the server uses, so client.html receives what
+// it already knows how to read
+// the "burst" is that replayed login sequence. a real server greets a fresh login with a fixed run
+// of frames: authentication_status, channel_list, client_list, channel_maintainer_id per channel,
+// tag_list, icon_list, and then the channel keys arrive as a direct message. the ui here logs in
+// long after node did, so node rebuilds that exact run from its own state and sends it in one burst
+// the moment a ui attaches, or, if node is not logged in yet, as soon as its own login state is
+// complete. to the ui a burst is indistinguishable from a real server login
+// everything is plaintext on purpose, because this never leaves the device. the token is required
+// as the first frame, because 127.0.0.1 is reachable by every app on the device
 
 let crypto = require("crypto");
 let WebSocketServer = require("./mini-ws.js").WebSocketServer;
@@ -20,16 +19,16 @@ function start(bundle, on_ready)
     let token = crypto.randomBytes(16).toString("hex");
     let ui_socket = null;
 
-    // the server's auth frame, cached at login and replayed verbatim - it drives the ui's
-    // entire "you're in" transition
+    // the server's auth frame, cached at login and replayed verbatim, because it drives the
+    // ui's entire logged-in transition
     let cached_auth_frame = null;
 
-    // same idea for the channel keys: they can arrive before the ui attaches
+    // the same idea for the channel keys, because they can arrive before the ui attaches
     let cached_keys_frame = null;
     let ui_needs_burst = false;
 
-    // frames that arrive while the burst is still pending - the maintainer frame landed in that
-    // window and was neither in the replayed state nor live-forwarded, so keys got rejected
+    // frames that arrive while the burst is still pending. the maintainer frame used to land in
+    // that window, neither in the replayed state nor live-forwarded, and the keys got rejected
     let pre_burst_frames = [];
 
     let server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
@@ -67,14 +66,14 @@ function start(bundle, on_ready)
         console.log("loopback ui: login burst sent");
     }
 
-    // when node loses the server, drop the attached ui: the webview then runs its own
-    // lost-connection path (clean state) and reattaches for a fresh burst once node is back in
+    // when node loses the server the attached ui is dropped, because the webview then runs its
+    // own lost-connection path with clean state and reattaches for a fresh burst once node is back in
     bundle.set_on_message_processed(function(message_type)
     {
         if (message_type === "websocket_worker_onclose" || message_type === "websocket_worker_onerror")
         {
-            // the session is gone, so everything cached from it is a lie - a stale auth frame
-            // led a burst that showed "connected" with no channels
+            // the session is gone, so everything cached from it is a lie. a stale auth frame
+            // used to lead a burst that showed connected with no channels
             cached_auth_frame = null;
             cached_keys_frame = null;
             pre_burst_frames = [];
@@ -92,8 +91,8 @@ function start(bundle, on_ready)
             }
         }
 
-        // a deferred burst fires once node's login is COMPLETE (client_list processed),
-        // so the state it is rebuilt from is whole
+        // a deferred burst fires once node's login is complete (client_list processed),
+        // because the state it is rebuilt from must be whole
         if (ui_socket != null && ui_needs_burst === true
             && (cached_auth_frame != null || bundle.get_auth_frame() != null)
             && bundle.read_state().g_is_client_list_retrieved === true)
@@ -102,8 +101,8 @@ function start(bundle, on_ready)
         }
     });
 
-    // node's connection status feeds the ui's login page - meta traffic, so it bypasses the
-    // burst gating and flows even while the ui is unauthenticated
+    // node's connection status feeds the ui's login page. it is meta traffic, so it bypasses
+    // the burst gating and flows even while the ui is unauthenticated
     function send_status_to_ui(status)
     {
         if (ui_socket != null)
@@ -124,7 +123,7 @@ function start(bundle, on_ready)
         {
             let frame = JSON.parse(json_string);
 
-            // node forwards direct messages already decrypted, so the marker is readable here.
+            // node forwards direct messages already decrypted, so the marker is readable here
             // keys nearly always arrive before a ui attaches, hence the cache
             if (frame.message && frame.message.type === "direct_chat_message"
                 && frame.message.some_json

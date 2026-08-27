@@ -589,6 +589,110 @@ function data_processing_worker_onmessage(e)
             custom_log("channel_chat_picture decrypt failed, data_processing_worker thread missing current channel keys");
         }
     }
+    else if (e.data.type == "mainthread__create_direct_chat_file")
+    {
+        // header and body get their own key sets: two plaintexts must never share a ctr keystream.
+        // the body pads up so even a 1 kb file clears the server's minimum upload size
+        let file_header = create_direct_chat_file_envelope(e.data.receiver_public_key, build_chat_file_header_json(e.data.file));
+        let data_for_upload_process = create_direct_chat_file_envelope(e.data.receiver_public_key, build_chat_file_body_json(e.data.file), G_CHAT_FILE_BODY_MIN_PADDED_BYTES);
+
+        if (file_header == null || data_for_upload_process == null)
+        {
+            global.postMessage({
+                type: "data_processing_worker__chat_file_send_failed",
+                local_message_id: e.data.local_message_id,
+                reason: "could not encrypt the file for this receiver"
+            });
+            return;
+        }
+
+        global.postMessage({
+            type: "data_processing_worker__direct_chat_file_to_be_uploaded_by_parts",
+            data_for_upload_process: data_for_upload_process,
+            extra_data: {
+                receiver_id: parseInt(e.data.chat_message_receiver_id),
+                local_message_id: e.data.local_message_id,
+                file_header: file_header
+            }
+        });
+    }
+    else if (e.data.type == "mainthread__create_channel_chat_file")
+    {
+        global.postMessage({
+            type: "data_processing_worker__channel_chat_file_to_be_uploaded_by_parts",
+            data_for_upload_process: encrypt_string_with_aes_keys_fast(e.data.current_channel_keys, build_chat_file_body_json(e.data.file), G_CHAT_FILE_BODY_MIN_PADDED_BYTES),
+            extra_data: {
+                receiver_id: parseInt(e.data.current_channel_id),
+                local_message_id: e.data.local_message_id,
+                file_header: encrypt_string_with_aes_keys_fast(e.data.current_channel_keys, build_chat_file_header_json(e.data.file))
+            }
+        });
+    }
+    else if (e.data.type == "mainthread__process_encrypted_direct_chat_file_data")
+    {
+        let file = parse_decrypted_chat_file_body(open_direct_chat_file_envelope(e.data.message_raw));
+
+        if (file == null)
+        {
+            custom_log("failed to decrypt direct chat file");
+            global.postMessage({
+                type: "data_processing_worker__chat_file_decrypt_failed",
+                value: { message: { file_id: e.data.file_id } }
+            });
+            return;
+        }
+
+        let msg = {
+            message: {
+                file_id: e.data.file_id,
+                client_id: e.data.sender_id,
+                file: file
+            }
+        };
+
+        // loopback: the ui has no key for this, so send it the finished file
+        if (g_dpw_forward_frames == true)
+        {
+            global.postMessage({ type: "decrypted_frame", value: JSON.stringify({
+                message: {
+                    type: "direct_chat_file_decrypted",
+                    file_id: e.data.file_id,
+                    client_id: e.data.sender_id,
+                    file: file
+                }
+            }) });
+        }
+
+        global.postMessage({
+            type: "data_processing_worker__direct_chat_file",
+            value: msg
+        });
+    }
+    else if (e.data.type == "mainthread__process_encrypted_channel_chat_file_data")
+    {
+        let file = decrypt_channel_chat_file_body(e.data.file_id, e.data.message_raw);
+
+        if (file == null)
+        {
+            custom_log("channel_chat_file decrypt failed, no channel key opened it");
+            global.postMessage({
+                type: "data_processing_worker__chat_file_decrypt_failed",
+                value: { message: { file_id: e.data.file_id } }
+            });
+            return;
+        }
+
+        global.postMessage({
+            type: "data_processing_worker__channel_chat_file",
+            value: {
+                message: {
+                    file_id: e.data.file_id,
+                    client_id: e.data.sender_id,
+                    file: file
+                }
+            }
+        });
+    }
 }
 
 // runs in the data processing worker: decrypts an incoming server message's metadata, handles
@@ -622,7 +726,8 @@ function mainthread__process_received_websocket_message_continue(e)
     // decrypted them - the ui never holds a private key
     if (g_dpw_forward_frames == true
         && msg.message.type != "direct_chat_message"
-        && msg.message.type != "offline_chat_message")
+        && msg.message.type != "offline_chat_message"
+        && msg.message.type != "direct_chat_file_metadata")
     {
         global.postMessage({ type: "decrypted_frame", value: decrypted_metadata });
     }
@@ -653,6 +758,10 @@ function mainthread__process_received_websocket_message_continue(e)
                 allow_typing_indicator: msg.message.allow_typing_indicator,
                 allow_avatars: msg.message.allow_avatars,
                 avatar_max_size: msg.message.avatar_max_size,
+                allow_file_uploads: msg.message.allow_file_uploads,
+                file_upload_max_size: msg.message.file_upload_max_size,
+                chat_picture_max_size: msg.message.chat_picture_max_size,
+                allow_chat_pictures: msg.message.allow_chat_pictures,
                 value: "success"
             });
 
@@ -750,6 +859,20 @@ function mainthread__process_received_websocket_message_continue(e)
         {
             global.postMessage({
                 type: "data_processing_worker__server_settings_values_from_server",
+                value: msg
+            });
+        }
+        else if (msg.message.type == "admin_log")
+        {
+            global.postMessage({
+                type: "data_processing_worker__admin_log_from_server",
+                value: msg
+            });
+        }
+        else if (msg.message.type == "server_policy")
+        {
+            global.postMessage({
+                type: "data_processing_worker__server_policy_from_server",
                 value: msg
             });
         }
@@ -1023,6 +1146,58 @@ function mainthread__process_received_websocket_message_continue(e)
         {
             global.postMessage({
                 type: "data_processing_worker__direct_chat_picture_metadata",
+                value: msg
+            });
+        }
+        else if (msg.message.type == "channel_chat_file_metadata")
+        {
+            // the header is opened here (channel keys live in this worker); null leaves a nameless card
+            msg.message.file_header_decrypted = (typeof msg.message.file_header === "string")
+                ? decrypt_channel_chat_file_header(msg.message.file_id, msg.message.file_header) : null;
+            msg.message.file_header = null;
+
+            global.postMessage({
+                type: "data_processing_worker__channel_chat_file_metadata",
+                value: msg
+            });
+        }
+        else if (msg.message.type == "direct_chat_file_metadata")
+        {
+            // loopback: node already opened the header, so just pass it on
+            if (msg.message.file_header_decrypted == null)
+            {
+                msg.message.file_header_decrypted = (typeof msg.message.file_header === "string")
+                    ? parse_chat_file_header(open_direct_chat_file_envelope(msg.message.file_header)) : null;
+                msg.message.file_header = null;
+
+                // opened shape, so the ui reads it without a key of its own
+                if (g_dpw_forward_frames == true)
+                {
+                    global.postMessage({ type: "decrypted_frame", value: JSON.stringify(msg) });
+                }
+            }
+
+            global.postMessage({
+                type: "data_processing_worker__direct_chat_file_metadata",
+                value: msg
+            });
+        }
+        else if (msg.message.type == "direct_chat_file_decrypted")
+        {
+            // loopback only: node decrypted it for us
+            global.postMessage({
+                type: "data_processing_worker__direct_chat_file",
+                value: { message: {
+                    file_id: msg.message.file_id,
+                    client_id: msg.message.client_id,
+                    file: msg.message.file
+                } }
+            });
+        }
+        else if (msg.message.type == "file_send_error")
+        {
+            global.postMessage({
+                type: "data_processing_worker__file_send_error_from_server",
                 value: msg
             });
         }
@@ -1554,6 +1729,12 @@ var g_is_deep_idle_pending = false;
 var g_is_come_from_idle_in_flight = false;
 var g_come_from_idle_in_flight_timer = null;
 
+// call-accept presence grace: gentle idle waits this long after an accept before re-deciding,
+// so the accept transition's blink of invisibility cannot idle the user out of the call
+var G_CALL_ACCEPT_PRESENCE_GRACE_MS = 5000;
+var g_presence_grace_until_timestamp = 0;
+var g_presence_grace_recheck_timer = null;
+
 function mark_come_from_idle_in_flight()
 {
     g_is_come_from_idle_in_flight = true;
@@ -1597,6 +1778,50 @@ function apply_pending_deep_idle_if_any()
         enter_deep_idle();
     }
 }
+
+// accepting a call blinks the screen off or hands the call screen over to the activity, and both
+// read as "nobody is looking" exactly while the user IS there - which idled people right back out
+// of the call they just answered. state lives with the other idle globals above
+function mark_call_accept_presence_grace()
+{
+    g_presence_grace_until_timestamp = new Date().valueOf() + G_CALL_ACCEPT_PRESENCE_GRACE_MS;
+    console.log("connect-path: call accepted, holding presence for " + G_CALL_ACCEPT_PRESENCE_GRACE_MS + "ms");
+}
+
+// one shot at grace end. node re-reads whether a ui is attached; the webview retries the gentle
+// entry (when the user actually came back, exit_deep_idle cancelled this and nothing runs)
+function schedule_presence_grace_recheck()
+{
+    if (g_presence_grace_recheck_timer != null)
+    {
+        return;
+    }
+
+    let wait_ms = Math.max(250, (g_presence_grace_until_timestamp - new Date().valueOf()) + 250);
+
+    g_presence_grace_recheck_timer = setTimeout(function()
+    {
+        g_presence_grace_recheck_timer = null;
+
+        if (typeof process !== "undefined")
+        {
+            node_apply_idle_for_ui_state();
+        }
+        else
+        {
+            enter_deep_idle(false);
+        }
+    }, wait_ms);
+}
+
+function cancel_presence_grace_recheck()
+{
+    if (g_presence_grace_recheck_timer != null)
+    {
+        clearTimeout(g_presence_grace_recheck_timer);
+        g_presence_grace_recheck_timer = null;
+    }
+}
 var g_connection_check_interval_ms = 10 * 1000;
 // three missed 10s heartbeats + slack. the old 120s left the ui sitting in a
 // fake "connected" state for two minutes after the network died under it
@@ -1635,6 +1860,7 @@ var g_my_rsa_key_object = null;
 var g_rsa_public_key_string = "";
 var g_chat_message_author_public_keys = {}; // server chat message id -> author's public key; used to decide whether to honour an incoming delete/edit
 var identity_string = "";
+var g_pending_identity_file_string = ""; // passphrase read from a picked .lmn file, waiting for its confirm click
 var g_is_rsa_key_generated = false;
 var g_is_client_list_retrieved = false;
 var g_is_channel_list_retrieved = false;
@@ -1747,6 +1973,8 @@ var g_selected_font_size = 12;
 var file_send_intent = "";
 var file_send_intent_extra_data = {};
 var g_is_file_being_uploaded = false;
+var g_picture_delivery_pending = false; // between the server's upload ack and image_sent_status (relay to the receivers finished)
+var g_picture_delivery_hide_timer = null;
 var g_is_client_running_under_touch_device = false;  // for touch devices
 var g_client_volume_by_id = {};  // local per-client playback volume (client_id -> gain, 1.0 = default); worklet mode only, never sent to the server
 var g_is_running_in_android_webview = false;
@@ -2581,6 +2809,15 @@ function enter_deep_idle(is_forced)
         return;
     }
 
+    // inside the call-accept presence grace: hold, then re-decide from the real state.
+    // a swipe-away (is_forced) stays deliberate and is honoured immediately
+    if (is_forced != true && new Date().valueOf() < g_presence_grace_until_timestamp)
+    {
+        console.log("connect-path: idle deferred, inside the call-accept presence grace");
+        schedule_presence_grace_recheck();
+        return;
+    }
+
     // backgrounding (home) keeps an in-channel session alive - music and calls continue.
     // only a swipe-away forces idle from any channel (is_forced, from onTaskRemoved)
     if (is_forced != true)
@@ -2648,6 +2885,10 @@ function enter_deep_idle(is_forced)
 // leaves deep idle: restores heartbeat cadence, audio graph, opus tick and the webrtc datachannel
 function exit_deep_idle()
 {
+    // the user is demonstrably here: a queued presence-grace re-check must not fire behind them.
+    // before the was-not-idle return, because the webview arms that timer without ever being idle
+    cancel_presence_grace_recheck();
+
     g_is_deep_idle_pending = false;
 
     if (g_is_deep_idle == false)
@@ -3595,6 +3836,48 @@ function release_file_upload_lock()
     g_is_file_being_uploaded = false;
 }
 
+// the upload ack arrived but the relay to the receivers is still running; say so instead of
+// leaving the grayed thumbnail unexplained. image_sent_status ends it, the timer is a fallback
+function show_picture_delivery_status()
+{
+    g_picture_delivery_pending = true;
+
+    document.getElementById("upload-progress-overlay").style.display = "block";
+    document.getElementById("upload-progress-bar").style.width = "100%";
+    document.getElementById("upload-progress-text").innerHTML = "image received by server, being received by users ...";
+
+    if (g_picture_delivery_hide_timer != null)
+    {
+        clearTimeout(g_picture_delivery_hide_timer);
+    }
+
+    g_picture_delivery_hide_timer = setTimeout(hide_picture_delivery_status, 120000);
+}
+
+function hide_picture_delivery_status()
+{
+    if (g_picture_delivery_hide_timer != null)
+    {
+        clearTimeout(g_picture_delivery_hide_timer);
+        g_picture_delivery_hide_timer = null;
+    }
+
+    if (g_picture_delivery_pending == false)
+    {
+        return;
+    }
+
+    g_picture_delivery_pending = false;
+
+    // a new upload may already own the overlay; leave it to that one then
+    if (g_is_file_being_uploaded == false)
+    {
+        document.getElementById("upload-progress-overlay").style.display = "none";
+        document.getElementById("upload-progress-bar").style.width = "0%";
+        document.getElementById("upload-progress-text").innerHTML = "0%";
+    }
+}
+
 // the intent globals are written before send_file_by_parts runs its guard, so a refused upload
 // relabelled the one already in flight. call sites ask here first and touch nothing on refusal
 function can_start_file_upload()
@@ -3621,13 +3904,19 @@ function send_file_by_parts(parts, total_bytes_length, delay_ms) {
 
     function next_part_upload ()
     {
+        // a file_send_error released the lock mid-upload: the server dropped this file, stop feeding it
+        if (i > 0 && g_is_file_being_uploaded == false)
+        {
+            return;
+        }
+
         g_is_file_being_uploaded = true;
 
         if (i >= parts.length)
         {
             // queued, not delivered. hold the lock until the server acks, with a timer so a lost
             // ack cannot block uploads for the rest of the session
-            document.getElementById("upload-progress-text").innerHTML = "sending ...";
+            document.getElementById("upload-progress-text").innerHTML = "waiting for server ...";
             g_upload_ack_timer = setTimeout(release_file_upload_lock, G_UPLOAD_ACK_TIMEOUT_MS);
             return;
         }
@@ -3947,10 +4236,147 @@ function render_typing_indicator()
     }
 }
 
+// the attached file goes out as a message of its own; typed text stays in the box for the next
+// send. every way this can fail tells the user and keeps the file attached. true = handed off
+function send_pending_chat_file(receiver_type)
+{
+    if (g_pending_chat_file == null)
+    {
+        return false;
+    }
+
+    if (g_is_file_being_uploaded == true)
+    {
+        custom_alert("cant upload more than 1 file at a time");
+        return false;
+    }
+
+    let chat_context_index = get_chat_context_index_by_chat_context_id(g_current_chat_context_id);
+
+    if (chat_context_index == -1)
+    {
+        custom_log("[send-file] STOP: no chat context for " + g_current_chat_context_id);
+        return false;
+    }
+
+    let receiver_public_key = "";
+
+    if (receiver_type == "user")
+    {
+        let receiver = get_client_by_client_id(chat_message_receiver_id);
+
+        if (receiver == null)
+        {
+            custom_alert("files can only be sent to people who are online");
+            return false;
+        }
+
+        if (receiver.is_idle == true)
+        {
+            custom_alert(sanitize_string(get_display_name_by_client_id(chat_message_receiver_id, receiver.username)) + " is idle, files can not be delivered to idle clients");
+            return false;
+        }
+
+        receiver_public_key = get_public_key_by_client_id(chat_message_receiver_id);
+
+        if (receiver_public_key == "" || receiver_public_key == null)
+        {
+            custom_alert("no public key for this user yet, try again in a moment");
+            return false;
+        }
+    }
+    else if (current_channel_keys == null)
+    {
+        custom_alert("no channel keys from channel maintainer, cant send the file");
+        return false;
+    }
+
+    let file = g_pending_chat_file;
+    let key = "local-" + local_message_id;
+
+    clear_pending_chat_file();
+
+    let element_count = document.getElementById(g_current_chat_context_id).getElementsByClassName('chat-spacer').length;
+
+    for (let i = 0; i < element_count; i++)
+    {
+        document.getElementById(g_current_chat_context_id).getElementsByClassName('chat-spacer')[0].remove();
+    }
+
+    let html_to_append = "<div class=\"single-chat-message\">\n\
+                            <div class=\"single-message-content\">\n\
+                                <div class=\"single-chat-message-sender-local-username-container\">\n\
+                                    " + generate_message_sender_html(local_client_id, g_local_username) + "\n\
+                                </div>\n\
+                                <div class=\"single-chat-message-sender-time\">\n\
+                                    <p>" + new Date().toLocaleTimeString() + "</p>\n\
+                                </div>\n\
+                                <div class=\"single-chat-message-content\">\n\
+                                    " + generate_chat_file_card_html({ key: key, name: file.name, size: file.size, is_local: true, local_message_id: local_message_id }) + "\n\
+                                </div>\n\
+                            </div>\n\
+                        </div>";
+
+    document.getElementById(g_current_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
+    document.getElementById(g_current_chat_context_id).insertAdjacentHTML("beforeend", "<div class=\"chat-spacer\"></div>");
+    document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
+
+    g_chat_context_array[chat_context_index].last_known_message_sender_username = g_local_username;
+
+    // our own copy is downloadable right away
+    g_chat_files_by_message_id[key] = file;
+
+    let card = get_chat_file_card_by_key(key);
+
+    if (card != null)
+    {
+        wire_chat_file_download_button(card, key);
+    }
+
+    // lock now, not when the worker answers: encrypting 20 MB takes a moment and a second
+    // send in that window must be refused instead of relabelling this one
+    g_is_file_being_uploaded = true;
+    document.getElementById("upload-progress-overlay").style.display = "block";
+    document.getElementById("upload-progress-text").innerHTML = "encrypting ...";
+
+    if (receiver_type == "user")
+    {
+        clear_seen_indicator_for_client(chat_message_receiver_id);
+
+        g_data_processing_worker.postMessage({
+            type: "mainthread__create_direct_chat_file",
+            file: file,
+            receiver_public_key: receiver_public_key,
+            chat_message_receiver_id: chat_message_receiver_id,
+            local_message_id: local_message_id
+        });
+    }
+    else
+    {
+        g_data_processing_worker.postMessage({
+            type: "mainthread__create_channel_chat_file",
+            file: file,
+            current_channel_keys: current_channel_keys,
+            current_channel_id: current_channel_id,
+            local_message_id: local_message_id
+        });
+    }
+
+    local_message_id++;
+    return true;
+}
+
 // sends the chat input (or the pending picture) to the current channel: renders the local
 // echo into the chat DOM, hands encryption to the worker, and bumps local_message_id
 function send_channel_chat_message()
 {
+    // a pending file goes first, on its own
+    if (g_pending_chat_file != null)
+    {
+        send_pending_chat_file("channel");
+        return;
+    }
+
     let chat_message_to_send_value = document.getElementById('chat-input-container-text-input').value;
     document.getElementById('chat-input-container-text-input').value = "";
 
@@ -3968,6 +4394,11 @@ function send_channel_chat_message()
 
     if (base64_picture_string_to_send.length > 0)
     {
+        if (can_start_file_upload() == false)
+        {
+            return;
+        }
+
         let element_count = document.getElementById(g_current_chat_context_id).getElementsByClassName('chat-spacer').length;
 
         for (let i = 0; i < element_count; i++)
@@ -3994,7 +4425,14 @@ function send_channel_chat_message()
         document.getElementById('chat-context-container').scrollTop = document.getElementById('chat-context-container').scrollHeight;
 
         document.getElementById("image-upload-preview").style.backgroundImage = "";
+        document.getElementById("image-upload-preview").style.display = "none";
         g_chat_context_array[chat_context_index].last_known_message_sender_username = g_local_username;
+
+        // lock now, like the file path: encrypting a big picture takes a while and a second
+        // send in that window must be refused, not relabel this one
+        g_is_file_being_uploaded = true;
+        document.getElementById("upload-progress-overlay").style.display = "block";
+        document.getElementById("upload-progress-text").innerHTML = "processing image for send ...";
 
         g_data_processing_worker.postMessage({
             type: "mainthread__create_channel_chat_picture",
@@ -4161,6 +4599,13 @@ function send_offline_chat_message(offline_contact)
 // echo, then lets the worker RSA+AES encrypt it for the receiver's public key
 function send_direct_chat_message()
 {
+    // a pending file goes first, on its own
+    if (g_pending_chat_file != null)
+    {
+        send_pending_chat_file("user");
+        return;
+    }
+
     let chat_message_to_send_value = document.getElementById('chat-input-container-text-input').value;
     document.getElementById('chat-input-container-text-input').value = "";
 
@@ -4196,6 +4641,11 @@ function send_direct_chat_message()
 
     if (base64_picture_string_to_send.length > 0)
     {
+        if (can_start_file_upload() == false)
+        {
+            return;
+        }
+
         let html_to_append = "<div class=\"single-chat-message\">\n\
                                 <div class=\"single-message-content\">\n\
                                     <div class=\"single-chat-message-sender-local-username-container\">\n\
@@ -4222,7 +4672,12 @@ function send_direct_chat_message()
         }
 
         document.getElementById('image-upload-preview').style.backgroundImage = "";
+        document.getElementById('image-upload-preview').style.display = "none";
         g_chat_context_array[chat_context_index].last_known_message_sender_username = g_local_username;
+
+        g_is_file_being_uploaded = true;
+        document.getElementById("upload-progress-overlay").style.display = "block";
+        document.getElementById("upload-progress-text").innerHTML = "processing image for send ...";
 
         g_data_processing_worker.postMessage({
             type: "mainthread__create_direct_chat_picture",
@@ -4324,6 +4779,14 @@ function send_chat_message()
     {
         if (get_client_by_client_id(chat_message_receiver_id) == null)
         {
+            // nobody is there to decrypt a file, and the server keeps nothing this big
+            if (g_pending_chat_file != null)
+            {
+                custom_log("[send] STOP: file attached but the receiver is offline");
+                custom_alert("files can only be sent to people who are online");
+                return;
+            }
+
             custom_log("[send] receiver not in client list, trying the offline paths"
                 + " (alias='" + g_offline_chat_recipient_alias + "')");
             // they left (or were never here this session). if the server keeps messages
@@ -5578,6 +6041,47 @@ async function attempt_connection(target, identity)
 // per-sender frame sequence for outgoing voice/song audio; 16 bits, wraps at 65536
 var g_voice_send_sequence_number = 0;
 
+// the server's client-facing policy, applied from authentication_status on join and from the
+// "server_policy" broadcast an admin's settings save triggers. absent fields (older server)
+// leave the current values untouched, except the file fields, where absent means "off"
+function apply_server_policy_fields(data)
+{
+    // whether admins may register aliases (gates the context menu item)
+    g_is_alias_registration_allowed = (data.is_alias_registration_allowed == true);
+    g_is_typing_indicator_allowed = (data.allow_typing_indicator == true);
+
+    // avatars policy arrives in-protocol: the android app loads client.html from its assets,
+    // so the serve-time config injection never reaches it
+    if (data.allow_avatars !== undefined)
+    {
+        g_avatars_allowed = (data.allow_avatars == true);
+    }
+    if (typeof data.avatar_max_size === "number" && data.avatar_max_size > 0)
+    {
+        g_avatar_max_upload_bytes = data.avatar_max_size;
+    }
+
+    g_file_uploads_allowed = (data.allow_file_uploads == true);
+
+    if (typeof data.file_upload_max_size === "number" && data.file_upload_max_size > 0)
+    {
+        g_file_upload_max_bytes = data.file_upload_max_size;
+    }
+
+    // inline pictures: on unless the server says otherwise (an older server says nothing)
+    if (data.allow_chat_pictures !== undefined)
+    {
+        g_chat_pictures_allowed = (data.allow_chat_pictures == true);
+    }
+    if (typeof data.chat_picture_max_size === "number" && data.chat_picture_max_size > 0)
+    {
+        g_chat_picture_max_bytes = data.chat_picture_max_size;
+    }
+
+    apply_file_upload_policy_to_ui();
+    apply_chat_picture_policy_to_ui();
+}
+
 // * Callback when main thread receives a message
 function mainthread_onmessage(e)
 {
@@ -5794,23 +6298,9 @@ function mainthread_onmessage(e)
 
             hide_custom_alert(); // if there was any alert
 
-            // server policy: whether admins may register aliases (gates the context menu item)
-            g_is_alias_registration_allowed = (e.data.is_alias_registration_allowed == true);
-            g_is_typing_indicator_allowed = (e.data.allow_typing_indicator == true);
-
-            // avatars policy arrives in-protocol too: the android app loads client.html
-            // from its assets, so the serve-time config injection never reaches it and
-            // the config-based default said "avatars off" - hiding set avatar/delete
-            // avatar and quoting the wrong size limit. absent fields (older server)
-            // leave the config-derived values untouched.
-            if (e.data.allow_avatars !== undefined)
-            {
-                g_avatars_allowed = (e.data.allow_avatars == true);
-            }
-            if (typeof e.data.avatar_max_size === "number" && e.data.avatar_max_size > 0)
-            {
-                g_avatar_max_upload_bytes = e.data.avatar_max_size;
-            }
+            // the same policy set arrives again as "server_policy" whenever an admin saves,
+            // so both paths share one application function
+            apply_server_policy_fields(e.data);
 
             // fresh session: the info card counts from this moment
             g_session_connected_at = new Date().valueOf();
@@ -6192,7 +6682,34 @@ function mainthread_onmessage(e)
         document.getElementById("server-settings-general-allow-typing-indicator-checkbox").checked = msg.message.allow_typing_indicator == true;
         document.getElementById("server-settings-general-allow-text-to-idle-clients-checkbox").checked = msg.message.is_sending_text_to_idle_clients_allowed == true;
         document.getElementById("server-settings-general-allow-private-messages-checkbox").checked = msg.message.allow_private_messages == true;
+        document.getElementById("server-settings-general-allow-file-uploads-checkbox").checked = msg.message.allow_file_uploads == true;
+        document.getElementById("server-settings-general-file-upload-max-size-input").value = (typeof msg.message.file_upload_max_size_mb === "number") ? msg.message.file_upload_max_size_mb : 10;
+        refresh_file_upload_size_visibility();
+        document.getElementById("server-settings-general-allow-pictures-checkbox").checked = msg.message.allow_chat_pictures == true;
+        document.getElementById("server-settings-general-picture-max-size-input").value = (typeof msg.message.chat_picture_max_size_mb === "number") ? msg.message.chat_picture_max_size_mb : 4;
+        refresh_picture_size_visibility();
+        document.getElementById("server-settings-general-allow-same-ip-checkbox").checked = msg.message.is_same_ip_address_allowed == true;
+        document.getElementById("server-settings-general-country-blocking-checkbox").checked = msg.message.is_country_blocking_active == true;
+        set_blocked_countries_from_server(msg.message.blocked_countries);
+        refresh_country_blocking_visibility();
         UI.render_bans_list(msg.message.bans);
+        document.getElementById("server-settings-log-joins-checkbox").checked = msg.message.log_client_joins == true;
+        document.getElementById("server-settings-log-renames-checkbox").checked = msg.message.log_username_changes == true;
+        document.getElementById("server-settings-log-tags-checkbox").checked = msg.message.log_tag_changes == true;
+        document.getElementById("server-settings-log-settings-checkbox").checked = msg.message.log_server_settings_updates == true;
+        document.getElementById("server-settings-log-kicks-bans-checkbox").checked = msg.message.log_kicks_and_bans == true;
+        document.getElementById("server-settings-log-disconnects-checkbox").checked = msg.message.log_client_disconnects == true;
+        document.getElementById("server-settings-log-failed-checkbox").checked = msg.message.log_failed_attempts == true;
+        document.getElementById("server-settings-log-max-size-input").value = (typeof msg.message.admin_log_max_size_mb === "number") ? msg.message.admin_log_max_size_mb : 10;
+        document.getElementById("server-settings-log-retention-select").value = (typeof msg.message.admin_log_retention_days === "number") ? String(msg.message.admin_log_retention_days) : "7";
+    }
+    else if (e.data.type == "data_processing_worker__admin_log_from_server")
+    {
+        server_msg.process_admin_log_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__server_policy_from_server")
+    {
+        apply_server_policy_fields(e.data.value.message);
     }
     else if (e.data.type == "data_processing_worker__channel_join_from_server")
     {
@@ -6273,6 +6790,30 @@ function mainthread_onmessage(e)
     {
         server_msg.process_direct_chat_picture_metadata_from_server(e.data.value);
     }
+    else if (e.data.type == "data_processing_worker__channel_chat_file_metadata")
+    {
+        server_msg.process_channel_chat_file_metadata_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__direct_chat_file_metadata")
+    {
+        server_msg.process_direct_chat_file_metadata_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__direct_chat_file")
+    {
+        server_msg.process_direct_chat_file_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__channel_chat_file")
+    {
+        server_msg.process_channel_chat_file_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__chat_file_decrypt_failed")
+    {
+        server_msg.process_chat_file_decrypt_failed_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__file_send_error_from_server")
+    {
+        server_msg.process_file_send_error_from_server(e.data.value);
+    }
     else if (e.data.type == "data_processing_worker__seen_receipt_message_result")
     {
         websocket_worker_send(e.data.seen_receipt_message_content);
@@ -6346,23 +6887,43 @@ function mainthread_onmessage(e)
     {
         let total_bytes_length = e.data.data_for_upload_process.length;
         let parts = split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
-        if (can_start_file_upload() == true)
-        {
-            file_send_intent = "direct_chat_picture_file";
-            file_send_intent_extra_data = e.data.extra_data;
-            send_file_by_parts(parts, total_bytes_length, 5);
-        }
+
+        // the send path took the upload lock before handing the picture to the worker
+        file_send_intent = "direct_chat_picture_file";
+        file_send_intent_extra_data = e.data.extra_data;
+        g_is_file_being_uploaded = false;
+        send_file_by_parts(parts, total_bytes_length, 5);
     }
     else if (e.data.type == "data_processing_worker__channel_chat_picture_to_be_uploaded_by_parts")
     {
         let total_bytes_length = e.data.data_for_upload_process.length;
         let parts = split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
-        if (can_start_file_upload() == true)
-        {
-            file_send_intent = "channel_chat_picture_file";
-            file_send_intent_extra_data = e.data.extra_data;
-            send_file_by_parts(parts, total_bytes_length, 5);
-        }
+
+        // the send path took the upload lock before handing the picture to the worker
+        file_send_intent = "channel_chat_picture_file";
+        file_send_intent_extra_data = e.data.extra_data;
+        g_is_file_being_uploaded = false;
+        send_file_by_parts(parts, total_bytes_length, 5);
+    }
+    else if (e.data.type == "data_processing_worker__direct_chat_file_to_be_uploaded_by_parts"
+        || e.data.type == "data_processing_worker__channel_chat_file_to_be_uploaded_by_parts")
+    {
+        // the send path took the upload lock before handing the file to the worker, so this
+        // cannot collide with another upload the way a refused picture could
+        let total_bytes_length = e.data.data_for_upload_process.length;
+        let parts = split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
+
+        file_send_intent = (e.data.type == "data_processing_worker__direct_chat_file_to_be_uploaded_by_parts") ? "direct_chat_file" : "channel_chat_file";
+        file_send_intent_extra_data = e.data.extra_data;
+        g_is_file_being_uploaded = false;
+        send_file_by_parts(parts, total_bytes_length, 5);
+    }
+    else if (e.data.type == "data_processing_worker__chat_file_send_failed")
+    {
+        // the worker could not encrypt it (bad receiver key); the card and the lock are ours to clean up
+        release_file_upload_lock();
+        custom_alert("file not sent: " + e.data.reason);
+        mark_local_chat_file_card_failed(e.data.local_message_id, "not sent: " + e.data.reason);
     }
     else if (e.data.type == "data_processing_worker__music_bot_song_list_from_server")
     {
@@ -6953,7 +7514,16 @@ function activate_microphone()
         return;
     }
 
-    navigator.mediaDevices.getUserMedia({ audio: true })
+    let microphone_constraints = { audio: true };
+
+    // a chosen input device rides along as "ideal", because "exact" would fail the whole mic
+    // activation when that device is unplugged - the browser then falls back to its default
+    if (g_selected_microphone_device_id != "")
+    {
+        microphone_constraints = { audio: { deviceId: { ideal: g_selected_microphone_device_id } } };
+    }
+
+    navigator.mediaDevices.getUserMedia(microphone_constraints)
     .then(
         function (stream)
         {
@@ -7189,10 +7759,16 @@ async function window_onload()
         {
             if (is_short_click == true)
             {
-                // bring the channel chat back on screen - same as tapping its pill
+                // bring the channel chat back on screen - same as tapping its pill. a pill
+                // fresh from the html has no handler yet - give it the standard one
                 let channel_pill = document.querySelector('.chat-context-selector[data-chat-context-selector-id="channel-' + channel_circle.getAttribute("data-member-list-channel-id") + '"]');
-                if (channel_pill != null && channel_pill.onclick != null)
+                if (channel_pill != null)
                 {
+                    if (channel_pill.onclick == null)
+                    {
+                        channel_pill.onclick = UI.chat_context_selector_onclick;
+                    }
+
                     channel_pill.click();
                 }
             }
@@ -7597,10 +8173,31 @@ async function window_onload()
     document.getElementById("background-container").addEventListener("mousedown", stop_propagation);
 
     document.getElementById("chat-input-container-send-chat-input").onclick = UI.send_chat_input_on_click;
+
+    // the pills shipped in the html (the root channel's) have no handlers until a rebind loop
+    // happens to run; bind them now so they work on a fresh session too - opening an offline
+    // chat used to leave the channel pill (and the strip's channel circle) dead
+    for (let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
+    {
+        document.getElementsByClassName("chat-context-selector")[x].onclick = UI.chat_context_selector_onclick;
+    }
+    for (let x = 0; x < document.getElementsByClassName("remove-chat-context-selector").length; x++)
+    {
+        document.getElementsByClassName("remove-chat-context-selector")[x].onclick = UI.chat_context_remove_onclick;
+    }
     document.getElementById("connect-button").onclick = UI.connect_button_onclick;
     wire_server_bookmarks();
     document.getElementById("chat-input-container-text-input").onkeyup = UI.chat_input_on_keyup;
     document.getElementById("choose_image_input").onchange = UI.choose_image_input;
+    document.getElementById("choose-file-input").onchange = choose_chat_file_input_onchange;
+    document.getElementById("image-upload-preview-remove").onclick = clear_pending_chat_picture;
+    document.getElementById("server-settings-general-file-upload-max-size-input").oninput = refresh_file_upload_size_warning;
+    document.getElementById("server-settings-general-allow-file-uploads-checkbox").onchange = refresh_file_upload_size_visibility;
+    document.getElementById("server-settings-general-allow-pictures-checkbox").onchange = refresh_picture_size_visibility;
+    document.getElementById("server-settings-general-country-blocking-checkbox").onchange = refresh_country_blocking_visibility;
+    document.getElementById("server-settings-country-block-select").onchange = country_block_select_onchange;
+    setup_chat_file_drag_and_drop();
+    apply_file_upload_policy_to_ui();
     document.getElementById("add-key-button").onclick = UI.add_key_button_on_click;
     document.getElementById("show-hide-log-button").onclick = UI.show_hide_log_on_click;
     document.querySelector("[data-chat-context-remove-selector-id='channel-0']").onclick = UI.chat_context_remove_onclick;
@@ -7623,9 +8220,38 @@ async function window_onload()
     document.getElementById("stop-song").onclick = UI.stop_song_onclick;
     document.getElementById("add-new-tag-to-server-button").onclick = UI.add_new_tag_to_server_button_onlick;
     document.getElementById("save-server-settings-button").onclick = UI.save_server_settings_button_onclick;
+    document.getElementById("server-settings-log-save-button").onclick = UI.server_settings_log_save_button_onclick;
+    document.getElementById("server-settings-log-refresh-button").onclick = UI.server_settings_log_refresh_button_onclick;
+    document.getElementById("server-settings-log-clear-button").onclick = UI.server_settings_log_clear_button_onclick;
     document.getElementById("enter-server-settings").onclick = UI.enter_server_settings_onclick;
     document.getElementById("channel-flatten-toggle-button").onclick = UI.channel_flatten_toggle_onclick;
     document.getElementById("show-secret-identity-string").onclick = UI.show_secret_identity_string_onclick;
+    document.getElementById("export-identity-file-button").onclick = UI.export_identity_file_button_onclick;
+    document.getElementById("choose-identity-file-button").onclick = UI.choose_identity_file_button_onclick;
+    document.getElementById("identity-file-input").onchange = UI.identity_file_input_onchange;
+    document.getElementById("identity-file-confirm-button").onclick = UI.identity_file_confirm_button_onclick;
+    document.getElementById("identity-mode-toggle-link").onclick = UI.identity_mode_toggle_onclick;
+    // dropping a .lmn file on the identity dialog behaves like picking it; stopPropagation keeps
+    // the drop away from the chat-file handlers
+    {
+        let identity_dialog = document.getElementById("identity-string-use-container-enter");
+        identity_dialog.addEventListener("dragover", function(drag_event) { drag_event.preventDefault(); drag_event.stopPropagation(); });
+        identity_dialog.addEventListener("drop", function(drop_event)
+        {
+            drop_event.preventDefault();
+            drop_event.stopPropagation();
+
+            if (document.getElementById("identity-file-mode").style.display == "none")
+            {
+                UI.identity_mode_toggle_onclick(drop_event);
+            }
+
+            if (drop_event.dataTransfer != null && drop_event.dataTransfer.files != null && drop_event.dataTransfer.files.length > 0)
+            {
+                UI.identity_read_identity_file(drop_event.dataTransfer.files[0]);
+            }
+        });
+    }
     document.getElementById("import-identity-button").onclick = UI.import_identity_button_onclick;
     // top bar: same passphrase dialog; entered while connected it disconnects, regenerates
     // the keypair from the passphrase and reconnects as that identity (see the confirm handler)
@@ -7703,6 +8329,7 @@ async function window_onload()
         document.getElementById("local-settings-strip-vertical").checked = document.body.classList.contains("msgr-vertical");
         document.getElementById("local-settings-strip-neighbors").checked = document.body.classList.contains("msgr-neighbors-only");
         document.getElementById("local-settings-audio-availability").checked = document.body.classList.contains("msgr-audio-availability");
+        populate_microphone_device_list();
 
         if (panel.style.display === "none")
         {
@@ -7751,6 +8378,90 @@ async function window_onload()
             let is_selected = (segments[x].getAttribute("data-mic-mode") === "continuous") === g_is_continuous_mic_mode;
             segments[x].classList.toggle("segment-selected", is_selected);
         }
+    }
+
+    // fills the microphone picker with the audio inputs the browser reports. the row always
+    // shows; before the microphone has been used once the browser hides the real device list
+    // behind the permission, so a disabled hint entry explains why there is nothing to pick yet
+    function populate_microphone_device_list()
+    {
+        let row = document.getElementById("local-settings-mic-device-row");
+
+        if (row == null || navigator.mediaDevices == null || typeof navigator.mediaDevices.enumerateDevices != "function")
+        {
+            return;
+        }
+
+        navigator.mediaDevices.enumerateDevices().then(function(devices)
+        {
+            // a device with an empty id is the pre-permission placeholder, not a real choice
+            let inputs = devices.filter(function(device) { return device.kind === "audioinput" && device.deviceId !== ""; });
+
+            let select = document.getElementById("local-settings-mic-device");
+            let html = "<option value=\"\">system default</option>";
+
+            if (inputs.length == 0)
+            {
+                html += "<option value=\"\" disabled>(use the microphone once to list devices)</option>";
+            }
+
+            for (let i = 0; i < inputs.length; i++)
+            {
+                let label = (typeof inputs[i].label === "string" && inputs[i].label.length > 0) ? inputs[i].label : ("microphone " + (i + 1));
+                html += "<option value=\"" + sanitize_string(inputs[i].deviceId) + "\">" + sanitize_string(label) + "</option>";
+            }
+
+            select.innerHTML = html;
+            select.value = g_selected_microphone_device_id;
+
+            // a remembered device that no longer exists falls back to the default entry
+            if (select.value !== g_selected_microphone_device_id)
+            {
+                select.value = "";
+            }
+
+            row.style.display = "";
+        }).catch(function() { row.style.display = "none"; });
+    }
+
+    // switches the live capture to the chosen device without touching the capture graph: a new
+    // source joins the same gain node and the old track just stops. nothing is ever disconnected,
+    // because a capture-edge disconnect once stalled chromium's whole mic delivery
+    function apply_selected_microphone_device()
+    {
+        if (g_local_audio_stream == null || navigator.mediaDevices == null)
+        {
+            return; // the mic is not built yet; the choice applies when it activates
+        }
+
+        let switch_constraints = (g_selected_microphone_device_id != "")
+            ? { audio: { deviceId: { ideal: g_selected_microphone_device_id } } }
+            : { audio: true };
+
+        navigator.mediaDevices.getUserMedia(switch_constraints).then(function(new_stream)
+        {
+            let old_track = g_local_audio_stream.getAudioTracks()[0];
+            let new_track = new_stream.getAudioTracks()[0];
+
+            // the new track inherits the transmit state, so a switch mid-talk keeps talking
+            new_track.enabled = (old_track != null) ? old_track.enabled : false;
+
+            let new_source = audio_context.createMediaStreamSource(new_stream);
+            new_source.connect(g_audio_recorder_gain_node);
+
+            if (old_track != null)
+            {
+                old_track.stop();
+            }
+
+            g_local_audio_stream = new_stream;
+            g_audio_input = new_source;
+
+            custom_log("microphone switched to: " + (new_track.label || "default device"));
+        }).catch(function(switch_error)
+        {
+            custom_alert("could not switch the microphone: " + switch_error);
+        });
     }
 
     function apply_mic_mode(is_continuous)
@@ -7877,6 +8588,13 @@ async function window_onload()
     document.getElementById("local-settings-mic-mode").onchange = function()
     {
         apply_mic_mode(this.value === "continuous");
+    };
+
+    document.getElementById("local-settings-mic-device").onchange = function()
+    {
+        g_selected_microphone_device_id = this.value;
+        try { localStorage.setItem("lemon_mic_device_id", g_selected_microphone_device_id); } catch (e) { }
+        apply_selected_microphone_device();
     };
 
     {
@@ -8308,6 +9026,7 @@ async function window_onload()
     {
         g_send_go_to_idle_mode_request = android_js_bridge.send_go_to_idle_mode_request_android;
         g_send_come_from_idle_mode_request = android_js_bridge.send_come_from_idle_mode_request_android;
+        g_mark_call_accept_presence = android_js_bridge.mark_call_accept_presence_android;
         g_set_username_on_connect = android_js_bridge.set_username_on_connect_android;
         g_accept_current_settings_from_android = android_js_bridge.accept_current_settings_from_android;
         g_nudge_loopback_reattach = android_js_bridge.nudge_loopback_reattach_android;
@@ -8396,6 +9115,280 @@ async function window_onload()
 if (typeof window !== 'undefined')
 {
     window.onload = window_onload;
+}
+
+
+// ---------------------------------------------------------------------------
+// country blocking, the admin's join block list in the server settings tab
+// the selectable countries are harvested from the flag stylesheet the client already ships,
+// so no second country list exists that could drift out of sync; display names come from the
+// browser (Intl), falling back to the bare code. nothing here runs at load time
+// ---------------------------------------------------------------------------
+
+// the admin's unsaved block list, replaced whenever server_settings_values arrives
+var g_blocked_countries_draft = [];
+
+// stylesheet harvest and the Intl helper, both resolved once on first use
+var g_country_code_cache = null;
+var g_country_display_names = null;
+var g_is_country_select_populated = false;
+
+// english name for an iso code, or the code itself when the browser cannot name it
+function get_country_display_name(code)
+{
+    if (g_country_display_names === null)
+    {
+        try
+        {
+            g_country_display_names = new Intl.DisplayNames(["en"], { type: "region" });
+        }
+        catch (intl_error)
+        {
+            g_country_display_names = false;
+        }
+    }
+
+    if (g_country_display_names !== false)
+    {
+        try
+        {
+            let name = g_country_display_names.of(code);
+
+            if (typeof name === "string" && name.length > 0)
+            {
+                return name;
+            }
+        }
+        catch (lookup_error) { }
+    }
+
+    return code;
+}
+
+// every code the flag stylesheet can draw, sorted by display name; [] headless
+function get_all_country_codes()
+{
+    if (g_country_code_cache != null)
+    {
+        return g_country_code_cache;
+    }
+
+    let codes = {};
+
+    if (typeof document !== "undefined" && document.styleSheets != null)
+    {
+        for (let sheet_index = 0; sheet_index < document.styleSheets.length; sheet_index++)
+        {
+            let rules = null;
+
+            try
+            {
+                rules = document.styleSheets[sheet_index].cssRules;
+            }
+            catch (rules_error)
+            {
+                continue;
+            }
+
+            if (rules == null)
+            {
+                continue;
+            }
+
+            for (let rule_index = 0; rule_index < rules.length; rule_index++)
+            {
+                let selector = rules[rule_index].selectorText;
+
+                if (typeof selector !== "string")
+                {
+                    continue;
+                }
+
+                let matches = selector.match(/\.country-flag-([a-z]{2})\b/g);
+
+                if (matches == null)
+                {
+                    continue;
+                }
+
+                for (let match_index = 0; match_index < matches.length; match_index++)
+                {
+                    codes[matches[match_index].slice(-2).toUpperCase()] = true;
+                }
+            }
+        }
+    }
+
+    g_country_code_cache = Object.keys(codes).sort(function(a, b)
+    {
+        return get_country_display_name(a).localeCompare(get_country_display_name(b));
+    });
+
+    return g_country_code_cache;
+}
+
+// fills the picker once, the first time the section becomes visible
+function populate_country_block_select()
+{
+    if (g_is_country_select_populated == true)
+    {
+        return;
+    }
+
+    let select = document.getElementById("server-settings-country-block-select");
+
+    if (select == null)
+    {
+        return;
+    }
+
+    let codes = get_all_country_codes();
+
+    if (codes.length == 0)
+    {
+        return;
+    }
+
+    let html = "<option value=\"\">add a country to the block list ...</option>";
+
+    for (let i = 0; i < codes.length; i++)
+    {
+        html += "<option value=\"" + codes[i] + "\">" + sanitize_string(get_country_display_name(codes[i])) + " (" + codes[i] + ")</option>";
+    }
+
+    select.innerHTML = html;
+    g_is_country_select_populated = true;
+}
+
+function render_blocked_countries_list()
+{
+    let container = document.getElementById("server-settings-blocked-countries-list");
+
+    if (container == null)
+    {
+        return;
+    }
+
+    container.innerHTML = "";
+
+    if (g_blocked_countries_draft.length == 0)
+    {
+        let empty = document.createElement("p");
+        empty.className = "blocked-country-empty";
+        empty.innerText = "no blocked countries";
+        container.appendChild(empty);
+        return;
+    }
+
+    for (let i = 0; i < g_blocked_countries_draft.length; i++)
+    {
+        let code = g_blocked_countries_draft[i];
+
+        let row = document.createElement("div");
+        row.className = "blocked-country-entry";
+
+        let flag = document.createElement("div");
+        flag.className = "blocked-country-flag country-flag-" + code.toLowerCase();
+        row.appendChild(flag);
+
+        let name = document.createElement("span");
+        name.className = "blocked-country-name";
+        name.innerText = get_country_display_name(code) + " (" + code + ")";
+        row.appendChild(name);
+
+        let remove = document.createElement("span");
+        remove.className = "blocked-country-remove";
+        remove.title = "remove";
+        remove.innerText = "✕";
+        remove.setAttribute("data-country-code", code);
+        remove.onclick = function(event)
+        {
+            event.stopPropagation();
+
+            let removed_code = event.currentTarget.getAttribute("data-country-code");
+
+            g_blocked_countries_draft = g_blocked_countries_draft.filter(function(entry) { return entry != removed_code; });
+            render_blocked_countries_list();
+        };
+        row.appendChild(remove);
+
+        container.appendChild(row);
+    }
+}
+
+// picking an option adds it to the draft; the picker snaps back to its placeholder
+function country_block_select_onchange()
+{
+    let select = document.getElementById("server-settings-country-block-select");
+    let code = select.value;
+
+    select.value = "";
+
+    if (typeof code !== "string" || /^[A-Z]{2}$/.test(code) == false)
+    {
+        return;
+    }
+
+    if (g_blocked_countries_draft.indexOf(code) != -1)
+    {
+        return;
+    }
+
+    if (g_blocked_countries_draft.length >= 100)
+    {
+        custom_alert("the block list is full (100 countries)");
+        return;
+    }
+
+    g_blocked_countries_draft.push(code);
+    g_blocked_countries_draft.sort(function(a, b)
+    {
+        return get_country_display_name(a).localeCompare(get_country_display_name(b));
+    });
+    render_blocked_countries_list();
+}
+
+// the checkbox shows or hides the picker below it (the block list itself is server state
+// either way; unchecking just disables enforcement, it does not clear the list)
+function refresh_country_blocking_visibility()
+{
+    let checkbox = document.getElementById("server-settings-general-country-blocking-checkbox");
+    let container = document.getElementById("server-settings-country-blocking-container");
+
+    if (checkbox == null || container == null)
+    {
+        return;
+    }
+
+    if (checkbox.checked == true)
+    {
+        populate_country_block_select();
+        container.style.display = "block";
+    }
+    else
+    {
+        container.style.display = "none";
+    }
+}
+
+// what the server currently has, straight from server_settings_values
+function set_blocked_countries_from_server(list)
+{
+    g_blocked_countries_draft = [];
+
+    if (Array.isArray(list))
+    {
+        for (let i = 0; i < list.length; i++)
+        {
+            if (typeof list[i] === "string" && /^[A-Za-z]{2}$/.test(list[i]) == true
+                && g_blocked_countries_draft.indexOf(list[i].toUpperCase()) == -1)
+            {
+                g_blocked_countries_draft.push(list[i].toUpperCase());
+            }
+        }
+    }
+
+    render_blocked_countries_list();
 }
 
 

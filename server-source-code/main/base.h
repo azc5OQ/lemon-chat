@@ -58,6 +58,8 @@ void    base__move_client_into_channel(uint64 client_id, uint64 destination_chan
 boole   base__is_client_valid(uint64 client_id);
 uint64  base__get_other_clients_in_channel(int client_to_ignore, uint64 channel_id, int64* out_receiving_client_ids);
 boole   base__is_ip_banned(char* ip_address);
+boole   base__is_identity_banned(char* public_key);
+boole   base__is_country_blocked(char* country_iso_code);
 boole   base__add_ban(char* ip_address, char* country_iso_code, char* identity, char* extra_data);
 boole   base__remove_ban_by_ip(char* ip_address);
 

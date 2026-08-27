@@ -9,6 +9,7 @@ var g_send_come_from_idle_mode_request = null;
 var g_accept_current_settings_from_android = null;
 var g_nudge_loopback_reattach = null;
 var g_show_connection_phase = null;
+var g_mark_call_accept_presence = null;
 
 function JavascriptJavaBridge__send_go_to_idle_mode_request(is_forced)
 {
@@ -18,6 +19,15 @@ function JavascriptJavaBridge__send_go_to_idle_mode_request(is_forced)
 function JavascriptJavaBridge__send_come_from_idle_mode_request(channelId)
 {
     g_send_come_from_idle_mode_request(channelId);
+}
+
+// java stamps this on a call accept, so the page holds presence through the accept transition
+function JavascriptJavaBridge__mark_call_accept_presence()
+{
+    if (typeof g_mark_call_accept_presence === "function" && g_mark_call_accept_presence != null)
+    {
+        g_mark_call_accept_presence();
+    }
 }
 
 function JavascriptJavaBridge__set_username_on_connect(username)

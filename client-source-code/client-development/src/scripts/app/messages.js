@@ -958,6 +958,16 @@ var server_msg = {
                 element.setAttribute("data-single-chat-message-server-message-id", msg.message.server_chat_message_id);
                 element.addEventListener("mousedown", UI.single_chat_message_onrightclick);
             }
+            else
+            {
+                let file_card = document.querySelector('.local-client-chat-file[data-single-chat-message-local-message-id="' + msg.message.local_message_id + '"]');
+
+                if (file_card != null)
+                {
+                    file_card.setAttribute("data-single-chat-message-server-message-id", msg.message.server_chat_message_id);
+                    file_card.addEventListener("mousedown", chat_file_card_onrightclick);
+                }
+            }
         }
     },
     // applies the edited channel fields to g_channel_list and its row (name text plus the
@@ -1223,6 +1233,9 @@ var server_msg = {
             return;
         }
 
+        // the ring counts the incoming chunks against the encrypted length the server announced
+        begin_chat_file_transfer(msg.message.picture_id, msg.message.size);
+
         let sender_username = g_client_list[client_index].username;
         let index = get_chat_context_index_by_chat_context_id("chat-context-channel-" + current_channel_id);
         let receiving_chat_context_id = "chat-context-channel-" + msg.message.channel_id;
@@ -1245,7 +1258,8 @@ var server_msg = {
                                         <p>" + new Date().toLocaleTimeString() + "</p>\n\
                                     </div>\n\
                                     <div class=\"single-chat-message-content\">\n\
-                                        <img class='chat-picture-img chat-picture-img-default' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + g_loading_gif + "\"></img>\n\
+                                        " + generate_chat_picture_progress_html(msg.message.picture_id) + "\n\
+                                        <img class='chat-picture-img chat-picture-img-default' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\"></img>\n\
                                     </div>\n\
                                 </div>";
 
@@ -1261,6 +1275,9 @@ var server_msg = {
         {
             return;
         }
+
+        // the ring counts the incoming chunks against the encrypted length the server announced
+        begin_chat_file_transfer(msg.message.picture_id, msg.message.size);
 
         let received_direct_message_chat_context_id = 'chat-context-pm-' + msg.message.sender_id;
 
@@ -1314,7 +1331,8 @@ var server_msg = {
                                         <div class=\"single-chat-message-sender-time\"><p>" + new Date().toLocaleTimeString() + "</p>\n\
                                         </div>\n\
                                         <div class=\"single-chat-message-content\">\n\
-                                            <img class='chat-picture-img-default chat-picture-img' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\" src=\"" + g_loading_gif + "\"></img>\n\
+                                            " + generate_chat_picture_progress_html(msg.message.picture_id) + "\n\
+                                            <img class='chat-picture-img-default chat-picture-img' data-single-chat-message-server-message-id='"+ msg.message.picture_id + "' id=\"chat-picture-img-" + msg.message.picture_id + "\"></img>\n\
                                         </div>\n\
                                     </div>\n\
                                 </div>";
@@ -1335,6 +1353,165 @@ var server_msg = {
             increment_unread_count(msg.message.sender_id);
             render_unread_badge(msg.message.sender_id, true);
         }
+        g_chat_context_array[chat_context_index].last_known_message_sender_username = msg.message.sender_username;
+    },
+    // a file is coming to the channel: the worker already opened its header, so the card goes up
+    // now with the name, size, icon and a progress ring; the body fills it in later by file_id
+    process_channel_chat_file_metadata_from_server: function(msg)
+    {
+        let client_index = get_client_index_in_array_by_client_id(msg.message.sender_id);
+
+        if (client_index == -1)
+        {
+            return;
+        }
+
+        if (get_client_by_client_id(msg.message.sender_id).is_ignored_by_local_client == true)
+        {
+            return;
+        }
+
+        let receiving_chat_context_id = "chat-context-channel-" + msg.message.channel_id;
+        let chat_context_index = get_chat_context_index_by_chat_context_id(receiving_chat_context_id);
+
+        if (chat_context_index == -1)
+        {
+            return;
+        }
+
+        let sender_username = g_client_list[client_index].username;
+        let header = (msg.message.file_header_decrypted != null) ? msg.message.file_header_decrypted : { name: "(file, no key to open it)", size: 0 };
+
+        g_chat_context_array[chat_context_index].last_known_message_sender_username = sender_username;
+        g_chat_message_author_public_keys[msg.message.file_id] = get_public_key_by_client_id(msg.message.sender_id);
+        begin_chat_file_transfer(msg.message.file_id, msg.message.encrypted_size);
+
+        let elements_count = document.getElementsByClassName("chat-spacer").length;
+
+        for (let i = 0; i < elements_count; i++)
+        {
+            document.getElementsByClassName("chat-spacer")[0].remove();
+        }
+
+        let html_to_append = "<div class=\"single-chat-message\">\n\
+                                    <div class=\"single-message-content\">\n\
+                                        <div class=\"single-chat-message-sender-username-container\">\n\
+                                            " + generate_message_sender_html(msg.message.sender_id, sanitize_string(sender_username)) + "\n\
+                                        </div>\n\
+                                    <div class=\"single-chat-message-sender-time\">\n\
+                                        <p>" + new Date().toLocaleTimeString() + "</p>\n\
+                                    </div>\n\
+                                    <div class=\"single-chat-message-content\">\n\
+                                        " + generate_chat_file_card_html({ key: msg.message.file_id, name: header.name, size: header.size, is_receiving: true }) + "\n\
+                                    </div>\n\
+                                </div>";
+
+        document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
+        document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", "<div class=\"chat-spacer\"></div>");
+
+        let card = get_chat_file_card_by_key(msg.message.file_id);
+
+        if (card != null)
+        {
+            card.addEventListener("mousedown", chat_file_card_onrightclick);
+        }
+
+        document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
+    },
+    // private-chat version: creates the pm chat context if missing, plays the received sound,
+    // puts up the card with its ring and bumps the sender's unread badge
+    process_direct_chat_file_metadata_from_server: function(msg)
+    {
+        if (get_client_by_client_id(msg.message.sender_id) == null || get_client_by_client_id(msg.message.sender_id).is_ignored_by_local_client == true)
+        {
+            return;
+        }
+
+        let received_direct_message_chat_context_id = 'chat-context-pm-' + msg.message.sender_id;
+        let is_chat_context_existing = false;
+
+        for (let context_index = 0; context_index < g_chat_context_array.length; context_index++)
+        {
+            if (g_chat_context_array[context_index].chat_context_id == received_direct_message_chat_context_id)
+            {
+                is_chat_context_existing = true;
+                break;
+            }
+        }
+
+        if (g_are_sound_effects_enabled)
+        {
+            g_sound_effects.message_received.play();
+        }
+
+        if (is_chat_context_existing == false)
+        {
+            let html_to_append = "<div class=\"chat-context\" id=\"" + received_direct_message_chat_context_id + "\">\n\
+                                            <div class=\"single-server-message\">now talking to user: " + sanitize_string(get_display_name_by_client_id(msg.message.sender_id, msg.message.sender_username)) + "</div>\n\
+                                                <div class=\"single-server-message\">your public key: " + g_rsa_public_key_string + "</div>\n\
+                                                <div class=\"single-server-message\">his public key: " + sanitize_string(get_public_key_by_client_id(msg.message.sender_id)) + "</div>\n\
+                                            <div class=\"single-server-message\"></div>\n\
+                                        </div>";
+
+            document.getElementById("chat-context-container").insertAdjacentHTML("beforeend", html_to_append);
+            document.getElementById(received_direct_message_chat_context_id).style.display = "none";
+
+            let single_chat_context = {
+                type: "user",
+                chat_context_id: received_direct_message_chat_context_id,
+                last_known_message_sender_username: ""
+            };
+
+            g_chat_context_array.push(single_chat_context);
+        }
+
+        let chat_context_index = get_chat_context_index_by_chat_context_id(received_direct_message_chat_context_id);
+        let header = (msg.message.file_header_decrypted != null) ? msg.message.file_header_decrypted : { name: "(file, no key to open it)", size: 0 };
+
+        g_chat_message_author_public_keys[msg.message.file_id] = get_public_key_by_client_id(msg.message.sender_id);
+        begin_chat_file_transfer(msg.message.file_id, msg.message.encrypted_size);
+
+        let html_to_append = "<div class=\"single-chat-message\">\n\
+                                    <div class=\"single-message-content\">\n\
+                                        <div class=\"single-chat-message-sender-username-container\">\n\
+                                            " + generate_message_sender_html(msg.message.sender_id, sanitize_string(msg.message.sender_username)) + "\n\
+                                        </div>\n\
+                                        <div class=\"single-chat-message-sender-time\"><p>" + new Date().toLocaleTimeString() + "</p>\n\
+                                        </div>\n\
+                                        <div class=\"single-chat-message-content\">\n\
+                                            " + generate_chat_file_card_html({ key: msg.message.file_id, name: header.name, size: header.size, is_receiving: true }) + "\n\
+                                        </div>\n\
+                                    </div>\n\
+                                </div>";
+
+        document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
+
+        let elements_count = document.getElementsByClassName("chat-spacer").length;
+
+        for (let i = 0; i < elements_count; i++)
+        {
+            document.getElementsByClassName("chat-spacer")[0].remove();
+        }
+
+        document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", "<div class=\"chat-spacer\"></div>");
+
+        let card = get_chat_file_card_by_key(msg.message.file_id);
+
+        if (card != null)
+        {
+            card.addEventListener("mousedown", chat_file_card_onrightclick);
+        }
+
+        if (g_current_chat_context_id != received_direct_message_chat_context_id)
+        {
+            increment_unread_count(msg.message.sender_id);
+            render_unread_badge(msg.message.sender_id, true);
+        }
+        else
+        {
+            document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
+        }
+
         g_chat_context_array[chat_context_index].last_known_message_sender_username = msg.message.sender_username;
     },
     // records the announced maintainer on the channel after validating he exists in our
@@ -1805,6 +1982,8 @@ var server_msg = {
     // fills a private chat picture placeholder with the decrypted image and scrolls down
     process_direct_chat_picture_from_server: function(msg)
     {
+        finish_chat_picture_progress(msg.message.picture_id);
+
         if (document.getElementById("chat-picture-img-" + msg.message.picture_id) != null)
         {
             document.getElementById("chat-picture-img-" + msg.message.picture_id).src = msg.message.decrypted_base64_picture;
@@ -1815,6 +1994,8 @@ var server_msg = {
     // fills a channel chat picture placeholder with the decrypted image and scrolls down
     process_channel_chat_picture_from_server: function(msg)
     {
+        finish_chat_picture_progress(msg.message.picture_id);
+
         if (document.getElementById("chat-picture-img-" + msg.message.picture_id) != null)
         {
             document.getElementById("chat-picture-img-" + msg.message.picture_id).src = msg.message.decrypted_base64_picture;
@@ -1822,9 +2003,39 @@ var server_msg = {
             document.getElementById("chat-context-container").scrollTop = document.getElementById("chat-context-container").scrollHeight;
         }
     },
+    // the decrypted file body arrived (private chat): the card gets its download button
+    process_direct_chat_file_from_server: function(msg)
+    {
+        finish_chat_file_card(msg.message.file_id, msg.message.file);
+    },
+    // same for a channel file
+    process_channel_chat_file_from_server: function(msg)
+    {
+        finish_chat_file_card(msg.message.file_id, msg.message.file);
+    },
+    // the body arrived but no key opened it: say so on the card instead of spinning forever
+    process_chat_file_decrypt_failed_from_server: function(msg)
+    {
+        delete g_chat_file_transfers[msg.message.file_id];
+        mark_chat_file_card_failed(get_chat_file_card_by_key(msg.message.file_id), "could not decrypt this file");
+    },
+    // the server refused our file and says why: drop the upload lock, tell the user, mark the card
+    process_file_send_error_from_server: function(msg)
+    {
+        release_file_upload_lock();
+        file_send_intent = "";
+        file_send_intent_extra_data = {};
+
+        let text = explain_file_send_error(msg.message.reason, msg.message.file_upload_max_size);
+
+        custom_alert(text);
+        mark_local_chat_file_card_failed(msg.message.local_message_id, text);
+    },
     // upload confirmed: strips the "imgnotsentyet" marker class from every element carrying it
     process_image_sent_status_from_server: function(msg)
     {
+        hide_picture_delivery_status();
+
         var lights = document.getElementsByClassName("imgnotsentyet");
         while (lights.length)
         {
@@ -2249,11 +2460,21 @@ var server_msg = {
         // exist; if the grid just armed, refresh does the initial bulk enqueue itself.
         UI.refresh_member_list_state();
     },
-    // shows the "insufficient permissions" alert and plays its sound effect
+    // shows the denial: the server's reason when it sent one, the generic line otherwise
     process_access_denied_from_server: function(msg)
     {
-        custom_alert("insufficient permissions");
+        custom_alert((typeof msg.message.reason === "string" && msg.message.reason.length > 0)
+            ? sanitize_string(msg.message.reason) : "insufficient permissions");
         g_sound_effects.insufficient_permissions.play();
+    },
+    // fills the admin log textarea (log tab), one dated line per row, newest at the bottom
+    process_admin_log_from_server: function(msg)
+    {
+        let textarea = document.getElementById("server-settings-log-textarea");
+        let lines = Array.isArray(msg.message.lines) ? msg.message.lines : [];
+
+        textarea.value = lines.join("\n");
+        textarea.scrollTop = textarea.scrollHeight;
     },
     // handles anyone switching channel: moves his row, replays his tag chips, plays join/leave/
     // switch sounds; for the local client also swaps chat context and nulls current_channel_keys
@@ -2626,7 +2847,16 @@ var server_msg = {
             }
             else
             {
-                console.log("process_chat_message_delete_from_server unable to find element");
+                let file_card = document.querySelector('.chat-file-card[data-single-chat-message-server-message-id="' + msg.message.chat_message_id + '"]');
+
+                if (file_card != null)
+                {
+                    mark_chat_file_card_deleted(file_card);
+                }
+                else
+                {
+                    console.log("process_chat_message_delete_from_server unable to find element");
+                }
             }
         }
     },
@@ -2764,6 +2994,7 @@ var server_msg = {
             });
         }
 
+        custom_log("stored clients list: " + g_offline_client_list.length + " people kept of " + msg.message.stored_clients.length + " sent");
         UI.schedule_member_list_sync();
     },
 
@@ -3037,11 +3268,14 @@ var server_msg = {
     // by sending the current file_send_intent back
     process_file_send_success_from_server: function(msg)
     {
+        let was_picture = (file_send_intent == "direct_chat_picture_file" || file_send_intent == "channel_chat_picture_file");
+
         // the ack means every part actually arrived, so this is where the upload is really
         // finished. released before the intent check so a stray ack cannot leave the lock stuck
         release_file_upload_lock();
 
-        if (file_send_intent == "musicbot_file" || file_send_intent == "direct_chat_picture_file" || file_send_intent == "channel_chat_picture_file")
+        if (file_send_intent == "musicbot_file" || file_send_intent == "direct_chat_picture_file" || file_send_intent == "channel_chat_picture_file"
+            || file_send_intent == "direct_chat_file" || file_send_intent == "channel_chat_file")
         {
             client_msg.send_file_send_completed_request(file_send_intent);
 
@@ -3049,6 +3283,12 @@ var server_msg = {
             // cannot replay the last file (e.g. re-upload the song on an unrelated action)
             file_send_intent = "";
             file_send_intent_extra_data = {};
+        }
+
+        // the picture is on the server now; image_sent_status marks the end of the relay
+        if (was_picture == true)
+        {
+            show_picture_delivery_status();
         }
     },
 
@@ -3083,6 +3323,9 @@ var server_msg = {
             {
                 g_received_files[i].timestamp_last_received = new Date().valueOf();
                 g_received_files[i].file_content_base64 += msg.message.value;
+
+                // a file card's ring; a no-op for pictures, which register no transfer
+                update_chat_file_progress(msg.message.server_chat_message_id, g_received_files[i].file_content_base64.length);
                 break;
             }
         }
@@ -3145,6 +3388,30 @@ var server_msg = {
             });
 
             console.log("total files in received_files " + g_received_files.length +"");
+        }
+        else if (msg.message.receive_type == "direct_chat_file")
+        {
+            // loopback: no private key here, node sends the decrypted file instead
+            if (is_ui_only_runtime())
+            {
+                return;
+            }
+
+            g_data_processing_worker.postMessage({
+                type: "mainthread__process_encrypted_direct_chat_file_data",
+                message_raw: message_raw,
+                file_id: msg.message.server_chat_message_id,
+                sender_id: msg.message.sender_id
+            });
+        }
+        else if (msg.message.receive_type == "channel_chat_file")
+        {
+            g_data_processing_worker.postMessage({
+                type: "mainthread__process_encrypted_channel_chat_file_data",
+                message_raw: message_raw,
+                file_id: msg.message.server_chat_message_id,
+                sender_id: msg.message.sender_id
+            });
         }
     }
 };

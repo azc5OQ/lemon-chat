@@ -82,7 +82,9 @@ No socket here. Android gives two built-in ways, one per direction:
 - **Page -> Java**: the page calls methods on a magic `Android` object that Java
   injected into it. All these methods are named `JavaExport*`. Used for:
   asking for the settings, opening the native settings screen, showing
-  notifications, toasts, the unread badge.
+  notifications, toasts, the unread badge, and saving a received chat file
+  into Downloads (`JavaExportSaveFile` - the WebView cannot save a blob url
+  by itself).
 
 ## What happens when... (short stories)
 

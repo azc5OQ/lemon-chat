@@ -4,6 +4,7 @@
 #include "clib/clib_memory.h"
 #include "../third-party/dave-g-json/cJSON.h" // needed by base.h
 #include "base.h"
+#include "server_logs.h"
 
 #include "../third-party/ITH-sha/sha256.h"
 
@@ -159,6 +160,7 @@ void onopen(ws_cli_conn_t* client)
     if (base__is_ip_banned(ip_address) == TRUE)
     {
         DBG_AUTHENTICATION log_info("%s", "ip address is banned, closing socket");
+        server_logs__join_refused("banned ip", ip_address);
         ws_close_client(client);
         goto label_onopen_end;
     }
@@ -170,6 +172,7 @@ void onopen(ws_cli_conn_t* client)
         if (ip_address_already_in_use == TRUE)
         {
             DBG_AUTHENTICATION log_info("%s", "ip address already in use, closing socket");
+            server_logs__join_refused("same ip already connected", ip_address);
             ws_close_client(client);
             goto label_onopen_end;
         }
@@ -416,6 +419,9 @@ void websocket_connection_check_thread(void)
             clib__unlock(&g_channels_global_rwlock_guard);
             clib__unlock(&g_clients_global_rwlock_guard);
         }
+
+        // rate-limited inside to one purge per day
+        server_logs__purge_tick();
 
         // 15s, same in windows and linux. this interval is ALSO the pong deadline of the
         // ws_ping above: a dead socket is closed after interval * threshold = 45-60 seconds

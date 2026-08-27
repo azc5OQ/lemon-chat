@@ -109,6 +109,7 @@
 /* @@INCLUDE: scripts/app/sounds.js @@ */
 /* @@INCLUDE: scripts/app/messages.js @@ */
 /* @@INCLUDE: scripts/app/ui.js @@ */
+/* @@INCLUDE: scripts/app/chat-files.js @@ */
 /* @@INCLUDE: scripts/app/node-runtime.js @@ */
 /* @@INCLUDE: scripts/app/connection-driver.js @@ */
 /* @@INCLUDE: scripts/app/android-webview.js @@ */
@@ -138,6 +139,7 @@
                 <li class="server-settings-tab-li" data-action="2">server settings</li>
                 <li class="server-settings-tab-li" data-action="3">bans</li>
                 <li class="server-settings-tab-li" data-action="4">identities</li>
+                <li class="server-settings-tab-li" data-action="5">log</li>
             </ul>
             </div>
             <div id="server-settings-tab-subcontainer2">
@@ -202,6 +204,37 @@
                             <input type="checkbox" id="server-settings-general-allow-private-messages-checkbox">
                             <span>allow private messages between clients</span>
                         </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-file-uploads-checkbox">
+                            <span>allow file uploads in chat (any file, not just pictures; held in server RAM only while relayed)</span>
+                        </label>
+                        <label class="server-settings-general-row server-settings-general-row-number" id="server-settings-file-upload-size-row" style="display: none;">
+                            <span>max file size (MB)</span>
+                            <input type="number" min="1" max="100" step="1" id="server-settings-general-file-upload-max-size-input">
+                        </label>
+                        <p class="server-settings-general-warning" id="server-settings-general-file-upload-size-warning" style="display: none;">over 20 MB is not recommended: every transfer is held in server RAM at about twice the file size, and uploads get slow on phones and weak connections</p>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-pictures-checkbox">
+                            <span>allow inline pictures in chat</span>
+                        </label>
+                        <label class="server-settings-general-row server-settings-general-row-number" id="server-settings-picture-max-size-row" style="display: none;">
+                            <span>max picture size (MB)</span>
+                            <input type="number" min="1" max="15" step="1" id="server-settings-general-picture-max-size-input">
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-same-ip-checkbox">
+                            <span>allow more than one client from the same IP address</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-country-blocking-checkbox">
+                            <span>restrict access by country (clients joining from a blocked country are refused)</span>
+                        </label>
+                        <div id="server-settings-country-blocking-container" style="display: none;">
+                            <select id="server-settings-country-block-select">
+                                <option value="">add a country to the block list ...</option>
+                            </select>
+                            <div id="server-settings-blocked-countries-list"></div>
+                        </div>
 
                         <input type="button" value="save server settings" id="save-server-settings-button">
                     </div>
@@ -228,10 +261,73 @@
                         <div id="server-settings-identities-list"></div>
                     </div>
                 </div>
+                <div id="server-settings-tab-log">
+                    <div id="server-settings-log-container">
+                        <p class="server-settings-general-header">log</p>
+                        <p style="font-size:11px; opacity:0.7; margin: 0 0 6px 0;">events are kept in server RAM only, never in a file, and are gone after a server restart. the log is capped by the size below, and entries older than the retention period are purged once a day.</p>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-joins-checkbox">
+                            <span>log users joining (username and IP address)</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-renames-checkbox">
+                            <span>log username changes</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-tags-checkbox">
+                            <span>log adding of tags</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-settings-checkbox">
+                            <span>log server settings updates</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-kicks-bans-checkbox">
+                            <span>log kicks and bans</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-disconnects-checkbox">
+                            <span>log users disconnecting</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-failed-checkbox">
+                            <span>log failed attempts (wrong key, banned IP or identity, blocked country, same IP, wrong admin password)</span>
+                        </label>
+                        <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>max log size (MB)</span>
+                            <input type="number" min="1" max="100" step="1" id="server-settings-log-max-size-input">
+                        </label>
+                        <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>keep entries for</span>
+                            <select id="server-settings-log-retention-select">
+                                <option value="1">1 day</option>
+                                <option value="7">7 days</option>
+                                <option value="30">30 days</option>
+                            </select>
+                        </label>
+                        <div id="server-settings-log-buttons">
+                            <input type="button" value="save log settings" id="server-settings-log-save-button">
+                            <input type="button" value="refresh" id="server-settings-log-refresh-button">
+                            <input type="button" value="clear log" id="server-settings-log-clear-button">
+                        </div>
+                        <textarea id="server-settings-log-textarea" readonly spellcheck="false" placeholder="the log is empty"></textarea>
+                    </div>
+                </div>
             </div>
         </div>
 
     <a-toast style="visibility:hidden"></a-toast>
+
+    <!-- the one gradient every file card's progress ring strokes with. it has to live in a rendered
+         svg: a paint server inside a display:none subtree cannot be referenced in chromium -->
+    <svg width="0" height="0" style="position: absolute;" aria-hidden="true" focusable="false">
+        <defs>
+            <linearGradient id="chat-file-ring-gradient" x1="0" y1="0" x2="1" y2="1">
+                <stop class="chat-file-ring-stop-start" offset="0"></stop>
+                <stop class="chat-file-ring-stop-end" offset="1"></stop>
+            </linearGradient>
+        </defs>
+    </svg>
 
     <div id="body-container">
         <div id="communication-system-head-menu">
@@ -303,6 +399,14 @@
                             <span class="local-settings-hint">the keyboard key you hold down while speaking</span>
                         </span>
                         <input type="button" id="local-settings-ptt-key" value="Q">
+                    </div>
+                    <!-- the device list fills once the microphone permission has been granted -->
+                    <div class="local-settings-row local-settings-row-select" id="local-settings-mic-device-row" style="display: none;">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">microphone input</span>
+                            <span class="local-settings-hint">which microphone the app captures from</span>
+                        </span>
+                        <select id="local-settings-mic-device"></select>
                     </div>
                     <label class="local-settings-row">
                         <span class="local-settings-text">
@@ -533,8 +637,11 @@
                     </label>
                     <input type="range" id="chat-input-font-size-range" min="12" max="30">
                     <textarea spellcheck="false" id="chat-input-container-text-input" maxlength="900"></textarea>
-                    <div id="image-upload-preview">
-                    </div>
+                    <!-- the pending attachment previews (file chip, picture thumbnail) overlay the text
+                         box's top-left corner; attaching clears the typed text so the preview does not
+                         sit on top of it -->
+                    <div id="file-upload-preview" style="display: none;"></div>
+                    <div id="image-upload-preview" style="display: none;"><span id="image-upload-preview-remove" title="remove">&#10005;</span></div>
                 </div>
                 <div class="chat-controls-container">
                     <div id="play-pause-song-container">
@@ -548,7 +655,14 @@
                     <div id='upload-image-container'>
                         <div>
                             <label class="custom-file-upload-button" id="custom-file-upload-button-image">
-                                <input id="choose_image_input" onclick="this.value=null;" type="file" accept=".png,.jpg,.jpeg,.gif,.ico" style="display: none">
+                                <input id="choose_image_input" onclick="this.value=null;" type="file" accept="image/*" style="display: none">
+                            </label>
+                        </div>
+                    </div>
+                    <div id='upload-file-container'>
+                        <div>
+                            <label class="custom-file-upload-button" id="custom-file-upload-button-file" title="attach a file">
+                                <input id="choose-file-input" onclick="this.value=null;" type="file" style="display: none">
                             </label>
                         </div>
                     </div>
@@ -653,21 +767,15 @@
                     </div>
                 </div>
                 <div id="admin-password-input-container">
-                    <div style="display: inline-block;">
-                        <div style="display: inline-block;">
-                            <div class="text-input-container">
-                                <input type="text" disabled="" style="width: 120px" class="text-input-not-pretty" value="admin password">
-                            </div>
-                        </div>
-                        <div style="display: inline-block;">
-                            <div class="text-inputpoke-client-send-button-container">
-                                <input class="text-input-not-pretty" id="input-admin-password" type="password" value="">
-                            </div>
+                    <div class="dialog-form-grid">
+                        <label class="dialog-form-label" for="input-admin-password">password</label>
+                        <div class="dialog-form-field">
+                            <input class="text-input-not-pretty-2" id="input-admin-password" type="password" value="" placeholder="admin password">
                         </div>
                     </div>
-                </div>
-                <div style="text-align: right;">
-                    <input type="button" id="admin-password-send-button" class="button-1" value="send" style="right: 20px;">
+                    <div class="dialog-form-actions">
+                        <input type="button" id="admin-password-send-button" class="button-1" value="send">
+                    </div>
                 </div>
             </div>
         </div>
@@ -794,23 +902,27 @@
                     <div class="close-button" id="close-button-identity-string-use">
                     </div>
                 </div>
-                <div id="admin-password-input-container">
-                    <div>
-                        <div>
-                            <div class="text-input-container" style="padding-top: 0px;">
-                                <input type="text" disabled="" style="width: 164px" class="text-input-not-pretty" value="enter identity passphrase">
-                            </div>
-                        </div>
-                        <div>
-                            <div class="text-input-container">
-                                <textarea spellcheck="false" id="identity-string-use-textarea" placeholder="Your identity is your RSA keypair (2048-bit). A fresh random one is created every time client.html starts, so you normally connect with a different public key each time - if you just want to join and chat, ignore this. Tags and permissions, however, are tied to your public key. Entering your identity passphrase here re-creates the exact same keypair, so the server recognizes you and restores them. Generating the keypair may take a moment, depending on your CPU. The passphrase never leaves your device - the server does not know it." value="confirm"></textarea>
-                            </div>
-                        </div>
+                <div id="identity-file-mode">
+                    <p class="identity-dialog-explainer">
+                        An identity file (.lmn) holds an identity. Import one and this device connects as that identity - the server recognizes it and restores its tags and permissions. Pick the file (or drop it here); nothing happens until you confirm. Re-creating the keypair may take a moment. The file never leaves your device.</p>
+                    <div class="identity-dialog-button-row">
+                        <input type="button" class="button-1" id="choose-identity-file-button" value="choose identity file">
+                        <input type="file" id="identity-file-input" accept=".lmn" style="display: none;">
+                    </div>
+                    <p id="identity-file-status" class="identity-dialog-hint"></p>
+                    <div style="text-align: right;">
+                        <input type="button" id="identity-file-confirm-button" class="button-1" value="use this identity" style="right: 20px; display: none;">
                     </div>
                 </div>
-                <div style="text-align: right;">
-                    <input type="button" id="identity-string-use-confirm-button" class="button-1" value="generate" style="right: 20px;">
+                <div id="identity-string-mode" style="display: none;">
+                    <div class="text-input-container">
+                        <textarea spellcheck="false" id="identity-string-use-textarea" placeholder="Your identity is your RSA keypair (2048-bit). A fresh random one is created every time client.html starts, so you normally connect with a different public key each time - if you just want to join and chat, ignore this. Tags and permissions, however, are tied to your public key. Entering your identity passphrase here re-creates the exact same keypair, so the server recognizes you and restores them. Generating the keypair may take a moment, depending on your CPU. The passphrase never leaves your device - the server does not know it."></textarea>
+                    </div>
+                    <div style="text-align: right;">
+                        <input type="button" id="identity-string-use-confirm-button" class="button-1" value="generate" style="right: 20px;">
+                    </div>
                 </div>
+                <p id="identity-mode-toggle-link" class="identity-dialog-link">use an identity passphrase instead</p>
             </div>
         </div>
 
@@ -821,8 +933,12 @@
                     <div class="close-button" id="close-button-secret-identity-string">
                     </div>
                 </div>
-                <p style="font-family: sans-serif; font-size: 11px; padding: 8px; color: #21bccb;">
-                    This is your identity passphrase used to generate your current public private RSA keys. Never to be shared with others. Server or other clients must never have access to it. This is only for you, to re-generate same identity after next start of client, if needed, to preserve settings or permissions on some server after reconnect.</p>
+                <p class="identity-dialog-explainer">
+                    Your identity is the RSA keypair this device connects with - tags and permissions on a server are tied to it. Save it as a file to keep it, or to carry it to another device (import it there). Never share the file or the passphrase below: whoever has it becomes you.</p>
+                <div class="identity-dialog-button-row">
+                    <input type="button" class="button-1" id="export-identity-file-button" value="save identity file">
+                    <span id="export-identity-file-name" class="identity-dialog-hint"></span>
+                </div>
                 <p id="p-secret-identity-string"></p>
             </div>
         </div>
@@ -945,7 +1061,7 @@
                         color: #b8b8ff;
                         margin-bottom: 10px;
                     ">
-                        Sending file…
+                        sending ...
                     </div>
     
                     <!-- Progress Bar Background -->

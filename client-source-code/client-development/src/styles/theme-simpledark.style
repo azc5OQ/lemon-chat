@@ -1,4 +1,3 @@
-/* simpledark - dead-simple messenger theme for phones */
 
 * {
     margin: 0px;
@@ -30,7 +29,7 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     color: #f5f5f5;
 
-    /* strip sizing fallbacks; main.js apply_strip_scale overwrites these live as inline body variables */
+    /* member-strip sizes, fallbacks only, because main.js apply_strip_scale overwrites them live as inline body variables */
     --msgr-circle: 46px;
     --msgr-item: 62px;
     --msgr-strip: 98px;
@@ -78,7 +77,7 @@ div {
     cursor: pointer;
 }
 
-/* strip controls (js-created; layout.style hides them everywhere else) */
+/* strip control buttons unhidden with !important, because layout.style hides these js-created controls in every theme by default */
 #msgr-orientation-button,
 #msgr-neighbors-button,
 #msgr-me-button {
@@ -123,8 +122,6 @@ body.msgr-neighbors-only #msgr-neighbors-button {
     background-color: #2b5278;
 }
 
-/* the bar packs against the right edge - theme 6, settings 76, session 112, clear 148, slider 184 -
-   so the leftover room ends up as one clear space on the left instead of a hole in the middle */
 #msgr-scale-slider {
     display: inline-block !important;
     position: absolute;
@@ -188,7 +185,7 @@ body.msgr-neighbors-only #member-list-body .member-list-client:not(.in-current-c
     line-height: normal;
 }
 
-/* invisible bridge over the gap: without it the :hover chain breaks and the list closes */
+/* invisible hover bridge over the gap between the theme button and its dropdown list, because without it the :hover chain breaks and the list closes */
 #choose-theme-button-list::before {
     content: "";
     position: absolute;
@@ -218,7 +215,7 @@ body.msgr-neighbors-only #member-list-body .member-list-client:not(.in-current-c
     display: none !important;
 }
 
-/* !important throughout: the desktop js grid engine stamps inline width/height/display on these panels */
+/* the main panels are re-pinned with !important throughout, because the desktop js grid engine stamps inline width/height/display on them */
 #communication-system-container {
     display: none;
     position: absolute !important;
@@ -271,7 +268,9 @@ body.msgr-neighbors-only #member-list-body .member-list-client:not(.in-current-c
 
 #space-devider4 {
     display: flex !important;
-    position: absolute !important;
+    /* fixed, not absolute, because the desktop grid engine can make a panel the positioned
+       ancestor and the bar then indents to that panel instead of spanning the window */
+    position: fixed !important;
     bottom: 0 !important;
     top: auto !important;
     left: 0 !important;
@@ -298,7 +297,6 @@ body.msgr-neighbors-only #member-list-body .member-list-client:not(.in-current-c
     display: none;
 }
 
-/* people strip: the member-list mirror as a horizontal avatar row */
 
 #member-list-container {
     display: block !important;
@@ -800,7 +798,8 @@ body.msgr-vertical #current-client-description {
     background-color: #6398d1;
 }
 
-#upload-image-container {
+#upload-image-container,
+#upload-file-container {
     display: inline-block;
 }
 
@@ -811,7 +810,8 @@ body.msgr-vertical #current-client-description {
     margin: 0;
 }
 
-#custom-file-upload-button-image {
+#custom-file-upload-button-image,
+#custom-file-upload-button-file {
     display: block;
     width: 38px;
     height: 38px;
@@ -823,24 +823,34 @@ body.msgr-vertical #current-client-description {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aebdcc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='14' rx='3'/%3E%3Ccircle cx='9' cy='10' r='2'/%3E%3Cpath d='M3 17l5-4 3 2 4-4 6 5'/%3E%3C/svg%3E");
 }
 
-#custom-file-upload-button-image:active {
+#custom-file-upload-button-image:active,
+#custom-file-upload-button-file:active {
     background-color: #242f3d;
 }
 
-#image-upload-preview {
+/* the input bar is a single 44px line in this theme, so the pending previews compact to fit
+   inside it; div# is needed because layout.style's full-size preview rules load later and win ties */
+div#file-upload-preview {
+    top: 4px;
+    height: 36px;
+    padding: 2px 8px;
+    font-size: 11px;
+}
+div#file-upload-preview .file-upload-preview-icon {
+    width: 20px;
+    height: 26px;
+}
+div#file-upload-preview .file-upload-preview-size {
     display: none;
-    position: fixed;
-    left: 12px;
-    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
-    width: 96px;
-    height: 96px;
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-color: #17212b;
-    border-radius: 10px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
-    z-index: 4;
+}
+div#image-upload-preview {
+    top: 4px;
+    /* a share of the box, so the thumbnail follows the bar if it ever grows */
+    height: calc(100% - 8px);
+    max-height: 120px;
+    width: auto;
+    min-width: 28px;
+    max-width: 320px;
 }
 
 #play-pause-song-container, #stop-song, #custom-file-upload-button-song,
@@ -1007,8 +1017,7 @@ body.msgr-vertical #current-client-description {
 }
 
 body.android-app #verification-system {
-    /* !important: the reset path stamps inline display:block, which killed the flex
-       ordering and dropped the ::after headline below the cards */
+    /* display:flex needs !important, because the verification reset path stamps inline display:block */
     display: flex !important;
     flex-direction: column;
     align-items: center;
@@ -1037,15 +1046,11 @@ body.android-app #verification-system > div[style*="25vmin"] {
 body.android-app #container-2 {
     order: 3;
     min-width: 0 !important;
-    /* stable width: without it the flex column sizes by content, so the page went
-       narrow whenever the status text emptied and wide when it filled */
+    /* the verification column gets a fixed width, because without one the flex column resizes with the status text */
     width: 100%;
     max-width: 340px;
 }
 
-/* ===========================================================================
-   the login page as labelled sections rather than loose labels around a button
-   =========================================================================== */
 body.android-app #another-buttons-container {
     display: flex;
     flex-direction: column;
@@ -1056,7 +1061,6 @@ body.android-app #another-buttons-container {
     text-align: left;
 }
 
-/* flat here on purpose: this theme states its surfaces plainly, bluebell is the one that graduates */
 body.android-app #another-buttons-container > div {
     box-sizing: border-box;
     padding: 14px 16px 16px 16px;
@@ -1087,7 +1091,6 @@ body.android-app #connect-status-section::before {
     content: "status";
 }
 
-/* the page-wide "not connected" banner moves in here and closes the section off at the bottom */
 body.android-app #connect-status-section::after {
     content: "not connected";
     display: block;
@@ -1105,7 +1108,7 @@ body.android-app #another-buttons-sub-loading-container {
     padding: 0;
 }
 
-/* the text wrapper carries an inline height that clips the added line */
+/* the loading-text wrapper gets height:auto !important, because its inline height clips the extra line android adds */
 body.android-app #another-buttons-sub-loading-container > div:nth-child(2) {
     height: auto !important;
 }
@@ -1114,12 +1117,10 @@ body.android-app #another-buttons-loading-container-p {
     margin: 0;
 }
 
-/* the big page banner is gone - the state now rides on the STATUS line above */
 body.android-app #verification-system::before {
     display: none;
 }
 
-/* the detail lines belong to the status panel, so they carry no panel of their own */
 body.android-app #connect-status-section #connection-status-extra {
     display: block;
     margin: 0 !important;
@@ -1130,7 +1131,6 @@ body.android-app #connect-status-section #connection-status-extra {
     text-align: left;
 }
 
-/* on the lighter section panel the old translucent white read as switched-off text */
 body.android-app #connect-status-section #connection-status-extra p {
     text-align: left;
     color: #b3b9c1;
@@ -1156,7 +1156,6 @@ body.android-app #android-server-settings-container::before {
     content: "server";
 }
 
-/* the buttons fill their section instead of floating in the middle of the page */
 body.android-app #connect-button,
 body.android-app #android-server-settings-button {
     display: block;
@@ -1201,8 +1200,6 @@ body.android-app #another-buttons-sub-container > div {
     font-size: 13px;
 }
 
-/* same filled circle as the icons on the other end of the bar, so the row reads as one set.
-   the dots inside the glyph are painted in the circle's colour, not the page's */
 #android-settings-button {
     display: none;
     position: fixed;
@@ -1441,7 +1438,6 @@ a-toast {
     background-position: center;
     background-size: 11px 11px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1 1l10 10M11 1L1 11' stroke='%23f5f5f5' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
-    cursor: pointer;
 }
 
 .close-button:active, .close-button:hover {
@@ -1513,7 +1509,6 @@ a-toast {
     transform: none !important;
 }
 
-/* both description blocks stay dead - the popup card annoyed more than it helped */
 #current-channel-description,
 #current-client-description {
     display: none !important;
@@ -1589,7 +1584,8 @@ a-toast {
 #msgr-me-button,
 #choose-theme-button,
 #chat-input-container-send-chat-input,
-#custom-file-upload-button-image {
+#custom-file-upload-button-image,
+#custom-file-upload-button-file {
     transition: background-color 0.15s ease, transform 0.12s ease;
 }
 
@@ -1667,7 +1663,6 @@ a-toast {
     font-family: inherit !important;
 }
 
-/* session info: its own icon left of the me button; the card drops in under the bar */
 #msgr-session-button {
     display: inline-block !important;
     position: absolute;
@@ -1732,7 +1727,6 @@ a-toast {
 }
 
 
-/* live connection status detail: revealed in this theme */
 div#connection-status-extra {
     display: block;
     margin: 14px auto 0 auto;
@@ -1770,10 +1764,11 @@ div#connection-status-extra {
     50% { opacity: 0.5; }
 }
 
-/* local settings: full-screen sheet on mobile (div# outranks the layout.style panel rules) */
+/* the local-settings panel goes fullscreen in this theme; div# is needed because it outranks
+   layout.style's panel rules, which load later */
 div#local-settings-container {
     position: fixed;
-    /* above every bar button (the gear is 31), below context menus and toasts */
+    /* z-index 38 because the panel must sit above every bar button (the gear is 31) and below context menus and toasts */
     z-index: 38;
     left: 0;
     top: 0;
@@ -1807,9 +1802,8 @@ div#local-settings-container .local-settings-row {
     font-size: 16px;
 }
 
-/* the rows scroll, the title bar and the save button stay put. min-height:0 is what makes it
-   scroll at all - without it the flex item refuses to shrink under its content and just overflows,
-   which pushed the save button off the screen */
+/* the settings-rows area scrolls; min-height:0 is needed because a flex item does not shrink below
+   content size by default, which would push the save button off-screen */
 div#local-settings-container #local-settings-scroll {
     flex: 1 1 auto;
     min-height: 0;
@@ -1833,8 +1827,8 @@ div#local-settings-container #local-settings-close-button {
     to { opacity: 1; transform: none; }
 }
 
-/* per-channel unread counter: shown in this theme. the .hidden-by-count class is what the
-   renderer toggles, so a zero count still disappears */
+/* the channel unread badge is switched on in this theme; !important + p. specificity are needed
+   because layout.style hides it by default; the renderer toggles .unread-empty on zero count */
 p.single-channel-unread-number {
     display: inline-block !important;
     margin: 0 6px 0 auto;
@@ -1855,8 +1849,6 @@ p.single-channel-unread-number.unread-empty {
     display: none !important;
 }
 
-/* orientation, neighbours and avatar moved into local settings: drop their toolbar circles and
-   give that slot to the local-settings button, styled as one of them */
 #msgr-orientation-button,
 #msgr-neighbors-button,
 #msgr-me-button {
@@ -1878,7 +1870,6 @@ input#local-settings-button {
     background-repeat: no-repeat;
     background-position: center;
     background-size: 16px 16px;
-    /* the button carries value="local"; zero out the text so only the glyph shows */
     font-size: 0;
     color: transparent;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -1890,10 +1881,6 @@ input#local-settings-button:active {
     background-color: #31363d;
 }
 
-/* ===========================================================================
-   local settings, in this theme's own language: gradient surfaces, a gradient
-   border (padding-box/border-box), and real checkboxes instead of the browser's
-   =========================================================================== */
 div#local-settings-container {
     background: #1e2126;
     border: 1px solid transparent;
@@ -1917,7 +1904,6 @@ div#local-settings-container #local-settings-title {
     letter-spacing: 0.08em;
 }
 
-/* the row separates itself from the page by being a lighter gradient than it, not by an outline */
 div#local-settings-container .local-settings-row {
     display: flex;
     align-items: center;
@@ -1932,7 +1918,6 @@ div#local-settings-container .local-settings-row {
     transition: filter 0.14s ease;
 }
 
-/* a control needs the full width on a phone, so it drops under its label instead of squeezing it */
 div#local-settings-container .local-settings-row-select {
     flex-wrap: wrap;
     gap: 10px;
@@ -1948,8 +1933,8 @@ div#local-settings-container #local-settings-mic-mode-segmented {
     margin-left: auto;
 }
 
-/* brightness, not transform: a transform on an ancestor makes the android webview drop a native
-   dropdown the moment you touch it, which is why the mic-mode list never opened */
+/* settings-row press feedback uses brightness, not transform, because a transform on an ancestor
+   makes the android webview drop a native dropdown */
 div#local-settings-container .local-settings-row:active {
     filter: brightness(1.18);
 }
@@ -1966,7 +1951,6 @@ div#local-settings-container .local-settings-hint {
     color: #9aa0a8;
 }
 
-/* the browser checkbox is replaced by a rounded box that fills with the accent gradient */
 div#local-settings-container .local-settings-row input[type="checkbox"] {
     -webkit-appearance: none;
     appearance: none;
@@ -1988,7 +1972,6 @@ div#local-settings-container .local-settings-row input[type="checkbox"]:checked 
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
-/* the tick is drawn, not a glyph, so it scales cleanly */
 div#local-settings-container .local-settings-row input[type="checkbox"]:checked::after {
     content: "";
     position: absolute;
@@ -2001,7 +1984,6 @@ div#local-settings-container .local-settings-row input[type="checkbox"]:checked:
     transform: rotate(45deg);
 }
 
-/* the one full-width button in the panel */
 div#local-settings-container #local-settings-close-button {
     border: 1px solid transparent;
     border-radius: 12px;
@@ -2018,7 +2000,6 @@ div#local-settings-container #local-settings-close-button {
 }
 
 
-/* the unread counter on the channel circle in the strip */
 .member-list-channel-unread {
     position: absolute;
     top: -2px;
@@ -2045,17 +2026,14 @@ div#local-settings-container #local-settings-close-button {
 .member-list-channel {
     position: relative;
 }
-/* this theme HAS the people strip, so its two rows belong in local settings */
 div#local-settings-container .local-settings-row-strip {
     display: flex !important;
 }
 
-/* a keyboard key cannot be held on a phone - here the mic is an on-screen button */
 div#local-settings-container #local-settings-ptt-key-row {
     display: none !important;
 }
 
-/* the segments replace the select on touch */
 div#local-settings-container #local-settings-mic-mode {
     display: none;
 }
@@ -2089,7 +2067,6 @@ div#local-settings-container .local-settings-segment.segment-selected {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
-/* the small action button on the right of a row (avatar) */
 div#local-settings-container .local-settings-row-select input[type="button"]:not(.local-settings-segment) {
     flex: 0 0 auto;
     padding: 9px 16px;
@@ -2104,8 +2081,6 @@ div#local-settings-container .local-settings-row-select input[type="button"]:not
     cursor: pointer;
 }
 
-/* the mic must say what it is doing without being read: a green ring while you hold it,
-   a red one while it transmits on its own */
 #microphone-push-to-talk-button-touch-device.ptt-pressed {
     border-radius: 50%;
     filter: brightness(1.7) saturate(1.25);
@@ -2116,8 +2091,6 @@ div#local-settings-container .local-settings-row-select input[type="button"]:not
     background-color: #d05050;
     box-shadow: none;
 }
-/* "this person cannot receive audio": a muted speaker opposite the presence dot, so the two are
-   never confused. only drawn while the local setting is on and the client's audio is off */
 body.msgr-audio-availability #member-list-body .client-audio-state-completely-disabled .client-audio-availability {
     display: block;
     position: absolute;
@@ -2135,8 +2108,8 @@ body.msgr-audio-availability #member-list-body .client-audio-state-completely-di
     z-index: 4;
 }
 
-/* centred horizontally so it stops sitting on top of the seen indicator. the height is unchanged.
-   the shift variable is what the pressed state in layout.style reuses to stay centred */
+/* the mic button is centred with left:50% + shift; --mic-center-shift is a variable because
+   layout.style's pressed-state transform must repeat it to stay centred */
 #microphone-push-to-talk-button-touch-device {
     --mic-center-shift: -50%;
     right: auto;
@@ -2144,7 +2117,6 @@ body.msgr-audio-availability #member-list-body .client-audio-state-completely-di
     transform: translateX(-50%);
 }
 
-/* soft fade when the connect page and the chat swap places */
 #verification-system, #communication-system-container {
     animation: lemon-page-fade 0.28s ease;
 }
@@ -2154,14 +2126,13 @@ body.msgr-audio-availability #member-list-body .client-audio-state-completely-di
     to { opacity: 1; }
 }
 
-/* the legacy loading gif: the phase/status lines own the story on the phone */
 body.android-app #another-buttons-loading-container {
     display: none !important;
 }
 
 
-/* the open local-settings panel lives INSIDE the top bar's stacking context, so the bar
-   must outrank the corner gear (31) while the panel is open - otherwise the gear floats */
+/* the head menu bar is raised to 39 while the settings panel is open, because the panel lives
+   inside the bar's stacking context and the bar must outrank the gear button (31) */
 #communication-system-head-menu:has(#local-settings-container[style*="display: block"]) {
     z-index: 39;
 }

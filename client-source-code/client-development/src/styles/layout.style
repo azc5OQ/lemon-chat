@@ -1,8 +1,4 @@
-/* server-settings dialog: give it a title bar across the top (absolute so it takes no flow space)
-   and shrink the nav + content columns to sit below it. theme-independent so every theme matches. */
-/* the title bar's geometry is owned here. themes disagree about it - some leave it in flow, some
-   size it differently - and out of flow at 30px it sat ON TOP of the first nav item and the section
-   heading, which is why the dialog title itself was never visible */
+/* server-settings title bar: geometry is pinned here because the themes each size and place this bar differently */
 #server-settings-tab > #menu-bar-container {
     position: absolute !important;
     top: 0;
@@ -11,8 +7,7 @@
     height: 30px !important;
     z-index: 4;
 }
-/* both columns hang below the title bar. vertical-align alone did not do it: the line box is only as
-   tall as the columns, so "bottom" left them at the top of the dialog, under the bar */
+/* nav + content columns of the settings dialog: margin-top pushes them below the bar, because vertical-align cannot (the line box is only as tall as the columns) */
 #server-settings-tab > #server-settings-tab-subcontainer,
 #server-settings-tab > #server-settings-tab-subcontainer2 {
     height: calc(100% - 30px) !important;
@@ -20,42 +15,27 @@
     padding-top: 0;
     vertical-align: top;
 }
-/* the content column scrolls when a tab (e.g. a long identity list) overflows, instead of
-   spilling out of the dialog */
 #server-settings-tab > #server-settings-tab-subcontainer2 {
     overflow-y: auto;
     overflow-x: hidden;
 }
-/* let the owner resize the dialog by dragging its bottom-right corner (we are in a browser after
-   all). overflow:hidden is what enables the CSS resize grip; the theme min-width/height caps how
-   small it can get. the resized size is inline so it sticks; re-open still re-centers it. */
+/* makes the settings dialog user-resizable; overflow:hidden is required for the css resize grip to work */
 #server-settings-tab {
     overflow: hidden;
     resize: both;
 }
 
-/* ===========================================================================
-   server settings dialog
-
-   the whole dialog is laid out and painted here ONCE, from the --set-* custom
-   properties each theme declares on #server-settings-tab. a theme only picks
-   colours (about ten lines); it does not repeat the layout. the fallbacks in
-   each var() keep a theme that declares nothing looking sane rather than
-   falling back to browser defaults.
-   =========================================================================== */
-
-/* title bar: separated by a hairline instead of floating on the panel */
+/* the settings dialog is laid out and painted here once, from the --set-* variables each theme
+   declares, because that way a theme only picks colours instead of restyling the whole dialog */
 #server-settings-tab > #menu-bar-container {
     border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.09));
     box-sizing: border-box;
     padding: 0 10px;
 }
-/* some themes hide dialog titles outright, which left this one an empty strip with a lone ✕ in it.
-   scoped here so the other dialogs keep whatever their theme decided */
+/* forces the settings dialog's title visible, because some themes hide dialog titles; scoped so other dialogs keep their theme's choice */
 #server-settings-tab .dialog-title {
     display: block;
     margin: 0;
-    /* the bar is right-aligned in most themes, which pushed the title under the close button */
     text-align: left;
     padding-right: 30px;
     line-height: 30px;
@@ -65,13 +45,10 @@
     letter-spacing: 0.06em;
     color: var(--set-text, #e8e8e8);
 }
-/* the close control is an empty div wearing a decorative border with no glyph in it, which reads as
-   a stray shape. scoped to this dialog so the other popups keep whatever their theme gives them */
-/* positioned, NOT floated: a theme that leaves the title bar in flow (oldschool) lets a floated
-   button taller than the bar intrude on the next line, which pushed the content column below the nav */
+/* the settings close button is absolute, not floated, because a floated button taller than an in-flow bar (oldschool) pushes the content column below the nav */
 #server-settings-tab .close-button {
     position: absolute;
-    right: 8px;
+    right: 0;
     top: 50%;
     transform: translateY(-50%);
     width: 22px;
@@ -82,7 +59,6 @@
     font-size: 13px;
     line-height: 22px;
     text-align: center;
-    cursor: pointer;
 }
 #server-settings-tab .close-button::before {
     content: "\2715";
@@ -92,8 +68,6 @@
     color: var(--set-danger-strong, #ff6b6b);
 }
 
-/* nav column: a real list of rows, no disc bullets, with a hairline separating
-   it from the content pane */
 #server-settings-tab > #server-settings-tab-subcontainer {
     border-right: 1px solid var(--set-line, rgba(255, 255, 255, 0.09));
     box-sizing: border-box;
@@ -102,8 +76,6 @@
     list-style: none;
     margin: 0;
     padding: 10px 8px;
-    /* some themes give the list its own pale fill and a tinted rule, which reads as a stray block
-       sitting on the nav column rather than as part of it */
     background: transparent;
     border-bottom: 0;
 }
@@ -111,8 +83,7 @@
     padding: 7px 10px;
     margin-bottom: 2px;
     border-radius: var(--set-radius, 4px);
-    /* the accent bar for the selected tab lives here so selecting cannot change
-       the row's width and shuffle the list */
+    /* transparent border on the unselected tab row, so selecting (which colours it) cannot change the row's width */
     border-left: 2px solid transparent;
     cursor: pointer;
     transition: background-color 0.12s ease, color 0.12s ease;
@@ -124,12 +95,9 @@
 #server-settings-tab .server-settings-tab-li-selected:hover {
     background-color: var(--set-selected, rgba(255, 255, 255, 0.11));
     border-left-color: var(--set-accent, #5a8cff);
-    /* only themes that select with a solid fill (the old school ones) need to flip the text */
     color: var(--set-selected-text, inherit);
 }
 
-/* content pane + every tab inside it: one background and one padding, so tabs
-   stop disagreeing about where their content starts */
 #server-settings-tab > #server-settings-tab-subcontainer2 {
     background: var(--set-panel, #36393f);
 }
@@ -137,18 +105,16 @@
 #server-settings-tab-tags-container,
 #server-settings-general-settings-container,
 #server-settings-bans-container,
-#server-settings-identities-container {
+#server-settings-identities-container,
+#server-settings-log-container {
     background: transparent;
     box-sizing: border-box;
     padding: 16px 18px;
-    /* auto, not scroll - the default theme showed an empty scrollbar track on panes with nothing
-       to scroll */
+    /* auto, not scroll, because scroll draws an empty scrollbar track on panes with nothing to scroll */
     overflow-y: auto;
     overflow-x: hidden;
 }
 
-/* the upload / add-tag strips read as a form footer for their pane: separated by a rule, sharing the
-   pane's background instead of the pale blue fill the themes hand them */
 #server-settings-tab-upload-icon-file-input-container,
 #server-settings-tab-add-tag-details-container {
     display: flex;
@@ -161,7 +127,6 @@
     border-top: 1px solid var(--set-line, rgba(255, 255, 255, 0.09));
 }
 
-/* section heading: quiet and letterspaced, with a rule under it */
 #server-settings-tab .server-settings-general-header {
     margin: 0 0 10px 0;
     padding-bottom: 7px;
@@ -171,8 +136,6 @@
     text-transform: uppercase;
     color: var(--set-text, #e8e8e8);
 }
-
-/* --- the three tables (tags, identities, bans) share one rhythm ----------- */
 
 #server-settings-tab .tag-head-p-container,
 #server-settings-tab .identity-head-p-container {
@@ -184,8 +147,7 @@
 #server-settings-tab .identity-head-p {
     font-size: 10px;
     font-weight: 600;
-    /* kept tight on purpose: at the dialog's 750px minimum the labels have barely enough room,
-       and a wider tracking truncates them */
+    /* table header letter-spacing stays small, because wider tracking truncates the labels at the dialog's 750px minimum width */
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--set-muted, rgba(255, 255, 255, 0.45));
@@ -208,9 +170,7 @@
     color: var(--set-text, #e8e8e8);
 }
 
-/* header and row cells must carry the SAME horizontal padding. with flex-basis 0 the padding is added
-   on top of each column's share, so a cell padded differently from the one above it shifts the lot.
-   vertical padding is left to the theme, which is what sets each table's row height */
+/* identity-table cells: header and row cells get identical horizontal padding, because with flex-basis 0 a padding difference shifts the columns apart */
 #server-settings-tab .identity-head-p,
 #server-settings-tab .identity-entry-p,
 #server-settings-tab .identity-entry-alias,
@@ -220,8 +180,6 @@
     box-sizing: border-box;
 }
 
-/* these two hold a dot and a yes/no, so they are pinned to the width of their own labels. sharing
-   equally left every column too narrow and truncated the headers that carry real text */
 #server-settings-tab .identity-head-p-online,
 #server-settings-tab .identity-entry-p-online {
     flex: 0 0 56px;
@@ -231,8 +189,6 @@
     flex: 0 0 82px;
 }
 
-/* tags table: was fixed pixel widths per cell, which never lined up with the
-   icon box or the delete button. same flex columns as the identity table now */
 #server-settings-tab .tag-head-p-container,
 #server-settings-tab .server-settings-tag-entry {
     display: flex;
@@ -254,7 +210,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-/* icon column: wide enough for its own label, with the 22px icon centred under it */
 #server-settings-tab .tag-head-p-icon,
 #server-settings-tab .tag-settings-entry-img {
     flex: 0 0 58px;
@@ -263,16 +218,14 @@
 #server-settings-tab .tag-settings-entry-img {
     position: relative;
     height: 22px;
-    /* the themes hand this cell a margin from when the table was laid out with inline-blocks. the
-       flex gap owns the spacing now, and a leftover margin steals width from every column before it */
+    /* margin removed on the tag icon cell, because a theme margin here steals width from every column before it (the flex gap owns the spacing) */
     margin: 0;
     padding: 0;
     background-size: 22px 22px;
     background-repeat: no-repeat;
     background-position: center;
 }
-/* an unassigned icon should read as empty rather than as a mystery box. the cell always carries a
-   style attribute (url() with nothing in it), so match the data uri, not the presence of url */
+/* dashed placeholder for a tag with no icon; matched on "url(data" because the cell carries an empty url() even without an icon */
 #server-settings-tab .tag-settings-entry-img::after {
     content: "";
     position: absolute;
@@ -294,7 +247,6 @@
     width: 24px;
 }
 
-/* bans: the row is an info block plus a remove button */
 #server-settings-tab .ban-entry {
     display: flex;
     align-items: center;
@@ -310,9 +262,6 @@
     color: var(--set-muted, rgba(255, 255, 255, 0.45));
 }
 
-/* --- controls ------------------------------------------------------------- */
-
-/* every delete ✕ in the dialog reads the same */
 #server-settings-tab .identity-delete-button,
 #server-settings-tab .settings-entry-delete-button,
 #server-settings-tab .ban-entry-remove {
@@ -334,8 +283,6 @@
     color: var(--set-danger-strong, #ff6b6b);
 }
 
-/* text fields and dropdowns: these were raw browser widgets (white box, inset
-   3d border) in every theme */
 #server-settings-tab input[type="text"],
 #server-settings-tab input[type="password"],
 #server-settings-tab select,
@@ -345,8 +292,7 @@
     padding: 4px 7px;
     color: var(--set-field-text, inherit);
     background: var(--set-field, rgba(255, 255, 255, 0.06));
-    /* a theme supplies a whole border here when it wants a different idiom, e.g. an inset bevel
-       for the old school themes, instead of restating this rule */
+    /* border as one variable, so a theme can swap the whole border for its own idiom (e.g. an inset bevel) */
     border: var(--set-field-border, 1px solid var(--set-line, rgba(255, 255, 255, 0.14)));
     border-radius: var(--set-radius, 4px);
     font-family: inherit;
@@ -361,7 +307,6 @@
     box-shadow: 0 0 0 2px var(--set-accent-soft, rgba(90, 140, 255, 0.25));
 }
 
-/* buttons: input[type=button] carries its own UA look, so it is reset here */
 #server-settings-tab input[type="button"],
 #server-settings-tab .custom-file-upload-button {
     box-sizing: border-box;
@@ -377,20 +322,16 @@
     cursor: pointer;
     transition: filter 0.12s ease;
 }
-/* brightening a already-white button does nothing, so light themes darken instead */
 #server-settings-tab input[type="button"]:hover,
 #server-settings-tab .custom-file-upload-button:hover {
     filter: var(--set-button-hover-filter, brightness(1.14));
 }
-/* pressed state: modern themes just darken, the bevelled ones flip the bevel inwards */
 #server-settings-tab input[type="button"]:active,
 #server-settings-tab .custom-file-upload-button:active {
     filter: brightness(0.92);
     border: var(--set-button-border-active, var(--set-button-border, 1px solid transparent));
 }
 
-/* checkbox rows: accent-color tints the native control, which keeps the native
-   behaviour instead of faking one out of a div */
 #server-settings-tab .server-settings-general-row {
     display: flex;
     align-items: center;
@@ -416,20 +357,12 @@
     margin-top: 14px;
 }
 
-/* the tag chips in identity rows */
 #server-settings-tab .identity-tag-chip {
     background: var(--set-chip, rgba(120, 140, 180, 0.22));
     color: var(--set-text, #e8e8e8);
 }
 
-/* ===========================================================================
-   the other dialogs (client info, set alias, passwords, poke, volume, ...)
-
-   they share the settings dialog's title bar markup, so they get the same
-   chrome from the same --set-* variables. only the bar and its controls are
-   touched here - each dialog keeps whatever its theme gives the body.
-   =========================================================================== */
-
+/* title bars of the other dialogs (poke, passwords, aliases, ...): same chrome as the settings dialog, painted from the same --set-* vars, because they share the bar markup */
 #channel-properties-edit > #menu-bar-container,
 #channel-password-enter > #menu-bar-container,
 #admin-password-enter > #menu-bar-container,
@@ -441,7 +374,6 @@
 #identity-string-use-container-enter > #menu-bar-container,
 #secret-identity-string-container-enter > #menu-bar-container,
 #android-settings-warning > #menu-bar-container {
-    /* relative so the close button can be placed against it rather than floated out of it */
     position: relative;
     box-sizing: border-box;
     min-height: 30px;
@@ -465,8 +397,6 @@
     padding-right: 30px;
     line-height: 30px;
     text-align: left;
-    /* these inherited from the card, which meant the browser's default serif in near-black - the
-       titles were nearly invisible on the darker themes */
     font-family: var(--set-font, 'Raleway', sans-serif);
     font-size: 12px;
     font-weight: 600;
@@ -474,7 +404,6 @@
     color: var(--set-text, #e8e8e8);
 }
 
-/* the same ✕ the settings dialog got, instead of the empty bordered shape */
 #channel-properties-edit .close-button,
 #channel-password-enter .close-button,
 #admin-password-enter .close-button,
@@ -487,7 +416,7 @@
 #secret-identity-string-container-enter .close-button,
 #android-settings-warning .close-button {
     position: absolute;
-    right: 8px;
+    right: 0;
     top: 50%;
     transform: translateY(-50%);
     float: none;
@@ -499,7 +428,6 @@
     font-size: 13px;
     line-height: 22px;
     text-align: center;
-    cursor: pointer;
 }
 #channel-properties-edit .close-button::before,
 #channel-password-enter .close-button::before,
@@ -529,35 +457,44 @@
     color: var(--set-danger-strong, #ff6b6b);
 }
 
-/* --- channel properties / channel creation form --------------------------------------------- */
-
-/* one grid, so a label and its own control are always on the same row. it used to be two independent
-   inline-block columns whose rows only lined up while every row happened to be the same height,
-   which is why the themes each pinned .text-input-container-2 to a fixed height with !important */
-#channel-properties-input-container .dialog-form-grid {
+#admin-password-input-container {
+    display: block;
+    text-align: left;
+    padding: 14px 16px 16px;
+}
+/* the admin-password dialog sizes to its content, because the themes floor it at a fixed 219px which leaves a large empty area */
+#admin-password-enter {
+    min-height: 0;
+    height: auto;
+}
+#channel-properties-input-container .dialog-form-grid,
+#admin-password-input-container .dialog-form-grid {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     gap: 9px 14px;
     align-items: center;
-    /* a theme sizes the old right-hand column at 48%; the grid owns the widths now */
+    /* width:auto needed because a theme sizes the old right-hand column at 48% and the grid owns the widths now */
     width: auto;
     text-align: left;
 }
-#channel-properties-input-container .dialog-form-label {
+#channel-properties-input-container .dialog-form-label,
+#admin-password-input-container .dialog-form-label {
     font-family: var(--set-font, 'Raleway', sans-serif);
     font-size: 12px;
     color: var(--set-muted, rgba(255, 255, 255, 0.55));
     white-space: nowrap;
     cursor: pointer;
 }
-#channel-properties-input-container .dialog-form-field {
+#channel-properties-input-container .dialog-form-field,
+#admin-password-input-container .dialog-form-field {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
 }
 #channel-properties-input-container .dialog-form-field > input[type="text"],
-#channel-properties-input-container .dialog-form-field > input[type="number"] {
+#channel-properties-input-container .dialog-form-field > input[type="number"],
+#admin-password-input-container .dialog-form-field > input[type="password"] {
     flex: 1;
     min-width: 0;
     width: auto;
@@ -571,15 +508,16 @@
     accent-color: var(--set-accent, #5a8cff);
     cursor: pointer;
 }
-#channel-properties-input-container .dialog-form-actions {
+#channel-properties-input-container .dialog-form-actions,
+#admin-password-input-container .dialog-form-actions {
     margin-top: 16px;
     text-align: right;
 }
-#channel-properties-input-container .dialog-form-actions .button-1 {
+#channel-properties-input-container .dialog-form-actions .button-1,
+#admin-password-input-container .dialog-form-actions .button-1 {
     width: auto;
     min-width: 74px;
 }
-/* the swatch and its remove link carried their colours inline, so they never followed the theme */
 #channel-properties-icon-box {
     flex: 0 0 auto;
     width: 22px;
@@ -588,7 +526,7 @@
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
-    /* the muted colour, not the hairline one - a 22px dashed box in --set-line is invisible */
+    /* dashed border in the muted colour, because a 22px dashed box in --set-line is invisible */
     border: 1px dashed var(--set-muted, rgba(255, 255, 255, 0.45));
     border-radius: 3px;
     cursor: pointer;
@@ -608,8 +546,6 @@
     text-decoration: underline;
 }
 
-/* the volume dialog's card carried its colours inline (#262626 on #e0e0e0), so it stayed dark in
-   every theme including the light ones. it takes the same surface as the rest now */
 #adjust-volume-card {
     background: var(--set-panel, #262626);
     color: var(--set-text, #e0e0e0);
@@ -618,11 +554,8 @@
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
-/* drag-resize-chat included on purpose: it was the one handle still in INLINE flow,
-   and its 4px + the whitespace text node pushed the width:100% chat container 8px out
-   of its grid cell - the chat pane then slid under the info panel, which painted over
-   the chat scrollbar and made the thumb unclickable. absolute like its two siblings,
-   the cell contents fit exactly and no panel overlaps another */
+/* the three pane-resize handles are absolute, because drag-resize-chat in inline flow pushed the
+   chat pane under the info panel and made the chat scrollbar unclickable */
 #drag-resize-chat,
 #drag-resize-info,
 #drag-resize-channels {
@@ -640,10 +573,8 @@
 #drag-resize-channels:hover {
     border-left: 2px solid #696555;
 }
-/* the layout + identity buttons are styled per-theme (icons in default/light/mobile, text in
-   oldschool). this sheet loads AFTER the themes, so it must NOT set their base appearance/position
-   or it would override the theme rules - it only carries the theme-independent edit-mode indicator.
-   edit-mode indicator: a yellow ring, works on both the text and icon forms */
+/* layout-edit-mode ring on the layout button; only this indicator lives here, because this sheet
+   loads after the themes and any base styling would override their own button looks */
 body[data-layout-edit="1"] #layout-edit-button {
     color: #ffd23f;
     box-shadow: inset 0 0 0 2px #ffd23f;
@@ -657,8 +588,8 @@ body[data-layout-edit="1"] #space-devider4 {
     outline-offset: -2px;
     cursor: grab;
 }
-/* children go inert while re-arranging, so a drag can never get eaten by inner widgets;
-    it also makes the hovered panel itself the drop target for elementFromPoint-style hit tests */
+/* panel children go pointer-events:none while re-arranging, so a drag cannot be eaten by inner
+   widgets and the hovered panel itself is the drop target */
 body[data-layout-edit="1"] #space-devider1 *,
 body[data-layout-edit="1"] #space-devider2 *,
 body[data-layout-edit="1"] #space-devider-42 *,
@@ -672,20 +603,104 @@ body[data-layout-edit="1"] #space-devider4 * {
     outline: 2px solid #ffd23f !important;
     outline-offset: -2px;
 }
-/* every tree row contains its own floats (channel icon, tag icons, mute state are float:right).
-   without this the rows share one block formatting context, so a float poking out of its row
-   pushes the floats of every row below it - icons visibly drifted whenever a user row was
-   added/removed (e.g. someone switching channels) */
+/* each tree row contains its own float:right icons via overflow:hidden, because in a shared block
+   formatting context one row's float pushes the floats of every row below it */
 .single-channel,
 .connected-client {
     overflow: hidden;
 }
 
-/* identity-management tab (server settings). lives here, not in the theme files, so all themes get
-   it; text colours inherit from the themed server-settings panel. hidden until its nav item is picked */
+/* the identities pane of the settings dialog; styled here so every theme gets it, hidden until its nav item is picked */
 #server-settings-tab-identities {
     display: none;
     height: 100%;
+}
+
+.identity-dialog-explainer {
+    font-family: sans-serif;
+    font-size: 11px;
+    padding: 8px;
+    margin: 0;
+    color: #21bccb;
+}
+.identity-dialog-button-row {
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.identity-dialog-hint {
+    font-family: sans-serif;
+    font-size: 11px;
+    color: var(--set-muted, #9a9a9a);
+    word-break: break-word;
+}
+p.identity-dialog-hint {
+    margin: 2px 0 0 0;
+    padding: 0 8px;
+    /* min-height reserves the hint line, because the confirm button appearing under it would otherwise jump the layout */
+    min-height: 15px;
+}
+.identity-dialog-link {
+    font-family: sans-serif;
+    font-size: 11px;
+    color: var(--set-accent, #21bccb);
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 6px 8px;
+    margin: 0;
+    user-select: none;
+}
+/* the identity file buttons carry whole phrases, so they need width:auto; targeted by id because
+   the themes size .button-1 at 58px and an id outranks the class whatever the sheet order */
+#export-identity-file-button,
+#choose-identity-file-button,
+#identity-file-confirm-button {
+    width: auto;
+    min-width: 58px;
+    padding: 0 12px;
+}
+#identity-file-confirm-button {
+    margin-right: 20px;
+    margin-bottom: 4px;
+}
+
+#server-settings-tab-log {
+    display: none;
+    height: 100%;
+}
+#server-settings-log-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+#server-settings-log-container .server-settings-general-row {
+    flex: 0 0 auto;
+}
+#server-settings-log-buttons {
+    display: flex;
+    gap: 8px;
+    margin: 10px 0 8px 0;
+    flex: 0 0 auto;
+}
+#server-settings-log-textarea {
+    flex: 1 1 auto;
+    min-height: 100px;
+    width: 100%;
+    box-sizing: border-box;
+    resize: none;
+    /* the admin log textarea is monospace in every theme, because the date stamps must line up into a column */
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre;
+    overflow: auto;
+    background: var(--set-field, rgba(0, 0, 0, 0.18));
+    color: var(--set-field-text, var(--set-text, #e8e8e8));
+    border: 1px solid var(--set-field-border, rgba(255, 255, 255, 0.09));
+    border-radius: var(--set-radius, 4px);
+    padding: 8px;
+    outline: none;
 }
 .identity-head-p-container,
 .identity-entry {
@@ -716,16 +731,14 @@ body[data-layout-edit="1"] #space-devider4 * {
     color: #d05050;
     font-size: 13px;
     line-height: 1;
-    /* declared rather than left to the glyph + default button padding, so the header cell above
-       can claim the same width and the columns stay in line */
+    /* the delete button gets an explicit 24px, because the header cell above claims the same
+       width and the columns must stay in line */
     width: 24px;
     padding: 0;
 }
 .identity-delete-button:hover {
     color: #ff6b6b;
 }
-/* alias column: the field an admin types a display name into, with save and clear buttons. giving an
-   identity an alias is what REGISTERS it, which is why the row also carries a yes/no column */
 .identity-entry-alias {
     flex: 1.4;
     min-width: 0;
@@ -733,8 +746,6 @@ body[data-layout-edit="1"] #space-devider4 * {
     align-items: center;
     gap: 3px;
 }
-/* inherits its colours like the "+ tag" select beside it - the identity tab renders inside each
-   theme's own panel, so a hard-coded (or UA-default white) field looks pasted on in all but one */
 .identity-alias-input {
     flex: 1;
     min-width: 0;
@@ -754,8 +765,8 @@ body[data-layout-edit="1"] #space-devider4 * {
     font-size: 12px;
     line-height: 1;
 }
-/* the header is a separate flex row from the entries, so both sides must size identically or the
-   labels drift off their columns: the alias cell is wider, the last sits above a fixed-width button */
+/* identity-table header cells: sized exactly like the entry cells below (alias flex 1.4, delete 24px),
+   because the header is a separate flex row and any size difference drifts the labels off their columns */
 .identity-head-p-alias {
     flex: 1.4;
 }
@@ -770,7 +781,6 @@ body[data-layout-edit="1"] #space-devider4 * {
     color: #d05050;
 }
 
-/* tags column: chips (each removable) plus an "add tag" dropdown */
 .identity-entry-tags {
     flex: 1;
     min-width: 0;
@@ -811,17 +821,13 @@ body[data-layout-edit="1"] #space-devider4 * {
     width: 0px !important;
 }
 
-/* right-pane member list + the flatten toggle are OFF for every theme by default; a theme that wants
-   the "channels left, members right" split (currently termix) overrides these to show
-   them. the list itself is a live clone of the left tree's user rows, kept in sync from js, so it is
-   only populated while it is visible. */
+/* right-pane member list hidden by default, because only a theme that wants the
+   "channels left, members right" split (currently termix) unhides it */
 #member-list-container {
     display: none;
 }
-/* strip-only decorations the mirror sync stamps on member-list clones (channel captions
-   under names, the current-channel circle): themes that use the mirror as a plain member
-   list (termix) must not render them - only the strip themes (simpledark/bluebell) opt in with
-   higher-specificity rules */
+/* member-list channel captions + current-channel circle hidden by default, because these
+   strip decorations only make sense in the strip themes (simpledark/bluebell), which unhide them */
 .member-list-client-channel,
 .member-list-channel {
     display: none;
@@ -829,8 +835,8 @@ body[data-layout-edit="1"] #space-devider4 * {
 #channel-flatten-toggle-button {
     display: none;
 }
-/* strip controls (created from js): only a theme that uses the member strip
-   as its people surface (simpledark/bluebell) unhides them */
+/* js-created strip controls (orientation, neighbors, me, scale, session) hidden by default,
+   because only a theme that uses the member strip (simpledark/bluebell) unhides them */
 #msgr-orientation-button,
 #msgr-neighbors-button,
 #msgr-me-button,
@@ -840,20 +846,13 @@ body[data-layout-edit="1"] #space-devider4 * {
     display: none;
 }
 
-/* strip-only member-list extras the mirror sync emits for every theme that
-   shows the member list: the per-person channel caption and the current
-   channel's own circle. termix shows the member list too and rendered these
-   as stray text - hidden by default, the strip themes re-enable them with
-   higher-specificity rules */
 .member-list-client-channel,
 .member-list-channel {
     display: none;
 }
 
-/* the local client's name is an <input> where everybody else has a <p>. an input carries its own
-   font and padding, so the local row rendered TALLER than the rest and broke the rhythm of the
-   channel list. :where() keeps this at zero specificity: it only fills in for themes that do not
-   style these properties themselves, so no theme's own sizing is overridden. */
+/* the local client's name input inherits the row font/padding, because as an <input> it rendered
+   taller than the <p> rows around it; :where() keeps zero specificity so no theme sizing is overridden */
 :where(#connected-local-client-input) {
     font: inherit;
     line-height: inherit;
@@ -862,10 +861,8 @@ body[data-layout-edit="1"] #space-devider4 * {
     vertical-align: middle;
 }
 
-/* admin-registered alias (display name): rendered next to the username in every user row.
-   aliases have PRIORITY over usernames everywhere - when a row carries .has-alias the
-   alias is what people see and the raw username stays hidden. themes may refine the
-   alias look (the strip themes do); this is the baseline for all of them. */
+/* alias display in user rows: on .has-alias the alias span shows and the raw username hides,
+   because an admin-registered alias has priority over the username everywhere */
 .client-alias {
     display: none;
 }
@@ -883,14 +880,8 @@ body[data-layout-edit="1"] #space-devider4 * {
     vertical-align: top;
 }
 
-/* the set-alias dialog is new and no theme styles it, so its base look lives here (theme-independent,
-   like the identity tab above). hidden until the context menu opens it; neutral colors that read on
-   every theme. the inner title bar / close button inherit each theme's dialog styling.
-
-   the CARD must be the inner #set-alias-enter, not the container: the shared popup recentering code
-   pins whichever element holds #menu-bar-container with inline position:fixed + left/top. with the
-   background on the container, that pin tore the two apart - a small empty rounded box stayed behind
-   at the container's spot while the real fields rendered transparent somewhere else. */
+/* set-alias dialog: the container is a bare fullscreen layer and the card look sits on the inner
+   #set-alias-enter, because the recenter code pins the element holding #menu-bar-container */
 #set-alias-enter-container {
     display: none;
     position: fixed;
@@ -908,7 +899,6 @@ body[data-layout-edit="1"] #space-devider4 * {
     transform: translate(-50%, -50%);
     width: 300px;
     max-width: 94vw;
-    /* was a fixed dark fill, which read as a foreign panel in the light and old school themes */
     background: var(--set-panel, rgba(38, 48, 62, 0.97));
     color: var(--set-text, #f0f0f0);
     border: 1px solid var(--set-line, transparent);
@@ -918,8 +908,8 @@ body[data-layout-edit="1"] #space-devider4 * {
     box-sizing: border-box;
 }
 
-/* the js centering sets inline left/top on the card; the transform above would then shift it
-   half its size off. it only ever adds position:fixed inline, so key the reset off that. */
+/* transform cancelled once js pins the card with inline left/top, because the translate above
+   would shift it half its size off; the js only ever adds inline position:fixed, so key off that */
 #set-alias-enter[style*="position: fixed"] {
     transform: none;
 }
@@ -939,8 +929,6 @@ body[data-layout-edit="1"] #space-devider4 * {
     box-sizing: border-box;
 }
 
-/* android-only: gear tapped while connected. same card recipe as set-alias above
-   (container = invisible full-screen catcher, card = the themed --set-* panel) */
 #android-settings-warning-container {
     display: none;
     position: fixed;
@@ -967,9 +955,8 @@ body[data-layout-edit="1"] #space-devider4 * {
     box-sizing: border-box;
 }
 
-/* the shared recenter code (main.js) pins this with inline left/top the moment the
-   container opens; the translate above would then double-shift it off-screen. cancel
-   it once pinned, exactly like #set-alias-enter does */
+/* same transform cancel as #set-alias-enter, because the recenter code pins this card with
+   inline left/top too and the translate would double-shift it off-screen */
 #android-settings-warning[style*="position: fixed"] {
     transform: none;
 }
@@ -980,19 +967,8 @@ body[data-layout-edit="1"] #space-devider4 * {
     margin: 12px 2px 14px 2px;
 }
 
-/* --------------------------------------------------------------------------
-   typing indicator: one small chip per person, stacked at the bottom of the chat
-   column (#space-devider2), above the input row.
-
-   it hangs OUT OF FLOW on purpose. as a normal child it became a column of the
-   input row in the flex themes (bluebell) and shoved the text box sideways, and
-   it stretched the row in the old school ones - out of flow it cannot push or
-   resize anything, whatever a theme does with its input row.
-
-   colours come from the --set-* custom properties each theme already declares
-   for its dialogs, so the chip is that theme's own panel and text colour. the
-   fallbacks are for the two messenger themes, which declare none and are dark.
-   -------------------------------------------------------------------------- */
+/* the typing indicator is absolute (out of flow), because as a normal child it shoved the text box
+   sideways in the flex themes and stretched the row in the old school ones */
 #typing-indicator-container {
     display: none;
     position: absolute;
@@ -1008,8 +984,6 @@ body[data-layout-edit="1"] #space-devider4 * {
     overflow: hidden;
 }
 
-/* a chip that hugs its text: block so each person gets a row of their own,
-   fit-content so the background stops at the end of the sentence */
 .typing-indicator-line {
     display: block;
     width: -moz-fit-content;
@@ -1030,14 +1004,10 @@ body[data-layout-edit="1"] #space-devider4 * {
     letter-spacing: 0.015em;
 }
 
-/* the name reads a touch quieter than the dots, without dimming the whole chip */
 .typing-indicator-line > span:first-child {
     opacity: 0.92;
 }
 
-/* the three dots fill in one after another - . .. ... - then start over. each dot
-   is its own span, so only the dots repaint and the name never re-renders.
-   fixed width per dot keeps the chip from twitching as they come and go */
 .typing-indicator-dots {
     display: inline-block;
     margin-left: 1px;
@@ -1061,21 +1031,18 @@ body[data-layout-edit="1"] #space-devider4 * {
     100% { opacity: 1; }
 }
 
-/* the chip is positioned against the chat column; make sure that column is a
-   positioning context in every theme (most already are, via div{position:relative}) */
+/* the chat column is made a positioning context in every theme, because the absolute typing
+   indicator is placed against it */
 #space-devider2 {
     position: relative;
 }
 
 
-/* mic is hot: glowing aura on whichever mic control is visible */
 .mic-transmitting {
     box-shadow: 0 0 6px 2px rgba(120, 230, 140, 0.9), 0 0 16px 6px rgba(120, 230, 140, 0.45);
     border-radius: 50%;
 }
 
-/* optional avatar circle next to chat messages (local setting); the sibling rule only
-   changes the name's layout when an avatar is actually rendered before it */
 .chat-message-avatar {
     width: 26px;
     height: 26px;
@@ -1091,8 +1058,6 @@ body[data-layout-edit="1"] #space-devider4 * {
     vertical-align: middle;
 }
 
-/* the local-settings panel. it borrows the server-settings dialog's --set-* palette, which every
-   theme already declares, so it matches whatever theme is active instead of being one hardcoded look */
 #local-settings-container {
     position: absolute;
     z-index: 60;
@@ -1108,8 +1073,8 @@ body[data-layout-edit="1"] #space-devider4 * {
     box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
 }
 
-/* the panel's own title bar: themes style menu-bar-container for the big dialogs, so this
-   scoped rule overrides that inheritance and gives the drag handle a real grabbable surface */
+/* title bar of the local-settings panel, scoped, because the themes style menu-bar-container
+   for the big dialogs and the drag handle here needs its own grabbable surface */
 #local-settings-container div#menu-bar-container {
     display: block;
     position: relative;
@@ -1137,8 +1102,6 @@ body[data-layout-edit="1"] #space-devider4 * {
     color: var(--set-text, #e8e8e8);
 }
 
-/* the label sits on the left and the control on the right edge, so every control lines up in one
-   column no matter how long the label is. the control is last in the markup, which is what does it */
 .local-settings-row {
     display: flex;
     align-items: center;
@@ -1157,8 +1120,6 @@ body[data-layout-edit="1"] #space-devider4 * {
     background: var(--set-row-hover, rgba(255, 255, 255, 0.05));
 }
 
-/* this panel is the local twin of the server-settings dialog, so its controls are built from the
-   same --set-* variables. left to the browser they were a different blue and a different font */
 #local-settings-container .local-settings-row input[type="checkbox"] {
     flex: 0 0 auto;
     width: 15px;
@@ -1168,8 +1129,8 @@ body[data-layout-edit="1"] #space-devider4 * {
     cursor: pointer;
 }
 
-/* this file is included after every theme, so the segments are excluded by name - otherwise these
-   would outrank the touch themes' own segment rules and paint the unselected half as selected */
+/* local-settings buttons, excluding the segment halves by name, because this file loads after
+   every theme and would otherwise paint the touch themes' unselected segment half as selected */
 #local-settings-container input[type="button"]:not(.local-settings-segment) {
     box-sizing: border-box;
     padding: 6px 13px;
@@ -1207,18 +1168,22 @@ body[data-layout-edit="1"] #space-devider4 * {
     cursor: pointer;
 }
 
+/* the microphone picker can carry long device names, so it is capped and ellipsised
+   instead of stretching the panel */
+#local-settings-mic-device {
+    max-width: 220px;
+    text-overflow: ellipsis;
+}
+
 #local-settings-container select:focus {
     border-color: var(--set-accent, #5a8cff);
     box-shadow: 0 0 0 2px var(--set-accent-soft, rgba(90, 140, 255, 0.25));
 }
 
-/* the server-settings rows are 12px; the label matches them and the hint sits a step below */
 .local-settings-label {
     font-size: 12px;
 }
 
-/* takes the slack so the control is pushed right; min-width lets long hints wrap instead of
-   stretching the panel */
 .local-settings-text {
     display: flex;
     flex-direction: column;
@@ -1239,20 +1204,16 @@ body[data-layout-edit="1"] #space-devider4 * {
     flex: 0 0 auto;
 }
 
-/* the panel can outgrow the window once every row carries a description */
 #local-settings-scroll {
     max-height: 62vh;
     overflow-y: auto;
     overscroll-behavior: contain;
 }
 
-/* the touch-only replacement for the mic-mode select; the mobile themes reveal it */
 #local-settings-mic-mode-segmented {
     display: none;
 }
 
-/* the profile avatar is a fixed circle, so with no picture it left a hole in the card. it carries
-   the first letter of the name until one arrives - every theme sizes the circle itself */
 #current-client-avatar.avatar-empty {
     display: flex;
     align-items: center;
@@ -1272,7 +1233,6 @@ body[data-layout-edit="1"] #space-devider4 * {
     display: none;
 }
 
-/* the X borrows the dialog's close-button look (glyph included, via ::before) */
 #local-settings-container .close-button {
     width: 22px;
     height: 22px;
@@ -1297,15 +1257,10 @@ body[data-layout-edit="1"] #space-devider4 * {
     margin: 2px 14px 0 14px;
 }
 
-/* every theme sizes this icon itself, and this file is included last - a base size here would
-   outrank all of them and blow the button out of its 25px slot */
-
-/* live connection status detail on the login page - hidden by default, mobile themes reveal it */
 #connection-status-extra {
     display: none;
 }
 
-/* saved servers, above the address/port fields on the login page */
 #server-bookmarks-container {
     display: flex;
     align-items: center;
@@ -1346,39 +1301,33 @@ body[data-layout-edit="1"] #space-devider4 * {
     cursor: pointer;
 }
 
-/* mic button feedback: pressed while push-to-talk is held, pulsing while continuous is live.
-   the shift keeps whatever centring the theme applied - a bare scale() would drop it and the
-   button would jump sideways on every press. themes that do not centre leave the shift at 0 */
+/* mic button pressed state: the transform repeats the theme's --mic-center-shift, because a bare
+   scale() would drop the theme's centring translate and the button would jump sideways on every press */
 #microphone-push-to-talk-button-touch-device.ptt-pressed {
     transform: translateX(var(--mic-center-shift, 0px)) scale(0.9);
     filter: brightness(1.6);
 }
 
-/* transmitting: the button goes red. a glow around it was easy to miss */
 #microphone-push-to-talk-button-touch-device.mic-continuous-active {
     background-color: #d03a3a;
     border-radius: 50%;
 }
 
-/* desktop mic label gets the same pressed feel */
 #toggle-microphone-label:active {
     transform: scale(0.92);
     filter: brightness(1.5);
 }
-/* the X sits at the bar's right edge; the bar is the drag handle so the button must not drag */
 #local-settings-container div#menu-bar-container {
     position: relative;
 }
 
 #local-settings-container #local-settings-x-button {
     position: absolute;
-    right: 8px;
+    right: 0;
     top: 50%;
     transform: translateY(-50%);
-    cursor: pointer;
 }
 
-/* fade out, matching the mobile fade in - display:none alone made it disappear abruptly */
 div#local-settings-container.closing {
     animation: local-settings-fade-out 0.2s ease forwards;
 }
@@ -1387,31 +1336,24 @@ div#local-settings-container.closing {
     from { opacity: 1; transform: none; }
     to { opacity: 0; transform: translateY(14px); }
 }
-/* per-channel unread counter: hidden by default, the mobile themes reveal it (it does not suit
-   the desktop channel tree). the inline style="display:none" is the zero-count state */
+/* channel unread-count badge hidden by default, because only a theme that draws it
+   (simpledark/bluebell) opts back in with a higher-specificity !important rule */
 .single-channel-unread-number {
     display: none !important;
 }
-/* the people-strip rows only mean anything in the strip themes (simpledark / bluebell),
-   which reveal them again; elsewhere there is no strip to orient or filter */
 .local-settings-row-strip {
     display: none !important;
 }
-/* rows that hold a control rather than a checkbox */
 .local-settings-row-select {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
 }
-/* the "cannot receive audio" badge on a strip circle. only simpledark and bluebell draw it, and
-   only while the local setting is on - everywhere else it stays out of the way */
 .client-audio-availability {
     display: none;
 }
 
-/* "your last private message has been read": one eye in the corner of the conversation, not one
-   per bubble. hidden again the moment you send something new */
 #chat-seen-indicator {
     display: none;
     position: absolute;
@@ -1432,8 +1374,513 @@ div#local-settings-container.closing {
     display: block;
 }
 
-/* audio is not available yet. shown rather than hidden, so tapping it can explain why */
 #microphone-push-to-talk-button-touch-device.mic-unavailable {
     filter: grayscale(1) brightness(0.65);
     opacity: 0.55;
+}
+
+/* file-upload paperclip container: stays clickable even while the uploads-off class dims it,
+   because the click handler explains why uploads are off */
+#upload-file-container {
+    display: inline-block;
+    vertical-align: top;
+}
+
+#custom-file-upload-button-file {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.4 11.1 12.5 20a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6l8.2-8.2'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+#custom-file-upload-button-file.chat-file-uploads-off {
+    opacity: 0.4;
+    filter: grayscale(1);
+}
+
+.chat-drop-active {
+    outline: 2px dashed var(--set-accent, #5a8cff);
+    outline-offset: -2px;
+}
+
+/* the text box container anchors the pending previews, because they are placed absolutely inside it */
+#chat-input-file-input-container {
+    position: relative;
+}
+
+/* the pending-file chip overlays the text box's top-left corner; absolute, because in flow it
+   broke the input row. attaching also clears the typed text so the chip does not cover it */
+#file-upload-preview {
+    display: none;
+    position: absolute;
+    left: 10px;
+    top: 8px;
+    z-index: 5;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    width: 260px;
+    max-width: calc(100% - 20px);
+    height: 56px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+    background: var(--set-panel, rgba(16, 20, 38, 0.92));
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.10));
+    color: var(--set-text, #f0f2f7);
+    font-family: var(--set-font, sans-serif);
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+#file-upload-preview .file-upload-preview-icon {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 36px;
+}
+
+#file-upload-preview .file-upload-preview-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+#file-upload-preview .file-upload-preview-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#file-upload-preview .file-upload-preview-size {
+    opacity: 0.65;
+    font-size: 11px;
+}
+
+#file-upload-preview .file-upload-preview-remove {
+    flex: 0 0 auto;
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: 4px;
+    opacity: 0.7;
+}
+
+#file-upload-preview .file-upload-preview-remove:hover {
+    opacity: 1;
+    background: var(--set-row-hover, rgba(255, 255, 255, 0.08));
+}
+
+/* the pending-picture thumbnail takes the same spot as the file chip, because only one
+   attachment can be pending at a time. the width follows the picture's own aspect ratio
+   (js stamps the real one inline), because a fixed box cover-cropped most images to a sliver;
+   the clamps stop panoramas and tall screenshots from degenerating */
+#image-upload-preview {
+    display: none;
+    position: absolute;
+    left: 10px;
+    top: 8px;
+    z-index: 5;
+    width: auto;
+    aspect-ratio: 3 / 2;
+    min-width: 40px;
+    max-width: 200px;
+    height: 56px;
+    margin: 0;
+    box-sizing: border-box;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.10));
+    background-color: var(--set-panel, rgba(16, 20, 38, 0.92));
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: cover;
+}
+
+/* the picture's cancel cross sits on the thumbnail's corner; the dark circle keeps it readable
+   on any image */
+#image-upload-preview-remove {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    text-align: center;
+    font-size: 10px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: #ffffff;
+    cursor: pointer;
+    user-select: none;
+}
+
+#image-upload-preview-remove:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.chat-file-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    box-sizing: border-box;
+    max-width: 420px;
+    min-width: 240px;
+    margin: 4px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--set-panel, rgba(16, 20, 38, 0.92));
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.10));
+    color: var(--set-text, #f0f2f7);
+    font-family: var(--set-font, sans-serif);
+    vertical-align: top;
+    transition: opacity 0.3s ease;
+}
+
+.chat-file-card .chat-file-icon-wrap {
+    flex: 0 0 auto;
+}
+
+.chat-file-card .chat-file-icon {
+    display: block;
+    width: 40px;
+    height: 48px;
+}
+
+.chat-file-card .chat-file-info {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.chat-file-card .chat-file-info p {
+    margin: 0;
+    padding: 0;
+    line-height: 1.35;
+}
+
+.chat-file-card .chat-file-name {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-file-card .chat-file-size {
+    font-size: 12px;
+    opacity: 0.65;
+}
+
+.chat-file-card .chat-file-status {
+    font-size: 11px;
+    font-style: italic;
+    opacity: 0.75;
+}
+
+.chat-file-card .chat-file-status:empty {
+    display: none;
+}
+
+.chat-file-card.imgnotsentyet .chat-file-status::after {
+    content: "sending ...";
+}
+
+.chat-file-card.chat-file-failed {
+    border-color: var(--set-danger, #d9534f);
+}
+
+.chat-file-card.chat-file-failed .chat-file-status {
+    color: var(--set-danger, #d9534f);
+    opacity: 1;
+}
+
+.chat-file-card.chat-file-deleted {
+    min-width: 0;
+    opacity: 0.6;
+}
+
+.chat-file-card .chat-file-download {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 20px 20px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12'/%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3Cpath d='M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2'/%3E%3C/svg%3E");
+    opacity: 0.75;
+}
+
+.chat-file-card .chat-file-download:hover:enabled {
+    opacity: 1;
+    background-color: var(--set-row-hover, rgba(255, 255, 255, 0.10));
+}
+
+.chat-file-card .chat-file-download:disabled {
+    opacity: 0.25;
+    cursor: default;
+}
+
+.chat-file-card.chat-file-receiving .chat-file-download,
+.chat-file-card.chat-file-failed .chat-file-download {
+    display: none;
+}
+
+/* file-receive progress ring: js animates stroke-dashoffset from 97.4 (full circle) to 0 (done) */
+.chat-file-card .chat-file-progress {
+    display: none;
+    flex: 0 0 auto;
+    position: relative;
+    width: 40px;
+    height: 40px;
+}
+
+.chat-file-card.chat-file-receiving .chat-file-progress {
+    display: block;
+}
+
+.chat-file-card .chat-file-progress svg {
+    width: 40px;
+    height: 40px;
+    transform: rotate(-90deg);
+}
+
+.chat-file-card .chat-file-ring-track,
+.chat-file-card .chat-file-ring-bar {
+    fill: none;
+    stroke-width: 3.5;
+}
+
+.chat-file-card .chat-file-ring-track {
+    stroke: var(--set-line, rgba(255, 255, 255, 0.14));
+}
+
+.chat-file-card .chat-file-ring-bar {
+    stroke: url(#chat-file-ring-gradient);
+    stroke-linecap: round;
+    stroke-dasharray: 97.4;
+    stroke-dashoffset: 97.4;
+    transition: stroke-dashoffset 0.15s linear;
+}
+
+/* incoming-picture placeholder img hidden while it has no src, because a src-less img paints a broken-image glyph */
+.chat-picture-img:not([src]) {
+    display: none;
+}
+
+.chat-picture-progress {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.chat-picture-progress-ring {
+    position: relative;
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+}
+
+.chat-picture-progress-ring svg {
+    width: 40px;
+    height: 40px;
+    transform: rotate(-90deg);
+}
+
+.chat-picture-progress-label {
+    font-size: 11px;
+    color: var(--set-muted, rgba(255, 255, 255, 0.55));
+}
+
+.chat-picture-progress .chat-file-ring-track,
+.chat-picture-progress .chat-file-ring-bar {
+    fill: none;
+    stroke-width: 3.5;
+}
+
+.chat-picture-progress .chat-file-ring-track {
+    stroke: var(--set-line, rgba(255, 255, 255, 0.14));
+}
+
+.chat-picture-progress .chat-file-ring-bar {
+    stroke: url(#chat-file-ring-gradient);
+    stroke-linecap: round;
+    stroke-dasharray: 97.4;
+    stroke-dashoffset: 97.4;
+    transition: stroke-dashoffset 0.15s linear;
+}
+
+.chat-picture-progress .chat-file-progress-text {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 40px;
+    height: 40px;
+    line-height: 40px;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--set-text, #e8e8e8);
+}
+
+/* ring-gradient stops: the gradient lives in a page-level svg in template.html, because chromium
+   does not render a paint server defined inside a display:none subtree */
+.chat-file-ring-stop-start {
+    stop-color: var(--set-accent, #2f5bff);
+}
+
+.chat-file-ring-stop-end {
+    stop-color: #4fd6ff;
+}
+
+.chat-file-card .chat-file-progress-text {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 40px;
+    height: 40px;
+    line-height: 40px;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+/* file-type icon parts, keyed on the svg's inner classes, because the same svg is reused in the
+   chat card and in the pending upload chip */
+.chat-file-icon-page {
+    fill: #8a94a6;
+}
+
+.chat-file-icon-fold {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.55);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+}
+
+.chat-file-icon-badge {
+    fill: #6c7686;
+}
+
+.chat-file-icon-text {
+    fill: #ffffff;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10.5px;
+    font-weight: 700;
+}
+
+.chat-file-kind-archive .chat-file-icon-badge { fill: #e0a21b; }
+.chat-file-kind-pdf .chat-file-icon-badge { fill: #e4533f; }
+.chat-file-kind-document .chat-file-icon-badge { fill: #3b7ddd; }
+.chat-file-kind-sheet .chat-file-icon-badge { fill: #2e9e5b; }
+.chat-file-kind-slides .chat-file-icon-badge { fill: #e46a2b; }
+.chat-file-kind-code .chat-file-icon-badge { fill: #7b5bd6; }
+.chat-file-kind-audio .chat-file-icon-badge { fill: #d64b9b; }
+.chat-file-kind-video .chat-file-icon-badge { fill: #c9402a; }
+.chat-file-kind-image .chat-file-icon-badge { fill: #22a0b6; }
+.chat-file-kind-executable .chat-file-icon-badge { fill: #555e6b; }
+
+#server-settings-tab .server-settings-general-row-number {
+    justify-content: space-between;
+}
+
+#server-settings-tab .server-settings-general-row-number input[type="number"] {
+    width: 70px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    background: var(--set-field, rgba(0, 0, 0, 0.25));
+    color: var(--set-field-text, var(--set-text, #f0f2f7));
+    font-family: var(--set-font, inherit);
+    font-size: 13px;
+}
+
+#server-settings-tab .server-settings-general-warning {
+    margin: 2px 0 8px 0;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--set-danger, #d9534f);
+    background: var(--set-danger-soft, rgba(217, 83, 79, 0.12));
+    color: var(--set-text, #f0f2f7);
+    font-family: var(--set-font, inherit);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+#server-settings-country-blocking-container {
+    margin: 2px 0 8px 24px;
+}
+
+#server-settings-country-block-select {
+    width: 100%;
+    max-width: 340px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    background: var(--set-field, rgba(0, 0, 0, 0.25));
+    color: var(--set-field-text, var(--set-text, #f0f2f7));
+    font-family: var(--set-font, inherit);
+    font-size: 12px;
+}
+
+#server-settings-blocked-countries-list {
+    margin-top: 6px;
+    max-width: 340px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.blocked-country-entry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: var(--set-font, inherit);
+    color: var(--set-text, #f0f2f7);
+}
+
+.blocked-country-entry:hover {
+    background: var(--set-row-hover, rgba(255, 255, 255, 0.06));
+}
+
+.blocked-country-flag {
+    flex: 0 0 auto;
+    width: 23px;
+    height: 15px;
+    border-radius: 2px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.blocked-country-name {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.blocked-country-remove {
+    flex: 0 0 auto;
+    cursor: pointer;
+    padding: 1px 5px;
+    border-radius: 3px;
+    opacity: 0.7;
+}
+
+.blocked-country-remove:hover {
+    opacity: 1;
+    background: var(--set-danger-soft, rgba(217, 83, 79, 0.15));
+}
+
+.blocked-country-empty {
+    margin: 4px 0;
+    font-size: 11px;
+    font-style: italic;
+    opacity: 0.6;
 }

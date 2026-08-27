@@ -356,6 +356,32 @@ body {
     background: #2a2c30;
     color: var(--tmx-muted);
 }
+
+/* the input bar is a single 44px line in this theme, so the pending previews compact to fit
+   inside it; div# is needed because layout.style's full-size preview rules load later and win ties */
+div#file-upload-preview {
+    top: 4px;
+    height: 36px;
+    padding: 2px 8px;
+    font-size: 11px;
+}
+div#file-upload-preview .file-upload-preview-icon {
+    width: 20px;
+    height: 26px;
+}
+div#file-upload-preview .file-upload-preview-size {
+    display: none;
+}
+div#image-upload-preview {
+    top: 4px;
+    /* a share of the box, not a fixed size, because the text box is resizable here and a
+       36px thumbnail looked lost in a tall box */
+    height: calc(100% - 8px);
+    max-height: 120px;
+    width: auto;
+    min-width: 28px;
+    max-width: 320px;
+}
 #chat-input-file-input-container {
     background: transparent;
     border-radius: 8px;
@@ -685,7 +711,7 @@ body {
     display: none;
 }
 
-/* dialog colours: layout.style lays out and paints every dialog from these */
+/* this theme's --set-* dialog palette, because layout.style lays out and paints every dialog from these variables */
 :root {
 
     --set-font: 'Segoe UI', 'Raleway', sans-serif;
@@ -739,7 +765,6 @@ body {
 }
 
 #idle-clients-container { display: none; }
-#image-upload-preview { display: none; }
 .client-mute-state { display: none; }
 .client-ignore-state { display: none; }
 .marquee-music-playing-container { display: none; }
@@ -957,7 +982,7 @@ body {
     gap: 8px;
     padding-top: 8px;
 }
-#play-pause-song-container, #upload-image-container { display: flex; align-items: center; }
+#play-pause-song-container, #upload-image-container, #upload-file-container { display: flex; align-items: center; }
 
 a-toast {
     position: fixed;
@@ -1310,7 +1335,6 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
     width: 22px;
     height: 22px;
     border-radius: 4px;
-    cursor: pointer;
     background: transparent;
 }
 .close-button::before {
@@ -1555,8 +1579,6 @@ input[type="radio"] {
     line-height: 40px;
     letter-spacing: 0.2px;
 }
-
-/* admin settings modal; layout.style pins #menu-bar-container position:absolute */
 
 #server-settings-tab-subcontainer,
 #server-settings-tab-subcontainer2 {
@@ -2132,9 +2154,6 @@ input[type="radio"] {
     }
 }
 
-/* sound effects, country flags and always-on mic moved into local settings; this button
-   takes the first freed slot and the buttons to its right slid back by two slots */
-/* 116px is the always-broadcasting mic button's slot; this sat exactly on top of it */
 #local-settings-button {
     position: absolute;
     z-index: 1;
@@ -2150,14 +2169,11 @@ input[type="radio"] {
     background-position: center center;
     background-color: transparent;
     background-size: 17px 17px;
-    /* the button carries value="local": hide the text so only the glyph shows */
     font-size: 0;
     color: transparent;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa5b1' stroke-width='2' stroke-linecap='round'%3E%3Cline x1='4' y1='7' x2='20' y2='7'/%3E%3Cline x1='4' y1='12' x2='20' y2='12'/%3E%3Cline x1='4' y1='17' x2='20' y2='17'/%3E%3Ccircle cx='9' cy='7' r='2.2'/%3E%3Ccircle cx='15' cy='12' r='2.2'/%3E%3Ccircle cx='8' cy='17' r='2.2'/%3E%3C/svg%3E");
 }
 
-/* the other toolbar icons hover through one shared id list; this one was added later
-   and was the only icon that stayed flat under the cursor */
 #local-settings-button:hover {
     background-color: var(--tmx-hover) !important;
 }

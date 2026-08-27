@@ -4,12 +4,11 @@
     position: relative;
 }
 
-/* slim scrollbar — firefox only */
-
+/* slim scrollbars for firefox, because it ignores the ::-webkit-scrollbar rules below */
 @supports (-moz-appearance: none) {
     * {
-        scrollbar-width: thin;  /* firefox: slim bar instead of the chunky os default */
-        scrollbar-color: rgba(255, 255, 255, 0.25) transparent;  /* firefox: thumb colour, track colour */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
     }
 }
 
@@ -747,7 +746,7 @@ a-toast:hover {
 }
 
 #chat-input-file-input-container {
-    width: calc(100% - 175px);
+    width: calc(100% - 210px); /* 210px is reserved because the controls row incl. the paperclip must fit beside the text box */
     display: inline-block;
     vertical-align: top;
     padding: 0.5em;
@@ -1301,7 +1300,7 @@ a-toast:hover {
     height: 50%;
 }
 
-/* dialog colours: layout.style lays out and paints every dialog from these */
+/* this theme's --set-* dialog palette, because layout.style lays out and paints every dialog from these variables */
 :root {
 
     --set-font: 'Raleway', sans-serif;
@@ -1957,6 +1956,59 @@ a-toast:hover {
     border-color: #d8d22b;
 }
 
+/* the signature lemon close button on every dialog; the doubled class is needed because
+   layout.style's plain cross loads after the themes and would win a specificity tie */
+#server-settings-tab .close-button.close-button,
+#channel-properties-edit .close-button.close-button,
+#channel-password-enter .close-button.close-button,
+#admin-password-enter .close-button.close-button,
+#poke-client-enter .close-button.close-button,
+#set-alias-enter .close-button.close-button,
+#adjust-volume-card .close-button.close-button,
+#set-new-username-enter .close-button.close-button,
+#client-info-enter .close-button.close-button,
+#identity-string-use-container-enter .close-button.close-button,
+#secret-identity-string-container-enter .close-button.close-button,
+#android-settings-warning .close-button.close-button {
+    /* no float here, because layout.style places the button absolutely and a float would drop it below the title row */
+    width: 29px;
+    height: 25px;
+    border: 2px solid #9e8232;
+    border-radius: 0;
+    border-bottom-left-radius: 16px;
+    border-top-right-radius: 16px;
+    background: transparent;
+}
+#server-settings-tab .close-button.close-button::before,
+#channel-properties-edit .close-button.close-button::before,
+#channel-password-enter .close-button.close-button::before,
+#admin-password-enter .close-button.close-button::before,
+#poke-client-enter .close-button.close-button::before,
+#set-alias-enter .close-button.close-button::before,
+#adjust-volume-card .close-button.close-button::before,
+#set-new-username-enter .close-button.close-button::before,
+#client-info-enter .close-button.close-button::before,
+#identity-string-use-container-enter .close-button.close-button::before,
+#secret-identity-string-container-enter .close-button.close-button::before,
+#android-settings-warning .close-button.close-button::before {
+    content: none;
+}
+#server-settings-tab .close-button.close-button:hover,
+#channel-properties-edit .close-button.close-button:hover,
+#channel-password-enter .close-button.close-button:hover,
+#admin-password-enter .close-button.close-button:hover,
+#poke-client-enter .close-button.close-button:hover,
+#set-alias-enter .close-button.close-button:hover,
+#adjust-volume-card .close-button.close-button:hover,
+#set-new-username-enter .close-button.close-button:hover,
+#client-info-enter .close-button.close-button:hover,
+#identity-string-use-container-enter .close-button.close-button:hover,
+#secret-identity-string-container-enter .close-button.close-button:hover,
+#android-settings-warning .close-button.close-button:hover {
+    background: transparent;
+    border-color: #d8d22b;
+}
+
 #toggle-microphone-label {
     display: none;
     position: absolute;
@@ -2005,9 +2057,6 @@ a-toast:hover {
 .single-channel-icon {
     float: right;
 }
-/* sound effects, country flags and always-on mic moved into local settings; this button
-   takes the first freed slot and the buttons to its right slid back by two slots */
-/* 116px is the always-broadcasting mic button's slot; this sat exactly on top of it */
 #local-settings-button {
     position: absolute;
     z-index: 1;
@@ -2023,14 +2072,11 @@ a-toast:hover {
     background-position: center center;
     background-color: #000000;
     background-size: 17px 17px;
-    /* the button carries value="local": hide the text so only the glyph shows */
     font-size: 0;
     color: transparent;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cfd6dd' stroke-width='2' stroke-linecap='round'%3E%3Cline x1='4' y1='7' x2='20' y2='7'/%3E%3Cline x1='4' y1='12' x2='20' y2='12'/%3E%3Cline x1='4' y1='17' x2='20' y2='17'/%3E%3Ccircle cx='9' cy='7' r='2.2'/%3E%3Ccircle cx='15' cy='12' r='2.2'/%3E%3Ccircle cx='8' cy='17' r='2.2'/%3E%3C/svg%3E");
 }
 
-/* the other toolbar icons hover through one shared id list; this one was added later
-   and was the only icon that stayed flat under the cursor */
 #local-settings-button:hover {
     background-color: #36393f;
 }

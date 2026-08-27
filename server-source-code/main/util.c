@@ -157,3 +157,42 @@ boole util__is_music_bot_and_song_slot_valid(int client_id)
         return FALSE;
     }
 }
+/**
+ * @brief validates one json entry as an iso 3166-1 alpha-2 country code and writes it uppercased
+ *
+ * @param cJSON* json_entry -> candidate array element (must be a 2-letter string)
+ * @param char* out_code -> receives 2 uppercase letters plus terminator (COUNTRY_ISO_CODE_LENGTH bytes)
+ *
+ * @return boole TRUE when the entry was usable
+ */
+boole util__normalize_country_code(cJSON* json_entry, char* out_code)
+{
+    char first = 0;
+    char second = 0;
+
+    if (json_entry == NULL_POINTER || cJSON_IsString(json_entry) == FALSE || json_entry->valuestring == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    if (clib__utf8_string_length(json_entry->valuestring) != 2)
+    {
+        return FALSE;
+    }
+
+    first = json_entry->valuestring[0];
+    second = json_entry->valuestring[1];
+
+    if (first >= 'a' && first <= 'z') { first = (char)(first - 32); }
+    if (second >= 'a' && second <= 'z') { second = (char)(second - 32); }
+
+    if (first < 'A' || first > 'Z' || second < 'A' || second > 'Z')
+    {
+        return FALSE;
+    }
+
+    out_code[0] = first;
+    out_code[1] = second;
+    out_code[2] = 0;
+    return TRUE;
+}

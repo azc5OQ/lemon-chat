@@ -1,16 +1,11 @@
-            // ===========================================================================
-            // CONNECTION DRIVER - the one place that decides when to dial.
-            //
-            // Three questions, three owners:
-            //   who am I        -> is_ui_only_runtime() (environment, fixed at load)
-            //   what identity   -> g_identity_slot     (set by the keygen result)
-            //   where to        -> g_target_slot       (set by settings / page config / connect button)
-            //
-            // Writers write, the driver awaits. Nothing polls a flag before it is set, no
-            // gate fails silently, and only one attempt can ever be in flight.
-            // ===========================================================================
+            // connection-driver.js is the connection driver, the one place that decides when to dial
+            // three questions have three owners: who am i is answered by is_ui_only_runtime() (fixed
+            // at load), what identity by g_identity_slot (set by the keygen result), and where to by
+            // g_target_slot (set by settings, page config or the connect button)
+            // writers write and the driver awaits, so nothing polls a flag before it is set, no gate
+            // fails silently, and only one attempt can ever be in flight
 
-            // one async value: set() stores it and wakes every wait()er
+            // a slot holds one async value: set() stores it and wakes everyone who called wait()
             function make_slot()
             {
                 let slot = {
@@ -46,13 +41,13 @@
                 return slot;
             }
 
-            // where to connect: { kind: "loopback", port, token } or { kind: "server", host, port, wss_port }
+            // where to connect, as { kind: "loopback", port, token } or { kind: "server", host, port, wss_port }
             var g_target_slot = make_slot();
 
-            // the local keypair: { public_key_string, identity_string }. private key stays in the worker
+            // the local keypair as { public_key_string, identity_string }. the private key stays in the worker
             var g_identity_slot = make_slot();
 
-            // one keygen per passphrase - a repeat request for the same identity is a no-op
+            // one keygen per passphrase, because a repeat request for the same identity must be a no-op
             var g_identity_requested_for = null;
 
             function request_identity(passphrase_or_null)
@@ -65,7 +60,7 @@
                     return;
                 }
 
-                // settings can arrive before the workers exist; the next push retries
+                // settings can arrive before the workers exist; the next settings push retries this
                 if (g_data_processing_worker == null)
                 {
                     console.log("connect-path: no worker yet, keypair request dropped");
@@ -84,11 +79,11 @@
                     identity_passphrase_string: requested_key === "(random)" ? null : requested_key
                 });
 
-                // the derive can take minutes on a phone; say what the wait actually is
+                // the derive can take minutes on a phone, so the status says what the wait actually is
                 report_connection_status("connecting", "generating the identity key (takes a while on first start)");
             }
 
-            // resolved by the websocket close/error handlers - the driver awaits this while a
+            // resolved by the websocket close and error handlers. the driver awaits this while a
             // socket exists, whether it is mid-handshake or long connected
             var g_connection_closed_resolvers = [];
 
@@ -108,7 +103,7 @@
                 return new Promise(function(resolve) { g_connection_closed_resolvers.push(resolve); });
             }
 
-            // skips the retry countdown (connect button pressed, new details arrived)
+            // skips the retry countdown, used when the connect button is pressed or new details arrive
             var g_driver_nudge_resolver = null;
 
             function nudge_connection_driver()
@@ -121,7 +116,7 @@
                 }
             }
 
-            // countdown between retries; shows the failure text and leaves early on a nudge
+            // the countdown between retries. it shows the failure text and leaves early on a nudge
             async function driver_retry_wait(seconds)
             {
                 let nudged = new Promise(function(resolve) { g_driver_nudge_resolver = resolve; });
@@ -208,8 +203,8 @@
 
                         if (g_is_authenticated == false)
                         {
-                            // loopback socket is fine, node just has not logged in yet.
-                            // redialing now would kill a healthy attach - keep waiting
+                            // the loopback socket is fine, node just has not logged in yet
+                            // redialing now would kill a healthy attach, so keep waiting
                             if (target.kind === "loopback")
                             {
                                 console.log("connect-path: loopback attached, still waiting for node's login");
@@ -224,8 +219,8 @@
                     if (g_is_authenticated == false
                         && (g_is_reconnect_active == false || g_is_autoconnect_without_user_action_active == false))
                     {
-                        // manual mode: one attempt per button press - state the failure and
-                        // hold until the connect button nudges, no countdown
+                        // manual mode means one attempt per button press: state the failure and
+                        // hold until the connect button nudges, with no countdown
                         set_connect_button_pending(false);
                         report_connection_status("idle",
                             (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
@@ -248,17 +243,13 @@
                 }
             }
 
-            // ===============================================================
-            // THE ONE PLACE that may start a connection. every trigger routes
-            // through here; this table is the entire dial policy:
-            //   "button"   the user asked - always dial
-            //   "attach"   a ui attached to node - downstream of an authorized
-            //              decision, so always dial
-            //   "settings" | "resume" | "retry"  dial only under autoconnect;
-            //              "resume" additionally reattaches when node already
-            //              holds a session (rendering it is not connecting)
-            // nothing else in the codebase may set the target or nudge the driver.
-            // ===============================================================
+            // the one place that may start a connection. every trigger routes through here and
+            // this is the entire dial policy: "button" means the user asked, so it always dials
+            // "attach" means a ui attached to node, which is downstream of an authorized decision,
+            // so it always dials too. "settings", "resume" and "retry" dial only under autoconnect,
+            // and "resume" additionally reattaches when node already holds a session, because
+            // rendering it is not connecting. nothing else in the codebase may set the target or
+            // nudge the driver
             function request_connect(trigger)
             {
                 let is_wanted =
@@ -280,7 +271,7 @@
                 {
                     if (g_loopback_port <= 0)
                     {
-                        // node has not announced yet; the settings push that follows finishes this
+                        // node has not announced its port yet; the settings push that follows finishes this
                         if (trigger === "button")
                         {
                             g_ui_connect_requested = true;
@@ -292,8 +283,8 @@
                     g_ui_connect_requested = false;
                     g_target_slot.set({ kind: "loopback", port: g_loopback_port, token: g_loopback_token });
 
-                    // a button press keeps the page exactly as it is (the button itself fades);
-                    // every other trigger connects behind the spinner page
+                    // a button press keeps the page exactly as it is, only the button itself
+                    // fades; every other trigger connects behind the spinner page
                     if (trigger !== "button")
                     {
                         hold_back_connect_page();
@@ -301,7 +292,7 @@
                 }
                 else if (g_are_server_details_predefined == true)
                 {
-                    // a partial first-run json has no host yet - that must never become a target
+                    // a partial first-run json has no host yet, and that must never become a target
                     if (typeof g_autoconnect_details.host !== "string" || g_autoconnect_details.host.length == 0
                         || (parseInt(g_autoconnect_details.port) > 0) == false)
                     {
@@ -328,17 +319,17 @@
                 nudge_connection_driver();
             }
 
-            // the connect button; kept as its own name for the onclick wiring
+            // the connect button. it keeps its own name for the onclick wiring
             function submit_connection_target_from_ui()
             {
                 request_connect("button");
             }
 
-            // webview only: connect pressed before node announced its loopback port
+            // webview only: true when connect was pressed before node announced its loopback port
             var g_ui_connect_requested = false;
 
-            // live status for the login page. the local driver writes it; in the webview, node's
-            // reports arriving over the loopback overwrite it (node owns the real connection)
+            // the live status for the login page. the local driver writes it; in the webview,
+            // node's reports arriving over the loopback overwrite it, because node owns the real connection
             var g_connection_status = {
                 state: "idle",          // idle | connecting | waiting_retry | connected
                 reason: "",             // why the last attempt failed, human readable
@@ -346,20 +337,20 @@
                 last_connected_at: 0    // ms timestamp the server connection last existed, 0 = never
             };
 
-            // set through the seam; every listener receives every status change
-            // (two exist under node: the loopback ui and the java bridge)
+            // set through the export seam. every listener receives every status change; under node
+            // two exist, the loopback ui and the java bridge
             var g_connection_status_listeners = [];
 
-            // filled by the close/error handlers, consumed by the driver for the retry status
+            // filled by the close and error handlers, consumed by the driver for the retry status
             var g_last_disconnect_reason = "";
 
-            // android reports the device's real network state over the bridge; null = never told.
+            // android reports the device's real network state over the bridge; null means never told
             // a browser has navigator.onLine, but the android webview lies about it, so this is the
-            // only trustworthy "is there any network" answer on the phone
+            // only trustworthy answer to whether the phone has any network
             var g_device_has_network = null;
 
             // turns a node socket error code into something a person can act on. the codes are the
-            // difference between "your wifi is off" and "the server rejected you" - without one, an
+            // difference between your wifi being off and the server rejecting you; without them an
             // unreachable network used to be reported as a login rejection
             function describe_socket_error(error_code)
             {
@@ -406,7 +397,8 @@
             }
 
             // paints the login page extras from g_connection_status; the ticker recalls it every
-            // second so countdowns and "x ago" stay live. safe headless: the shim absorbs the dom
+            // second so the countdown and the "ago" times stay live. it is safe headless, because
+            // the shim absorbs the dom
             function render_connection_status()
             {
                 let reason_element = document.getElementById("connection-status-reason");
@@ -430,8 +422,8 @@
 
                 let countdown_text = "";
 
-                // only the retry countdown belongs here. the loading line above already says
-                // "connecting to <host>", and printing it twice read as two separate states
+                // only the retry countdown belongs here, because the loading line above already
+                // says "connecting to <host>" and printing it twice read as two separate states
                 if (g_connection_status.state === "waiting_retry" && g_connection_status.next_retry_at > 0)
                 {
                     let seconds_left = Math.max(0, Math.ceil((g_connection_status.next_retry_at - new Date().valueOf()) / 1000));

@@ -230,6 +230,24 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     cJSON_AddItemToObject(json_root, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
     cJSON_AddItemToObject(json_root, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
+    cJSON_AddItemToObject(json_root, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
+    cJSON_AddNumberToObject(json_root, "file_upload_max_size_bytes", (double)g_server_settings.file_upload_max_size_bytes);
+    cJSON_AddNumberToObject(json_root, "chat_picture_max_size_bytes", (double)g_server_settings.chat_picture_max_size_bytes);
+    // pictures are assumed wanted: on by default and never a setup question, only a settings-tab toggle
+    cJSON_AddItemToObject(json_root, "allow_chat_pictures", cJSON_CreateBool(g_server_settings.allow_chat_pictures == TRUE));
+    // country blocking is deliberately NOT a setup question; the admin sets it later in the settings tab
+    cJSON_AddItemToObject(json_root, "is_country_blocking_active", cJSON_CreateBool(g_server_settings.is_country_blocking_active == TRUE));
+    cJSON_AddItemToObject(json_root, "blocked_countries", cJSON_CreateArray());
+    // the admin log toggles are not setup questions either; all off until the admin turns them on
+    cJSON_AddItemToObject(json_root, "log_client_joins", cJSON_CreateBool(g_server_settings.log_client_joins == TRUE));
+    cJSON_AddItemToObject(json_root, "log_username_changes", cJSON_CreateBool(g_server_settings.log_username_changes == TRUE));
+    cJSON_AddItemToObject(json_root, "log_tag_changes", cJSON_CreateBool(g_server_settings.log_tag_changes == TRUE));
+    cJSON_AddItemToObject(json_root, "log_server_settings_updates", cJSON_CreateBool(g_server_settings.log_server_settings_updates == TRUE));
+    cJSON_AddItemToObject(json_root, "log_kicks_and_bans", cJSON_CreateBool(g_server_settings.log_kicks_and_bans == TRUE));
+    cJSON_AddItemToObject(json_root, "log_client_disconnects", cJSON_CreateBool(g_server_settings.log_client_disconnects == TRUE));
+    cJSON_AddItemToObject(json_root, "log_failed_attempts", cJSON_CreateBool(g_server_settings.log_failed_attempts == TRUE));
+    cJSON_AddNumberToObject(json_root, "admin_log_max_size_bytes", (double)g_server_settings.admin_log_max_size_bytes);
+    cJSON_AddNumberToObject(json_root, "admin_log_retention_days", (double)g_server_settings.admin_log_retention_days);
 
     json_text = cJSON_Print(json_root);
     if (json_text != NULL_POINTER)
@@ -704,7 +722,7 @@ void first_time_setup__run(char plaintext_keys[][256])
         printf("%s %s\n", g_mark_off, "voice chat: off");
     }
 
-    if (_first_time_setup_internal__ask_yes_no("Allow several people to connect from the same IP address?", TRUE) == FALSE)
+    if (_first_time_setup_internal__ask_yes_no("Allow more than one client to connect from the same IP address?", TRUE) == FALSE)
     {
         g_server_settings.is_same_ip_address_allowed = FALSE;
         printf("%s %s\n", g_mark_ok, "same-IP clients: blocked");
@@ -833,6 +851,40 @@ void first_time_setup__run(char plaintext_keys[][256])
         g_server_settings.allow_typing_indicator = TRUE;
         printf("%s %s\n", g_mark_ok, "typing indicator: on");
     }
+
+    // chat files: pictures are always allowed, this opens the door for any file type. the file is
+    // end-to-end encrypted like a picture and only ever passes through ram, but ram is the cost:
+    // the server holds the upload plus a relay copy (~2x the file) until every receiver has it
+    printf("%s %s\n", "   ", "files (documents, archives, ...) are end-to-end encrypted like pictures and relayed through");
+    printf("%s %s\n", "   ", "ram only - never written to disk. while a file is being relayed the server holds about twice");
+    printf("%s %s\n", "   ", "its size in ram, and big files upload slowly from phones.");
+
+    if (_first_time_setup_internal__ask_yes_no("Allow users to send files (not just pictures) in chat?", FALSE) == TRUE)
+    {
+        g_server_settings.allow_file_uploads = TRUE;
+        printf("%s %s\n", g_mark_ok, "file uploads: on");
+
+        clib__null_memory(input, sizeof(input));
+        printf("%s %s", g_mark_ask, "Max file size in MB (blank = 10, capped at 100; more than 20 is not recommended): ");
+        fgets(input, sizeof(input), stdin);
+        clib__sanitize_stdin(input);
+        g_server_settings.file_upload_max_size_bytes = (int64)strtol(input, 0, 10) * 1024 * 1024;
+        if (g_server_settings.file_upload_max_size_bytes < FILE_UPLOAD_MIN_SIZE_BYTES)
+        {
+            g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_DEFAULT_SIZE_BYTES;
+        }
+        else if (g_server_settings.file_upload_max_size_bytes > FILE_UPLOAD_MAX_SIZE_BYTES)
+        {
+            g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_MAX_SIZE_BYTES;
+        }
+        printf("%s %s%lld%s\n", g_mark_ok, "max file size: ", (long long)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)), " MB");
+
+        if (g_server_settings.file_upload_max_size_bytes > 20 * 1024 * 1024)
+        {
+            printf("%s %s\n", g_mark_warn, "over 20 MB: each transfer can take ~2x that in ram and minutes to upload on a slow link");
+        }
+    }
+    clib__null_memory(input, sizeof(input));
 
     printf("\n%s %s\n\n", g_mark_info, "4/4  Web access - optional, for joining from a browser instead of the app.");
 
@@ -989,6 +1041,14 @@ void first_time_setup__run(char plaintext_keys[][256])
     printf("      %s%s\n", "last seen ............ ", (g_server_settings.allow_last_seen == TRUE) ? "on" : "off");
     printf("      %s%s\n", "offline messages ..... ", (g_server_settings.allow_offline_messages == TRUE) ? "on" : "off");
     printf("      %s%s\n", "typing indicator ..... ", (g_server_settings.allow_typing_indicator == TRUE) ? "on" : "off");
+    if (g_server_settings.allow_file_uploads == TRUE)
+    {
+        printf("      %s%s%lld%s\n", "file uploads ......... ", "on (max ", (long long)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)), " MB)");
+    }
+    else
+    {
+        printf("      %s%s\n", "file uploads ......... ", "off");
+    }
     printf("      %s%s\n\n", "browser access ....... ", (g_server_settings.serve_client_http == TRUE) ? "on" : "off");
 
     _first_time_setup_internal__save_server_settings(plaintext_keys, g_server_settings.keys_count);

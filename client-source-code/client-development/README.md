@@ -33,8 +33,11 @@ Editing section): `scripts/app/main.js` is the spine (startup, workers,
 dispatchers, crypto helpers, app lifecycle), `scripts/app/messages.js` is the
 protocol layer (`server_msg` handlers + `client_msg` builders), `scripts/app/ui.js`
 is the `UI` object (rendering, themes, menus, dialogs), and `scripts/app/audio.js`
-is the audio engine (worklets, playback/capture graphs). `styles/fonts.style` is
-large because the fonts are base64-embedded.
+is the audio engine (worklets, playback/capture graphs). `scripts/app/chat-files.js`
+is the chat file feature (any file as an encrypted message: paperclip, drag & drop,
+the file card with its progress ring, the download button, and the fast base64 /
+crypto helpers its worker branches use). `styles/fonts.style` is large because the
+fonts are base64-embedded.
 
 ## Building
 

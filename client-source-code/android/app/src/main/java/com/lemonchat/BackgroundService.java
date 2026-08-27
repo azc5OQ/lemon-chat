@@ -49,7 +49,7 @@ public class BackgroundService extends Service
 
 	// a copy of the log setting, because it is checked on every single printed line.
 	// the saved one lives in ChatSettings and is loaded into here when the service starts
-	public static volatile boolean isFileLoggingEnabled = true;
+	public static volatile boolean isFileLoggingEnabled = false;
 
 	private final IBinder binder = new LocalBinder();
 
@@ -149,6 +149,13 @@ public class BackgroundService extends Service
 				if (this.nodeBridge != null)
 				{
 					this.nodeBridge.sendComeFromIdle(channelId);
+				}
+
+				// the webview keeps its own idle logic: stamp the accept there too, so its gentle
+				// idle (onStop during the accept transition) waits the presence grace out
+				if (this.webView != null)
+				{
+					this.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__mark_call_accept_presence === 'function') { JavascriptJavaBridge__mark_call_accept_presence(); }", null);
 				}
 
 				//bring app to foreground by calling startActivity from service context

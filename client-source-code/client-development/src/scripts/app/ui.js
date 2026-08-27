@@ -289,6 +289,7 @@ var UI = {
         document.getElementById("chat-input-container-text-input").disabled = false;
         document.getElementById("chat-input-container-send-chat-input").disabled = false;
         document.getElementById("choose_image_input").disabled = false;
+        document.getElementById("choose-file-input").disabled = false;
         document.getElementById("color-picker-selector-div").style.display = "block";
         document.getElementById("chat-input-font-size-range").style.display = "block";
     },
@@ -300,6 +301,7 @@ var UI = {
         document.getElementById("chat-input-container-text-input").disabled = true;
         document.getElementById("chat-input-container-send-chat-input").disabled = true;
         document.getElementById("choose_image_input").disabled = true;
+        document.getElementById("choose-file-input").disabled = true;
         document.getElementById("color-picker-selector-div").style.display = "none";
         document.getElementById("chat-input-font-size-range").style.display = "none";
     },
@@ -1399,8 +1401,10 @@ var UI = {
     send_chat_input_on_click: function()
     {
         send_chat_message();
-        document.getElementById("chat-input-container-text-input").style.width = "100%";
         document.getElementById("image-upload-preview").style.display = "none";
+
+        // a refused file stays attached, so its chip comes back
+        render_pending_chat_file_chip();
     },
 
     // connect button on the login form: hands the driver a target
@@ -1422,41 +1426,20 @@ var UI = {
         send_typing_indicator();
     },
 
-    // image picked for the chat: rejects files over 4mb, otherwise shows the preview and
-    // stores the data url in base64_picture_string_to_send for the next send
+    // image picked for the chat: the preview path lives in attach_chat_picture (chat-files.js),
+    // shared with drag & drop, which also explains a refusal over 4mb
     choose_image_input: function()
     {
         if (typeof window === 'undefined')   // multiple webworkers are used within same file
         {
             return;
         }
-        let fileInput = document.getElementById('choose_image_input');
-        let files = fileInput.files;
 
-        for (let x = 0; x < files.length; x++)
+        let files = document.getElementById('choose_image_input').files;
+
+        if (files.length > 0)
         {
-            if (x == 0)
-            {
-                let file = files[x];
-                let max_size = 4 * 1024 * 1024;
-
-                if (file.size > max_size)
-                {
-                    custom_alert("image is too large. Max size: 4mb");
-                    return;
-                }
-
-                let reader = new FileReader();
-                reader.onload = function (event)
-                {
-                    document.getElementById("chat-input-container-text-input").style.width = "calc(100% - 90px)";
-                    document.getElementById("image-upload-preview").style.display = "inline-block";
-
-                    document.getElementById('image-upload-preview').style.backgroundImage = 'url(' + event.target.result + ')';
-                    base64_picture_string_to_send = event.target.result;
-                }
-                reader.readAsDataURL(file); // invokes onload
-            }
+            attach_chat_picture(files[0]);
         }
     },
 
@@ -2655,6 +2638,7 @@ var UI = {
         document.getElementById("server-settings-tab-general-settings").style.display = "none";
         document.getElementById("server-settings-tab-bans").style.display = "none";
         document.getElementById("server-settings-tab-identities").style.display = "none";
+        document.getElementById("server-settings-tab-log").style.display = "none";
 
         if (action == 0)
         {
@@ -2671,6 +2655,15 @@ var UI = {
             // pull the live identity list from the server (admins only)
             let message_object = { message: { type: "request_identity_list" } };
             send_message_object(message_object);
+        }
+        else if (action == 5)
+        {
+            document.getElementById("server-settings-tab-log").style.display = "block";
+
+            // the settings request fills the four toggle checkboxes, the log request fills the
+            // textarea (the server answers both only for admins)
+            send_message_object({ message: { type: "load_server_settings" } });
+            send_message_object({ message: { type: "admin_log_request" } });
         }
         else if (action == 2 || action == 3)
         {
@@ -3150,6 +3143,9 @@ var UI = {
         {
             elements1[i].remove();
         }
+
+        // the file cards went with the messages; the bytes behind them go too
+        prune_chat_files_without_cards();
     },
 
     // sends server_settings_add_new_tag with the typed tag name (an icon is assigned later)
@@ -3187,15 +3183,85 @@ var UI = {
                 allow_temp_channels: document.getElementById("server-settings-general-allow-temp-channels-checkbox").checked,
                 allow_typing_indicator: document.getElementById("server-settings-general-allow-typing-indicator-checkbox").checked,
                 is_sending_text_to_idle_clients_allowed: document.getElementById("server-settings-general-allow-text-to-idle-clients-checkbox").checked,
-                allow_private_messages: document.getElementById("server-settings-general-allow-private-messages-checkbox").checked
+                allow_private_messages: document.getElementById("server-settings-general-allow-private-messages-checkbox").checked,
+                allow_file_uploads: document.getElementById("server-settings-general-allow-file-uploads-checkbox").checked,
+                file_upload_max_size_mb: parseInt(document.getElementById("server-settings-general-file-upload-max-size-input").value) || 10,
+                allow_chat_pictures: document.getElementById("server-settings-general-allow-pictures-checkbox").checked,
+                chat_picture_max_size_mb: parseInt(document.getElementById("server-settings-general-picture-max-size-input").value) || 4,
+                is_same_ip_address_allowed: document.getElementById("server-settings-general-allow-same-ip-checkbox").checked,
+                is_country_blocking_active: document.getElementById("server-settings-general-country-blocking-checkbox").checked,
+                blocked_countries: g_blocked_countries_draft
             }
         };
 
         send_message_object(message_object);
     },
 
-    // confirm in the import-identity dialog: validates the 200-char passphrase, asks the worker
-    // to derive the rsa keypair from it, and when connected drops the socket to reconnect as it
+    // saves only the four log toggles; save_server_settings applies just the fields present,
+    // so the general-settings values are left untouched
+    server_settings_log_save_button_onclick: function(event)
+    {
+        event.stopPropagation();
+
+        let message_object = {
+            message: {
+                type: "save_server_settings",
+                log_client_joins: document.getElementById("server-settings-log-joins-checkbox").checked,
+                log_username_changes: document.getElementById("server-settings-log-renames-checkbox").checked,
+                log_tag_changes: document.getElementById("server-settings-log-tags-checkbox").checked,
+                log_server_settings_updates: document.getElementById("server-settings-log-settings-checkbox").checked,
+                log_kicks_and_bans: document.getElementById("server-settings-log-kicks-bans-checkbox").checked,
+                log_client_disconnects: document.getElementById("server-settings-log-disconnects-checkbox").checked,
+                log_failed_attempts: document.getElementById("server-settings-log-failed-checkbox").checked,
+                admin_log_max_size_mb: parseInt(document.getElementById("server-settings-log-max-size-input").value) || 10,
+                admin_log_retention_days: parseInt(document.getElementById("server-settings-log-retention-select").value) || 7
+            }
+        };
+
+        send_message_object(message_object);
+    },
+
+    server_settings_log_refresh_button_onclick: function(event)
+    {
+        event.stopPropagation();
+        send_message_object({ message: { type: "admin_log_request" } });
+    },
+
+    // the server clears, stamps who did it, and replies with the fresh log on its own
+    server_settings_log_clear_button_onclick: function(event)
+    {
+        event.stopPropagation();
+        send_message_object({ message: { type: "admin_log_clear" } });
+    },
+
+    // becomes the given identity: asks the worker to derive the rsa keypair from the passphrase
+    // and, when connected, drops the socket to reconnect as it. shared tail of the identity-file
+    // and the raw-passphrase import paths - the caller has already validated the string
+    identity_apply_passphrase: function(identity_passphrase_string)
+    {
+        // clears the identity slot; the driver dials again only once the new keypair exists
+        request_identity(identity_passphrase_string);
+
+        document.getElementById("identity-string-use-container").style.display = "none";
+        document.getElementById("background-container").style.display = "none";
+        document.getElementById("another-buttons-sub-loading-container").style.display = "block";
+        document.getElementById("another-buttons-sub-container").style.display = "none";
+
+        // invoked while connected (top bar "identity" button): drop the connection and,
+        // once the socket is down and the new keypair exists, reconnect as that identity.
+        // g_is_authenticated is the live "connected" signal - g_is_websocket_connected is a
+        // dead flag that is never set true anywhere, do not gate on it
+        if (g_is_authenticated == true)
+        {
+            // deliberate close; the user asked for this reconnect, so it is a button-class
+            // request and redials once the new identity slot fills
+            g_is_identity_switch_in_progress = true;
+            g_websocket_worker.postMessage({ type: "close" });
+            request_connect("button");
+        }
+    },
+
+    // confirm on the raw-passphrase side of the import dialog: validates the 200-char passphrase
     identity_string_use_confirm_button: function()
     {
         let textarea = document.getElementById("identity-string-use-textarea");
@@ -3211,28 +3277,153 @@ var UI = {
             }
 
             textarea.value = "";
-
-            // clears the identity slot; the driver dials again only once the new keypair exists
-            request_identity(identity_passphrase_string);
-
-            document.getElementById("identity-string-use-container").style.display = "none";
-            document.getElementById("background-container").style.display = "none";
-            document.getElementById("another-buttons-sub-loading-container").style.display = "block";
-            document.getElementById("another-buttons-sub-container").style.display = "none";
-
-            // invoked while connected (top bar "identity" button): drop the connection and,
-            // once the socket is down and the new keypair exists, reconnect as that identity.
-            // g_is_authenticated is the live "connected" signal - g_is_websocket_connected is a
-            // dead flag that is never set true anywhere, do not gate on it
-            if (g_is_authenticated == true)
-            {
-                // deliberate close; the user asked for this reconnect, so it is a button-class
-                // request and redials once the new identity slot fills
-                g_is_identity_switch_in_progress = true;
-                g_websocket_worker.postMessage({ type: "close" });
-                request_connect("button");
-            }
+            UI.identity_apply_passphrase(identity_passphrase_string);
         }
+    },
+
+    // the exported identity file is named after the current username (fallback when there is none)
+    identity_export_file_name: function()
+    {
+        let base_name = (typeof g_local_username === "string" && g_local_username.length > 0) ? g_local_username : "identity";
+
+        base_name = base_name.replace(/[\\/:*?"<>|]/g, "_").trim();
+        if (base_name.length == 0)
+        {
+            base_name = "identity";
+        }
+
+        return base_name + ".lmn";
+    },
+
+    // "save identity file": wraps the identity passphrase in a <username>.lmn download
+    export_identity_file_button_onclick: function(event)
+    {
+        event.stopPropagation();
+
+        if (identity_string == null || identity_string.length == 0)
+        {
+            custom_alert("no identity yet - it is still being generated, try again in a moment");
+            return;
+        }
+
+        let file_name = UI.identity_export_file_name();
+
+        // the android webview cannot save a blob url; java writes it into Downloads
+        if (typeof Android !== "undefined" && Android != null && typeof Android.JavaExportSaveFile === "function")
+        {
+            Android.JavaExportSaveFile(file_name, "application/octet-stream", btoa(identity_string));
+            return;
+        }
+
+        let url = URL.createObjectURL(new Blob([identity_string], { type: "application/octet-stream" }));
+        let anchor = document.createElement("a");
+
+        anchor.href = url;
+        anchor.download = file_name;
+        anchor.style.display = "none";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+
+        setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+    },
+
+    choose_identity_file_button_onclick: function(event)
+    {
+        event.stopPropagation();
+        document.getElementById("identity-file-input").click();
+    },
+
+    identity_file_input_onchange: function()
+    {
+        let input = document.getElementById("identity-file-input");
+
+        if (input.files == null || input.files.length == 0)
+        {
+            return;
+        }
+
+        UI.identity_read_identity_file(input.files[0]);
+
+        // so choosing the same file again still fires a change event
+        input.value = "";
+    },
+
+    // reads a picked or dropped identity file; a valid one arms the confirm button
+    identity_read_identity_file: function(file)
+    {
+        let status_line = document.getElementById("identity-file-status");
+        let confirm_button = document.getElementById("identity-file-confirm-button");
+
+        g_pending_identity_file_string = "";
+        confirm_button.style.display = "none";
+
+        if (file == null)
+        {
+            return;
+        }
+
+        // an identity file holds a 200-char passphrase; anything big is some other file
+        if (file.size > 4096)
+        {
+            status_line.textContent = "'" + file.name + "' is not an identity file";
+            return;
+        }
+
+        let reader = new FileReader();
+
+        reader.onload = function()
+        {
+            // tolerate editors: strip a BOM and any whitespace or newlines around the passphrase
+            let passphrase = String(reader.result).replace(/^﻿/, "").trim();
+
+            // strict on purpose: a longer string would derive a DIFFERENT identity without any error
+            if (passphrase.length < 199 || passphrase.length > 200)
+            {
+                status_line.textContent = "'" + file.name + "' does not contain an identity passphrase";
+                return;
+            }
+
+            g_pending_identity_file_string = passphrase;
+            status_line.textContent = "'" + file.name + "' looks good - confirm to connect as that identity";
+            confirm_button.style.display = "inline-block";
+        };
+
+        reader.onerror = function()
+        {
+            status_line.textContent = "could not read '" + file.name + "'";
+        };
+
+        reader.readAsText(file);
+    },
+
+    identity_file_confirm_button_onclick: function(event)
+    {
+        event.stopPropagation();
+
+        if (g_pending_identity_file_string.length == 0)
+        {
+            return;
+        }
+
+        let passphrase = g_pending_identity_file_string;
+        g_pending_identity_file_string = "";
+        UI.identity_apply_passphrase(passphrase);
+    },
+
+    // flips the import dialog between its file side and the raw-passphrase side
+    identity_mode_toggle_onclick: function(event)
+    {
+        event.stopPropagation();
+
+        let file_mode = document.getElementById("identity-file-mode");
+        let string_mode = document.getElementById("identity-string-mode");
+        let toggle_link = document.getElementById("identity-mode-toggle-link");
+        let is_file_mode_active = file_mode.style.display != "none";
+
+        file_mode.style.display = is_file_mode_active ? "none" : "block";
+        string_mode.style.display = is_file_mode_active ? "block" : "none";
+        toggle_link.textContent = is_file_mode_active ? "use an identity file instead" : "use an identity passphrase instead";
     },
 
     // font-size slider: stores g_selected_font_size and applies it to the chat input
@@ -3250,13 +3441,14 @@ var UI = {
         document.getElementById("chat-input-container-text-input").style.color = event.srcElement.value;
     },
 
-    // opens the dialog that reveals the local identity string
+    // opens the dialog that reveals the local identity (export button + raw passphrase)
     show_secret_identity_string_onclick: function(event)
     {
         event.stopPropagation();
         document.getElementById("secret-identity-string-container").style.display = "block";
         document.getElementById("background-container").style.display = "block";
         document.getElementById("p-secret-identity-string").innerHTML = identity_string;
+        document.getElementById("export-identity-file-name").textContent = "saves as " + UI.identity_export_file_name();
     },
 
     // toggles the server settings window (admins only): on open it is re-centered by measured
@@ -3312,6 +3504,14 @@ var UI = {
     // opens the import-identity dialog and its background overlay
     import_identity_button_onclick: function()
     {
+        // fresh walk-through every time: file side first, nothing picked yet
+        g_pending_identity_file_string = "";
+        document.getElementById("identity-file-status").textContent = "";
+        document.getElementById("identity-file-confirm-button").style.display = "none";
+        document.getElementById("identity-file-mode").style.display = "block";
+        document.getElementById("identity-string-mode").style.display = "none";
+        document.getElementById("identity-mode-toggle-link").textContent = "use an identity passphrase instead";
+
         document.getElementById("identity-string-use-container").style.display = "block";
         document.getElementById("background-container").style.display = "block";
     },

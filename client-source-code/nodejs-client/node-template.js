@@ -36,6 +36,9 @@
 /* @@INCLUDE: scripts/app/audio-opus-glue.js @@ */
 
 /* @@INCLUDE: scripts/app/messages.js @@ */
+// the chat file handlers in messages.js call into this (card markup, header/body crypto), and
+// node decrypts direct chat files itself, so it is part of the headless bundle too
+/* @@INCLUDE: scripts/app/chat-files.js @@ */
 /* @@INCLUDE: scripts/app/node-runtime.js @@ */
 /* @@INCLUDE: scripts/app/connection-driver.js @@ */
 /* @@INCLUDE: scripts/app/android-webview.js @@ */

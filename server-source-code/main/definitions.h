@@ -140,6 +140,26 @@ int mytypedef__check_data_types_for_consistency(void);
 // debug aid: assign each connecting client a random real ISO country code instead of doing the GeoIP
 // #define DEBUG_ASSIGN_RANDOM_COUNTRY_CODE 1
 #define MAX_CLIENT_FILE_UPLOAD_LENGTH 14400000 // must exceed the base64 of the client musicbot gate: 10*1024*1024 raw -> ~13,981,016 base64 chars. the /400 per-part cap (36000) then exceeds the client's ceil(total/400) part size (~34953), so a full 10MiB upload is not rejected
+// the encrypted name/size/mime block a chat file carries next to its body; opaque to the server
+#define FILE_HEADER_MAX_LENGTH 8192
+// raw-byte bounds for the admin's chat file size limit
+#define FILE_UPLOAD_MIN_SIZE_BYTES (1024 * 1024)
+#define FILE_UPLOAD_MAX_SIZE_BYTES (100 * 1024 * 1024)
+#define FILE_UPLOAD_DEFAULT_SIZE_BYTES (10 * 1024 * 1024)
+// raw-byte bounds for the admin's inline chat picture limit; the upload gate grows with it
+#define PICTURE_MIN_SIZE_BYTES (1024 * 1024)
+#define PICTURE_MAX_SIZE_BYTES (15 * 1024 * 1024)
+#define PICTURE_DEFAULT_SIZE_BYTES (4 * 1024 * 1024)
+// how many countries the join block list can hold (there are ~250 iso codes in total)
+#define MAX_BLOCKED_COUNTRIES 100
+// the admin log: ram-only dated one-line events, never written to disk (the lines carry ip
+// addresses). capped by total size, entries older than the retention period are purged daily
+#define ADMIN_LOG_ENTRY_MAX_LENGTH 256
+#define ADMIN_LOG_MIN_SIZE_BYTES (1024 * 1024)
+#define ADMIN_LOG_MAX_SIZE_BYTES (100 * 1024 * 1024)
+#define ADMIN_LOG_DEFAULT_SIZE_BYTES (10 * 1024 * 1024)
+#define ADMIN_LOG_MAX_RETENTION_DAYS 30
+#define ADMIN_LOG_DEFAULT_RETENTION_DAYS 7
 #define MAX_SIMULTANEOUS_FILE_SEND_THREADS 20
 #define CHALLENGE_STRING_SIZE 100
 
@@ -219,6 +239,22 @@ typedef struct server_settings
     boole embed_client_config;
     boole is_sending_text_to_idle_clients_allowed;  // deliver direct text chat to idle clients; their websocket stays open in idle, so delivery works; default on
     boole allow_private_messages;  // clients may send direct text chat to each other at all; off makes this a channels-only server; default on
+    boole allow_file_uploads;  // any file may be sent in chat, not just pictures; relayed through ram only, never written to disk; default off
+    int64 file_upload_max_size_bytes;  // largest accepted raw file size for a chat file; the server holds ~2x this in ram per transfer
+    int64 chat_picture_max_size_bytes;  // largest raw picture clients may send inline; pictures are e2e encrypted, so clients enforce it (the upload gate is the hard bound)
+    boole allow_chat_pictures;  // inline chat pictures; on by default, never a setup question, the upload intents enforce it
+    boole is_country_blocking_active;  // refuse joins whose ip resolves to a listed country (per connection, works with flags off); set in the settings tab, never in setup; default off
+    char blocked_countries[MAX_BLOCKED_COUNTRIES][COUNTRY_ISO_CODE_LENGTH];  // uppercase iso 3166-1 alpha-2, the form the geoip db emits
+    uint64 blocked_countries_count;
+    boole log_client_joins;  // admin log: record each completed join with username and ip; default off
+    boole log_username_changes;  // admin log: record renames (old -> new); default off
+    boole log_tag_changes;  // admin log: record tags being added to clients; default off
+    boole log_server_settings_updates;  // admin log: record who saved the server settings; default off
+    boole log_kicks_and_bans;  // admin log: record kicks and bans (who did it, to whom); default off
+    boole log_client_disconnects;  // admin log: record authenticated clients disconnecting; default off
+    boole log_failed_attempts;  // admin log: record refused joins (wrong key, banned ip or identity, country, same ip) and wrong admin passwords; default off
+    int64 admin_log_max_size_bytes;  // ram cap of the admin log; oldest entries fall out over it
+    int64 admin_log_retention_days;  // admin log entries older than this are purged once a day
 } server_settings_t;
 
 typedef enum audio_state_e
@@ -435,7 +471,8 @@ typedef enum memory_manager_allocation_type_e
     MEMALLOC_FILE_DOWNLOAD_BY_PARTS,
     MEMALLOC_AVATAR,
     MEMALLOC_OFFLINE_MESSAGE,
-    MEMALLOC_OFFLINE_MESSAGES_ARRAY
+    MEMALLOC_OFFLINE_MESSAGES_ARRAY,
+    MEMALLOC_ADMIN_LOG
 } memory_manager_allocation_type_e;
 
 typedef struct webrtc_peer_t
@@ -470,6 +507,7 @@ typedef struct data_for_file_send_thread_t
     uint64 client_sender_id;
     uint64 server_chat_message_id;
     uint64 local_chat_message_id;
+    char receive_type[32]; // what the receivers are told arrived: direct/channel chat picture or file
 } data_for_file_send_thread_t;
 
 #endif

@@ -17,6 +17,8 @@ void client_msg__process_delete_chat_message_request(cJSON* json_root, uint64 se
 void client_msg__process_edit_chat_message_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_channel_chat_picture(uint64 sender_client_id, uint64 local_message_id, char* message_value);
 void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char* message_value);
+void client_msg__process_channel_chat_file(uint64 sender_client_id, uint64 local_message_id, char* message_value, char* file_header);
+void client_msg__process_direct_chat_file(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char* message_value, char* file_header);
 void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_client_id);
@@ -50,6 +52,8 @@ void client_msg__process_set_server_settings_set_tag_icon(cJSON* json_root, uint
 void client_msg__process_set_channel_icon(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_load_server_settings_request(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_admin_log_request(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_admin_log_clear(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_call_idle_client_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint64 sender_client_id);

@@ -8,6 +8,7 @@
 #include "../third-party/ITH-sha/sha256.h"
 #include "../third-party/rxi-log/log.h"
 #include "http/http_server.h"
+#include "util.h"
 #include "first_time_setup.h"
 #include "settings.h"
 #include <string.h>
@@ -573,6 +574,21 @@ void settings__load(void)
     g_server_settings.allow_offline_messages = FALSE;
     g_server_settings.allow_typing_indicator = FALSE;
     g_server_settings.avatar_max_size_bytes = 51200;  // 50 KB raw image (~68 KB base64, fits MAX_CLIENT_AVATAR_LENGTH)
+    g_server_settings.allow_file_uploads = FALSE;
+    g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_DEFAULT_SIZE_BYTES;
+    g_server_settings.chat_picture_max_size_bytes = PICTURE_DEFAULT_SIZE_BYTES;
+    g_server_settings.allow_chat_pictures = TRUE;
+    g_server_settings.is_country_blocking_active = FALSE;
+    g_server_settings.blocked_countries_count = 0;
+    g_server_settings.log_client_joins = FALSE;
+    g_server_settings.log_username_changes = FALSE;
+    g_server_settings.log_tag_changes = FALSE;
+    g_server_settings.log_server_settings_updates = FALSE;
+    g_server_settings.log_kicks_and_bans = FALSE;
+    g_server_settings.log_client_disconnects = FALSE;
+    g_server_settings.log_failed_attempts = FALSE;
+    g_server_settings.admin_log_max_size_bytes = ADMIN_LOG_DEFAULT_SIZE_BYTES;
+    g_server_settings.admin_log_retention_days = ADMIN_LOG_DEFAULT_RETENTION_DAYS;
 
     // set the max client/channel counts here too; the JSON path below returns early, so without this the arrays would allocate at size 0
     g_server_settings.max_client_count = MAX_CLIENTS;
@@ -707,6 +723,55 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_sending_text_to_idle_clients_allowed = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_private_messages");
                 if (cJSON_IsBool(json_field)) { g_server_settings.allow_private_messages = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_file_uploads");
+                if (cJSON_IsBool(json_field)) { g_server_settings.allow_file_uploads = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "file_upload_max_size_bytes");
+                if (cJSON_IsNumber(json_field)) { g_server_settings.file_upload_max_size_bytes = (int64)json_field->valuedouble; }
+                if (g_server_settings.file_upload_max_size_bytes < FILE_UPLOAD_MIN_SIZE_BYTES) { g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_MIN_SIZE_BYTES; }
+                if (g_server_settings.file_upload_max_size_bytes > FILE_UPLOAD_MAX_SIZE_BYTES) { g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_MAX_SIZE_BYTES; }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "chat_picture_max_size_bytes");
+                if (cJSON_IsNumber(json_field)) { g_server_settings.chat_picture_max_size_bytes = (int64)json_field->valuedouble; }
+                if (g_server_settings.chat_picture_max_size_bytes < PICTURE_MIN_SIZE_BYTES) { g_server_settings.chat_picture_max_size_bytes = PICTURE_MIN_SIZE_BYTES; }
+                if (g_server_settings.chat_picture_max_size_bytes > PICTURE_MAX_SIZE_BYTES) { g_server_settings.chat_picture_max_size_bytes = PICTURE_MAX_SIZE_BYTES; }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_chat_pictures");
+                if (cJSON_IsBool(json_field)) { g_server_settings.allow_chat_pictures = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_country_blocking_active");
+                if (cJSON_IsBool(json_field)) { g_server_settings.is_country_blocking_active = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "blocked_countries");
+                if (cJSON_IsArray(json_field))
+                {
+                    g_server_settings.blocked_countries_count = 0;
+                    cJSON_ArrayForEach(json_key, json_field)
+                    {
+                        if (g_server_settings.blocked_countries_count >= MAX_BLOCKED_COUNTRIES) { break; }
+                        if (util__normalize_country_code(json_key, &g_server_settings.blocked_countries[g_server_settings.blocked_countries_count][0]) == TRUE)
+                        {
+                            g_server_settings.blocked_countries_count++;
+                        }
+                    }
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "log_client_joins");
+                if (cJSON_IsBool(json_field)) { g_server_settings.log_client_joins = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "log_username_changes");
+                if (cJSON_IsBool(json_field)) { g_server_settings.log_username_changes = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "log_tag_changes");
+                if (cJSON_IsBool(json_field)) { g_server_settings.log_tag_changes = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "log_server_settings_updates");
+                if (cJSON_IsBool(json_field)) { g_server_settings.log_server_settings_updates = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "log_kicks_and_bans");
+                if (cJSON_IsBool(json_field)) { g_server_settings.log_kicks_and_bans = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "log_client_disconnects");
+                if (cJSON_IsBool(json_field)) { g_server_settings.log_client_disconnects = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "log_failed_attempts");
+                if (cJSON_IsBool(json_field)) { g_server_settings.log_failed_attempts = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_log_max_size_bytes");
+                if (cJSON_IsNumber(json_field)) { g_server_settings.admin_log_max_size_bytes = (int64)json_field->valuedouble; }
+                if (g_server_settings.admin_log_max_size_bytes < ADMIN_LOG_MIN_SIZE_BYTES) { g_server_settings.admin_log_max_size_bytes = ADMIN_LOG_MIN_SIZE_BYTES; }
+                if (g_server_settings.admin_log_max_size_bytes > ADMIN_LOG_MAX_SIZE_BYTES) { g_server_settings.admin_log_max_size_bytes = ADMIN_LOG_MAX_SIZE_BYTES; }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_log_retention_days");
+                if (cJSON_IsNumber(json_field)) { g_server_settings.admin_log_retention_days = (int64)json_field->valuedouble; }
+                if (g_server_settings.admin_log_retention_days < 1) { g_server_settings.admin_log_retention_days = 1; }
+                if (g_server_settings.admin_log_retention_days > ADMIN_LOG_MAX_RETENTION_DAYS) { g_server_settings.admin_log_retention_days = ADMIN_LOG_MAX_RETENTION_DAYS; }
 
                 _settings_internal__build_and_push_client_config(g_server_settings.websocket_port, plaintext_keys, g_server_settings.keys_count);
 

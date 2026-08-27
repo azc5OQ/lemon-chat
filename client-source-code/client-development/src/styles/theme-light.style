@@ -4,12 +4,11 @@ body, input, button, textarea, select, p, li, label {
     font-family: Tahoma, Arial, sans-serif;
 }
 
-/* Scrollbars - slim bar, firefox only */
-
+/* slim scrollbars for firefox, because it ignores the ::-webkit-scrollbar rules below */
 @supports (-moz-appearance: none) {
     * {
-        scrollbar-width: thin;  /* firefox: slim bar */
-        scrollbar-color: rgba(0, 0, 0, 0.3) transparent;  /* firefox: thumb colour, track colour */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(0, 0, 0, 0.3) transparent;
     }
 
     #channel-list-container, #chat-context-container, #chat-input-container-text-input, .add-tag-context-menu-items, .chat-input-container-context-menu-items {
@@ -447,7 +446,7 @@ body, input, button, textarea, select, p, li, label {
     border-radius: 6px;
     padding: 0.5em;
     transition: border-color 0.2s;
-    width: calc(100% - 175px);
+    width: calc(100% - 210px); /* 210px is reserved because the controls row incl. the paperclip must fit beside the text box */
     display: inline-block;
     vertical-align: top;
 }
@@ -553,7 +552,6 @@ body, input, button, textarea, select, p, li, label {
     float: right;
     border-bottom-left-radius: 16px;
     border-top-right-radius: 16px;
-    cursor: pointer;
 }
 
 .close-button:hover {
@@ -672,7 +670,7 @@ a-toast:hover {
     color: #1a1a1a;
 }
 
-/* dialog colours: layout.style lays out and paints every dialog from these */
+/* this theme's --set-* dialog palette, because layout.style lays out and paints every dialog from these variables */
 :root {
 
     --set-font: 'Raleway', sans-serif;
@@ -693,7 +691,7 @@ a-toast:hover {
     --set-danger: #c23b3b;
     --set-danger-soft: rgba(194, 59, 59, 0.13);
     --set-danger-strong: #e04b4b;
-    /* dark button text is forced with !important further down, so buttons are a light surface */
+    /* buttons are a white surface with dark text, because this theme forces dark button text with !important further down */
     --set-button-bg: #ffffff;
     --set-button-text: #1a1a1a;
     --set-button-border: 1px solid rgba(61, 122, 200, 0.4);
@@ -1670,8 +1668,6 @@ div {
     background-color: transparent;
 }
 
-/* Firefox scrollbar (firefox only — chromium uses the styled webkit scrollbar above) */
-
 .connected-client-country-flag {
     width: 23px;
     height: 15px;
@@ -2051,7 +2047,7 @@ div {
     background-size: 24px 24px;
 }
 
-/* hidden in this theme, but kept on the 28px grid so it lands correctly if it is ever shown */
+/* the server-settings bar button is hidden in this theme, but stays placed on the 28px button grid, because it must land correctly if it is ever shown */
 #enter-server-settings {
     display: none;
     position: absolute;
@@ -2313,9 +2309,6 @@ div {
     float: right;
 }
 
-/* sound effects, country flags and always-on mic moved into local settings; this button
-   takes the first freed slot and the buttons to its right slid back by two slots */
-/* 116px is the always-broadcasting mic button's slot; this sat exactly on top of it */
 #local-settings-button {
     position: absolute;
     z-index: 1;
@@ -2331,14 +2324,11 @@ div {
     background-position: center center;
     background-color: transparent;
     background-size: 17px 17px;
-    /* the button carries value="local": hide the text so only the glyph shows */
     font-size: 0;
     color: transparent;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23444444' stroke-width='2' stroke-linecap='round'%3E%3Cline x1='4' y1='7' x2='20' y2='7'/%3E%3Cline x1='4' y1='12' x2='20' y2='12'/%3E%3Cline x1='4' y1='17' x2='20' y2='17'/%3E%3Ccircle cx='9' cy='7' r='2.2'/%3E%3Ccircle cx='15' cy='12' r='2.2'/%3E%3Ccircle cx='8' cy='17' r='2.2'/%3E%3C/svg%3E");
 }
 
-/* the other toolbar icons hover through one shared id list; this one was added later
-   and was the only icon that stayed flat under the cursor */
 #local-settings-button:hover {
     background-color: #c0ccd8 !important;
 }

@@ -1,12 +1,26 @@
 package com.lemonchat;
 
+import android.app.DownloadManager;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Context;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.widget.Toast;
 
 import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 
 public class JavascriptJavaBridge
 {
@@ -26,6 +40,158 @@ public class JavascriptJavaBridge
 	@JavascriptInterface public void JavaExport(String toast)
 	{
 		Toast.makeText(this.mContext, toast, Toast.LENGTH_SHORT).show();
+	}
+
+	/**
+	 * the download button of a chat file. the webview cannot save a blob url, so the page hands the
+	 * decoded bytes over and they land in Downloads: MediaStore on api 29+, below that the app's own
+	 * downloads folder registered with the DownloadManager so the Downloads app lists it.
+	 */
+	@JavascriptInterface public void JavaExportSaveFile(String fileName, String mimeType, String base64)
+	{
+		String safeName = sanitizeFileName(fileName);
+		String safeMime = (mimeType == null || mimeType.isEmpty()) ? "application/octet-stream" : mimeType;
+		byte[] bytes;
+
+		try
+		{
+			bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
+		}
+		catch (IllegalArgumentException badBase64)
+		{
+			this.showToastOnMainThread("could not save " + safeName + ": the file data is damaged");
+			return;
+		}
+
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+		{
+			this.saveToMediaStoreDownloads(safeName, safeMime, bytes);
+		}
+		else
+		{
+			this.saveToAppDownloads(safeName, safeMime, bytes);
+		}
+	}
+
+	/** no path separators or control characters, never empty */
+	private static String sanitizeFileName(String fileName)
+	{
+		String name = (fileName == null) ? "" : fileName.replaceAll("[\\\\/\\p{Cntrl}]", "_").trim();
+
+		if (name.isEmpty() || name.equals(".") || name.equals(".."))
+		{
+			name = "file";
+		}
+
+		if (name.length() > 200)
+		{
+			name = name.substring(0, 200);
+		}
+
+		return name;
+	}
+
+	/** api 29+: a pending MediaStore row, filled, then published. a duplicate name is renamed by the system */
+	private void saveToMediaStoreDownloads(String safeName, String safeMime, byte[] bytes)
+	{
+		ContentResolver resolver = this.mContext.getContentResolver();
+		ContentValues values = new ContentValues();
+		values.put(MediaStore.Downloads.DISPLAY_NAME, safeName);
+		values.put(MediaStore.Downloads.MIME_TYPE, safeMime);
+		values.put(MediaStore.Downloads.IS_PENDING, 1);
+
+		Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+
+		if (uri == null)
+		{
+			this.showToastOnMainThread("could not save " + safeName + " into Downloads");
+			return;
+		}
+
+		try (OutputStream out = resolver.openOutputStream(uri))
+		{
+			if (out == null)
+			{
+				throw new IOException("no output stream");
+			}
+
+			out.write(bytes);
+		}
+		catch (IOException writeFailed)
+		{
+			Log.e("Info", "[lemonchat] saving chat file failed", writeFailed);
+			resolver.delete(uri, null, null);
+			this.showToastOnMainThread("could not save " + safeName + " into Downloads");
+			return;
+		}
+
+		values.clear();
+		values.put(MediaStore.Downloads.IS_PENDING, 0);
+		resolver.update(uri, values, null, null);
+
+		this.showToastOnMainThread("saved to Downloads/" + safeName);
+	}
+
+	/** api 26-28: the app's external downloads folder needs no permission; the DownloadManager entry makes it visible */
+	@SuppressWarnings("deprecation")
+	private void saveToAppDownloads(String safeName, String safeMime, byte[] bytes)
+	{
+		File directory = this.mContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+
+		if (directory == null)
+		{
+			this.showToastOnMainThread("could not save " + safeName + ": no storage available");
+			return;
+		}
+
+		File target = new File(directory, safeName);
+		int counter = 1;
+
+		while (target.exists())
+		{
+			int dot = safeName.lastIndexOf('.');
+			String stem = (dot > 0) ? safeName.substring(0, dot) : safeName;
+			String extension = (dot > 0) ? safeName.substring(dot) : "";
+			target = new File(directory, stem + " (" + counter + ")" + extension);
+			counter++;
+		}
+
+		try (FileOutputStream out = new FileOutputStream(target))
+		{
+			out.write(bytes);
+		}
+		catch (IOException writeFailed)
+		{
+			Log.e("Info", "[lemonchat] saving chat file failed", writeFailed);
+			this.showToastOnMainThread("could not save " + safeName);
+			return;
+		}
+
+		DownloadManager downloadManager = (DownloadManager) this.mContext.getSystemService(Context.DOWNLOAD_SERVICE);
+
+		if (downloadManager != null)
+		{
+			try
+			{
+				downloadManager.addCompletedDownload(target.getName(), "lemon chat file", true, safeMime, target.getAbsolutePath(), target.length(), true);
+			}
+			catch (Exception registerFailed)
+			{
+				Log.w("Info", "[lemonchat] could not register the saved file with the download manager", registerFailed);
+			}
+		}
+
+		this.showToastOnMainThread("saved: " + target.getAbsolutePath());
+	}
+
+	private void showToastOnMainThread(final String text)
+	{
+		new Handler(Looper.getMainLooper()).post(new Runnable() {
+			@Override public void run()
+			{
+				Toast.makeText(JavascriptJavaBridge.this.mContext, text, Toast.LENGTH_LONG).show();
+			}
+		});
 	}
 
 	@JavascriptInterface public void JavaExportSetContinousAudioBroadcastStatus(boolean isActive)

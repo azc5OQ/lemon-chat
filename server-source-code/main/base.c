@@ -1,7 +1,5 @@
 #include "definitions.h"
 
-// use forward slashes "/" when specifying paths, not backward slashes "\" linux environment has trouble finding files that way
-// windows compiler will work with both
 
 #include "clib/clib_string.h"
 #include "clib/clib_memory.h"
@@ -16,6 +14,7 @@
 
 #include "client_message.h"
 #include "server_message.h"
+#include "server_logs.h"
 
 #include "../third-party/libtom/libtommath/tommath.h"
 
@@ -172,11 +171,76 @@ boole base__is_ip_banned(char* ip_address)
 }
 
 /**
+ * @brief whether a public key is on the ban list. a ban records the target's identity at ban
+ *        time, so the same identity is refused even when it returns from a different ip address.
+ *        entries without a recorded identity never match
+ *
+ * @param char* public_key -> the connecting client's public key
+ *
+ * @return boole TRUE if the identity is in the ban list
+ */
+boole base__is_identity_banned(char* public_key)
+{
+    boole is_banned = FALSE;
+    uint64 i = 0;
+
+    if (public_key == NULL_POINTER || public_key[0] == 0 || g_ban_array == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    clib__read_lock(&g_bans_global_rwlock_guard);
+    for (i = 0; i < MAX_BANS; i++)
+    {
+        if (g_ban_array[i].is_existing == FALSE || g_ban_array[i].identity[0] == 0)
+        {
+            continue;
+        }
+        if (clib__is_string_equal(g_ban_array[i].identity, public_key) == TRUE)
+        {
+            is_banned = TRUE;
+            break;
+        }
+    }
+    clib__unlock(&g_bans_global_rwlock_guard);
+
+    return is_banned;
+}
+
+/**
+ * @brief whether a resolved country code is on the join block list. an empty or unresolved
+ *        country (local addresses, lookup failures) is never blocked
+ *
+ * @param char* country_iso_code -> uppercase 2-letter code as the geoip db emits it
+ *
+ * @return boole TRUE when country blocking is on and the code is listed
+ */
+boole base__is_country_blocked(char* country_iso_code)
+{
+    uint64 i = 0;
+
+    if (g_server_settings.is_country_blocking_active == FALSE || country_iso_code == NULL_POINTER || country_iso_code[0] == 0)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i < g_server_settings.blocked_countries_count; i++)
+    {
+        if (clib__is_string_equal(&g_server_settings.blocked_countries[i][0], country_iso_code) == TRUE)
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/**
  * @brief adds a ban entry. ignored if the ip is already banned or the ban list is full
  *
- * @param char* ip_address -> the banned ip (matching is by this)
+ * @param char* ip_address -> the banned ip (matched at socket open)
  * @param char* country_iso_code -> the client's country at ban time (may be empty)
- * @param char* identity -> the client's identity / public key at ban time (may be empty)
+ * @param char* identity -> the client's identity / public key at ban time (matched at join; may be empty)
  * @param char* extra_data -> free-form extra data, e.g. a future fingerprint (may be empty)
  *
  * @attention caller must hold the bans write lock
@@ -342,13 +406,7 @@ static void _base_internal__serialize_identities(cJSON* json_root)
 }
 
 /**
- * @brief persists the runtime-editable server state into server_settings.json: the general-settings
- *        toggles, the channel layout, the tags/icons and the ban list.
- *
- *        it READS the existing file first and only updates the keys it manages, so ports, operator keys
- *        and every other setting stay untouched. if the file is missing or cannot be parsed it aborts
- *        WITHOUT writing, so a transient error can never destroy a good settings file. the admin
- *        icon/tag (id 0) are re-seeded on every start and are not written.
+ * @brief saves server settings to a file
  *
  * @note caller holds the channels, icons, tags and bans locks for reading
  *
@@ -365,6 +423,7 @@ boole base__save_server_settings_to_file(void)
     cJSON* json_tag = NULL_POINTER;
     cJSON* json_bans = NULL_POINTER;
     cJSON* json_ban = NULL_POINTER;
+    cJSON* json_blocked_countries = NULL_POINTER;
     char* json_text = NULL_POINTER;
     FILE* settings_file = NULL_POINTER;
     int64 file_length = 0;
@@ -431,6 +490,44 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_private_messages");
     cJSON_AddItemToObject(json_root, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_same_ip_address_allowed");
+    cJSON_AddItemToObject(json_root, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_file_uploads");
+    cJSON_AddItemToObject(json_root, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "file_upload_max_size_bytes");
+    cJSON_AddNumberToObject(json_root, "file_upload_max_size_bytes", (double)g_server_settings.file_upload_max_size_bytes);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "chat_picture_max_size_bytes");
+    cJSON_AddNumberToObject(json_root, "chat_picture_max_size_bytes", (double)g_server_settings.chat_picture_max_size_bytes);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_chat_pictures");
+    cJSON_AddItemToObject(json_root, "allow_chat_pictures", cJSON_CreateBool(g_server_settings.allow_chat_pictures == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_country_blocking_active");
+    cJSON_AddItemToObject(json_root, "is_country_blocking_active", cJSON_CreateBool(g_server_settings.is_country_blocking_active == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "blocked_countries");
+    json_blocked_countries = cJSON_CreateArray();
+    cJSON_AddItemToObject(json_root, "blocked_countries", json_blocked_countries);
+    for (i = 0; i < g_server_settings.blocked_countries_count; i++)
+    {
+        cJSON_AddItemToArray(json_blocked_countries, cJSON_CreateString(&g_server_settings.blocked_countries[i][0]));
+    }
+    // only the log TOGGLES are persisted; the log lines themselves stay in ram, never in a file
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "log_client_joins");
+    cJSON_AddItemToObject(json_root, "log_client_joins", cJSON_CreateBool(g_server_settings.log_client_joins == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "log_username_changes");
+    cJSON_AddItemToObject(json_root, "log_username_changes", cJSON_CreateBool(g_server_settings.log_username_changes == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "log_tag_changes");
+    cJSON_AddItemToObject(json_root, "log_tag_changes", cJSON_CreateBool(g_server_settings.log_tag_changes == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "log_server_settings_updates");
+    cJSON_AddItemToObject(json_root, "log_server_settings_updates", cJSON_CreateBool(g_server_settings.log_server_settings_updates == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "log_kicks_and_bans");
+    cJSON_AddItemToObject(json_root, "log_kicks_and_bans", cJSON_CreateBool(g_server_settings.log_kicks_and_bans == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "log_client_disconnects");
+    cJSON_AddItemToObject(json_root, "log_client_disconnects", cJSON_CreateBool(g_server_settings.log_client_disconnects == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "log_failed_attempts");
+    cJSON_AddItemToObject(json_root, "log_failed_attempts", cJSON_CreateBool(g_server_settings.log_failed_attempts == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_log_max_size_bytes");
+    cJSON_AddNumberToObject(json_root, "admin_log_max_size_bytes", (double)g_server_settings.admin_log_max_size_bytes);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_log_retention_days");
+    cJSON_AddNumberToObject(json_root, "admin_log_retention_days", (double)g_server_settings.admin_log_retention_days);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_password");
     cJSON_AddStringToObject(json_root, "admin_password", &g_server_settings.admin_password[0]);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_password_is_initial");
@@ -519,7 +616,7 @@ boole base__save_server_settings_to_file(void)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_tag_has_icon");
     cJSON_AddItemToObject(json_root, "admin_tag_has_icon", cJSON_CreateBool(g_tags_array[ADMIN_TAG_ID].has_icon == TRUE));
 
-    // rebuild the ban list (matching is by ip; country/identity/extra data are recorded for the admin)
+    // rebuild the ban list (matching is by ip at socket open and by identity at join; country/extra data are recorded for the admin)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "bans");
     json_bans = cJSON_CreateArray();
     cJSON_AddItemToObject(json_root, "bans", json_bans);
@@ -3314,6 +3411,9 @@ void base__process_client_disconnect(uint64 client_index)
     {
         DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "base__process_client_disconnect is_existing TRUE ", client_index, "\n");
 
+        // only ever-authenticated clients are recorded; the wrapper checks that itself
+        server_logs__client_disconnected(client);
+
         // remember when this identity was last here, while the client struct still holds its key
         if (g_server_settings.allow_last_seen == TRUE && client->public_key[0] != 0 && client->is_music_bot == FALSE)
         {
@@ -3612,6 +3712,14 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             {
                 client_msg__process_load_server_settings_request(json_root, client_index);
             }
+            else if (clib__is_string_equal(message_type, "admin_log_request"))
+            {
+                client_msg__process_admin_log_request(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "admin_log_clear"))
+            {
+                client_msg__process_admin_log_clear(json_root, client_index);
+            }
             else if (clib__is_string_equal(message_type, "call_idle_client_request"))
             {
                 if (g_server_settings.is_idle_mode_allowed == TRUE)
@@ -3718,6 +3826,7 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
     if (checked_message_length == -1)
     {
         DBG_AUTHENTICATION log_info("%s %s %s", "base__process_not_authenticated_client_message message has more chars than allowed : ", decrypted_metadata_cstring, "\n");
+        server_logs__join_refused("wrong key or malformed handshake", g_clients_array[index].ip_address);
         ws_close_client(websocket);
         return;
     }
@@ -3729,6 +3838,8 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
     if (json_root == 0)
     {
         DBG_AUTHENTICATION log_info("%s %llu %s", "client : ", index, " json_root is null \n");
+        // a wrong key decrypts the handshake into garbage, which is exactly what lands here
+        server_logs__join_refused("wrong key or malformed handshake", g_clients_array[index].ip_address);
         ws_close_client(websocket);
         // there is no json object to cJSON_Delete, since it's 0
         return;
@@ -3739,6 +3850,7 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
     if (status == FALSE)
     {
         DBG_AUTHENTICATION log_info("%s%llu%s", "client : ", index, "client_msg__is_message_correct_at_first_sight_and_get_message_type failed \n");
+        server_logs__join_refused("wrong key or malformed handshake", g_clients_array[index].ip_address);
         ws_close_client(websocket);
         cJSON_Delete(json_root);
         return;

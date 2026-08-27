@@ -1,18 +1,10 @@
-/* country flags - shared base set used by every theme. loaded always-on (see template.html),
-deliberately NOT in fonts.style or any single theme sheet. a theme may override any individual
-.country-flag-xx with its own image using !important (old-school does this with a pixel png set). */
-
-/* === country flags (shared across every theme; the old-school theme overrides each
-    .country-flag-xx with its own image). the per-client flag div carries a country-flag-xx
-    class, so flags come purely from css now - no inline background styles. === */
+/* country flags + a few cross-theme controls; this sheet loads with every theme, because these must look the same everywhere - a theme overrides an individual .country-flag-xx with !important */
 .connected-client-country-flag {
     background-size: cover;
     background-repeat: no-repeat;
     background-position: center;
 }
 
-/* server-settings tag/icon delete buttons (shared across every theme, always-on).
-    the X stays hidden until its entry is hovered */
 .server-settings-tag-entry {
     position: relative;
 }
@@ -42,9 +34,6 @@ deliberately NOT in fonts.style or any single theme sheet. a theme may override 
     display: block;
 }
 
-/* connect-form per-key remove button (shared across every theme, always-on).
-    each added key's value row carries data-key-id; the "X" stays hidden until
-    that key row is hovered, then click removes the key. */
 #connect-form-sub-container-2 .text-input-container[data-key-id] {
     position: relative;
 }
@@ -73,8 +62,6 @@ deliberately NOT in fonts.style or any single theme sheet. a theme may override 
     background: #d83c3e;
 }
 
-/* a tag's icon box is clickable to open the icon picker; it renders its icon when it has one and stays
-    visible as a small bordered box when it does not */
 .tag-settings-entry-img {
     cursor: pointer;
     min-width: 16px;
@@ -85,7 +72,6 @@ deliberately NOT in fonts.style or any single theme sheet. a theme may override 
     border: 1px solid #666;
 }
 
-/* icon picker popup: a centered, scrollable wrap of selectable icons */
 #tag-icon-picker-popup {
     position: fixed;
     top: 50%;

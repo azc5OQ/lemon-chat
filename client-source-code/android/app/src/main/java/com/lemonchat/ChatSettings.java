@@ -105,10 +105,11 @@ public class ChatSettings
 		}
 	}
 
-	/** the log file setting. this is the saved one, the copies elsewhere are read from here. */
+	/** the log file setting. this is the saved one, the copies elsewhere are read from here.
+	 *  off unless the user turned it on in the local settings panel. */
 	public boolean isFileLoggingEnabled()
 	{
-		return (this.preferences() == null) || this.preferences().getBoolean("file_logging_enabled", true);
+		return (this.preferences() != null) && this.preferences().getBoolean("file_logging_enabled", false);
 	}
 
 	public void setFileLoggingEnabled(boolean isEnabled)

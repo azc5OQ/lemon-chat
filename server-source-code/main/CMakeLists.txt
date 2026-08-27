@@ -51,6 +51,7 @@ add_executable(chat-server
         clib/clib_rwlock.c
         client_message.c
         server_message.c
+        server_logs.c
         memory_manager.c
         ip_tools.c
         musicbot.c

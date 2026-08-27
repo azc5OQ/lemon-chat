@@ -8,6 +8,7 @@
 #include "../third-party/dave-g-json/cJSON.h"
 #include "base.h"
 #include "server_message.h"
+#include "server_logs.h"
 #include "memory_manager.h"
 #include "../third-party/eteran-cvector/cvector.h"
 #include "../third-party/rxi-log/log.h"
@@ -100,6 +101,11 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     cJSON_AddBoolToObject(json_message_object1, "allow_avatars", g_server_settings.allow_avatars);
     cJSON_AddBoolToObject(json_message_object1, "allow_typing_indicator", g_server_settings.allow_typing_indicator);
     cJSON_AddNumberToObject(json_message_object1, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
+    // chat file policy: the client refuses oversize/forbidden files itself, with a reason, before uploading
+    cJSON_AddBoolToObject(json_message_object1, "allow_file_uploads", g_server_settings.allow_file_uploads);
+    cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
+    cJSON_AddNumberToObject(json_message_object1, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
+    cJSON_AddBoolToObject(json_message_object1, "allow_chat_pictures", g_server_settings.allow_chat_pictures);
     cJSON_AddNumberToObject(json_message_object1, "stun_port", 3478);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
@@ -1082,12 +1088,13 @@ void server_msg__send_force_admin_password_change_to_single_client(client_t* cli
  * @brief sends an access-denied message to a single client
  *
  * @param client_t* client -> self explanatory
+ * @param char* reason -> optional text the client shows instead of its generic denial line; NULL omits it
  *
  * @attention this function is used within acquired readlock within client_message.c , multiple functions
  *
  * @return void
  */
-void server_msg__send_access_denied_to_single_client(client_t* client)
+void server_msg__send_access_denied_to_single_client(client_t* client, char* reason)
 {
     char* json_root_object1_string = 0;
     int64 size_of_allocated_message_buffer = 0;
@@ -1102,6 +1109,12 @@ void server_msg__send_access_denied_to_single_client(client_t* client)
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_access_denied_to_single_client \n");
 
     cJSON_AddStringToObject(json_message_object1, "type", "access_denied");
+
+    if (reason != NULL_POINTER && reason[0] != 0)
+    {
+        cJSON_AddStringToObject(json_message_object1, "reason", reason);
+    }
+
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
@@ -1138,6 +1151,7 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON* json_message_object1 = 0;
     cJSON* json_bans = 0;
     cJSON* json_ban = 0;
+    cJSON* json_blocked_countries = 0;
     ban_entry_t* ban_in_loop = 0;
     uint64 i = 0;
 
@@ -1153,6 +1167,27 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON_AddItemToObject(json_message_object1, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
     cJSON_AddItemToObject(json_message_object1, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
+    cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size_mb", (double)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)));
+    cJSON_AddNumberToObject(json_message_object1, "chat_picture_max_size_mb", (double)(g_server_settings.chat_picture_max_size_bytes / (1024 * 1024)));
+    cJSON_AddItemToObject(json_message_object1, "allow_chat_pictures", cJSON_CreateBool(g_server_settings.allow_chat_pictures == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "is_country_blocking_active", cJSON_CreateBool(g_server_settings.is_country_blocking_active == TRUE));
+    json_blocked_countries = cJSON_CreateArray();
+    cJSON_AddItemToObject(json_message_object1, "blocked_countries", json_blocked_countries);
+    for (i = 0; i < g_server_settings.blocked_countries_count; i++)
+    {
+        cJSON_AddItemToArray(json_blocked_countries, cJSON_CreateString(&g_server_settings.blocked_countries[i][0]));
+    }
+    cJSON_AddItemToObject(json_message_object1, "log_client_joins", cJSON_CreateBool(g_server_settings.log_client_joins == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "log_username_changes", cJSON_CreateBool(g_server_settings.log_username_changes == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "log_tag_changes", cJSON_CreateBool(g_server_settings.log_tag_changes == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "log_server_settings_updates", cJSON_CreateBool(g_server_settings.log_server_settings_updates == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "log_kicks_and_bans", cJSON_CreateBool(g_server_settings.log_kicks_and_bans == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "log_client_disconnects", cJSON_CreateBool(g_server_settings.log_client_disconnects == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "log_failed_attempts", cJSON_CreateBool(g_server_settings.log_failed_attempts == TRUE));
+    cJSON_AddNumberToObject(json_message_object1, "admin_log_max_size_mb", (double)(g_server_settings.admin_log_max_size_bytes / (1024 * 1024)));
+    cJSON_AddNumberToObject(json_message_object1, "admin_log_retention_days", (double)g_server_settings.admin_log_retention_days);
 
     // include the current ban list so the admin's bans section can render it
     json_bans = cJSON_CreateArray();
@@ -1192,6 +1227,114 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     ws_sendframe_txt(client->p_ws_connection, msg_text);
 
     memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief replies to a single client with every admin log line, oldest first (used when an admin
+ *        opens or refreshes the log tab). the caller must have checked the client is an admin
+ *
+ * @param client_t* client -> the client to reply to
+ *
+ * @return void
+ */
+void server_msg__send_admin_log_to_single_client(client_t* client)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    cJSON* json_lines = 0;
+
+    json_lines = server_logs__build_json_array();
+    if (json_lines == NULL_POINTER)
+    {
+        return;
+    }
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "admin_log");
+    cJSON_AddItemToObject(json_message_object1, "lines", json_lines);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(client->p_ws_connection, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief broadcasts the client-relevant policy values (file/picture limits, avatars, typing,
+ *        aliases) to every connected client, so a settings change applies without a reconnect
+ *
+ * @note the caller must hold the clients read lock
+ *
+ * @return void
+ */
+void server_msg__send_policy_update_to_all_clients(void)
+{
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    uint64 x = 0;
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    client_t* client_in_loop = 0;
+
+    for (x = 0; x < g_server_settings.max_client_count; x++)
+    {
+        client_in_loop = &g_clients_array[x];
+
+        if (client_in_loop->is_existing == FALSE || client_in_loop->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        json_root_object1 = cJSON_CreateObject();
+        json_message_object1 = cJSON_CreateObject();
+
+        cJSON_AddStringToObject(json_message_object1, "type", "server_policy");
+        cJSON_AddBoolToObject(json_message_object1, "allow_file_uploads", g_server_settings.allow_file_uploads);
+        cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
+        cJSON_AddNumberToObject(json_message_object1, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
+        cJSON_AddBoolToObject(json_message_object1, "allow_chat_pictures", g_server_settings.allow_chat_pictures);
+        cJSON_AddBoolToObject(json_message_object1, "allow_typing_indicator", g_server_settings.allow_typing_indicator);
+        cJSON_AddBoolToObject(json_message_object1, "allow_avatars", g_server_settings.allow_avatars);
+        cJSON_AddNumberToObject(json_message_object1, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
+        cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
+
+        cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+        json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
+
+        base__free_json_message(json_root_object1, json_root_object1_string);
+
+        if (msg_text == NULL_POINTER)
+        {
+            continue;
+        }
+
+        ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
+
+        memorymanager__free((nuint)msg_text);
+    }
 }
 
 /**
@@ -1705,7 +1848,7 @@ void server_msg__send_chat_message_action_to_clients_in_same_channel(uint64 rece
  *
  * @return void
  */
-void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(uint64 client_sender_id, uint64 receiving_channel_id, uint64 server_chat_message_id)
+void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(uint64 client_sender_id, uint64 receiving_channel_id, uint64 server_chat_message_id, uint64 encrypted_size)
 {
     char* json_root_object1_string = 0;
     int64 size_of_allocated_message_buffer = 0;
@@ -1725,7 +1868,8 @@ void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(u
     cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
     cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
     cJSON_AddNumberToObject(json_message_object1, "picture_id", server_chat_message_id);
-    cJSON_AddNumberToObject(json_message_object1, "size", 10000000);
+    // the encrypted length the receiver counts its chunks against, for the progress ring
+    cJSON_AddNumberToObject(json_message_object1, "size", (double)encrypted_size);
 
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
@@ -1929,7 +2073,7 @@ void server_msg__send_image_status_to_single_client(client_t* client, char* stat
  *
  * @return void
  */
-void server_msg__send_chat_picture_metadata_to_single_client(uint64 client_sender_id, uint64 client_receiver_id, uint64 server_chat_message_id)
+void server_msg__send_chat_picture_metadata_to_single_client(uint64 client_sender_id, uint64 client_receiver_id, uint64 server_chat_message_id, uint64 encrypted_size)
 {
     char* json_root_object1_string = 0;
     int64 size_of_allocated_message_buffer = 0;
@@ -1952,6 +2096,8 @@ void server_msg__send_chat_picture_metadata_to_single_client(uint64 client_sende
     cJSON_AddStringToObject(json_message_object1, "sender_username", client_sender->username);
     cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender->client_id);
     cJSON_AddNumberToObject(json_message_object1, "picture_id", server_chat_message_id);
+    // the encrypted length the receiver counts its chunks against, for the progress ring
+    cJSON_AddNumberToObject(json_message_object1, "size", (double)encrypted_size);
 
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
@@ -1970,6 +2116,197 @@ void server_msg__send_chat_picture_metadata_to_single_client(uint64 client_sende
     }
 
     ws_sendframe_txt(client_receiver->p_ws_connection, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief sends chat-file metadata to all clients in the sender's channel: the sender's encrypted
+ *        name/size/mime header (opaque here) and the encrypted body length, so receivers can draw
+ *        the file card and a progress ring before the chunks arrive
+ *
+ * @param uint64 client_sender_id -> self explanatory
+ * @param uint64 receiving_channel_id -> self explanatory
+ * @param uint64 server_chat_message_id -> server assigned id of the file
+ * @param char* file_header -> the sender's encrypted header, forwarded as is
+ * @param uint64 encrypted_size -> length of the encrypted body that follows in chunks
+ *
+ * @attention this function is used within read lock on clients array
+ *
+ * @return void
+ */
+void server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel(uint64 client_sender_id, uint64 receiving_channel_id, uint64 server_chat_message_id, char* file_header, uint64 encrypted_size)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client_in_loop = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_file_metadata");
+    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
+    cJSON_AddNumberToObject(json_message_object1, "file_id", server_chat_message_id);
+    cJSON_AddStringToObject(json_message_object1, "file_header", file_header);
+    cJSON_AddNumberToObject(json_message_object1, "encrypted_size", (double)encrypted_size);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client_in_loop = &g_clients_array[i];
+
+        if (client_in_loop->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        if (client_in_loop->channel_id != receiving_channel_id)
+        {
+            continue;
+        }
+
+        if (client_in_loop->client_id == client_sender_id)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief sends chat-file metadata to a single client (direct chat): the sender's encrypted
+ *        name/size/mime header (opaque here) and the encrypted body length
+ *
+ * @param uint64 client_sender_id -> id of client that sent the file
+ * @param uint64 client_receiver_id -> id of client to send the file metadata to
+ * @param uint64 server_chat_message_id -> server assigned id of the file
+ * @param char* file_header -> the sender's encrypted header, forwarded as is
+ * @param uint64 encrypted_size -> length of the encrypted body that follows in chunks
+ *
+ * @attention this function is used within read lock on clients array
+ *
+ * @return void
+ */
+void server_msg__send_chat_file_metadata_to_single_client(uint64 client_sender_id, uint64 client_receiver_id, uint64 server_chat_message_id, char* file_header, uint64 encrypted_size)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client_receiver = 0;
+    client_t* client_sender = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_chat_file_metadata_to_single_client \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    client_sender = &g_clients_array[client_sender_id];
+    client_receiver = &g_clients_array[client_receiver_id];
+
+    cJSON_AddStringToObject(json_message_object1, "type", "direct_chat_file_metadata");
+    cJSON_AddStringToObject(json_message_object1, "sender_username", client_sender->username);
+    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender->client_id);
+    cJSON_AddNumberToObject(json_message_object1, "file_id", server_chat_message_id);
+    cJSON_AddStringToObject(json_message_object1, "file_header", file_header);
+    cJSON_AddNumberToObject(json_message_object1, "encrypted_size", (double)encrypted_size);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_receiver->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(client_receiver->p_ws_connection, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief tells the client that SENT a chat file why the server refused it, so the failure is never
+ *        silent on its side. reasons: file_uploads_disabled, file_too_large, receiver_unavailable,
+ *        private_messages_disabled
+ *
+ * @param client_t* client -> the sender
+ * @param char* reason -> one of the reason strings above
+ * @param uint64 local_message_id -> the sender's own id of the refused message, so it can mark that card
+ *
+ * @attention this function is used within acquired lock on clients array
+ *
+ * @return void
+ */
+void server_msg__send_file_send_error_to_single_client(client_t* client, char* reason, uint64 local_message_id)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s %s %s", "server_msg__send_file_send_error_to_single_client", reason, "\n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "file_send_error");
+    cJSON_AddStringToObject(json_message_object1, "reason", reason);
+    cJSON_AddNumberToObject(json_message_object1, "local_message_id", (double)local_message_id);
+    cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(client->p_ws_connection, msg_text);
 
     memorymanager__free((nuint)msg_text);
 }
