@@ -8,6 +8,7 @@
 - channel management system! (create , delete, edit channels)
 - direct messages (text and pictures)
 - channel messages (text and pictures)
+- sending files
 - audio in channel
 - end to end encryption
 - android app
