@@ -2332,3 +2332,125 @@ div {
 #local-settings-button:hover {
     background-color: #c0ccd8 !important;
 }
+
+/* the composer, light variant: the input row reads as one rounded card aligned with the chat
+   panel above it - text field, attach, image and send controls and the small format tools all
+   inside a single surface, because the old row scattered them */
+#space-devider4 {
+    position: relative;
+    padding: 6px 0 10px 0;
+    box-sizing: border-box;
+}
+
+#chat-input-file-input-container {
+    display: block;
+    width: auto;
+    background-color: #ffffff;
+    border: 1px solid #c8d4e0;
+    border-radius: 14px;
+    box-shadow: 0 4px 16px rgba(30, 50, 80, 0.08);
+    box-sizing: border-box;
+    padding: 6px 210px 24px 10px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#chat-input-file-input-container:focus-within {
+    border-color: rgba(61, 122, 200, 0.65);
+    box-shadow: 0 4px 16px rgba(30, 50, 80, 0.08), 0 0 0 3px rgba(61, 122, 200, 0.12);
+}
+
+#chat-input-container-text-input {
+    width: 100%;
+    min-height: 46px;
+    box-sizing: border-box;
+    background-color: transparent;
+    border: none;
+    outline: none;
+    color: #1c2733;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 8px 10px;
+    resize: none;
+}
+
+#chat-input-container-text-input::placeholder {
+    color: rgba(28, 39, 51, 0.35);
+}
+
+#space-devider4 .chat-controls-container {
+    position: absolute;
+    float: none;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-52%);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 3;
+}
+
+#space-devider4 #play-pause-song-container,
+#space-devider4 #upload-image-container,
+#space-devider4 #upload-file-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    transition: background-color 0.12s ease;
+}
+
+#space-devider4 #upload-image-container:hover,
+#space-devider4 #upload-file-container:hover,
+#space-devider4 #play-pause-song-container:hover {
+    background-color: rgba(30, 50, 80, 0.07);
+}
+
+#chat-input-container-send-chat-input {
+    width: auto;
+    height: 36px;
+    padding: 0 18px;
+    margin-left: 4px;
+    border: 0;
+    border-radius: 10px;
+    background: #3d7ac8;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+}
+
+#chat-input-container-send-chat-input:hover {
+    background-color: #4c8ad8;
+}
+
+#chat-input-file-input-container #color-picker-selector-div {
+    left: 14px;
+    bottom: 7px;
+    opacity: 0.45;
+    transition: opacity 0.12s ease;
+}
+
+#chat-input-file-input-container #chat-input-font-size-range {
+    left: 40px;
+    bottom: 10px;
+    width: 90px;
+    opacity: 0.45;
+    accent-color: #3d7ac8;
+    transition: opacity 0.12s ease;
+}
+
+#chat-input-file-input-container #color-picker-selector-div:hover,
+#chat-input-file-input-container #chat-input-font-size-range:hover {
+    opacity: 1;
+}
+
+/* the paperclip icon gets a dark stroke here, because layout.style draws it white and a white
+   stroke is invisible on this theme's white card; label# is needed because layout.style's rule
+   loads later and wins a plain-id tie */
+label#custom-file-upload-button-file {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23445565' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.4 11.1 12.5 20a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6l8.2-8.2'/%3E%3C/svg%3E");
+}

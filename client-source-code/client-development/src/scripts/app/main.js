@@ -7237,6 +7237,8 @@ function layout_apply()
         order = order.filter(function(col) { return col != "chat"; });
     }
 
+    // the input row lives inside the chat column, because the composer must align with the
+    // chat panel above it - same left edge, same right edge, in every theme
     let row_a = [], row_b = [];
     for (let i = 0; i < order.length; i++)
     {
@@ -7275,6 +7277,10 @@ function layout_apply()
         panel.style.height = "auto";
         panel.style.left = "0px";
     }
+
+    // no left inset here: the input sits in the chat column, so the corner mic button is
+    // outside it and the composer starts flush with the chat panel's edge
+    g_layout_panels.input.style.paddingLeft = "";
 
     document.getElementById("space-devider3").style.display = "none"; // legacy spacer row, obsolete in the grid
 

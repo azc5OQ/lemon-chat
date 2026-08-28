@@ -2080,3 +2080,127 @@ a-toast:hover {
 #local-settings-button:hover {
     background-color: #36393f;
 }
+
+/* the composer: the input row reads as one rounded card - the text field, the attach, image
+   and send controls and the small format tools all live inside a single surface, because the
+   old row scattered them (buttons top-right, slider floating over the text, a bare send) */
+#space-devider4 {
+    position: relative;
+    /* no side padding, because the card must line up exactly with the chat panel's edges above */
+    padding: 6px 0 10px 0;
+    box-sizing: border-box;
+}
+
+#chat-input-file-input-container {
+    display: block;
+    width: auto;
+    background-color: #17191d;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 14px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    box-sizing: border-box;
+    padding: 6px 210px 24px 10px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* the card answers the caret, because a plain grey box gave no hint where the focus is */
+#chat-input-file-input-container:focus-within {
+    border-color: rgba(90, 150, 255, 0.55);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35), 0 0 0 3px rgba(90, 150, 255, 0.12);
+}
+
+#chat-input-container-text-input {
+    width: 100%;
+    min-height: 46px;
+    box-sizing: border-box; /* border-box, because at content-box the 100% width plus padding ran the text under the controls */
+    background-color: transparent;
+    border: none;
+    outline: none;
+    color: #e8ecf2;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 8px 10px;
+    resize: none;
+}
+
+#chat-input-container-text-input::placeholder {
+    color: rgba(232, 236, 242, 0.35);
+}
+
+/* the control cluster sits inside the card's right edge, vertically centred, because the old
+   float pinned it to the top with a dead gap beside the text box */
+#space-devider4 .chat-controls-container {
+    position: absolute;
+    float: none;
+    right: 30px;
+    top: 50%;
+    transform: translateY(-52%);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 3;
+}
+
+/* every icon becomes the same 36px chip with a quiet hover, because three different button
+   shapes next to each other read as clutter */
+#space-devider4 #play-pause-song-container,
+#space-devider4 #upload-image-container,
+#space-devider4 #upload-file-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    transition: background-color 0.12s ease;
+}
+
+#space-devider4 #upload-image-container:hover,
+#space-devider4 #upload-file-container:hover,
+#space-devider4 #play-pause-song-container:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+/* send is the one accent in the row, because it is the primary action */
+#chat-input-container-send-chat-input {
+    width: auto;
+    height: 36px;
+    padding: 0 18px;
+    margin-left: 4px;
+    border: 0;
+    border-radius: 10px;
+    background: #3f8cff;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+}
+
+#chat-input-container-send-chat-input:hover {
+    background-color: #5c9dff;
+}
+
+/* the format tools (text colour, font size) stay reachable but quiet in the card's bottom-left
+   corner, because they are rarely used and used to float over the message text */
+#chat-input-file-input-container #color-picker-selector-div {
+    left: 14px;
+    bottom: 7px;
+    opacity: 0.4;
+    transition: opacity 0.12s ease;
+}
+
+#chat-input-file-input-container #chat-input-font-size-range {
+    left: 40px;
+    bottom: 10px;
+    width: 90px;
+    opacity: 0.4;
+    accent-color: #3f8cff;
+    transition: opacity 0.12s ease;
+}
+
+#chat-input-file-input-container #color-picker-selector-div:hover,
+#chat-input-file-input-container #chat-input-font-size-range:hover {
+    opacity: 1;
+}
