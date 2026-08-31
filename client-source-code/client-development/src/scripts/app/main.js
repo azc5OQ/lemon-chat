@@ -60,10 +60,22 @@ function data_processing_worker_onmessage(e)
             identity_passphrase_string = randomstring(200); // also known as passphrase
         }
 
-        g_cryptico_library = cryptico;
+        // the size travels with the request: this worker has its own copy of every global,
+        // so the main thread's preference does not reach it any other way
+        let requested_rsa_key_bits = 2048;
+        if (G_ALLOWED_RSA_KEY_BITS.indexOf(e.data.rsa_key_bits) >= 0) { requested_rsa_key_bits = e.data.rsa_key_bits; }
 
-        g_my_rsa_key_object = g_cryptico_library.generateRSAKey(identity_passphrase_string, 2048);
-        g_rsa_public_key_string = g_cryptico_library.publicKeyString(g_my_rsa_key_object);
+        try
+        {
+            g_my_rsa_key_object = lemon_crypto.generateRSAKey(identity_passphrase_string, requested_rsa_key_bits);
+        }
+        catch (err)
+        {
+            // the wasm module is the only rsa implementation; without it there is no identity
+            custom_log("FATAL: rsa keygen wasm failed (" + err + "), cannot create an identity");
+            throw err;
+        }
+        g_rsa_public_key_string = lemon_crypto.publicKeyString(g_my_rsa_key_object);
 
         custom_log("identity_passphrase_string now in use -> " + identity_passphrase_string);
 
@@ -120,7 +132,7 @@ function data_processing_worker_onmessage(e)
             receipt_keys.push(single_key);
         }
 
-        let receipt_encryption = g_cryptico_library.encrypt(JSON.stringify(receipt_keys), e.data.public_key);
+        let receipt_encryption = lemon_crypto.encrypt(JSON.stringify(receipt_keys), e.data.public_key);
 
         let receipt_value_object = {
             type: "message_seen",
@@ -220,7 +232,7 @@ function data_processing_worker_onmessage(e)
 
             let single_message_aes_keys_string = JSON.stringify(current_message_keys);
 
-            let encryption_result = g_cryptico_library.encrypt(single_message_aes_keys_string, e.data.clients[x].public_key);
+            let encryption_result = lemon_crypto.encrypt(single_message_aes_keys_string, e.data.clients[x].public_key);
 
             let message_data = {
                 message_keys: encryption_result.cipher,
@@ -309,7 +321,7 @@ function data_processing_worker_onmessage(e)
         }
 
         let single_message_aes_keys_string = JSON.stringify(current_message_keys);
-        let encryption_result = g_cryptico_library.encrypt(single_message_aes_keys_string, e.data.receiver_public_key);
+        let encryption_result = lemon_crypto.encrypt(single_message_aes_keys_string, e.data.receiver_public_key);
 
         let message_data = {
             message_keys: encryption_result.cipher,
@@ -375,7 +387,7 @@ function data_processing_worker_onmessage(e)
         }
 
         let single_message_aes_keys_string = JSON.stringify(current_message_keys);
-        let encryption_result = g_cryptico_library.encrypt(single_message_aes_keys_string, e.data.receiver_public_key);
+        let encryption_result = lemon_crypto.encrypt(single_message_aes_keys_string, e.data.receiver_public_key);
 
         let message_data = {
             message_keys: encryption_result.cipher,
@@ -434,7 +446,7 @@ function data_processing_worker_onmessage(e)
 
         let single_message_aes_keys_string = JSON.stringify(current_message_keys);
 
-        let encryption_result = g_cryptico_library.encrypt(single_message_aes_keys_string, e.data.receiver_public_key);
+        let encryption_result = lemon_crypto.encrypt(single_message_aes_keys_string, e.data.receiver_public_key);
 
         // data_for_upload_process are the data server should not be possible to decrypt, server only forwards them to client
         // message_object contains metadata server can decrypt
@@ -498,7 +510,7 @@ function data_processing_worker_onmessage(e)
     else if (e.data.type == "mainthread__process_encrypted_direct_chat_picture_data")
     {
         let message_data = JSON.parse(e.data.message_raw);
-        let decryption_result = g_cryptico_library.decrypt(message_data.message_keys, g_my_rsa_key_object);
+        let decryption_result = lemon_crypto.decrypt(message_data.message_keys, g_my_rsa_key_object);
 
         if (decryption_result.status == 'failure')
         {
@@ -697,8 +709,45 @@ function data_processing_worker_onmessage(e)
 
 // runs in the data processing worker: decrypts an incoming server message's metadata, handles
 // the auth handshake, decrypts chat payloads, and forwards everything typed to the main thread
+// returns the announced minimum key size when a raw frame is the plaintext "your key is too
+// weak" notice, and null for everything else. that notice is the ONLY type accepted in the
+// clear: the server sends it before the diffie-hellman exchange finishes, so neither side has
+// a shared secret to encrypt with yet. every other type stays on the encrypted path
+function try_read_plaintext_rsa_key_notice(raw_value)
+{
+    if (typeof raw_value !== "string" || raw_value.indexOf("rsa_key_too_weak") < 0)
+    {
+        return null;
+    }
+
+    let parsed = null;
+
+    try { parsed = JSON.parse(raw_value); }
+    catch (parse_error) { return null; }
+
+    if (parsed == null || parsed.message == null || parsed.message.type !== "rsa_key_too_weak")
+    {
+        return null;
+    }
+    return parsed.message.minimum_rsa_key_bits;
+}
+
 function mainthread__process_received_websocket_message_continue(e)
 {
+    if (e.data.is_plaintext != true)
+    {
+        let announced_minimum_bits = try_read_plaintext_rsa_key_notice(e.data.value);
+
+        if (announced_minimum_bits != null)
+        {
+            global.postMessage({
+                type: "data_processing_worker__rsa_key_too_weak",
+                minimum_rsa_key_bits: announced_minimum_bits
+            });
+            return;
+        }
+    }
+
     // loopback frames are plaintext; everything downstream is identical
     let decrypted_metadata = (e.data.is_plaintext == true) ? e.data.value : decrypt_message_metadata(e.data.value);
 
@@ -786,7 +835,7 @@ function mainthread__process_received_websocket_message_continue(e)
     {
         if (msg.message.type == "public_key_challenge")
         {
-            decryption_result = g_cryptico_library.challenge_decrypt(msg.message.value, g_my_rsa_key_object); // has to be processed here, main thread does not have access to cryptico object
+            decryption_result = lemon_crypto.challenge_decrypt(msg.message.value, g_my_rsa_key_object); // has to be processed here, the main thread never holds the private key
 
             msg.message.decryption_result = decryption_result;
 
@@ -1241,7 +1290,7 @@ function mainthread__process_received_websocket_message_continue(e)
 
             let message_data = JSON.parse(msg.message.value);
 
-            let decryption_result = g_cryptico_library.decrypt(message_data.message_keys, g_my_rsa_key_object);
+            let decryption_result = lemon_crypto.decrypt(message_data.message_keys, g_my_rsa_key_object);
 
             if (decryption_result.status == 'failure')
             {
@@ -1289,7 +1338,7 @@ function mainthread__process_received_websocket_message_continue(e)
             // message, so the same decrypt; it just arrives on connect instead of live
             let message_data = JSON.parse(msg.message.value);
 
-            let decryption_result = g_cryptico_library.decrypt(message_data.message_keys, g_my_rsa_key_object);
+            let decryption_result = lemon_crypto.decrypt(message_data.message_keys, g_my_rsa_key_object);
 
             if (decryption_result.status == 'failure')
             {
@@ -1656,7 +1705,7 @@ var g_dh_secret_exponent = null;
 
 if (typeof window != 'undefined')
 {
-    g_dh_generator = bigInt(2);
+    g_dh_generator = 2n;
 
     var dh_modulus_bits = 8192; // 2048, 4096, or 8192 - MUST match the server's DH_MODULUS_BITS in dh_primes.h
 
@@ -1664,7 +1713,7 @@ if (typeof window != 'undefined')
     var dh_modulus_string = "32317006071311007300338913926423828248817941241140239112842009751400741706634354222619689417363569347117901737909704191754605873209195028853758986185622153212175412514901774520270235796078236248884246189477587641105928646099411723245426622522193230540919037680524235519125679715870117001058055877651038861847280257976054903569732561526167081339361799541336476559160368317896729073178384589680639671900977202194168647225871031411336429319536193471636533209717077448227988588565369208645296636077250268955505928362751121174096972998068410554359584866583291642136218231078990999448652468262416972035911852507045361090559";
     if (dh_modulus_bits == 4096) { dh_modulus_string = "769693417275193209984647063932271739387855846059952565355802298991172654607712104048642837327086393649061117273977479029847880929901816490502575106445708811728815104699538212859676255621694933541780065300216380119365448477045659714142752962409351060465337847941705392356465059912091910379610354725312649190019796723866880686790102505810145302961022375682955537024852712153016097337874982984026217981644194741246064934907045623310252540105014478602030042625050790892256552738501094150544017503366521405695110938208299693781667383898463231081051406284286841973557391837014717399840317430691522097547152517168661381236591027075489125945391080953462725086945640553263655450552529331021143283920078415126554651532264427032676910742519456229972244566183184460134372157613705601578581124341629241972089511142281008551119184446873409929566545851290281361166571221433352162292794386037934251491816926283501321267998170847037246436312385384549128374516008246102779333275418845691810684079267893733515705735729967088709311436111220883412133997678612136656076019025878523079903588858263406471350679442414909683284164773663260965983542100471510190345089294782440003918912451456992077790689703598681468439291465843547007915368517110174489101683183"; }
     if (dh_modulus_bits == 8192) { dh_modulus_string = "977457999394373613160803436413990067824664325329752783398860665650891758153546599425963979290921371512554424155404999662026528515231003619059250227581073193191817667145872254566150016152267378041043707227533090523130854162674719502912605093407840683480360272745764870153876137077404098306192221010043540729677343845507367074906936225679715947791388837030145881441948294883090889231339114529926218527174080089614380520453541140942641189135120655392817995558672348259240314664441211284094553472715483266674338226096876439738570920830431990068192898823624154982561509367679529622217472548774982858792731946532808614927934739139866206407985368007801168974233995065956999264060271473667589912911635282735847769997114239537087675283088650912126339354407150753898672557625721020468123121985217987055904104587919799098757089865856148151372159009557757252554523938389147793317088678845894492183206966490686288450161789777284440531583751707235355985011244929317700461604659491747569397015417605015844114189684757052804077400345793511780894375616367276781058142309055525279814951138171200246013005920763485637476273362810215876618783686490089700542042236756450450875748150296041125307287408385472961923570457489504445415040799421139916299426300456654408986639074321942096027448333024943556858265321864649169731360525833923693176347415312865652669889035367188555225154697353012485541899891405325448203641838378457181625265662866012641101851261909549715296062722220871699753970653198277244417978954211900339094323007747108915608099803996978341421956304178871205193962176652206358214977516703892527582137534788148271002406853630936928238671372686645287319965234542895792366832783193938302132219463877916744337606350077802640502896551808414614146119887726456058723288826440787605655349724793408478985959688481296784606909713086104258354166909655924759369179237403392373490546567686597579050582406536565868808879640217167277372359442106490085619712603267716148318470568791898988932303644832977117895522999512850187807810874398403568491329765776005361335497620431318887438033026603280081068652656086250926318691324234636743583950635209943952384403217947022081052893713058850302983931039183796265186758214153198152532323300955155280353467780525511888234737731346004632762960546857790075686663681335897303755575277977768637069626833995439307976899886428471454602498498262648098952772543021280017770216979020055000596511525631600903871686087096720903178326987700681798435674674029499323"; }
-    g_dh_modulus = bigInt(dh_modulus_string);
+    g_dh_modulus = BigInt(dh_modulus_string);
 }
 
 var g_is_microphone_always_on = false;
@@ -2020,9 +2069,6 @@ var g_opus_decoder_worker = null;
 var g_data_processing_worker = null;
 var g_minimp3_worker = null;
 
-// the cryptico rsa library, as the data processing worker sees it. the worker needs it
-// to encrypt outgoing private messages with the recipient's public key, keypair or not
-var g_cryptico_library = (typeof cryptico !== "undefined") ? cryptico : null;
 var g_websocket_worker = null;
 
 // for voice chat
@@ -3108,6 +3154,78 @@ async function webrtc_datachannel_connection_check(is_this_reconnect = false)
             break;
         }
     }
+}
+
+// the size this server last asked for, so the offer is not repeated on every redial. the
+// connection driver retries forever, and the rejection repeats on every attempt
+var g_rsa_key_too_weak_prompted_for_bits = 0;
+
+// smallest size we are allowed to create that satisfies the server. a modulus may come out one
+// bit short, so a server asking for exactly N is satisfied by our N; anything between the
+// offered sizes rounds up to the next one we can actually generate
+function pick_rsa_key_bits_for_minimum(minimum_bits)
+{
+    for (let i = 0; i < G_ALLOWED_RSA_KEY_BITS.length; i++)
+    {
+        if (G_ALLOWED_RSA_KEY_BITS[i] >= minimum_bits) { return G_ALLOWED_RSA_KEY_BITS[i]; }
+    }
+    return 0;
+}
+
+// the server rejected our identity key for being too small and told us what it wants. offers to
+// switch this device to a big enough key and reconnect. the announcement is optional on the
+// server: without it we are simply dropped and this never runs
+function handle_rsa_key_too_weak_notice(announced_minimum_bits)
+{
+    let minimum_bits = parseInt(announced_minimum_bits);
+
+    // the notice arrives before the handshake, so it is unauthenticated: treat the number as
+    // untrusted input. nothing outside the range the server itself enforces is believable
+    if (isNaN(minimum_bits) || minimum_bits < 2048 || minimum_bits > 8192)
+    {
+        console.warn("ignoring an implausible key size requirement from the server: " + announced_minimum_bits);
+        return;
+    }
+
+    // we already generate a key this big, so the rejection was not really about size - say
+    // nothing rather than offer a switch that would change nothing
+    if (g_rsa_key_bits >= minimum_bits)
+    {
+        return;
+    }
+
+    let target_bits = pick_rsa_key_bits_for_minimum(minimum_bits);
+
+    if (target_bits == 0)
+    {
+        custom_alert("this server requires an RSA key of " + minimum_bits + " bits, which this client cannot create");
+        return;
+    }
+
+    // the driver redials on its own and the server rejects every attempt, so without this the
+    // dialog would reopen in a loop
+    if (g_rsa_key_too_weak_prompted_for_bits == minimum_bits)
+    {
+        return;
+    }
+    g_rsa_key_too_weak_prompted_for_bits = minimum_bits;
+
+    document.getElementById("rsa-key-too-weak-text").textContent =
+        "This server requires an identity key of at least " + minimum_bits + " bits. Your key is "
+        + g_rsa_key_bits + " bits, so the server refused the connection. Switch this device to "
+        + target_bits + "-bit keys and reconnect? Creating the key may take a while, and it gives "
+        + "you a NEW identity here - the same passphrase produces a different key at a different size.";
+
+    document.getElementById("rsa-key-too-weak-yes-button").setAttribute("data-target-bits", target_bits);
+    document.getElementById("rsa-key-too-weak-container").style.display = "block";
+    document.getElementById("background-container").style.display = "block";
+}
+
+// hides the "stronger key required" dialog
+function hide_rsa_key_too_weak_dialog()
+{
+    document.getElementById("rsa-key-too-weak-container").style.display = "none";
+    document.getElementById("background-container").style.display = "none";
 }
 
 // shows the a-toast element with the given message
@@ -5493,7 +5611,7 @@ function process_audio_state_of_single_client(client)
 }
 
 // asks the data processing worker to generate fresh channel keys and build the per-client
-// encrypted key messages (cryptico/rsa only exists in that worker, not on the main thread)
+// encrypted key messages (the rsa keypair only exists in that worker, not on the main thread)
 // tells the sender of a private message that it has been read. every id is sent once,
 // and only to the person who wrote it
 var g_seen_receipts_already_sent = {};
@@ -5800,9 +5918,10 @@ function create_and_send_new_channel_keys()
         current_channel_id: current_channel_id
     });
 
-    // user's public keys cannot be used in main javascript UI thread, because cryptico, the library used for RSA encryption here, is initialized in worker thread and not main thread
-    // so the each user's public key must be sent to g_data_processing_worker thread
-    // g_data_processing_worker thread is then responsible for sending back results of encryption to main thread, mainthread decided what to do with it (possibly sent it to websocket worker)
+    // rsa encryption stays in the data processing worker: the private key lives only there, and
+    // the wasm module lemon_crypto uses compiles synchronously, which the main thread disallows.
+    // so each user's public key is sent to g_data_processing_worker, which posts the encryption
+    // results back for the main thread to route (possibly on to the websocket worker)
 }
 
 // rebuilds g_metadata_keys by sha256-hashing the predefined (or form-entered) key strings,
@@ -5921,7 +6040,7 @@ function get_public_mix()
     g_dh_secret_exponent = BigInt(random_exponent_binary_string);
 
     // let A = product.mod(g_dh_modulus);
-    let A = g_dh_generator.modPow(g_dh_secret_exponent, g_dh_modulus);
+    let A = lemon_crypto.modpow(g_dh_generator, g_dh_secret_exponent, g_dh_modulus);
 
     return A;
 }
@@ -6164,6 +6283,10 @@ function mainthread_onmessage(e)
             // loopback frames arrive as plain json, the worker skips decryption
             is_plaintext: is_ui_only_runtime()
         });
+    }
+    else if (e.data.type == "data_processing_worker__rsa_key_too_weak")
+    {
+        handle_rsa_key_too_weak_notice(e.data.minimum_rsa_key_bits);
     }
     else if (e.data.type == "websocket_worker_onclose")
     {
@@ -6586,17 +6709,17 @@ function mainthread_onmessage(e)
         let msg = e.data.value;
         let dh_public_mix_string = msg.message.dh_public_mix;
 
-        let dh_public_mix = bigInt(dh_public_mix_string);
+        let dh_public_mix = BigInt(dh_public_mix_string);
 
         // reject a degenerate server public mix (B <= 1 or B >= p-1) before using it; such values
         // force a known/tiny shared secret. for a safe prime, requiring 2 <= B <= p-2 is sufficient.
-        if (dh_public_mix.lesserOrEquals(1) || dh_public_mix.greaterOrEquals(g_dh_modulus.minus(1)))
+        if (dh_public_mix <= 1n || dh_public_mix >= g_dh_modulus - 1n)
         {
             console.error("rejected degenerate DH public mix from server; aborting handshake");
             return;
         }
 
-        let shared_secret = dh_public_mix.modPow(g_dh_secret_exponent, g_dh_modulus);
+        let shared_secret = lemon_crypto.modpow(dh_public_mix, g_dh_secret_exponent, g_dh_modulus);
 
         // add shared secret to
 
@@ -6689,6 +6812,8 @@ function mainthread_onmessage(e)
         document.getElementById("server-settings-general-picture-max-size-input").value = (typeof msg.message.chat_picture_max_size_mb === "number") ? msg.message.chat_picture_max_size_mb : 4;
         refresh_picture_size_visibility();
         document.getElementById("server-settings-general-allow-same-ip-checkbox").checked = msg.message.is_same_ip_address_allowed == true;
+        document.getElementById("server-settings-general-minimum-rsa-bits-input").value = (typeof msg.message.minimum_rsa_key_bits === "number") ? msg.message.minimum_rsa_key_bits : 2048;
+        document.getElementById("server-settings-general-announce-rsa-bits-checkbox").checked = msg.message.announce_minimum_rsa_key_bits == true;
         document.getElementById("server-settings-general-country-blocking-checkbox").checked = msg.message.is_country_blocking_active == true;
         set_blocked_countries_from_server(msg.message.blocked_countries);
         refresh_country_blocking_visibility();
@@ -8323,6 +8448,7 @@ async function window_onload()
     {
         let panel = document.getElementById("local-settings-container");
         document.getElementById("local-settings-show-avatars").checked = g_show_message_avatars;
+        document.getElementById("local-settings-rsa-key-bits").value = String(g_rsa_key_bits);
         document.getElementById("local-settings-seen-indicator").checked = g_show_seen_indicator;
         document.getElementById("local-settings-send-seen").checked = g_send_seen_receipts;
         document.getElementById("local-settings-hide-mic").checked = g_hide_microphone_button;
@@ -8544,6 +8670,44 @@ async function window_onload()
     {
         g_show_message_avatars = this.checked;
         try { localStorage.setItem("lemon_show_message_avatars", this.checked ? "1" : "0"); } catch (e) { }
+    };
+
+    // changing the key size changes the identity itself, so it only takes effect on the next
+    // keypair: the current connection keeps the key it already has
+    document.getElementById("local-settings-rsa-key-bits").onchange = function()
+    {
+        let chosen_bits = parseInt(this.value);
+
+        if (G_ALLOWED_RSA_KEY_BITS.indexOf(chosen_bits) < 0) { return; }
+
+        g_rsa_key_bits = chosen_bits;
+        try { localStorage.setItem("lemon_rsa_key_bits", String(chosen_bits)); } catch (e) { }
+
+        // a size the user picked by hand replaces whatever a server last asked for
+        g_rsa_key_too_weak_prompted_for_bits = 0;
+
+        custom_alert("identity key size set to " + chosen_bits + " bits. it applies to the next identity you create - use the identity button to switch now");
+    };
+
+    document.getElementById("rsa-key-too-weak-no-button").onclick = hide_rsa_key_too_weak_dialog;
+    document.getElementById("close-button-rsa-key-too-weak").onclick = hide_rsa_key_too_weak_dialog;
+
+    document.getElementById("rsa-key-too-weak-yes-button").onclick = function()
+    {
+        let target_bits = parseInt(this.getAttribute("data-target-bits"));
+
+        if (G_ALLOWED_RSA_KEY_BITS.indexOf(target_bits) < 0) { return; }
+
+        g_rsa_key_bits = target_bits;
+        try { localStorage.setItem("lemon_rsa_key_bits", String(target_bits)); } catch (e) { }
+
+        hide_rsa_key_too_weak_dialog();
+        custom_alert("creating a " + target_bits + "-bit identity key, this can take a while ...");
+
+        // keep the same passphrase where there is one: at the new size it derives a different
+        // keypair, but it stays reproducible from what the user already saved
+        request_identity((typeof identity_string === "string" && identity_string.length >= 199) ? identity_string : null);
+        request_connect("button");
     };
     document.getElementById("local-settings-seen-indicator").onchange = function()
     {
@@ -8931,8 +9095,8 @@ async function window_onload()
 
     // restore a persisted identity so the same keypair is reused across launches (like the
     // saved theme). the "identity string" is the 200-char passphrase that
-    // cryptico.generateRSAKey() deterministically turns back into the keypair, so persisting it
-    // means reconstructing rather than generating a fresh random identity on every launch.
+    // lemon_crypto.generateRSAKey() deterministically turns back into the keypair, so persisting
+    // it means reconstructing rather than generating a fresh random identity on every launch.
     // SECURITY: this passphrase is private-key-equivalent - anything that can read this origin's
     // localStorage (another script on the page, an XSS bug, someone at the machine) can lift the
     // whole identity. acceptable for a self-hosted / personal deployment; not for shared machines.

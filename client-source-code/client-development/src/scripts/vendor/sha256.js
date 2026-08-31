@@ -170,8 +170,8 @@
                 return binb2hex(core_sha256(str2binb(s), s.length * chrsz));
             }
 
-            var sha256 = {}
+            var sha256 = {};
             sha256.hex = function (s)
             {
                 return SHA256(s);
-            }
+            };

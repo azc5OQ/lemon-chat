@@ -107,7 +107,9 @@ int mytypedef__check_data_types_for_consistency(void);
 #define TIMESTAMP_LAST_ACTION_COOLDOWN_MS 100
 #define CHANNEL_PASSWORD_MAX_LENGTH 128
 #define CHANNEL_DESCRIPTION_MAX_LENGTH 1000
-#define MAX_PUBLIC_KEY_LENGTH 1000
+#define MAX_PUBLIC_KEY_LENGTH 1400 // base64 of an 8192-bit modulus is 1368 chars; smaller values truncated 6144+ bit keys
+#define PUBLIC_KEY_STRING_MIN_LENGTH 344   // base64 of a 2048-bit modulus, the smallest key any server accepts
+#define PUBLIC_KEY_STRING_MAX_LENGTH 1368  // base64 of an 8192-bit modulus, the largest a client can generate
 #define CHANNEL_NAME_MAX_LENGTH 128
 #define SONG_NAME_MAX_LENGTH 512
 #define TAG_MAX_NAME_LENGTH 32
@@ -244,6 +246,8 @@ typedef struct server_settings
     int64 chat_picture_max_size_bytes;  // largest raw picture clients may send inline; pictures are e2e encrypted, so clients enforce it (the upload gate is the hard bound)
     boole allow_chat_pictures;  // inline chat pictures; on by default, never a setup question, the upload intents enforce it
     boole is_country_blocking_active;  // refuse joins whose ip resolves to a listed country (per connection, works with flags off); set in the settings tab, never in setup; default off
+    int64 minimum_rsa_key_bits;  // weakest client rsa key accepted, 2048..8192; a modulus may come out one bit under its nominal size, so the check allows minimum-1. weaker clients are dropped silently
+    boole announce_minimum_rsa_key_bits;  // tell a rejected client which size is required so it can offer to regenerate. off keeps the requirement secret and the drop silent; default off
     char blocked_countries[MAX_BLOCKED_COUNTRIES][COUNTRY_ISO_CODE_LENGTH];  // uppercase iso 3166-1 alpha-2, the form the geoip db emits
     uint64 blocked_countries_count;
     boole log_client_joins;  // admin log: record each completed join with username and ip; default off

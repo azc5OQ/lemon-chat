@@ -108,6 +108,18 @@ var g_loopback_token = "";
 var g_show_message_avatars = false;
 try { g_show_message_avatars = (typeof localStorage !== "undefined" && localStorage.getItem("lemon_show_message_avatars") === "1"); } catch (e) { }
 
+// size of the rsa identity keypair this device creates. it is part of the identity function:
+// the same passphrase at a different size is a DIFFERENT keypair, so changing this makes the
+// server see a new person. only the sizes the wasm and the server both accept are allowed
+var G_ALLOWED_RSA_KEY_BITS = [2048, 3072, 4096, 6144, 8192];
+var g_rsa_key_bits = 2048;
+try
+{
+    let stored_rsa_key_bits = parseInt(typeof localStorage !== "undefined" ? localStorage.getItem("lemon_rsa_key_bits") : "");
+    if (G_ALLOWED_RSA_KEY_BITS.indexOf(stored_rsa_key_bits) >= 0) { g_rsa_key_bits = stored_rsa_key_bits; }
+}
+catch (e) { }
+
 // read receipts have two halves that are set separately: whether we draw the eye others send
 // us, and whether we send one back. both are on unless turned off
 var g_show_seen_indicator = true;

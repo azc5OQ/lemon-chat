@@ -4,6 +4,7 @@
 #define TEST0S_SOLUTION_SERVER_MESSAGE_H
 
 void server_msg__send_public_key_challenge_to_single_client(ws_cli_conn_t* websocket, char* random_value_challenge_string, char* dh_public_mix_for_client);
+void server_msg__send_rsa_key_too_weak_to_single_client(ws_cli_conn_t* websocket);
 void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret);
 void server_msg__send_channel_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret);
 void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret, char* local_clients_username, uint64 receiver_client_id);

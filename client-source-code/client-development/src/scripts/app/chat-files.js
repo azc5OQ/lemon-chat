@@ -174,7 +174,7 @@ function create_random_message_keys()
 function create_direct_chat_file_envelope(receiver_public_key, plaintext, minimum_padded_bytes)
 {
     let keys = create_random_message_keys();
-    let encryption_result = g_cryptico_library.encrypt(JSON.stringify(keys), receiver_public_key);
+    let encryption_result = lemon_crypto.encrypt(JSON.stringify(keys), receiver_public_key);
 
     if (encryption_result == null || encryption_result.status != "success")
     {
@@ -207,7 +207,7 @@ function open_direct_chat_file_envelope(envelope_json_string)
         return null;
     }
 
-    let decryption_result = g_cryptico_library.decrypt(envelope.message_keys, g_my_rsa_key_object);
+    let decryption_result = lemon_crypto.decrypt(envelope.message_keys, g_my_rsa_key_object);
 
     if (decryption_result.status == "failure")
     {

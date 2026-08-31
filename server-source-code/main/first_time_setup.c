@@ -200,6 +200,8 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     cJSON_AddItemToObject(json_root, "is_voice_chat_active", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
     cJSON_AddItemToObject(json_root, "is_music_bot_audio_active", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
     cJSON_AddItemToObject(json_root, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
+    cJSON_AddNumberToObject(json_root, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
+    cJSON_AddItemToObject(json_root, "announce_minimum_rsa_key_bits", cJSON_CreateBool(g_server_settings.announce_minimum_rsa_key_bits == TRUE));
     cJSON_AddItemToObject(json_root, "is_display_country_flags_active", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
     cJSON_AddItemToObject(json_root, "is_hide_clients_in_password_protected_channels_active", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
     cJSON_AddItemToObject(json_root, "is_temp_channel_creation_allowed", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
@@ -1031,6 +1033,8 @@ void first_time_setup__run(char plaintext_keys[][256])
     printf("      %s%s\n", "connect password ..... ", (g_server_settings.keys_count > 0) ? "set" : "none");
     printf("      %s%s\n", "voice chat ........... ", (g_server_settings.is_voice_chat_active == TRUE) ? "on" : "off");
     printf("      %s%s\n", "same-IP clients ...... ", (g_server_settings.is_same_ip_address_allowed == TRUE) ? "allowed" : "blocked");
+    printf("      %s%lld%s%s\n", "min rsa key size ..... ", g_server_settings.minimum_rsa_key_bits, " bits",
+        (g_server_settings.announce_minimum_rsa_key_bits == TRUE) ? " (announced to clients)" : " (not announced)");
     printf("      %s%s\n", "auto-restart ......... ", (g_server_settings.restart_on_crash == TRUE) ? "on" : "off");
     printf("      %s%s\n", "identities ........... ", (g_server_settings.are_identities_enabled == TRUE) ? "on" : "off");
     printf("      %s%s\n", "idle clients ......... ", (g_server_settings.is_idle_mode_allowed == TRUE) ? "on" : "off");

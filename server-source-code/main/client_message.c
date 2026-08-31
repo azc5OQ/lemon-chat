@@ -1733,10 +1733,20 @@ static boole _client_msg_internal__is_public_key_info_message_valid(cJSON* json_
         return FALSE;
     }
 
-    if (clib__utf8_string_length(json_message_value->valuestring) != 344)
+    // the public key is base64 of the modulus: 344 chars at 2048 bits, up to 1368 at 8192.
+    // this used to demand exactly 344, which made every size except 2048 unusable - including
+    // the larger sizes minimum_rsa_key_bits exists to let an admin require. only lengths no rsa
+    // key could have are rejected here; the exact bit length is measured further down
     {
-        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " clib__utf8_string_length(json_message_value->valuestring) != 344 \n");
-        return FALSE;
+        uint64 public_key_string_length = clib__utf8_string_length(json_message_value->valuestring);
+
+        if (public_key_string_length < PUBLIC_KEY_STRING_MIN_LENGTH
+            || public_key_string_length > PUBLIC_KEY_STRING_MAX_LENGTH
+            || (public_key_string_length % 4) != 0)
+        {
+            DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " public key string length is not a valid base64 modulus \n");
+            return FALSE;
+        }
     }
 
     // it's verified that json contains client's public key, continue json validation
@@ -2076,10 +2086,39 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
     }
 
     // ──────────────────────────────────────────────────────────────────
+    // STEP 2b: Enforce the configured minimum RSA key size
+    //
+    // A modulus may legitimately come out one bit under its nominal size
+    // (both primes near their lower bound), so minimum-1 still passes.
+    // Too-weak (or invalid / oversized) keys are dropped silently.
+    // ──────────────────────────────────────────────────────────────────
+    {
+        uint64 client_key_bits = base__get_public_key_bit_length(public_key);
+        boole is_too_weak = (client_key_bits < (uint64)(g_server_settings.minimum_rsa_key_bits - 1)) ? TRUE : FALSE;
+        boole is_unusable = (client_key_bits == 0 || client_key_bits > 8192) ? TRUE : FALSE;
+
+        if (is_too_weak == TRUE || is_unusable == TRUE)
+        {
+            DBG_AUTHENTICATION log_info("[auth] client %llu: public key is %llu bits, minimum is %lld, dropping", sender_client_id, client_key_bits, g_server_settings.minimum_rsa_key_bits);
+
+            // only a genuinely too-weak key earns the notice, and only if the admin opted in.
+            // a malformed or oversized key is never answered: nothing legitimate produces one,
+            // so there is nobody to help, only a prober to inform
+            if (is_too_weak == TRUE && is_unusable == FALSE && g_server_settings.announce_minimum_rsa_key_bits == TRUE)
+            {
+                server_msg__send_rsa_key_too_weak_to_single_client(g_clients_array[sender_client_id].p_ws_connection);
+            }
+
+            base__close_websocket_connection(sender_client_id, TRUE);
+            goto _label_client_msg__process_public_key_info_end;
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────
     // STEP 3: Store client's RSA public key
     // ──────────────────────────────────────────────────────────────────
     DBG_AUTHENTICATION log_info("[auth] client %llu: storing public key", sender_client_id);
-    clib__copy_memory(public_key, &g_clients_array[sender_client_id].public_key[0], clib__utf8_string_length(public_key), 1000);
+    clib__copy_memory(public_key, &g_clients_array[sender_client_id].public_key[0], clib__utf8_string_length(public_key), MAX_PUBLIC_KEY_LENGTH - 1);
 
     // ──────────────────────────────────────────────────────────────────
     // STEP 4: Diffie-Hellman key exchange
@@ -6402,6 +6441,20 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     if (cJSON_IsBool(json_field))
     {
         g_server_settings.is_same_ip_address_allowed = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "minimum_rsa_key_bits");
+    if (cJSON_IsNumber(json_field))
+    {
+        g_server_settings.minimum_rsa_key_bits = (int64)json_field->valuedouble;
+        if (g_server_settings.minimum_rsa_key_bits < 2048) { g_server_settings.minimum_rsa_key_bits = 2048; }
+        if (g_server_settings.minimum_rsa_key_bits > 8192) { g_server_settings.minimum_rsa_key_bits = 8192; }
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "announce_minimum_rsa_key_bits");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.announce_minimum_rsa_key_bits = cJSON_IsTrue(json_field);
     }
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_country_blocking_active");

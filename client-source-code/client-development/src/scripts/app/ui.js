@@ -3189,6 +3189,8 @@ var UI = {
                 allow_chat_pictures: document.getElementById("server-settings-general-allow-pictures-checkbox").checked,
                 chat_picture_max_size_mb: parseInt(document.getElementById("server-settings-general-picture-max-size-input").value) || 4,
                 is_same_ip_address_allowed: document.getElementById("server-settings-general-allow-same-ip-checkbox").checked,
+                minimum_rsa_key_bits: parseInt(document.getElementById("server-settings-general-minimum-rsa-bits-input").value) || 2048,
+                announce_minimum_rsa_key_bits: document.getElementById("server-settings-general-announce-rsa-bits-checkbox").checked,
                 is_country_blocking_active: document.getElementById("server-settings-general-country-blocking-checkbox").checked,
                 blocked_countries: g_blocked_countries_draft
             }

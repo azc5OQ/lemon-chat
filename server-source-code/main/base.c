@@ -502,6 +502,10 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "allow_chat_pictures", cJSON_CreateBool(g_server_settings.allow_chat_pictures == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_country_blocking_active");
     cJSON_AddItemToObject(json_root, "is_country_blocking_active", cJSON_CreateBool(g_server_settings.is_country_blocking_active == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "minimum_rsa_key_bits");
+    cJSON_AddNumberToObject(json_root, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "announce_minimum_rsa_key_bits");
+    cJSON_AddItemToObject(json_root, "announce_minimum_rsa_key_bits", cJSON_CreateBool(g_server_settings.announce_minimum_rsa_key_bits == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "blocked_countries");
     json_blocked_countries = cJSON_CreateArray();
     cJSON_AddItemToObject(json_root, "blocked_countries", json_blocked_countries);
@@ -3153,6 +3157,58 @@ void base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64_st
  * @attention only modulus is needed, exponent is defined in code, base is defined in code
  * @note this function is used only once, when server sends out public key challenge to client to find out if client is owner of that public key
  */
+/**
+ * @brief bit length of a base64-encoded rsa public key modulus. leading zero bytes are
+ *        skipped so a padded key cannot claim a bigger size than it has
+ *
+ * @param char* public_key_modulus -> the client's base64 public key string
+ *
+ * @return uint64 modulus bit length, 0 on any invalid input
+ */
+uint64 base__get_public_key_bit_length(char* public_key_modulus)
+{
+    unsigned char* modulus_binary = 0;
+    uint64 modulus_length = 0;
+    uint64 first_nonzero = 0;
+    uint64 key_string_length = 0;
+    uint64 bits = 0;
+    unsigned char top_byte = 0;
+
+    if (public_key_modulus == NULL_POINTER)
+    {
+        return 0;
+    }
+
+    // an 8192-bit modulus is 1368 base64 chars; anything longer is not a valid key
+    key_string_length = (uint64)strlen(public_key_modulus);
+    if (key_string_length == 0 || key_string_length > 1372)
+    {
+        return 0;
+    }
+
+    modulus_binary = (unsigned char*)memorymanager__allocate(2048, MEMALLOC_PUBLIC_KEY_ENCRYPT);
+    modulus_length = zchg_base64_decode(public_key_modulus, key_string_length, modulus_binary);
+
+    while (first_nonzero < modulus_length && modulus_binary[first_nonzero] == 0)
+    {
+        first_nonzero++;
+    }
+
+    if (first_nonzero < modulus_length)
+    {
+        top_byte = modulus_binary[first_nonzero];
+        bits = (modulus_length - first_nonzero - 1) * 8;
+        while (top_byte > 0)
+        {
+            bits++;
+            top_byte >>= 1;
+        }
+    }
+
+    memorymanager__free((nuint)modulus_binary);
+    return bits;
+}
+
 char* base__encrypt_string_with_public_key(char* public_key_modulus, unsigned char* bytes, uint64 buffer_length)
 {
     int status = 0;
@@ -3172,7 +3228,15 @@ char* base__encrypt_string_with_public_key(char* public_key_modulus, unsigned ch
 
     DBG_ENCRYPTION log_info("%s %s %s", "public_key_modulus_base64 ", public_key_modulus, "\n");
 
-    public_key_modulus_binary = (char*)memorymanager__allocate(1024, MEMALLOC_PUBLIC_KEY_ENCRYPT);
+    // an 8192-bit modulus is 1368 base64 chars / 1024 bytes; longer input is not a valid key
+    if (strlen(public_key_modulus) > 1372)
+    {
+        base64_out_buffer = (void*)memorymanager__allocate(1, MEMALLOC_PUBLIC_KEY_ENCRYPT);
+        ((char*)base64_out_buffer)[0] = 0;
+        return base64_out_buffer;
+    }
+
+    public_key_modulus_binary = (char*)memorymanager__allocate(2048, MEMALLOC_PUBLIC_KEY_ENCRYPT);
 
     buffer_modulus_bin_outsize = zchg_base64_decode(public_key_modulus, strlen(public_key_modulus), (unsigned char*)public_key_modulus_binary);
 
@@ -3221,7 +3285,7 @@ char* base__encrypt_string_with_public_key(char* public_key_modulus, unsigned ch
 
     clib__copy_memory(bytes, inputbuffer, buffer_length, 256);
 
-    outbuffer = (unsigned char*)memorymanager__allocate(1024, MEMALLOC_PUBLIC_KEY_ENCRYPT);
+    outbuffer = (unsigned char*)memorymanager__allocate(2048, MEMALLOC_PUBLIC_KEY_ENCRYPT);
 
     status = mbedtls_rsa_pkcs1_encrypt(&rsa, mbedtls_ctr_drbg_random, &ctr_drbg, buffer_length, inputbuffer, outbuffer);
 
@@ -3236,13 +3300,15 @@ char* base__encrypt_string_with_public_key(char* public_key_modulus, unsigned ch
         DBG_ENCRYPTION log_info("%s %d %s", "[!] base__encrypt_string_with_public_key succeeded ", status, " \n");
     }
 
-    base64_out_string_size = ((4 * 256 / 3) + 3) & ~3;
+    // the pkcs1 ciphertext is exactly as long as the modulus, not fixed 256 bytes:
+    // the old hardcoded 256 silently truncated the challenge for every key over 2048 bits
+    base64_out_string_size = ((4 * buffer_modulus_bin_outsize / 3) + 3) & ~3;
 
     DBG_ENCRYPTION log_info("%s %llu %s", "base64_out_string_size -> ", base64_out_string_size, "\n");
 
     base64_out_buffer = (void*)memorymanager__allocate(base64_out_string_size * 2, MEMALLOC_PUBLIC_KEY_ENCRYPT);
 
-    zchg_base64_encode(outbuffer, 256, base64_out_buffer);
+    zchg_base64_encode(outbuffer, buffer_modulus_bin_outsize, base64_out_buffer);
 
     memorymanager__free((nuint)public_key_modulus_binary);
     memorymanager__free((nuint)outbuffer);

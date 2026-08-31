@@ -14,6 +14,7 @@ void    base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64
 void    base__free_json_message(cJSON* json_root_object1, char* json_root_object1_string);
 uint64  base__get_client_count_for_channel(uint64 channel_id);
 char*   base__encrypt_string_with_public_key(char* public_key_modulus, unsigned char* bytes, uint64 buffer_length);
+uint64  base__get_public_key_bit_length(char* public_key_modulus);
 boole   base__fill_secure_random_bytes(unsigned char* out_buffer, uint64 length);
 boole   base__fill_block_of_data_with_ascii_characters(char* block, uint64 length);
 boole   base__is_there_a_client_with_same_public_key(cstring public_key);

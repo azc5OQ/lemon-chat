@@ -313,6 +313,21 @@ body {
     padding-top: 1px;
 }
 
+.chat-picture-img {
+    max-width: 100%;
+    border-radius: 8px;
+    display: block;
+    margin-top: 4px;
+    background: transparent !important;
+}
+.chat-picture-img-default {
+    width: 48px;
+    height: 48px;
+}
+.imgnotsentyet {
+    opacity: 0.3 !important;
+}
+
 #chat-context-selectors-container {
     background: var(--tmx-darkest);
     border-bottom: 1px solid var(--tmx-line);
@@ -1246,9 +1261,10 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
     cursor: default;
     border: 1px solid transparent;
 }
+/* the spacer div carries an inline display, so a bare display:none loses without !important */
 .member-list-client > div:first-child {
     width: 0 !important;
-    display: none;
+    display: none !important;
 }
 .member-list-client .connected-client-p-received-messages-number,
 .member-list-client .marquee-music-playing-container,
@@ -1277,6 +1293,8 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 1 1 auto;
+    text-align: center;
 }
 .member-list-client .client-alias {
     font-size: 14px;

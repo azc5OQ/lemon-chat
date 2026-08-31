@@ -579,6 +579,8 @@ void settings__load(void)
     g_server_settings.chat_picture_max_size_bytes = PICTURE_DEFAULT_SIZE_BYTES;
     g_server_settings.allow_chat_pictures = TRUE;
     g_server_settings.is_country_blocking_active = FALSE;
+    g_server_settings.minimum_rsa_key_bits = 2048;
+    g_server_settings.announce_minimum_rsa_key_bits = FALSE;
     g_server_settings.blocked_countries_count = 0;
     g_server_settings.log_client_joins = FALSE;
     g_server_settings.log_username_changes = FALSE;
@@ -727,6 +729,15 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.allow_file_uploads = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "file_upload_max_size_bytes");
                 if (cJSON_IsNumber(json_field)) { g_server_settings.file_upload_max_size_bytes = (int64)json_field->valuedouble; }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "minimum_rsa_key_bits");
+                if (cJSON_IsNumber(json_field))
+                {
+                    g_server_settings.minimum_rsa_key_bits = (int64)json_field->valuedouble;
+                    if (g_server_settings.minimum_rsa_key_bits < 2048) { g_server_settings.minimum_rsa_key_bits = 2048; }
+                    if (g_server_settings.minimum_rsa_key_bits > 8192) { g_server_settings.minimum_rsa_key_bits = 8192; }
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "announce_minimum_rsa_key_bits");
+                if (cJSON_IsBool(json_field)) { g_server_settings.announce_minimum_rsa_key_bits = cJSON_IsTrue(json_field); }
                 if (g_server_settings.file_upload_max_size_bytes < FILE_UPLOAD_MIN_SIZE_BYTES) { g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_MIN_SIZE_BYTES; }
                 if (g_server_settings.file_upload_max_size_bytes > FILE_UPLOAD_MAX_SIZE_BYTES) { g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_MAX_SIZE_BYTES; }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "chat_picture_max_size_bytes");

@@ -84,24 +84,14 @@
     </style>
 
     <script type="text/javascript">
-/* @@INCLUDE: scripts/vendor/biginteger.js @@ */
-    </script>
-
-
-    <script type="text/javascript">
 /* @@INCLUDE: scripts/app/utils.js @@ */
 /* @@INCLUDE: scripts/vendor/aes-js.js @@ */
 /* @@INCLUDE: scripts/app/encoding.js @@ */
-/* @@INCLUDE: scripts/vendor/jsbn.js @@ */
 /* @@INCLUDE: scripts/vendor/sha256.js @@ */
-/* @@INCLUDE: scripts/vendor/sha1.js @@ */
-/* @@INCLUDE: scripts/vendor/md5.js @@ */
-/* @@INCLUDE: scripts/vendor/rsa.js @@ */
-/* @@INCLUDE: scripts/vendor/rsa-sign.js @@ */
-/* @@INCLUDE: scripts/vendor/cryptico.js @@ */
 /* @@INCLUDE: scripts/vendor/js-sha256.js @@ */
 /* @@INCLUDE: scripts/vendor/libopus.emscripten.js @@ */
 /* @@INCLUDE: scripts/app/audio-opus-glue.js @@ */
+/* @@INCLUDE: scripts/app/rsa-crypto.js @@ */
 /* @@INCLUDE: scripts/app/worker-entry.js @@ */
 /* @@INCLUDE: scripts/vendor/minimp3.js @@ */
 /* @@INCLUDE: scripts/app/minimp3-worker.js @@ */
@@ -224,6 +214,14 @@
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-same-ip-checkbox">
                             <span>allow more than one client from the same IP address</span>
+                        </label>
+                        <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>minimum rsa key size in bits (2048-8192, clients with weaker keys are dropped)</span>
+                            <input type="number" min="2048" max="8192" step="1" id="server-settings-general-minimum-rsa-bits-input">
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-announce-rsa-bits-checkbox">
+                            <span>tell rejected clients which key size is required (off: they are dropped without knowing why)</span>
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-country-blocking-checkbox">
@@ -415,6 +413,19 @@
                         </span>
                         <input type="checkbox" id="local-settings-hide-mic">
                     </label>
+                    <div class="local-settings-row local-settings-row-select">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">identity key size</span>
+                            <span class="local-settings-hint">bigger is stronger but slower to create, and it changes which identity a passphrase produces</span>
+                        </span>
+                        <select id="local-settings-rsa-key-bits">
+                            <option value="2048">2048 bits</option>
+                            <option value="3072">3072 bits</option>
+                            <option value="4096">4096 bits</option>
+                            <option value="6144">6144 bits</option>
+                            <option value="8192">8192 bits</option>
+                        </select>
+                    </div>
                     <label class="local-settings-row">
                         <span class="local-settings-text">
                             <span class="local-settings-label">app log button</span>
@@ -923,6 +934,22 @@
                     </div>
                 </div>
                 <p id="identity-mode-toggle-link" class="identity-dialog-link">use an identity passphrase instead</p>
+            </div>
+        </div>
+
+        <!-- shown when the server rejected our key and told us which size it wants. only
+             appears when that server has the announcement turned on -->
+        <div id="rsa-key-too-weak-container" style="display: none;">
+            <div id="rsa-key-too-weak-container-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Stronger Key Required</p>
+                    <div class="close-button" id="close-button-rsa-key-too-weak"></div>
+                </div>
+                <p class="identity-dialog-explainer" id="rsa-key-too-weak-text"></p>
+                <div class="identity-dialog-button-row" style="text-align: right;">
+                    <input type="button" class="button-1" id="rsa-key-too-weak-no-button" value="no">
+                    <input type="button" class="button-1" id="rsa-key-too-weak-yes-button" value="yes, use a bigger key">
+                </div>
             </div>
         </div>
 

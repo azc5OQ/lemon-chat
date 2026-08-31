@@ -47,15 +47,18 @@
             // the local keypair as { public_key_string, identity_string }. the private key stays in the worker
             var g_identity_slot = make_slot();
 
-            // one keygen per passphrase, because a repeat request for the same identity must be a no-op
+            // one keygen per passphrase, because a repeat request for the same identity must be a no-op.
+            // the size is part of the key: the same passphrase at a new size is a different identity,
+            // so it has to be part of what makes a request a repeat
             var g_identity_requested_for = null;
+            var g_identity_requested_bits = 0;
 
             function request_identity(passphrase_or_null)
             {
                 let requested_key = (typeof passphrase_or_null === "string" && passphrase_or_null.length >= 199)
                     ? passphrase_or_null : "(random)";
 
-                if (g_identity_requested_for === requested_key)
+                if (g_identity_requested_for === requested_key && g_identity_requested_bits === g_rsa_key_bits)
                 {
                     return;
                 }
@@ -68,15 +71,17 @@
                 }
 
                 g_identity_requested_for = requested_key;
+                g_identity_requested_bits = g_rsa_key_bits;
                 g_identity_slot.is_set = false;
                 g_is_rsa_key_generated = false;
 
-                console.log("connect-path: keypair requested (" + (requested_key === "(random)" ? "random" : "from passphrase") + ")");
+                console.log("connect-path: keypair requested (" + (requested_key === "(random)" ? "random" : "from passphrase") + ", " + g_rsa_key_bits + " bits)");
 
                 g_data_processing_worker.postMessage({
                     type: "mainthread__generate_rsa_keypair",
                     from_identity_string: requested_key !== "(random)",
-                    identity_passphrase_string: requested_key === "(random)" ? null : requested_key
+                    identity_passphrase_string: requested_key === "(random)" ? null : requested_key,
+                    rsa_key_bits: g_rsa_key_bits
                 });
 
                 // the derive can take minutes on a phone, so the status says what the wait actually is

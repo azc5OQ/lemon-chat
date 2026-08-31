@@ -1366,7 +1366,7 @@ a-toast:hover {
 
 .custom-file-upload-button {
     display: inline-block;
-    background-color: #05a3ff;
+    background-color: #7d8799;
     font-family: sans-serif;
     color: #ffffff;
     padding: 15px 1px 15px 15px;
@@ -1377,7 +1377,8 @@ a-toast:hover {
     transition: 0.3s ease;
     vertical-align: top;
     background-repeat: no-repeat;
-    background-size: contain;
+    background-size: 18px 18px;
+    background-position: center;
 }
 
 .button-1 {
@@ -1413,7 +1414,7 @@ a-toast:hover {
 }
 
 .custom-file-upload-button:hover {
-    background-color: #7d8799;
+    background-color: #36393f;
 }
 
 .custom-file-upload-button:active {
@@ -2161,7 +2162,7 @@ a-toast:hover {
     background-color: rgba(255, 255, 255, 0.07);
 }
 
-/* send is the one accent in the row, because it is the primary action */
+/* send wears the same grey-blue as the log and microphone chrome, hover darkens like theirs */
 #chat-input-container-send-chat-input {
     width: auto;
     height: 36px;
@@ -2169,17 +2170,16 @@ a-toast:hover {
     margin-left: 4px;
     border: 0;
     border-radius: 10px;
-    background: #3f8cff;
+    background: #7d8799;
     color: #ffffff;
     font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    font-weight: 400;
     cursor: pointer;
     transition: background-color 0.12s ease;
 }
 
 #chat-input-container-send-chat-input:hover {
-    background-color: #5c9dff;
+    background-color: #36393f;
 }
 
 /* the format tools (text colour, font size) stay reachable but quiet in the card's bottom-left

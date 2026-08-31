@@ -27,6 +27,42 @@
  *
  * @return void
  */
+/**
+ * @brief tells a client its rsa key is too weak, naming the required size, so it can offer to
+ *        regenerate. only sent when the admin enabled announce_minimum_rsa_key_bits; otherwise
+ *        the client is dropped without a word and never learns the requirement.
+ *
+ * @attention sent in PLAINTEXT on purpose: the key is rejected before the diffie-hellman
+ *            exchange completes, so there is no shared secret to encrypt with yet. the message
+ *            carries nothing secret - only the already-public policy the admin chose to publish
+ *
+ * @param ws_cli_conn_t* websocket -> websocket connection of the rejected client
+ *
+ * @return void
+ */
+void server_msg__send_rsa_key_too_weak_to_single_client(ws_cli_conn_t* websocket)
+{
+    char* json_root_object1_string = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "rsa_key_too_weak");
+    cJSON_AddNumberToObject(json_message_object1, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    if (json_root_object1_string != NULL_POINTER)
+    {
+        ws_sendframe_txt(websocket, json_root_object1_string);
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
 void server_msg__send_public_key_challenge_to_single_client(ws_cli_conn_t* websocket, char* random_value_challenge_string, char* dh_public_mix_for_client)
 {
     char* json_root_object1_string = 0;
@@ -1168,6 +1204,8 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON_AddItemToObject(json_message_object1, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
     cJSON_AddItemToObject(json_message_object1, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
+    cJSON_AddNumberToObject(json_message_object1, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
+    cJSON_AddItemToObject(json_message_object1, "announce_minimum_rsa_key_bits", cJSON_CreateBool(g_server_settings.announce_minimum_rsa_key_bits == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
     cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size_mb", (double)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)));
     cJSON_AddNumberToObject(json_message_object1, "chat_picture_max_size_mb", (double)(g_server_settings.chat_picture_max_size_bytes / (1024 * 1024)));
