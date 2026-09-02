@@ -3182,6 +3182,7 @@ var UI = {
                 hide_clients_in_password_channels: document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked,
                 allow_temp_channels: document.getElementById("server-settings-general-allow-temp-channels-checkbox").checked,
                 allow_typing_indicator: document.getElementById("server-settings-general-allow-typing-indicator-checkbox").checked,
+                allow_client_renames: document.getElementById("server-settings-general-allow-renames-checkbox").checked,
                 is_sending_text_to_idle_clients_allowed: document.getElementById("server-settings-general-allow-text-to-idle-clients-checkbox").checked,
                 allow_private_messages: document.getElementById("server-settings-general-allow-private-messages-checkbox").checked,
                 allow_file_uploads: document.getElementById("server-settings-general-allow-file-uploads-checkbox").checked,

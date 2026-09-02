@@ -204,6 +204,7 @@ typedef struct server_settings
     boole allow_last_seen;  // record and serve when an identity was last connected, so clients can show "last seen"; needs identities; default off
     boole allow_offline_messages;  // queue text messages for registered identities that are offline and deliver them on reconnect. asked ONCE at first-time setup and never editable afterwards, because switching it on makes the server retain each identity's RAW public key (peers need it to encrypt while the owner is away). needs identities + allow_stored_clients_list; default off
     boole allow_typing_indicator;  // clients may tell the people they are writing to that they are typing ("x is typing ..."). carries no message content, only who is typing and where; editable in the server settings tab; default off
+    boole allow_client_renames;  // users may rename themselves after connecting; when off a rename request is silently ignored, because the switch is meant against name games - an admin still renames freely; default on
     int64 avatar_max_size_bytes;  // largest accepted raw image size (bytes) for an avatar; larger uploads are silently dropped
     uint64 chat_cooldown_milliseconds;
     uint64 join_channel_request_cooldown_milliseconds;

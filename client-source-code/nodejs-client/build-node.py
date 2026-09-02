@@ -9,6 +9,7 @@ dom-shim.js), plus all webaudio/wasm/worker files - voice stays in the WebView.
 
 Paths starting with `node/` resolve next to this script, everything else under client-development/src.
 """
+import base64
 import os
 import re
 import sys
@@ -20,6 +21,8 @@ TEMPLATE = os.path.join(HERE, "node-template.js")
 OUT = os.path.join(HERE, "bundle.js")
 
 INCLUDE_RE = re.compile(r"^\s*/\*\s*@@INCLUDE:\s*(.+?)\s*@@\s*\*/\s*$")
+# same token build.py resolves: rsa-crypto.js carries its wasm as @@WASM:wasm/rsa_keygen.wasm@@
+WASM_RE = re.compile(r"@@WASM:([^@]+)@@")
 
 
 def read_text(path):
@@ -56,6 +59,20 @@ def main():
             out.append(line)
 
     assembled = "\n".join(out)
+
+    # re-encode the wasm binaries into the inline base64 strings, exactly like build.py does
+    n_wasm = [0]
+
+    def sub_wasm(m):
+        rel = m.group(1).strip()
+        with open(os.path.join(SRC, rel), "rb") as f:
+            raw = f.read()
+        b64 = base64.b64encode(raw).decode("ascii")
+        n_wasm[0] += 1
+        print("  wasm    %2d  %-44s %9d bytes -> %d base64 chars" %
+              (n_wasm[0], rel, len(raw), len(b64)))
+        return b64
+    assembled = WASM_RE.sub(sub_wasm, assembled)
 
     if os.path.exists(OUT):
         os.remove(OUT)

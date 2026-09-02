@@ -3098,6 +3098,10 @@ var server_msg = {
         {
             document.getElementById("enter-server-settings").style.display = "block";
             document.getElementById("enter-server-settings").onclick = UI.enter_server_settings_onclick;
+
+            // an admin may rename even when renames are off for users, so the input un-greys
+            g_is_local_client_admin = true;
+            apply_rename_policy_to_ui();
         }
     },
     // pushes the newly created tag into g_tags and appends its row to the settings tag table

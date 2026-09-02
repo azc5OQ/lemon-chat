@@ -52,6 +52,11 @@
                         return;
                     }
 
+                    // remembered as the chosen username too, because on the next connect the
+                    // server can then apply the name at login instead of through a rename -
+                    // a rename the admin may have switched off for users
+                    g_chosen_username = username;
+
                     client_msg.send_change_client_username_request(username, local_client_id);
 
                     let index = get_client_index_in_array_by_client_id(local_client_id);
@@ -282,6 +287,14 @@
                     {
                         console.log("connect-path: server details changed, dropping the live connection");
                         g_websocket_worker.postMessage({ type: "close" });
+                    }
+
+                    // the android default username becomes the chosen username, because the settings
+                    // arrive before the dial and the server then applies the name at login - the old
+                    // way was a rename after connect, which an admin can switch off for users
+                    if (typeof settings_from_android.default_username === "string" && settings_from_android.default_username.length > 0)
+                    {
+                        g_chosen_username = settings_from_android.default_username;
                     }
 
                     // only node derives its identity from the settings, because the webview does not

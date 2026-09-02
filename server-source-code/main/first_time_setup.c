@@ -230,6 +230,7 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     cJSON_AddItemToObject(json_root, "allow_last_seen", cJSON_CreateBool(g_server_settings.allow_last_seen == TRUE));
     cJSON_AddItemToObject(json_root, "allow_offline_messages", cJSON_CreateBool(g_server_settings.allow_offline_messages == TRUE));
     cJSON_AddItemToObject(json_root, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
+    cJSON_AddItemToObject(json_root, "allow_client_renames", cJSON_CreateBool(g_server_settings.allow_client_renames == TRUE));
     cJSON_AddItemToObject(json_root, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
     cJSON_AddItemToObject(json_root, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
@@ -1045,6 +1046,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     printf("      %s%s\n", "last seen ............ ", (g_server_settings.allow_last_seen == TRUE) ? "on" : "off");
     printf("      %s%s\n", "offline messages ..... ", (g_server_settings.allow_offline_messages == TRUE) ? "on" : "off");
     printf("      %s%s\n", "typing indicator ..... ", (g_server_settings.allow_typing_indicator == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "client renames ....... ", (g_server_settings.allow_client_renames == TRUE) ? "allowed" : "admin only");
     if (g_server_settings.allow_file_uploads == TRUE)
     {
         printf("      %s%s%lld%s\n", "file uploads ......... ", "on (max ", (long long)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)), " MB)");

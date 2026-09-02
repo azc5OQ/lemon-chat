@@ -15,21 +15,16 @@
 
 /* @@INCLUDE: node/dom-shim.js @@ */
 
-// its own <script> block in the browser (template.html:87), i.e. outside the factory. main.js:1279
-// builds the 8192-bit dh modulus with bigInt at LOAD time, so this has to be here, not later
-/* @@INCLUDE: scripts/vendor/biginteger.js @@ */
-
 /* @@INCLUDE: scripts/app/utils.js @@ */
 /* @@INCLUDE: scripts/vendor/aes-js.js @@ */
 /* @@INCLUDE: scripts/app/encoding.js @@ */
-/* @@INCLUDE: scripts/vendor/jsbn.js @@ */
+/* @@INCLUDE: scripts/app/platform-detection.js @@ */
 /* @@INCLUDE: scripts/vendor/sha256.js @@ */
-/* @@INCLUDE: scripts/vendor/sha1.js @@ */
-/* @@INCLUDE: scripts/vendor/md5.js @@ */
-/* @@INCLUDE: scripts/vendor/rsa.js @@ */
-/* @@INCLUDE: scripts/vendor/rsa-sign.js @@ */
-/* @@INCLUDE: scripts/vendor/cryptico.js @@ */
 /* @@INCLUDE: scripts/vendor/js-sha256.js @@ */
+// the rsa keypair, encrypt, decrypt, signing and the dh modpow all run in rsa_keygen.wasm;
+// this one file replaced the whole old jsbn/rsa/cryptico vendor stack (dh itself uses the
+// native BigInt, which node has too)
+/* @@INCLUDE: scripts/app/rsa-crypto.js @@ */
 // in for ONE function: custom_typeof (audio-opus-glue.js:77), which messages.js calls when clamping
 // a chat message's font size. it is a general helper that happens to live in the audio file. the
 // opus classes around it are only constructed from the worker entry points, which never run here

@@ -805,6 +805,7 @@ function mainthread__process_received_websocket_message_continue(e)
                 is_idle_mode_allowed: msg.message.is_idle_mode_allowed,
                 is_alias_registration_allowed: msg.message.is_alias_registration_allowed,
                 allow_typing_indicator: msg.message.allow_typing_indicator,
+                allow_client_renames: msg.message.allow_client_renames,
                 allow_avatars: msg.message.allow_avatars,
                 avatar_max_size: msg.message.avatar_max_size,
                 allow_file_uploads: msg.message.allow_file_uploads,
@@ -1695,6 +1696,34 @@ var g_autoconnect_details = {
         // "test2"
     ]
 };
+
+// the username this client asks for while connecting; the server uses it instead of the
+// assigned user0/user1/... name, provided nobody connected is using it. leave "" for the
+// assigned name. a registered identity's admin-set name still wins over this
+var g_chosen_username = "";
+
+// on unless the server policy says users may not rename themselves; admins always may
+var g_client_renames_allowed = true;
+
+// true once the server granted this session the admin tag
+var g_is_local_client_admin = false;
+
+// greys the local rename input when the server ignores user renames, because a rename that
+// silently does nothing reads as a bug; an admin keeps the input editable
+function apply_rename_policy_to_ui()
+{
+    let rename_input = document.getElementById("connected-local-client-input");
+
+    if (rename_input == null)
+    {
+        return;
+    }
+
+    let may_rename = (g_client_renames_allowed == true) || (g_is_local_client_admin == true);
+
+    rename_input.readOnly = (may_rename == false);
+    rename_input.title = (may_rename == false) ? "renames are disabled on this server" : "";
+}
 
 var g_custom_key_count = 0; // no key field by default; the "add" button creates key 0, key 1, ... so connecting with zero keys matches a server configured with no extra metadata keys
 var g_metadata_keys = [];
@@ -6169,6 +6198,13 @@ function apply_server_policy_fields(data)
     g_is_alias_registration_allowed = (data.is_alias_registration_allowed == true);
     g_is_typing_indicator_allowed = (data.allow_typing_indicator == true);
 
+    // rename policy: on unless the server says otherwise (an older server says nothing)
+    if (data.allow_client_renames !== undefined)
+    {
+        g_client_renames_allowed = (data.allow_client_renames == true);
+    }
+    apply_rename_policy_to_ui();
+
     // avatars policy arrives in-protocol: the android app loads client.html from its assets,
     // so the serve-time config injection never reaches it
     if (data.allow_avatars !== undefined)
@@ -6760,6 +6796,13 @@ function mainthread_onmessage(e)
             }
         };
 
+        // the chosen username rides along on the last login message, because the server
+        // assigns the final name right after accepting this response
+        if (typeof g_chosen_username === "string" && g_chosen_username.length > 0)
+        {
+            message_object.message.chosen_username = g_chosen_username;
+        }
+
         send_message_object(message_object);
     }
     else if (e.data.type == "data_processing_worker__chat_message_edit_from_server")
@@ -6803,6 +6846,7 @@ function mainthread_onmessage(e)
         document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked = msg.message.hide_clients_in_password_channels == true;
         document.getElementById("server-settings-general-allow-temp-channels-checkbox").checked = msg.message.allow_temp_channels == true;
         document.getElementById("server-settings-general-allow-typing-indicator-checkbox").checked = msg.message.allow_typing_indicator == true;
+        document.getElementById("server-settings-general-allow-renames-checkbox").checked = msg.message.allow_client_renames == true;
         document.getElementById("server-settings-general-allow-text-to-idle-clients-checkbox").checked = msg.message.is_sending_text_to_idle_clients_allowed == true;
         document.getElementById("server-settings-general-allow-private-messages-checkbox").checked = msg.message.allow_private_messages == true;
         document.getElementById("server-settings-general-allow-file-uploads-checkbox").checked = msg.message.allow_file_uploads == true;
@@ -7760,8 +7804,8 @@ async function window_onload()
         g_are_server_details_predefined = false;
     }
 
-    // detect if device is touch device
-    if (window.matchMedia("(pointer: coarse) and (hover: none)").matches)
+    // touch detection lives in platform-detection.js; the android webview force above stays
+    if (detect_touch_device() == true)
     {
         g_is_client_running_under_touch_device = true;
     }
@@ -9581,6 +9625,13 @@ return {
 
     // the webview handover: false closes the socket and parks reconnect, true re-arms
     node_set_connection_wanted: node_set_connection_wanted,
+
+    // sets the username this client asks for while connecting, because a headless host
+    // has no page variable to edit; "" goes back to the assigned name
+    node_set_chosen_username: function(username)
+    {
+        g_chosen_username = (typeof username === "string") ? username : "";
+    },
 
     // a plaintext request from the loopback ui: encrypt it and send to the real server
     node_forward_raw_request: function(json_string)

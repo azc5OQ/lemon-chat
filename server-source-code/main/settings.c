@@ -573,6 +573,7 @@ void settings__load(void)
     g_server_settings.allow_last_seen = FALSE;
     g_server_settings.allow_offline_messages = FALSE;
     g_server_settings.allow_typing_indicator = FALSE;
+    g_server_settings.allow_client_renames = TRUE;
     g_server_settings.avatar_max_size_bytes = 51200;  // 50 KB raw image (~68 KB base64, fits MAX_CLIENT_AVATAR_LENGTH)
     g_server_settings.allow_file_uploads = FALSE;
     g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_DEFAULT_SIZE_BYTES;
@@ -689,6 +690,8 @@ void settings__load(void)
 
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_typing_indicator");
                 if (cJSON_IsBool(json_field)) { g_server_settings.allow_typing_indicator = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_client_renames");
+                if (cJSON_IsBool(json_field)) { g_server_settings.allow_client_renames = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "avatar_max_size_bytes");
                 if (cJSON_IsNumber(json_field)) { g_server_settings.avatar_max_size_bytes = (int64)json_field->valuedouble; }
 

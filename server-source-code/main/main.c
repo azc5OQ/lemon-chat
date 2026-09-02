@@ -123,7 +123,6 @@ static int64 _main_internal__get_client_index_by_ws_client_pointer(ws_cli_conn_t
 void onopen(ws_cli_conn_t* client)
 {
     char* ip_address = NULL_POINTER;
-    boole ip_address_already_in_use = FALSE;
     int64 index = 0;
 
 
@@ -165,13 +164,13 @@ void onopen(ws_cli_conn_t* client)
         goto label_onopen_end;
     }
 
+    // with same-ip off, a second session from an ip is judged once its identity is proven (a returning
+    // client's own ghost must not block him), so only a second unfinished handshake is refused this early
     if (g_server_settings.is_same_ip_address_allowed == FALSE)
     {
-        ip_address_already_in_use = base__is_there_a_client_with_same_ip_address(ip_address);
-
-        if (ip_address_already_in_use == TRUE)
+        if (base__is_there_an_unfinished_handshake_from_same_ip_address(ip_address) == TRUE)
         {
-            DBG_AUTHENTICATION log_info("%s", "ip address already in use, closing socket");
+            DBG_AUTHENTICATION log_info("%s", "another handshake from this ip is still in progress, closing socket");
             server_logs__join_refused("same ip already connected", ip_address);
             ws_close_client(client);
             goto label_onopen_end;

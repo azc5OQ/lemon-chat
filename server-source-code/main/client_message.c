@@ -57,6 +57,8 @@ static boole _client_msg_internal__is_json_create_channel_request_valid(cJSON* j
 static boole _client_msg_internal__is_public_key_info_message_valid(cJSON* json_root, uint64 client_id);
 static char* _client_msg_internal__get_challenge_string(cJSON* json_root);
 static boole _client_msg_internal__is_public_key_challenge_response_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_internal__try_apply_chosen_username(cJSON* json_root, uint64 client_index);
+static boole _client_msg_internal__is_username_free_at_login(cstring candidate_username, uint64 client_index);
 static boole _client_msg_internal__is_change_client_username_message_valid(cJSON* json_root, uint64 client_id);
 static void _client_msg_internal__process_chat_message_action(cJSON* json_root, uint64 sender_client_id, char* outbound_action_type, boole is_edit);
 static boole _client_msg_internal__is_offline_chat_message_valid(cJSON* json_root);
@@ -2078,12 +2080,11 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    if (base__is_there_a_client_with_same_public_key(public_key) == TRUE)
-    {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: duplicate public key, rejecting", sender_client_id);
-        base__close_websocket_connection(sender_client_id, TRUE);
-        goto _label_client_msg__process_public_key_info_end;
-    }
+    // a public key already in use is NOT refused here: after a connection drops the server can
+    // hold a stale session for minutes, and refusing locked the real owner out of his own identity.
+    // the returning client is let through and takes the identity over once the challenge below
+    // proves he holds the private key - judging it any earlier would let anyone kick anyone off,
+    // because a public key is public
 
     // ──────────────────────────────────────────────────────────────────
     // STEP 2b: Enforce the configured minimum RSA key size
@@ -2290,6 +2291,134 @@ _label_client_msg__process_public_key_info_end:
 }
 
 /**
+ * @brief applies the optional connect-time chosen username from the challenge response
+ *
+ * @param cJSON* json_root -> the parsed client request (may carry message.chosen_username)
+ * @param uint64 client_index -> id of the client being authenticated
+ *
+ * @return boole -> TRUE when the chosen name was applied, FALSE when the caller should run
+ *         the normal default_nameN assignment instead
+ *
+ * @note the same rules as a rename: at most 50 characters, not in use by a connected client,
+ *       not the registered name of another identity. a bad choice falls back silently, because
+ *       refusing the whole login over a taken name would read as a broken server
+ */
+/**
+ * @brief tells whether a username is free for this client to take while it is logging in
+ *
+ * @param cstring candidate_username -> the name being tried
+ * @param uint64 client_index -> the client that wants it
+ *
+ * @return boole -> TRUE when nobody else connected uses it and no other identity has it registered
+ *
+ * @note sessions carrying the SAME public key are skipped: those are this client's own ghosts,
+ *       already closed by the identity takeover, so the name they still hold counts as free
+ */
+static boole _client_msg_internal__is_username_free_at_login(cstring candidate_username, uint64 client_index)
+{
+    uint64 i = 0;
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (i == client_index)
+        {
+            continue;
+        }
+
+        if (g_clients_array[client_index].public_key[0] != 0
+            && clib__is_string_equal(g_clients_array[i].public_key, g_clients_array[client_index].public_key) == TRUE)
+        {
+            continue;
+        }
+
+        if (clib__is_string_equal(g_clients_array[i].username, candidate_username) == TRUE)
+        {
+            return FALSE;
+        }
+    }
+
+    // registered names are reserved for their identity, same rule the rename path enforces
+    if (g_clients_array[client_index].public_key[0] != 0)
+    {
+        char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+        base__hash_password_to_base64(g_clients_array[client_index].public_key, identity_hash, sizeof(identity_hash));
+
+        if (base__is_alias_taken_by_another_identity((char*)candidate_username, identity_hash) == TRUE)
+        {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+static boole _client_msg_internal__try_apply_chosen_username(cJSON* json_root, uint64 client_index)
+{
+    cJSON* json_message_object = 0;
+    cJSON* json_chosen_username = 0;
+    char candidate_username[USERNAME_MAX_LENGTH];
+    char suffix_buffer[16];
+    int64 chosen_length = 0;
+    uint64 i = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == 0)
+    {
+        return FALSE;
+    }
+
+    json_chosen_username = cJSON_GetObjectItemCaseSensitive(json_message_object, "chosen_username");
+    if (cJSON_IsString(json_chosen_username) == FALSE || json_chosen_username->valuestring == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    chosen_length = clib__utf8_string_length_check_max_length(json_chosen_username->valuestring, 50);
+    if (chosen_length <= 0)
+    {
+        return FALSE;
+    }
+
+    // the wanted name first, then the same name with 2, 3, ... appended, so somebody else holding
+    // it costs a digit instead of the whole wish
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        clib__null_memory(candidate_username, USERNAME_MAX_LENGTH);
+        clib__null_memory(suffix_buffer, sizeof(suffix_buffer));
+        clib__copy_memory(json_chosen_username->valuestring, candidate_username, chosen_length, USERNAME_MAX_LENGTH);
+
+        if (i > 0)
+        {
+            sprintf(suffix_buffer, "%llu", (unsigned long long)(i + 1));
+
+            // a name that long has no room left for a number, so stop trying
+            if ((chosen_length + (int64)clib__utf8_string_length(suffix_buffer)) > 50)
+            {
+                break;
+            }
+
+            clib__copy_memory(&suffix_buffer[0], &candidate_username[chosen_length], clib__utf8_string_length(suffix_buffer), USERNAME_MAX_LENGTH - chosen_length);
+        }
+
+        if (_client_msg_internal__is_username_free_at_login(candidate_username, client_index) == TRUE)
+        {
+            clib__null_memory(g_clients_array[client_index].username, USERNAME_MAX_LENGTH);
+            clib__copy_memory(candidate_username, g_clients_array[client_index].username, clib__utf8_string_length(candidate_username), USERNAME_MAX_LENGTH);
+            DBG_AUTHENTICATION log_info("%s %llu %s %s %s", "client ", client_index, " connected with chosen username ", g_clients_array[client_index].username, "\n");
+            return TRUE;
+        }
+    }
+
+    DBG_AUTHENTICATION log_info("%s %s %s", "chosen username ", json_chosen_username->valuestring, " and its numbered variants are all taken - falling back to an assigned name \n");
+    return FALSE;
+}
+
+/**
  * @brief processes public key challenge response from client
  *
  * @param cJSON* json_root -> the parsed client request
@@ -2384,13 +2513,38 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
             }
         }
 
-        status = base__assign_username_for_newly_joined_client(sender_client_id, g_server_settings.default_client_name);
+        // the challenge just proved this client owns the identity, so an older session still holding
+        // the same key is a ghost of a dropped connection and is disconnected now. nothing is carried
+        // over from it: this login is an ordinary fresh one, which is what keeps the channel key
+        // handover honest - a client only gets channel keys by joining a channel for real
+        base__disconnect_other_clients_with_same_public_key(sender_client_id, current_client->public_key);
 
-        if (status == FALSE)
+        // the same-ip rule is judged here and not at socket open, because only now is it known whether
+        // the session already on this ip was this very identity (its ghost, dropped just above)
+        if (g_server_settings.is_same_ip_address_allowed == FALSE)
         {
-            base__close_websocket_connection(sender_client_id, FALSE);
-            DBG_AUTHENTICATION log_info("%s %llu %s", "client_msg__process_public_key_challenge_response deleting client base__assign_username_for_newly_joined_client returned false : client index ", sender_client_id, " \n");
-            goto _label_client_msg__process_public_key_challenge_response_end;
+            if (base__is_there_another_authenticated_client_with_same_ip_address(sender_client_id, current_client->ip_address, current_client->public_key) == TRUE)
+            {
+                log_info("%s %s %s", "join refused: another identity is already connected from ip", current_client->ip_address, "\n");
+                server_logs__join_refused("same ip already connected", current_client->ip_address);
+                base__close_websocket_connection(sender_client_id, FALSE);
+                goto _label_client_msg__process_public_key_challenge_response_end;
+            }
+        }
+
+        // a connect-time chosen username is used instead of the assigned default_nameN when the
+        // client sent one and it is free; a registered identity's admin-set name still wins,
+        // because it is pinned over the session name right below
+        if (_client_msg_internal__try_apply_chosen_username(json_root, sender_client_id) == FALSE)
+        {
+            status = base__assign_username_for_newly_joined_client(sender_client_id, g_server_settings.default_client_name);
+
+            if (status == FALSE)
+            {
+                base__close_websocket_connection(sender_client_id, FALSE);
+                DBG_AUTHENTICATION log_info("%s %llu %s", "client_msg__process_public_key_challenge_response deleting client base__assign_username_for_newly_joined_client returned false : client index ", sender_client_id, " \n");
+                goto _label_client_msg__process_public_key_challenge_response_end;
+            }
         }
 
         // it's better when readlock is placed here instead of it being placed directly in server_msg__send_channel_list_to_single_client function
@@ -2603,6 +2757,14 @@ void client_msg__process_change_client_username(cJSON* json_root, uint64 sender_
 
     if (does_client_have_permission_to_change_username == FALSE)
     {
+        goto label_client_msg__process_change_client_username_end;
+    }
+
+    // renames can be switched off server-wide; the request is then silently ignored, because the
+    // switch is meant against name games by users - an admin still renames freely
+    if (g_server_settings.allow_client_renames == FALSE && g_clients_array[sender_client_id].is_admin == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_id", sender_client_id, "rename ignored - renames are off for users \n");
         goto label_client_msg__process_change_client_username_end;
     }
 
@@ -6373,6 +6535,12 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     if (cJSON_IsBool(json_field))
     {
         g_server_settings.allow_typing_indicator = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "allow_client_renames");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.allow_client_renames = cJSON_IsTrue(json_field);
     }
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_sending_text_to_idle_clients_allowed");

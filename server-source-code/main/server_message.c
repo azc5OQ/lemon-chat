@@ -136,6 +136,8 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     // fall back to "avatars off" and hide the set/delete avatar actions
     cJSON_AddBoolToObject(json_message_object1, "allow_avatars", g_server_settings.allow_avatars);
     cJSON_AddBoolToObject(json_message_object1, "allow_typing_indicator", g_server_settings.allow_typing_indicator);
+    // rename policy travels in-protocol so the client can grey its rename input out when users may not rename
+    cJSON_AddBoolToObject(json_message_object1, "allow_client_renames", g_server_settings.allow_client_renames);
     cJSON_AddNumberToObject(json_message_object1, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
     // chat file policy: the client refuses oversize/forbidden files itself, with a reason, before uploading
     cJSON_AddBoolToObject(json_message_object1, "allow_file_uploads", g_server_settings.allow_file_uploads);
@@ -1201,6 +1203,7 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON_AddItemToObject(json_message_object1, "hide_clients_in_password_channels", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_temp_channels", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "allow_client_renames", cJSON_CreateBool(g_server_settings.allow_client_renames == TRUE));
     cJSON_AddItemToObject(json_message_object1, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
     cJSON_AddItemToObject(json_message_object1, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
@@ -1351,6 +1354,7 @@ void server_msg__send_policy_update_to_all_clients(void)
         cJSON_AddNumberToObject(json_message_object1, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
         cJSON_AddBoolToObject(json_message_object1, "allow_chat_pictures", g_server_settings.allow_chat_pictures);
         cJSON_AddBoolToObject(json_message_object1, "allow_typing_indicator", g_server_settings.allow_typing_indicator);
+        cJSON_AddBoolToObject(json_message_object1, "allow_client_renames", g_server_settings.allow_client_renames);
         cJSON_AddBoolToObject(json_message_object1, "allow_avatars", g_server_settings.allow_avatars);
         cJSON_AddNumberToObject(json_message_object1, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
         cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);

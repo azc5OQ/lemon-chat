@@ -7408,6 +7408,147 @@ div#local-settings-container #local-settings-close-button {
     background-color: #36393f;
 }
 
+/* the composer facelift: one rounded card like the desktop default theme has now - the text
+   field, the attach, image and send controls all inside a single surface, sized for thumbs
+   (42px targets, and 16px text because ios zooms the whole page into any smaller input) */
+#space-devider4 {
+    height: auto;
+    position: relative;
+    padding: 6px 0 10px 0;
+    box-sizing: border-box;
+}
+
+#chat-input-file-input-container {
+    display: block;
+    width: auto;
+    height: auto;
+    margin: 0 10px;
+    background-color: #17191d;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 16px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    box-sizing: border-box;
+    padding: 8px 10px 52px 10px;   /* the bottom padding is the controls row's room inside the card */
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#chat-input-file-input-container:focus-within {
+    border-color: rgba(90, 150, 255, 0.55);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35), 0 0 0 3px rgba(90, 150, 255, 0.12);
+}
+
+#chat-input-container-text-input {
+    width: 100%;
+    min-height: 56px;
+    box-sizing: border-box;
+    background-color: transparent;
+    border: none;
+    outline: none;
+    color: #e8ecf2;
+    font-size: 16px;
+    line-height: 1.45;
+    padding: 6px 8px;
+    resize: none;
+}
+
+#chat-input-container-text-input::placeholder {
+    color: rgba(232, 236, 242, 0.35);
+}
+
+/* the controls move inside the card's bottom-right corner, because the old floating row
+   above the box read as disconnected from it */
+#space-devider4 .chat-controls-container {
+    position: absolute;
+    top: auto;
+    right: 22px;
+    bottom: 20px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 3;
+}
+
+#space-devider4 #play-pause-song-container,
+#space-devider4 #upload-image-container,
+#space-devider4 #upload-file-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    transition: background-color 0.12s ease;
+}
+
+#space-devider4 #upload-image-container:active,
+#space-devider4 #upload-file-container:active,
+#space-devider4 #play-pause-song-container:active {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* send is the one accent in the row, because it is the primary action */
+#chat-input-container-send-chat-input {
+    width: auto;
+    height: 42px;
+    padding: 0 22px;
+    margin-left: 4px;
+    border: 0;
+    border-radius: 12px;
+    background: #3f8cff;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+}
+
+#chat-input-container-send-chat-input:active {
+    background: #5c9dff;
+}
+
+/* the format tools (text colour, font size) stay reachable but quiet in the card's bottom-left */
+#chat-input-file-input-container #color-picker-selector-div {
+    left: 16px;
+    bottom: 16px;
+    opacity: 0.4;
+}
+
+#chat-input-file-input-container #chat-input-font-size-range {
+    left: 44px;
+    bottom: 20px;
+    width: 80px;
+    opacity: 0.4;
+    accent-color: #3f8cff;
+}
+
+/* the mic centres on the true middle; the old calc(50% - 19px) assumed a 38px button and the
+   real 55px one sat 9px off. the variable keeps layout.style's pressed state centred too */
+#microphone-push-to-talk-button-touch-device {
+    left: 50%;
+    --mic-center-shift: -50%;
+    transform: translateX(var(--mic-center-shift));
+}
+
+/* the top bar icons render whole, because a 32px png in a 25px button was cropped into
+   unreadable corners - the eye button most of all */
+#hide-chat-button,
+#clear-chat-button,
+#show-secret-identity-string,
+#show-admin-password-entry,
+#hide-show-flags-button,
+#show-hide-log-button,
+#enter-server-settings,
+#sound-effects-button,
+#microphone-always-broadcasting-audio-button,
+#local-settings-button,
+#choose-theme-button,
+#switch-identity-button {
+    background-size: 20px 20px;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
     </style>
 
 
@@ -19722,6 +19863,16 @@ body[data-layout-edit="1"] #space-devider4 * {
     overflow: hidden;
 }
 
+/* tree rows must survive a long press, because the browser's own hold behaviours (text
+   selection, the ios link callout) interrupted the 600ms context-menu timer on phones */
+.single-channel,
+.connected-client {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+}
+
 /* the identities pane of the settings dialog; styled here so every theme gets it, hidden until its nav item is picked */
 #server-settings-tab-identities {
     display: none;
@@ -22350,6 +22501,43 @@ var sha256 = function sha256(ascii)
     }
     return result;
 };
+
+// platform-detection.js decides whether this device gets the touch interface (mobile themes,
+// touch gestures, the long-press menus); main.js asks it once at page load
+
+// touch detection in layers, most reliable signal first; any hit counts, because every
+// layer covers the blind spots of the ones below it
+function detect_touch_device()
+{
+    // the chromium client-hints mobile flag survives user agent freezing; safari and firefox lack it
+    if (typeof navigator !== "undefined" && navigator.userAgentData != null && navigator.userAgentData.mobile === true)
+    {
+        return true;
+    }
+
+    let user_agent_string = (typeof navigator !== "undefined" && typeof navigator.userAgent === "string") ? navigator.userAgent : "";
+
+    // android and ios cover practically every touch device; some of their browsers report
+    // pointer/hover like a desktop, which is why the css probe alone was not enough
+    if (/android|iphone|ipad|ipod/i.test(user_agent_string) == true)
+    {
+        return true;
+    }
+
+    // an ipad on ipados pretends to be a mac, so a "mac" with many touch points is an ipad
+    if (/macintosh/i.test(user_agent_string) == true && typeof navigator !== "undefined" && navigator.maxTouchPoints > 1)
+    {
+        return true;
+    }
+
+    // the css probe stays as the last fallback for touch devices that are neither android nor ios
+    if (typeof window !== "undefined" && window.matchMedia("(pointer: coarse) and (hover: none)").matches)
+    {
+        return true;
+    }
+
+    return false;
+}
 
             /**
              *
@@ -30807,6 +30995,10 @@ var server_msg = {
         {
             document.getElementById("enter-server-settings").style.display = "block";
             document.getElementById("enter-server-settings").onclick = UI.enter_server_settings_onclick;
+
+            // an admin may rename even when renames are off for users, so the input un-greys
+            g_is_local_client_admin = true;
+            apply_rename_policy_to_ui();
         }
     },
     // pushes the newly created tag into g_tags and appends its row to the settings tag table
@@ -34434,6 +34626,7 @@ var UI = {
                 hide_clients_in_password_channels: document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked,
                 allow_temp_channels: document.getElementById("server-settings-general-allow-temp-channels-checkbox").checked,
                 allow_typing_indicator: document.getElementById("server-settings-general-allow-typing-indicator-checkbox").checked,
+                allow_client_renames: document.getElementById("server-settings-general-allow-renames-checkbox").checked,
                 is_sending_text_to_idle_clients_allowed: document.getElementById("server-settings-general-allow-text-to-idle-clients-checkbox").checked,
                 allow_private_messages: document.getElementById("server-settings-general-allow-private-messages-checkbox").checked,
                 allow_file_uploads: document.getElementById("server-settings-general-allow-file-uploads-checkbox").checked,
@@ -37573,6 +37766,11 @@ function init_node_runtime(identity_passphrase_string)
                         return;
                     }
 
+                    // remembered as the chosen username too, because on the next connect the
+                    // server can then apply the name at login instead of through a rename -
+                    // a rename the admin may have switched off for users
+                    g_chosen_username = username;
+
                     client_msg.send_change_client_username_request(username, local_client_id);
 
                     let index = get_client_index_in_array_by_client_id(local_client_id);
@@ -37803,6 +38001,14 @@ function init_node_runtime(identity_passphrase_string)
                     {
                         console.log("connect-path: server details changed, dropping the live connection");
                         g_websocket_worker.postMessage({ type: "close" });
+                    }
+
+                    // the android default username becomes the chosen username, because the settings
+                    // arrive before the dial and the server then applies the name at login - the old
+                    // way was a rename after connect, which an admin can switch off for users
+                    if (typeof settings_from_android.default_username === "string" && settings_from_android.default_username.length > 0)
+                    {
+                        g_chosen_username = settings_from_android.default_username;
                     }
 
                     // only node derives its identity from the settings, because the webview does not
@@ -38624,6 +38830,7 @@ function mainthread__process_received_websocket_message_continue(e)
                 is_idle_mode_allowed: msg.message.is_idle_mode_allowed,
                 is_alias_registration_allowed: msg.message.is_alias_registration_allowed,
                 allow_typing_indicator: msg.message.allow_typing_indicator,
+                allow_client_renames: msg.message.allow_client_renames,
                 allow_avatars: msg.message.allow_avatars,
                 avatar_max_size: msg.message.avatar_max_size,
                 allow_file_uploads: msg.message.allow_file_uploads,
@@ -39514,6 +39721,34 @@ var g_autoconnect_details = {
         // "test2"
     ]
 };
+
+// the username this client asks for while connecting; the server uses it instead of the
+// assigned user0/user1/... name, provided nobody connected is using it. leave "" for the
+// assigned name. a registered identity's admin-set name still wins over this
+var g_chosen_username = "";
+
+// on unless the server policy says users may not rename themselves; admins always may
+var g_client_renames_allowed = true;
+
+// true once the server granted this session the admin tag
+var g_is_local_client_admin = false;
+
+// greys the local rename input when the server ignores user renames, because a rename that
+// silently does nothing reads as a bug; an admin keeps the input editable
+function apply_rename_policy_to_ui()
+{
+    let rename_input = document.getElementById("connected-local-client-input");
+
+    if (rename_input == null)
+    {
+        return;
+    }
+
+    let may_rename = (g_client_renames_allowed == true) || (g_is_local_client_admin == true);
+
+    rename_input.readOnly = (may_rename == false);
+    rename_input.title = (may_rename == false) ? "renames are disabled on this server" : "";
+}
 
 var g_custom_key_count = 0; // no key field by default; the "add" button creates key 0, key 1, ... so connecting with zero keys matches a server configured with no extra metadata keys
 var g_metadata_keys = [];
@@ -43988,6 +44223,13 @@ function apply_server_policy_fields(data)
     g_is_alias_registration_allowed = (data.is_alias_registration_allowed == true);
     g_is_typing_indicator_allowed = (data.allow_typing_indicator == true);
 
+    // rename policy: on unless the server says otherwise (an older server says nothing)
+    if (data.allow_client_renames !== undefined)
+    {
+        g_client_renames_allowed = (data.allow_client_renames == true);
+    }
+    apply_rename_policy_to_ui();
+
     // avatars policy arrives in-protocol: the android app loads client.html from its assets,
     // so the serve-time config injection never reaches it
     if (data.allow_avatars !== undefined)
@@ -44579,6 +44821,13 @@ function mainthread_onmessage(e)
             }
         };
 
+        // the chosen username rides along on the last login message, because the server
+        // assigns the final name right after accepting this response
+        if (typeof g_chosen_username === "string" && g_chosen_username.length > 0)
+        {
+            message_object.message.chosen_username = g_chosen_username;
+        }
+
         send_message_object(message_object);
     }
     else if (e.data.type == "data_processing_worker__chat_message_edit_from_server")
@@ -44622,6 +44871,7 @@ function mainthread_onmessage(e)
         document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked = msg.message.hide_clients_in_password_channels == true;
         document.getElementById("server-settings-general-allow-temp-channels-checkbox").checked = msg.message.allow_temp_channels == true;
         document.getElementById("server-settings-general-allow-typing-indicator-checkbox").checked = msg.message.allow_typing_indicator == true;
+        document.getElementById("server-settings-general-allow-renames-checkbox").checked = msg.message.allow_client_renames == true;
         document.getElementById("server-settings-general-allow-text-to-idle-clients-checkbox").checked = msg.message.is_sending_text_to_idle_clients_allowed == true;
         document.getElementById("server-settings-general-allow-private-messages-checkbox").checked = msg.message.allow_private_messages == true;
         document.getElementById("server-settings-general-allow-file-uploads-checkbox").checked = msg.message.allow_file_uploads == true;
@@ -45579,8 +45829,8 @@ async function window_onload()
         g_are_server_details_predefined = false;
     }
 
-    // detect if device is touch device
-    if (window.matchMedia("(pointer: coarse) and (hover: none)").matches)
+    // touch detection lives in platform-detection.js; the android webview force above stays
+    if (detect_touch_device() == true)
     {
         g_is_client_running_under_touch_device = true;
     }
@@ -47401,6 +47651,13 @@ return {
     // the webview handover: false closes the socket and parks reconnect, true re-arms
     node_set_connection_wanted: node_set_connection_wanted,
 
+    // sets the username this client asks for while connecting, because a headless host
+    // has no page variable to edit; "" goes back to the assigned name
+    node_set_chosen_username: function(username)
+    {
+        g_chosen_username = (typeof username === "string") ? username : "";
+    },
+
     // a plaintext request from the loopback ui: encrypt it and send to the real server
     node_forward_raw_request: function(json_string)
     {
@@ -47697,6 +47954,10 @@ function JavascriptJavaBridge__accept_current_settings_from_android(settings_jso
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-typing-indicator-checkbox">
                             <span>show when somebody is typing</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-renames-checkbox">
+                            <span>allow users to rename themselves (admins always can)</span>
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-text-to-idle-clients-checkbox">

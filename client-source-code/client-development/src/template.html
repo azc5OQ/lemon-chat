@@ -87,6 +87,7 @@
 /* @@INCLUDE: scripts/app/utils.js @@ */
 /* @@INCLUDE: scripts/vendor/aes-js.js @@ */
 /* @@INCLUDE: scripts/app/encoding.js @@ */
+/* @@INCLUDE: scripts/app/platform-detection.js @@ */
 /* @@INCLUDE: scripts/vendor/sha256.js @@ */
 /* @@INCLUDE: scripts/vendor/js-sha256.js @@ */
 /* @@INCLUDE: scripts/vendor/libopus.emscripten.js @@ */
@@ -185,6 +186,10 @@
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-typing-indicator-checkbox">
                             <span>show when somebody is typing</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-renames-checkbox">
+                            <span>allow users to rename themselves (admins always can)</span>
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-text-to-idle-clients-checkbox">

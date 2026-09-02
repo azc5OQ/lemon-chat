@@ -486,6 +486,8 @@ boole base__save_server_settings_to_file(void)
 
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_typing_indicator");
     cJSON_AddItemToObject(json_root, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_client_renames");
+    cJSON_AddItemToObject(json_root, "allow_client_renames", cJSON_CreateBool(g_server_settings.allow_client_renames == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_sending_text_to_idle_clients_allowed");
     cJSON_AddItemToObject(json_root, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_private_messages");
@@ -1412,6 +1414,56 @@ void base__sleep_for_milliseconds(uint64 milliseconds)
  *
  * @attention output of this function is stored on heap, and must be freed manually
  */
+/**
+ * @brief drops every OTHER connected client holding this public key, so a returning identity
+ *        replaces its own stale session instead of being locked out by it
+ *
+ * @param uint64 client_index_to_keep -> the client that just proved it owns the key
+ * @param cstring public_key -> the public key both sessions carry
+ *
+ * @return uint64 -> how many stale sessions were closed
+ *
+ * @attention call ONLY after the challenge response verified ownership: the public key is public,
+ *            so acting on it any earlier would let anyone kick anyone off the server.
+ *            the caller must hold the clients write lock
+ */
+uint64 base__disconnect_other_clients_with_same_public_key(uint64 client_index_to_keep, cstring public_key)
+{
+    uint64 disconnected_count = 0;
+    uint64 i = 0;
+
+    if (public_key == NULL_POINTER || public_key[0] == 0)
+    {
+        return 0;
+    }
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        if (i == client_index_to_keep)
+        {
+            continue;
+        }
+
+        if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (clib__is_string_equal(g_clients_array[i].public_key, public_key) == FALSE)
+        {
+            continue;
+        }
+
+        // the socket may be long dead (a drop the server never saw); closing it makes that
+        // client's own reader thread run the normal disconnect teardown
+        log_info("%s %llu %s %llu %s", "identity takeover: client", i, "is replaced by the returning client", client_index_to_keep, "\n");
+        base__close_websocket_connection(i, FALSE);
+        disconnected_count++;
+    }
+
+    return disconnected_count;
+}
+
 boole base__is_there_a_client_with_same_public_key(cstring public_key)
 {
     boole result = FALSE;
@@ -1438,33 +1490,71 @@ boole base__is_there_a_client_with_same_public_key(cstring public_key)
 }
 
 /**
- * @brief part of authentication process.
+ * @brief the socket-open half of the same-ip rule: only one handshake at a time per ip, so a flood
+ *        from one address costs one slot and not the whole table, while an established session never counts
  *
- * @param cstring ip_address -> ip address
+ * @param cstring ip_address -> ip address of the socket that just opened
  *
  * @return boole
  *
- * @attention output of this function is stored on heap, and must be freed manually
+ * @attention the caller must hold the clients write lock
  */
-boole base__is_there_a_client_with_same_ip_address(cstring ip_address)
+boole base__is_there_an_unfinished_handshake_from_same_ip_address(cstring ip_address)
 {
-    boole result = FALSE;
     uint64 i = 0;
+
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        if (g_clients_array[i].is_existing == FALSE)
+        if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == TRUE)
         {
             continue;
         }
 
-        // doesn't have to be authenticated
-        if (clib__is_string_equal(g_clients_array[i].ip_address, ip_address))
+        if (clib__is_string_equal(g_clients_array[i].ip_address, ip_address) == TRUE)
         {
-            result = TRUE;
-            break;
+            return TRUE;
         }
     }
-    return result;
+
+    return FALSE;
+}
+
+/**
+ * @brief the login half of the same-ip rule, judged only once the challenge proved the identity, so
+ *        a returning client is refused by a second person on his ip and never by his own dropped session
+ *
+ * @param uint64 client_index -> the client being judged, never counted
+ * @param cstring ip_address -> his ip address
+ * @param cstring public_key -> his identity, older sessions holding it are the ghosts being disconnected and are skipped
+ *
+ * @return boole
+ *
+ * @attention the caller must hold the clients write lock. only authenticated sessions count: an unfinished
+ *            handshake from the same ip is judged when it gets here itself, which lets exactly one of them in
+ */
+boole base__is_there_another_authenticated_client_with_same_ip_address(uint64 client_index, cstring ip_address, cstring public_key)
+{
+    uint64 i = 0;
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        if (i == client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (clib__is_string_equal(g_clients_array[i].public_key, public_key) == TRUE)
+        {
+            continue;
+        }
+
+        if (clib__is_string_equal(g_clients_array[i].ip_address, ip_address) == TRUE)
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
 }
 
 /**

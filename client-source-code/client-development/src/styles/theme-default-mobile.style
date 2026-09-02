@@ -2258,3 +2258,144 @@ div#local-settings-container #local-settings-close-button {
 #local-settings-button:hover {
     background-color: #36393f;
 }
+
+/* the composer facelift: one rounded card like the desktop default theme has now - the text
+   field, the attach, image and send controls all inside a single surface, sized for thumbs
+   (42px targets, and 16px text because ios zooms the whole page into any smaller input) */
+#space-devider4 {
+    height: auto;
+    position: relative;
+    padding: 6px 0 10px 0;
+    box-sizing: border-box;
+}
+
+#chat-input-file-input-container {
+    display: block;
+    width: auto;
+    height: auto;
+    margin: 0 10px;
+    background-color: #17191d;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 16px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    box-sizing: border-box;
+    padding: 8px 10px 52px 10px;   /* the bottom padding is the controls row's room inside the card */
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#chat-input-file-input-container:focus-within {
+    border-color: rgba(90, 150, 255, 0.55);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35), 0 0 0 3px rgba(90, 150, 255, 0.12);
+}
+
+#chat-input-container-text-input {
+    width: 100%;
+    min-height: 56px;
+    box-sizing: border-box;
+    background-color: transparent;
+    border: none;
+    outline: none;
+    color: #e8ecf2;
+    font-size: 16px;
+    line-height: 1.45;
+    padding: 6px 8px;
+    resize: none;
+}
+
+#chat-input-container-text-input::placeholder {
+    color: rgba(232, 236, 242, 0.35);
+}
+
+/* the controls move inside the card's bottom-right corner, because the old floating row
+   above the box read as disconnected from it */
+#space-devider4 .chat-controls-container {
+    position: absolute;
+    top: auto;
+    right: 22px;
+    bottom: 20px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 3;
+}
+
+#space-devider4 #play-pause-song-container,
+#space-devider4 #upload-image-container,
+#space-devider4 #upload-file-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    transition: background-color 0.12s ease;
+}
+
+#space-devider4 #upload-image-container:active,
+#space-devider4 #upload-file-container:active,
+#space-devider4 #play-pause-song-container:active {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* send is the one accent in the row, because it is the primary action */
+#chat-input-container-send-chat-input {
+    width: auto;
+    height: 42px;
+    padding: 0 22px;
+    margin-left: 4px;
+    border: 0;
+    border-radius: 12px;
+    background: #3f8cff;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+}
+
+#chat-input-container-send-chat-input:active {
+    background: #5c9dff;
+}
+
+/* the format tools (text colour, font size) stay reachable but quiet in the card's bottom-left */
+#chat-input-file-input-container #color-picker-selector-div {
+    left: 16px;
+    bottom: 16px;
+    opacity: 0.4;
+}
+
+#chat-input-file-input-container #chat-input-font-size-range {
+    left: 44px;
+    bottom: 20px;
+    width: 80px;
+    opacity: 0.4;
+    accent-color: #3f8cff;
+}
+
+/* the mic centres on the true middle; the old calc(50% - 19px) assumed a 38px button and the
+   real 55px one sat 9px off. the variable keeps layout.style's pressed state centred too */
+#microphone-push-to-talk-button-touch-device {
+    left: 50%;
+    --mic-center-shift: -50%;
+    transform: translateX(var(--mic-center-shift));
+}
+
+/* the top bar icons render whole, because a 32px png in a 25px button was cropped into
+   unreadable corners - the eye button most of all */
+#hide-chat-button,
+#clear-chat-button,
+#show-secret-identity-string,
+#show-admin-password-entry,
+#hide-show-flags-button,
+#show-hide-log-button,
+#enter-server-settings,
+#sound-effects-button,
+#microphone-always-broadcasting-audio-button,
+#local-settings-button,
+#choose-theme-button,
+#switch-identity-button {
+    background-size: 20px 20px;
+    background-position: center;
+    background-repeat: no-repeat;
+}
