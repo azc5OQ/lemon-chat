@@ -9,6 +9,10 @@ var server_msg = {
     {
         UI.wire_settings_delete_delegation();
 
+        // the complete list arrives at every login, and the reconnect reset empties only g_tags,
+        // so the rows of the previous session have to go before the new ones are appended
+        document.getElementById("server-settings-tab-tags-container").innerHTML = "";
+
         for (let i = 0; i < msg.message.tags.length; i++)
         {
             let tag = msg.message.tags[i];
@@ -167,6 +171,9 @@ var server_msg = {
     process_icon_list_from_server: function(msg)
     {
         UI.wire_settings_delete_delegation();
+
+        // same as the tag list: the previous session's rows would otherwise stack up on every reconnect
+        document.getElementById("server-settings-tab-icons-container").innerHTML = "";
 
         for (let i = 0; i < msg.message.icons.length; i++)
         {
