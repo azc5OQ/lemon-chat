@@ -502,6 +502,10 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_websocket_ping_active");
     cJSON_AddItemToObject(json_root, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "webrtc_datachannel_cooldown_seconds");
+    cJSON_AddNumberToObject(json_root, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "show_music_bot_marquee_to_everyone");
+    cJSON_AddItemToObject(json_root, "show_music_bot_marquee_to_everyone", cJSON_CreateBool(g_server_settings.show_music_bot_marquee_to_everyone == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_file_uploads");
     cJSON_AddItemToObject(json_root, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "file_upload_max_size_bytes");

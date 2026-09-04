@@ -19,6 +19,30 @@
 #include "util.h"
 
 /**
+ * @brief the country code users may learn about a client: nothing unless flags are displayed, and
+ *        nothing for an admin while admin flags are kept private. country blocking resolves the code
+ *        for its own check, which must never leak it to users
+ *
+ * @param client_t* client -> the client being described
+ *
+ * @return cstring -> the code to put on the wire, possibly ""
+ */
+static cstring _server_msg_internal__country_code_to_send(client_t* client)
+{
+    if (g_server_settings.is_display_country_flags_active == FALSE)
+    {
+        return "";
+    }
+
+    if (g_server_settings.hide_admin_country_flag == TRUE && client->is_admin == TRUE)
+    {
+        return "";
+    }
+
+    return client->country_iso_code;
+}
+
+/**
  * @brief gets called by invididuals websocket thread
  *
  * @param ws_cli_conn_t* websocket -> websocket connection of client to send this message to
@@ -134,6 +158,8 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     cJSON_AddBoolToObject(json_message_object1, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
     // a row rendered for an admin skips the flag, also when he becomes admin after joining
     cJSON_AddBoolToObject(json_message_object1, "hide_admin_country_flag", g_server_settings.hide_admin_country_flag);
+    // the client keeps marquees of streaming bots in other channels visible when this is on
+    cJSON_AddBoolToObject(json_message_object1, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
     cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
     // avatars policy travels in-protocol so clients that were NOT served by this server's http
     // server (the android app loads the page from its assets) still learn it - otherwise they
@@ -463,11 +489,14 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
         // admin-registered alias (display name); empty string when none
         cJSON_AddStringToObject(single_client, "alias", &client_in_loop->alias[0]);
 
-        // property country_iso_code will always be part of response
-        // the value will be empty if ip address is from unknown country or if server doesn't display flags,
-        // and for an admin when the server keeps admin flags private
-        cJSON_AddStringToObject(single_client, "country_iso_code",
-            (g_server_settings.hide_admin_country_flag == TRUE && client_in_loop->is_admin == TRUE) ? "" : client_in_loop->country_iso_code);
+        // property country_iso_code will always be part of response; empty for an unknown country,
+        // whenever flags are not displayed, and for an admin when admin flags are kept private
+        cJSON_AddStringToObject(single_client, "country_iso_code", _server_msg_internal__country_code_to_send(client_in_loop));
+
+        // a stream already running when somebody logs in: the list is the only place a late
+        // joiner can learn about it, start_song_stream went out before he was here
+        cJSON_AddBoolToObject(single_client, "is_streaming_song", client_in_loop->is_streaming_song);
+        cJSON_AddStringToObject(single_client, "song_name", client_in_loop->song_name);
 
         cJSON_AddItemToArray(json_client_array, single_client);
     }
@@ -911,8 +940,7 @@ void server_msg__send_client_connect_message_to_all_clients(uint64 client_id_of_
         }
 
         cJSON_AddNumberToObject(json_message_object1, "audio_state", audio_state_to_send);
-        cJSON_AddStringToObject(json_message_object1, "country_iso_code",
-            (g_server_settings.hide_admin_country_flag == TRUE && new_client->is_admin == TRUE) ? "" : new_client->country_iso_code);
+        cJSON_AddStringToObject(json_message_object1, "country_iso_code", _server_msg_internal__country_code_to_send(new_client));
         cJSON_AddItemToObject(json_message_object1, "tag_ids", json_tag_ids_array);
 
         cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -1045,6 +1073,47 @@ void server_msg__send_fast_reconnect_ok_to_single_client(client_t* client)
     cJSON_AddStringToObject(json_message_object1, "type", "fast_reconnect_ok");
     cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client->client_id);
     cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)client->channel_id);
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text != NULL_POINTER)
+    {
+        ws_sendframe_txt(client->p_ws_connection, msg_text);
+
+        memorymanager__free((nuint)msg_text);
+    }
+}
+
+/**
+ * @brief tells a client the server will build no datachannel for it for a while: its attempts kept
+ *        failing (blocked udp, usually). the client sleeps that long instead of asking every 10 s
+ *
+ * @param client_t* client -> the client whose request was refused
+ * @param uint64 seconds_left -> how long the refusal lasts
+ *
+ * @return void
+ */
+void server_msg__send_datachannel_cooldown_to_single_client(client_t* client, uint64 seconds_left)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_datachannel_cooldown_to_single_client \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "datachannel_cooldown");
+    cJSON_AddNumberToObject(json_message_object1, "seconds_left", (double)seconds_left);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
@@ -1259,6 +1328,8 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON_AddItemToObject(json_message_object1, "is_fast_reconnect_allowed", cJSON_CreateBool(g_server_settings.is_fast_reconnect_allowed == TRUE));
     cJSON_AddItemToObject(json_message_object1, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
     cJSON_AddItemToObject(json_message_object1, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
+    cJSON_AddNumberToObject(json_message_object1, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
+    cJSON_AddItemToObject(json_message_object1, "show_music_bot_marquee_to_everyone", cJSON_CreateBool(g_server_settings.show_music_bot_marquee_to_everyone == TRUE));
     cJSON_AddNumberToObject(json_message_object1, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
     cJSON_AddItemToObject(json_message_object1, "announce_minimum_rsa_key_bits", cJSON_CreateBool(g_server_settings.announce_minimum_rsa_key_bits == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
@@ -1412,6 +1483,7 @@ void server_msg__send_policy_update_to_all_clients(void)
         cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
         cJSON_AddBoolToObject(json_message_object1, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
         cJSON_AddBoolToObject(json_message_object1, "hide_admin_country_flag", g_server_settings.hide_admin_country_flag);
+        cJSON_AddBoolToObject(json_message_object1, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
 
         cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
@@ -3172,7 +3244,8 @@ void server_msg__send_start_song_stream_message_to_clients_in_same_channel(clien
             continue;
         }
 
-        if (client->channel_id != client_that_streams->channel_id)
+        // only the streamer's channel hears about it, unless the marquee is shown to everyone
+        if (client->channel_id != client_that_streams->channel_id && g_server_settings.show_music_bot_marquee_to_everyone == FALSE)
         {
             continue;
         }
@@ -3249,7 +3322,8 @@ void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client
             continue;
         }
 
-        if (client->channel_id != client_that_streams->channel_id)
+        // only the streamer's channel hears about it, unless the marquee is shown to everyone
+        if (client->channel_id != client_that_streams->channel_id && g_server_settings.show_music_bot_marquee_to_everyone == FALSE)
         {
             continue;
         }

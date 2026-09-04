@@ -814,6 +814,7 @@ function mainthread__process_received_websocket_message_continue(e)
                 allow_chat_pictures: msg.message.allow_chat_pictures,
                 is_fast_reconnect_allowed: msg.message.is_fast_reconnect_allowed,
                 hide_admin_country_flag: msg.message.hide_admin_country_flag,
+                show_music_bot_marquee_to_everyone: msg.message.show_music_bot_marquee_to_everyone,
                 value: "success"
             });
 
@@ -840,6 +841,15 @@ function mainthread__process_received_websocket_message_continue(e)
     {
         global.postMessage({
             type: "data_processing_worker__fast_reconnect_ok",
+            value: msg
+        });
+        return;
+    }
+
+    if (msg.message.type == "datachannel_cooldown")
+    {
+        global.postMessage({
+            type: "data_processing_worker__datachannel_cooldown",
             value: msg
         });
         return;
@@ -1690,21 +1700,50 @@ var g_is_reconnect_active = true;
 // fast reconnect (server setting): a lost socket keeps the page exactly as it is and re-dials with
 // the same identity; the server adopts the still-open session. only a failed attempt shows
 // "connection lost" and wipes the page
-var g_is_fast_reconnect_allowed = false;     // announced by the server at login and on policy updates
 var g_is_fast_reconnect_in_progress = false; // an attempt is running: no wipe, no toast, one attempt only
 var g_is_fast_reconnect_resumed = false;     // the server said fast_reconnect_ok: the lists that follow are a refresh
 var g_fast_reconnect_deadline_timer = null;  // the classic "connection lost" path when the attempt stalls
 var g_fast_reconnect_pending_lists = null;   // the refreshed lists, applied together so the page repaints once
 var G_FAST_RECONNECT_DEADLINE_MS = 12000;
 
-// server setting: admins are listed without a country flag (the admin tag is id 0 on every server)
-var g_hide_admin_country_flag = false;
-var G_ADMIN_TAG_ID = 0;
+// server-side policy this client only obeys, announced at login (authentication_status) and on every
+// admin save (server_policy); absent fields on an older server keep these defaults
+var g_server_policy = {
+    is_fast_reconnect_allowed: false,          // a lost socket may resume its session instead of starting over
+    hide_admin_country_flag: false,            // admins are listed without a country flag
+    show_music_bot_marquee_to_everyone: false  // a streaming bot's marquee also for people outside its channel
+};
+
+var G_ADMIN_TAG_ID = 0; // the admin tag has id 0 on every server
+
+// server-side datachannel cooldown: after 10 attempts that never connected the server refuses to
+// build peers for a while and says for how long; the retry loop sleeps that long instead of 10 s
+var g_webrtc_datachannel_cooldown_until_ms = 0;
+var g_datachannel_retry_sleep_resolve = null; // a login resolves it early, the server then starts counting afresh
+
+function datachannel_retry_sleep(ms)
+{
+    return new Promise(function(resolve)
+    {
+        let timer = setTimeout(function()
+        {
+            g_datachannel_retry_sleep_resolve = null;
+            resolve();
+        }, ms);
+
+        g_datachannel_retry_sleep_resolve = function()
+        {
+            clearTimeout(timer);
+            g_datachannel_retry_sleep_resolve = null;
+            resolve();
+        };
+    });
+}
 
 // the flag a row shows for this client: none for an admin when the server keeps admin flags private
 function country_flag_code_for_client(client)
 {
-    if (g_hide_admin_country_flag == true && Array.isArray(client.tag_ids) && client.tag_ids.indexOf(G_ADMIN_TAG_ID) != -1)
+    if (g_server_policy.hide_admin_country_flag == true && Array.isArray(client.tag_ids) && client.tag_ids.indexOf(G_ADMIN_TAG_ID) != -1)
     {
         return "";
     }
@@ -3215,13 +3254,22 @@ async function webrtc_datachannel_connection_check(is_this_reconnect = false)
                     + (datachannel_attempt_error != null && datachannel_attempt_error.stack ? datachannel_attempt_error.stack : datachannel_attempt_error));
             }
 
-            await sleep(10000);
+            await datachannel_retry_sleep(10000);
 
             // a full attempt window passed and the channel is still down: find out
             // whether the browser is even capable of direct udp before retrying forever
             if (g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
             {
                 probe_webrtc_udp_and_warn();
+            }
+
+            // the server refused for a while (10 attempts never connected): wait it out here instead
+            // of asking every 10 s; a new login resolves the sleep and the server counts afresh
+            if (g_is_webrtc_datachannel_connected == false && g_webrtc_datachannel_cooldown_until_ms > new Date().valueOf())
+            {
+                let remaining_ms = g_webrtc_datachannel_cooldown_until_ms - new Date().valueOf();
+                console.log("datachannel: server cooldown, next attempt in " + Math.ceil(remaining_ms / 1000) + " s");
+                await datachannel_retry_sleep(remaining_ms);
             }
         }
         else
@@ -5385,7 +5433,7 @@ function is_channel_or_his_parent_collapsed(channel_id)
 function try_start_fast_reconnect(reason)
 {
     // node owns the real connection in the webview, and only a logged-in session can be resumed
-    if (g_is_fast_reconnect_allowed == false || g_is_authenticated == false
+    if (g_server_policy.is_fast_reconnect_allowed == false || g_is_authenticated == false
         || g_is_identity_switch_in_progress == true || is_ui_only_runtime() == true)
     {
         return false;
@@ -6383,16 +6431,13 @@ function apply_server_policy_fields(data)
     g_is_alias_registration_allowed = (data.is_alias_registration_allowed == true);
     g_is_typing_indicator_allowed = (data.allow_typing_indicator == true);
 
-    // whether a lost socket may resume its session instead of starting over (absent on an older server)
-    if (data.is_fast_reconnect_allowed !== undefined)
+    // the policy flags this client only obeys; a field an older server does not send keeps its default
+    for (let policy_field in g_server_policy)
     {
-        g_is_fast_reconnect_allowed = (data.is_fast_reconnect_allowed == true);
-    }
-
-    // admins are drawn without a country flag when the server says so (absent on an older server)
-    if (data.hide_admin_country_flag !== undefined)
-    {
-        g_hide_admin_country_flag = (data.hide_admin_country_flag == true);
+        if (data[policy_field] !== undefined)
+        {
+            g_server_policy[policy_field] = (data[policy_field] == true);
+        }
     }
 
     // rename policy: on unless the server says otherwise (an older server says nothing)
@@ -6748,6 +6793,17 @@ function mainthread_onmessage(e)
                 websocket_connection_check(websocket);
             }
 
+            // a fresh session starts the server's datachannel attempt count from zero, so a retry loop
+            // sitting out a cooldown may try again now (a resumed session keeps the server's cooldown)
+            if (g_is_fast_reconnect_resumed == false)
+            {
+                g_webrtc_datachannel_cooldown_until_ms = 0;
+            }
+            if (g_datachannel_retry_sleep_resolve != null)
+            {
+                g_datachannel_retry_sleep_resolve();
+            }
+
             // a resumed session was never gone from the user's point of view: no connected sound
             if (g_is_fast_reconnect_resumed == true)
             {
@@ -6911,6 +6967,16 @@ function mainthread_onmessage(e)
     else if (e.data.type == "data_processing_worker__fast_reconnect_ok")
     {
         fast_reconnect_succeeded();
+    }
+    else if (e.data.type == "data_processing_worker__datachannel_cooldown")
+    {
+        let seconds_left = parseInt(e.data.value.message.seconds_left);
+
+        if (isNaN(seconds_left) == false && seconds_left > 0)
+        {
+            g_webrtc_datachannel_cooldown_until_ms = new Date().valueOf() + seconds_left * 1000;
+            console.warn("datachannel: the server refuses new attempts for " + seconds_left + " s (10 attempts never connected)");
+        }
     }
     else if (e.data.type == "data_processing_worker__channel_list_from_server")
     {
@@ -7097,6 +7163,7 @@ function mainthread_onmessage(e)
         let msg = e.data.value;
         document.getElementById("server-settings-general-display-flags-checkbox").checked = msg.message.display_country_flags == true;
         document.getElementById("server-settings-general-hide-admin-flag-checkbox").checked = msg.message.hide_admin_country_flag == true;
+        refresh_hide_admin_flag_row_visibility();
         document.getElementById("server-settings-general-enable-audio").checked = msg.message.enable_audio == true;
         document.getElementById("server-settings-general-enable-music-bot-audio-checkbox").checked = msg.message.enable_music_bot_audio == true;
         document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked = msg.message.hide_clients_in_password_channels == true;
@@ -7115,6 +7182,8 @@ function mainthread_onmessage(e)
         document.getElementById("server-settings-general-fast-reconnect-checkbox").checked = msg.message.is_fast_reconnect_allowed == true;
         document.getElementById("server-settings-general-identity-takeover-checkbox").checked = msg.message.is_identity_takeover_allowed == true;
         document.getElementById("server-settings-general-websocket-ping-checkbox").checked = msg.message.is_websocket_ping_active == true;
+        document.getElementById("server-settings-general-datachannel-cooldown-input").value = (typeof msg.message.webrtc_datachannel_cooldown_seconds === "number") ? msg.message.webrtc_datachannel_cooldown_seconds : 600;
+        document.getElementById("server-settings-general-marquee-everyone-checkbox").checked = msg.message.show_music_bot_marquee_to_everyone == true;
         document.getElementById("server-settings-general-minimum-rsa-bits-input").value = (typeof msg.message.minimum_rsa_key_bits === "number") ? msg.message.minimum_rsa_key_bits : 2048;
         document.getElementById("server-settings-general-announce-rsa-bits-checkbox").checked = msg.message.announce_minimum_rsa_key_bits == true;
         document.getElementById("server-settings-general-country-blocking-checkbox").checked = msg.message.is_country_blocking_active == true;
@@ -8634,6 +8703,7 @@ async function window_onload()
     document.getElementById("server-settings-general-allow-file-uploads-checkbox").onchange = refresh_file_upload_size_visibility;
     document.getElementById("server-settings-general-allow-pictures-checkbox").onchange = refresh_picture_size_visibility;
     document.getElementById("server-settings-general-country-blocking-checkbox").onchange = refresh_country_blocking_visibility;
+    document.getElementById("server-settings-general-display-flags-checkbox").onchange = refresh_hide_admin_flag_row_visibility;
     document.getElementById("server-settings-country-block-select").onchange = country_block_select_onchange;
     setup_chat_file_drag_and_drop();
     apply_file_upload_policy_to_ui();
@@ -9828,6 +9898,20 @@ function country_block_select_onchange()
 
 // the checkbox shows or hides the picker below it (the block list itself is server state
 // either way; unchecking just disables enforcement, it does not clear the list)
+// the "hide admin's flag" row only makes sense while flags are displayed at all
+function refresh_hide_admin_flag_row_visibility()
+{
+    let flags_checkbox = document.getElementById("server-settings-general-display-flags-checkbox");
+    let row = document.getElementById("server-settings-hide-admin-flag-row");
+
+    if (flags_checkbox == null || row == null)
+    {
+        return;
+    }
+
+    row.style.display = (flags_checkbox.checked == true) ? "" : "none";
+}
+
 function refresh_country_blocking_visibility()
 {
     let checkbox = document.getElementById("server-settings-general-country-blocking-checkbox");

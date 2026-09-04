@@ -612,6 +612,9 @@ var server_msg = {
 
         // a new client joined: pull their avatar (if any) so it shows on their row
         request_single_avatar(client_id);
+
+        // a bot that just appeared streams within seconds; the player must already know it is one
+        audio_player_announce_music_bots();
     },
     // removes the client from the DOM, g_client_list and the id map (swap-with-last), keeps
     // aliased clients in g_offline_client_list, and drops his private chat context if open
@@ -2461,6 +2464,21 @@ var server_msg = {
         // themes that do not show the avatar grid get the paced one-at-a-time prefetch instead
         start_avatar_prefetch();
 
+        // the player needs to know which senders are bots before their first audio arrives
+        audio_player_announce_music_bots();
+
+        // a stream already running when the list arrives: its marquee shows when the streamer is in
+        // this channel, or wherever it is when the server shows marquees to everyone
+        for (let i = 0; i < msg.message.clients.length; i++)
+        {
+            let listed = msg.message.clients[i];
+
+            if (listed.is_streaming_song != true) { continue; }
+            if (g_server_policy.show_music_bot_marquee_to_everyone == false && listed.channel_id != current_channel_id) { continue; }
+
+            server_msg.process_start_song_stream_from_server({ message: { client_id: listed.client_id, song_name: listed.song_name } });
+        }
+
         // a strip theme saved from last time is applied at startup, BEFORE the
         // server config could set g_avatars_allowed - so the avatar grid never armed and
         // the enqueue above bailed. re-evaluate now that both the flag and the clients
@@ -2530,10 +2548,14 @@ var server_msg = {
             {
                 audio_player_clear();
 
-                let marquee_containers = document.getElementsByClassName("marquee-music-playing-container");
-                for (let i = 0; i < marquee_containers.length; i++)
+                // leaving a channel drops its marquees, unless the server shows them to everyone
+                if (g_server_policy.show_music_bot_marquee_to_everyone == false)
                 {
-                    marquee_containers[i].style.display = "none";
+                    let marquee_containers = document.getElementsByClassName("marquee-music-playing-container");
+                    for (let i = 0; i < marquee_containers.length; i++)
+                    {
+                        marquee_containers[i].style.display = "none";
+                    }
                 }
 
                 document.getElementById("channel-password-enter-container").style.display = "none";

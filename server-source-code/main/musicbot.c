@@ -514,6 +514,10 @@ void musicbot__threadstart(client_t* music_bot_client)
     uint64 timestamp_started_playing = 0;
     uint64 timestamp_stopped_playing = 0;
     uint64 remaining_play_ms = 0;
+    // the playback clock: when the current song starts at the receiver, MUSIC_BOT_LEAD_MS behind the
+    // sender. back-to-back songs continue on it, so the lead carries over a boundary unbroken
+    uint64 song_playback_start_ms = 0;
+    uint64 previous_song_end_playback_ms = 0;
     uint64 frames_done = 0;
     uint64 pacing_target_ms = 0;
     uint64 pacing_now_ms = 0;
@@ -635,6 +639,18 @@ void musicbot__threadstart(client_t* music_bot_client)
             clib__null_memory(opus_packet, sizeof(opus_packet));
             timestamp_started_playing = base__get_timestamp_ms();
 
+            // a song that follows straight on from the previous one starts where that one ends on the
+            // playback clock (no second burst, no gap); after a pause it starts now, with a fresh burst
+            if (previous_song_end_playback_ms > timestamp_started_playing)
+            {
+                song_playback_start_ms = previous_song_end_playback_ms;
+            }
+            else
+            {
+                song_playback_start_ms = timestamp_started_playing;
+            }
+            frames_done = 0;
+
             clib__null_memory(music_bot_client->song_name, SONG_NAME_MAX_LENGTH);
             clib__copy_memory(current_song->song_name, music_bot_client->song_name, clib__utf8_string_length(current_song->song_name), SONG_NAME_MAX_LENGTH);
             server_msg__send_start_song_stream_message_to_clients_in_same_channel(music_bot_client);
@@ -680,13 +696,15 @@ void musicbot__threadstart(client_t* music_bot_client)
 
                 // pace to real time: after sending frame K we should be at started + (K+1)*20ms.
                 // sleep only if we are ahead; if behind, send the next frame immediately to catch up.
-                // this self-corrects sleep overshoot / load instead of accumulating drift like a fixed sleep did
+                // this self-corrects sleep overshoot / load instead of accumulating drift like a fixed sleep did.
+                // "ahead" means more than MUSIC_BOT_LEAD_MS ahead of the playback clock: the first
+                // lead's worth of frames goes out at once, from then on one frame per 20 ms
                 frames_done = (frame_offset / frame_size) + 1;
-                pacing_target_ms = timestamp_started_playing + frames_done * 20;
+                pacing_target_ms = song_playback_start_ms + frames_done * 20;
                 pacing_now_ms = base__get_timestamp_ms();
-                if (pacing_target_ms > pacing_now_ms)
+                if (pacing_target_ms > pacing_now_ms + MUSIC_BOT_LEAD_MS)
                 {
-                    base__sleep_for_milliseconds(pacing_target_ms - pacing_now_ms);
+                    base__sleep_for_milliseconds(pacing_target_ms - MUSIC_BOT_LEAD_MS - pacing_now_ms);
                 }
             }
 
@@ -706,15 +724,18 @@ void musicbot__threadstart(client_t* music_bot_client)
             opus_encoder_destroy(opus_encoder);
             opus_encoder = NULL_POINTER;
 
-            // if the song ended early, sleep out the rest of its real duration before the next one.
-            // sliced sleep so a delete request stops the bot within ~100 ms instead of after minutes
+            // the sender finished this song a lead's worth early. wait until the next song's first frame
+            // is due on the playback clock (its end minus the lead), so the lead carries over the
+            // boundary; a cut-short song hands over from where it stopped. sliced sleep so a delete
+            // request stops the bot within ~100 ms instead of after minutes
+            previous_song_end_playback_ms = song_playback_start_ms + frames_done * 20;
             timestamp_stopped_playing = base__get_timestamp_ms();
-            if (streamed_song_length_seconds > 0 && is_stop_reason_sudden_song_deletion == FALSE)
+            if (is_stop_reason_sudden_song_deletion == FALSE)
             {
-                if ((streamed_song_length_seconds * 1000) > (timestamp_stopped_playing - timestamp_started_playing))
+                if (previous_song_end_playback_ms > timestamp_stopped_playing + MUSIC_BOT_LEAD_MS)
                 {
-                    remaining_play_ms = (streamed_song_length_seconds * 1000) - (timestamp_stopped_playing - timestamp_started_playing);
-                    DBG_MUSIC_BOT log_info("%s %llu %s", "sleeping for ->", remaining_play_ms, "ms \n");
+                    remaining_play_ms = previous_song_end_playback_ms - MUSIC_BOT_LEAD_MS - timestamp_stopped_playing;
+                    DBG_MUSIC_BOT log_info("%s %llu %s %llu %s", "song of", streamed_song_length_seconds, "s done, sleeping for ->", remaining_play_ms, "ms \n");
 
                     while (remaining_play_ms > 0 && music_bot_client->music_bot_client_extension.is_music_bot_running == TRUE)
                     {

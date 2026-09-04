@@ -2087,8 +2087,8 @@ a-toast:hover {
    old row scattered them (buttons top-right, slider floating over the text, a bare send) */
 #space-devider4 {
     position: relative;
-    /* no side padding, because the card must line up exactly with the chat panel's edges above */
-    padding: 6px 0 10px 0;
+    /* a little side room, so the card sits just inside the chat panel's edges instead of touching them */
+    padding: 6px 8px 10px 8px;
     box-sizing: border-box;
 }
 

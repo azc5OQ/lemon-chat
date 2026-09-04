@@ -118,6 +118,11 @@ int mytypedef__check_data_types_for_consistency(void);
 #define UNAUTH_HANDSHAKE_MAX_LENGTH (SHARED_SECRET_LENGTH + MAX_PUBLIC_KEY_LENGTH + 256)  // public_key_info = DH public mix (< SHARED_SECRET_LENGTH) + RSA public key (< MAX_PUBLIC_KEY_LENGTH) + JSON scaffolding
 #define MAX_TAGS_PER_USER 32
 #define ADMIN_TAG_ID 0
+// datachannel attempts a client gets before the server stops building peers for it for a while
+#define WEBRTC_DATACHANNEL_ATTEMPTS_BEFORE_COOLDOWN 10
+// how far ahead of playback a music bot streams: sent as a burst at song start, then paced. the
+// player worklet holds the same amount (BOT_TARGET in audio.js), keep the two in step
+#define MUSIC_BOT_LEAD_MS 3000
 #define CHALLENGE_STRING_LENGTH 128
 #define ADMIN_PASSWORD_MAX_LENGTH 50
 #define COUNTRY_ISO_CODE_LENGTH 3
@@ -197,6 +202,8 @@ typedef struct server_settings
     boole is_fast_reconnect_allowed;   // a returning identity may adopt its still-open session instead of replacing it
     boole is_identity_takeover_allowed; // a new login with an identity already online replaces that session (off: refused)
     boole is_websocket_ping_active;    // ws-level ping every check tick; 4 unanswered pings shut the socket
+    int64 webrtc_datachannel_cooldown_seconds; // no new peers for a client after 10 attempts that never connected
+    boole show_music_bot_marquee_to_everyone; // the "now playing" marquee also for people outside the bot's channel
     boole is_voice_chat_active;
     boole is_music_bot_audio_active;
     boole is_logging_of_failed_attempts_active;
@@ -496,6 +503,8 @@ typedef struct webrtc_peer_t
     boole is_existing;
     char dh_shared_secret[SHARED_SECRET_LENGTH];
     ws_cli_conn_t* p_ws_connection;
+    uint64 attempts_since_connected; // create requests since the transport last reached RTC_CONNECTED
+    uint64 cooldown_until_ms;        // while in the future, create requests are refused
 } webrtc_peer_t;
 
 typedef enum file_send_type_e

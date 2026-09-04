@@ -2558,8 +2558,8 @@ a-toast:hover {
    old row scattered them (buttons top-right, slider floating over the text, a bare send) */
 #space-devider4 {
     position: relative;
-    /* no side padding, because the card must line up exactly with the chat panel's edges above */
-    padding: 6px 0 10px 0;
+    /* a little side room, so the card sits just inside the chat panel's edges instead of touching them */
+    padding: 6px 8px 10px 8px;
     box-sizing: border-box;
 }
 
@@ -5025,7 +5025,8 @@ div {
    inside a single surface, because the old row scattered them */
 #space-devider4 {
     position: relative;
-    padding: 6px 0 10px 0;
+    /* a little side room, so the card sits just inside the chat panel's edges instead of touching them */
+    padding: 6px 8px 10px 8px;
     box-sizing: border-box;
 }
 
@@ -27266,6 +27267,18 @@ function lemon_audio_worklet_scope()
             this.LANE_IDLE_QUANTA = 3750;    // ~10 s without new data -> lane deleted
             this.TALK_END_QUANTA = 188;      // ~500 ms without new data -> push-to-talk was released
 
+            // music bot lanes: the server streams a bot MUSIC_BOT_LEAD_MS (3 s) ahead of playback, so
+            // its lane holds that much on purpose - a deep, fixed cushion instead of the low-latency
+            // voice rules. BOT_TARGET must match the server's lead
+            this.BOT_TARGET = 288000;        // 3 s held before and during playback
+            this.BOT_TARGET_MAX = 336000;    // grows to 3.5 s at most after underruns
+            this.BOT_RESUME_DEPTH = 96000;   // after a start or an underrun, play again at 1 s of audio
+            this.BOT_SLIP_EXCESS = 48000;    // slip only above target + 500 ms (music must not be time-squeezed)
+            this.BOT_RING_SIZE = 524288;     // ~5.4 s, power of two
+            this.BOT_RING_MASK = 524287;
+            this.BOT_RING_HARD_CAP = 432000; // ~4.5 s; beyond this the oldest samples are dropped
+            this.music_bot_senders = new Set(); // announced by the main thread from the client list
+
             this.quantum_counter = 0;
 
             this.port.onmessage = (event) =>
@@ -27274,6 +27287,26 @@ function lemon_audio_worklet_scope()
                 if (event.data === "clear")
                 {
                     this.lanes.clear();
+                    return;
+                }
+
+                // which senders are music bots, so their lanes get the deep-cushion rules on creation
+                if (event.data.type === "music_bot_senders")
+                {
+                    this.music_bot_senders = new Set(event.data.ids);
+                    return;
+                }
+
+                // a diagnostic snapshot of every lane, answered on the same port
+                if (event.data.type === "lane_stats")
+                {
+                    let stats = [];
+                    for (const [sender_id, lane] of this.lanes)
+                    {
+                        stats.push({ sender_id: sender_id, is_music_bot: lane.is_music_bot, state: lane.state,
+                                     available_ms: Math.round(lane.available / 96), target_ms: Math.round(lane.target / 96) });
+                    }
+                    this.port.postMessage({ type: "lane_stats", lanes: stats });
                     return;
                 }
 
@@ -27317,13 +27350,24 @@ function lemon_audio_worklet_scope()
 
             if (lane == null)
             {
+                let is_music_bot = this.music_bot_senders.has(sender_id);
+                let is_premixed = (sender_id === this.PREMIXED_LANE_ID);
+
+                // three kinds of lane: the pre-mixed flush (tiny), a voice (low latency, adaptive)
+                // and a music bot (deep fixed cushion fed by the server's lead)
                 lane = {
-                    ring: new Float32Array(this.RING_SIZE),
+                    ring: new Float32Array(is_music_bot ? this.BOT_RING_SIZE : this.RING_SIZE),
+                    ring_mask: is_music_bot ? this.BOT_RING_MASK : this.RING_MASK,
+                    hard_cap: is_music_bot ? this.BOT_RING_HARD_CAP : this.RING_HARD_CAP,
                     read_index: 0,
                     write_index: 0,
                     available: 0,
                     state: 0, // 0 = prebuffering, 1 = playing
-                    target: sender_id === this.PREMIXED_LANE_ID ? 960 : this.TARGET_START,
+                    target: is_premixed ? 960 : (is_music_bot ? this.BOT_TARGET : this.TARGET_START),
+                    target_min: is_premixed ? 960 : (is_music_bot ? this.BOT_TARGET : this.TARGET_MIN),
+                    target_max: is_music_bot ? this.BOT_TARGET_MAX : this.TARGET_MAX,
+                    slip_excess: is_music_bot ? this.BOT_SLIP_EXCESS : this.SLIP_EXCESS,
+                    is_music_bot: is_music_bot,
                     fade_in_remaining: 0,
                     stable_quanta: 0,
                     last_data_quantum: this.quantum_counter,
@@ -27335,21 +27379,21 @@ function lemon_audio_worklet_scope()
             lane.last_data_quantum = this.quantum_counter;
 
             // hard cap: drop the oldest first - delay that piled up is never recovered by itself
-            if (lane.available + chunk.length > this.RING_HARD_CAP)
+            if (lane.available + chunk.length > lane.hard_cap)
             {
-                let drop = lane.available + chunk.length - this.RING_HARD_CAP;
+                let drop = lane.available + chunk.length - lane.hard_cap;
                 if (drop > lane.available)
                 {
                     drop = lane.available;
                 }
-                lane.read_index = (lane.read_index + drop) & this.RING_MASK;
+                lane.read_index = (lane.read_index + drop) & lane.ring_mask;
                 lane.available = lane.available - drop;
             }
 
             for (let i = 0; i < chunk.length; i++)
             {
                 lane.ring[lane.write_index] = chunk[i];
-                lane.write_index = (lane.write_index + 1) & this.RING_MASK;
+                lane.write_index = (lane.write_index + 1) & lane.ring_mask;
             }
             lane.available = lane.available + chunk.length;
         }
@@ -27379,14 +27423,16 @@ function lemon_audio_worklet_scope()
                 {
                     lane.available = 0;
                     lane.read_index = lane.write_index;
-                    lane.target = sender_id === this.PREMIXED_LANE_ID ? 960 : this.TARGET_MIN;
+                    lane.target = lane.target_min;
                     lane.stable_quanta = 0;
                 }
 
-                // prebuffering: hold until the jitter target is reached, then start with a fade-in
+                // prebuffering: hold until the jitter target is reached, then start with a fade-in.
+                // a music bot lane starts (and restarts) once a second of audio is in; the server's
+                // lead fills the rest of its cushion while it already plays
                 if (lane.state === 0)
                 {
-                    if (lane.available < lane.target)
+                    if (lane.available < (lane.is_music_bot ? this.BOT_RESUME_DEPTH : lane.target))
                     {
                         continue;
                     }
@@ -27394,22 +27440,23 @@ function lemon_audio_worklet_scope()
                     lane.fade_in_remaining = this.FADE_FRAMES;
                 }
 
-                // stable long enough: shrink the target one step back toward the minimum
+                // stable long enough: shrink the target one step back toward the minimum (a music
+                // bot's cushion is fixed, it never shrinks)
                 lane.stable_quanta = lane.stable_quanta + 1;
                 if (lane.stable_quanta >= this.SHRINK_AFTER_QUANTA)
                 {
                     lane.stable_quanta = 0;
-                    if (lane.target > this.TARGET_MIN)
+                    if (lane.is_music_bot == false && lane.target > lane.target_min)
                     {
                         lane.target = lane.target - this.TARGET_SHRINK_STEP;
                     }
                 }
 
-                // sample slipping: while buffered depth exceeds target + 20 ms, silently drop one
-                // frame per quantum (~0.8% time compression) - drains built-up delay with no click
-                if (lane.available > lane.target + this.SLIP_EXCESS)
+                // sample slipping: while buffered depth exceeds target + the lane's slack, silently drop
+                // one frame per quantum (~0.8% time compression) - drains built-up delay with no click
+                if (lane.available > lane.target + lane.slip_excess)
                 {
-                    lane.read_index = (lane.read_index + 2) & this.RING_MASK;
+                    lane.read_index = (lane.read_index + 2) & lane.ring_mask;
                     lane.available = lane.available - 2;
                 }
 
@@ -27421,7 +27468,7 @@ function lemon_audio_worklet_scope()
                         // below already brought the level to ~zero, so no click
                         lane.state = 0;
                         lane.stable_quanta = 0;
-                        if (lane.target < this.TARGET_MAX)
+                        if (lane.target < lane.target_max)
                         {
                             lane.target = lane.target + this.TARGET_GROW_STEP;
                         }
@@ -27446,10 +27493,10 @@ function lemon_audio_worklet_scope()
 
                     // one output frame consumes two ring samples: left then right (interleaved)
                     left_channel[i] = left_channel[i] + lane.ring[lane.read_index] * gain;
-                    lane.read_index = (lane.read_index + 1) & this.RING_MASK;
+                    lane.read_index = (lane.read_index + 1) & lane.ring_mask;
 
                     let right_sample = lane.ring[lane.read_index];
-                    lane.read_index = (lane.read_index + 1) & this.RING_MASK;
+                    lane.read_index = (lane.read_index + 1) & lane.ring_mask;
                     lane.available = lane.available - 2;
 
                     if (right_channel != null)
@@ -27640,6 +27687,24 @@ function create_audio_player_output()
         let direct_audio_pipe = new MessageChannel();
         g_audio_player_worklet_node.port.postMessage({ type: "pipe", port: direct_audio_pipe.port2 }, [direct_audio_pipe.port2]);
         g_opus_decoder_worker.postMessage({ type: "use_direct_worklet_pipe", port: direct_audio_pipe.port1 }, [direct_audio_pipe.port1]);
+
+        // the worklet only ever answers a lane_stats request; it lands in the console
+        g_audio_player_worklet_node.port.onmessage = function(event)
+        {
+            if (event.data != null && event.data.type === "lane_stats")
+            {
+                console.log("playback lanes: " + JSON.stringify(event.data.lanes));
+            }
+        };
+
+        // a bot that was already listed before the node existed gets its deep-cushion lane too
+        audio_player_announce_music_bots();
+
+        // devtools: __LOG.lanes() prints every playback lane's depth and target
+        if (global.__LOG != null)
+        {
+            global.__LOG.lanes = audio_player_request_lane_stats;
+        }
     }).catch(function(worklet_setup_error)
     {
         // any setup failure (csp, quirky browser) lands on the old path instead of g_silence
@@ -27687,6 +27752,36 @@ function set_client_playback_volume(client_id, volume)
     if (g_is_audio_worklet_player_active == true && g_audio_player_worklet_node != null)
     {
         g_audio_player_worklet_node.port.postMessage({ type: "gain", sender_id: client_id, value: volume });
+    }
+}
+
+// tells the player worklet which senders are music bots, so their lanes get the deep cushion the
+// server's lead fills. called whenever the client list changes; the worklet keeps the latest set
+function audio_player_announce_music_bots()
+{
+    if (g_is_audio_worklet_player_active != true || g_audio_player_worklet_node == null)
+    {
+        return;
+    }
+
+    let bot_ids = [];
+    for (let i = 0; i < g_client_list.length; i++)
+    {
+        if (g_client_list[i] != null && g_client_list[i].is_music_bot == true)
+        {
+            bot_ids.push(g_client_list[i].client_id);
+        }
+    }
+
+    g_audio_player_worklet_node.port.postMessage({ type: "music_bot_senders", ids: bot_ids });
+}
+
+// asks the worklet for a snapshot of every lane (depth and target); the answer is logged
+function audio_player_request_lane_stats()
+{
+    if (g_is_audio_worklet_player_active == true && g_audio_player_worklet_node != null)
+    {
+        g_audio_player_worklet_node.port.postMessage({ type: "lane_stats" });
     }
 }
 
@@ -28519,6 +28614,9 @@ var server_msg = {
 
         // a new client joined: pull their avatar (if any) so it shows on their row
         request_single_avatar(client_id);
+
+        // a bot that just appeared streams within seconds; the player must already know it is one
+        audio_player_announce_music_bots();
     },
     // removes the client from the DOM, g_client_list and the id map (swap-with-last), keeps
     // aliased clients in g_offline_client_list, and drops his private chat context if open
@@ -30368,6 +30466,21 @@ var server_msg = {
         // themes that do not show the avatar grid get the paced one-at-a-time prefetch instead
         start_avatar_prefetch();
 
+        // the player needs to know which senders are bots before their first audio arrives
+        audio_player_announce_music_bots();
+
+        // a stream already running when the list arrives: its marquee shows when the streamer is in
+        // this channel, or wherever it is when the server shows marquees to everyone
+        for (let i = 0; i < msg.message.clients.length; i++)
+        {
+            let listed = msg.message.clients[i];
+
+            if (listed.is_streaming_song != true) { continue; }
+            if (g_server_policy.show_music_bot_marquee_to_everyone == false && listed.channel_id != current_channel_id) { continue; }
+
+            server_msg.process_start_song_stream_from_server({ message: { client_id: listed.client_id, song_name: listed.song_name } });
+        }
+
         // a strip theme saved from last time is applied at startup, BEFORE the
         // server config could set g_avatars_allowed - so the avatar grid never armed and
         // the enqueue above bailed. re-evaluate now that both the flag and the clients
@@ -30437,10 +30550,14 @@ var server_msg = {
             {
                 audio_player_clear();
 
-                let marquee_containers = document.getElementsByClassName("marquee-music-playing-container");
-                for (let i = 0; i < marquee_containers.length; i++)
+                // leaving a channel drops its marquees, unless the server shows them to everyone
+                if (g_server_policy.show_music_bot_marquee_to_everyone == false)
                 {
-                    marquee_containers[i].style.display = "none";
+                    let marquee_containers = document.getElementsByClassName("marquee-music-playing-container");
+                    for (let i = 0; i < marquee_containers.length; i++)
+                    {
+                        marquee_containers[i].style.display = "none";
+                    }
                 }
 
                 document.getElementById("channel-password-enter-container").style.display = "none";
@@ -32313,7 +32430,7 @@ var UI = {
                                                     <p class='context-menu-item' data-action='5'>" + ((the_client.is_muted_by_local_client == true ) ? 'un-mute' : 'mute') + "</p>\n\
                                                     <p class='context-menu-item' data-action='18'>adjust volume</p>\n\
                                                     <p class='context-menu-item' data-action='16'>delete</p>\n\
-                                                    <p class='context-menu-item' data-action='17'>set name</p>\n\
+                                                    <p class='context-menu-item' data-action='20'>set name</p>\n\
                                                     "+ string_to_append +"\n\
                                                 </div>\n\
                                             </div>";
@@ -32757,7 +32874,7 @@ var UI = {
 
             send_message_object(message_object);
         }
-        else if (action == 17)
+        else if (action == 20) // set a music bot's name; 17 belongs to "delete avatar" above, which used to swallow this
         {
             document.getElementById("input-set-new-username").value = get_client_by_client_id(selected_client_id).username;
             document.getElementById("set-new-username-enter-container").style.display = "block";
@@ -34655,6 +34772,9 @@ var UI = {
                 is_fast_reconnect_allowed: document.getElementById("server-settings-general-fast-reconnect-checkbox").checked,
                 is_identity_takeover_allowed: document.getElementById("server-settings-general-identity-takeover-checkbox").checked,
                 is_websocket_ping_active: document.getElementById("server-settings-general-websocket-ping-checkbox").checked,
+                show_music_bot_marquee_to_everyone: document.getElementById("server-settings-general-marquee-everyone-checkbox").checked,
+                // 0 is a valid value (cooldown off), so no "|| default" here
+                webrtc_datachannel_cooldown_seconds: (isNaN(parseInt(document.getElementById("server-settings-general-datachannel-cooldown-input").value)) ? 600 : parseInt(document.getElementById("server-settings-general-datachannel-cooldown-input").value)),
                 minimum_rsa_key_bits: parseInt(document.getElementById("server-settings-general-minimum-rsa-bits-input").value) || 2048,
                 announce_minimum_rsa_key_bits: document.getElementById("server-settings-general-announce-rsa-bits-checkbox").checked,
                 is_country_blocking_active: document.getElementById("server-settings-general-country-blocking-checkbox").checked,
@@ -38888,6 +39008,7 @@ function mainthread__process_received_websocket_message_continue(e)
                 allow_chat_pictures: msg.message.allow_chat_pictures,
                 is_fast_reconnect_allowed: msg.message.is_fast_reconnect_allowed,
                 hide_admin_country_flag: msg.message.hide_admin_country_flag,
+                show_music_bot_marquee_to_everyone: msg.message.show_music_bot_marquee_to_everyone,
                 value: "success"
             });
 
@@ -38914,6 +39035,15 @@ function mainthread__process_received_websocket_message_continue(e)
     {
         global.postMessage({
             type: "data_processing_worker__fast_reconnect_ok",
+            value: msg
+        });
+        return;
+    }
+
+    if (msg.message.type == "datachannel_cooldown")
+    {
+        global.postMessage({
+            type: "data_processing_worker__datachannel_cooldown",
             value: msg
         });
         return;
@@ -39764,21 +39894,50 @@ var g_is_reconnect_active = true;
 // fast reconnect (server setting): a lost socket keeps the page exactly as it is and re-dials with
 // the same identity; the server adopts the still-open session. only a failed attempt shows
 // "connection lost" and wipes the page
-var g_is_fast_reconnect_allowed = false;     // announced by the server at login and on policy updates
 var g_is_fast_reconnect_in_progress = false; // an attempt is running: no wipe, no toast, one attempt only
 var g_is_fast_reconnect_resumed = false;     // the server said fast_reconnect_ok: the lists that follow are a refresh
 var g_fast_reconnect_deadline_timer = null;  // the classic "connection lost" path when the attempt stalls
 var g_fast_reconnect_pending_lists = null;   // the refreshed lists, applied together so the page repaints once
 var G_FAST_RECONNECT_DEADLINE_MS = 12000;
 
-// server setting: admins are listed without a country flag (the admin tag is id 0 on every server)
-var g_hide_admin_country_flag = false;
-var G_ADMIN_TAG_ID = 0;
+// server-side policy this client only obeys, announced at login (authentication_status) and on every
+// admin save (server_policy); absent fields on an older server keep these defaults
+var g_server_policy = {
+    is_fast_reconnect_allowed: false,          // a lost socket may resume its session instead of starting over
+    hide_admin_country_flag: false,            // admins are listed without a country flag
+    show_music_bot_marquee_to_everyone: false  // a streaming bot's marquee also for people outside its channel
+};
+
+var G_ADMIN_TAG_ID = 0; // the admin tag has id 0 on every server
+
+// server-side datachannel cooldown: after 10 attempts that never connected the server refuses to
+// build peers for a while and says for how long; the retry loop sleeps that long instead of 10 s
+var g_webrtc_datachannel_cooldown_until_ms = 0;
+var g_datachannel_retry_sleep_resolve = null; // a login resolves it early, the server then starts counting afresh
+
+function datachannel_retry_sleep(ms)
+{
+    return new Promise(function(resolve)
+    {
+        let timer = setTimeout(function()
+        {
+            g_datachannel_retry_sleep_resolve = null;
+            resolve();
+        }, ms);
+
+        g_datachannel_retry_sleep_resolve = function()
+        {
+            clearTimeout(timer);
+            g_datachannel_retry_sleep_resolve = null;
+            resolve();
+        };
+    });
+}
 
 // the flag a row shows for this client: none for an admin when the server keeps admin flags private
 function country_flag_code_for_client(client)
 {
-    if (g_hide_admin_country_flag == true && Array.isArray(client.tag_ids) && client.tag_ids.indexOf(G_ADMIN_TAG_ID) != -1)
+    if (g_server_policy.hide_admin_country_flag == true && Array.isArray(client.tag_ids) && client.tag_ids.indexOf(G_ADMIN_TAG_ID) != -1)
     {
         return "";
     }
@@ -41289,13 +41448,22 @@ async function webrtc_datachannel_connection_check(is_this_reconnect = false)
                     + (datachannel_attempt_error != null && datachannel_attempt_error.stack ? datachannel_attempt_error.stack : datachannel_attempt_error));
             }
 
-            await sleep(10000);
+            await datachannel_retry_sleep(10000);
 
             // a full attempt window passed and the channel is still down: find out
             // whether the browser is even capable of direct udp before retrying forever
             if (g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
             {
                 probe_webrtc_udp_and_warn();
+            }
+
+            // the server refused for a while (10 attempts never connected): wait it out here instead
+            // of asking every 10 s; a new login resolves the sleep and the server counts afresh
+            if (g_is_webrtc_datachannel_connected == false && g_webrtc_datachannel_cooldown_until_ms > new Date().valueOf())
+            {
+                let remaining_ms = g_webrtc_datachannel_cooldown_until_ms - new Date().valueOf();
+                console.log("datachannel: server cooldown, next attempt in " + Math.ceil(remaining_ms / 1000) + " s");
+                await datachannel_retry_sleep(remaining_ms);
             }
         }
         else
@@ -43459,7 +43627,7 @@ function is_channel_or_his_parent_collapsed(channel_id)
 function try_start_fast_reconnect(reason)
 {
     // node owns the real connection in the webview, and only a logged-in session can be resumed
-    if (g_is_fast_reconnect_allowed == false || g_is_authenticated == false
+    if (g_server_policy.is_fast_reconnect_allowed == false || g_is_authenticated == false
         || g_is_identity_switch_in_progress == true || is_ui_only_runtime() == true)
     {
         return false;
@@ -44457,16 +44625,13 @@ function apply_server_policy_fields(data)
     g_is_alias_registration_allowed = (data.is_alias_registration_allowed == true);
     g_is_typing_indicator_allowed = (data.allow_typing_indicator == true);
 
-    // whether a lost socket may resume its session instead of starting over (absent on an older server)
-    if (data.is_fast_reconnect_allowed !== undefined)
+    // the policy flags this client only obeys; a field an older server does not send keeps its default
+    for (let policy_field in g_server_policy)
     {
-        g_is_fast_reconnect_allowed = (data.is_fast_reconnect_allowed == true);
-    }
-
-    // admins are drawn without a country flag when the server says so (absent on an older server)
-    if (data.hide_admin_country_flag !== undefined)
-    {
-        g_hide_admin_country_flag = (data.hide_admin_country_flag == true);
+        if (data[policy_field] !== undefined)
+        {
+            g_server_policy[policy_field] = (data[policy_field] == true);
+        }
     }
 
     // rename policy: on unless the server says otherwise (an older server says nothing)
@@ -44822,6 +44987,17 @@ function mainthread_onmessage(e)
                 websocket_connection_check(websocket);
             }
 
+            // a fresh session starts the server's datachannel attempt count from zero, so a retry loop
+            // sitting out a cooldown may try again now (a resumed session keeps the server's cooldown)
+            if (g_is_fast_reconnect_resumed == false)
+            {
+                g_webrtc_datachannel_cooldown_until_ms = 0;
+            }
+            if (g_datachannel_retry_sleep_resolve != null)
+            {
+                g_datachannel_retry_sleep_resolve();
+            }
+
             // a resumed session was never gone from the user's point of view: no connected sound
             if (g_is_fast_reconnect_resumed == true)
             {
@@ -44985,6 +45161,16 @@ function mainthread_onmessage(e)
     else if (e.data.type == "data_processing_worker__fast_reconnect_ok")
     {
         fast_reconnect_succeeded();
+    }
+    else if (e.data.type == "data_processing_worker__datachannel_cooldown")
+    {
+        let seconds_left = parseInt(e.data.value.message.seconds_left);
+
+        if (isNaN(seconds_left) == false && seconds_left > 0)
+        {
+            g_webrtc_datachannel_cooldown_until_ms = new Date().valueOf() + seconds_left * 1000;
+            console.warn("datachannel: the server refuses new attempts for " + seconds_left + " s (10 attempts never connected)");
+        }
     }
     else if (e.data.type == "data_processing_worker__channel_list_from_server")
     {
@@ -45171,6 +45357,7 @@ function mainthread_onmessage(e)
         let msg = e.data.value;
         document.getElementById("server-settings-general-display-flags-checkbox").checked = msg.message.display_country_flags == true;
         document.getElementById("server-settings-general-hide-admin-flag-checkbox").checked = msg.message.hide_admin_country_flag == true;
+        refresh_hide_admin_flag_row_visibility();
         document.getElementById("server-settings-general-enable-audio").checked = msg.message.enable_audio == true;
         document.getElementById("server-settings-general-enable-music-bot-audio-checkbox").checked = msg.message.enable_music_bot_audio == true;
         document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked = msg.message.hide_clients_in_password_channels == true;
@@ -45189,6 +45376,8 @@ function mainthread_onmessage(e)
         document.getElementById("server-settings-general-fast-reconnect-checkbox").checked = msg.message.is_fast_reconnect_allowed == true;
         document.getElementById("server-settings-general-identity-takeover-checkbox").checked = msg.message.is_identity_takeover_allowed == true;
         document.getElementById("server-settings-general-websocket-ping-checkbox").checked = msg.message.is_websocket_ping_active == true;
+        document.getElementById("server-settings-general-datachannel-cooldown-input").value = (typeof msg.message.webrtc_datachannel_cooldown_seconds === "number") ? msg.message.webrtc_datachannel_cooldown_seconds : 600;
+        document.getElementById("server-settings-general-marquee-everyone-checkbox").checked = msg.message.show_music_bot_marquee_to_everyone == true;
         document.getElementById("server-settings-general-minimum-rsa-bits-input").value = (typeof msg.message.minimum_rsa_key_bits === "number") ? msg.message.minimum_rsa_key_bits : 2048;
         document.getElementById("server-settings-general-announce-rsa-bits-checkbox").checked = msg.message.announce_minimum_rsa_key_bits == true;
         document.getElementById("server-settings-general-country-blocking-checkbox").checked = msg.message.is_country_blocking_active == true;
@@ -46708,6 +46897,7 @@ async function window_onload()
     document.getElementById("server-settings-general-allow-file-uploads-checkbox").onchange = refresh_file_upload_size_visibility;
     document.getElementById("server-settings-general-allow-pictures-checkbox").onchange = refresh_picture_size_visibility;
     document.getElementById("server-settings-general-country-blocking-checkbox").onchange = refresh_country_blocking_visibility;
+    document.getElementById("server-settings-general-display-flags-checkbox").onchange = refresh_hide_admin_flag_row_visibility;
     document.getElementById("server-settings-country-block-select").onchange = country_block_select_onchange;
     setup_chat_file_drag_and_drop();
     apply_file_upload_policy_to_ui();
@@ -47902,6 +48092,20 @@ function country_block_select_onchange()
 
 // the checkbox shows or hides the picker below it (the block list itself is server state
 // either way; unchecking just disables enforcement, it does not clear the list)
+// the "hide admin's flag" row only makes sense while flags are displayed at all
+function refresh_hide_admin_flag_row_visibility()
+{
+    let flags_checkbox = document.getElementById("server-settings-general-display-flags-checkbox");
+    let row = document.getElementById("server-settings-hide-admin-flag-row");
+
+    if (flags_checkbox == null || row == null)
+    {
+        return;
+    }
+
+    row.style.display = (flags_checkbox.checked == true) ? "" : "none";
+}
+
 function refresh_country_blocking_visibility()
 {
     let checkbox = document.getElementById("server-settings-general-country-blocking-checkbox");
@@ -48249,7 +48453,7 @@ function JavascriptJavaBridge__accept_current_settings_from_android(settings_jso
                             <input type="checkbox" id="server-settings-general-display-flags-checkbox">
                             <span>display country flags near clients</span>
                         </label>
-                        <label class="server-settings-general-row">
+                        <label class="server-settings-general-row" id="server-settings-hide-admin-flag-row" style="display: none;">
                             <input type="checkbox" id="server-settings-general-hide-admin-flag-checkbox">
                             <span>hide admin's flag</span>
                         </label>
@@ -48319,6 +48523,14 @@ function JavascriptJavaBridge__accept_current_settings_from_android(settings_jso
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-temp-channels-checkbox">
                             <span>allow creation of temp channels by guests</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-marquee-everyone-checkbox">
+                            <span>show a music bot's "now playing" marquee to everyone, not only inside its channel</span>
+                        </label>
+                        <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>voice datachannel cooldown after 10 failed connection attempts (seconds, 0 = keep trying)</span>
+                            <input type="number" min="0" max="86400" step="1" id="server-settings-general-datachannel-cooldown-input">
                         </label>
 
                         <p class="server-settings-general-subheader">connections and security</p>

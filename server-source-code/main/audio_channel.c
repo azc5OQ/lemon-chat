@@ -274,6 +274,13 @@ void RTC_API peerconnection_on_statechanged_callback(int pc, rtcState state, voi
             // reads it, so a silently dead transport must drop it here
             peer->connected = (boole)(state == RTC_CONNECTED);
 
+            // a transport that came up clears the attempt count and any cooldown behind it
+            if (state == RTC_CONNECTED)
+            {
+                peer->attempts_since_connected = 0;
+                peer->cooldown_until_ms = 0;
+            }
+
             status = util__is_client_valid(peer->client_id);
 
             if (status == TRUE)

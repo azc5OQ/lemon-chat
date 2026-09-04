@@ -161,6 +161,18 @@ function lemon_audio_worklet_scope()
             this.LANE_IDLE_QUANTA = 3750;    // ~10 s without new data -> lane deleted
             this.TALK_END_QUANTA = 188;      // ~500 ms without new data -> push-to-talk was released
 
+            // music bot lanes: the server streams a bot MUSIC_BOT_LEAD_MS (3 s) ahead of playback, so
+            // its lane holds that much on purpose - a deep, fixed cushion instead of the low-latency
+            // voice rules. BOT_TARGET must match the server's lead
+            this.BOT_TARGET = 288000;        // 3 s held before and during playback
+            this.BOT_TARGET_MAX = 336000;    // grows to 3.5 s at most after underruns
+            this.BOT_RESUME_DEPTH = 96000;   // after a start or an underrun, play again at 1 s of audio
+            this.BOT_SLIP_EXCESS = 48000;    // slip only above target + 500 ms (music must not be time-squeezed)
+            this.BOT_RING_SIZE = 524288;     // ~5.4 s, power of two
+            this.BOT_RING_MASK = 524287;
+            this.BOT_RING_HARD_CAP = 432000; // ~4.5 s; beyond this the oldest samples are dropped
+            this.music_bot_senders = new Set(); // announced by the main thread from the client list
+
             this.quantum_counter = 0;
 
             this.port.onmessage = (event) =>
@@ -169,6 +181,26 @@ function lemon_audio_worklet_scope()
                 if (event.data === "clear")
                 {
                     this.lanes.clear();
+                    return;
+                }
+
+                // which senders are music bots, so their lanes get the deep-cushion rules on creation
+                if (event.data.type === "music_bot_senders")
+                {
+                    this.music_bot_senders = new Set(event.data.ids);
+                    return;
+                }
+
+                // a diagnostic snapshot of every lane, answered on the same port
+                if (event.data.type === "lane_stats")
+                {
+                    let stats = [];
+                    for (const [sender_id, lane] of this.lanes)
+                    {
+                        stats.push({ sender_id: sender_id, is_music_bot: lane.is_music_bot, state: lane.state,
+                                     available_ms: Math.round(lane.available / 96), target_ms: Math.round(lane.target / 96) });
+                    }
+                    this.port.postMessage({ type: "lane_stats", lanes: stats });
                     return;
                 }
 
@@ -212,13 +244,24 @@ function lemon_audio_worklet_scope()
 
             if (lane == null)
             {
+                let is_music_bot = this.music_bot_senders.has(sender_id);
+                let is_premixed = (sender_id === this.PREMIXED_LANE_ID);
+
+                // three kinds of lane: the pre-mixed flush (tiny), a voice (low latency, adaptive)
+                // and a music bot (deep fixed cushion fed by the server's lead)
                 lane = {
-                    ring: new Float32Array(this.RING_SIZE),
+                    ring: new Float32Array(is_music_bot ? this.BOT_RING_SIZE : this.RING_SIZE),
+                    ring_mask: is_music_bot ? this.BOT_RING_MASK : this.RING_MASK,
+                    hard_cap: is_music_bot ? this.BOT_RING_HARD_CAP : this.RING_HARD_CAP,
                     read_index: 0,
                     write_index: 0,
                     available: 0,
                     state: 0, // 0 = prebuffering, 1 = playing
-                    target: sender_id === this.PREMIXED_LANE_ID ? 960 : this.TARGET_START,
+                    target: is_premixed ? 960 : (is_music_bot ? this.BOT_TARGET : this.TARGET_START),
+                    target_min: is_premixed ? 960 : (is_music_bot ? this.BOT_TARGET : this.TARGET_MIN),
+                    target_max: is_music_bot ? this.BOT_TARGET_MAX : this.TARGET_MAX,
+                    slip_excess: is_music_bot ? this.BOT_SLIP_EXCESS : this.SLIP_EXCESS,
+                    is_music_bot: is_music_bot,
                     fade_in_remaining: 0,
                     stable_quanta: 0,
                     last_data_quantum: this.quantum_counter,
@@ -230,21 +273,21 @@ function lemon_audio_worklet_scope()
             lane.last_data_quantum = this.quantum_counter;
 
             // hard cap: drop the oldest first - delay that piled up is never recovered by itself
-            if (lane.available + chunk.length > this.RING_HARD_CAP)
+            if (lane.available + chunk.length > lane.hard_cap)
             {
-                let drop = lane.available + chunk.length - this.RING_HARD_CAP;
+                let drop = lane.available + chunk.length - lane.hard_cap;
                 if (drop > lane.available)
                 {
                     drop = lane.available;
                 }
-                lane.read_index = (lane.read_index + drop) & this.RING_MASK;
+                lane.read_index = (lane.read_index + drop) & lane.ring_mask;
                 lane.available = lane.available - drop;
             }
 
             for (let i = 0; i < chunk.length; i++)
             {
                 lane.ring[lane.write_index] = chunk[i];
-                lane.write_index = (lane.write_index + 1) & this.RING_MASK;
+                lane.write_index = (lane.write_index + 1) & lane.ring_mask;
             }
             lane.available = lane.available + chunk.length;
         }
@@ -274,14 +317,16 @@ function lemon_audio_worklet_scope()
                 {
                     lane.available = 0;
                     lane.read_index = lane.write_index;
-                    lane.target = sender_id === this.PREMIXED_LANE_ID ? 960 : this.TARGET_MIN;
+                    lane.target = lane.target_min;
                     lane.stable_quanta = 0;
                 }
 
-                // prebuffering: hold until the jitter target is reached, then start with a fade-in
+                // prebuffering: hold until the jitter target is reached, then start with a fade-in.
+                // a music bot lane starts (and restarts) once a second of audio is in; the server's
+                // lead fills the rest of its cushion while it already plays
                 if (lane.state === 0)
                 {
-                    if (lane.available < lane.target)
+                    if (lane.available < (lane.is_music_bot ? this.BOT_RESUME_DEPTH : lane.target))
                     {
                         continue;
                     }
@@ -289,22 +334,23 @@ function lemon_audio_worklet_scope()
                     lane.fade_in_remaining = this.FADE_FRAMES;
                 }
 
-                // stable long enough: shrink the target one step back toward the minimum
+                // stable long enough: shrink the target one step back toward the minimum (a music
+                // bot's cushion is fixed, it never shrinks)
                 lane.stable_quanta = lane.stable_quanta + 1;
                 if (lane.stable_quanta >= this.SHRINK_AFTER_QUANTA)
                 {
                     lane.stable_quanta = 0;
-                    if (lane.target > this.TARGET_MIN)
+                    if (lane.is_music_bot == false && lane.target > lane.target_min)
                     {
                         lane.target = lane.target - this.TARGET_SHRINK_STEP;
                     }
                 }
 
-                // sample slipping: while buffered depth exceeds target + 20 ms, silently drop one
-                // frame per quantum (~0.8% time compression) - drains built-up delay with no click
-                if (lane.available > lane.target + this.SLIP_EXCESS)
+                // sample slipping: while buffered depth exceeds target + the lane's slack, silently drop
+                // one frame per quantum (~0.8% time compression) - drains built-up delay with no click
+                if (lane.available > lane.target + lane.slip_excess)
                 {
-                    lane.read_index = (lane.read_index + 2) & this.RING_MASK;
+                    lane.read_index = (lane.read_index + 2) & lane.ring_mask;
                     lane.available = lane.available - 2;
                 }
 
@@ -316,7 +362,7 @@ function lemon_audio_worklet_scope()
                         // below already brought the level to ~zero, so no click
                         lane.state = 0;
                         lane.stable_quanta = 0;
-                        if (lane.target < this.TARGET_MAX)
+                        if (lane.target < lane.target_max)
                         {
                             lane.target = lane.target + this.TARGET_GROW_STEP;
                         }
@@ -341,10 +387,10 @@ function lemon_audio_worklet_scope()
 
                     // one output frame consumes two ring samples: left then right (interleaved)
                     left_channel[i] = left_channel[i] + lane.ring[lane.read_index] * gain;
-                    lane.read_index = (lane.read_index + 1) & this.RING_MASK;
+                    lane.read_index = (lane.read_index + 1) & lane.ring_mask;
 
                     let right_sample = lane.ring[lane.read_index];
-                    lane.read_index = (lane.read_index + 1) & this.RING_MASK;
+                    lane.read_index = (lane.read_index + 1) & lane.ring_mask;
                     lane.available = lane.available - 2;
 
                     if (right_channel != null)
@@ -535,6 +581,24 @@ function create_audio_player_output()
         let direct_audio_pipe = new MessageChannel();
         g_audio_player_worklet_node.port.postMessage({ type: "pipe", port: direct_audio_pipe.port2 }, [direct_audio_pipe.port2]);
         g_opus_decoder_worker.postMessage({ type: "use_direct_worklet_pipe", port: direct_audio_pipe.port1 }, [direct_audio_pipe.port1]);
+
+        // the worklet only ever answers a lane_stats request; it lands in the console
+        g_audio_player_worklet_node.port.onmessage = function(event)
+        {
+            if (event.data != null && event.data.type === "lane_stats")
+            {
+                console.log("playback lanes: " + JSON.stringify(event.data.lanes));
+            }
+        };
+
+        // a bot that was already listed before the node existed gets its deep-cushion lane too
+        audio_player_announce_music_bots();
+
+        // devtools: __LOG.lanes() prints every playback lane's depth and target
+        if (global.__LOG != null)
+        {
+            global.__LOG.lanes = audio_player_request_lane_stats;
+        }
     }).catch(function(worklet_setup_error)
     {
         // any setup failure (csp, quirky browser) lands on the old path instead of g_silence
@@ -582,6 +646,36 @@ function set_client_playback_volume(client_id, volume)
     if (g_is_audio_worklet_player_active == true && g_audio_player_worklet_node != null)
     {
         g_audio_player_worklet_node.port.postMessage({ type: "gain", sender_id: client_id, value: volume });
+    }
+}
+
+// tells the player worklet which senders are music bots, so their lanes get the deep cushion the
+// server's lead fills. called whenever the client list changes; the worklet keeps the latest set
+function audio_player_announce_music_bots()
+{
+    if (g_is_audio_worklet_player_active != true || g_audio_player_worklet_node == null)
+    {
+        return;
+    }
+
+    let bot_ids = [];
+    for (let i = 0; i < g_client_list.length; i++)
+    {
+        if (g_client_list[i] != null && g_client_list[i].is_music_bot == true)
+        {
+            bot_ids.push(g_client_list[i].client_id);
+        }
+    }
+
+    g_audio_player_worklet_node.port.postMessage({ type: "music_bot_senders", ids: bot_ids });
+}
+
+// asks the worklet for a snapshot of every lane (depth and target); the answer is logged
+function audio_player_request_lane_stats()
+{
+    if (g_is_audio_worklet_player_active == true && g_audio_player_worklet_node != null)
+    {
+        g_audio_player_worklet_node.port.postMessage({ type: "lane_stats" });
     }
 }
 

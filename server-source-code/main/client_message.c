@@ -6696,6 +6696,20 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         g_server_settings.is_websocket_ping_active = cJSON_IsTrue(json_field);
     }
 
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "webrtc_datachannel_cooldown_seconds");
+    if (cJSON_IsNumber(json_field))
+    {
+        g_server_settings.webrtc_datachannel_cooldown_seconds = (int64)json_field->valuedouble;
+        if (g_server_settings.webrtc_datachannel_cooldown_seconds < 0) { g_server_settings.webrtc_datachannel_cooldown_seconds = 0; }
+        if (g_server_settings.webrtc_datachannel_cooldown_seconds > 86400) { g_server_settings.webrtc_datachannel_cooldown_seconds = 86400; }
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "show_music_bot_marquee_to_everyone");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.show_music_bot_marquee_to_everyone = cJSON_IsTrue(json_field);
+    }
+
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "minimum_rsa_key_bits");
     if (cJSON_IsNumber(json_field))
     {
@@ -7376,6 +7390,7 @@ void client_msg__process_create_new_webrtc_datachannel_connection(cJSON* json_ro
 {
     client_t* client = 0;
     webrtc_peer_t* peer = 0;
+    uint64 timestamp_now = 0;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
@@ -7398,6 +7413,28 @@ void client_msg__process_create_new_webrtc_datachannel_connection(cJSON* json_ro
     {
         goto label_process_create_new_webrtc_datachannel_connection_end;
     }
+
+    // a client whose transport never comes up (blocked udp) asks every 10 s forever, and every ask
+    // is a new peer plus a teardown thread. after N attempts without RTC_CONNECTED it waits the
+    // configured cooldown; a fresh session starts from zero, a connected transport resets the count
+    timestamp_now = base__get_timestamp_ms();
+
+    if (peer->cooldown_until_ms > timestamp_now)
+    {
+        server_msg__send_datachannel_cooldown_to_single_client(client, (peer->cooldown_until_ms - timestamp_now + 999) / 1000);
+        goto label_process_create_new_webrtc_datachannel_connection_end;
+    }
+
+    if (peer->attempts_since_connected >= WEBRTC_DATACHANNEL_ATTEMPTS_BEFORE_COOLDOWN && g_server_settings.webrtc_datachannel_cooldown_seconds > 0)
+    {
+        peer->cooldown_until_ms = timestamp_now + (uint64)g_server_settings.webrtc_datachannel_cooldown_seconds * 1000;
+        peer->attempts_since_connected = 0;
+        log_info("%s %s %s %s %s %lld %s", "datachannel cooldown:", client->username, "(ip", client->ip_address, ") never connected, no new peers for", g_server_settings.webrtc_datachannel_cooldown_seconds, "s \n");
+        server_msg__send_datachannel_cooldown_to_single_client(client, (uint64)g_server_settings.webrtc_datachannel_cooldown_seconds);
+        goto label_process_create_new_webrtc_datachannel_connection_end;
+    }
+
+    peer->attempts_since_connected++;
 
     // log_info("%s", "attempting reconnect");
     audio_channel__initialize_webrtc_datachannel_connection(client);

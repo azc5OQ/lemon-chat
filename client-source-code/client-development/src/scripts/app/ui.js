@@ -852,7 +852,7 @@ var UI = {
                                                     <p class='context-menu-item' data-action='5'>" + ((the_client.is_muted_by_local_client == true ) ? 'un-mute' : 'mute') + "</p>\n\
                                                     <p class='context-menu-item' data-action='18'>adjust volume</p>\n\
                                                     <p class='context-menu-item' data-action='16'>delete</p>\n\
-                                                    <p class='context-menu-item' data-action='17'>set name</p>\n\
+                                                    <p class='context-menu-item' data-action='20'>set name</p>\n\
                                                     "+ string_to_append +"\n\
                                                 </div>\n\
                                             </div>";
@@ -1296,7 +1296,7 @@ var UI = {
 
             send_message_object(message_object);
         }
-        else if (action == 17)
+        else if (action == 20) // set a music bot's name; 17 belongs to "delete avatar" above, which used to swallow this
         {
             document.getElementById("input-set-new-username").value = get_client_by_client_id(selected_client_id).username;
             document.getElementById("set-new-username-enter-container").style.display = "block";
@@ -3194,6 +3194,9 @@ var UI = {
                 is_fast_reconnect_allowed: document.getElementById("server-settings-general-fast-reconnect-checkbox").checked,
                 is_identity_takeover_allowed: document.getElementById("server-settings-general-identity-takeover-checkbox").checked,
                 is_websocket_ping_active: document.getElementById("server-settings-general-websocket-ping-checkbox").checked,
+                show_music_bot_marquee_to_everyone: document.getElementById("server-settings-general-marquee-everyone-checkbox").checked,
+                // 0 is a valid value (cooldown off), so no "|| default" here
+                webrtc_datachannel_cooldown_seconds: (isNaN(parseInt(document.getElementById("server-settings-general-datachannel-cooldown-input").value)) ? 600 : parseInt(document.getElementById("server-settings-general-datachannel-cooldown-input").value)),
                 minimum_rsa_key_bits: parseInt(document.getElementById("server-settings-general-minimum-rsa-bits-input").value) || 2048,
                 announce_minimum_rsa_key_bits: document.getElementById("server-settings-general-announce-rsa-bits-checkbox").checked,
                 is_country_blocking_active: document.getElementById("server-settings-general-country-blocking-checkbox").checked,

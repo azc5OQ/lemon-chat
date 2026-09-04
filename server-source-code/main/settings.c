@@ -567,6 +567,8 @@ void settings__load(void)
     g_server_settings.is_fast_reconnect_allowed = FALSE;
     g_server_settings.is_identity_takeover_allowed = FALSE;
     g_server_settings.is_websocket_ping_active = FALSE;
+    g_server_settings.webrtc_datachannel_cooldown_seconds = 600;
+    g_server_settings.show_music_bot_marquee_to_everyone = FALSE;
     g_server_settings.is_sending_text_to_idle_clients_allowed = TRUE;
     g_server_settings.allow_private_messages = TRUE;
     g_server_settings.are_identities_enabled = TRUE;
@@ -683,6 +685,15 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_identity_takeover_allowed = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_websocket_ping_active");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_websocket_ping_active = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "webrtc_datachannel_cooldown_seconds");
+                if (cJSON_IsNumber(json_field))
+                {
+                    g_server_settings.webrtc_datachannel_cooldown_seconds = (int64)json_field->valuedouble;
+                    if (g_server_settings.webrtc_datachannel_cooldown_seconds < 0) { g_server_settings.webrtc_datachannel_cooldown_seconds = 0; }
+                    if (g_server_settings.webrtc_datachannel_cooldown_seconds > 86400) { g_server_settings.webrtc_datachannel_cooldown_seconds = 86400; }
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "show_music_bot_marquee_to_everyone");
+                if (cJSON_IsBool(json_field)) { g_server_settings.show_music_bot_marquee_to_everyone = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "restart_on_crash");
                 if (cJSON_IsBool(json_field)) { g_server_settings.restart_on_crash = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "are_identities_enabled");

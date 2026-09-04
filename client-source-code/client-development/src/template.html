@@ -168,7 +168,7 @@
                             <input type="checkbox" id="server-settings-general-display-flags-checkbox">
                             <span>display country flags near clients</span>
                         </label>
-                        <label class="server-settings-general-row">
+                        <label class="server-settings-general-row" id="server-settings-hide-admin-flag-row" style="display: none;">
                             <input type="checkbox" id="server-settings-general-hide-admin-flag-checkbox">
                             <span>hide admin's flag</span>
                         </label>
@@ -238,6 +238,14 @@
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-temp-channels-checkbox">
                             <span>allow creation of temp channels by guests</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-marquee-everyone-checkbox">
+                            <span>show a music bot's "now playing" marquee to everyone, not only inside its channel</span>
+                        </label>
+                        <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>voice datachannel cooldown after 10 failed connection attempts (seconds, 0 = keep trying)</span>
+                            <input type="number" min="0" max="86400" step="1" id="server-settings-general-datachannel-cooldown-input">
                         </label>
 
                         <p class="server-settings-general-subheader">connections and security</p>
