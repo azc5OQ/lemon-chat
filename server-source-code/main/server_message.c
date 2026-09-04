@@ -130,6 +130,10 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     cJSON_AddBoolToObject(json_message_object1, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
     cJSON_AddBoolToObject(json_message_object1, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
     cJSON_AddBoolToObject(json_message_object1, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
+    // the client attempts a fast reconnect only on a server that allows it
+    cJSON_AddBoolToObject(json_message_object1, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
+    // a row rendered for an admin skips the flag, also when he becomes admin after joining
+    cJSON_AddBoolToObject(json_message_object1, "hide_admin_country_flag", g_server_settings.hide_admin_country_flag);
     cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
     // avatars policy travels in-protocol so clients that were NOT served by this server's http
     // server (the android app loads the page from its assets) still learn it - otherwise they
@@ -460,8 +464,10 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
         cJSON_AddStringToObject(single_client, "alias", &client_in_loop->alias[0]);
 
         // property country_iso_code will always be part of response
-        // the value will be empty if ip address is from unknown country or if server doesn't display flags
-        cJSON_AddStringToObject(single_client, "country_iso_code", client_in_loop->country_iso_code);
+        // the value will be empty if ip address is from unknown country or if server doesn't display flags,
+        // and for an admin when the server keeps admin flags private
+        cJSON_AddStringToObject(single_client, "country_iso_code",
+            (g_server_settings.hide_admin_country_flag == TRUE && client_in_loop->is_admin == TRUE) ? "" : client_in_loop->country_iso_code);
 
         cJSON_AddItemToArray(json_client_array, single_client);
     }
@@ -905,7 +911,8 @@ void server_msg__send_client_connect_message_to_all_clients(uint64 client_id_of_
         }
 
         cJSON_AddNumberToObject(json_message_object1, "audio_state", audio_state_to_send);
-        cJSON_AddStringToObject(json_message_object1, "country_iso_code", new_client->country_iso_code);
+        cJSON_AddStringToObject(json_message_object1, "country_iso_code",
+            (g_server_settings.hide_admin_country_flag == TRUE && new_client->is_admin == TRUE) ? "" : new_client->country_iso_code);
         cJSON_AddItemToObject(json_message_object1, "tag_ids", json_tag_ids_array);
 
         cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -1001,6 +1008,47 @@ void server_msg__send_connection_check_response_to_single_client(client_t* clien
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
 
     // DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n");
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text != NULL_POINTER)
+    {
+        ws_sendframe_txt(client->p_ws_connection, msg_text);
+
+        memorymanager__free((nuint)msg_text);
+    }
+}
+
+/**
+ * @brief tells a returning client that its session was adopted (fast reconnect), so it keeps its
+ *        state and treats the lists that follow as a refresh. sent before authentication_status
+ *
+ * @param client_t* client -> the resumed session, already carrying the new socket
+ *
+ * @return void
+ */
+void server_msg__send_fast_reconnect_ok_to_single_client(client_t* client)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_fast_reconnect_ok_to_single_client \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "fast_reconnect_ok");
+    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client->client_id);
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)client->channel_id);
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
     size_of_allocated_message_buffer = 0;
     msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
 
@@ -1198,6 +1246,7 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
 
     cJSON_AddStringToObject(json_message_object1, "type", "server_settings_values");
     cJSON_AddItemToObject(json_message_object1, "display_country_flags", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "hide_admin_country_flag", cJSON_CreateBool(g_server_settings.hide_admin_country_flag == TRUE));
     cJSON_AddItemToObject(json_message_object1, "enable_audio", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "enable_music_bot_audio", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "hide_clients_in_password_channels", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
@@ -1207,6 +1256,9 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON_AddItemToObject(json_message_object1, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
     cJSON_AddItemToObject(json_message_object1, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "is_fast_reconnect_allowed", cJSON_CreateBool(g_server_settings.is_fast_reconnect_allowed == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
     cJSON_AddNumberToObject(json_message_object1, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
     cJSON_AddItemToObject(json_message_object1, "announce_minimum_rsa_key_bits", cJSON_CreateBool(g_server_settings.announce_minimum_rsa_key_bits == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
@@ -1358,6 +1410,8 @@ void server_msg__send_policy_update_to_all_clients(void)
         cJSON_AddBoolToObject(json_message_object1, "allow_avatars", g_server_settings.allow_avatars);
         cJSON_AddNumberToObject(json_message_object1, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
         cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
+        cJSON_AddBoolToObject(json_message_object1, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
+        cJSON_AddBoolToObject(json_message_object1, "hide_admin_country_flag", g_server_settings.hide_admin_country_flag);
 
         cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 

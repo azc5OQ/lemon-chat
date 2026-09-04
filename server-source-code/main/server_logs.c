@@ -185,6 +185,49 @@ void server_logs__client_joined(client_t* client)
 }
 
 /**
+ * @brief records a fast reconnect: an identity adopted its still-open session instead of joining fresh.
+ *        always logged, it is the one visible trace that the feature did its job
+ *
+ * @param client_t* client -> the resumed session, already carrying the new socket's ip
+ *
+ * @return void
+ */
+void server_logs__fast_reconnect(client_t* client)
+{
+    char text[ADMIN_LOG_ENTRY_MAX_LENGTH];
+
+    if (client == NULL_POINTER)
+    {
+        return;
+    }
+
+    snprintf(text, sizeof(text), "fast reconnect: %s (ip %s)", client->username, client->ip_address);
+    _server_logs_internal__append(text);
+}
+
+/**
+ * @brief records WHY the server is about to drop a client (identity takeover, heartbeat timeout),
+ *        one line before the plain "disconnect:" entry the teardown writes. same switch as that entry
+ *
+ * @param client_t* client -> the client being dropped, still intact
+ * @param char* reason -> short reason, becomes the line's prefix
+ *
+ * @return void
+ */
+void server_logs__client_disconnect_reason(client_t* client, char* reason)
+{
+    char text[ADMIN_LOG_ENTRY_MAX_LENGTH];
+
+    if (g_server_settings.log_client_disconnects == FALSE || client == NULL_POINTER || client->is_authenticated == FALSE || client->username[0] == 0)
+    {
+        return;
+    }
+
+    snprintf(text, sizeof(text), "%s: %s (ip %s)", reason, client->username, client->ip_address);
+    _server_logs_internal__append(text);
+}
+
+/**
  * @brief records a username change (old -> new)
  *
  * @param char* old_username -> the name being replaced

@@ -137,6 +137,16 @@
     color: var(--set-text, #e8e8e8);
 }
 
+/* a group title inside the general settings: same voice as the header, quieter and without the rule */
+#server-settings-tab .server-settings-general-subheader {
+    margin: 16px 0 4px 0;
+    font-size: 11px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    opacity: 0.65;
+    color: var(--set-text, #e8e8e8);
+}
+
 #server-settings-tab .tag-head-p-container,
 #server-settings-tab .identity-head-p-container {
     border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.09));

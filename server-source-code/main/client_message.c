@@ -2433,6 +2433,11 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
     uint64 client_count_in_root_channel = 0;
     channel_t* root_channel = 0;
     client_t* current_client = NULL_POINTER;
+    cJSON* json_message_object = 0;
+    cJSON* json_fast_reconnect = 0;
+    boole is_fast_reconnect = FALSE;   // the client asks to resume its still-open session
+    boole is_resumed_session = FALSE;  // granted: current_client is the adopted session, not a fresh join
+    int64 adopted_index = -1;
 
     // status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     // if (status == FALSE)
@@ -2513,37 +2518,70 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
             }
         }
 
-        // the challenge just proved this client owns the identity, so an older session still holding
-        // the same key is a ghost of a dropped connection and is disconnected now. nothing is carried
-        // over from it: this login is an ordinary fresh one, which is what keeps the channel key
-        // handover honest - a client only gets channel keys by joining a channel for real
-        base__disconnect_other_clients_with_same_public_key(sender_client_id, current_client->public_key);
+        // fast reconnect (settings tab): the challenge just proved the identity, so the client may adopt
+        // its still-open session and keep id, channel, name and roles. asked for by a flag in this message
+        json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+        json_fast_reconnect = cJSON_GetObjectItemCaseSensitive(json_message_object, "fast_reconnect");
+        is_fast_reconnect = (boole)(cJSON_IsBool(json_fast_reconnect) && cJSON_IsTrue(json_fast_reconnect));
 
-        // the same-ip rule is judged here and not at socket open, because only now is it known whether
-        // the session already on this ip was this very identity (its ghost, dropped just above)
-        if (g_server_settings.is_same_ip_address_allowed == FALSE)
+        if (is_fast_reconnect == TRUE && g_server_settings.is_fast_reconnect_allowed == TRUE)
         {
-            if (base__is_there_another_authenticated_client_with_same_ip_address(sender_client_id, current_client->ip_address, current_client->public_key) == TRUE)
-            {
-                log_info("%s %s %s", "join refused: another identity is already connected from ip", current_client->ip_address, "\n");
-                server_logs__join_refused("same ip already connected", current_client->ip_address);
-                base__close_websocket_connection(sender_client_id, FALSE);
-                goto _label_client_msg__process_public_key_challenge_response_end;
-            }
+            adopted_index = base__adopt_socket_into_existing_session(sender_client_id, current_client->public_key);
         }
 
-        // a connect-time chosen username is used instead of the assigned default_nameN when the
-        // client sent one and it is free; a registered identity's admin-set name still wins,
-        // because it is pinned over the session name right below
-        if (_client_msg_internal__try_apply_chosen_username(json_root, sender_client_id) == FALSE)
+        if (adopted_index >= 0)
         {
-            status = base__assign_username_for_newly_joined_client(sender_client_id, g_server_settings.default_client_name);
+            // from here on the handler works on the adopted session; the new socket's own entry is gone
+            is_resumed_session = TRUE;
+            sender_client_id = (uint64)adopted_index;
+            current_client = &g_clients_array[sender_client_id];
+        }
 
-            if (status == FALSE)
+        // identity takeover (settings tab): any other session still holding the same key is torn down now
+        // and this login goes on as an ordinary fresh one, which is what keeps the channel key handover
+        // honest - a client only gets channel keys by joining for real. with takeover off, an identity
+        // that is already online is refused instead, until that session ends or times out
+        if (g_server_settings.is_identity_takeover_allowed == TRUE)
+        {
+            base__disconnect_other_clients_with_same_public_key(sender_client_id, current_client->public_key);
+        }
+        else if (is_resumed_session == FALSE && base__is_there_another_authenticated_client_with_same_public_key(sender_client_id, current_client->public_key) == TRUE)
+        {
+            log_info("%s %s %s", "join refused: this identity is already connected (ip", current_client->ip_address, ") \n");
+            server_logs__join_refused("identity already connected", current_client->ip_address);
+            base__close_websocket_connection(sender_client_id, FALSE);
+            goto _label_client_msg__process_public_key_challenge_response_end;
+        }
+
+        // a resumed session was admitted and named when it first joined; both are judged for fresh joins only
+        if (is_resumed_session == FALSE)
+        {
+            // the same-ip rule is judged here and not at socket open, because only now is it known whether
+            // the session already on this ip was this very identity (its ghost, dropped just above)
+            if (g_server_settings.is_same_ip_address_allowed == FALSE)
             {
-                base__close_websocket_connection(sender_client_id, FALSE);
-                DBG_AUTHENTICATION log_info("%s %llu %s", "client_msg__process_public_key_challenge_response deleting client base__assign_username_for_newly_joined_client returned false : client index ", sender_client_id, " \n");
-                goto _label_client_msg__process_public_key_challenge_response_end;
+                if (base__is_there_another_authenticated_client_with_same_ip_address(sender_client_id, current_client->ip_address, current_client->public_key) == TRUE)
+                {
+                    log_info("%s %s %s", "join refused: another identity is already connected from ip", current_client->ip_address, "\n");
+                    server_logs__join_refused("same ip already connected", current_client->ip_address);
+                    base__close_websocket_connection(sender_client_id, FALSE);
+                    goto _label_client_msg__process_public_key_challenge_response_end;
+                }
+            }
+
+            // a connect-time chosen username is used instead of the assigned default_nameN when the
+            // client sent one and it is free; a registered identity's admin-set name still wins,
+            // because it is pinned over the session name right below
+            if (_client_msg_internal__try_apply_chosen_username(json_root, sender_client_id) == FALSE)
+            {
+                status = base__assign_username_for_newly_joined_client(sender_client_id, g_server_settings.default_client_name);
+
+                if (status == FALSE)
+                {
+                    base__close_websocket_connection(sender_client_id, FALSE);
+                    DBG_AUTHENTICATION log_info("%s %llu %s", "client_msg__process_public_key_challenge_response deleting client base__assign_username_for_newly_joined_client returned false : client index ", sender_client_id, " \n");
+                    goto _label_client_msg__process_public_key_challenge_response_end;
+                }
             }
         }
 
@@ -2556,62 +2594,75 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
 
         if (status == TRUE)
         {
-            // restore this client's saved tags from the identity store (matched by public-key hash); the
-            // admin tag re-grants admin. runs before the connect broadcast so every client sees the tags.
-            // the tags read lock (held above) and clients write lock (held for this handler) cover it
-            if (g_server_settings.are_identities_enabled == TRUE)
+            // a resumed session already carries its tags, avatar, alias and stored key: nothing to restore
+            if (is_resumed_session == FALSE)
             {
-                DBG_IDENTITIES log_info("%s %llu %s", "identities: enabled -> restoring tags for authenticated client_id", current_client->client_id, "\n");
-                base__restore_identity_tags(current_client);
+                // restore this client's saved tags from the identity store (matched by public-key hash); the
+                // admin tag re-grants admin. runs before the connect broadcast so every client sees the tags.
+                // the tags read lock (held above) and clients write lock (held for this handler) cover it
+                if (g_server_settings.are_identities_enabled == TRUE)
+                {
+                    DBG_IDENTITIES log_info("%s %llu %s", "identities: enabled -> restoring tags for authenticated client_id", current_client->client_id, "\n");
+                    base__restore_identity_tags(current_client);
+                }
+                else
+                {
+                    DBG_IDENTITIES log_info("%s", "identities: DISABLED on this server (are_identities_enabled=false) -> no tags will be restored on connect \n");
+                }
+
+                // restore this identity's persisted avatar into the live client so others can load it. gated on
+                // allow_avatars only (avatars may be enabled without tag-identities)
+                if (g_server_settings.allow_avatars == TRUE)
+                {
+                    base__restore_identity_avatar(current_client);
+                }
+
+                // restore the admin-registered alias (display name) for this identity
+                if (g_server_settings.are_identities_enabled == TRUE && g_server_settings.allow_alias_registrations == TRUE)
+                {
+                    base__restore_identity_alias(current_client);
+                }
+
+                // an identity the admin gave a registered name to is a REGISTERED user of this server. only
+                // those may list the stored clients - otherwise any guest could join and harvest everyone's
+                // name and avatar. avatars are self-service so they prove nothing; a registered name is
+                // admin-granted
+                current_client->is_registered = (boole)(current_client->alias[0] != 0);
+
+                // the registered name IS the username: pin it over whatever this session connected with,
+                // so a registered person always appears under their one admin-set name (and cannot keep an
+                // old self-chosen username after being registered)
+                // registered names are reserved (the rename path refuses them and registration refuses a
+                // name in use), so this is normally free - but never overwrite into a duplicate if some
+                // older state left the name occupied: he keeps the deduped name assigned on join instead
+                if (current_client->is_registered == TRUE && _client_msg_internal__is_username_taken_by_another_client(current_client->alias, current_client->client_id) == FALSE)
+                {
+                    clib__null_memory(&current_client->username[0], USERNAME_MAX_LENGTH);
+                    clib__copy_memory(current_client->alias, &current_client->username[0], clib__utf8_string_length(current_client->alias), USERNAME_MAX_LENGTH - 1);
+                }
+
+                // offline messages need peers to be able to encrypt to this identity while it is away,
+                // which means the server must keep its RAW public key (only ever while the feature is on,
+                // and only for REGISTERED identities - unregistered ones cannot be messaged offline)
+                if (g_server_settings.allow_offline_messages == TRUE && current_client->is_registered == TRUE && current_client->public_key[0] != 0 && current_client->is_music_bot == FALSE)
+                {
+                    char offline_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+                    base__hash_password_to_base64(current_client->public_key, offline_identity_hash, sizeof(offline_identity_hash));
+                    base__store_identity_raw_public_key(offline_identity_hash, current_client->public_key);
+                }
+            }
+
+            if (is_resumed_session == TRUE)
+            {
+                // announced before the lists, so the client applies them as a refresh, not a first build
+                server_logs__fast_reconnect(current_client);
+                server_msg__send_fast_reconnect_ok_to_single_client(current_client);
             }
             else
             {
-                DBG_IDENTITIES log_info("%s", "identities: DISABLED on this server (are_identities_enabled=false) -> no tags will be restored on connect \n");
+                // the join is complete and the username is final (deduped / alias-pinned) here
+                server_logs__client_joined(current_client);
             }
-
-            // restore this identity's persisted avatar into the live client so others can load it. gated on
-            // allow_avatars only (avatars may be enabled without tag-identities)
-            if (g_server_settings.allow_avatars == TRUE)
-            {
-                base__restore_identity_avatar(current_client);
-            }
-
-            // restore the admin-registered alias (display name) for this identity
-            if (g_server_settings.are_identities_enabled == TRUE && g_server_settings.allow_alias_registrations == TRUE)
-            {
-                base__restore_identity_alias(current_client);
-            }
-
-            // an identity the admin gave a registered name to is a REGISTERED user of this server. only
-            // those may list the stored clients - otherwise any guest could join and harvest everyone's
-            // name and avatar. avatars are self-service so they prove nothing; a registered name is
-            // admin-granted
-            current_client->is_registered = (boole)(current_client->alias[0] != 0);
-
-            // the registered name IS the username: pin it over whatever this session connected with,
-            // so a registered person always appears under their one admin-set name (and cannot keep an
-            // old self-chosen username after being registered)
-            // registered names are reserved (the rename path refuses them and registration refuses a
-            // name in use), so this is normally free - but never overwrite into a duplicate if some
-            // older state left the name occupied: he keeps the deduped name assigned on join instead
-            if (current_client->is_registered == TRUE && _client_msg_internal__is_username_taken_by_another_client(current_client->alias, current_client->client_id) == FALSE)
-            {
-                clib__null_memory(&current_client->username[0], USERNAME_MAX_LENGTH);
-                clib__copy_memory(current_client->alias, &current_client->username[0], clib__utf8_string_length(current_client->alias), USERNAME_MAX_LENGTH - 1);
-            }
-
-            // offline messages need peers to be able to encrypt to this identity while it is away,
-            // which means the server must keep its RAW public key (only ever while the feature is on,
-            // and only for REGISTERED identities - unregistered ones cannot be messaged offline)
-            if (g_server_settings.allow_offline_messages == TRUE && current_client->is_registered == TRUE && current_client->public_key[0] != 0 && current_client->is_music_bot == FALSE)
-            {
-                char offline_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
-                base__hash_password_to_base64(current_client->public_key, offline_identity_hash, sizeof(offline_identity_hash));
-                base__store_identity_raw_public_key(offline_identity_hash, current_client->public_key);
-            }
-
-            // the join is complete and the username is final (deduped / alias-pinned) here
-            server_logs__client_joined(current_client);
 
             server_msg__send_authentication_status_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
             server_msg__send_channel_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
@@ -2619,7 +2670,11 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
             server_msg__send_icon_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
             server_msg__send_tag_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
             server_msg__send_active_microphone_usage_for_current_channel_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret, current_client->channel_id);
-            server_msg__send_client_connect_message_to_all_clients(current_client->client_id);
+            // a resumed session never left, so the others get no connect broadcast
+            if (is_resumed_session == FALSE)
+            {
+                server_msg__send_client_connect_message_to_all_clients(current_client->client_id);
+            }
 
             // hand over anything that was said to this identity while it was away, then forget it.
             // after the client list, so the receiving client already knows who everybody is
@@ -2628,20 +2683,26 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
                 server_msg__send_queued_offline_messages_to_single_client(current_client);
             }
 
-            client_count_in_root_channel = base__get_client_count_for_channel(ROOT_CHANNEL_ID);
-
-            root_channel = &g_channel_array[ROOT_CHANNEL_ID];
-
-            if (client_count_in_root_channel == 1)
+            // a resumed session is still in its channel and still holds its keys: the refreshed channel
+            // list already names that channel's maintainer, and a maintainer message would make the
+            // client wait for keys nobody is going to send
+            if (is_resumed_session == FALSE)
             {
-                root_channel->maintainer_id = current_client->client_id;
-                root_channel->is_channel_maintainer_present = TRUE;
-                root_channel->maintainer_generation++;
-                server_msg__send_maintainer_id_to_single_client(current_client, ROOT_CHANNEL_ID, current_client->client_id);
-            }
-            else
-            {
-                server_msg__send_maintainer_id_to_single_client(current_client, ROOT_CHANNEL_ID, root_channel->maintainer_id);
+                client_count_in_root_channel = base__get_client_count_for_channel(ROOT_CHANNEL_ID);
+
+                root_channel = &g_channel_array[ROOT_CHANNEL_ID];
+
+                if (client_count_in_root_channel == 1)
+                {
+                    root_channel->maintainer_id = current_client->client_id;
+                    root_channel->is_channel_maintainer_present = TRUE;
+                    root_channel->maintainer_generation++;
+                    server_msg__send_maintainer_id_to_single_client(current_client, ROOT_CHANNEL_ID, current_client->client_id);
+                }
+                else
+                {
+                    server_msg__send_maintainer_id_to_single_client(current_client, ROOT_CHANNEL_ID, root_channel->maintainer_id);
+                }
             }
 
             clib__unlock(&g_icons_global_rwlock_guard);
@@ -6609,6 +6670,30 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     if (cJSON_IsBool(json_field))
     {
         g_server_settings.is_same_ip_address_allowed = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "hide_admin_country_flag");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.hide_admin_country_flag = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_fast_reconnect_allowed");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.is_fast_reconnect_allowed = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_identity_takeover_allowed");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.is_identity_takeover_allowed = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_websocket_ping_active");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.is_websocket_ping_active = cJSON_IsTrue(json_field);
     }
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "minimum_rsa_key_bits");

@@ -206,6 +206,10 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     cJSON_AddItemToObject(json_root, "is_hide_clients_in_password_protected_channels_active", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
     cJSON_AddItemToObject(json_root, "is_temp_channel_creation_allowed", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "is_idle_mode_allowed", cJSON_CreateBool(g_server_settings.is_idle_mode_allowed == TRUE));
+    cJSON_AddItemToObject(json_root, "hide_admin_country_flag", cJSON_CreateBool(g_server_settings.hide_admin_country_flag == TRUE));
+    cJSON_AddItemToObject(json_root, "is_fast_reconnect_allowed", cJSON_CreateBool(g_server_settings.is_fast_reconnect_allowed == TRUE));
+    cJSON_AddItemToObject(json_root, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
+    cJSON_AddItemToObject(json_root, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
     cJSON_AddItemToObject(json_root, "restart_on_crash", cJSON_CreateBool(g_server_settings.restart_on_crash == TRUE));
 
     cJSON_AddItemToObject(json_root, "use_stunnel", cJSON_CreateBool(g_server_settings.use_stunnel == TRUE));

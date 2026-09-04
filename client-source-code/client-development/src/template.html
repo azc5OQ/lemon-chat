@@ -163,33 +163,38 @@
                     <div id="server-settings-general-settings-container">
                         <p class="server-settings-general-header">general settings</p>
 
+                        <p class="server-settings-general-subheader">clients</p>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-display-flags-checkbox">
                             <span>display country flags near clients</span>
                         </label>
                         <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-enable-audio">
-                            <span>enable audio server-wide</span>
-                        </label>
-                        <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-enable-music-bot-audio-checkbox">
-                            <span>enable audio for music bots</span>
-                        </label>
-                        <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-hide-clients-in-password-protected-channels">
-                            <span>hide clients in password protected channels</span>
-                        </label>
-                        <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-allow-temp-channels-checkbox">
-                            <span>allow creation of temp channels by guests</span>
-                        </label>
-                        <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-allow-typing-indicator-checkbox">
-                            <span>show when somebody is typing</span>
+                            <input type="checkbox" id="server-settings-general-hide-admin-flag-checkbox">
+                            <span>hide admin's flag</span>
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-renames-checkbox">
                             <span>allow users to rename themselves (admins always can)</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-same-ip-checkbox">
+                            <span>allow more than one client from the same IP address</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-country-blocking-checkbox">
+                            <span>restrict access by country</span>
+                        </label>
+                        <div id="server-settings-country-blocking-container" style="display: none;">
+                            <select id="server-settings-country-block-select">
+                                <option value="">add a country to the block list ...</option>
+                            </select>
+                            <div id="server-settings-blocked-countries-list"></div>
+                        </div>
+
+                        <p class="server-settings-general-subheader">chat</p>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-typing-indicator-checkbox">
+                            <span>show when somebody is typing</span>
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-text-to-idle-clients-checkbox">
@@ -216,28 +221,46 @@
                             <span>max picture size (MB)</span>
                             <input type="number" min="1" max="15" step="1" id="server-settings-general-picture-max-size-input">
                         </label>
+
+                        <p class="server-settings-general-subheader">voice and channels</p>
                         <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-allow-same-ip-checkbox">
-                            <span>allow more than one client from the same IP address</span>
+                            <input type="checkbox" id="server-settings-general-enable-audio">
+                            <span>enable audio server-wide</span>
                         </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-enable-music-bot-audio-checkbox">
+                            <span>enable audio for music bots</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-hide-clients-in-password-protected-channels">
+                            <span>hide clients in password protected channels</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-temp-channels-checkbox">
+                            <span>allow creation of temp channels by guests</span>
+                        </label>
+
+                        <p class="server-settings-general-subheader">connections and security</p>
                         <label class="server-settings-general-row server-settings-general-row-number">
                             <span>minimum rsa key size in bits (2048-8192, clients with weaker keys are dropped)</span>
                             <input type="number" min="2048" max="8192" step="1" id="server-settings-general-minimum-rsa-bits-input">
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-announce-rsa-bits-checkbox">
-                            <span>tell rejected clients which key size is required (off: they are dropped without knowing why)</span>
+                            <span>tell rejected clients which key size is required</span>
                         </label>
                         <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-country-blocking-checkbox">
-                            <span>restrict access by country (clients joining from a blocked country are refused)</span>
+                            <input type="checkbox" id="server-settings-general-fast-reconnect-checkbox">
+                            <span>fast reconnect: a client that loses its socket resumes its session in place</span>
                         </label>
-                        <div id="server-settings-country-blocking-container" style="display: none;">
-                            <select id="server-settings-country-block-select">
-                                <option value="">add a country to the block list ...</option>
-                            </select>
-                            <div id="server-settings-blocked-countries-list"></div>
-                        </div>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-identity-takeover-checkbox">
+                            <span>identity takeover: a new connect with an identity of user that is already online disconnects that user (default off: the same identity is refused)</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-websocket-ping-checkbox">
+                            <span>additional ping check: the server pings every socket every 15 s and drops one that misses 4 pings (heartbeat check stays either way)</span>
+                        </label>
 
                         <input type="button" value="save server settings" id="save-server-settings-button">
                     </div>

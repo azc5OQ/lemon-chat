@@ -3177,6 +3177,7 @@ var UI = {
             message: {
                 type: "save_server_settings",
                 display_country_flags: document.getElementById("server-settings-general-display-flags-checkbox").checked,
+                hide_admin_country_flag: document.getElementById("server-settings-general-hide-admin-flag-checkbox").checked,
                 enable_audio: document.getElementById("server-settings-general-enable-audio").checked,
                 enable_music_bot_audio: document.getElementById("server-settings-general-enable-music-bot-audio-checkbox").checked,
                 hide_clients_in_password_channels: document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked,
@@ -3190,6 +3191,9 @@ var UI = {
                 allow_chat_pictures: document.getElementById("server-settings-general-allow-pictures-checkbox").checked,
                 chat_picture_max_size_mb: parseInt(document.getElementById("server-settings-general-picture-max-size-input").value) || 4,
                 is_same_ip_address_allowed: document.getElementById("server-settings-general-allow-same-ip-checkbox").checked,
+                is_fast_reconnect_allowed: document.getElementById("server-settings-general-fast-reconnect-checkbox").checked,
+                is_identity_takeover_allowed: document.getElementById("server-settings-general-identity-takeover-checkbox").checked,
+                is_websocket_ping_active: document.getElementById("server-settings-general-websocket-ping-checkbox").checked,
                 minimum_rsa_key_bits: parseInt(document.getElementById("server-settings-general-minimum-rsa-bits-input").value) || 2048,
                 announce_minimum_rsa_key_bits: document.getElementById("server-settings-general-announce-rsa-bits-checkbox").checked,
                 is_country_blocking_active: document.getElementById("server-settings-general-country-blocking-checkbox").checked,

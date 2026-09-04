@@ -475,6 +475,8 @@ boole base__save_server_settings_to_file(void)
     // update the general-settings toggles (delete-then-add so a value already present is replaced)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_display_country_flags_active");
     cJSON_AddItemToObject(json_root, "is_display_country_flags_active", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "hide_admin_country_flag");
+    cJSON_AddItemToObject(json_root, "hide_admin_country_flag", cJSON_CreateBool(g_server_settings.hide_admin_country_flag == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_voice_chat_active");
     cJSON_AddItemToObject(json_root, "is_voice_chat_active", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_music_bot_audio_active");
@@ -494,6 +496,12 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_same_ip_address_allowed");
     cJSON_AddItemToObject(json_root, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_fast_reconnect_allowed");
+    cJSON_AddItemToObject(json_root, "is_fast_reconnect_allowed", cJSON_CreateBool(g_server_settings.is_fast_reconnect_allowed == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_identity_takeover_allowed");
+    cJSON_AddItemToObject(json_root, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_websocket_ping_active");
+    cJSON_AddItemToObject(json_root, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_file_uploads");
     cJSON_AddItemToObject(json_root, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "file_upload_max_size_bytes");
@@ -1457,11 +1465,146 @@ uint64 base__disconnect_other_clients_with_same_public_key(uint64 client_index_t
         // the socket may be long dead (a drop the server never saw); closing it makes that
         // client's own reader thread run the normal disconnect teardown
         log_info("%s %llu %s %llu %s", "identity takeover: client", i, "is replaced by the returning client", client_index_to_keep, "\n");
+        server_logs__client_disconnect_reason(&g_clients_array[i], "identity takeover");
         base__close_websocket_connection(i, FALSE);
+
+        // torn down right here, not when the socket dies: the returning client's list and the
+        // disconnect broadcast must both precede its join, so nobody ever sees both sessions
+        clib__write_lock(&g_channels_global_rwlock_guard);
+        base__process_client_disconnect(i);
+        clib__unlock(&g_channels_global_rwlock_guard);
         disconnected_count++;
     }
 
     return disconnected_count;
+}
+
+/**
+ * @brief fast reconnect: hands the new socket to this identity's still-open session, so the session keeps
+ *        its id, channel, name, tags and roles. the old socket is closed without any broadcast
+ *
+ * @param uint64 new_client_index -> the entry the new socket got at onopen; emptied on success
+ * @param cstring public_key -> the key the new socket just proved it owns
+ *
+ * @return int64 -> index of the adopted session, -1 when this key has no open session
+ *
+ * @attention the caller must hold the clients write lock. same rule as the takeover: only after the
+ *            challenge response verified ownership, the public key alone proves nothing
+ */
+int64 base__adopt_socket_into_existing_session(uint64 new_client_index, cstring public_key)
+{
+    uint64 i = 0;
+    uint64 timestamp_now = 0;
+    client_t* old_session = NULL_POINTER;
+    client_t* new_entry = NULL_POINTER;
+    ws_cli_conn_t* old_ws_connection = NULL_POINTER;
+
+    if (public_key == NULL_POINTER || public_key[0] == 0)
+    {
+        return -1;
+    }
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        if (i == new_client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (clib__is_string_equal(g_clients_array[i].public_key, public_key) == TRUE)
+        {
+            old_session = &g_clients_array[i];
+            break;
+        }
+    }
+
+    if (old_session == NULL_POINTER)
+    {
+        return -1;
+    }
+
+    new_entry = &g_clients_array[new_client_index];
+    old_ws_connection = old_session->p_ws_connection;
+    timestamp_now = base__get_timestamp_ms();
+
+    // the per-socket half moves over; the session half (id, channel, name, tags, roles, avatar) stays
+    old_session->p_ws_connection = new_entry->p_ws_connection;
+    old_session->is_dh_shared_secret_agreed_upon = new_entry->is_dh_shared_secret_agreed_upon;
+    old_session->is_public_key_challenge_sent = new_entry->is_public_key_challenge_sent;
+    clib__copy_memory(new_entry->dh_shared_secret, old_session->dh_shared_secret, SHARED_SECRET_LENGTH, SHARED_SECRET_LENGTH);
+    clib__copy_memory(new_entry->challenge_string, old_session->challenge_string, CHALLENGE_STRING_LENGTH, CHALLENGE_STRING_LENGTH);
+    clib__null_memory(old_session->ip_address, sizeof(old_session->ip_address));
+    clib__copy_memory(new_entry->ip_address, old_session->ip_address, clib__utf8_string_length(new_entry->ip_address), sizeof(old_session->ip_address));
+    clib__null_memory(old_session->country_iso_code, sizeof(old_session->country_iso_code));
+    clib__copy_memory(new_entry->country_iso_code, old_session->country_iso_code, clib__utf8_string_length(new_entry->country_iso_code), sizeof(old_session->country_iso_code));
+    old_session->timestamp_last_maintain_connection_message_received = timestamp_now;
+    old_session->timestamp_last_action = timestamp_now;
+    old_session->is_idle = FALSE;
+    old_session->has_pending_maintainer_reset_vote = FALSE;
+
+    // an upload that was in flight on the old socket died with it
+    if (old_session->file_upload_extension.file_upload_buffer != NULL_POINTER)
+    {
+        memorymanager__free((nuint)old_session->file_upload_extension.file_upload_buffer);
+    }
+    clib__null_memory(&old_session->file_upload_extension, sizeof(old_session->file_upload_extension));
+
+    // the throwaway entry owns nothing on the heap this early in the handshake; mirrored from the
+    // disconnect path anyway, so a later change there cannot turn this into a leak
+    if (new_entry->tag_ids != NULL_POINTER)
+    {
+        cvector_free(new_entry->tag_ids);
+    }
+    if (new_entry->base64_avatar != NULL_POINTER)
+    {
+        memorymanager__free((nuint)new_entry->base64_avatar);
+    }
+    if (new_entry->file_upload_extension.file_upload_buffer != NULL_POINTER)
+    {
+        memorymanager__free((nuint)new_entry->file_upload_extension.file_upload_buffer);
+    }
+    clib__null_memory(new_entry, sizeof(client_t));
+
+    log_info("%s %llu %s %llu %s", "fast reconnect: session", i, "adopted the socket of entry", new_client_index, "\n");
+
+    // closed like any other socket; its late onclose finds no entry holding this pointer
+    ws_close_client(old_ws_connection);
+
+    return (int64)i;
+}
+
+/**
+ * @brief tells whether some OTHER authenticated client holds this public key (identity takeover off:
+ *        such a newcomer is refused instead of replacing that session)
+ *
+ * @param uint64 client_index -> the newcomer, skipped
+ * @param cstring public_key -> the key it just proved
+ *
+ * @return boole -> TRUE when another authenticated session carries the same key
+ */
+boole base__is_there_another_authenticated_client_with_same_public_key(uint64 client_index, cstring public_key)
+{
+    uint64 i = 0;
+
+    if (public_key == NULL_POINTER || public_key[0] == 0)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        if (i == client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (clib__is_string_equal(g_clients_array[i].public_key, public_key) == TRUE)
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
 }
 
 boole base__is_there_a_client_with_same_public_key(cstring public_key)

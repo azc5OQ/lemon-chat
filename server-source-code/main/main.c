@@ -340,6 +340,7 @@ void websocket_connection_check_thread(void)
 {
     static uint64 timestamp_now = 0;
     uint64 i = 0;
+    uint64 maintain_limit_ms = 0; // heartbeat silence allowed before a client is dropped
     int64 size_of_allocated_message_buffer = 0;
     int64* marked_client_ids_for_disconnect = 0;
     char* msg = 0;
@@ -353,11 +354,12 @@ void websocket_connection_check_thread(void)
 
         DBG_CONNECTION_CHECK_THREAD log_info("%s", "websocket_connection_check_thread tick");
 
-        // ws-level liveness: ping every open socket; a client more than 3 pings behind gets its
-        // socket shut down and its own reader thread runs the normal onclose teardown.
-        // (the library's original timeout path destroyed the client's mutexes from this thread,
-        // which crashed the server - fixed in ws.c send_ping_close, see the comment there)
-        ws_ping(0, 3);
+        // ws-level liveness, off by default and switched in the settings tab: a client 4 pings
+        // behind gets its socket shut down (ws.c send_ping_close) and its reader thread runs onclose
+        if (g_server_settings.is_websocket_ping_active == TRUE)
+        {
+            ws_ping(0, 3);
+        }
 
         // clib__null_memory(marked_client_ids_for_disconnect, sizeof(int) * g_server_settings.max_client_count);
         number_of_marked_clients = 0;
@@ -380,8 +382,11 @@ void websocket_connection_check_thread(void)
 
                 timestamp_now = base__get_timestamp_ms();
 
-                // disconnect client who has not sent maintain_connection_message in given time limit
-                if (g_clients_array[i].timestamp_last_maintain_connection_message_received + 180000 < timestamp_now)
+                // 150 s when idle mode is allowed (an idle client heartbeats every 120 s), 80 s otherwise
+                // (a live client heartbeats every 10 s)
+                maintain_limit_ms = (g_server_settings.is_idle_mode_allowed == TRUE) ? 150000 : 80000;
+
+                if (g_clients_array[i].timestamp_last_maintain_connection_message_received + maintain_limit_ms < timestamp_now)
                 {
                     DBG_CONNECTION_CHECK_THREAD log_info("%s %p %s", "trying to disconnect client. did not receive maintain connection message : ", g_clients_array[i].p_ws_connection, "\n");
 
@@ -412,6 +417,10 @@ void websocket_connection_check_thread(void)
 
             for (i = 0; i < number_of_marked_clients; i++)
             {
+                // the socket itself: without this only the entry went away and the dead connection
+                // kept its reader thread and ws slot forever (the ws ping used to reap those)
+                server_logs__client_disconnect_reason(&g_clients_array[marked_client_ids_for_disconnect[i]], "heartbeat timeout");
+                base__close_websocket_connection(marked_client_ids_for_disconnect[i], FALSE);
                 base__process_client_disconnect(marked_client_ids_for_disconnect[i]);
             }
 
@@ -422,8 +431,8 @@ void websocket_connection_check_thread(void)
         // rate-limited inside to one purge per day
         server_logs__purge_tick();
 
-        // 15s, same in windows and linux. this interval is ALSO the pong deadline of the
-        // ws_ping above: a dead socket is closed after interval * threshold = 45-60 seconds
+        // 15s, same in windows and linux: the tick at which the 180 s heartbeat limit and the
+        // 60 s authentication limit above are checked
         sleep(15);
     }
 }

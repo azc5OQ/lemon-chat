@@ -19390,6 +19390,16 @@ body.android-app #another-buttons-loading-container {
     color: var(--set-text, #e8e8e8);
 }
 
+/* a group title inside the general settings: same voice as the header, quieter and without the rule */
+#server-settings-tab .server-settings-general-subheader {
+    margin: 16px 0 4px 0;
+    font-size: 11px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    opacity: 0.65;
+    color: var(--set-text, #e8e8e8);
+}
+
 #server-settings-tab .tag-head-p-container,
 #server-settings-tab .identity-head-p-container {
     border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.09));
@@ -34628,6 +34638,7 @@ var UI = {
             message: {
                 type: "save_server_settings",
                 display_country_flags: document.getElementById("server-settings-general-display-flags-checkbox").checked,
+                hide_admin_country_flag: document.getElementById("server-settings-general-hide-admin-flag-checkbox").checked,
                 enable_audio: document.getElementById("server-settings-general-enable-audio").checked,
                 enable_music_bot_audio: document.getElementById("server-settings-general-enable-music-bot-audio-checkbox").checked,
                 hide_clients_in_password_channels: document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked,
@@ -34641,6 +34652,9 @@ var UI = {
                 allow_chat_pictures: document.getElementById("server-settings-general-allow-pictures-checkbox").checked,
                 chat_picture_max_size_mb: parseInt(document.getElementById("server-settings-general-picture-max-size-input").value) || 4,
                 is_same_ip_address_allowed: document.getElementById("server-settings-general-allow-same-ip-checkbox").checked,
+                is_fast_reconnect_allowed: document.getElementById("server-settings-general-fast-reconnect-checkbox").checked,
+                is_identity_takeover_allowed: document.getElementById("server-settings-general-identity-takeover-checkbox").checked,
+                is_websocket_ping_active: document.getElementById("server-settings-general-websocket-ping-checkbox").checked,
                 minimum_rsa_key_bits: parseInt(document.getElementById("server-settings-general-minimum-rsa-bits-input").value) || 2048,
                 announce_minimum_rsa_key_bits: document.getElementById("server-settings-general-announce-rsa-bits-checkbox").checked,
                 is_country_blocking_active: document.getElementById("server-settings-general-country-blocking-checkbox").checked,
@@ -37372,8 +37386,11 @@ function init_node_runtime(identity_passphrase_string)
                 return new Promise(function(resolve) { g_connection_closed_resolvers.push(resolve); });
             }
 
-            // skips the retry countdown, used when the connect button is pressed or new details arrive
+            // skips the retry countdown, used when the connect button is pressed or new details arrive.
+            // a nudge that lands while the driver is still watching the old socket is kept, not lost:
+            // an identity switch closes the socket and nudges in the same breath, before the close is seen
             var g_driver_nudge_resolver = null;
+            var g_is_driver_nudge_pending = false;
 
             function nudge_connection_driver()
             {
@@ -37382,12 +37399,22 @@ function init_node_runtime(identity_passphrase_string)
                     let resolver = g_driver_nudge_resolver;
                     g_driver_nudge_resolver = null;
                     resolver();
+                    return;
                 }
+
+                g_is_driver_nudge_pending = true;
             }
 
             // the countdown between retries. it shows the failure text and leaves early on a nudge
             async function driver_retry_wait(seconds)
             {
+                if (g_is_driver_nudge_pending == true)
+                {
+                    g_is_driver_nudge_pending = false;
+                    console.log("connect-path: retry wait skipped by a pending nudge");
+                    return;
+                }
+
                 let nudged = new Promise(function(resolve) { g_driver_nudge_resolver = resolve; });
 
                 for (let remaining = seconds; remaining > 0; remaining--)
@@ -37454,6 +37481,8 @@ function init_node_runtime(identity_passphrase_string)
                     g_last_disconnect_reason = "";
                     report_connection_status("connecting");
 
+                    // a dial consumes any nudge; one kept from before must not skip a later countdown
+                    g_is_driver_nudge_pending = false;
                     await attempt_connection(target, identity);
 
                     // wait for the socket to die. a dial that could not even create a socket never
@@ -37485,11 +37514,24 @@ function init_node_runtime(identity_passphrase_string)
                         }
                     }
 
+                    // a fast reconnect re-dials at once with the same identity: no countdown, no button
+                    if (g_is_authenticated == false && g_is_fast_reconnect_in_progress == true)
+                    {
+                        continue;
+                    }
+
                     if (g_is_authenticated == false
                         && (g_is_reconnect_active == false || g_is_autoconnect_without_user_action_active == false))
                     {
                         // manual mode means one attempt per button press: state the failure and
                         // hold until the connect button nudges, with no countdown
+                        if (g_is_driver_nudge_pending == true)
+                        {
+                            g_is_driver_nudge_pending = false;
+                            console.log("connect-path: dialing on the pending nudge");
+                            continue;
+                        }
+
                         set_connect_button_pending(false);
                         report_connection_status("idle",
                             (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
@@ -38844,6 +38886,8 @@ function mainthread__process_received_websocket_message_continue(e)
                 file_upload_max_size: msg.message.file_upload_max_size,
                 chat_picture_max_size: msg.message.chat_picture_max_size,
                 allow_chat_pictures: msg.message.allow_chat_pictures,
+                is_fast_reconnect_allowed: msg.message.is_fast_reconnect_allowed,
+                hide_admin_country_flag: msg.message.hide_admin_country_flag,
                 value: "success"
             });
 
@@ -38861,6 +38905,17 @@ function mainthread__process_received_websocket_message_continue(e)
                 });
             }
         }
+        return;
+    }
+
+    // a fast reconnect's answer comes right before authentication_status, i.e. while this worker is
+    // still in handshake mode, so it is handled ahead of the authenticated / unauthenticated split
+    if (msg.message.type == "fast_reconnect_ok")
+    {
+        global.postMessage({
+            type: "data_processing_worker__fast_reconnect_ok",
+            value: msg
+        });
         return;
     }
 
@@ -39706,6 +39761,31 @@ var g_are_server_details_predefined = false;
 var g_is_autoconnect_without_user_action_active = false;
 var g_is_reconnect_active = true;
 
+// fast reconnect (server setting): a lost socket keeps the page exactly as it is and re-dials with
+// the same identity; the server adopts the still-open session. only a failed attempt shows
+// "connection lost" and wipes the page
+var g_is_fast_reconnect_allowed = false;     // announced by the server at login and on policy updates
+var g_is_fast_reconnect_in_progress = false; // an attempt is running: no wipe, no toast, one attempt only
+var g_is_fast_reconnect_resumed = false;     // the server said fast_reconnect_ok: the lists that follow are a refresh
+var g_fast_reconnect_deadline_timer = null;  // the classic "connection lost" path when the attempt stalls
+var g_fast_reconnect_pending_lists = null;   // the refreshed lists, applied together so the page repaints once
+var G_FAST_RECONNECT_DEADLINE_MS = 12000;
+
+// server setting: admins are listed without a country flag (the admin tag is id 0 on every server)
+var g_hide_admin_country_flag = false;
+var G_ADMIN_TAG_ID = 0;
+
+// the flag a row shows for this client: none for an admin when the server keeps admin flags private
+function country_flag_code_for_client(client)
+{
+    if (g_hide_admin_country_flag == true && Array.isArray(client.tag_ids) && client.tag_ids.indexOf(G_ADMIN_TAG_ID) != -1)
+    {
+        return "";
+    }
+
+    return client.country_iso_code;
+}
+
 // whether the last connect attempt actually failed (so the login shows
 // "connection failed, retrying in Xs" - not before)
 var g_last_connect_attempt_failed = false;
@@ -40534,7 +40614,8 @@ function describe_client_for_profile(client)
 
     if (client.is_idle == true) { parts.push("idle"); }
     if (client.alias != null && client.alias.length > 0) { parts.push("known as " + client.alias); }
-    if (client.country_iso_code != null && client.country_iso_code.length > 0) { parts.push(client.country_iso_code.toUpperCase()); }
+    let shown_country = country_flag_code_for_client(client);
+    if (shown_country != null && shown_country.length > 0) { parts.push(shown_country.toUpperCase()); }
     if (client.is_muted_by_local_client == true) { parts.push("muted by you"); }
     if (client.is_ignored_by_local_client == true) { parts.push("ignored by you"); }
 
@@ -41084,8 +41165,17 @@ async function websocket_connection_check(websocket)
 
             if ((g_connection_check_message_response_received_timestamp + g_connection_check_lost_threshold_ms) < timestamp_now)
             {
+                let silence_ms = timestamp_now - g_connection_check_message_response_received_timestamp;
+                console.error("loss detector: no heartbeat response for " + silence_ms + "ms");
+
+                // the resume path ends this loop; the login that follows starts a fresh one
+                if (try_start_fast_reconnect("no heartbeat reply for " + silence_ms + " ms") == true)
+                {
+                    break;
+                }
+
                 custom_alert("connection with server lost");
-                console.error("loss detector: no heartbeat response for " + (timestamp_now - g_connection_check_message_response_received_timestamp) + "ms, resetting");
+                console.error("loss detector: resetting");
                 reset_chat_app_keep_identity();
             }
 
@@ -43226,7 +43316,7 @@ function generate_html_for_single_client(client, is_local_client)
     let alias_text = sanitize_string((client.alias != null) ? client.alias : "");
     let has_alias_html_class = (alias_text.length > 0) ? " has-alias" : "";
     let audio_state = client.audio_state;
-    let country_iso_code = client.country_iso_code;
+    let country_iso_code = country_flag_code_for_client(client);
     let is_music_bot = client.is_music_bot;
     // every theme hides this badge by default, so it needs the inline display to show at all.
     // painting it from state means a re-rendered row (channel join, idle) keeps its count
@@ -43361,6 +43451,143 @@ function is_channel_or_his_parent_collapsed(channel_id)
         result = true;
     }
     return result;
+}
+
+// fast reconnect: the socket is gone but the page keeps everything (lists, chat, channel, keys) and
+// the driver re-dials at once with the same identity, asking the server to adopt the session.
+// returns false when a resume is not possible, so the caller runs the classic wipe instead
+function try_start_fast_reconnect(reason)
+{
+    // node owns the real connection in the webview, and only a logged-in session can be resumed
+    if (g_is_fast_reconnect_allowed == false || g_is_authenticated == false
+        || g_is_identity_switch_in_progress == true || is_ui_only_runtime() == true)
+    {
+        return false;
+    }
+
+    // one attempt per loss: when the resume socket itself dies the caller takes the classic path
+    if (g_is_fast_reconnect_in_progress == true)
+    {
+        return false;
+    }
+
+    g_is_fast_reconnect_in_progress = true;
+    g_is_fast_reconnect_resumed = false;
+    g_fast_reconnect_pending_lists = null;
+
+    // the driver keys off this flag; the page itself is left exactly as it is
+    g_is_authenticated = false;
+    g_should_connection_check_be_running = false;
+    g_connection_check_message_response_received_timestamp = 0;
+    stop_avatar_prefetch();
+
+    // the worker goes back to handshake mode; it keeps the identity and the channel keys
+    g_data_processing_worker.postMessage({ type: "mainthread_reset_data" });
+
+    console.log("%cfast reconnect: " + reason + " - re-dialing with the same identity", "color: #ffa500; font-weight: bold; font-size: 14px;");
+    custom_log("fast reconnect attempt (" + reason + ")");
+
+    g_fast_reconnect_deadline_timer = setTimeout(function()
+    {
+        fast_reconnect_failed("no adopted session within " + (G_FAST_RECONNECT_DEADLINE_MS / 1000) + " s");
+    }, G_FAST_RECONNECT_DEADLINE_MS);
+
+    // wakes the driver out of its wait on the old socket; it re-dials instead of parking
+    signal_connection_closed();
+    return true;
+}
+
+// the one failure of a fast reconnect: the classic "connection lost" toast and the full wipe
+function fast_reconnect_failed(reason)
+{
+    if (g_is_fast_reconnect_in_progress == false && g_is_fast_reconnect_resumed == false)
+    {
+        return;
+    }
+
+    g_is_fast_reconnect_in_progress = false;
+    g_is_fast_reconnect_resumed = false;
+    g_fast_reconnect_pending_lists = null;
+    clearTimeout(g_fast_reconnect_deadline_timer);
+    g_fast_reconnect_deadline_timer = null;
+
+    console.log("%cfast reconnect failed: " + reason + " - back to the connect screen", "color: #ff4040; font-weight: bold; font-size: 14px;");
+    custom_log("fast reconnect failed (" + reason + ")");
+
+    if (g_is_running_in_android_webview == false)
+    {
+        custom_alert("connection with server lost");
+    }
+
+    g_is_authenticated = false;
+    reset_chat_app_keep_identity();
+}
+
+// the server adopted the session: everything on this page is still valid. the complete lists follow
+// as on a login and are held back until the last one, see fast_reconnect_buffer_list
+function fast_reconnect_succeeded()
+{
+    g_is_fast_reconnect_resumed = true;
+    g_fast_reconnect_pending_lists = {};
+    console.log("fast reconnect: the server adopted the session, waiting for the refreshed lists");
+}
+
+// resume: the four lists (channel, client, icon, tag) are applied together in one task, so the old
+// ones are replaced in a single repaint and nothing on screen flickers. false = not resuming
+function fast_reconnect_buffer_list(kind, value)
+{
+    if (g_is_fast_reconnect_resumed == false)
+    {
+        return false;
+    }
+
+    if (g_fast_reconnect_pending_lists == null)
+    {
+        g_fast_reconnect_pending_lists = {};
+    }
+
+    g_fast_reconnect_pending_lists[kind] = value;
+
+    if (g_fast_reconnect_pending_lists.channel != null && g_fast_reconnect_pending_lists.client != null
+        && g_fast_reconnect_pending_lists.icon != null && g_fast_reconnect_pending_lists.tag != null)
+    {
+        fast_reconnect_apply_lists();
+    }
+
+    return true;
+}
+
+function fast_reconnect_apply_lists()
+{
+    let lists = g_fast_reconnect_pending_lists;
+
+    g_fast_reconnect_pending_lists = null;
+    g_is_fast_reconnect_resumed = false;
+    clearTimeout(g_fast_reconnect_deadline_timer);
+    g_fast_reconnect_deadline_timer = null;
+
+    // the old lists go in the same task the new ones are built: one repaint, already complete
+    g_map_client_id_to_array_index.clear();
+    g_client_list.length = 0;
+    g_channel_list.length = 0;
+    g_tags.length = 0;
+    g_icons.length = 0;
+    g_is_client_list_retrieved = false;
+    g_is_channel_list_retrieved = false;
+
+    let elements_count = document.getElementsByClassName("connected-client").length;
+    for (let i = 0; i < elements_count; i++)
+    {
+        document.getElementsByClassName("connected-client")[0].remove();
+    }
+
+    server_msg.process_channel_list_from_server(lists.channel);
+    server_msg.process_client_list_from_server(lists.client);
+    server_msg.process_icon_list_from_server(lists.icon);
+    server_msg.process_tag_list_from_server(lists.tag);
+
+    console.log("%cFAST RECONNECT HAPPENED - session resumed, lists refreshed, nothing was lost", "color: #00e000; font-weight: bold; font-size: 20px;");
+    custom_log("fast reconnect happened");
 }
 
 // tears the session down to the connect screen while keeping the rsa identity: closes the
@@ -44230,6 +44457,18 @@ function apply_server_policy_fields(data)
     g_is_alias_registration_allowed = (data.is_alias_registration_allowed == true);
     g_is_typing_indicator_allowed = (data.allow_typing_indicator == true);
 
+    // whether a lost socket may resume its session instead of starting over (absent on an older server)
+    if (data.is_fast_reconnect_allowed !== undefined)
+    {
+        g_is_fast_reconnect_allowed = (data.is_fast_reconnect_allowed == true);
+    }
+
+    // admins are drawn without a country flag when the server says so (absent on an older server)
+    if (data.hide_admin_country_flag !== undefined)
+    {
+        g_hide_admin_country_flag = (data.hide_admin_country_flag == true);
+    }
+
     // rename policy: on unless the server says otherwise (an older server says nothing)
     if (data.allow_client_renames !== undefined)
     {
@@ -44385,18 +44624,26 @@ function mainthread_onmessage(e)
 
         signal_connection_closed();
         console.warn("server connection lost (identity switch in progress: " + g_is_identity_switch_in_progress + ")");
-        // a deliberate close (identity switch) is not a lost connection - no scary alert
-        if (g_is_authenticated && g_is_identity_switch_in_progress == false)
-        {
-            if (g_is_running_in_android_webview == false)
-            {
-                custom_alert("connection with server was lost");
-            }
-            // window.location.reload();
-        }
-        g_is_authenticated = false;
 
-        reset_chat_app_keep_identity();
+        // the resume socket itself died: that is the one allowed failure, back to the connect screen
+        if (g_is_fast_reconnect_in_progress == true)
+        {
+            fast_reconnect_failed("the resume socket closed");
+        }
+        else if (try_start_fast_reconnect("socket closed") == false)
+        {
+            // a deliberate close (identity switch) is not a lost connection - no scary alert
+            if (g_is_authenticated && g_is_identity_switch_in_progress == false)
+            {
+                if (g_is_running_in_android_webview == false)
+                {
+                    custom_alert("connection with server was lost");
+                }
+            }
+            g_is_authenticated = false;
+
+            reset_chat_app_keep_identity();
+        }
     }
     else if (e.data.type == "websocket_worker_onerror")
     {
@@ -44413,16 +44660,20 @@ function mainthread_onmessage(e)
         }
 
         signal_connection_closed();
-        if (g_is_running_in_android_webview == false)
+
+        if (g_is_fast_reconnect_in_progress == true)
         {
-            custom_alert("connecting to server failed");
-
-            // window.alert("connection with server lost"); //this will be window.alert, this is serious problem
+            fast_reconnect_failed("the resume socket failed");
         }
-        reset_chat_app_keep_identity();
-
-        // window.location.reload();
-        g_is_authenticated = false;
+        else if (try_start_fast_reconnect("socket error") == false)
+        {
+            if (g_is_running_in_android_webview == false)
+            {
+                custom_alert("connecting to server failed");
+            }
+            reset_chat_app_keep_identity();
+            g_is_authenticated = false;
+        }
     }
     else if (e.data.type == "data_processing_worker__generate_rsa_keypair_result")
     {
@@ -44476,6 +44727,14 @@ function mainthread_onmessage(e)
     {
         if (e.data.value == "success")
         {
+            // a resume the server answered with a plain login: it had no session left to adopt, so
+            // the page state is stale. one clean failure instead of a half-refreshed page
+            if (g_is_fast_reconnect_in_progress == true && g_is_fast_reconnect_resumed == false)
+            {
+                fast_reconnect_failed("the server had no session to resume");
+                return;
+            }
+
             g_connection_status.last_connected_at = new Date().valueOf();
             g_connection_status.next_retry_at = 0;
             report_connection_status("connected");
@@ -44493,18 +44752,22 @@ function mainthread_onmessage(e)
             // so both paths share one application function
             apply_server_policy_fields(e.data);
 
-            // fresh session: the info card counts from this moment
-            g_session_connected_at = new Date().valueOf();
-            g_session_bytes_sent = 0;
-            g_session_bytes_received = 0;
-            g_session_last_ping_ms = -1;
+            // fresh session: the info card counts from this moment. a resumed one keeps counting
+            if (g_is_fast_reconnect_resumed == false)
+            {
+                g_session_connected_at = new Date().valueOf();
+                g_session_bytes_sent = 0;
+                g_session_bytes_received = 0;
+                g_session_last_ping_ms = -1;
+            }
 
             // ask for the offline-people roster on every connect, from every device and theme.
             // the server decides: it answers only if it offers the list AND this user is
             // registered on it. a refusal is simply g_silence, so nothing here needs to know.
             client_msg.send_request_stored_clients();
 
-            if (e.data.is_idle_mode_allowed)
+            // the idle panel is wired once; a resume still has it (a second listener would cancel the first)
+            if (e.data.is_idle_mode_allowed && g_is_fast_reconnect_resumed == false)
             {
                 document.getElementById('channel-list-container').style.height = "calc(70% - 30px)";
                 document.getElementById("idle-channel-collapse-button").addEventListener("mousedown", UI.collapse_expand_channel);
@@ -44513,6 +44776,14 @@ function mainthread_onmessage(e)
 
             g_is_authenticated = true;
             console.log("client authenticated");
+
+            // the attempt is over once the adopted session accepted the login; the refreshed
+            // lists are still on their way and are applied together when the last one arrives
+            if (g_is_fast_reconnect_resumed == true)
+            {
+                g_is_fast_reconnect_in_progress = false;
+                console.log("fast reconnect: login accepted on the adopted session");
+            }
 
             g_client_list = g_client_list;
             g_channel_list = g_channel_list;
@@ -44539,8 +44810,8 @@ function mainthread_onmessage(e)
             update_microphone_button();
 
             // people on touch device dont need to see chat by default, current UI isnt suitable for that
-            // most likely they will just want to call with voice
-            if (g_is_client_running_under_touch_device)
+            // most likely they will just want to call with voice. a resume leaves the chat as the user had it
+            if (g_is_client_running_under_touch_device && g_is_fast_reconnect_resumed == false)
             {
                 UI.hide_chat_container();
             }
@@ -44551,22 +44822,30 @@ function mainthread_onmessage(e)
                 websocket_connection_check(websocket);
             }
 
-            // the connected sound effect is delayed for 1 second...
-            // because at this moment its not yet known if the sound effect should be played or not. why?
-            // because, at the moment client.html receives g_client_list message (later, shortly after this)
-            // client.html invokes JavaExport onconnected (if client.html is running in android)
-            // the invoke causes java to send user settings to androids WebView (client.html)
-            // it happens in short time frame
-            // so thats why this timeout waits 1 second
-            // of course this is a bit useless in web browser context, but web browser can live with the sound effect delayed at 1 second
-            // plus minus 1 second doesnt matter in this case
-            // and the way its made now, android needs it
-            setTimeout( () => {
-                if (g_are_sound_effects_enabled)
-                {
-                    g_sound_effects.connected.play();
-                }
-            }, 1000);
+            // a resumed session was never gone from the user's point of view: no connected sound
+            if (g_is_fast_reconnect_resumed == true)
+            {
+                console.log("fast reconnect: connected sound skipped");
+            }
+            else
+            {
+                // the connected sound effect is delayed for 1 second...
+                // because at this moment its not yet known if the sound effect should be played or not. why?
+                // because, at the moment client.html receives g_client_list message (later, shortly after this)
+                // client.html invokes JavaExport onconnected (if client.html is running in android)
+                // the invoke causes java to send user settings to androids WebView (client.html)
+                // it happens in short time frame
+                // so thats why this timeout waits 1 second
+                // of course this is a bit useless in web browser context, but web browser can live with the sound effect delayed at 1 second
+                // plus minus 1 second doesnt matter in this case
+                // and the way its made now, android needs it
+                setTimeout( () => {
+                    if (g_are_sound_effects_enabled)
+                    {
+                        g_sound_effects.connected.play();
+                    }
+                }, 1000);
+            }
         }
     }
     else if (e.data.type == "data_processing_worker__audio_enabled")
@@ -44681,7 +44960,10 @@ function mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__client_list_from_server")
     {
-        server_msg.process_client_list_from_server(e.data.value);
+        if (fast_reconnect_buffer_list("client", e.data.value) == false)
+        {
+            server_msg.process_client_list_from_server(e.data.value);
+        }
     }
     else if (e.data.type == "data_processing_worker__client_avatar_from_server")
     {
@@ -44700,13 +44982,23 @@ function mainthread_onmessage(e)
             g_session_last_ping_ms = g_connection_check_message_response_received_timestamp - g_session_ping_sent_at;
         }
     }
+    else if (e.data.type == "data_processing_worker__fast_reconnect_ok")
+    {
+        fast_reconnect_succeeded();
+    }
     else if (e.data.type == "data_processing_worker__channel_list_from_server")
     {
-        server_msg.process_channel_list_from_server(e.data.value);
+        if (fast_reconnect_buffer_list("channel", e.data.value) == false)
+        {
+            server_msg.process_channel_list_from_server(e.data.value);
+        }
     }
     else if (e.data.type == "data_processing_worker__tag_list_from_server")
     {
-        server_msg.process_tag_list_from_server(e.data.value);
+        if (fast_reconnect_buffer_list("tag", e.data.value) == false)
+        {
+            server_msg.process_tag_list_from_server(e.data.value);
+        }
     }
     else if (e.data.type == "data_processing_worker__identity_list_from_server")
     {
@@ -44714,7 +45006,10 @@ function mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__icon_list_from_server")
     {
-        server_msg.process_icon_list_from_server(e.data.value);
+        if (fast_reconnect_buffer_list("icon", e.data.value) == false)
+        {
+            server_msg.process_icon_list_from_server(e.data.value);
+        }
     }
     else if (e.data.type == "data_processing_worker__icon_add_from_server")
     {
@@ -44824,7 +45119,9 @@ function mainthread_onmessage(e)
         let message_object = {
             message: {
                 type: "public_key_challenge_response",
-                value: msg.message.decryption_result
+                value: msg.message.decryption_result,
+                // asks the server to adopt the still-open session of this identity (fast reconnect)
+                fast_reconnect: (g_is_fast_reconnect_in_progress == true)
             }
         };
 
@@ -44873,6 +45170,7 @@ function mainthread_onmessage(e)
     {
         let msg = e.data.value;
         document.getElementById("server-settings-general-display-flags-checkbox").checked = msg.message.display_country_flags == true;
+        document.getElementById("server-settings-general-hide-admin-flag-checkbox").checked = msg.message.hide_admin_country_flag == true;
         document.getElementById("server-settings-general-enable-audio").checked = msg.message.enable_audio == true;
         document.getElementById("server-settings-general-enable-music-bot-audio-checkbox").checked = msg.message.enable_music_bot_audio == true;
         document.getElementById("server-settings-general-hide-clients-in-password-protected-channels").checked = msg.message.hide_clients_in_password_channels == true;
@@ -44888,6 +45186,9 @@ function mainthread_onmessage(e)
         document.getElementById("server-settings-general-picture-max-size-input").value = (typeof msg.message.chat_picture_max_size_mb === "number") ? msg.message.chat_picture_max_size_mb : 4;
         refresh_picture_size_visibility();
         document.getElementById("server-settings-general-allow-same-ip-checkbox").checked = msg.message.is_same_ip_address_allowed == true;
+        document.getElementById("server-settings-general-fast-reconnect-checkbox").checked = msg.message.is_fast_reconnect_allowed == true;
+        document.getElementById("server-settings-general-identity-takeover-checkbox").checked = msg.message.is_identity_takeover_allowed == true;
+        document.getElementById("server-settings-general-websocket-ping-checkbox").checked = msg.message.is_websocket_ping_active == true;
         document.getElementById("server-settings-general-minimum-rsa-bits-input").value = (typeof msg.message.minimum_rsa_key_bits === "number") ? msg.message.minimum_rsa_key_bits : 2048;
         document.getElementById("server-settings-general-announce-rsa-bits-checkbox").checked = msg.message.announce_minimum_rsa_key_bits == true;
         document.getElementById("server-settings-general-country-blocking-checkbox").checked = msg.message.is_country_blocking_active == true;
@@ -45864,13 +46165,18 @@ async function window_onload()
         };
         document.getElementById("connect-form-sub-container-1").style.display = "none";
         document.getElementById("connect-form-sub-container-2").style.display = "none";
-
-        // the address is baked in, so the fields bookmarks fill are never consulted
-        document.getElementById("server-bookmarks-container").style.display = "none";
     }
 
     if (g_is_running_in_android_webview == false)
     {
+        // the address is baked in (injected config, or set by hand in the source), so the fields the
+        // bookmarks fill are never consulted: hidden in every theme, and it stays hidden on the
+        // connect screen after a disconnect
+        if (g_are_server_details_predefined == true)
+        {
+            document.getElementById("server-bookmarks-container").style.display = "none";
+        }
+
         if (g_are_server_details_predefined == false)
         {
             document.getElementById("connect-form-sub-container-1").style.visibility = "visible";
@@ -47938,33 +48244,38 @@ function JavascriptJavaBridge__accept_current_settings_from_android(settings_jso
                     <div id="server-settings-general-settings-container">
                         <p class="server-settings-general-header">general settings</p>
 
+                        <p class="server-settings-general-subheader">clients</p>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-display-flags-checkbox">
                             <span>display country flags near clients</span>
                         </label>
                         <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-enable-audio">
-                            <span>enable audio server-wide</span>
-                        </label>
-                        <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-enable-music-bot-audio-checkbox">
-                            <span>enable audio for music bots</span>
-                        </label>
-                        <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-hide-clients-in-password-protected-channels">
-                            <span>hide clients in password protected channels</span>
-                        </label>
-                        <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-allow-temp-channels-checkbox">
-                            <span>allow creation of temp channels by guests</span>
-                        </label>
-                        <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-allow-typing-indicator-checkbox">
-                            <span>show when somebody is typing</span>
+                            <input type="checkbox" id="server-settings-general-hide-admin-flag-checkbox">
+                            <span>hide admin's flag</span>
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-renames-checkbox">
                             <span>allow users to rename themselves (admins always can)</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-same-ip-checkbox">
+                            <span>allow more than one client from the same IP address</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-country-blocking-checkbox">
+                            <span>restrict access by country</span>
+                        </label>
+                        <div id="server-settings-country-blocking-container" style="display: none;">
+                            <select id="server-settings-country-block-select">
+                                <option value="">add a country to the block list ...</option>
+                            </select>
+                            <div id="server-settings-blocked-countries-list"></div>
+                        </div>
+
+                        <p class="server-settings-general-subheader">chat</p>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-typing-indicator-checkbox">
+                            <span>show when somebody is typing</span>
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-text-to-idle-clients-checkbox">
@@ -47991,28 +48302,46 @@ function JavascriptJavaBridge__accept_current_settings_from_android(settings_jso
                             <span>max picture size (MB)</span>
                             <input type="number" min="1" max="15" step="1" id="server-settings-general-picture-max-size-input">
                         </label>
+
+                        <p class="server-settings-general-subheader">voice and channels</p>
                         <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-allow-same-ip-checkbox">
-                            <span>allow more than one client from the same IP address</span>
+                            <input type="checkbox" id="server-settings-general-enable-audio">
+                            <span>enable audio server-wide</span>
                         </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-enable-music-bot-audio-checkbox">
+                            <span>enable audio for music bots</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-hide-clients-in-password-protected-channels">
+                            <span>hide clients in password protected channels</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-allow-temp-channels-checkbox">
+                            <span>allow creation of temp channels by guests</span>
+                        </label>
+
+                        <p class="server-settings-general-subheader">connections and security</p>
                         <label class="server-settings-general-row server-settings-general-row-number">
                             <span>minimum rsa key size in bits (2048-8192, clients with weaker keys are dropped)</span>
                             <input type="number" min="2048" max="8192" step="1" id="server-settings-general-minimum-rsa-bits-input">
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-announce-rsa-bits-checkbox">
-                            <span>tell rejected clients which key size is required (off: they are dropped without knowing why)</span>
+                            <span>tell rejected clients which key size is required</span>
                         </label>
                         <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-country-blocking-checkbox">
-                            <span>restrict access by country (clients joining from a blocked country are refused)</span>
+                            <input type="checkbox" id="server-settings-general-fast-reconnect-checkbox">
+                            <span>fast reconnect: a client that loses its socket resumes its session in place</span>
                         </label>
-                        <div id="server-settings-country-blocking-container" style="display: none;">
-                            <select id="server-settings-country-block-select">
-                                <option value="">add a country to the block list ...</option>
-                            </select>
-                            <div id="server-settings-blocked-countries-list"></div>
-                        </div>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-identity-takeover-checkbox">
+                            <span>identity takeover: a new connect with an identity of user that is already online disconnects that user (default off: the same identity is refused)</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-websocket-ping-checkbox">
+                            <span>additional ping check: the server pings every socket every 15 s and drops one that misses 4 pings (heartbeat check stays either way)</span>
+                        </label>
 
                         <input type="button" value="save server settings" id="save-server-settings-button">
                     </div>

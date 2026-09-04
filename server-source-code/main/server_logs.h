@@ -4,6 +4,8 @@
 // the admin log
 
 void server_logs__client_joined(client_t* client);
+void server_logs__fast_reconnect(client_t* client);
+void server_logs__client_disconnect_reason(client_t* client, char* reason);
 void server_logs__username_changed(char* old_username, char* new_username);
 void server_logs__tag_added(int tag_id, char* target_username, char* admin_username);
 void server_logs__server_settings_updated(char* admin_username, boole save_succeeded);

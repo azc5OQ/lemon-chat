@@ -15,6 +15,7 @@ void server_msg__send_active_microphone_usage_for_current_channel_to_single_clie
 void server_msg__send_client_connect_message_to_all_clients(uint64 connected_client_id);
 void server_msg__send_maintainer_id_to_single_client(client_t* client, uint64 channel_id, uint64 current_channel_maintainer_id);
 void server_msg__send_connection_check_response_to_single_client(client_t* client);
+void server_msg__send_fast_reconnect_ok_to_single_client(client_t* client);
 void server_msg__send_client_rename_message_to_all_clients(uint64 username_changer_client_id, char* new_username);
 void server_msg__send_access_denied_to_single_client(client_t* client, char* reason);
 void server_msg__send_force_admin_password_change_to_single_client(client_t* client);

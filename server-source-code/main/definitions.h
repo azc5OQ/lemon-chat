@@ -191,8 +191,12 @@ typedef struct server_settings
     boole is_restrict_channel_deletion_creation_editing_to_admin_active;
     boole is_temp_channel_creation_allowed;
     boole is_display_country_flags_active;
+    boole hide_admin_country_flag;     // admins are listed without a flag while flags are on (a comfort setting)
     boole is_display_admin_tag_active;
     boole is_idle_mode_allowed;
+    boole is_fast_reconnect_allowed;   // a returning identity may adopt its still-open session instead of replacing it
+    boole is_identity_takeover_allowed; // a new login with an identity already online replaces that session (off: refused)
+    boole is_websocket_ping_active;    // ws-level ping every check tick; 4 unanswered pings shut the socket
     boole is_voice_chat_active;
     boole is_music_bot_audio_active;
     boole is_logging_of_failed_attempts_active;

@@ -108,8 +108,11 @@
                 return new Promise(function(resolve) { g_connection_closed_resolvers.push(resolve); });
             }
 
-            // skips the retry countdown, used when the connect button is pressed or new details arrive
+            // skips the retry countdown, used when the connect button is pressed or new details arrive.
+            // a nudge that lands while the driver is still watching the old socket is kept, not lost:
+            // an identity switch closes the socket and nudges in the same breath, before the close is seen
             var g_driver_nudge_resolver = null;
+            var g_is_driver_nudge_pending = false;
 
             function nudge_connection_driver()
             {
@@ -118,12 +121,22 @@
                     let resolver = g_driver_nudge_resolver;
                     g_driver_nudge_resolver = null;
                     resolver();
+                    return;
                 }
+
+                g_is_driver_nudge_pending = true;
             }
 
             // the countdown between retries. it shows the failure text and leaves early on a nudge
             async function driver_retry_wait(seconds)
             {
+                if (g_is_driver_nudge_pending == true)
+                {
+                    g_is_driver_nudge_pending = false;
+                    console.log("connect-path: retry wait skipped by a pending nudge");
+                    return;
+                }
+
                 let nudged = new Promise(function(resolve) { g_driver_nudge_resolver = resolve; });
 
                 for (let remaining = seconds; remaining > 0; remaining--)
@@ -190,6 +203,8 @@
                     g_last_disconnect_reason = "";
                     report_connection_status("connecting");
 
+                    // a dial consumes any nudge; one kept from before must not skip a later countdown
+                    g_is_driver_nudge_pending = false;
                     await attempt_connection(target, identity);
 
                     // wait for the socket to die. a dial that could not even create a socket never
@@ -221,11 +236,24 @@
                         }
                     }
 
+                    // a fast reconnect re-dials at once with the same identity: no countdown, no button
+                    if (g_is_authenticated == false && g_is_fast_reconnect_in_progress == true)
+                    {
+                        continue;
+                    }
+
                     if (g_is_authenticated == false
                         && (g_is_reconnect_active == false || g_is_autoconnect_without_user_action_active == false))
                     {
                         // manual mode means one attempt per button press: state the failure and
                         // hold until the connect button nudges, with no countdown
+                        if (g_is_driver_nudge_pending == true)
+                        {
+                            g_is_driver_nudge_pending = false;
+                            console.log("connect-path: dialing on the pending nudge");
+                            continue;
+                        }
+
                         set_connect_button_pending(false);
                         report_connection_status("idle",
                             (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
