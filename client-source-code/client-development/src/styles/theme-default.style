@@ -1054,6 +1054,33 @@ a-toast:hover {
     width: 73%;
 }
 
+/* the file card: see-through, and a thin border the cursor lights up (js keeps --mx/--my on the hovered card) */
+.chat-file-card.chat-file-card {
+    position: relative;
+    background: rgba(54, 57, 63, 0.55);
+    border-color: rgba(0, 240, 255, 0.22);
+}
+
+.chat-file-card.chat-file-card::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: radial-gradient(170px circle at var(--mx, 50%) var(--my, 50%), #f5ff3d 0%, #00f0ff 28%, #ff2bd6 58%, rgba(122, 60, 255, 0) 85%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.chat-file-card.chat-file-card:hover::before {
+    opacity: 1;
+}
+
 .single-chat-message {
     background-color: inherit;
     border-radius: 9px;

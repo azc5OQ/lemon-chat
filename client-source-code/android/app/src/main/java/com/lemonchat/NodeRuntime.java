@@ -102,7 +102,7 @@ public class NodeRuntime
                     int exitCode = new NodeRuntime().nativeStartNode(new String[] { "node", entryScriptPath });
 
                     // do NOT add a restart loop: node::Start works once per process (v8 cannot be
-                    // re-initialised). the js side (dispatch_safely, uncaughtException guard) exists
+                    // re-initialised). the js side (android_host__dispatch_safely, uncaughtException guard) exists
                     // to make sure this line is never reached.
                     Log.e(TAG, "node event loop EXITED (code " + exitCode + ") - runtime is dead until the app process restarts");
                 }

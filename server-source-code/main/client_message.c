@@ -227,6 +227,7 @@ static boole _client_msg_internal__is_process_server_settings_icon_upload_messag
     cJSON* json_message_object = 0;
     cJSON* base64_icon_value = 0;
     uint64 base64_icon_length = 0;
+    uint64 max_base64_length = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     base64_icon_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "base64_icon_value");
@@ -238,10 +239,12 @@ static boole _client_msg_internal__is_process_server_settings_icon_upload_messag
 
     base64_icon_length = clib__utf8_string_length(base64_icon_value->valuestring);
 
-    // don't accept icons too small or too large
-    if (base64_icon_length >= ICON_MAX_LENGTH || base64_icon_length < 128)
+    // the raw-bytes setting caps the upload: base64 is ~4/3 of raw plus a small data-url prefix.
+    // the store buffer ceiling stays as the hard limit behind it
+    max_base64_length = (uint64)((g_server_settings.icon_max_size_bytes * 4) / 3) + 64;
+    if (base64_icon_length >= ICON_MAX_LENGTH || base64_icon_length > max_base64_length || base64_icon_length < 128)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "clib__utf8_string_length(base64_icon_value->valuestring) >= ICON_MAX_LENGTH");
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "icon upload dropped: base64 length", base64_icon_length, "is outside the allowed range \n");
         return FALSE;
     }
 
@@ -4663,6 +4666,12 @@ void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_
             server_msg__send_add_tag_to_client_event_to_all_clients(client->client_id, ADMIN_TAG_ID);
         }
 
+        // an admin's flag may be withheld, so the rows showing him learn the code they show from now on
+        if (g_server_settings.hide_admin_country_flag == TRUE)
+        {
+            server_msg__send_client_country_code_changed_to_all_clients(client);
+        }
+
         // tie this identity to its tags in ram right away, so a reconnect restores admin within this
         // server run even before any disk save. persistence to disk still needs a settings save
         base__sync_client_identity_in_store(client);
@@ -4818,6 +4827,12 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
     }
 
     server_msg__send_add_tag_to_client_event_to_all_clients(client_to_add_tag_to->client_id, json_tag_id->valueint);
+
+    // an admin's flag may be withheld, so the rows showing him learn the code they show from now on
+    if (json_tag_id->valueint == ADMIN_TAG_ID && g_server_settings.hide_admin_country_flag == TRUE)
+    {
+        server_msg__send_client_country_code_changed_to_all_clients(client_to_add_tag_to);
+    }
 
     // mirror the change into the ram identity store immediately, so the tag survives a reconnect
     // within this server run without needing an admin disk save
@@ -5763,6 +5778,12 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
 
         server_msg__send_remove_tag_from_client_event_to_all_clients(client_to_remove_tag_id_from->client_id, json_tag_id->valueint);
 
+        // his flag was withheld as an admin's; the rows showing him get the real code back
+        if (json_tag_id->valueint == ADMIN_TAG_ID && g_server_settings.hide_admin_country_flag == TRUE)
+        {
+            server_msg__send_client_country_code_changed_to_all_clients(client_to_remove_tag_id_from);
+        }
+
         // mirror the removal into the ram identity store immediately (drops the identity entirely
         // if it now wears no tags), so a reconnect does not resurrect a tag that was just removed
         base__sync_client_identity_in_store(client_to_remove_tag_id_from);
@@ -5817,9 +5838,12 @@ void client_msg__process_set_server_settings_icon_upload(cJSON* json_root, uint6
         icon_t* icon = &g_icons_array[icon_index];
         if (icon->is_existing == FALSE)
         {
+            if (base__set_icon_base64(icon, base64_icon_value->valuestring) == FALSE)
+            {
+                break; // out of memory: the slot stays free and nothing is announced
+            }
             found_icon = icon;
             found_icon->is_existing = TRUE;
-            clib__copy_memory((void*)base64_icon_value->valuestring, (void*)&found_icon->base64[0], clib__utf8_string_length(base64_icon_value->valuestring), ICON_MAX_LENGTH);
             found_icon->id = icon_index;
 
             break;
@@ -5834,7 +5858,7 @@ void client_msg__process_set_server_settings_icon_upload(cJSON* json_root, uint6
 
     // everything is checked
     // write new icon and notify users
-    server_msg__send_add_new_icon_event_to_all_clients(found_icon->id, &found_icon->base64[0]);
+    server_msg__send_add_new_icon_event_to_all_clients(found_icon->id, found_icon->base64);
 
 label_client_msg__process_server_settings_icon_upload_end:
     clib__unlock(&g_icons_global_rwlock_guard);
@@ -6093,6 +6117,7 @@ void client_msg__process_delete_identity(cJSON* json_root, uint64 sender_client_
     uint64 tags_to_remove[MAX_TAGS_FOR_SINGLE_CLIENT];
     uint64 tags_to_remove_count = 0;
     uint64 holder_client_id = 0;
+    boole holder_was_admin = FALSE;
     uint64 c = 0;
     uint64 t = 0;
 
@@ -6151,6 +6176,7 @@ void client_msg__process_delete_identity(cJSON* json_root, uint64 sender_client_
         {
             cvector_erase(holder->tag_ids, 0);
         }
+        holder_was_admin = holder->is_admin;
         holder->is_admin = FALSE;
 
         break;
@@ -6163,6 +6189,12 @@ void client_msg__process_delete_identity(cJSON* json_root, uint64 sender_client_
     for (t = 0; t < tags_to_remove_count; t++)
     {
         server_msg__send_remove_tag_from_client_event_to_all_clients(holder_client_id, tags_to_remove[t]);
+    }
+
+    // his flag was withheld as an admin's; the rows showing him get the real code back
+    if (holder_was_admin == TRUE && g_server_settings.hide_admin_country_flag == TRUE)
+    {
+        server_msg__send_client_country_code_changed_to_all_clients(holder);
     }
 
     // refresh the requesting admin's identity list so the deleted row disappears
@@ -6265,6 +6297,9 @@ void client_msg__process_modify_identity_tag(cJSON* json_root, uint64 sender_cli
                 cvector_push_back(holder->tag_ids, (int)tag_id);
                 if (tag_id == ADMIN_TAG_ID) { holder->is_admin = TRUE; }
                 server_msg__send_add_tag_to_client_event_to_all_clients(holder->client_id, tag_id);
+
+                // an admin's flag may be withheld, so the rows showing him learn the code they show from now on
+                if (tag_id == ADMIN_TAG_ID && g_server_settings.hide_admin_country_flag == TRUE) { server_msg__send_client_country_code_changed_to_all_clients(holder); }
             }
         }
         else
@@ -6274,6 +6309,9 @@ void client_msg__process_modify_identity_tag(cJSON* json_root, uint64 sender_cli
                 cvector_erase(holder->tag_ids, tag_index);
                 if (tag_id == ADMIN_TAG_ID) { holder->is_admin = FALSE; }
                 server_msg__send_remove_tag_from_client_event_to_all_clients(holder->client_id, tag_id);
+
+                // his flag was withheld as an admin's; the rows showing him get the real code back
+                if (tag_id == ADMIN_TAG_ID && g_server_settings.hide_admin_country_flag == TRUE) { server_msg__send_client_country_code_changed_to_all_clients(holder); }
             }
         }
 
@@ -6332,7 +6370,7 @@ void client_msg__process_set_server_settings_delete_icon(cJSON* json_root, uint6
 
     // free the icon's pool slot (an icon id equals its index in g_icons_array)
     g_icons_array[icon_id].is_existing = FALSE;
-    clib__null_memory(&g_icons_array[icon_id].base64[0], ICON_MAX_LENGTH);
+    base__free_icon_base64(&g_icons_array[icon_id]);
 
     server_msg__send_remove_icon_event_to_all_clients(icon_id);
 
@@ -6527,6 +6565,7 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     boole previous_music_bot_audio_active = FALSE;
     boole previous_hide_clients_in_password_channels = FALSE;
     boole previous_temp_channel_creation_allowed = FALSE;
+    boole previous_hide_admin_country_flag = FALSE;
     cJSON* json_message_object = NULL_POINTER;
     cJSON* json_field = NULL_POINTER;
     cJSON* json_country_entry = NULL_POINTER;
@@ -6564,6 +6603,9 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     previous_music_bot_audio_active = g_server_settings.is_music_bot_audio_active;
     previous_hide_clients_in_password_channels = g_server_settings.is_hide_clients_in_password_protected_channels_active;
     previous_temp_channel_creation_allowed = g_server_settings.is_temp_channel_creation_allowed;
+
+    // the change check after the save: a toggled value re-sends the admins' shown country codes
+    previous_hide_admin_country_flag = g_server_settings.hide_admin_country_flag;
 
     // apply the general-settings toggles the admin sent (each only when present and boolean)
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -6702,6 +6744,14 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         g_server_settings.webrtc_datachannel_cooldown_seconds = (int64)json_field->valuedouble;
         if (g_server_settings.webrtc_datachannel_cooldown_seconds < 0) { g_server_settings.webrtc_datachannel_cooldown_seconds = 0; }
         if (g_server_settings.webrtc_datachannel_cooldown_seconds > 86400) { g_server_settings.webrtc_datachannel_cooldown_seconds = 86400; }
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "icon_max_size_bytes");
+    if (cJSON_IsNumber(json_field))
+    {
+        g_server_settings.icon_max_size_bytes = (int64)json_field->valuedouble;
+        if (g_server_settings.icon_max_size_bytes < 1000) { g_server_settings.icon_max_size_bytes = 1000; }
+        if (g_server_settings.icon_max_size_bytes > 30000) { g_server_settings.icon_max_size_bytes = 30000; }
     }
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "show_music_bot_marquee_to_everyone");
@@ -6854,6 +6904,13 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     {
         clib__read_lock(&g_clients_global_rwlock_guard);
         server_msg__send_policy_update_to_all_clients();
+
+        // admins' flags appear or vanish for everyone at once; the clients only see the codes, never the setting
+        if (previous_hide_admin_country_flag != g_server_settings.hide_admin_country_flag)
+        {
+            server_msg__send_admin_country_codes_to_all_clients();
+        }
+
         clib__unlock(&g_clients_global_rwlock_guard);
     }
 

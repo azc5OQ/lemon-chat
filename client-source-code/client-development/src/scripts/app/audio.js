@@ -1,102 +1,138 @@
-// ===========================================================================
-//  START HERE. WHAT THE AUDIO CODE IS, IN PLAIN WORDS.
-// ---------------------------------------------------------------------------
-//  WHICH FILE DOES WHAT
-//
-//  audio.js (this file)  Moves sound around. Microphone in, speakers out,
-//                        buffering and timing. It never compresses anything.
-//
-//  audio-opus-glue.js    Turns sound into small network packets and back, with
-//                        the opus codec. It runs inside web workers.
-//
-//  Between the two files, sound is plain numbers (Float32Array). On the
-//  network, sound is opus packets. This file only ever sees plain numbers.
-//
-//  Two blocks of numbers are safe to tune. "AUDIO WORKLET TUNABLES", further
-//  down in this file, sets delay against smoothness. "OPUS AUDIO TUNABLES", at
-//  the top of audio-opus-glue.js, sets compression.
-// ---------------------------------------------------------------------------
-//  WORDS WE INVENTED, OR USE IN OUR OWN WAY
-//
-//  lane        One speaker's private playback buffer. Three people talking
-//              means three lanes, and we add them together at the very end.
-//
-//  premixed lane   A fake lane, id 9999999, for sound that something else
-//                  already mixed. It is not a person.
-//
-//  target      How much sound a lane collects before it starts to play. This
-//              cushion hides network delay. Bigger is smoother but later.
-//
-//  prebuffering    A lane that is collecting sound and not playing yet,
-//                  because it has not reached its target.
-//
-//  underrun    A playing lane ran out of sound. Normally the network was late,
-//              so we grow that lane's target to make it happen less often.
-//
-//  slipping    Quietly deleting one frame when a lane holds far too much. It
-//              removes delay a little at a time and nobody hears it.
-//
-//  quantum     One tick of the audio engine: 128 frames, about 2.7 ms. There
-//              are about 375 ticks in a second.
-//
-//  interleaved     Stereo stored as one list: left, right, left, right. So the
-//                  count of numbers is always twice the count of frames.
-//
-//  frame       One moment of stereo sound, so two numbers.
-//              CAREFUL: audio-opus-glue.js says "frame" for a different thing,
-//              one opus packet, which is 40 ms of sound.
-//
-//  worklet     The modern way to run audio code on its own thread. Preferred.
-//  ScriptProcessor     The old and slower way. Used only if worklet is missing.
-//
-//  capture graph   Microphone -> gain -> recorder node. The way in.
-//  playback graph  Player node -> gain -> speakers. The way out.
-// ===========================================================================
-// contents: the worklet processors (player + recorder), their ScriptProcessorNode
-// fallbacks, playback and capture graph construction, the push-to-talk capture gate,
-// and the after-idle context rebuild. UI glue (buttons, key handlers) stays in main.js
+// audio.js is embedded in template.html along with the other client files
+// it is the audio engine: it moves sound around (microphone in, speakers out, buffering and timing)
+// and never compresses anything; audio-opus-glue.js does the opus packets inside the workers
+// it holds the worklet processors and their ScriptProcessorNode fallbacks, the playback and capture
+// graphs, the push-to-talk gate and the after-idle rebuild; voice.js and dispatch.js call it
 
-// builds a brand new AudioContext and re-wires playback and (if present) the microphone
-// onto it - resuming a context whose HAL android reset is what corrupted both directions
-function rebuild_audio_graph_after_idle()
+// the words used here: a lane is one speaker's own playback buffer, its target the amount it collects before
+// playing (an underrun, running dry, grows it; slipping drops a frame from an overfull lane); a frame is one
+// stereo moment (two floats), a quantum one 128-frame engine tick, interleaved is left, right, left, right in one list
+
+// state private to this file
+var player = null;
+
+var audio_player_worklet_node = null;
+
+var is_audio_worklet_player_active = false;
+
+var audio_worklet_module_promise = null; // set while/after the worklet module loads; null = no worklet support
+
+var is_microphone_worklet_active = false;
+
+var PREMIXED_AUDIO_LANE_ID = 9999999; // worklet lane id for already-mixed audio (matches PREMIXED_LANE_ID in the processor)
+
+var audio_queue = {
+    buffer: new Float32Array(0),
+
+    // AUDIO TUNABLE (fallback path only; the worklet path uses the "AUDIO WORKLET TUNABLES" jitter buffer):
+    // the hard cap on the ScriptProcessor's queue, ~300 ms of interleaved stereo. beyond it the oldest
+    // samples drop, so playback snaps back to near-real-time after gc pauses, throttling or a rate mismatch
+    max_buffered_samples: 28800,
+
+    /**
+     * @brief appends decoded samples to the fallback playback queue
+     *        beyond max_buffered_samples the oldest samples are dropped, so playback snaps back to
+     *        near-real-time instead of lagging forever
+     *
+     * @param Float32Array newAudio -> interleaved stereo samples
+     *
+     * @return void
+     */
+    write: function (newAudio)
+    {
+        var currentQLength = this.buffer.length;
+        var newBuffer = new Float32Array(currentQLength + newAudio.length);
+        newBuffer.set(this.buffer, 0);
+        newBuffer.set(newAudio, currentQLength);
+
+        if (newBuffer.length > this.max_buffered_samples)
+        {
+            newBuffer = newBuffer.subarray(newBuffer.length - this.max_buffered_samples);
+        }
+
+        this.buffer = newBuffer;
+    },
+
+    /**
+     * @brief empties the fallback playback queue
+     *
+     * @return void
+     */
+    clear: function ()
+    {
+        this.buffer = g_silence;
+    },
+
+    /**
+     * @brief takes the next samples off the front of the fallback playback queue
+     *
+     * @param number nSamples -> how many floats to take
+     *
+     * @return Float32Array the samples, fewer when the queue runs dry
+     */
+    read: function (nSamples)
+    {
+        var samplesToPlay = this.buffer.subarray(0, nSamples);
+        this.buffer = this.buffer.subarray(nSamples, this.buffer.length);
+        return samplesToPlay;
+    },
+
+    /**
+     * @brief how many floats the fallback playback queue holds
+     *
+     * @return number the queued floats
+     */
+    length: function ()
+    {
+        return this.buffer.length;
+    }
+};
+
+/**
+ * @brief builds a brand new AudioContext and re-wires playback and (if present) the microphone onto it
+ *        resuming a context whose HAL android reset is what corrupted both directions
+ *
+ * @return void
+ */
+function audio__rebuild_audio_graph_after_idle()
 {
-    let old_context = audio_context;
+    let old_context = g_audio_context;
     let old_sample_rate = (old_context != null) ? old_context.sampleRate : 48000;
 
     try
     {
-        audio_context = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+        g_audio_context = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
     }
     catch (sample_rate_hint_not_supported)
     {
-        audio_context = new (window.AudioContext || window.webkitAudioContext)();
+        g_audio_context = new (window.AudioContext || window.webkitAudioContext)();
     }
 
     // playback graph: gain -> speakers, then the player node (worklet or script processor)
-    g_audio_player_gain_node = audio_context.createGain();
-    g_audio_player_gain_node.connect(audio_context.destination);
-    create_audio_player_output();
+    g_audio_player_gain_node = g_audio_context.createGain();
+    g_audio_player_gain_node.connect(g_audio_context.destination);
+    audio__create_audio_player_output();
 
     // microphone: the MediaStream survives a context swap, the nodes do not
     if (g_local_audio_stream != null && g_microphone_recorder != null)
     {
-        // create_microphone_capture_node builds a fresh capture node on the new context
+        // audio__create_microphone_capture_node builds a fresh capture node on the new context
         g_microphone_recorder = null;
-        g_audio_input = audio_context.createMediaStreamSource(g_local_audio_stream);
-        g_audio_recorder_gain_node = audio_context.createGain();
-        create_microphone_capture_node();
+        g_audio_input = g_audio_context.createMediaStreamSource(g_local_audio_stream);
+        g_audio_recorder_gain_node = g_audio_context.createGain();
+        audio__create_microphone_capture_node();
     }
 
     // a fresh context may come up at a different device rate; the decode resampler and
     // both codec workers are pinned to it, so re-init them on a change
-    if (audio_context.sampleRate !== old_sample_rate)
+    if (g_audio_context.sampleRate !== old_sample_rate)
     {
-        g_opus_decoding_sampler = new SpeexResampler(1, 48000, audio_context.sampleRate);
-        g_opus_decoder_worker.postMessage({ type: "init", sampleRate: audio_context.sampleRate });
+        g_opus_decoding_sampler = new SpeexResampler(1, 48000, g_audio_context.sampleRate);
+        g_opus_decoder_worker.postMessage({ type: "init", sampleRate: g_audio_context.sampleRate });
 
         if (g_microphone_recorder != null)
         {
-            g_opus_encoder_worker.postMessage({ type: "init", sampleRate: audio_context.sampleRate });
+            g_opus_encoder_worker.postMessage({ type: "init", sampleRate: g_audio_context.sampleRate });
         }
     }
 
@@ -106,17 +142,18 @@ function rebuild_audio_graph_after_idle()
         try { old_context.close().catch(function() {}); } catch (e) {}
     }
 
-    console.log("audio graph rebuilt on a fresh context, sampleRate " + audio_context.sampleRate);
+    console.log("audio graph rebuilt on a fresh context, sampleRate " + g_audio_context.sampleRate);
 }
 
-// AudioWorklet playback processor. this function is never called on the main thread: its source
-// is stringified into a blob module and runs on the browser's dedicated audio rendering thread,
-// where main-thread jank (busy UI, big DOM updates) cannot starve it - the ScriptProcessorNode
-// it replaces ran its callback on the main thread and stuttered whenever the page was busy.
-// it keeps its own ring buffer of interleaved stereo samples: chunks arrive over the port,
-// oldest samples are dropped beyond ~300 ms of backlog (same policy as g_audio_queue), and each
-// 128-frame render quantum is filled from the ring (zeros on underrun)
-function lemon_audio_worklet_scope()
+/**
+ * @brief the AudioWorklet processors, the player and the recorder
+ *        never called on the main thread: its source is stringified into a blob module and runs on
+ *        the audio rendering thread, where main-thread jank cannot starve it (the ScriptProcessorNode
+ *        it replaces ran on the main thread and stuttered whenever the page was busy)
+ *
+ * @return void
+ */
+function audio__lemon_audio_worklet_scope()
 {
     // AudioWorkletProcessor is a class the browser only defines inside the audio worklet scope,
     // never on the main thread - another reason this function must not be called directly
@@ -126,26 +163,15 @@ function lemon_audio_worklet_scope()
         {
             super();
 
-            // per-SENDER playback lanes: sender id -> its own jitter-buffered ring of interleaved
-            // stereo. each lane prebuffers to a target depth before it plays, grows the target
-            // when it underruns (jittery network needs more cushion) and shrinks it back plus
-            // slips out excess samples once the flow proves stable. lanes are mixed here, on the
-            // audio clock - the g_decoder worker pipes raw per-sender pcm via a MessagePort
+            // per-sender playback lanes: sender id -> its own jitter-buffered ring of interleaved stereo. a lane
+            // prebuffers to a target depth before it plays, grows the target when it underruns and shrinks it
+            // back (slipping excess) once the flow is stable; lanes are mixed here, on the audio clock
             this.lanes = new Map();
             this.pending_lane_gains = new Map(); // volume set before the lane's first pcm arrived
 
-            // ================================================================
-            //  AUDIO WORKLET TUNABLES  -  the per-sender jitter buffer.
-            // ----------------------------------------------------------------
-            //  THIS is what sets felt playback latency vs. smoothness on the
-            //  normal (worklet) path. TARGET_START is the delay each voice
-            //  adds before it starts playing - lower it for less latency,
-            //  raise it if choppy on bad networks. All values are in
-            //  interleaved-stereo floats: 48000 Hz x 2 ch = 96000 floats/sec,
-            //  so 1 ms = 96 floats and 60 ms = 5760 floats.
-            //  (The opus decode/PLC knobs are in audio-opus-glue.js under
-            //   "OPUS AUDIO TUNABLES".)
-            // ==============================================================
+            // AUDIO WORKLET TUNABLES: the per-sender jitter buffer, which sets felt latency vs. smoothness on
+            // the worklet path. TARGET_START is the delay each voice adds before it starts playing: lower it for
+            // less latency, raise it if choppy. values are interleaved-stereo floats (1 ms = 96, 60 ms = 5760)
             this.RING_SIZE = 65536;          // interleaved floats per lane (~680 ms), power of two
             this.RING_MASK = 65535;          // "index & mask" wraps cheaply (replaces % RING_SIZE)
             this.RING_HARD_CAP = 57600;      // ~600 ms; beyond this the oldest samples are dropped
@@ -204,7 +230,7 @@ function lemon_audio_worklet_scope()
                     return;
                 }
 
-                // the g_decoder worker's end of the direct pipe: per-sender pcm arrives here
+                // the decoder worker's end of the direct pipe: per-sender pcm arrives here
                 // from the worker thread without ever touching the main thread
                 if (event.data.type === "pipe")
                 {
@@ -432,18 +458,16 @@ function lemon_audio_worklet_scope()
         }
     }
 
-    // microphone capture processor: the mirror image of the player. the mic chain is connected
-    // INTO this node; every 128-frame quantum it appends the captured samples to a chunk of the
-    // same size the old ScriptProcessorNode delivered, and posts full chunks to the main thread,
-    // which forwards them to the opus g_encoder worker. push-to-talk gates it via "start"/"stop"
-    // port messages - while stopped, no pcm leaves the audio thread at all
+    // the microphone capture processor, the player's mirror image: the mic chain is connected into this node,
+    // every 128-frame quantum is appended to a chunk of the size the old ScriptProcessorNode delivered, and
+    // full chunks go to the main thread for the encoder worker. "start"/"stop" port messages gate it (push-to-talk)
     class LemonRecorderProcessor extends AudioWorkletProcessor
     {
         constructor(options)
         {
             super();
             // chunk size comes from the main thread (g_audio_config.codec.bufferSize) so the opus
-            // g_encoder worker sees identical input on both capture paths
+            // encoder worker sees identical input on both capture paths
             this.chunk_size = (options && options.processorOptions && options.processorOptions.chunk_size) ? options.processorOptions.chunk_size : 8192;
             this.chunk = new Float32Array(this.chunk_size);
             this.fill = 0;              // how many samples of the current chunk are filled
@@ -507,83 +531,82 @@ function lemon_audio_worklet_scope()
     registerProcessor("lemon-recorder-processor", LemonRecorderProcessor);
 }
 
-// creates the playback output node on audio_context: AudioWorkletNode when available, the old
-// ScriptProcessorNode otherwise. audioWorklet exists only in SECURE contexts (https, localhost,
-// 127.0.0.1) - a plain http page on a LAN ip does not have it - so the fallback is a real,
-// routinely exercised path, not an afterthought
-function create_audio_player_output()
+/**
+ * @brief creates the playback output node on the audio context: an AudioWorkletNode when available, the old ScriptProcessorNode otherwise
+ *        audioWorklet exists only in secure contexts (https, localhost, 127.0.0.1), so on a plain
+ *        http page on a lan ip the fallback is a real, routinely exercised path
+ *
+ * @return void
+ */
+function audio__create_audio_player_output()
 {
     // start from a clean state; this runs again on every fresh audio_context (reconnect)
-    g_is_audio_worklet_player_active = false;
-    g_audio_player_worklet_node = null;
-    g_is_microphone_worklet_active = false;
-    g_audio_worklet_module_promise = null;
+    is_audio_worklet_player_active = false;
+    audio_player_worklet_node = null;
+    is_microphone_worklet_active = false;
+    audio_worklet_module_promise = null;
 
-    // capability check: audioWorklet is simply absent outside secure contexts and in old browsers.
-    // NOTE: deliberately no "is it a file:// page" test here. loading the worklet module from a
-    // page opened straight from disk works in some chromium browsers (edge) and fails in others
-    // (chrome, depending on flags/policy), so this detects the ACTUAL failure below and falls
-    // back then - a blanket file:// rule would downgrade the browsers where it works fine
-    if (audio_context.audioWorklet == null || typeof AudioWorkletNode == "undefined")
+    // capability check: audioWorklet is absent outside secure contexts and in old browsers. deliberately no
+    // "is it a file:// page" test: loading the module from disk works in some chromium browsers (edge) and
+    // fails in others (chrome, by flags/policy), so the actual failure below decides and falls back then
+    if (g_audio_context.audioWorklet == null || typeof AudioWorkletNode == "undefined")
     {
         console.log("audioWorklet unavailable (needs a secure context: https or localhost); using ScriptProcessorNode playback");
-        create_script_processor_player();
+        audio__create_script_processor_player();
         return;
     }
 
     // the worklet must be loaded as a module from a url; stringify the scope function and wrap it
     // in "(...)();" so it executes on load - same trick as the web workers, keeps client.html one file
-    let worklet_code_url = URL.createObjectURL(new Blob(['(', lemon_audio_worklet_scope.toString(), ')();'], { type: 'application/javascript' }));
+    let worklet_code_url = URL.createObjectURL(new Blob(['(', audio__lemon_audio_worklet_scope.toString(), ')();'], { type: 'application/javascript' }));
 
-    // the promise is kept: the microphone capture node creation (which happens later, at mic
-    // permission time) chains on it to build its AudioWorkletNode from the same module.
-    // addModule can THROW instead of returning a rejected promise (a blocked url is rejected
-    // at call time): unguarded, that exception escapes this whole function and kills the rest
-    // of the audio_enabled handler - including the webrtc datachannel check that follows it
+    // the promise is kept: the microphone capture node (built later, at mic permission time) chains on it to
+    // use the same module. addModule can throw instead of rejecting (a blocked url fails at call time), and
+    // unguarded that exception would kill the rest of the audio_enabled handler, the datachannel check included
     try
     {
-        g_audio_worklet_module_promise = audio_context.audioWorklet.addModule(worklet_code_url);
+        audio_worklet_module_promise = g_audio_context.audioWorklet.addModule(worklet_code_url);
     }
     catch (add_module_threw)
     {
         console.log("audioWorklet.addModule threw (" + add_module_threw + "); using ScriptProcessorNode playback");
-        g_audio_worklet_module_promise = null;
-        create_script_processor_player();
+        audio_worklet_module_promise = null;
+        audio__create_script_processor_player();
         return;
     }
 
-    // addModule is async: while it loads, decoded chunks keep landing in g_audio_queue (see
-    // audio_player_write_chunk) and are handed over below once the node is up
-    g_audio_worklet_module_promise.then(function()
+    // addModule is async: while it loads, decoded chunks keep landing in audio_queue (see
+    // audio__audio_player_write_chunk) and are handed over below once the node is up
+    audio_worklet_module_promise.then(function()
     {
         // instantiate the registered processor: no inputs (we feed it via the port), one stereo output
-        g_audio_player_worklet_node = new AudioWorkletNode(audio_context, "lemon-player-processor", {
+        audio_player_worklet_node = new AudioWorkletNode(g_audio_context, "lemon-player-processor", {
             numberOfInputs: 0,
             numberOfOutputs: 1,
             outputChannelCount: [2]
         });
         // same output chain as the old player: node -> gain -> speakers
-        g_audio_player_worklet_node.connect(g_audio_player_gain_node);
-        g_is_audio_worklet_player_active = true;
+        audio_player_worklet_node.connect(g_audio_player_gain_node);
+        is_audio_worklet_player_active = true;
         console.log("playback: AudioWorkletNode active");
 
-        // hand over whatever buffered in g_audio_queue while the module was loading.
+        // hand over whatever buffered in audio_queue while the module was loading.
         // copy before transferring: read() returns a view into the queue's backing buffer
-        if (g_audio_queue.length() > 0)
+        if (audio_queue.length() > 0)
         {
-            let buffered_samples = new Float32Array(g_audio_queue.read(g_audio_queue.length()));
-            g_audio_player_worklet_node.port.postMessage({ type: "pcm", sender_id: g_PREMIXED_AUDIO_LANE_ID, pcm: buffered_samples }, [buffered_samples.buffer]);
+            let buffered_samples = new Float32Array(audio_queue.read(audio_queue.length()));
+            audio_player_worklet_node.port.postMessage({ type: "pcm", sender_id: PREMIXED_AUDIO_LANE_ID, pcm: buffered_samples }, [buffered_samples.buffer]);
         }
 
-        // direct pipe: g_decoder worker -> worklet. one end goes into the worklet, the other into
-        // the g_decoder worker; per-sender pcm then flows between the two threads with no
+        // direct pipe: decoder worker -> worklet. one end goes into the worklet, the other into
+        // the decoder worker; per-sender pcm then flows between the two threads with no
         // main-thread hop, and the worker stops its 20 ms mixing tick
         let direct_audio_pipe = new MessageChannel();
-        g_audio_player_worklet_node.port.postMessage({ type: "pipe", port: direct_audio_pipe.port2 }, [direct_audio_pipe.port2]);
+        audio_player_worklet_node.port.postMessage({ type: "pipe", port: direct_audio_pipe.port2 }, [direct_audio_pipe.port2]);
         g_opus_decoder_worker.postMessage({ type: "use_direct_worklet_pipe", port: direct_audio_pipe.port1 }, [direct_audio_pipe.port1]);
 
         // the worklet only ever answers a lane_stats request; it lands in the console
-        g_audio_player_worklet_node.port.onmessage = function(event)
+        audio_player_worklet_node.port.onmessage = function(event)
         {
             if (event.data != null && event.data.type === "lane_stats")
             {
@@ -592,68 +615,88 @@ function create_audio_player_output()
         };
 
         // a bot that was already listed before the node existed gets its deep-cushion lane too
-        audio_player_announce_music_bots();
+        audio__audio_player_announce_music_bots();
 
         // devtools: __LOG.lanes() prints every playback lane's depth and target
         if (global.__LOG != null)
         {
-            global.__LOG.lanes = audio_player_request_lane_stats;
+            global.__LOG.lanes = audio__audio_player_request_lane_stats;
         }
     }).catch(function(worklet_setup_error)
     {
-        // any setup failure (csp, quirky browser) lands on the old path instead of g_silence
+        // any setup failure (csp, quirky browser) lands on the old path instead of silence
         console.log("AudioWorklet setup failed (" + worklet_setup_error + "); using ScriptProcessorNode playback");
         console.warn("audio playback degraded to main-thread ScriptProcessorNode (higher latency)");
         // null it so the microphone path below takes its "no worklet" branch outright instead
         // of chaining onto a promise that is already rejected
-        g_audio_worklet_module_promise = null;
-        create_script_processor_player();
+        audio_worklet_module_promise = null;
+        audio__create_script_processor_player();
     });
 }
 
-// the legacy playback path: ScriptProcessorNode calls player_onaudioprocess on the MAIN thread,
-// which drains g_audio_queue - works everywhere, but stutters when the page is busy
-function create_script_processor_player()
+/**
+ * @brief the legacy playback path: a ScriptProcessorNode calling audio__player_onaudioprocess on the MAIN thread, which drains audio_queue
+ *        works everywhere, but stutters when the page is busy
+ *
+ * @return void
+ */
+function audio__create_script_processor_player()
 {
     // two output channels: the decode/mix pipeline delivers interleaved stereo
-    player = audio_context.createScriptProcessor(g_audio_config.codec.bufferSize, 1, 2);
-    player.onaudioprocess = player_onaudioprocess;
+    player = g_audio_context.createScriptProcessor(g_audio_config.codec.bufferSize, 1, 2);
+    player.onaudioprocess = audio__player_onaudioprocess;
     player.connect(g_audio_player_gain_node);
 }
 
-// single entry point for decoded PCM: worklet ring when active, g_audio_queue (ScriptProcessor
-// path, and the short window while the worklet module is still loading) otherwise
-function audio_player_write_chunk(pcm_chunk)
+/**
+ * @brief the single entry point for decoded pcm: the worklet's pre-mixed lane when active, audio_queue otherwise (the ScriptProcessor path, and the short window while the worklet module is still loading)
+ *
+ * @param Float32Array pcm_chunk -> interleaved stereo samples, transferred to the audio thread when the worklet takes them
+ *
+ * @return void
+ */
+function audio__audio_player_write_chunk(pcm_chunk)
 {
-    if (g_is_audio_worklet_player_active == true)
+    if (is_audio_worklet_player_active == true)
     {
         // pre-mixed audio goes into the worklet's dedicated low-latency lane; the buffer is
         // transferred to the audio thread instead of copied
-        g_audio_player_worklet_node.port.postMessage({ type: "pcm", sender_id: g_PREMIXED_AUDIO_LANE_ID, pcm: pcm_chunk }, [pcm_chunk.buffer]);
+        audio_player_worklet_node.port.postMessage({ type: "pcm", sender_id: PREMIXED_AUDIO_LANE_ID, pcm: pcm_chunk }, [pcm_chunk.buffer]);
     }
     else
     {
         // ScriptProcessor path - and the short window while the worklet module is still loading
-        g_audio_queue.write(pcm_chunk);
+        audio_queue.write(pcm_chunk);
     }
 }
 
-// per-user playback volume (1.0 = unchanged, 0.5 = half, 0 = silent), applied per sender at the
-// mix inside the player worklet. worklet mode only: the ScriptProcessorNode fallback receives
-// already-mixed audio, so individual volumes cannot apply there
-function set_client_playback_volume(client_id, volume)
+/**
+ * @brief per-user playback volume, applied per sender at the mix inside the player worklet
+ *        worklet mode only: the ScriptProcessorNode fallback receives already-mixed audio, so
+ *        individual volumes cannot apply there
+ *
+ * @param number client_id -> the sender
+ * @param number volume -> 1.0 unchanged, 0.5 half, 0 silent
+ *
+ * @return void
+ */
+function audio__set_client_playback_volume(client_id, volume)
 {
-    if (g_is_audio_worklet_player_active == true && g_audio_player_worklet_node != null)
+    if (is_audio_worklet_player_active == true && audio_player_worklet_node != null)
     {
-        g_audio_player_worklet_node.port.postMessage({ type: "gain", sender_id: client_id, value: volume });
+        audio_player_worklet_node.port.postMessage({ type: "gain", sender_id: client_id, value: volume });
     }
 }
 
-// tells the player worklet which senders are music bots, so their lanes get the deep cushion the
-// server's lead fills. called whenever the client list changes; the worklet keeps the latest set
-function audio_player_announce_music_bots()
+/**
+ * @brief tells the player worklet which senders are music bots, so their lanes get the deep cushion the server's lead fills
+ *        called whenever the client list changes; the worklet keeps the latest set
+ *
+ * @return void
+ */
+function audio__audio_player_announce_music_bots()
 {
-    if (g_is_audio_worklet_player_active != true || g_audio_player_worklet_node == null)
+    if (is_audio_worklet_player_active != true || audio_player_worklet_node == null)
     {
         return;
     }
@@ -667,93 +710,122 @@ function audio_player_announce_music_bots()
         }
     }
 
-    g_audio_player_worklet_node.port.postMessage({ type: "music_bot_senders", ids: bot_ids });
+    audio_player_worklet_node.port.postMessage({ type: "music_bot_senders", ids: bot_ids });
 }
 
-// asks the worklet for a snapshot of every lane (depth and target); the answer is logged
-function audio_player_request_lane_stats()
+/**
+ * @brief asks the worklet for a snapshot of every lane (depth and target); the answer is logged
+ *
+ * @return void
+ */
+function audio__audio_player_request_lane_stats()
 {
-    if (g_is_audio_worklet_player_active == true && g_audio_player_worklet_node != null)
+    if (is_audio_worklet_player_active == true && audio_player_worklet_node != null)
     {
-        g_audio_player_worklet_node.port.postMessage({ type: "lane_stats" });
+        audio_player_worklet_node.port.postMessage({ type: "lane_stats" });
     }
 }
 
-// flushes all buffered playback (used on channel switch, so old channel audio stops instantly)
-function audio_player_clear()
+/**
+ * @brief flushes all buffered playback, used on a channel switch so old channel audio stops instantly
+ *
+ * @return void
+ */
+function audio__audio_player_clear()
 {
-    g_audio_queue.clear();
+    audio_queue.clear();
 
-    if (g_is_audio_worklet_player_active == true)
+    if (is_audio_worklet_player_active == true)
     {
-        g_audio_player_worklet_node.port.postMessage("clear");
+        audio_player_worklet_node.port.postMessage("clear");
     }
 }
 
-// creates the microphone capture node: AudioWorkletNode (capture runs on the audio thread,
-// immune to main-thread jank that used to chop OUTGOING audio) when the worklet module loaded,
-// ScriptProcessorNode otherwise. wires the capture graph either way
-function create_microphone_capture_node()
+/**
+ * @brief creates the microphone capture node and wires the capture graph
+ *        an AudioWorkletNode (capture runs on the audio thread, immune to the main-thread jank that
+ *        used to chop OUTGOING audio) when the worklet module loaded, a ScriptProcessorNode otherwise
+ *
+ * @return void
+ */
+function audio__create_microphone_capture_node()
 {
     // no worklet support on this context (insecure context / old browser): old path immediately
-    if (g_audio_worklet_module_promise == null)
+    if (audio_worklet_module_promise == null)
     {
-        create_script_processor_recorder();
+        audio__create_script_processor_recorder();
         return;
     }
 
-    // the module load was started by create_audio_player_output; chain on it
-    g_audio_worklet_module_promise.then(function()
+    // the module load was started by audio__create_audio_player_output; chain on it
+    audio_worklet_module_promise.then(function()
     {
-        // chunk_size 1920 = 40 ms at 48 kHz (two opus frames): captured voice reaches the g_encoder
-        // within 40 ms instead of sitting up to 171 ms in an 8192-sample buffer. the g_encoder
-        // frames internally, so any chunk size is legal - 40 ms balances latency against
-        // message rate (25 posts/s; 960 would halve the latency at double the traffic)
-        g_microphone_recorder = new AudioWorkletNode(audio_context, "lemon-recorder-processor", {
+        // chunk_size 1920 = 40 ms at 48 kHz (two opus frames): captured voice reaches the encoder within 40 ms
+        // instead of up to 171 ms in an 8192-sample buffer. the encoder frames internally, so any size is
+        // legal; 40 ms balances latency against message rate (25 posts/s; 960 halves the latency at double the traffic)
+        g_microphone_recorder = new AudioWorkletNode(g_audio_context, "lemon-recorder-processor", {
             numberOfInputs: 1,
             numberOfOutputs: 1,
             outputChannelCount: [1],
             processorOptions: { chunk_size: 1920 }
         });
 
-        // captured chunks arrive here from the audio thread and go on to the opus g_encoder
+        // captured chunks arrive here from the audio thread and go on to the opus encoder
         g_microphone_recorder.port.onmessage = function(event)
         {
-            process_captured_microphone_pcm(event.data);
+            audio__process_captured_microphone_pcm(event.data);
         };
 
-        g_is_microphone_worklet_active = true;
+        is_microphone_worklet_active = true;
         console.log("microphone capture: AudioWorkletNode active");
-        wire_microphone_capture_graph();
+        audio__wire_microphone_capture_graph();
     }).catch(function(recorder_worklet_error)
     {
         console.log("recorder worklet setup failed (" + recorder_worklet_error + "); using ScriptProcessorNode capture");
-        create_script_processor_recorder();
+        audio__create_script_processor_recorder();
     });
 }
 
-function create_script_processor_recorder()
+/**
+ * @brief the legacy capture path: a 2048-sample ScriptProcessorNode (~43 ms per callback), then the capture graph
+ *        ScriptProcessor buffer sizes must be powers of two, so 960 is not available here
+ *
+ * @return void
+ */
+function audio__create_script_processor_recorder()
 {
-    g_is_microphone_worklet_active = false;
+    is_microphone_worklet_active = false;
     // 2048 samples = ~43 ms per callback (was 8192 = 171 ms of built-in send latency);
     // ScriptProcessor buffer sizes must be powers of two, so 960 is not available here
-    g_microphone_recorder = audio_context.createScriptProcessor(2048, 1, 1);
-    wire_microphone_capture_graph();
+    g_microphone_recorder = g_audio_context.createScriptProcessor(2048, 1, 1);
+    audio__wire_microphone_capture_graph();
 }
 
-// mic -> gain -> capture node -> destination. the capture node must reach the destination or
-// the graph never pulls samples through it; it only ever outputs zeros, so nothing is audible
-function wire_microphone_capture_graph()
+/**
+ * @brief mic -> gain -> capture node -> destination
+ *        the capture node must reach the destination or the graph never pulls samples through it;
+ *        it only ever outputs zeros, so nothing is audible
+ *
+ * @return void
+ */
+function audio__wire_microphone_capture_graph()
 {
     g_audio_input.connect(g_audio_recorder_gain_node);
     g_audio_recorder_gain_node.connect(g_microphone_recorder);
-    g_microphone_recorder.connect(audio_context.destination);
+    g_microphone_recorder.connect(g_audio_context.destination);
 }
 
-// push-to-talk gate for whichever capture node is in use: the worklet is told to start/stop
-// over its port (no pcm crosses threads while muted), the ScriptProcessorNode gets its callback
-// assigned/removed like before. safe to call before the capture node exists (does nothing)
-function set_microphone_capture_active(is_active)
+/**
+ * @brief the push-to-talk gate for whichever capture node is in use
+ *        the worklet is told to start/stop over its port (no pcm crosses threads while muted), the
+ *        ScriptProcessorNode gets its callback assigned or removed; the encoder's pending input is
+ *        flushed on both edges. safe to call before the capture node exists (does nothing)
+ *
+ * @param boolean is_active -> true to let pcm flow
+ *
+ * @return void
+ */
+function audio__set_microphone_capture_active(is_active)
 {
     if (g_microphone_recorder == null)
     {
@@ -767,29 +839,37 @@ function set_microphone_capture_active(is_active)
         g_opus_encoder_worker.postMessage({ type: "clear_opus_encoder_buffer" });
     }
 
-    if (g_is_microphone_worklet_active == true)
+    if (is_microphone_worklet_active == true)
     {
         g_microphone_recorder.port.postMessage(is_active ? "start" : "stop");
     }
     else
     {
-        g_microphone_recorder.onaudioprocess = is_active ? recorder_onaudioprocess : null;
+        g_microphone_recorder.onaudioprocess = is_active ? audio__recorder_onaudioprocess : null;
     }
 }
 
-function player_onaudioprocess(e)
+/**
+ * @brief the ScriptProcessorNode playback callback: fills the output channels from the interleaved queue, zeros on underrun
+ *        runs constantly while audio is active, so nothing unnecessary (no html work) belongs in it
+ *
+ * @param object e -> the AudioProcessingEvent
+ *
+ * @return void
+ */
+function audio__player_onaudioprocess(e)
 {
     // this function is constantly being run if audio is active
     // do not put any unnseceray code in it, unnsesecary=dealing with html elements
-    // same as recorder_onaudioprocess
+    // same as audio__recorder_onaudioprocess
 
     let left_channel = e.outputBuffer.getChannelData(0);
     let right_channel = e.outputBuffer.getChannelData(1);
 
-    if (g_audio_queue.length())
+    if (audio_queue.length())
     {
         // the queue holds interleaved stereo (L R L R), two floats per output frame
-        let interleaved = g_audio_queue.read(g_audio_config.codec.bufferSize * 2);
+        let interleaved = audio_queue.read(g_audio_config.codec.bufferSize * 2);
         let frame_count = interleaved.length >> 1;
 
         for (let i = 0; i < frame_count; i++)
@@ -812,16 +892,27 @@ function player_onaudioprocess(e)
     }
 }
 
-// ScriptProcessorNode capture fallback: runs on the MAIN thread; the worklet path delivers the
-// same chunks through the capture node's port instead. both feed process_captured_microphone_pcm
-function recorder_onaudioprocess(event)
+/**
+ * @brief the ScriptProcessorNode capture fallback, on the MAIN thread; the worklet path delivers the same chunks through the capture node's port instead
+ *        both feed audio__process_captured_microphone_pcm
+ *
+ * @param object event -> the AudioProcessingEvent
+ *
+ * @return void
+ */
+function audio__recorder_onaudioprocess(event)
 {
-    process_captured_microphone_pcm(event.inputBuffer.getChannelData(0));
+    audio__process_captured_microphone_pcm(event.inputBuffer.getChannelData(0));
 }
 
-// one chunk of captured microphone pcm (bufferSize mono samples), from either capture path;
-// checks the datachannel is usable, then hands the samples to the opus g_encoder worker
-function process_captured_microphone_pcm(webaudio_captured_bytes)
+/**
+ * @brief one chunk of captured microphone pcm from either capture path: checks the datachannel is usable, then hands the samples to the opus encoder worker
+ *
+ * @param Float32Array webaudio_captured_bytes -> mono samples
+ *
+ * @return void
+ */
+function audio__process_captured_microphone_pcm(webaudio_captured_bytes)
 {
     if (typeof (g_datachannel) == 'undefined')
     {

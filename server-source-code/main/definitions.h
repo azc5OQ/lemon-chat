@@ -113,7 +113,7 @@ int mytypedef__check_data_types_for_consistency(void);
 #define CHANNEL_NAME_MAX_LENGTH 128
 #define SONG_NAME_MAX_LENGTH 512
 #define TAG_MAX_NAME_LENGTH 32
-#define ICON_MAX_LENGTH 8192
+#define ICON_MAX_LENGTH 40960 // base64 of a 30000-byte icon with its data-url prefix; the ceiling behind icon_max_size_bytes
 #define SHARED_SECRET_LENGTH 3000 // a DH value (shared secret or public mix) is < the modulus; an 8192-bit modulus is 2467 decimal digits, so this must exceed ~2468
 #define UNAUTH_HANDSHAKE_MAX_LENGTH (SHARED_SECRET_LENGTH + MAX_PUBLIC_KEY_LENGTH + 256)  // public_key_info = DH public mix (< SHARED_SECRET_LENGTH) + RSA public key (< MAX_PUBLIC_KEY_LENGTH) + JSON scaffolding
 #define MAX_TAGS_PER_USER 32
@@ -217,6 +217,7 @@ typedef struct server_settings
     boole allow_typing_indicator;  // clients may tell the people they are writing to that they are typing ("x is typing ..."). carries no message content, only who is typing and where; editable in the server settings tab; default off
     boole allow_client_renames;  // users may rename themselves after connecting; when off a rename request is silently ignored, because the switch is meant against name games - an admin still renames freely; default on
     int64 avatar_max_size_bytes;  // largest accepted raw image size (bytes) for an avatar; larger uploads are silently dropped
+    int64 icon_max_size_bytes;  // largest accepted raw image size (bytes) for a tag/channel icon, 1000-30000; editable in the server settings tab
     uint64 chat_cooldown_milliseconds;
     uint64 join_channel_request_cooldown_milliseconds;
     uint64 delete_channel_request_cooldown_milliseconds;
@@ -424,7 +425,7 @@ typedef struct icon_t
 {
     boole is_existing;
     uint64 id;
-    char base64[ICON_MAX_LENGTH];
+    char* base64; // heap (MEMALLOC_ICON), NUL-terminated data url; NULL while the slot is free
 } icon_t;
 
 // if someone wishes to use just chat without tags, make it possible to disable it
@@ -488,7 +489,8 @@ typedef enum memory_manager_allocation_type_e
     MEMALLOC_AVATAR,
     MEMALLOC_OFFLINE_MESSAGE,
     MEMALLOC_OFFLINE_MESSAGES_ARRAY,
-    MEMALLOC_ADMIN_LOG
+    MEMALLOC_ADMIN_LOG,
+    MEMALLOC_ICON
 } memory_manager_allocation_type_e;
 
 typedef struct webrtc_peer_t

@@ -1,7 +1,6 @@
-// ui sound effects, split out of main.js: 14 short ogg clips embedded as data
-// urls. asset data only - the play() calls live in main.js and ui.js
-
-var g_sound_effects = null;
+// sounds.js is embedded in template.html along with the other client files
+// it is the asset data for the ui sound effects: 14 short ogg clips as data urls, filled into
+// g_sound_effects at load; the play() calls live in main.js, ui.js and dispatch.js
 
 if (typeof window != 'undefined')
 {
@@ -23,9 +22,13 @@ if (typeof window != 'undefined')
     };
 }
 
-// applies the current sound-effects toggle to every clip's muted flag. authoritative:
-// even a play() that skipped the g_are_sound_effects_enabled check stays silent
-function apply_sound_effects_muted()
+/**
+ * @brief applies the sound-effects toggle to every clip's muted flag
+ *        authoritative: even a play() that skipped the g_are_sound_effects_enabled check stays silent
+ *
+ * @return void
+ */
+function sounds__apply_sound_effects_muted()
 {
     if (g_sound_effects == null) { return; }
     let muted = (g_are_sound_effects_enabled == false);

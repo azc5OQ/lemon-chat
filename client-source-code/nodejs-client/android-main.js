@@ -59,7 +59,7 @@ function tee_to_file(line)
 });
 
 // last-resort containment: node::Start works once per process, so an uncaught throw would leave a
-// permanently dead runtime. dispatch_safely (main.js) contains per-message throws; this catches
+// permanently dead runtime. android_host__dispatch_safely contains per-message throws; this catches
 // the rest. log and keep the loop alive.
 process.on("uncaughtException", function(error)
 {

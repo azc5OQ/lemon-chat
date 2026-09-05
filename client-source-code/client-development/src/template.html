@@ -84,10 +84,9 @@
     </style>
 
     <script type="text/javascript">
-/* @@INCLUDE: scripts/app/utils.js @@ */
 /* @@INCLUDE: scripts/vendor/aes-js.js @@ */
-/* @@INCLUDE: scripts/app/encoding.js @@ */
-/* @@INCLUDE: scripts/app/platform-detection.js @@ */
+/* @@INCLUDE: scripts/app/utils.js @@ */
+/* @@INCLUDE: scripts/app/globals.js @@ */
 /* @@INCLUDE: scripts/vendor/sha256.js @@ */
 /* @@INCLUDE: scripts/vendor/js-sha256.js @@ */
 /* @@INCLUDE: scripts/vendor/libopus.emscripten.js @@ */
@@ -101,9 +100,17 @@
 /* @@INCLUDE: scripts/app/messages.js @@ */
 /* @@INCLUDE: scripts/app/ui.js @@ */
 /* @@INCLUDE: scripts/app/chat-files.js @@ */
-/* @@INCLUDE: scripts/app/node-runtime.js @@ */
-/* @@INCLUDE: scripts/app/connection-driver.js @@ */
-/* @@INCLUDE: scripts/app/android-webview.js @@ */
+/* @@INCLUDE: scripts/app/android-host.js @@ */
+/* @@INCLUDE: scripts/app/connection.js @@ */
+/* @@INCLUDE: scripts/app/workers.js @@ */
+/* @@INCLUDE: scripts/app/console-log.js @@ */
+/* @@INCLUDE: scripts/app/keys.js @@ */
+/* @@INCLUDE: scripts/app/channel-tree.js @@ */
+/* @@INCLUDE: scripts/app/chat.js @@ */
+/* @@INCLUDE: scripts/app/layout.js @@ */
+/* @@INCLUDE: scripts/app/voice.js @@ */
+/* @@INCLUDE: scripts/app/server-settings-tab.js @@ */
+/* @@INCLUDE: scripts/app/dispatch.js @@ */
 /* @@INCLUDE: scripts/app/main.js @@ */
     </script>
 
@@ -190,6 +197,10 @@
                             </select>
                             <div id="server-settings-blocked-countries-list"></div>
                         </div>
+                        <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>max size of a tag or channel icon (bytes, 1000-30000)</span>
+                            <input type="number" min="1000" max="30000" step="1" id="server-settings-general-icon-max-size-input">
+                        </label>
 
                         <p class="server-settings-general-subheader">chat</p>
                         <label class="server-settings-general-row">
@@ -396,6 +407,13 @@
                             <span class="local-settings-hint">sends the eye back, so people can see you have read their private message</span>
                         </span>
                         <input type="checkbox" id="local-settings-send-seen">
+                    </label>
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">auto-scroll to the end</span>
+                            <span class="local-settings-hint">a new message scrolls the chat down; off keeps your place while you read older messages</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-auto-scroll">
                     </label>
                     <label class="local-settings-row">
                         <span class="local-settings-text">

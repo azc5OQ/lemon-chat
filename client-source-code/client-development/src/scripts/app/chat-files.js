@@ -1,50 +1,22 @@
 // chat-files.js is a file that is embedded in template.html along with other files
 // it facilitates functionality for uploading and receiving all kinds of files from the local filesystem
-// its functions are called from three other files in the lemon chat client, main.js (crypto and setup) and messages.js (receiving and rendering) and ui.js (attach functionality)
+// its functions are called from three other files in the lemon chat client, chat.js (sending and the upload lock), messages.js (receiving and rendering) and ui.js (attach functionality)
 // the encryption mechanism for files in a channel mirrors the channel encryption mechanism of lemon chat; 
 // files sent directly to a user mirror the direct chat message encryption mechanism
 
-// whether the server allows file uploads and how big they may be. the server announces both
-// in authentication_status; uploads stay off until it does
-var g_file_uploads_allowed = false;
-var g_file_upload_max_bytes = 10 * 1024 * 1024;
-
 // above this limit the server settings tab shows a warning, because one transfer holds
 // roughly twice the file size in ram
-var G_FILE_UPLOAD_WARNING_MB = 20;
-
-// the file the user attached but has not sent yet, as { name, size, mime, base64 }
-var g_pending_chat_file = null;
-
-// decrypted files stored by card key, which is the server message id, or "local-N" for our own echo
-// they live here because the download button should not carry megabytes in a dom attribute
-var g_chat_files_by_message_id = {};
-
-// transfers that are currently being received, stored by file id. encrypted_size is the total
-// the progress ring divides by
-var g_chat_file_transfers = {};
+var FILE_UPLOAD_WARNING_MB = 20;
 
 // used only in the worker. it remembers the key set that decrypted a file's header, so the
 // body (up to 20 MB) is not tried against every historic key set
-var g_chat_file_keys_by_file_id = {};
+var chat_file_keys_by_file_id = {};
 
 // the circumference of the progress ring (radius 15.5). stroke-dashoffset counts down from this value
-var G_CHAT_FILE_RING_LENGTH = 97.4;
-
-// the size limit for inline pictures. the server announces its own value on join and on settings
-// change; 4 MB stands until it does. bigger images can still travel as plain files
-var g_chat_picture_max_bytes = 4 * 1024 * 1024;
-
-// whether inline pictures are allowed. they are on until the server announces the admin switched them off
-var g_chat_pictures_allowed = true;
-
-// the server refuses uploads of 4096 base64 characters or less, so file bodies are padded up to
-// this many plaintext bytes, which encodes to 5462 characters. without the padding a small file
-// would be refused without a word
-var G_CHAT_FILE_BODY_MIN_PADDED_BYTES = 4096;
+var CHAT_FILE_RING_LENGTH = 97.4;
 
 // maps file extensions to an icon kind. the kind picks the badge colour of the file icon in layout.style
-var G_CHAT_FILE_KINDS = {
+var CHAT_FILE_KINDS = {
     archive: ["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz", "iso"],
     pdf: ["pdf"],
     document: ["doc", "docx", "odt", "rtf", "txt", "md", "epub"],
@@ -58,19 +30,24 @@ var G_CHAT_FILE_KINDS = {
 };
 
 // the extensions the picture picker accepts. anything else dropped on the chat is sent as a file
-var G_CHAT_PICTURE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "ico", "webp", "bmp", "svg", "avif"];
+var CHAT_PICTURE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "ico", "webp", "bmp", "svg", "avif"];
 
 // ---------------------------------------------------------------------------
 // base64 and crypto helpers. these run in the page, in the workers and in the node client
 // ---------------------------------------------------------------------------
 
-// converts bytes to base64 with the native btoa, because it is about 100 times faster than
-// bytesToBase64String and that matters at 20 MB
-function fast_bytes_to_base64(bytes)
+/**
+ * @brief bytes -> base64 with the native btoa, about 100 times faster than utils__bytesToBase64String, which matters at 20 MB
+ *
+ * @param Uint8Array bytes -> the bytes
+ *
+ * @return string the base64 text
+ */
+function chat_files__fast_bytes_to_base64(bytes)
 {
     if (typeof btoa !== "function")
     {
-        return bytesToBase64String(bytes);
+        return utils__bytesToBase64String(bytes);
     }
 
     let chunks = [];
@@ -84,12 +61,18 @@ function fast_bytes_to_base64(bytes)
     return btoa(chunks.join(""));
 }
 
-// converts base64 back to bytes. it throws on malformed base64, because atob does; the callers catch that
-function fast_base64_to_bytes(base64_string)
+/**
+ * @brief base64 -> bytes with the native atob; throws on malformed base64, because atob does, and the callers catch that
+ *
+ * @param string base64_string -> the base64 text
+ *
+ * @return Uint8Array the bytes
+ */
+function chat_files__fast_base64_to_bytes(base64_string)
 {
     if (typeof atob !== "function")
     {
-        return new Uint8Array(base64StringToBytes(base64_string));
+        return new Uint8Array(utils__base64StringToBytes(base64_string));
     }
 
     let binary = atob(base64_string);
@@ -103,10 +86,16 @@ function fast_base64_to_bytes(base64_string)
     return bytes;
 }
 
-// encrypts a string the same way pictures are encrypted: utf8 bytes, zero padding, aes-ctr with
-// every key, then base64. minimum_padded_bytes defaults to the picture path's 1024; file bodies
-// pass G_CHAT_FILE_BODY_MIN_PADDED_BYTES so they clear the server's minimum upload size
-function encrypt_string_with_aes_keys_fast(keys, string_to_encrypt, minimum_padded_bytes)
+/**
+ * @brief encrypts a string the way pictures are encrypted: utf8 bytes, zero padding, aes-ctr with every key, then base64
+ *
+ * @param array keys -> the key layers, each with key_bytes and iv_bytes
+ * @param string string_to_encrypt -> the plaintext
+ * @param number minimum_padded_bytes -> the padding floor; defaults to the picture path's 1024, file bodies pass CHAT_FILE_BODY_MIN_PADDED_BYTES to clear the server's minimum upload size
+ *
+ * @return string the base64 ciphertext
+ */
+function chat_files__encrypt_string_with_aes_keys_fast(keys, string_to_encrypt, minimum_padded_bytes)
 {
     let padding_floor = (typeof minimum_padded_bytes === "number") ? minimum_padded_bytes : 1024;
     let bytes = aesjs.utils.utf8.toBytes(string_to_encrypt);
@@ -126,17 +115,24 @@ function encrypt_string_with_aes_keys_fast(keys, string_to_encrypt, minimum_padd
         data = aes_ctr.encrypt(data);
     }
 
-    return fast_bytes_to_base64(data);
+    return chat_files__fast_bytes_to_base64(data);
 }
 
-// decrypts what encrypt_string_with_aes_keys_fast produced. returns null when the base64 is malformed
-function decrypt_base64_with_aes_keys_fast(keys, base64_string)
+/**
+ * @brief decrypts what chat_files__encrypt_string_with_aes_keys_fast produced
+ *
+ * @param array keys -> the key layers, each with key_bytes and iv_bytes
+ * @param string base64_string -> the base64 ciphertext
+ *
+ * @return string|null the plaintext cut at the first null, null when the base64 is malformed
+ */
+function chat_files__decrypt_base64_with_aes_keys_fast(keys, base64_string)
 {
     let data = null;
 
     try
     {
-        data = fast_base64_to_bytes(base64_string);
+        data = chat_files__fast_base64_to_bytes(base64_string);
     }
     catch (decode_error)
     {
@@ -149,11 +145,15 @@ function decrypt_base64_with_aes_keys_fast(keys, base64_string)
         data = aes_ctr.decrypt(data);
     }
 
-    return substringByNullTerminator(new TextDecoder().decode(data));
+    return utils__substringByNullTerminator(new TextDecoder().decode(data));
 }
 
-// creates four fresh random aes-ctr keys, the key set a direct message envelope uses
-function create_random_message_keys()
+/**
+ * @brief four fresh random aes-ctr keys, the key set a direct message envelope uses
+ *
+ * @return array the keys as [{ key_bytes, iv_bytes }]
+ */
+function chat_files__create_random_message_keys()
 {
     let keys = [];
 
@@ -168,12 +168,18 @@ function create_random_message_keys()
     return keys;
 }
 
-// builds the direct chat envelope as a json string. message_keys carries the aes keys encrypted
-// with the receiver's rsa key, message_value carries the aes encrypted plaintext. returns null
-// when the receiver's public key is unusable
-function create_direct_chat_file_envelope(receiver_public_key, plaintext, minimum_padded_bytes)
+/**
+ * @brief builds the direct chat envelope: message_keys carries the aes keys encrypted with the receiver's rsa key, message_value the aes-encrypted plaintext
+ *
+ * @param string receiver_public_key -> the receiver's public key string
+ * @param string plaintext -> the text to wrap
+ * @param number minimum_padded_bytes -> the padding floor, see chat_files__encrypt_string_with_aes_keys_fast
+ *
+ * @return string|null the envelope as json, null when the receiver's public key is unusable
+ */
+function chat_files__create_direct_chat_file_envelope(receiver_public_key, plaintext, minimum_padded_bytes)
 {
-    let keys = create_random_message_keys();
+    let keys = chat_files__create_random_message_keys();
     let encryption_result = lemon_crypto.encrypt(JSON.stringify(keys), receiver_public_key);
 
     if (encryption_result == null || encryption_result.status != "success")
@@ -183,13 +189,18 @@ function create_direct_chat_file_envelope(receiver_public_key, plaintext, minimu
 
     return JSON.stringify({
         message_keys: encryption_result.cipher,
-        message_value: encrypt_string_with_aes_keys_fast(keys, plaintext, minimum_padded_bytes)
+        message_value: chat_files__encrypt_string_with_aes_keys_fast(keys, plaintext, minimum_padded_bytes)
     });
 }
 
-// opens a direct envelope with our own rsa key. returns the decrypted plaintext, or null when
-// anything about the envelope is wrong
-function open_direct_chat_file_envelope(envelope_json_string)
+/**
+ * @brief opens a direct envelope with our own rsa key
+ *
+ * @param string envelope_json_string -> the envelope as json
+ *
+ * @return string|null the plaintext, null when anything about the envelope is wrong
+ */
+function chat_files__open_direct_chat_file_envelope(envelope_json_string)
 {
     let envelope = null;
 
@@ -225,12 +236,17 @@ function open_direct_chat_file_envelope(envelope_json_string)
         return null;
     }
 
-    return decrypt_base64_with_aes_keys_fast(keys, envelope.message_value);
+    return chat_files__decrypt_base64_with_aes_keys_fast(keys, envelope.message_value);
 }
 
-// returns the channel key sets a file could be encrypted with: the hinted set first, then the
-// current channel keys, then the historic ones
-function get_channel_key_candidates(hinted_keys)
+/**
+ * @brief the channel key sets a file could be encrypted with: the hinted set first, then the current channel keys, then the historic ones
+ *
+ * @param array|null hinted_keys -> the set that worked before, or null
+ *
+ * @return array the key sets to try, in that order
+ */
+function chat_files__get_channel_key_candidates(hinted_keys)
 {
     let candidates = [];
 
@@ -239,9 +255,9 @@ function get_channel_key_candidates(hinted_keys)
         candidates.push(hinted_keys);
     }
 
-    if (current_channel_keys != null && current_channel_keys !== hinted_keys)
+    if (g_current_channel_keys != null && g_current_channel_keys !== hinted_keys)
     {
-        candidates.push(current_channel_keys);
+        candidates.push(g_current_channel_keys);
     }
 
     for (let i = 0; i < g_historic_keys_of_current_channel.length; i++)
@@ -255,19 +271,26 @@ function get_channel_key_candidates(hinted_keys)
     return candidates;
 }
 
-// runs in the worker. it decrypts the header of a channel file into { name, size, mime }, or null,
-// and remembers the key set that worked so the body can use it directly
-function decrypt_channel_chat_file_header(file_id, header_base64)
+/**
+ * @brief decrypts the header of a channel file, trying every candidate key set, and remembers the one that worked so the body can use it directly
+ *        runs in the worker
+ *
+ * @param number file_id -> the transfer
+ * @param string header_base64 -> the encrypted header
+ *
+ * @return object|null { name, size, mime }, null when no key set fits
+ */
+function chat_files__decrypt_channel_chat_file_header(file_id, header_base64)
 {
-    let candidates = get_channel_key_candidates(null);
+    let candidates = chat_files__get_channel_key_candidates(null);
 
     for (let i = 0; i < candidates.length; i++)
     {
-        let header = parse_chat_file_header(decrypt_base64_with_aes_keys_fast(candidates[i], header_base64));
+        let header = chat_files__parse_chat_file_header(chat_files__decrypt_base64_with_aes_keys_fast(candidates[i], header_base64));
 
         if (header != null)
         {
-            g_chat_file_keys_by_file_id[file_id] = candidates[i];
+            chat_file_keys_by_file_id[file_id] = candidates[i];
             return header;
         }
     }
@@ -275,16 +298,24 @@ function decrypt_channel_chat_file_header(file_id, header_base64)
     return null;
 }
 
-// runs in the worker. it decrypts the body of a channel file into { name, size, mime, base64 }, or null
-function decrypt_channel_chat_file_body(file_id, body_base64)
+/**
+ * @brief decrypts the body of a channel file with the key set the header found, else every candidate
+ *        runs in the worker
+ *
+ * @param number file_id -> the transfer
+ * @param string body_base64 -> the encrypted body
+ *
+ * @return object|null { name, size, mime, base64 }, null when no key set fits
+ */
+function chat_files__decrypt_channel_chat_file_body(file_id, body_base64)
 {
-    let candidates = get_channel_key_candidates(g_chat_file_keys_by_file_id[file_id]);
+    let candidates = chat_files__get_channel_key_candidates(chat_file_keys_by_file_id[file_id]);
 
-    delete g_chat_file_keys_by_file_id[file_id];
+    delete chat_file_keys_by_file_id[file_id];
 
     for (let i = 0; i < candidates.length; i++)
     {
-        let file = parse_decrypted_chat_file_body(decrypt_base64_with_aes_keys_fast(candidates[i], body_base64));
+        let file = chat_files__parse_decrypted_chat_file_body(chat_files__decrypt_base64_with_aes_keys_fast(candidates[i], body_base64));
 
         if (file != null)
         {
@@ -299,22 +330,39 @@ function decrypt_channel_chat_file_body(file_id, body_base64)
 // the shapes that travel over the wire
 // ---------------------------------------------------------------------------
 
-// builds the header json that travels encrypted in the metadata. it carries enough to draw the
-// file card before the body arrives
-function build_chat_file_header_json(file)
+/**
+ * @brief the header json that travels encrypted in the metadata; it carries enough to draw the file card before the body arrives
+ *
+ * @param object file -> { name, size, mime }
+ *
+ * @return string the json
+ */
+function chat_files__build_chat_file_header_json(file)
 {
     return JSON.stringify({ name: file.name, size: file.size, mime: file.mime });
 }
 
-// builds the body json that travels encrypted in the 400-part upload
-function build_chat_file_body_json(file)
+/**
+ * @brief the body json that travels encrypted in the 400-part upload
+ *
+ * @param object file -> { name, size, mime, base64 }
+ *
+ * @return string the json
+ */
+function chat_files__build_chat_file_body_json(file)
 {
     return JSON.stringify({ name: file.name, size: file.size, mime: file.mime, data: file.base64 });
 }
 
-// parses a decrypted header or body. returns null when the text is not one, because decrypting
-// with a wrong key produces noise instead of json
-function parse_chat_file_json(text)
+/**
+ * @brief parses a decrypted header or body, sanitising the name and the mime type
+ *        decrypting with a wrong key produces noise instead of json, so anything that is not one is null
+ *
+ * @param string text -> the decrypted text
+ *
+ * @return object|null the parsed object, null when the text is not a file json
+ */
+function chat_files__parse_chat_file_json(text)
 {
     if (typeof text !== "string" || text.charAt(0) !== "{")
     {
@@ -338,16 +386,23 @@ function parse_chat_file_json(text)
     }
 
     return {
-        name: sanitize_file_name(parsed.name),
+        name: chat_files__sanitize_file_name(parsed.name),
         size: (typeof parsed.size === "number" && parsed.size > 0) ? Math.floor(parsed.size) : 0,
-        mime: sanitize_mime_type(parsed.mime),
+        mime: chat_files__sanitize_mime_type(parsed.mime),
         data: parsed.data
     };
 }
 
-function parse_chat_file_header(text)
+/**
+ * @brief a decrypted header as { name, size, mime }
+ *
+ * @param string text -> the decrypted text
+ *
+ * @return object|null the header, null when the text is not one
+ */
+function chat_files__parse_chat_file_header(text)
 {
-    let parsed = parse_chat_file_json(text);
+    let parsed = chat_files__parse_chat_file_json(text);
 
     if (parsed == null)
     {
@@ -357,9 +412,16 @@ function parse_chat_file_header(text)
     return { name: parsed.name, size: parsed.size, mime: parsed.mime };
 }
 
-function parse_decrypted_chat_file_body(text)
+/**
+ * @brief a decrypted body as { name, size, mime, base64 }, the data checked to be base64
+ *
+ * @param string text -> the decrypted text
+ *
+ * @return object|null the body, null when the text is not one
+ */
+function chat_files__parse_decrypted_chat_file_body(text)
 {
-    let parsed = parse_chat_file_json(text);
+    let parsed = chat_files__parse_chat_file_json(text);
 
     if (parsed == null || typeof parsed.data !== "string" || /^[A-Za-z0-9+/]*={0,2}$/.test(parsed.data) == false)
     {
@@ -373,8 +435,14 @@ function parse_decrypted_chat_file_body(text)
 // names, sizes, icons
 // ---------------------------------------------------------------------------
 
-// cleans a file name: no path separators or control characters, at most 255 characters, never empty
-function sanitize_file_name(name)
+/**
+ * @brief cleans a file name: no path separators or control characters, at most 255 characters, never empty
+ *
+ * @param string name -> the name as received
+ *
+ * @return string the cleaned name, "file" when nothing usable is left
+ */
+function chat_files__sanitize_file_name(name)
 {
     let result = ("" + (name == null ? "" : name)).replace(/[\\\/\x00-\x1f\x7f]/g, "_").trim();
 
@@ -391,7 +459,14 @@ function sanitize_file_name(name)
     return result;
 }
 
-function sanitize_mime_type(mime)
+/**
+ * @brief cleans a mime type: lowercase, at most 100 characters, of the type/subtype shape
+ *
+ * @param string mime -> the type as received
+ *
+ * @return string the cleaned type, "application/octet-stream" when it is not a valid one
+ */
+function chat_files__sanitize_mime_type(mime)
 {
     let text = "" + (mime == null ? "" : mime);
 
@@ -403,18 +478,18 @@ function sanitize_mime_type(mime)
     return text.toLowerCase();
 }
 
-// returns the lowercase extension without the dot, or "" when there is none
-function get_file_extension(name)
+/**
+ * @brief the icon kind of a file extension, from CHAT_FILE_KINDS
+ *
+ * @param string extension -> the extension without the dot
+ *
+ * @return string the kind, "generic" when unknown
+ */
+function chat_files__get_chat_file_kind(extension)
 {
-    let match = /\.([a-z0-9]{1,8})$/i.exec("" + name);
-    return (match != null) ? match[1].toLowerCase() : "";
-}
-
-function get_chat_file_kind(extension)
-{
-    for (let kind in G_CHAT_FILE_KINDS)
+    for (let kind in CHAT_FILE_KINDS)
     {
-        if (G_CHAT_FILE_KINDS[kind].indexOf(extension) != -1)
+        if (CHAT_FILE_KINDS[kind].indexOf(extension) != -1)
         {
             return kind;
         }
@@ -423,7 +498,16 @@ function get_chat_file_kind(extension)
     return "generic";
 }
 
-function is_chat_picture_file(file)
+/**
+ * @brief whether a file takes the picture path
+ *        the browser's own type is trusted first, so a dropped image behaves like one picked from
+ *        disk; the extension is the fallback for a drop that carried no type
+ *
+ * @param File file -> the file
+ *
+ * @return boolean true for a picture
+ */
+function chat_files__is_chat_picture_file(file)
 {
     if (file == null)
     {
@@ -437,10 +521,17 @@ function is_chat_picture_file(file)
         return true;
     }
 
-    return G_CHAT_PICTURE_EXTENSIONS.indexOf(get_file_extension(file.name)) != -1;
+    return CHAT_PICTURE_EXTENSIONS.indexOf(chat__get_file_extension(file.name)) != -1;
 }
 
-function format_file_size(bytes)
+/**
+ * @brief a byte count as "12 KB" / "1.5 MB" text
+ *
+ * @param number bytes -> the size
+ *
+ * @return string the text, "" for anything that is not a non-negative number
+ */
+function chat_files__format_file_size(bytes)
 {
     if (typeof bytes !== "number" || bytes < 0)
     {
@@ -465,10 +556,17 @@ function format_file_size(bytes)
     return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
 }
 
-// draws the file icon: a page with a folded corner and, for a known extension, a coloured badge carrying it
-function generate_chat_file_icon_svg(file_name, css_class)
+/**
+ * @brief the file icon: a page with a folded corner and, for a known extension, a coloured badge carrying it
+ *
+ * @param string file_name -> the name the extension is taken from
+ * @param string css_class -> the class of the svg
+ *
+ * @return string the svg markup
+ */
+function chat_files__generate_chat_file_icon_svg(file_name, css_class)
 {
-    let extension = get_file_extension(file_name);
+    let extension = chat__get_file_extension(file_name);
     let label = (extension.length > 0 && extension.length <= 4) ? extension.toUpperCase() : "";
     let badge = "";
 
@@ -478,7 +576,7 @@ function generate_chat_file_icon_svg(file_name, css_class)
               + "<text class=\"chat-file-icon-text\" x=\"20\" y=\"38.5\" text-anchor=\"middle\">" + label + "</text>";
     }
 
-    return "<svg class=\"" + css_class + " chat-file-kind-" + get_chat_file_kind(extension) + "\" viewBox=\"0 0 40 48\" aria-hidden=\"true\">"
+    return "<svg class=\"" + css_class + " chat-file-kind-" + chat_files__get_chat_file_kind(extension) + "\" viewBox=\"0 0 40 48\" aria-hidden=\"true\">"
          + "<path class=\"chat-file-icon-page\" d=\"M7 1h18l11 11v32a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V4a3 3 0 0 1 3-3z\"></path>"
          + "<path class=\"chat-file-icon-fold\" d=\"M25 1v11h11\"></path>"
          + badge
@@ -489,12 +587,17 @@ function generate_chat_file_icon_svg(file_name, css_class)
 // the file card in the chat
 // ---------------------------------------------------------------------------
 
-// builds the file card html. options are { key, name, size, is_local, local_message_id, is_receiving };
-// key is the server message id for received files, or "local-N" for our own echo
-function generate_chat_file_card_html(options)
+/**
+ * @brief the file card html
+ *
+ * @param object options -> { key, name, size, is_local, local_message_id, is_receiving }; key is the server message id for received files, or "local-N" for our own echo
+ *
+ * @return string the card markup
+ */
+function chat_files__generate_chat_file_card_html(options)
 {
-    let name_html = sanitize_string(options.name);
-    let size_text = (options.size > 0) ? format_file_size(options.size) : "";
+    let name_html = chat__sanitize_string(options.name);
+    let size_text = (options.size > 0) ? chat_files__format_file_size(options.size) : "";
     let classes = "chat-file-card";
     let attributes = " data-chat-file-key=\"" + options.key + "\"";
 
@@ -514,7 +617,7 @@ function generate_chat_file_card_html(options)
     }
 
     return "<div class=\"" + classes + "\"" + attributes + ">"
-         + "<div class=\"chat-file-icon-wrap\">" + generate_chat_file_icon_svg(options.name, "chat-file-icon") + "</div>"
+         + "<div class=\"chat-file-icon-wrap\">" + chat_files__generate_chat_file_icon_svg(options.name, "chat-file-icon") + "</div>"
          + "<div class=\"chat-file-info\">"
          + "<p class=\"chat-file-name\" title=\"" + name_html + "\">" + name_html + "</p>"
          + "<p class=\"chat-file-size\">" + size_text + "</p>"
@@ -530,23 +633,41 @@ function generate_chat_file_card_html(options)
          + "</div>";
 }
 
-// finds a file card or an incoming picture's progress ring by its key. both carry the same data
-// attribute and the same ring innards, so one lookup serves both
-function get_chat_file_card_by_key(key)
+/**
+ * @brief finds a file card or an incoming picture's progress ring by its key; both carry the same data attribute and the same ring innards, so one lookup serves both
+ *
+ * @param string|number key -> the transfer key
+ *
+ * @return Element|null the element, null when there is none
+ */
+function chat_files__get_chat_file_card_by_key(key)
 {
     return document.querySelector('[data-chat-file-key="' + key + '"]');
 }
 
-function begin_chat_file_transfer(file_id, encrypted_size)
+/**
+ * @brief registers an incoming transfer with its total size, so its progress ring can be moved
+ *
+ * @param number file_id -> the transfer
+ * @param number encrypted_size -> the encrypted size in characters, 0 when unknown
+ *
+ * @return void
+ */
+function chat_files__begin_chat_file_transfer(file_id, encrypted_size)
 {
     g_chat_file_transfers[file_id] = {
         encrypted_size: (typeof encrypted_size === "number" && encrypted_size > 0) ? encrypted_size : 0
     };
 }
 
-// builds the same progress ring a file card shows, for an incoming picture, because a picture
-// has no card of its own
-function generate_chat_picture_progress_html(picture_id)
+/**
+ * @brief the progress ring a file card shows, for an incoming picture, because a picture has no card of its own
+ *
+ * @param number picture_id -> the transfer
+ *
+ * @return string the ring markup
+ */
+function chat_files__generate_chat_picture_progress_html(picture_id)
 {
     return "<div class=\"chat-picture-progress\" data-chat-file-key=\"" + picture_id + "\">"
          + "<div class=\"chat-picture-progress-ring\">"
@@ -559,8 +680,14 @@ function generate_chat_picture_progress_html(picture_id)
          + "</div>";
 }
 
-// removes the progress ring and forgets the transfer, once the picture arrived or its transfer died
-function finish_chat_picture_progress(picture_id)
+/**
+ * @brief removes the progress ring and forgets the transfer, once the picture arrived or its transfer died
+ *
+ * @param number picture_id -> the transfer
+ *
+ * @return void
+ */
+function chat_files__finish_chat_picture_progress(picture_id)
 {
     delete g_chat_file_transfers[picture_id];
 
@@ -572,8 +699,15 @@ function finish_chat_picture_progress(picture_id)
     }
 }
 
-// moves the progress ring from how many characters of the transfer arrived so far
-function update_chat_file_progress(file_id, received_chars)
+/**
+ * @brief moves the progress ring from how many characters of the transfer arrived so far
+ *
+ * @param number file_id -> the transfer
+ * @param number received_chars -> characters received so far
+ *
+ * @return void
+ */
+function chat_files__update_chat_file_progress(file_id, received_chars)
 {
     let transfer = g_chat_file_transfers[file_id];
 
@@ -583,12 +717,20 @@ function update_chat_file_progress(file_id, received_chars)
     }
 
     let ratio = (transfer.encrypted_size > 0) ? Math.min(1, received_chars / transfer.encrypted_size) : 0;
-    render_chat_file_progress(file_id, ratio);
+    chat_files__render_chat_file_progress(file_id, ratio);
 }
 
-function render_chat_file_progress(file_id, ratio)
+/**
+ * @brief paints a ratio onto a transfer's ring and its percentage text
+ *
+ * @param number file_id -> the transfer
+ * @param number ratio -> 0 to 1
+ *
+ * @return void
+ */
+function chat_files__render_chat_file_progress(file_id, ratio)
 {
-    let card = get_chat_file_card_by_key(file_id);
+    let card = chat_files__get_chat_file_card_by_key(file_id);
 
     if (card == null)
     {
@@ -600,7 +742,7 @@ function render_chat_file_progress(file_id, ratio)
 
     if (bar != null)
     {
-        bar.style.strokeDashoffset = (G_CHAT_FILE_RING_LENGTH * (1 - ratio)).toFixed(2);
+        bar.style.strokeDashoffset = (CHAT_FILE_RING_LENGTH * (1 - ratio)).toFixed(2);
     }
 
     if (text != null)
@@ -609,7 +751,15 @@ function render_chat_file_progress(file_id, ratio)
     }
 }
 
-function wire_chat_file_download_button(card, key)
+/**
+ * @brief enables a card's download button and points it at the stored file
+ *
+ * @param Element card -> the file card
+ * @param string|number key -> the transfer key
+ *
+ * @return void
+ */
+function chat_files__wire_chat_file_download_button(card, key)
 {
     let button = card.querySelector(".chat-file-download");
 
@@ -622,17 +772,25 @@ function wire_chat_file_download_button(card, key)
     button.onclick = function(event)
     {
         event.stopPropagation();
-        download_chat_file(key);
+        chat_files__download_chat_file(key);
     };
 }
 
-// finishes a file card once the body arrived and decrypted. the file is kept for the download
-// button and the progress ring goes away
-function finish_chat_file_card(key, file)
+/**
+ * @brief finishes a file card once the body arrived and decrypted: the file is kept for the download button and the progress ring goes away
+ *        when there is no live card, no copy is kept; this catches node's dead elements (the phone
+ *        would otherwise hold every received file in ram forever), a cleared chat and a deleted message
+ *
+ * @param string|number key -> the transfer key
+ * @param object file -> { name, size, mime, base64 }
+ *
+ * @return void
+ */
+function chat_files__finish_chat_file_card(key, file)
 {
     delete g_chat_file_transfers[key];
 
-    let card = get_chat_file_card_by_key(key);
+    let card = chat_files__get_chat_file_card_by_key(key);
 
     // when there is no live card, no copy is kept. this catches node's dead elements (the phone
     // would otherwise hold every received file in ram forever), a cleared chat and a deleted message
@@ -655,13 +813,21 @@ function finish_chat_file_card(key, file)
 
     if (size != null)
     {
-        size.textContent = format_file_size(file.size > 0 ? file.size : Math.floor(file.base64.length * 3 / 4));
+        size.textContent = chat_files__format_file_size(file.size > 0 ? file.size : Math.floor(file.base64.length * 3 / 4));
     }
 
-    wire_chat_file_download_button(card, key);
+    chat_files__wire_chat_file_download_button(card, key);
 }
 
-function mark_chat_file_card_failed(card, text)
+/**
+ * @brief turns a card into its failed state with a status text
+ *
+ * @param Element|null card -> the file card, nothing happens for null
+ * @param string text -> the status text
+ *
+ * @return void
+ */
+function chat_files__mark_chat_file_card_failed(card, text)
 {
     if (card == null)
     {
@@ -680,15 +846,23 @@ function mark_chat_file_card_failed(card, text)
     }
 }
 
-// marks a refused upload as failed. the server names the local message id it refused; 0 means it
-// refused the very first part, and then the newest unsent card is the one that failed
-function mark_local_chat_file_card_failed(local_message_id, text)
+/**
+ * @brief marks a refused upload as failed
+ *        the server names the local message id it refused; 0 means it refused the very first part,
+ *        and then the newest unsent card is the one that failed
+ *
+ * @param number g_local_message_id -> the refused local message id, 0 for the newest unsent card
+ * @param string text -> the status text
+ *
+ * @return void
+ */
+function chat_files__mark_local_chat_file_card_failed(g_local_message_id, text)
 {
     let card = null;
 
-    if (typeof local_message_id === "number" && local_message_id > 0)
+    if (typeof g_local_message_id === "number" && g_local_message_id > 0)
     {
-        card = document.querySelector('.local-client-chat-file[data-single-chat-message-local-message-id="' + local_message_id + '"]');
+        card = document.querySelector('.local-client-chat-file[data-single-chat-message-local-message-id="' + g_local_message_id + '"]');
     }
     else
     {
@@ -696,10 +870,17 @@ function mark_local_chat_file_card_failed(local_message_id, text)
         card = (unsent.length > 0) ? unsent[unsent.length - 1] : null;
     }
 
-    mark_chat_file_card_failed(card, text);
+    chat_files__mark_chat_file_card_failed(card, text);
 }
 
-function mark_chat_file_card_deleted(card)
+/**
+ * @brief turns a card into its deleted state: forgets the file and the transfer, unwires the menu, leaves a "deleted" card
+ *
+ * @param Element|null card -> the file card, nothing happens for null
+ *
+ * @return void
+ */
+function chat_files__mark_chat_file_card_deleted(card)
 {
     if (card == null)
     {
@@ -708,24 +889,36 @@ function mark_chat_file_card_deleted(card)
 
     delete g_chat_files_by_message_id[card.getAttribute("data-chat-file-key")];
     delete g_chat_file_transfers[card.getAttribute("data-chat-file-key")];
-    card.removeEventListener("mousedown", chat_file_card_onrightclick);
+    card.removeEventListener("mousedown", chat_files__chat_file_card_onrightclick);
     card.className = "chat-file-card chat-file-deleted";
     card.innerHTML = "<p class=\"chat-file-status\">deleted</p>";
 }
 
-// forgets the stored bytes of cards that no longer exist, after "clear chat" removed them
-function prune_chat_files_without_cards()
+/**
+ * @brief forgets the stored bytes of cards that no longer exist, after "clear chat" removed them
+ *
+ * @return void
+ */
+function chat_files__prune_chat_files_without_cards()
 {
     for (let key in g_chat_files_by_message_id)
     {
-        if (get_chat_file_card_by_key(key) == null)
+        if (chat_files__get_chat_file_card_by_key(key) == null)
         {
             delete g_chat_files_by_message_id[key];
         }
     }
 }
 
-function explain_file_send_error(reason, max_bytes)
+/**
+ * @brief the text for a refused file: uploads off, too big, receiver unavailable, private messages off, or the server's own reason
+ *
+ * @param string reason -> the reason code from the server
+ * @param number max_bytes -> the server's limit, for the "too big" text
+ *
+ * @return string the text to show
+ */
+function chat_files__explain_file_send_error(reason, max_bytes)
 {
     if (reason == "file_uploads_disabled")
     {
@@ -734,7 +927,7 @@ function explain_file_send_error(reason, max_bytes)
 
     if (reason == "file_too_large")
     {
-        return "file not sent: too big, this server allows up to " + format_file_size(max_bytes);
+        return "file not sent: too big, this server allows up to " + chat_files__format_file_size(max_bytes);
     }
 
     if (reason == "receiver_unavailable")
@@ -747,12 +940,17 @@ function explain_file_send_error(reason, max_bytes)
         return "file not sent: private messages are disabled on this server";
     }
 
-    return "file not sent: refused by the server (" + sanitize_string("" + reason) + ")";
+    return "file not sent: refused by the server (" + chat__sanitize_string("" + reason) + ")";
 }
 
-// right click on a file card opens the delete menu. there is no edit item, because a file has
-// nothing to edit
-function chat_file_card_onrightclick(event)
+/**
+ * @brief right click on a file card opens the delete menu; there is no edit item, because a file has nothing to edit
+ *
+ * @param object event -> the mouse event
+ *
+ * @return void
+ */
+function chat_files__chat_file_card_onrightclick(event)
 {
     if (event.which != 3)
     {
@@ -798,13 +996,20 @@ function chat_file_card_onrightclick(event)
 // download
 // ---------------------------------------------------------------------------
 
-function download_chat_file(key)
+/**
+ * @brief saves a received file: the java side writes it into Downloads in the webview, a browser gets a blob download
+ *
+ * @param string|number key -> the transfer key
+ *
+ * @return void
+ */
+function chat_files__download_chat_file(key)
 {
     let file = g_chat_files_by_message_id[key];
 
     if (file == null)
     {
-        custom_alert("this file is no longer available");
+        utils__custom_alert("this file is no longer available");
         return;
     }
 
@@ -819,11 +1024,11 @@ function download_chat_file(key)
 
     try
     {
-        bytes = fast_base64_to_bytes(file.base64);
+        bytes = chat_files__fast_base64_to_bytes(file.base64);
     }
     catch (decode_error)
     {
-        custom_alert("the file data is damaged, it can not be saved");
+        utils__custom_alert("the file data is damaged, it can not be saved");
         return;
     }
 
@@ -844,9 +1049,16 @@ function download_chat_file(key)
 // attaching: paperclip, drag & drop, the pending chip
 // ---------------------------------------------------------------------------
 
-// the drag and drop entry point. every refusal explains why. a dropped image takes the picture
-// path; an image over the server's inline picture limit goes out as a plain file instead
-function attach_chat_file_or_picture(file)
+/**
+ * @brief the drag and drop entry point; every refusal explains why
+ *        a dropped image takes the picture path; an image over the server's inline picture limit
+ *        goes out as a plain file instead
+ *
+ * @param File file -> the dropped file
+ *
+ * @return void
+ */
+function chat_files__attach_chat_file_or_picture(file)
 {
     if (file == null)
     {
@@ -855,64 +1067,69 @@ function attach_chat_file_or_picture(file)
 
     if (document.getElementById("chat-input-container-text-input").disabled == true)
     {
-        custom_alert("join a channel or open a private chat first");
+        utils__custom_alert("join a channel or open a private chat first");
         return;
     }
 
-    if (is_chat_picture_file(file))
+    if (chat_files__is_chat_picture_file(file))
     {
-        if (g_chat_pictures_allowed == false)
+        if (g_server_policy.allow_chat_pictures == false)
         {
-            if (g_file_uploads_allowed == true && file.size <= g_file_upload_max_bytes)
+            if (g_server_policy.allow_file_uploads == true && file.size <= g_server_policy.file_upload_max_size)
             {
-                custom_alert("inline pictures are disabled on this server, so the image goes as a file");
-                attach_chat_file(file);
+                utils__custom_alert("inline pictures are disabled on this server, so the image goes as a file");
+                chat_files__attach_chat_file(file);
                 return;
             }
 
-            custom_alert("inline pictures are disabled on this server");
+            utils__custom_alert("inline pictures are disabled on this server");
             return;
         }
 
-        if (file.size <= g_chat_picture_max_bytes)
+        if (file.size <= g_server_policy.chat_picture_max_size)
         {
-            attach_chat_picture(file);
+            chat_files__attach_chat_picture(file);
             return;
         }
 
-        if (g_file_uploads_allowed == true && file.size <= g_file_upload_max_bytes)
+        if (g_server_policy.allow_file_uploads == true && file.size <= g_server_policy.file_upload_max_size)
         {
-            custom_alert("image is over the server's " + format_file_size(g_chat_picture_max_bytes) + " picture limit, so it goes as a file - the receiver downloads it instead of seeing it inline");
-            attach_chat_file(file);
+            utils__custom_alert("image is over the server's " + chat_files__format_file_size(g_server_policy.chat_picture_max_size) + " picture limit, so it goes as a file - the receiver downloads it instead of seeing it inline");
+            chat_files__attach_chat_file(file);
             return;
         }
 
-        custom_alert("image is too large to send as a picture (this server allows up to " + format_file_size(g_chat_picture_max_bytes) + ")");
+        utils__custom_alert("image is too large to send as a picture (this server allows up to " + chat_files__format_file_size(g_server_policy.chat_picture_max_size) + ")");
         return;
     }
 
-    attach_chat_file(file);
+    chat_files__attach_chat_file(file);
 }
 
-// attaches a picture. this is the same preview path the picture button (UI.choose_image_input)
-// uses; drag & drop lands here too
-function attach_chat_picture(file)
+/**
+ * @brief attaches a picture for the next send, the same preview path the picture button uses; drag and drop lands here too
+ *
+ * @param File file -> the picture
+ *
+ * @return void
+ */
+function chat_files__attach_chat_picture(file)
 {
-    if (g_chat_pictures_allowed == false)
+    if (g_server_policy.allow_chat_pictures == false)
     {
-        custom_alert("inline pictures are disabled on this server");
+        utils__custom_alert("inline pictures are disabled on this server");
         return;
     }
 
-    if (file.size > g_chat_picture_max_bytes)
+    if (file.size > g_server_policy.chat_picture_max_size)
     {
-        if (g_file_uploads_allowed == true && file.size <= g_file_upload_max_bytes)
+        if (g_server_policy.allow_file_uploads == true && file.size <= g_server_policy.file_upload_max_size)
         {
-            custom_alert("image is too large to send as a picture (this server allows up to " + format_file_size(g_chat_picture_max_bytes) + "). use the paperclip to send it as a file");
+            utils__custom_alert("image is too large to send as a picture (this server allows up to " + chat_files__format_file_size(g_server_policy.chat_picture_max_size) + "). use the paperclip to send it as a file");
         }
         else
         {
-            custom_alert("image is too large to send as a picture (this server allows up to " + format_file_size(g_chat_picture_max_bytes) + ")");
+            utils__custom_alert("image is too large to send as a picture (this server allows up to " + chat_files__format_file_size(g_server_policy.chat_picture_max_size) + ")");
         }
 
         return;
@@ -923,20 +1140,20 @@ function attach_chat_picture(file)
     reader.onload = function(event)
     {
         // one attachment per message, so a pending file gives way to the picture
-        clear_pending_chat_file();
+        chat_files__clear_pending_chat_file();
 
         // the thumbnail overlays the text box, so the typed text is cleared out of its way
         document.getElementById("chat-input-container-text-input").value = "";
         document.getElementById("image-upload-preview").style.aspectRatio = "";
         document.getElementById("image-upload-preview").style.display = "inline-block";
         document.getElementById("image-upload-preview").style.backgroundImage = "url(" + event.target.result + ")";
-        base64_picture_string_to_send = event.target.result;
+        g_base64_picture_string_to_send = event.target.result;
 
         // the thumbnail takes the picture's own shape, because the css box alone would crop it
         let preview_image = new Image();
         preview_image.onload = function()
         {
-            if (preview_image.naturalWidth > 0 && preview_image.naturalHeight > 0 && base64_picture_string_to_send === preview_image.src)
+            if (preview_image.naturalWidth > 0 && preview_image.naturalHeight > 0 && g_base64_picture_string_to_send === preview_image.src)
             {
                 document.getElementById("image-upload-preview").style.aspectRatio = preview_image.naturalWidth + " / " + preview_image.naturalHeight;
             }
@@ -946,29 +1163,36 @@ function attach_chat_picture(file)
 
     reader.onerror = function()
     {
-        custom_alert("could not read the image");
+        utils__custom_alert("could not read the image");
     };
 
     reader.readAsDataURL(file);
 }
 
-function attach_chat_file(file)
+/**
+ * @brief attaches a file for the next send after the policy checks (uploads allowed, within the size limit, not empty); it replaces a pending picture and shows the chip
+ *
+ * @param File file -> the file
+ *
+ * @return void
+ */
+function chat_files__attach_chat_file(file)
 {
-    if (g_file_uploads_allowed == false)
+    if (g_server_policy.allow_file_uploads == false)
     {
-        custom_alert("file uploads are not allowed on this server");
+        utils__custom_alert("file uploads are not allowed on this server");
         return;
     }
 
-    if (file.size > g_file_upload_max_bytes)
+    if (file.size > g_server_policy.file_upload_max_size)
     {
-        custom_alert("file is too big (" + format_file_size(file.size) + "). this server allows up to " + format_file_size(g_file_upload_max_bytes));
+        utils__custom_alert("file is too big (" + chat_files__format_file_size(file.size) + "). this server allows up to " + chat_files__format_file_size(g_server_policy.file_upload_max_size));
         return;
     }
 
     if (file.size == 0)
     {
-        custom_alert("the file is empty");
+        utils__custom_alert("the file is empty");
         return;
     }
 
@@ -977,47 +1201,60 @@ function attach_chat_file(file)
     reader.onload = function(event)
     {
         g_pending_chat_file = {
-            name: sanitize_file_name(file.name),
+            name: chat_files__sanitize_file_name(file.name),
             size: file.size,
-            mime: sanitize_mime_type(file.type),
-            base64: remove_data_url_prefix_from_base64_string(event.target.result)
+            mime: chat_files__sanitize_mime_type(file.type),
+            base64: chat__remove_data_url_prefix_from_base64_string(event.target.result)
         };
 
         // one attachment per message, so a pending picture gives way
-        clear_pending_chat_picture();
+        chat_files__clear_pending_chat_picture();
 
         // the chip overlays the text box, so the typed text is cleared out of its way
         document.getElementById("chat-input-container-text-input").value = "";
 
-        render_pending_chat_file_chip();
+        chat_files__render_pending_chat_file_chip();
     };
 
     reader.onerror = function()
     {
-        custom_alert("could not read the file");
+        utils__custom_alert("could not read the file");
     };
 
     reader.readAsDataURL(file);
 }
 
-function clear_pending_chat_file()
+/**
+ * @brief drops the pending file and hides its chip
+ *
+ * @return void
+ */
+function chat_files__clear_pending_chat_file()
 {
     g_pending_chat_file = null;
-    render_pending_chat_file_chip();
+    chat_files__render_pending_chat_file_chip();
 }
 
-// removes a pending picture: the thumbnail hides and nothing is left to send. wired to the
-// thumbnail's cancel cross, and used by the file path because one attachment replaces the other
-function clear_pending_chat_picture()
+/**
+ * @brief removes a pending picture: the thumbnail hides and nothing is left to send
+ *        wired to the thumbnail's cancel cross, and used by the file path because one attachment replaces the other
+ *
+ * @return void
+ */
+function chat_files__clear_pending_chat_picture()
 {
-    base64_picture_string_to_send = "";
+    g_base64_picture_string_to_send = "";
     document.getElementById("image-upload-preview").style.backgroundImage = "";
     document.getElementById("image-upload-preview").style.display = "none";
     document.getElementById("image-upload-preview").style.aspectRatio = "";
 }
 
-// renders the pending file chip over the text box's corner, or nothing when no file is pending
-function render_pending_chat_file_chip()
+/**
+ * @brief renders the pending file chip over the text box's corner, or nothing when no file is pending
+ *
+ * @return void
+ */
+function chat_files__render_pending_chat_file_chip()
 {
     let chip = document.getElementById("file-upload-preview");
 
@@ -1033,27 +1270,32 @@ function render_pending_chat_file_chip()
         return;
     }
 
-    chip.innerHTML = generate_chat_file_icon_svg(g_pending_chat_file.name, "file-upload-preview-icon")
+    chip.innerHTML = chat_files__generate_chat_file_icon_svg(g_pending_chat_file.name, "file-upload-preview-icon")
                    + "<span class=\"file-upload-preview-text\">"
-                   + "<span class=\"file-upload-preview-name\">" + sanitize_string(g_pending_chat_file.name) + "</span>"
-                   + "<span class=\"file-upload-preview-size\">" + format_file_size(g_pending_chat_file.size) + "</span>"
+                   + "<span class=\"file-upload-preview-name\">" + chat__sanitize_string(g_pending_chat_file.name) + "</span>"
+                   + "<span class=\"file-upload-preview-size\">" + chat_files__format_file_size(g_pending_chat_file.size) + "</span>"
                    + "</span>"
                    + "<span class=\"file-upload-preview-remove\" title=\"remove\">&#10005;</span>";
 
     chip.querySelector(".file-upload-preview-remove").onclick = function(event)
     {
         event.stopPropagation();
-        clear_pending_chat_file();
+        chat_files__clear_pending_chat_file();
     };
 
     chip.style.display = "flex";
 }
 
-// the paperclip's file input. it always attaches as a plain file, even an image, because the
-// user chose the file button on purpose; the picture path belongs to the image button and drag and drop
-function choose_chat_file_input_onchange()
+/**
+ * @brief the paperclip's file input
+ *        it always attaches as a plain file, even an image, because the user chose the file button
+ *        on purpose; the picture path belongs to the image button and drag and drop
+ *
+ * @return void
+ */
+function chat_files__choose_chat_file_input_onchange()
 {
-    if (typeof window === "undefined")
+    if (G_HAS_DOM == false)
     {
         return;
     }
@@ -1062,15 +1304,18 @@ function choose_chat_file_input_onchange()
 
     if (files.length > 0)
     {
-        attach_chat_file(files[0]);
+        chat_files__attach_chat_file(files[0]);
     }
 }
 
-// sets up drag and drop. the text box and the chat itself take drops; the document refuses them,
-// because a missed drop would otherwise make the browser open the file as a page
-function setup_chat_file_drag_and_drop()
+/**
+ * @brief sets up drag and drop: the text box and the chat itself take drops; the document refuses them, because a missed drop would otherwise make the browser open the file as a page
+ *
+ * @return void
+ */
+function chat_files__setup_chat_file_drag_and_drop()
 {
-    if (typeof window === "undefined" || typeof document === "undefined")
+    if (G_HAS_DOM == false)
     {
         return;
     }
@@ -1131,17 +1376,54 @@ function setup_chat_file_drag_and_drop()
 
             if (files.length > 1)
             {
-                custom_alert("one file at a time - taking the first one");
+                utils__custom_alert("one file at a time - taking the first one");
             }
 
-            attach_chat_file_or_picture(files[0]);
+            chat_files__attach_chat_file_or_picture(files[0]);
         });
     }
 }
 
-// applies the server's upload policy to the paperclip button. it stays visible when uploads are
-// off, only dimmed, so a click can still explain why
-function apply_file_upload_policy_to_ui()
+/**
+ * @brief the cursor-lit border of the file cards: one delegated mousemove on the chat writes the cursor position into the hovered card's --mx and --my, which the default theme's ring gradient follows
+ *
+ * @return void
+ */
+function chat_files__setup_chat_file_card_glow()
+{
+    if (G_HAS_DOM == false)
+    {
+        return;
+    }
+
+    let chat = document.getElementById("chat-context-container");
+
+    if (chat == null)
+    {
+        return;
+    }
+
+    chat.addEventListener("mousemove", function(event)
+    {
+        let card = (event.target != null && typeof event.target.closest === "function") ? event.target.closest(".chat-file-card") : null;
+
+        if (card == null)
+        {
+            return;
+        }
+
+        let box = card.getBoundingClientRect();
+        card.style.setProperty("--mx", (event.clientX - box.left) + "px");
+        card.style.setProperty("--my", (event.clientY - box.top) + "px");
+    });
+}
+
+/**
+ * @brief applies the server's upload policy to the paperclip button; it stays visible when uploads are off, only dimmed, so a click can still explain why
+ *
+ * @return void
+ */
+function chat_files__apply_file_upload_policy_to_ui()
 {
     if (typeof document === "undefined")
     {
@@ -1155,10 +1437,10 @@ function apply_file_upload_policy_to_ui()
         return;
     }
 
-    if (g_file_uploads_allowed == true)
+    if (g_server_policy.allow_file_uploads == true)
     {
         button.classList.remove("chat-file-uploads-off");
-        button.title = "attach a file (up to " + format_file_size(g_file_upload_max_bytes) + ")";
+        button.title = "attach a file (up to " + chat_files__format_file_size(g_server_policy.file_upload_max_size) + ")";
     }
     else
     {
@@ -1167,8 +1449,12 @@ function apply_file_upload_policy_to_ui()
     }
 }
 
-// the same treatment for the picture button: it stays visible when pictures are off, only dimmed
-function apply_chat_picture_policy_to_ui()
+/**
+ * @brief the same treatment for the picture button: it stays visible when pictures are off, only dimmed
+ *
+ * @return void
+ */
+function chat_files__apply_chat_picture_policy_to_ui()
 {
     if (typeof document === "undefined")
     {
@@ -1182,10 +1468,10 @@ function apply_chat_picture_policy_to_ui()
         return;
     }
 
-    if (g_chat_pictures_allowed == true)
+    if (g_server_policy.allow_chat_pictures == true)
     {
         button.classList.remove("chat-file-uploads-off");
-        button.title = "attach a picture (up to " + format_file_size(g_chat_picture_max_bytes) + ")";
+        button.title = "attach a picture (up to " + chat_files__format_file_size(g_server_policy.chat_picture_max_size) + ")";
     }
     else
     {
@@ -1198,8 +1484,12 @@ function apply_chat_picture_policy_to_ui()
 // server settings tab
 // ---------------------------------------------------------------------------
 
-// shows the ram and upload-time warning while the typed limit is over G_FILE_UPLOAD_WARNING_MB
-function refresh_file_upload_size_warning()
+/**
+ * @brief shows the ram and upload-time warning while the typed limit is over FILE_UPLOAD_WARNING_MB
+ *
+ * @return void
+ */
+function chat_files__refresh_file_upload_size_warning()
 {
     let input = document.getElementById("server-settings-general-file-upload-max-size-input");
     let warning = document.getElementById("server-settings-general-file-upload-size-warning");
@@ -1211,11 +1501,15 @@ function refresh_file_upload_size_warning()
 
     let megabytes = parseInt(input.value);
 
-    warning.style.display = (megabytes > G_FILE_UPLOAD_WARNING_MB) ? "block" : "none";
+    warning.style.display = (megabytes > FILE_UPLOAD_WARNING_MB) ? "block" : "none";
 }
 
-// the pictures checkbox shows or hides the picture max-size row under it
-function refresh_picture_size_visibility()
+/**
+ * @brief the pictures checkbox shows or hides the picture max-size row under it
+ *
+ * @return void
+ */
+function chat_files__refresh_picture_size_visibility()
 {
     let checkbox = document.getElementById("server-settings-general-allow-pictures-checkbox");
     let size_row = document.getElementById("server-settings-picture-max-size-row");
@@ -1228,9 +1522,13 @@ function refresh_picture_size_visibility()
     size_row.style.display = (checkbox.checked == true) ? "" : "none";
 }
 
-// the uploads checkbox shows or hides the max-size row below it; the stored limit stays server
-// state either way. the size warning only makes sense while the row is visible
-function refresh_file_upload_size_visibility()
+/**
+ * @brief the uploads checkbox shows or hides the max-size row below it; the stored limit stays server state either way
+ *        the size warning only makes sense while the row is visible
+ *
+ * @return void
+ */
+function chat_files__refresh_file_upload_size_visibility()
 {
     let checkbox = document.getElementById("server-settings-general-allow-file-uploads-checkbox");
     let size_row = document.getElementById("server-settings-file-upload-size-row");
@@ -1244,7 +1542,7 @@ function refresh_file_upload_size_visibility()
     if (checkbox.checked == true)
     {
         size_row.style.display = "";
-        refresh_file_upload_size_warning();
+        chat_files__refresh_file_upload_size_warning();
     }
     else
     {

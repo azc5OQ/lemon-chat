@@ -57,7 +57,7 @@ console.log("3. a real server message builds real state");
 // the first version of this test invented `is_temporary` and marked the root with
 // parent_channel_id -1, and the tree builder correctly rejected the whole payload. root channels
 // are identified by the is_root_channel FLAG, because a uint64 parent id cannot carry -1
-// (see get_channels_by_channel_parent_id in main.js)
+// (see channel_tree__get_channels_by_channel_parent_id)
 function channel(channel_id, parent_channel_id, is_root_channel, name)
 {
     return {

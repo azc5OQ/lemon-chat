@@ -27,7 +27,7 @@ if (typeof document === "undefined")
     {
         let element = {
             style: {
-                // apply_avatar_to_ui calls these unconditionally; a plain {} would throw
+                // channel_tree__apply_avatar_to_ui calls these unconditionally; a plain {} would throw
                 setProperty: function() {},
                 removeProperty: function() {},
                 getPropertyValue: function() { return ""; }

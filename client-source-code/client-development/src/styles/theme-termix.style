@@ -202,11 +202,20 @@ body {
     background: var(--tmx-main);
     left: 0;
 }
+/* the chat window fills the grid cell as a flex column: the tab strip keeps its height, the message list takes the rest and is the one part that scrolls */
 #chat-window-container {
     background: var(--tmx-main);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
 }
 #chat-context-container {
     background: var(--tmx-main);
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 #space-devider-42 {
@@ -462,12 +471,12 @@ div#image-upload-preview {
     background: var(--tmx-darkest);
 }
 ::-webkit-scrollbar-thumb {
-    background: #1a1b1e;
+    background: var(--tmx-active);
     border-radius: 4px;
     border: 2px solid var(--tmx-darkest);
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #141517;
+    background: var(--tmx-muted);
 }
 ::-webkit-scrollbar-corner {
     background: transparent;
@@ -476,7 +485,7 @@ div#image-upload-preview {
 @supports (-moz-appearance: none) {
     * {
         scrollbar-width: thin;
-        scrollbar-color: #1a1b1e var(--tmx-darkest);
+        scrollbar-color: var(--tmx-active) var(--tmx-darkest);
     }
 }
 
@@ -2143,7 +2152,7 @@ input[type="radio"] {
     border-radius: 5px;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--tmx-active);
+    background: var(--tmx-muted);
 }
 
 #container-2 {

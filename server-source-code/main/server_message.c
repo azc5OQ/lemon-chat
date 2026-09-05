@@ -156,8 +156,6 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     cJSON_AddBoolToObject(json_message_object1, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
     // the client attempts a fast reconnect only on a server that allows it
     cJSON_AddBoolToObject(json_message_object1, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
-    // a row rendered for an admin skips the flag, also when he becomes admin after joining
-    cJSON_AddBoolToObject(json_message_object1, "hide_admin_country_flag", g_server_settings.hide_admin_country_flag);
     // the client keeps marquees of streaming bots in other channels visible when this is on
     cJSON_AddBoolToObject(json_message_object1, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
     cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
@@ -169,6 +167,8 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     // rename policy travels in-protocol so the client can grey its rename input out when users may not rename
     cJSON_AddBoolToObject(json_message_object1, "allow_client_renames", g_server_settings.allow_client_renames);
     cJSON_AddNumberToObject(json_message_object1, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
+    // the settings tab's icon upload refuses oversize files itself, with the same cap the server enforces
+    cJSON_AddNumberToObject(json_message_object1, "icon_max_size", (double)g_server_settings.icon_max_size_bytes);
     // chat file policy: the client refuses oversize/forbidden files itself, with a reason, before uploading
     cJSON_AddBoolToObject(json_message_object1, "allow_file_uploads", g_server_settings.allow_file_uploads);
     cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
@@ -562,7 +562,7 @@ void server_msg__send_icon_list_to_single_client(ws_cli_conn_t* websocket, char*
 
         single_client = cJSON_CreateObject();
         cJSON_AddNumberToObject(single_client, "icon_id", (double)g_icons_array[x].id);
-        cJSON_AddStringToObject(single_client, "base64_icon", g_icons_array[x].base64);
+        cJSON_AddStringToObject(single_client, "base64_icon", (g_icons_array[x].base64 != NULL_POINTER) ? g_icons_array[x].base64 : "");
         cJSON_AddItemToArray(json_icons_array, single_client);
     }
 
@@ -1329,6 +1329,7 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON_AddItemToObject(json_message_object1, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
     cJSON_AddItemToObject(json_message_object1, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
     cJSON_AddNumberToObject(json_message_object1, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
+    cJSON_AddNumberToObject(json_message_object1, "icon_max_size_bytes", (double)g_server_settings.icon_max_size_bytes);
     cJSON_AddItemToObject(json_message_object1, "show_music_bot_marquee_to_everyone", cJSON_CreateBool(g_server_settings.show_music_bot_marquee_to_everyone == TRUE));
     cJSON_AddNumberToObject(json_message_object1, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
     cJSON_AddItemToObject(json_message_object1, "announce_minimum_rsa_key_bits", cJSON_CreateBool(g_server_settings.announce_minimum_rsa_key_bits == TRUE));
@@ -1480,9 +1481,9 @@ void server_msg__send_policy_update_to_all_clients(void)
         cJSON_AddBoolToObject(json_message_object1, "allow_client_renames", g_server_settings.allow_client_renames);
         cJSON_AddBoolToObject(json_message_object1, "allow_avatars", g_server_settings.allow_avatars);
         cJSON_AddNumberToObject(json_message_object1, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
+        cJSON_AddNumberToObject(json_message_object1, "icon_max_size", (double)g_server_settings.icon_max_size_bytes);
         cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
         cJSON_AddBoolToObject(json_message_object1, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
-        cJSON_AddBoolToObject(json_message_object1, "hide_admin_country_flag", g_server_settings.hide_admin_country_flag);
         cJSON_AddBoolToObject(json_message_object1, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
 
         cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
@@ -3476,6 +3477,100 @@ void server_msg__send_client_alias_changed_to_all_clients(uint64 client_id, char
     }
 
     base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief broadcasts the country code a client's row shows from now on, to all authenticated non-bot
+ *        clients. the clients only ever see the code, never the setting that withholds it, so this
+ *        is sent whenever the code the server is willing to show changed: the client became or
+ *        stopped being an admin, or the admin toggled hide_admin_country_flag
+ *
+ * @param client_t* client_whose_code_changed -> the client whose shown code changed
+ *
+ * @note must be called with the clients lock already held (like the tag-event broadcasts)
+ *
+ * @return void
+ */
+void server_msg__send_client_country_code_changed_to_all_clients(client_t* client_whose_code_changed)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_country_code_changed_to_all_clients \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "client_country_code_changed");
+    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client_whose_code_changed->client_id);
+    cJSON_AddStringToObject(json_message_object1, "country_iso_code", _server_msg_internal__country_code_to_send(client_whose_code_changed));
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        // if statements that are most probable to run should be first in loop
+        if (client->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_authenticated == FALSE)
+        {
+            continue;
+        }
+
+        if (client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief re-sends every connected admin's shown country code to all clients, after the admin
+ *        toggled hide_admin_country_flag: the flags appear or vanish for everyone at once
+ *
+ * @note must be called with the clients lock already held
+ *
+ * @return void
+ */
+void server_msg__send_admin_country_codes_to_all_clients(void)
+{
+    uint64 i = 0;
+    client_t* client = 0;
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_admin == FALSE)
+        {
+            continue;
+        }
+
+        server_msg__send_client_country_code_changed_to_all_clients(client);
+    }
 }
 
 /**

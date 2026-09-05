@@ -28,16 +28,45 @@ client-development/
    └─ wasm/            # *.wasm  -> real binaries (libopus, mp3_decoder)
 ```
 
-The application splits across four files, all sharing one closure (see the
-Editing section): `scripts/app/main.js` is the spine (startup, workers,
-dispatchers, crypto helpers, app lifecycle), `scripts/app/messages.js` is the
-protocol layer (`server_msg` handlers + `client_msg` builders), `scripts/app/ui.js`
-is the `UI` object (rendering, themes, menus, dialogs), and `scripts/app/audio.js`
-is the audio engine (worklets, playback/capture graphs). `scripts/app/chat-files.js`
-is the chat file feature (any file as an encrypted message: paperclip, drag & drop,
+The application splits across topic files, all sharing one closure (see the
+Editing section). The big three: `scripts/app/messages.js` is the protocol layer
+(`server_msg` handlers + `client_msg` builders), `scripts/app/ui.js` is the `UI`
+object (rendering, themes, menus, dialogs), and `scripts/app/audio.js` is the
+audio engine (worklets, playback/capture graphs). `scripts/app/chat-files.js` is
+the chat file feature (any file as an encrypted message: paperclip, drag & drop,
 the file card with its progress ring, the download button, and the fast base64 /
-crypto helpers its worker branches use). `styles/fonts.style` is large because the
-fonts are base64-embedded.
+crypto helpers its worker branches use). The rest of the page lives in one file
+per topic, each with its own state at the top and its functions below:
+
+| file | what it holds |
+| --- | --- |
+| `globals.js` | every name two or more other files use, one group per topic; `g_` = app-wide state, `G_` = app-wide constant, no prefix = private to the file that declares it (kept at that file's top) |
+| `utils.js` | the helpers every file uses: storage, sleep, the log and the toast, base64 both ways, sha256, the touch-device check |
+| `workers.js` | the two worker handlers, data processing and websocket (run inside those workers only) |
+| `console-log.js` | the console prefixing installed in every context |
+| `connection.js` | the driver that decides when to dial, the dial, the heartbeat, fast reconnect, the connect-page hold, server bookmarks |
+| `keys.js` | the identity keypair, dh session keys, aes message bodies, channel keys and the maintainer wait timer |
+| `channel-tree.js` | lookups and rendering for channels and clients, avatars |
+| `chat.js` | composing and sending messages, pictures and files; the typing indicator; unread counts and seen receipts |
+| `android-host.js` | the headless node runtime, the webview bridge implementations, deep idle |
+| `layout.js` | the desktop grid layout engine |
+| `voice.js` | the microphone, the webrtc datachannel, the music bot stream |
+| `server-settings-tab.js` | the admin tab: field table, policy, icon uploads, country blocking |
+| `dispatch.js` | `dispatch__mainthread_onmessage`, everything the data-processing worker posts back |
+| `main.js` | startup: `main__window_onload` and the export seam for the node runtime |
+| `android-bridge.js` | outside the closure: the `JavascriptJavaBridge__*` functions the java side calls by name |
+
+Every top-level function carries its file's name as a prefix (`chat__send_chat_message` lives
+in chat.js), the way the C server names its functions, so a call site tells you where to look.
+The namespaced objects (`UI`, `server_msg`, `client_msg`, `lemon_crypto`, `webrtc`) are the
+exception: the object is their prefix.
+
+Every function and method carries a doc block in the server's layout, `@brief` (what it is,
+then what it does), one `@param type name -> what` per parameter and `@return type what`
+(`void` when nothing comes back). Add one to a new function; `lemonchat-study/tools/docinv.py`
+lists any that lack it.
+
+`styles/fonts.style` is large because the fonts are base64-embedded.
 
 ## Building
 
@@ -99,10 +128,10 @@ mid-string-literal, because that is where the base64 sits in the library code:
   element parses.
 - To replace a wasm binary: drop the new `.wasm` into `src/wasm/` and rebuild.
 
-## Key configuration & state (`scripts/app/main.js`)
+## Key configuration & state (`scripts/app/globals.js`)
 
-The most useful knobs live near the **top of `scripts/app/main.js`** (around
-lines 922–1018). Start here when wiring the client to a server.
+The most useful knobs live in the **"connection and session" group at the top of
+`scripts/app/globals.js`**. Start here when wiring the client to a server.
 
 **Connection / autoconnect:**
 

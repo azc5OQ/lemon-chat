@@ -245,7 +245,7 @@ function WebSocketServer(options)
     this.close = function() { self.net_server.close(); };
 }
 
-// ---- client (browser WebSocket lookalike, enough for websocket_worker_onmessage) ----
+// ---- client (browser WebSocket lookalike, enough for workers__websocket_worker_onmessage) ----
 
 function WebSocketClient(url)
 {

@@ -51,6 +51,8 @@ void server_msg__send_start_song_stream_message_to_clients_in_same_channel(clien
 void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client_t* client_that_streams);
 void server_msg__send_add_tag_to_client_event_to_all_clients(uint64 client_id_of_client_that_got_the_new_tag, uint64 tag_id);
 void server_msg__send_client_alias_changed_to_all_clients(uint64 client_id, char* alias);
+void server_msg__send_client_country_code_changed_to_all_clients(client_t* client_whose_code_changed);
+void server_msg__send_admin_country_codes_to_all_clients(void);
 void server_msg__send_avatar_changed_event_to_all_clients(uint64 client_id_whose_avatar_changed);
 void server_msg__send_client_avatar_to_single_client(ws_cli_conn_t* websocket, char* dh_shared_secret, uint64 client_id, char* base64_avatar);
 void server_msg__send_stored_clients_to_single_client(ws_cli_conn_t* websocket, char* dh_shared_secret);

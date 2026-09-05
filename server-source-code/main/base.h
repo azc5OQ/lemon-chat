@@ -4,6 +4,8 @@
 // everything should be as simple as possible, but not simpler!
 
 int64   base__get_new_index_for_client(void);
+boole   base__set_icon_base64(icon_t* icon, cstring base64);
+void    base__free_icon_base64(icon_t* icon);
 
 void    base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64 client_id, char* decrypted_metadata_cstring);
 void    base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, uint64 index, char* decrypted_metadata_cstring);

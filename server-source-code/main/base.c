@@ -504,6 +504,8 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "webrtc_datachannel_cooldown_seconds");
     cJSON_AddNumberToObject(json_root, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "icon_max_size_bytes");
+    cJSON_AddNumberToObject(json_root, "icon_max_size_bytes", (double)g_server_settings.icon_max_size_bytes);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "show_music_bot_marquee_to_everyone");
     cJSON_AddItemToObject(json_root, "show_music_bot_marquee_to_everyone", cJSON_CreateBool(g_server_settings.show_music_bot_marquee_to_everyone == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_file_uploads");
@@ -602,7 +604,7 @@ boole base__save_server_settings_to_file(void)
 
         json_icon = cJSON_CreateObject();
         cJSON_AddNumberToObject(json_icon, "id", icon_in_loop->id);
-        cJSON_AddStringToObject(json_icon, "base64", &icon_in_loop->base64[0]);
+        cJSON_AddStringToObject(json_icon, "base64", (icon_in_loop->base64 != NULL_POINTER) ? icon_in_loop->base64 : "");
         cJSON_AddItemToArray(json_icons, json_icon);
     }
 
@@ -4210,4 +4212,51 @@ uint64 base__get_other_clients_in_channel(int client_to_ignore, uint64 channel_i
     }
 
     return count;
+}
+
+/**
+ * @brief gives an icon slot its own heap copy of a base64 data url, replacing whatever it held
+ *
+ * @param icon_t* icon -> the slot
+ * @param cstring base64 -> the data url, cut at ICON_MAX_LENGTH - 1 characters
+ *
+ * @return boole -> FALSE when the allocation failed (the slot is then empty)
+ */
+boole base__set_icon_base64(icon_t* icon, cstring base64)
+{
+    uint64 length = 0;
+
+    base__free_icon_base64(icon);
+
+    length = clib__utf8_string_length(base64);
+    if (length > ICON_MAX_LENGTH - 1)
+    {
+        length = ICON_MAX_LENGTH - 1;
+    }
+
+    icon->base64 = (char*)memorymanager__allocate(length + 1, MEMALLOC_ICON); // zeroed, so the copy ends in a NUL
+    if (icon->base64 == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    clib__copy_memory((void*)base64, (void*)icon->base64, length, length + 1);
+
+    return TRUE;
+}
+
+/**
+ * @brief releases an icon slot's base64 buffer, if it has one
+ *
+ * @param icon_t* icon -> the slot
+ *
+ * @return void
+ */
+void base__free_icon_base64(icon_t* icon)
+{
+    if (icon->base64 != NULL_POINTER)
+    {
+        memorymanager__free((nuint)icon->base64);
+        icon->base64 = NULL_POINTER;
+    }
 }

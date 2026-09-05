@@ -15,10 +15,9 @@
 
 /* @@INCLUDE: node/dom-shim.js @@ */
 
-/* @@INCLUDE: scripts/app/utils.js @@ */
 /* @@INCLUDE: scripts/vendor/aes-js.js @@ */
-/* @@INCLUDE: scripts/app/encoding.js @@ */
-/* @@INCLUDE: scripts/app/platform-detection.js @@ */
+/* @@INCLUDE: scripts/app/utils.js @@ */
+/* @@INCLUDE: scripts/app/globals.js @@ */
 /* @@INCLUDE: scripts/vendor/sha256.js @@ */
 /* @@INCLUDE: scripts/vendor/js-sha256.js @@ */
 // the rsa keypair, encrypt, decrypt, signing and the dh modpow all run in rsa_keygen.wasm;
@@ -34,7 +33,15 @@
 // the chat file handlers in messages.js call into this (card markup, header/body crypto), and
 // node decrypts direct chat files itself, so it is part of the headless bundle too
 /* @@INCLUDE: scripts/app/chat-files.js @@ */
-/* @@INCLUDE: scripts/app/node-runtime.js @@ */
-/* @@INCLUDE: scripts/app/connection-driver.js @@ */
-/* @@INCLUDE: scripts/app/android-webview.js @@ */
+/* @@INCLUDE: scripts/app/android-host.js @@ */
+/* @@INCLUDE: scripts/app/connection.js @@ */
+/* @@INCLUDE: scripts/app/workers.js @@ */
+/* @@INCLUDE: scripts/app/console-log.js @@ */
+/* @@INCLUDE: scripts/app/keys.js @@ */
+/* @@INCLUDE: scripts/app/channel-tree.js @@ */
+/* @@INCLUDE: scripts/app/chat.js @@ */
+/* @@INCLUDE: scripts/app/layout.js @@ */
+/* @@INCLUDE: scripts/app/voice.js @@ */
+/* @@INCLUDE: scripts/app/server-settings-tab.js @@ */
+/* @@INCLUDE: scripts/app/dispatch.js @@ */
 /* @@INCLUDE: scripts/app/main.js @@ */

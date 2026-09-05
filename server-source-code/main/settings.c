@@ -218,12 +218,13 @@ void settings__load_persisted_state(void)
             }
 
             icon_in_loop = &g_icons_array[icon_id];
+            base__free_icon_base64(icon_in_loop);
             clib__null_memory(icon_in_loop, sizeof(icon_t));
             icon_in_loop->id = icon_id;
             icon_in_loop->is_existing = TRUE;
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_icon, "base64");
-            if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &icon_in_loop->base64[0], clib__utf8_string_length(json_field->valuestring), ICON_MAX_LENGTH - 1); }
+            if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { base__set_icon_base64(icon_in_loop, json_field->valuestring); }
 
             loaded_icons++;
         }
@@ -438,7 +439,7 @@ void settings__init_tags_and_icons(void)
     admin_icon = &g_icons_array[0];
     admin_icon->id = 0;
     admin_icon->is_existing = TRUE;
-    clib__copy_memory((void*)&base64_icon, (void*)&admin_icon->base64, strlen(base64_icon), ICON_MAX_LENGTH);
+    base__set_icon_base64(admin_icon, &base64_icon[0]);
 }
 
 /**
@@ -581,6 +582,7 @@ void settings__load(void)
     g_server_settings.allow_typing_indicator = FALSE;
     g_server_settings.allow_client_renames = TRUE;
     g_server_settings.avatar_max_size_bytes = 51200;  // 50 KB raw image (~68 KB base64, fits MAX_CLIENT_AVATAR_LENGTH)
+    g_server_settings.icon_max_size_bytes = 5000;
     g_server_settings.allow_file_uploads = FALSE;
     g_server_settings.file_upload_max_size_bytes = FILE_UPLOAD_DEFAULT_SIZE_BYTES;
     g_server_settings.chat_picture_max_size_bytes = PICTURE_DEFAULT_SIZE_BYTES;
@@ -717,6 +719,13 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.allow_client_renames = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "avatar_max_size_bytes");
                 if (cJSON_IsNumber(json_field)) { g_server_settings.avatar_max_size_bytes = (int64)json_field->valuedouble; }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "icon_max_size_bytes");
+                if (cJSON_IsNumber(json_field))
+                {
+                    g_server_settings.icon_max_size_bytes = (int64)json_field->valuedouble;
+                    if (g_server_settings.icon_max_size_bytes < 1000) { g_server_settings.icon_max_size_bytes = 1000; }
+                    if (g_server_settings.icon_max_size_bytes > 30000) { g_server_settings.icon_max_size_bytes = 30000; }
+                }
 
                 // optional bundled-stunnel front-end (wss)
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "use_stunnel");

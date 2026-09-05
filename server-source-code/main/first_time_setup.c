@@ -231,6 +231,7 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     cJSON_AddItemToObject(json_root, "persist_identity_in_localstorage", cJSON_CreateBool(g_server_settings.persist_identity_in_localstorage == TRUE));
     cJSON_AddItemToObject(json_root, "allow_avatars", cJSON_CreateBool(g_server_settings.allow_avatars == TRUE));
     cJSON_AddNumberToObject(json_root, "avatar_max_size_bytes", (double)g_server_settings.avatar_max_size_bytes);
+    cJSON_AddNumberToObject(json_root, "icon_max_size_bytes", (double)g_server_settings.icon_max_size_bytes);
     cJSON_AddItemToObject(json_root, "allow_alias_registrations", cJSON_CreateBool(g_server_settings.allow_alias_registrations == TRUE));
     cJSON_AddItemToObject(json_root, "allow_stored_clients_list", cJSON_CreateBool(g_server_settings.allow_stored_clients_list == TRUE));
     cJSON_AddItemToObject(json_root, "allow_last_seen", cJSON_CreateBool(g_server_settings.allow_last_seen == TRUE));

@@ -1,29 +1,20 @@
-// NEW HERE? Read the glossary at the top of audio.js first. It explains how the two audio files
-// divide the work, and the words this project uses in its own way ("lane", "target", "slipping").
-// One warning: in THIS file, "frame" means one opus packet. In audio.js it means one moment of sound.
+// audio-opus-glue.js is embedded in template.html along with the other client files
+// it is the opus codec side of audio: it turns microphone sound into network packets and packets back
+// into sound, and runs inside the opus encoder and decoder workers (worker-entry.js picks the handler)
+// audio.js and dispatch.js post to these workers, voice.js sends what they encode
+// in this file a "frame" is one opus packet; in audio.js it is one moment of sound
+
+// state private to this file
+var encoder = null;
 
 
-// ========================================================================
-//  OPUS AUDIO TUNABLES
-// ------------------------------------------------------------------------
-//  Each value below is safe to change on its own. Numbers elsewhere in this
-//  file that are NOT listed here are load-bearing, not knobs:
-//     - g_decoder channel count = 2 (stereo interleaving is assumed everywhere
-//       downstream; mono packets are upmixed by libopus automatically)
-//     - sample rate = 48000 (opus fullband; the whole pipeline assumes it)
-//     - OPUS_CTL_RESET_STATE = 4028 (a fixed opus ABI constant)
-//
-//  There is a SECOND, separate set of audio knobs in audio.js inside the
-//  audio worklet - the per-sender JITTER BUFFER, which is what actually sets
-//  playback latency vs. smoothness. Search audio.js for "AUDIO WORKLET
-//  TUNABLES". Those matter more for felt delay than anything here.
-// ======================================================================
+// OPUS AUDIO TUNABLES: each value below is safe to change on its own; numbers elsewhere in this file are load-bearing
+// (decoder channel count 2 with stereo interleaving assumed downstream, sample rate 48000, OPUS_CTL_RESET_STATE 4028).
+// the jitter buffer knobs under "AUDIO WORKLET TUNABLES" in audio.js matter more for felt delay than anything here
 
-// how many people can be HEARD talking at once. one opus g_decoder per
-// concurrent speaker (opus is stateful - separate streams cannot share a
-// g_decoder). all are allocated once at worker start and never freed; a
-// "released" g_decoder just goes back to the pool. this is speakers-at-once,
-// not channel size - a handful of simultaneous voices is already a mush
+// how many people can be heard talking at once: one opus decoder per concurrent speaker (opus is stateful,
+// streams cannot share one). all are allocated at worker start and never freed; a released decoder goes back
+// to the pool. this is speakers-at-once, not channel size; a handful of simultaneous voices is already a mush
 var OPUS_DECODER_POOL_SIZE = 16;
 
 // microphone encode frame length. opus allows 2.5 / 5 / 10 / 20 / 40 / 60 ms.
@@ -31,20 +22,18 @@ var OPUS_DECODER_POOL_SIZE = 16;
 // audio lost per dropped packet. MUST be <= OPUS_DECODER_FRAME_CAPACITY_MS
 var OPUS_ENCODER_FRAME_DURATION_MS = 40;
 
-// opus g_encoder mode: 2048 = OPUS_APPLICATION_VOIP (tuned for speech),
+// opus encoder mode: 2048 = OPUS_APPLICATION_VOIP (tuned for speech),
 // 2049 = OPUS_APPLICATION_AUDIO (music), 2051 = RESTRICTED_LOWDELAY
 var OPUS_ENCODER_APPLICATION = 2048;
 
-// decode output buffer size, in ms of audio, per g_decoder. must be >= the
-// largest frame ANY sender might send (voice frames above, plus the server
-// music bot's frames). 60 ms is the opus maximum, so it always fits - only
-// lower this if you are sure no larger frames ever arrive
+// decode output buffer size in ms of audio, per decoder: must hold the largest frame any sender might send
+// (voice frames above, plus the server music bot's). 60 ms is the opus maximum, so it always fits; only lower
+// this if you are sure no larger frames ever arrive
 var OPUS_DECODER_FRAME_CAPACITY_MS = 60;
 
-// --- packet loss concealment (PLC) ---------------------------------------
-// when frames go missing on the wire, libopus can fabricate plausible fill
-// audio from the g_decoder's state instead of leaving a gap/click. active only
-// on the low-latency worklet path (the fallback mixer below never conceals).
+// --- packet loss concealment (PLC): when frames go missing, libopus can fabricate plausible fill audio
+// from the decoder's state instead of leaving a gap or click. active only on the low-latency worklet path
+// (the fallback mixer below never conceals)
 
 // max fill frames invented per gap. concealment decays fast: 1-2 is
 // transparent, 3+ starts to smear / sound robotic. set 0 to disable PLC
@@ -55,11 +44,10 @@ var OPUS_PLC_MAX_CONCEAL_FRAMES = 2;
 // stale invented audio
 var OPUS_PLC_MAX_GAP_TO_CONCEAL = 25;
 
-// every talk-spurt start (press, song start) jumps the outgoing sequence by this much;
-// receivers scrub that sender's decoder at half this delta. must be well above any real
-// in-mapping loss run (~160 frames before idle release) and stay under 32768 for the
-// 16-bit wrap arithmetic. the sender's encoder is reset at the same boundary
-var OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP = 1000;
+// every talk-spurt start (press, song start) jumps the outgoing sequence by this much, and receivers scrub that
+// sender's decoder at half this delta. must be well above any real in-mapping loss run (~160 frames before idle
+// release) and under 32768 for the 16-bit wrap arithmetic; the sender's encoder is reset at the same boundary
+var G_OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP = 1000;
 
 // --- fallback mixer (only when AudioWorklet is unavailable) ---------------
 // used on insecure contexts / old browsers. the worklet path ignores all of
@@ -70,7 +58,7 @@ var OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP = 1000;
 // past ~60 ms makes playback choppy
 var OPUS_TICK_INTERVAL_MS = 20;
 
-// a sender silent this long has its g_decoder returned to the pool for reuse
+// a sender silent this long has its decoder returned to the pool for reuse
 var OPUS_DECODER_IDLE_RELEASE_SECONDS = 5;
 
 // consecutive out-of-order "late" frames before we decide the sender
@@ -102,6 +90,18 @@ var custom_typeof = (function (global)
 
 
 
+/**
+ * @brief an opus encoder on the wasm: the encoder state, a resampler when the microphone rate is not the opus rate, and the heap views the encode paths write into
+ *
+ * @param number application -> the opus application mode (2048 voip, 2049 audio, 2051 restricted lowdelay)
+ * @param number frameDuration -> the frame length in ms
+ * @param number sampleRate -> the opus rate, 48000
+ * @param number originalRate -> the microphone's rate; a resampler is built when it differs
+ * @param number channels -> channels of the input
+ * @param object params -> unused
+ *
+ * @return void a constructor, used with new
+ */
 function OpusEncoder(application, frameDuration, sampleRate, originalRate, channels, params)
 {
     var err;
@@ -156,10 +156,14 @@ function OpusEncoder(application, frameDuration, sampleRate, originalRate, chann
     this.out = Module.HEAPU8.subarray(this.outPtr, this.outPtr + outSize);
 }
 
-// the views cached in the constructor detach if the wasm heap ever grows afterwards -
-// and SpeexResampler.process reallocates its io buffers whenever a bigger chunk than
-// any before arrives, which can trigger exactly that growth mid-run. called at the top
-// of both encode paths; a no-op while the cached buffer still matches the live heap
+/**
+ * @brief re-derives the cached heap views when the wasm heap grew
+ *        SpeexResampler.process reallocates its io buffers whenever a bigger chunk than any before
+ *        arrives, which can trigger exactly that mid-run. called at the top of both encode paths;
+ *        a no-op while the cached buffer still matches the live heap
+ *
+ * @return void
+ */
 OpusEncoder.prototype.refresh_heap_views_if_detached = function ()
 {
     if (this.buf.buffer === Module.HEAPF32.buffer)
@@ -171,9 +175,12 @@ OpusEncoder.prototype.refresh_heap_views_if_detached = function ()
     this.out = Module.HEAPU8.subarray(this.outPtr, this.outPtr + (1275 * 3 + 7));
 }
 
-// invalidates audio data still in buffer
-// added because when person push to talk, some leftover data remained there
-// experimental, (didnt work)
+/**
+ * @brief invalidates the audio still in the buffer and rebuilds the resampler
+ *        added because leftover data remained after a push-to-talk; experimental, did not help
+ *
+ * @return void
+ */
 OpusEncoder.prototype.reset = function ()
 {
     
@@ -205,6 +212,15 @@ OpusEncoder.prototype.reset = function ()
 
 }
 
+/**
+ * @brief encodes microphone samples: resamples when needed, fills whole frames and encodes each completed one
+ *        whether resampling is needed is known at construction, from the microphone rate; done
+ *        wrong, a voice comes out too high or too low
+ *
+ * @param Float32Array samples -> mono pcm at the microphone rate
+ *
+ * @return array|undefined the opus packets completed by these samples (Uint8Array each), undefined when the resampler failed
+ */
 OpusEncoder.prototype.encode = function (samples)
 {
     // if resample is needed or not, is known right at the beginning, based on clients microphone
@@ -257,6 +273,14 @@ OpusEncoder.prototype.encode = function (samples)
     }
 }
 
+/**
+ * @brief encodes decoded mp3 samples, resampling 44100 Hz material to 48 kHz first, since every mp3 has its own rate
+ *
+ * @param Float32Array samples -> pcm from the mp3 decoder
+ * @param number input_pcm_sample_rate -> the mp3's rate
+ *
+ * @return array|undefined the opus packets completed by these samples, undefined when the resampler failed
+ */
 OpusEncoder.prototype.encode_mp3_chunk = function (samples, input_pcm_sample_rate)
 {
     // goal of this function is to make sure PCM is converted to 48kHz if it needs to be
@@ -307,6 +331,11 @@ OpusEncoder.prototype.encode_mp3_chunk = function (samples, input_pcm_sample_rat
     }
 }
 
+/**
+ * @brief frees the wasm encoder state and the resamplers
+ *
+ * @return void
+ */
 OpusEncoder.prototype.destroy = function ()
 {
     _opus_encoder_destroy(this.handle);
@@ -324,6 +353,14 @@ OpusEncoder.prototype.destroy = function ()
     this.buf = null;
 }
 
+/**
+ * @brief an opus decoder on the wasm: the decoder state and the heap views one packet and one decoded frame live in
+ *
+ * @param number sampleRate -> the opus rate, 48000
+ * @param number channels -> output channels, 2 for the interleaved stereo everything downstream expects
+ *
+ * @return void a constructor, used with new
+ */
 function OpusDecoder(sampleRate, channels)
 {
     this.channels = channels;
@@ -358,24 +395,38 @@ function OpusDecoder(sampleRate, channels)
     this.last_decoded_frame_size = 0;
 }
 
-// re-derives the wasm-heap views from the current heap buffer. the views cached at construction
-// time detach if the emscripten heap grows during a later instance's allocation, so after building
-// the whole g_decoder pool every member's views are refreshed once, when no further mallocs follow
+/**
+ * @brief re-derives the wasm-heap views from the current heap buffer
+ *        the views cached at construction time detach if the emscripten heap grows during a later
+ *        instance's allocation, so after building the whole decoder pool every member's views are
+ *        refreshed once, when no further mallocs follow
+ *
+ * @return void
+ */
 OpusDecoder.prototype.refresh_heap_views = function()
 {
     this.buf = Module.HEAPU8.subarray(this.bufPtr, this.bufPtr + this.bufSize);
     this.pcm = Module.HEAPF32.subarray(this.pcmPtr / 4, this.pcmPtr / 4 + this.frameSize * this.channels);
 }
 
+/**
+ * @brief decodes one opus packet into this.pcm
+ *        the payload is the audio bytes decrypted with the maintainer's channel key on this end;
+ *        an oversize packet (beyond a valid opus packet's 1275*3+7 bytes) is refused, because it
+ *        would throw a RangeError and take the whole decoder worker down
+ *
+ * @param ArrayBuffer payload -> the opus packet
+ *
+ * @return number samples per channel produced, negative on an opus error, -1 for an oversize packet
+ */
 OpusDecoder.prototype.decode = function (payload)
 {
-    // payload = audio bytes decrypted with maintainer's channel key on clients end (this end)
-    // stock libopus signature: opus_decode_float(state, data, len, pcm_out, frame_size, decode_fec)
-    // frame_size is the CAPACITY of pcm_out in samples per channel; the return value is how many
-    // samples per channel were actually produced. decoded pcm is read from this.pcm afterwards
+    // payload = audio bytes decrypted with the maintainer's channel key on this end. stock libopus signature
+    // opus_decode_float(state, data, len, pcm_out, frame_size, decode_fec): frame_size is the capacity of pcm_out
+    // in samples per channel, the return value how many were produced; decoded pcm is read from this.pcm afterwards
 
     // a valid opus packet never exceeds this.bufSize (1275*3+7); anything bigger would
-    // make the set() below throw a RangeError and take the whole g_decoder worker down
+    // make the set() below throw a RangeError and take the whole decoder worker down
     if (payload.byteLength > this.bufSize)
     {
         return -1;
@@ -392,10 +443,12 @@ OpusDecoder.prototype.decode = function (payload)
     return ret;
 }
 
-// packet loss concealment: calling opus_decode_float with data=NULL and len=0 makes
-// libopus synthesize one plausible frame from the g_decoder's predictor state instead of
-// going silent. only possible once at least one real frame told us the stream's frame
-// duration. returns samples per channel written into this.pcm, or 0 when unable
+/**
+ * @brief packet loss concealment: opus_decode_float with data=NULL and len=0 makes libopus synthesize one plausible frame from the predictor state instead of going silent
+ *        possible once a real frame told us the stream's frame duration
+ *
+ * @return number samples per channel written into this.pcm, 0 when unable
+ */
 OpusDecoder.prototype.conceal_lost_frame = function ()
 {
     if (this.last_decoded_frame_size <= 0)
@@ -413,6 +466,11 @@ OpusDecoder.prototype.conceal_lost_frame = function ()
     return ret;
 }
 
+/**
+ * @brief frees the wasm decoder state
+ *
+ * @return void
+ */
 OpusDecoder.prototype.destroy = function ()
 {
     _opus_decoder_destroy(this.handle);
@@ -425,7 +483,14 @@ var IS_WORKER = !global.document && !!global.postMessage;
 var IS_CURRENT_THREAD_WORKER = IS_WORKER && /blob:/i.test((global.location || {}).protocol);
 
 
-function create_new_webworker_in_same_file(worker_name)
+/**
+ * @brief creates one of the workers from this very page: the moduleFactory source is patched with the worker's name (THREAD_NAME) and loaded as a blob url
+ *
+ * @param string worker_name -> the name the worker runs under, "opus_decoder_worker" and the like
+ *
+ * @return Worker the new worker
+ */
+function audio_opus_glue__create_new_webworker_in_same_file(worker_name)
 {
     console.log("trying to create webworker " + worker_name);
     let URL = global.URL || global.webkitURL || null;
@@ -447,22 +512,27 @@ function create_new_webworker_in_same_file(worker_name)
     let worker_url = URL.createObjectURL(new Blob(['(', code, ')();'], { type: 'text/javascript' }));
     let newly_created_worker = new global.Worker(worker_url);
     console.log("webworker created: " + worker_name);
-    newly_created_worker.onmessage = mainthread_onmessage;
+    newly_created_worker.onmessage = dispatch__mainthread_onmessage;
     newly_created_worker.worker_name = worker_name;
     return newly_created_worker;
 }
 
 
-// mainthread_onmessage (the main-thread worker-message dispatcher) lives in main.js
+// dispatch__mainthread_onmessage (the main-thread worker-message dispatcher) lives in main.js
 
 
-// e.data.value must be Float32Array
-function opus_encoder_worker_onmessage(e)
+/**
+ * @brief the opus encoder worker's message handler: "encode" and "encode_mp3_chunk" post the packets back, the rest manages the encoder (create, clear, destroy)
+ *
+ * @param object e -> the worker message event; e.data.value of "encode" must be a Float32Array
+ *
+ * @return void
+ */
+function audio_opus_glue__opus_encoder_worker_onmessage(e)
 {
     if (e.data.type == "encode")
     {
-        // let resampled = g_opus_encoding_sampler.process(e.data.value);
-        let opus_data_chunks = g_encoder.encode(e.data.value);
+        let opus_data_chunks = encoder.encode(e.data.value);
 
         // no full frame completed: nothing to send, and posting undefined
         // made the main thread throw on .length
@@ -480,28 +550,27 @@ function opus_encoder_worker_onmessage(e)
     {
         // drops the half-filled frame (it used to survive across push-to-talk sessions
         // and replay old speech on the next press)
-        if (g_encoder != null)
+        if (encoder != null)
         {
-            g_encoder.bufPos = 0;
+            encoder.bufPos = 0;
 
             // the mic-path resampler keeps a few ms of filter history; rebuild it so no
             // old samples bleed into the next talk (reset_mem is not exported from wasm)
-            if (g_encoder.resampler != null)
+            if (encoder.resampler != null)
             {
-                let old_resampler = g_encoder.resampler;
-                g_encoder.resampler = new SpeexResampler(g_encoder.channels, g_encoder.originalRate, g_encoder.sampleRate);
+                let old_resampler = encoder.resampler;
+                encoder.resampler = new SpeexResampler(encoder.channels, encoder.originalRate, encoder.sampleRate);
                 old_resampler.destroy();
             }
 
             // codec predictor reset - one half of a pair with the receivers' spurt-start scrub
             // (triggered by the sequence jump); unpaired, spurt heads decode as a loud squelch
-            try { _opus_encoder_ctl(g_encoder.handle, OPUS_CTL_RESET_STATE); } catch (reset_err) { console.log("encoder reset_state failed: " + reset_err); }
+            try { _opus_encoder_ctl(encoder.handle, OPUS_CTL_RESET_STATE); } catch (reset_err) { console.log("encoder reset_state failed: " + reset_err); }
         }
     }
     else if (e.data.type == "encode_mp3_chunk")
     {
-        // let resampled = g_opus_encoding_sampler.process(e.data.value);
-        let opus_data_chunks = g_encoder.encode_mp3_chunk(e.data.value, e.data.mp3_sample_rate);
+        let opus_data_chunks = encoder.encode_mp3_chunk(e.data.value, e.data.mp3_sample_rate);
 
         // same guard as "encode": an incomplete frame returns nothing
         if (opus_data_chunks == null)
@@ -521,11 +590,11 @@ function opus_encoder_worker_onmessage(e)
         let encoder_channels = 1;
         let encoder_output_samplerate = 48000; // if unsupported sample rate is used, Encoder wont construct
         let encoder_original_samplerate = e.data.sampleRate;
-        g_encoder = new OpusEncoder(encoder_application_use, encoder_frame_duration, encoder_output_samplerate, encoder_original_samplerate, encoder_channels, 0);
+        encoder = new OpusEncoder(encoder_application_use, encoder_frame_duration, encoder_output_samplerate, encoder_original_samplerate, encoder_channels, 0);
     }
     else if (e.data.type == "destruct")
     {
-        g_encoder.destroy();
+        encoder.destroy();
     }
 }
 
@@ -537,14 +606,9 @@ var opus_decoder_worker_clients_opus_data_count = 0; // im keeping count in sepa
 var opus_decoder_worker_current_channel_opus_client_ids = [];
 var opus_decoder_worker_current_channel_opus_client_ids_map = new Map();
 
-// per-sender g_decoder pool. opus is stateful (each frame is predicted from the same stream's previous
-// frame), so every concurrently-audible sender needs its own g_decoder - pushing interleaved streams
-// through one g_decoder corrupts the predictor state of all of them. the pool is allocated ONCE at init
-// (a mid-run malloc can grow the wasm heap and detach the cached heap views) and is never freed:
-// "releasing" a g_decoder just returns its slot to the free list, and the codec state is scrubbed in
-// place with OPUS_RESET_STATE when the slot is handed to a new sender. sized to simultaneous
-// SPEAKERS, not channel population - past a handful of concurrent voices the mix is noise anyway.
-// pool size / idle-release / reset-state constant all live in the TUNABLES block at the top of this file
+// the per-sender decoder pool: opus is stateful, so each concurrently audible sender needs its own decoder
+// (interleaved streams through one corrupt each other's predictor). allocated once at init (a mid-run malloc can
+// grow the wasm heap and detach the cached views), never freed: a release returns the slot, OPUS_RESET_STATE scrubs it
 var opus_decoder_pool = [];
 var opus_decoder_pool_free_indices = [];
 var opus_decoder_sender_map = new Map(); // sender client_id -> { pool_index, last_used_tick }
@@ -564,10 +628,16 @@ var opus_decoder_worker_concealed_frame_count = 0;
 // (per sender, no mixing here) - no 20 ms tick, no main-thread hop. null = tick/fallback mode
 var opus_decoder_direct_worklet_port = null;
 
-// returns the sender's g_decoder, claiming a pool slot on first use. on pool exhaustion the
-// longest-idle sender's slot is stolen (that one stream restarts cleanly on its next frame,
-// everyone else stays untouched)
-function opus_decoder_worker_get_decoder_for_sender(sender_client_id)
+/**
+ * @brief the sender's decoder, claiming a pool slot on first use
+ *        on pool exhaustion the longest-idle sender's slot is stolen (that one stream restarts
+ *        cleanly on its next frame, everyone else stays untouched)
+ *
+ * @param number sender_client_id -> the sender
+ *
+ * @return OpusDecoder|null the decoder, null when the pool is empty
+ */
+function audio_opus_glue__opus_decoder_worker_get_decoder_for_sender(sender_client_id)
 {
     let mapping = opus_decoder_sender_map.get(sender_client_id);
 
@@ -622,9 +692,13 @@ function opus_decoder_worker_get_decoder_for_sender(sender_client_id)
     return opus_decoder_pool[pool_index];
 }
 
-// returns slots of senders that have been silent for a while back to the free list.
-// no state is touched here; the reset happens when the slot is reassigned
-function opus_decoder_worker_release_idle_decoders()
+/**
+ * @brief returns the slots of senders that have been silent for a while to the free list
+ *        no state is touched here; the reset happens when the slot is reassigned
+ *
+ * @return void
+ */
+function audio_opus_glue__opus_decoder_worker_release_idle_decoders()
 {
     for (const [sender, m] of opus_decoder_sender_map)
     {
@@ -637,17 +711,19 @@ function opus_decoder_worker_release_idle_decoders()
 }
 
 
-// this function gets run every 20ms. Can be extended to 100ms? possibly 200ms? But not more.
-// this function handles merging of multiple opus streams into single pcm from very high level perspective
-// decodes one chunk with THAT SENDER'S pooled g_decoder, applying the per-sender sequence rules
-// (duplicate/late drop, loss concealment, resync after a counter restart). returns an Array
-// of fresh interleaved-stereo Float32Arrays: with allow_plc, up to OPUS_PLC_MAX_CONCEAL_FRAMES
-// concealed frames patched over a detected loss, then the decoded frame itself - without it,
-// exactly one element. returns null when the chunk was dropped (duplicate/late/corrupt).
-// used by BOTH modes: the direct pipe decodes on arrival, the tick mixer per 20 ms round
-function opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, allow_plc)
+/**
+ * @brief decodes one chunk with that sender's pooled decoder under the per-sender sequence rules: duplicate and late drop, loss concealment, resync after a counter restart
+ *        both the direct pipe and the 20 ms tick mixer use it
+ *
+ * @param number sender_client_id -> the sender
+ * @param object chunk_entry -> the opus bytes and their sequence number
+ * @param boolean allow_plc -> true to patch concealed frames over a detected loss
+ *
+ * @return array|null fresh interleaved-stereo Float32Arrays (concealed frames before the real one), null when the chunk was dropped
+ */
+function audio_opus_glue__opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, allow_plc)
 {
-    let sender_decoder = opus_decoder_worker_get_decoder_for_sender(sender_client_id);
+    let sender_decoder = audio_opus_glue__opus_decoder_worker_get_decoder_for_sender(sender_client_id);
     let frames_to_conceal = 0;
 
     if (sender_decoder == null)
@@ -685,7 +761,7 @@ function opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, 
             _opus_decoder_ctl(sender_decoder.handle, OPUS_CTL_RESET_STATE);
             sender_decoder.last_decoded_frame_size = 0;
         }
-        else if (sequence_delta - 1 >= (OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP >> 1))
+        else if (sequence_delta - 1 >= (G_OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP >> 1))
         {
             // the sender's deliberate spurt-start jump (its encoder was reset at the same
             // boundary): scrub so both predictors begin from zero. not loss, so not counted
@@ -758,13 +834,19 @@ function opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, 
     return decoded_frames;
 }
 
-// direct mode: decode one sender's chunk immediately (no 20 ms tick latency) and transfer the
-// pcm straight to the player worklet, which jitter-buffers per sender and mixes on the audio
-// clock. concealed frames ride the same pipe ahead of the real frame - to the worklet they
-// are indistinguishable from received audio and simply fill the time the lost frames covered
-function opus_decoder_worker_decode_and_pipe(sender_client_id, chunk_entry)
+/**
+ * @brief direct mode: decodes one sender's chunk immediately (no 20 ms tick latency) and transfers the pcm straight to the player worklet, which jitter-buffers per sender and mixes on the audio clock
+ *        concealed frames ride the same pipe ahead of the real frame; to the worklet they are
+ *        received audio filling the time the loss covered
+ *
+ * @param number sender_client_id -> the sender
+ * @param object chunk_entry -> the opus bytes and their sequence number
+ *
+ * @return void
+ */
+function audio_opus_glue__opus_decoder_worker_decode_and_pipe(sender_client_id, chunk_entry)
 {
-    let decoded_frames = opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, true);
+    let decoded_frames = audio_opus_glue__opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, true);
 
     if (decoded_frames == null)
     {
@@ -782,8 +864,15 @@ function opus_decoder_worker_decode_and_pipe(sender_client_id, chunk_entry)
     }
 }
 
-// fallback (tick) mode: register the sender for this 20 ms round and queue the chunk for the mixer
-function opus_decoder_worker_queue_chunk_for_tick(sender_client_id, chunk_entry)
+/**
+ * @brief fallback (tick) mode: registers the sender for this 20 ms round and queues the chunk for the mixer
+ *
+ * @param number sender_client_id -> the sender
+ * @param object chunk_entry -> the opus bytes and their sequence number
+ *
+ * @return void
+ */
+function audio_opus_glue__opus_decoder_worker_queue_chunk_for_tick(sender_client_id, chunk_entry)
 {
     if (!opus_decoder_worker_current_channel_opus_client_ids.includes(sender_client_id))
     {
@@ -801,23 +890,32 @@ function opus_decoder_worker_queue_chunk_for_tick(sender_client_id, chunk_entry)
     opus_decoder_worker_clients_opus_data_count = opus_decoder_worker_clients_opus_data_count + 1;
 }
 
-// direct-pipe mode housekeeping: the mixing tick is gone, but idle g_decoder slots still need
-// returning to the pool. the tick counter advances by one tick-interval's worth per second so
-// the "1 tick = OPUS_TICK_INTERVAL_MS" units of last_used_tick / IDLE_TICKS_BEFORE_RELEASE stay valid
-function opus_decoder_worker_housekeeping_function()
+/**
+ * @brief direct-pipe mode housekeeping: the mixing tick is gone, but idle decoder slots still need returning to the pool
+ *        the tick counter advances by one tick-interval's worth per second so the "1 tick =
+ *        OPUS_TICK_INTERVAL_MS" units of last_used_tick / IDLE_TICKS_BEFORE_RELEASE stay valid
+ *
+ * @return void
+ */
+function audio_opus_glue__opus_decoder_worker_housekeeping_function()
 {
     opus_decoder_tick_counter = opus_decoder_tick_counter + OPUS_HOUSEKEEPING_TICKS_PER_SECOND;
-    opus_decoder_worker_release_idle_decoders();
+    audio_opus_glue__opus_decoder_worker_release_idle_decoders();
 }
 
-function opus_decoder_worker_interval_function()
+/**
+ * @brief the fallback mixer's 20 ms tick: orders each sender's queued chunks by sequence number (wrap-aware), decodes them with that sender's decoder, sums and clamps the frames and posts one mixed block per time step
+ *
+ * @return void
+ */
+function audio_opus_glue__opus_decoder_worker_interval_function()
 {
     opus_decoder_tick_counter = opus_decoder_tick_counter + 1;
 
     // cheap periodic sweep: hand slots of long-silent senders back to the pool
     if ((opus_decoder_tick_counter & 63) == 0)
     {
-        opus_decoder_worker_release_idle_decoders();
+        audio_opus_glue__opus_decoder_worker_release_idle_decoders();
     }
 
     if (opus_decoder_worker_clients_opus_data_count == 0)
@@ -859,10 +957,9 @@ function opus_decoder_worker_interval_function()
         }
     }
 
-    // per time step: decode each sender's chunk with THAT SENDER'S g_decoder (predictor state stays
-    // per-stream), sum the frames in js, clamp to [-1,1], post one mixed block - same message the
-    // main thread always consumed. decode is called with clear=1 so the shared frame buffer holds
-    // exactly the current call's frame, which is accumulated into the scratch before the next call
+    // per time step: decode each sender's chunk with that sender's decoder (predictor state stays per-stream),
+    // sum the frames in js, clamp to [-1,1], post one mixed block, the message the main thread always consumed.
+    // decode is called with clear=1, so the shared frame buffer holds exactly this call's frame before accumulating
     for (let ArrayBuffer_index = 0; ArrayBuffer_index < longestLength; ArrayBuffer_index++)
     {
         let mixed_sample_count = 0;
@@ -880,11 +977,10 @@ function opus_decoder_worker_interval_function()
             let sender_client_id = opus_decoder_worker_current_channel_opus_client_ids[client_index];
             let chunk_entry = opus_decoder_worker_clients_opus_data[client_index][ArrayBuffer_index];
 
-            // sequence rules + per-sender decode live in the shared helper (same one the
-            // direct pipe uses); null means the chunk was dropped (duplicate/late/corrupt).
-            // plc is off here: the tick mixer aligns frames by queue position, so injecting
-            // extra concealed frames would shift this sender against the others mid-round
-            let decoded_frames = opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, false);
+            // sequence rules and per-sender decode live in the shared helper (the direct pipe's too); null means
+            // the chunk was dropped. plc is off here: the tick mixer aligns frames by queue position, so extra
+            // concealed frames would shift this sender against the others mid-round
+            let decoded_frames = audio_opus_glue__opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, false);
 
             if (decoded_frames == null)
             {
@@ -931,7 +1027,17 @@ function opus_decoder_worker_interval_function()
     opus_decoder_worker_current_channel_opus_client_ids_map.clear();
 }
 
-function opus_decoder_worker_onmessage(event)
+/**
+ * @brief the opus decoder worker's message handler
+ *        a voice frame ([4B sender id][encrypted 2B sequence + opus]) is decrypted with the channel
+ *        keys and decoded, through the direct pipe or the tick queue; the other types manage the
+ *        pool, the pipe port and the keys
+ *
+ * @param object event -> the worker message event; event.data.type picks the branch
+ *
+ * @return void
+ */
+function audio_opus_glue__opus_decoder_worker_onmessage(event)
 {
     // voice frame: [4B sender client id][encrypted(2B sequence + opus)]
     if (event.data.type == "mainthread__add_data_to_opus_decoder")
@@ -942,7 +1048,7 @@ function opus_decoder_worker_onmessage(event)
         let extracted_client_id = dataView.getInt32(0, true);
 
         let opus_ArrayBuffer_encrypted = event.data.value.slice(4);
-        let decrypted_bytes = decrypt_data_with_aes_keys(current_channel_keys, opus_ArrayBuffer_encrypted);
+        let decrypted_bytes = keys__decrypt_data_with_aes_keys(g_current_channel_keys, opus_ArrayBuffer_encrypted);
 
         // after decryption: [2B sequence little endian][opus]. too-short frames are dropped
         if (decrypted_bytes == null || decrypted_bytes.length < 3)
@@ -958,11 +1064,11 @@ function opus_decoder_worker_onmessage(event)
         // direct mode decodes right now and pipes to the worklet; tick mode queues for the mixer
         if (opus_decoder_direct_worklet_port != null)
         {
-            opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
+            audio_opus_glue__opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
             return;
         }
 
-        opus_decoder_worker_queue_chunk_for_tick(extracted_client_id, chunk_entry);
+        audio_opus_glue__opus_decoder_worker_queue_chunk_for_tick(extracted_client_id, chunk_entry);
     }
     else if (event.data.type == "mainthread__add_data_to_opus_decoder_musicbot")
     {
@@ -994,15 +1100,15 @@ function opus_decoder_worker_onmessage(event)
 
         if (opus_decoder_direct_worklet_port != null)
         {
-            opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
+            audio_opus_glue__opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
             return;
         }
 
-        opus_decoder_worker_queue_chunk_for_tick(extracted_client_id, chunk_entry);
+        audio_opus_glue__opus_decoder_worker_queue_chunk_for_tick(extracted_client_id, chunk_entry);
     }
     else if (event.data.type == "mainthread__channel_keys_for_opus_decoder")
     {
-        current_channel_keys = event.data.value;
+        g_current_channel_keys = event.data.value;
         // console.log("mainthread__channel_keys_for_opus_decoder got channel keys", current_channel_keys);
     }
     else if (event.data.type == "use_direct_worklet_pipe")
@@ -1013,7 +1119,7 @@ function opus_decoder_worker_onmessage(event)
         opus_decoder_direct_worklet_port = event.data.port;
 
         clearInterval(opus_decoder_worker_interval);
-        opus_decoder_worker_interval = setInterval(opus_decoder_worker_housekeeping_function, 1000);
+        opus_decoder_worker_interval = setInterval(audio_opus_glue__opus_decoder_worker_housekeeping_function, 1000);
 
         // drop anything the tick queue still holds; the pipe owns playback from here
         opus_decoder_worker_clients_opus_data.length = 0;
@@ -1037,24 +1143,22 @@ function opus_decoder_worker_onmessage(event)
         {
             if (opus_decoder_direct_worklet_port != null)
             {
-                opus_decoder_worker_interval = setInterval(opus_decoder_worker_housekeeping_function, 1000);
+                opus_decoder_worker_interval = setInterval(audio_opus_glue__opus_decoder_worker_housekeeping_function, 1000);
             }
             else
             {
-                opus_decoder_worker_interval = setInterval(opus_decoder_worker_interval_function, OPUS_TICK_INTERVAL_MS);
+                opus_decoder_worker_interval = setInterval(audio_opus_glue__opus_decoder_worker_interval_function, OPUS_TICK_INTERVAL_MS);
             }
         }
     }
     else if (event.data.type == "init")
     {
         // fallback mixer tick (replaced by housekeeping once the worklet pipe activates)
-        opus_decoder_worker_interval = setInterval(opus_decoder_worker_interval_function, OPUS_TICK_INTERVAL_MS);
+        opus_decoder_worker_interval = setInterval(audio_opus_glue__opus_decoder_worker_interval_function, OPUS_TICK_INTERVAL_MS);
 
-        // allocate the whole per-sender g_decoder pool up front - every wasm malloc happens here,
-        // before any audio flows, so the heap never grows mid-run under the cached views.
-        // decoders are STEREO: an opus g_decoder's channel count is independent of the packet's -
-        // stereo music-bot packets decode as true stereo, mono voice packets get duplicated to
-        // both channels by libopus itself. everything downstream is interleaved L R L R
+        // the whole per-sender decoder pool is allocated up front: every wasm malloc happens here, before any
+        // audio flows, so the heap never grows mid-run under the cached views. decoders are stereo (a decoder's
+        // channel count is independent of the packet's): stereo bot packets stay stereo, mono voice is duplicated by libopus
         for (let pool_index = 0; pool_index < OPUS_DECODER_POOL_SIZE; pool_index++)
         {
             opus_decoder_pool.push(new OpusDecoder(48000, 2));
