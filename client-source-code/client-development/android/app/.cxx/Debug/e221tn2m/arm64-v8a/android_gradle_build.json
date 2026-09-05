@@ -1,0 +1,40 @@
+{
+  "buildFiles": [
+    "C:\\Users\\babikp\\Desktop\\lala\\lemon-chat\\client-source-code\\android\\app\\src\\main\\cpp\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "D:\\androidsdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "C:\\Users\\babikp\\Desktop\\lala\\lemon-chat\\client-source-code\\android\\app\\.cxx\\Debug\\e221tn2m\\arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "D:\\androidsdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "C:\\Users\\babikp\\Desktop\\lala\\lemon-chat\\client-source-code\\android\\app\\.cxx\\Debug\\e221tn2m\\arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "lemonchatnode::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "lemonchatnode",
+      "output": "C:\\Users\\babikp\\Desktop\\lala\\lemon-chat\\client-source-code\\android\\app\\build\\intermediates\\cxx\\Debug\\e221tn2m\\obj\\arm64-v8a\\liblemonchatnode.so",
+      "runtimeFiles": [
+        "C:\\Users\\babikp\\Desktop\\lala\\lemon-chat\\client-source-code\\android\\app\\src\\main\\jniLibs\\arm64-v8a\\libnode.so"
+      ]
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "D:\\androidsdk\\ndk\\27.2.12479018\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang.exe",
+      "cppCompilerExecutable": "D:\\androidsdk\\ndk\\27.2.12479018\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

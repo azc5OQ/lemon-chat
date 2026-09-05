@@ -1,0 +1,24 @@
+2026-08-20T15:00:39.736Z [log] android-main starting
+2026-08-20T15:00:39.741Z [log] node v24.14.0 on win32/x64
+2026-08-20T15:00:39.742Z [log] cwd C:\Users\babikp\Desktop\lala\lemon-chat\client-source-code\nodejs-client
+2026-08-20T15:00:39.743Z [log] __dirname C:\Users\babikp\Desktop\lala\lemon-chat\client-source-code\nodejs-client
+2026-08-20T15:00:39.838Z [log] %c[main][Object.<anonymous>:91][17:00:39.834]%c color:#6ab0ff;font-weight:bold color:inherit bundle loaded, exports: server_msg, client_msg, android_js_bridge, init_node_runtime, node_set_connection_wanted, node_forward_raw_request, set_frame_listener, set_connection_status_listener, set_unread_listener, set_incoming_call_listener, node_set_ui_attached, node_set_device_network, get_connection_status, node_connect_intent, get_auth_frame, set_on_message_processed, read_state
+2026-08-20T15:00:39.840Z [log] %c[main][Object.<anonymous>:92][17:00:39.839]%c color:#6ab0ff;font-weight:bold color:inherit WebSocket is function
+2026-08-20T15:00:39.842Z [log] %c[main][connection_driver:12276][17:00:39.842]%c color:#6ab0ff;font-weight:bold color:inherit connect-path: driver started
+2026-08-20T15:00:39.844Z [log] %c[main][Object.<anonymous>:97][17:00:39.843]%c color:#6ab0ff;font-weight:bold color:inherit node runtime initialised (loopback workers + log sink + keypair requested)
+2026-08-20T15:00:39.864Z [log] %c[main][Object.<anonymous>:115][17:00:39.864]%c color:#6ab0ff;font-weight:bold color:inherit android-main alive, waiting for the bridge to hand over server details
+2026-08-20T15:00:39.874Z [log] %c[main][anon:290][17:00:39.874]%c color:#6ab0ff;font-weight:bold color:inherit loopback ui: listening on 127.0.0.1:64545
+2026-08-20T15:00:39.876Z [log] %c[main][anon:111][17:00:39.875]%c color:#6ab0ff;font-weight:bold color:inherit loopback ui ready on port 64545
+2026-08-20T15:00:39.880Z [log] %c[main][connect_to_bridge:225][17:00:39.880]%c color:#6ab0ff;font-weight:bold color:inherit bridge: dialing 127.0.0.1:64544
+2026-08-20T15:00:39.888Z [log] %c[main][Socket.<anonymous>:229][17:00:39.888]%c color:#6ab0ff;font-weight:bold color:inherit bridge: connected to java on port 64544
+2026-08-20T15:00:40.093Z [log] %c[main][handle_command:154][17:00:40.092]%c color:#6ab0ff;font-weight:bold color:inherit bridge: settings received, connecting
+2026-08-20T15:00:40.095Z [log] %c[main][Object.accept_current_settings_from_android:12570][17:00:40.094]%c color:#6ab0ff;font-weight:bold color:inherit android settings received, app_mode = 
+2026-08-20T15:00:40.097Z [log] %c[main][Object.accept_current_settings_from_android:12715][17:00:40.096]%c color:#6ab0ff;font-weight:bold color:inherit accept_current_settings_from_android autoconnect_details{"host":"127.0.0.1","port":"1111","keys":[]}
+2026-08-20T15:00:40.098Z [log] %c[main][request_identity:12195][17:00:40.097]%c color:#6ab0ff;font-weight:bold color:inherit connect-path: keypair requested (random)
+2026-08-20T15:00:40.100Z [log] %c[main][connection_driver:12293][17:00:40.099]%c color:#6ab0ff;font-weight:bold color:inherit connect-path: target 127.0.0.1:1111, waiting for keypair
+2026-08-20T15:00:40.132Z [log] %c[main][anon:5974][17:00:40.131]%c color:#6ab0ff;font-weight:bold color:inherit this.e ->  3
+2026-08-20T15:00:40.134Z [log] %c[main][anon:5976][17:00:40.133]%c color:#6ab0ff;font-weight:bold color:inherit ee ->  3
+2026-08-20T15:00:45.618Z [log] %c[main][mainthread_onmessage:18378][17:00:45.618]%c color:#6ab0ff;font-weight:bold color:inherit public key string -> m1ah/TUn39J66HGErB9TOVGfM8tOOcN21CINPFzn9zg1YMbCA369gGZ1F5DvtlIN9gKTCQevy3qltHPbKHAbiXHvOxFpZke1kaeauJB8luK7snef9WaOjEMeEMTanO+IizixOWKsmx+/XYu15scdLAlqImMHCps3dJEc3Ij7/Qiag8knp13E+nc2li/oPMKHSIDqKxslEudj5uNvikt8ByLtGcd/nUG+Wn5yxXns0dkPhM1o8S457FjZGAQwRaJmpTm4p1daMcRN7bSvHa8tcsig0KF3x/DP9Kov3Op7hldZkjPl+vye9pXOILJHLLVKvpgZSNAb4o4YYh/u6d3oPw==
+2026-08-20T15:00:45.729Z [log] %c[main][attempt_connection:18191][17:00:45.728]%c color:#6ab0ff;font-weight:bold color:inherit connection_string -> ws://127.0.0.1:1111/
+2026-08-20T15:00:46.349Z [log] %c[main][g_websocket_instance.onclose:13992][17:00:46.347]%c color:#6ab0ff;font-weight:bold color:inherit websocket closed
+2026-08-20T15:00:46.362Z [warn] %c[main][mainthread_onmessage:18335][17:00:46.361]%c color:#6ab0ff;font-weight:bold color:inherit server connection lost (identity switch in progress: false)

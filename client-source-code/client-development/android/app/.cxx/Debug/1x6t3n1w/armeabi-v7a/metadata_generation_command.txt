@@ -1,0 +1,19 @@
+                        -HC:\Users\babikp\Desktop\lala\lemon-chat\client-source-code\client-development\android\app\src\main\cpp
+-DCMAKE_SYSTEM_NAME=Android
+-DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+-DCMAKE_SYSTEM_VERSION=26
+-DANDROID_PLATFORM=android-26
+-DANDROID_ABI=armeabi-v7a
+-DCMAKE_ANDROID_ARCH_ABI=armeabi-v7a
+-DANDROID_NDK=D:\androidsdk\ndk\27.2.12479018
+-DCMAKE_ANDROID_NDK=D:\androidsdk\ndk\27.2.12479018
+-DCMAKE_TOOLCHAIN_FILE=D:\androidsdk\ndk\27.2.12479018\build\cmake\android.toolchain.cmake
+-DCMAKE_MAKE_PROGRAM=D:\androidsdk\cmake\3.22.1\bin\ninja.exe
+-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=C:\Users\babikp\Desktop\lala\lemon-chat\client-source-code\client-development\android\app\build\intermediates\cxx\Debug\1x6t3n1w\obj\armeabi-v7a
+-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=C:\Users\babikp\Desktop\lala\lemon-chat\client-source-code\client-development\android\app\build\intermediates\cxx\Debug\1x6t3n1w\obj\armeabi-v7a
+-DCMAKE_BUILD_TYPE=Debug
+-BC:\Users\babikp\Desktop\lala\lemon-chat\client-source-code\client-development\android\app\.cxx\Debug\1x6t3n1w\armeabi-v7a
+-GNinja
+-DANDROID_STL=c++_shared
+                        Build command args: []
+                        Version: 2

@@ -467,7 +467,7 @@ if errorlevel 1 (
   echo   WARNING: python not on PATH - skipping client build, the served client.html may be stale or missing.
 ) else (
   echo Building the browser client client.html ...
-  python "%ROOT_DIRECTORY%\..\client-source-code\client-development\build.py"
+  python "%ROOT_DIRECTORY%\..\client-source-code\client-development\browser\build.py"
 )
 
 

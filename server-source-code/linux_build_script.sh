@@ -315,7 +315,7 @@ cd ../../
 
 message "building the browser client (client.html)"
 if type python3 >/dev/null 2>&1; then
-  python3 "$ROOT_DIRECTORY/../client-source-code/client-development/build.py"
+  python3 "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.py"
 else
   warning "python3 not found - skipping client build, the served client.html may be stale or missing"
 fi
