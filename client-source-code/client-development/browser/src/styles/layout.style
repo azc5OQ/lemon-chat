@@ -710,6 +710,26 @@ p.identity-dialog-hint {
     margin-right: 20px;
     margin-bottom: 4px;
 }
+/* the "his public key:" header line: a 4096-bit key has no break opportunity, and termix inherits nowrap */
+.single-server-message {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+/* the key itself: an ellipsis until clicked, then the whole key wrapped (chat__setup_public_key_expand) */
+.server-message-key {
+    display: inline-block;
+    max-width: 26ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+    cursor: pointer;
+}
+.server-message-key-expanded {
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
 
 #server-settings-tab-log {
     display: none;

@@ -155,6 +155,9 @@ void onopen(ws_cli_conn_t* client)
         goto label_onopen_end;
     }
 
+    // every socket, before any check judges it: this is the only trace a bot leaves
+    server_logs__socket_opened(ip_address);
+
     // drop banned ips right away, before any client slot is set up
     if (base__is_ip_banned(ip_address) == TRUE)
     {
@@ -223,6 +226,18 @@ void onclose(ws_cli_conn_t* websocket)
     }
 
     DBG_AUTHENTICATION log_info("%s %d %s", "onclose", client_index, "\n");
+
+    // the socket log needs the address and name before the slot is wiped; a socket that never got
+    // a slot (refused at open) still has its address in the library until this callback returns
+    if (client_index != -1)
+    {
+        server_logs__socket_closed(g_clients_array[client_index].ip_address,
+            (g_clients_array[client_index].is_authenticated == TRUE) ? g_clients_array[client_index].username : NULL_POINTER);
+    }
+    else
+    {
+        server_logs__socket_closed(ws_getaddress(websocket), NULL_POINTER);
+    }
 
     if (client_index == -1)
     {
@@ -1108,8 +1123,18 @@ int main(void)
     for (;;)
     {
         clib__null_memory(input, sizeof(input));
-        fgets(input, sizeof(input), stdin);
+        if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
+        {
+            break;
+        }
         clib__sanitize_stdin(input);
+    }
+
+    log_info("%s", "stdin closed, console input is off");
+
+    for (;;)
+    {
+        sleep(3600);
     }
 
     return 0;

@@ -6836,6 +6836,12 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         g_server_settings.log_client_disconnects = cJSON_IsTrue(json_field);
     }
 
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "log_socket_opens_and_closes");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.log_socket_opens_and_closes = cJSON_IsTrue(json_field);
+    }
+
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "log_failed_attempts");
     if (cJSON_IsBool(json_field))
     {

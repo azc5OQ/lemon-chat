@@ -597,6 +597,7 @@ void settings__load(void)
     g_server_settings.log_server_settings_updates = FALSE;
     g_server_settings.log_kicks_and_bans = FALSE;
     g_server_settings.log_client_disconnects = FALSE;
+    g_server_settings.log_socket_opens_and_closes = FALSE;
     g_server_settings.log_failed_attempts = FALSE;
     g_server_settings.admin_log_max_size_bytes = ADMIN_LOG_DEFAULT_SIZE_BYTES;
     g_server_settings.admin_log_retention_days = ADMIN_LOG_DEFAULT_RETENTION_DAYS;
@@ -808,6 +809,8 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.log_kicks_and_bans = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "log_client_disconnects");
                 if (cJSON_IsBool(json_field)) { g_server_settings.log_client_disconnects = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "log_socket_opens_and_closes");
+                if (cJSON_IsBool(json_field)) { g_server_settings.log_socket_opens_and_closes = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "log_failed_attempts");
                 if (cJSON_IsBool(json_field)) { g_server_settings.log_failed_attempts = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_log_max_size_bytes");

@@ -694,6 +694,7 @@ async function main__window_onload()
     document.getElementById("server-settings-country-block-select").onchange = server_settings_tab__country_block_select_onchange;
     chat_files__setup_chat_file_drag_and_drop();
     chat_files__setup_chat_file_card_glow();
+    chat__setup_public_key_expand();
     chat_files__apply_file_upload_policy_to_ui();
     document.getElementById("add-key-button").onclick = UI.add_key_button_on_click;
     document.getElementById("show-hide-log-button").onclick = UI.show_hide_log_on_click;

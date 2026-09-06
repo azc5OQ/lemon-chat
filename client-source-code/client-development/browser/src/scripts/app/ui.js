@@ -764,8 +764,8 @@ var UI = {
 
                     let html_to_append = "<div class=\"chat-context\" id=\"" + id_to_find + "\">\n\
                                                     <div class=\"single-server-message\">now talking to user: " + data_username + "</div>\n\
-                                                    <div class=\"single-server-message\">your public key: " + g_rsa_public_key_string + "</div>\n\
-                                                    <div class=\"single-server-message\">his public key: " + chat__sanitize_string(channel_tree__get_public_key_by_client_id(g_chat_message_receiver_id)) + "</div>\n\
+                                                    <div class=\"single-server-message\">your public key: <span class=\"server-message-key\" title=\"click to expand\">" + g_rsa_public_key_string + "</span></div>\n\
+                                                    <div class=\"single-server-message\">his public key: <span class=\"server-message-key\" title=\"click to expand\">" + chat__sanitize_string(channel_tree__get_public_key_by_client_id(g_chat_message_receiver_id)) + "</span></div>\n\
                                                     <div class=\"single-server-message\"> </div>\n\
                                                 </div>";
 

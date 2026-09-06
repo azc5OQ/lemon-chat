@@ -542,6 +542,8 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "log_kicks_and_bans", cJSON_CreateBool(g_server_settings.log_kicks_and_bans == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "log_client_disconnects");
     cJSON_AddItemToObject(json_root, "log_client_disconnects", cJSON_CreateBool(g_server_settings.log_client_disconnects == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "log_socket_opens_and_closes");
+    cJSON_AddItemToObject(json_root, "log_socket_opens_and_closes", cJSON_CreateBool(g_server_settings.log_socket_opens_and_closes == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "log_failed_attempts");
     cJSON_AddItemToObject(json_root, "log_failed_attempts", cJSON_CreateBool(g_server_settings.log_failed_attempts == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_log_max_size_bytes");
@@ -3818,7 +3820,9 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
 
     if (json_root == NULL_POINTER)
     {
-        DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %llu %s", "client : ", client_index, " json_root is null \n");
+        // the frame is about to cost the client its socket, so its head goes to the log always
+        log_info("%s %llu %s %llu %s %.600s", "client : ", client_index, " unparseable frame, decrypted length ",
+            (uint64)strlen(decrypted_metadata_cstring), " text : ", decrypted_metadata_cstring);
         ws_close_client(websocket);
         // there is no json object to call cJSON_Delete on so just disconnect the client
         return;
@@ -3828,7 +3832,9 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
 
     if (status == FALSE)
     {
-        DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s%llu%s", "client : ", client_index, "client_msg__is_message_correct_at_first_sight_and_get_message_type failed \n");
+        // same reason as above: the validator said why, this says what it looked at
+        log_info("%s %llu %s %llu %s %.600s", "client : ", client_index, " rejected frame, decrypted length ",
+            (uint64)strlen(decrypted_metadata_cstring), " text : ", decrypted_metadata_cstring);
         ws_close_client(websocket);
         cJSON_Delete(json_root);
         return;

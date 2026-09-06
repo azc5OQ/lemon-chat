@@ -557,6 +557,40 @@ function chat__send_composed_chat_message(target)
 }
 
 /**
+ * @brief the click handler that expands and collapses a public key in a private chat's header line
+ *        one delegated listener on the chat container, so keys in chats opened later are covered too
+ *
+ * @return void
+ */
+function chat__setup_public_key_expand()
+{
+    if (G_HAS_DOM == false)
+    {
+        return;
+    }
+
+    let chat = document.getElementById("chat-context-container");
+
+    if (chat == null)
+    {
+        return;
+    }
+
+    chat.addEventListener("click", function(event)
+    {
+        let key = (event.target != null && typeof event.target.closest === "function") ? event.target.closest(".server-message-key") : null;
+
+        if (key == null)
+        {
+            return;
+        }
+
+        key.classList.toggle("server-message-key-expanded");
+        key.title = key.classList.contains("server-message-key-expanded") ? "click to collapse" : "click to expand";
+    });
+}
+
+/**
  * @brief scrolls the chat to its newest message
  *        a received message only does so while the local "auto-scroll to the end" setting is on, so a
  *        person reading older messages is not yanked down; the user's own send or tab switch always does

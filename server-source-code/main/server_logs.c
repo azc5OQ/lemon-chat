@@ -357,6 +357,55 @@ void server_logs__join_refused(char* reason, char* ip_address)
 }
 
 /**
+ * @brief records a socket opening, before any check has judged it, so a bot that never logs in still leaves a trace
+ *
+ * @param char* ip_address -> where the socket came from
+ *
+ * @return void
+ */
+void server_logs__socket_opened(char* ip_address)
+{
+    char text[ADMIN_LOG_ENTRY_MAX_LENGTH];
+
+    if (g_server_settings.log_socket_opens_and_closes == FALSE || ip_address == NULL_POINTER)
+    {
+        return;
+    }
+
+    snprintf(text, sizeof(text), "socket opened (ip %s)", ip_address);
+    _server_logs_internal__append(text);
+}
+
+/**
+ * @brief records a socket closing; names the user when the socket had logged in, otherwise says it never did
+ *
+ * @param char* ip_address -> where the socket came from, NULL when the library no longer knows
+ * @param char* username -> the logged-in name, NULL or empty when the socket never got past the handshake
+ *
+ * @return void
+ */
+void server_logs__socket_closed(char* ip_address, char* username)
+{
+    char text[ADMIN_LOG_ENTRY_MAX_LENGTH];
+    char* shown_ip = (ip_address != NULL_POINTER) ? ip_address : "unknown";
+
+    if (g_server_settings.log_socket_opens_and_closes == FALSE)
+    {
+        return;
+    }
+
+    if (username != NULL_POINTER && username[0] != 0)
+    {
+        snprintf(text, sizeof(text), "socket closed: %s (ip %s)", username, shown_ip);
+    }
+    else
+    {
+        snprintf(text, sizeof(text), "socket closed before login (ip %s)", shown_ip);
+    }
+    _server_logs_internal__append(text);
+}
+
+/**
  * @brief records a join refused because the ip resolved to a blocked country
  *
  * @param char* country_iso_code -> the blocked country

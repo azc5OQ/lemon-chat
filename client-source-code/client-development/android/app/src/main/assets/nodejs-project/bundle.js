@@ -16718,6 +16718,40 @@ function chat__send_composed_chat_message(target)
 }
 
 /**
+ * @brief the click handler that expands and collapses a public key in a private chat's header line
+ *        one delegated listener on the chat container, so keys in chats opened later are covered too
+ *
+ * @return void
+ */
+function chat__setup_public_key_expand()
+{
+    if (G_HAS_DOM == false)
+    {
+        return;
+    }
+
+    let chat = document.getElementById("chat-context-container");
+
+    if (chat == null)
+    {
+        return;
+    }
+
+    chat.addEventListener("click", function(event)
+    {
+        let key = (event.target != null && typeof event.target.closest === "function") ? event.target.closest(".server-message-key") : null;
+
+        if (key == null)
+        {
+            return;
+        }
+
+        key.classList.toggle("server-message-key-expanded");
+        key.title = key.classList.contains("server-message-key-expanded") ? "click to collapse" : "click to expand";
+    });
+}
+
+/**
  * @brief scrolls the chat to its newest message
  *        a received message only does so while the local "auto-scroll to the end" setting is on, so a
  *        person reading older messages is not yanked down; the user's own send or tab switch always does
@@ -18977,6 +19011,7 @@ var SERVER_SETTINGS_FIELDS = [
     { key: "log_server_settings_updates", id: "server-settings-log-settings-checkbox", kind: "bool", tab: "log" },
     { key: "log_kicks_and_bans", id: "server-settings-log-kicks-bans-checkbox", kind: "bool", tab: "log" },
     { key: "log_client_disconnects", id: "server-settings-log-disconnects-checkbox", kind: "bool", tab: "log" },
+    { key: "log_socket_opens_and_closes", id: "server-settings-log-sockets-checkbox", kind: "bool", tab: "log" },
     { key: "log_failed_attempts", id: "server-settings-log-failed-checkbox", kind: "bool", tab: "log" },
     { key: "admin_log_max_size_mb", id: "server-settings-log-max-size-input", kind: "number", fallback: 10, tab: "log" },
     { key: "admin_log_retention_days", id: "server-settings-log-retention-select", kind: "number", fallback: 7, tab: "log" }
@@ -21068,6 +21103,7 @@ async function main__window_onload()
     document.getElementById("server-settings-country-block-select").onchange = server_settings_tab__country_block_select_onchange;
     chat_files__setup_chat_file_drag_and_drop();
     chat_files__setup_chat_file_card_glow();
+    chat__setup_public_key_expand();
     chat_files__apply_file_upload_policy_to_ui();
     document.getElementById("add-key-button").onclick = UI.add_key_button_on_click;
     document.getElementById("show-hide-log-button").onclick = UI.show_hide_log_on_click;

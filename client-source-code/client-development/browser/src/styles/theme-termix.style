@@ -422,6 +422,17 @@ div#image-upload-preview {
     color: var(--tmx-text);
 }
 
+/* the two identity dialogs get no box geometry from layout.style, so without this they span the page */
+#identity-string-use-container-enter, #secret-identity-string-container-enter {
+    position: relative;
+    top: 25%;
+    width: 380px;
+    max-width: calc(100% - 40px);
+    margin: 0 auto;
+    padding-bottom: 8px;
+    overflow: hidden;
+}
+
 #menu-bar-container {
     background: var(--tmx-darkest);
     border-bottom: 1px solid var(--tmx-line);
@@ -564,7 +575,7 @@ div#image-upload-preview {
     position: absolute;
     z-index: 1;
     top: 0;
-    right: 87px;
+    right: 172px;
     width: 25px;
     height: 99%;
     border: 0px;
@@ -675,7 +686,7 @@ div#image-upload-preview {
     position: absolute;
     z-index: 1;
     top: 0;
-    right: 172px;
+    right: 87px;
     width: 25px;
     height: 99%;
     border: 0px;

@@ -1637,7 +1637,7 @@ a-toast:hover {
     position: absolute;
     z-index: 1;
     top: 0;
-    right: 87px;
+    right: 172px;
     width: 25px;
     height: 99%;
     border: 0px;
@@ -1693,7 +1693,7 @@ a-toast:hover {
     position: absolute;
     z-index: 1;
     top: 0;
-    right: 172px;
+    right: 87px;
     width: 25px;
     height: 99%;
     border: 0px;
@@ -1873,7 +1873,8 @@ a-toast:hover {
 #identity-string-use-container-enter {
     top: 25%;
     width: 380px;
-    height: 281px;
+    height: auto;
+    padding-bottom: 8px;
     background-color: #36393f;
     margin: 0 auto;
     border-radius: 13px;
@@ -1937,7 +1938,9 @@ a-toast:hover {
 
 #secret-identity-string-container-enter {
     color: white;
-    height: 274px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding-bottom: 8px;
 }
 
 #poke-client-enter-container-enter, #channel-properties-edit, #channel-password-enter, #admin-password-enter, #secret-identity-string-container-enter {

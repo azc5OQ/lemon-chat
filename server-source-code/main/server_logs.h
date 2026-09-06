@@ -14,6 +14,8 @@ void server_logs__client_banned(char* target_username, char* target_ip, char* ad
 void server_logs__client_disconnected(client_t* client);
 void server_logs__join_refused(char* reason, char* ip_address);
 void server_logs__join_refused_country(char* country_iso_code, char* ip_address);
+void server_logs__socket_opened(char* ip_address);
+void server_logs__socket_closed(char* ip_address, char* username);
 void server_logs__admin_password_failed(char* username, char* ip_address, char* attempted_password);
 void server_logs__cleared_by(char* admin_username);
 

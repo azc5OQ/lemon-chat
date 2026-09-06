@@ -36,6 +36,7 @@ var SERVER_SETTINGS_FIELDS = [
     { key: "log_server_settings_updates", id: "server-settings-log-settings-checkbox", kind: "bool", tab: "log" },
     { key: "log_kicks_and_bans", id: "server-settings-log-kicks-bans-checkbox", kind: "bool", tab: "log" },
     { key: "log_client_disconnects", id: "server-settings-log-disconnects-checkbox", kind: "bool", tab: "log" },
+    { key: "log_socket_opens_and_closes", id: "server-settings-log-sockets-checkbox", kind: "bool", tab: "log" },
     { key: "log_failed_attempts", id: "server-settings-log-failed-checkbox", kind: "bool", tab: "log" },
     { key: "admin_log_max_size_mb", id: "server-settings-log-max-size-input", kind: "number", fallback: 10, tab: "log" },
     { key: "admin_log_retention_days", id: "server-settings-log-retention-select", kind: "number", fallback: 7, tab: "log" }

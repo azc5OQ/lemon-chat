@@ -61,31 +61,31 @@ typedef const char* cstring;
 #endif
 
 #ifndef DEBUG_ACTIVE
-#define DBG_DLLMAIN if (0)
-#define DBG_CLIENT_MESSAGE if (0)
-#define DBG_CLIENT_MESSAGE_MAIN_FUNCTION if (0)
-#define DBG_AUTHENTICATION if (0)
-#define DBG_ENCRYPTION if (0)
-#define DBG_SERVER_MESSAGE if (0)
-#define DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE if (0)
-#define DBG_CLOSE_CONNECTION if (0)
-#define DBG_ONMESSAGE if (0)
-#define DBG_MEMORY_MANAGER if (0)
-#define DBG_CONNECTION_CHECK_THREAD if (0)
-#define DBG_CLIENT_DISCONNECT if (0)
-#define DBG_AUDIOCHANNEL_WEBRTC if (0)
-#define DBG_VIOLET if (0)
-#define DBG_DBG_MEMORY_ALLOCATIONS if (0)
-#define DBG_IP_TOOLS if (0)
-#define DBG_FILE_UPLOAD if (0)
-#define DBG_MUSIC_BOT if (0)
-#define DBG_RWLOCKS if (0)
+#define DBG_DLLMAIN if (0) 
+#define DBG_CLIENT_MESSAGE if (0) 
+#define DBG_CLIENT_MESSAGE_MAIN_FUNCTION if (0) 
+#define DBG_AUTHENTICATION if (0) 
+#define DBG_ENCRYPTION if (0) 
+#define DBG_SERVER_MESSAGE if (0) 
+#define DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE if (0) 
+#define DBG_CLOSE_CONNECTION if (0) 
+#define DBG_ONMESSAGE if (0) 
+#define DBG_MEMORY_MANAGER if (0) 
+#define DBG_CONNECTION_CHECK_THREAD if (0) 
+#define DBG_CLIENT_DISCONNECT if (0) 
+#define DBG_AUDIOCHANNEL_WEBRTC if (0) 
+#define DBG_VIOLET if (0) 
+#define DBG_DBG_MEMORY_ALLOCATIONS if (0) 
+#define DBG_IP_TOOLS if (0) 
+#define DBG_FILE_UPLOAD if (0) 
+#define DBG_MUSIC_BOT if (0) 
+#define DBG_RWLOCKS if (0) 
 // force-on even in a release build: identity-restore debugging (flip to if (0) when done)
-#define DBG_IDENTITIES if (0)
+#define DBG_IDENTITIES if (0) 
 #endif
 
 #ifdef DONT_USE_AUDIO_CHANNEL
-#define AUDIO_CHANNEL_CHECK_IF_RETURN_NEEDED if (1)
+#define AUDIO_CHANNEL_CHECK_IF_RETURN_NEEDED if (0) 
 #endif
 
 #ifndef DONT_USE_AUDIO_CHANNEL
@@ -269,6 +269,7 @@ typedef struct server_settings
     boole log_server_settings_updates;  // admin log: record who saved the server settings; default off
     boole log_kicks_and_bans;  // admin log: record kicks and bans (who did it, to whom); default off
     boole log_client_disconnects;  // admin log: record authenticated clients disconnecting; default off
+    boole log_socket_opens_and_closes;  // admin log: record every socket opening and closing, login or not (bots show up here); default off
     boole log_failed_attempts;  // admin log: record refused joins (wrong key, banned ip or identity, country, same ip) and wrong admin passwords; default off
     int64 admin_log_max_size_bytes;  // ram cap of the admin log; oldest entries fall out over it
     int64 admin_log_retention_days;  // admin log entries older than this are purged once a day
