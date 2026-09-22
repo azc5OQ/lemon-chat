@@ -12,6 +12,7 @@
 - audio in channel
 - end to end encryption
 - android app
+- screen sharing (in progress)
 
 <br>
 
