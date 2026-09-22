@@ -18,7 +18,8 @@
 ## other fun features
 - select .mp3 file from disk and play in channel
 - set different theme
-- change font size and color of message
+- rearange UI layout
+- change font size and color of message for both you and receivers
 - add groups/tags to other users
 - create music bots
 
