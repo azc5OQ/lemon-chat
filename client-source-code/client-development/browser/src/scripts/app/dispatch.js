@@ -20,6 +20,11 @@ function dispatch__mainthread_onmessage(e)
     {
         utils__custom_log(e.data.value);
     }
+    else if (typeof e.data.type === "string" && e.data.type.indexOf("video_worker__") == 0)
+    {
+        // everything the video worker posts back: packets to send, keyframe requests, decoder state
+        video__on_worker_message(e.data);
+    }
     else if (e.data.type == "opus_encoder_worker__encode_result")
     {
         // chunks already inside the encoder when push-to-talk ended arrive here after
@@ -571,6 +576,30 @@ function dispatch__mainthread_onmessage(e)
     {
         server_msg.process_stop_song_stream_from_server(e.data.value);
     }
+    else if (e.data.type == "data_processing_worker__video_stream_state_from_server")
+    {
+        server_msg.process_video_stream_state_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_offer_from_server")
+    {
+        server_msg.process_video_stream_offer_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_viewer_request_from_server")
+    {
+        server_msg.process_video_stream_viewer_request_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_viewer_state_from_server")
+    {
+        server_msg.process_video_stream_viewer_state_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_keyframe_request_from_server")
+    {
+        server_msg.process_video_stream_keyframe_request_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_refused_from_server")
+    {
+        server_msg.process_video_stream_refused_from_server(e.data.value);
+    }
     else if (e.data.type == "data_processing_worker__chat_message_delete_from_server")
     {
         server_msg.process_chat_message_delete_from_server(e.data.value);
@@ -856,6 +885,9 @@ function dispatch__mainthread_onmessage(e)
             type: "mainthread__channel_keys_for_opus_decoder",
             value: g_current_channel_keys
         });
+
+        // the video worker encrypts and decrypts stream packets with the same keys
+        video__post_channel_keys_to_worker();
     }
     else if (e.data.type == "data_processing_worker__tell_websocket_worker_to_send_data")
     {

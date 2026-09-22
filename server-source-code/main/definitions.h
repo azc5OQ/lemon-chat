@@ -57,6 +57,7 @@ typedef const char* cstring;
 #define DBG_MUSIC_BOT if (0)
 #define DBG_RWLOCKS if (0)
 #define DBG_IDENTITIES if (0)
+#define DBG_VIDEO_STREAM if (0)
 
 #endif
 
@@ -81,7 +82,8 @@ typedef const char* cstring;
 #define DBG_MUSIC_BOT if (0) 
 #define DBG_RWLOCKS if (0) 
 // force-on even in a release build: identity-restore debugging (flip to if (0) when done)
-#define DBG_IDENTITIES if (0) 
+#define DBG_IDENTITIES if (0)
+#define DBG_VIDEO_STREAM if (0)
 #endif
 
 #ifdef DONT_USE_AUDIO_CHANNEL
@@ -95,7 +97,8 @@ typedef const char* cstring;
 int mytypedef__check_data_types_for_consistency(void);
 
 #define MAX_CHANNELS 100
-#define MAX_CLIENTS 500
+#define DEFAULT_SERVER_SLOTS 500
+#define MAX_SERVER_SLOTS 100000
 #define MAX_CLIENT_STORED_DATA 100
 #define MAX_ICONS 1000
 #define MAX_TAGS 1000
@@ -170,6 +173,22 @@ int mytypedef__check_data_types_for_consistency(void);
 #define MAX_SIMULTANEOUS_FILE_SEND_THREADS 20
 #define CHALLENGE_STRING_SIZE 100
 
+// video streaming (screen share / video file, see VIDEO_STREAMING_DESIGN.md at the repo root): the
+// second data channel every peer gets next to the audio one. reliable and ordered, because a video
+// keyframe spans many sctp fragments and one lost fragment on the unreliable audio channel would
+// kill the whole frame
+#define VIDEO_DATACHANNEL_LABEL "video"
+// a viewer whose video channel has this much queued is skipped for the current frame instead of
+// stalling everyone; it notices the gap and asks the streamer for a keyframe
+#define VIDEO_RELAY_MAX_BUFFERED_BYTES (1024 * 1024)
+// the streamer is asked for a keyframe at most this often, no matter how many viewers ask
+#define VIDEO_KEYFRAME_REQUEST_MIN_INTERVAL_MS 1000
+// what the streamer announces about its stream, echoed to viewers in the offer
+#define VIDEO_STREAM_SOURCE_MAX_LENGTH 16   // "screen" or "file"
+#define VIDEO_STREAM_CODEC_MAX_LENGTH 32    // a webcodecs codec string such as avc1.42E01E or vp8
+#define VIDEO_STREAM_MAX_DIMENSION 4096
+#define VIDEO_STREAM_MAX_FPS 60
+
 #include "../third-party/theldus-websocket/include/ws.h"
 #include <pthread.h>
 #include <stdint.h>
@@ -206,6 +225,7 @@ typedef struct server_settings
     boole show_music_bot_marquee_to_everyone; // the "now playing" marquee also for people outside the bot's channel
     boole is_voice_chat_active;
     boole is_music_bot_audio_active;
+    boole is_video_streaming_active;  // clients may stream their screen or a video file to their channel; every channel also has its own toggle. off by default and never a setup question, the admin switches it on in the server settings tab; while off no client shows any stream ui
     boole is_logging_of_failed_attempts_active;
     boole are_identities_enabled;
     boole persist_identity_in_localstorage;  // bake a flag into the served client so it saves/restores the identity passphrase in localStorage; default off
@@ -313,7 +333,8 @@ typedef struct music_bot_client_extension_t
     uint64 music_bot_pthread_handle;
     boole is_music_bot_running;
     uint64 music_bot_songs_count;
-    music_bot_single_song_data_t songs[MUSIC_BOT_MAX_FILE_COUNT];
+    uint64 pending_song_uploads; // pins the song table until detached upload workers finish
+    music_bot_single_song_data_t* songs; // allocated once for an actual music bot
 } music_bot_client_extension_t;
 
 typedef struct client_file_upload_extension_t
@@ -339,6 +360,8 @@ typedef struct client_t
     uint64 client_id; // client id is the same as the index of the client_t in clients_array
     uint64 channel_id;
     uint64 temp_channel_id; // if is_temp_admin_channel, the id of the temp channel this client owns
+    uint64 idle_return_channel_id;
+    char idle_return_channel_password[CHANNEL_PASSWORD_MAX_LENGTH]; // authorization snapshot, never sent to clients
     int64 audio_state; // 1 -> active, 2 -> not active but enabled, 3 -> disabled but audio still active, 4 -> audio disabled
     uint64 timestamp_connected;
     uint64 timestamp_last_action;
@@ -356,6 +379,20 @@ typedef struct client_t
     char ip_address[INET6_ADDRSTRLEN]; // max size of an ipv6 address
     char country_iso_code[COUNTRY_ISO_CODE_LENGTH];
     char* base64_avatar;  // heap-allocated on demand (MEMALLOC_AVATAR), NULL when none; the live avatar served to others. persistent copy lives in the identity store
+    // video streaming: this client is the current streamer of its channel, with what it announced
+    boole is_streaming_video;
+    char video_stream_source[VIDEO_STREAM_SOURCE_MAX_LENGTH];
+    char video_stream_codec[VIDEO_STREAM_CODEC_MAX_LENGTH];
+    int64 video_stream_width;
+    int64 video_stream_height;
+    int64 video_stream_fps;
+    uint64 timestamp_last_video_keyframe_request_forwarded_ms;
+    // video streaming, viewer side: the streamer of this client's channel let it watch (implicit for
+    // members present at the start, explicit for later joiners), and it pressed connect. both live
+    // here rather than on the webrtc peer slot, because that slot is rebuilt on every datachannel
+    // retry and wiped when the transport closes, and neither should forget the consent
+    boole is_video_viewer_allowed;
+    boole is_video_viewer_watching;
     int* tag_ids; // must be int because a function of another library depends on this being int
     // int tag_ids_count;
     music_bot_client_extension_t music_bot_client_extension;
@@ -370,6 +407,9 @@ typedef struct channel
     boole is_channel_maintainer_present;
     boole is_using_password;
     boole is_audio_enabled;
+    boole is_video_stream_enabled;  // the per-channel video streaming toggle, persisted; only meaningful while the server-wide switch is on. default on, so switching the server on lights every channel up and admins / temp channel owners switch single channels off
+    boole is_video_stream_active;   // somebody streams in here right now (one stream per channel at a time)
+    uint64 video_streamer_client_id;
     boole is_music_bot_active_in_channel;
     boole is_temp_channel;
     boole is_client_limit_active;
@@ -481,6 +521,7 @@ typedef enum memory_manager_allocation_type_e
     MEMALLOC_OPUS_DATA_BUFFER_ENTRY,
     MEMALLOC_WEBRTC_PEERS,
     MEMALLOC_AUDIOCHANNEL_ONMESSAGE,
+    MEMALLOC_VIDEOCHANNEL_ONMESSAGE,
     MEMALLOC_MUSICBOT_AUDIOCHANNEL_ONMESSAGE,
     MEMALLOC_MUSICBOT_SONG,
     MEMALLOC_FILE_UPLOAD_BY_PARTS,
@@ -498,6 +539,8 @@ typedef struct webrtc_peer_t
 {
     int peer_connection_handle;
     int data_channel_handle;
+    int video_data_channel_handle;    // the second, reliable channel of this peer (VIDEO_DATACHANNEL_LABEL); 0 while not created
+    boole is_video_channel_connected; // its open callback fired and its close callback has not
     boole connected;
     audio_state_e last_sent_audio_state;
     boole is_sending_audio_right_now;
@@ -520,7 +563,6 @@ typedef struct data_for_file_send_thread_t
 {
     boole is_existing;
     file_send_type_e send_type;
-    uint64 receiving_client_ids[MAX_CLIENTS];
     uint64 receiving_clients_count;
     uint64 client_receiver_id; // in case it is sent to a single client
     char* buffer; // this is the buffer that must be split into parts
@@ -529,6 +571,7 @@ typedef struct data_for_file_send_thread_t
     uint64 server_chat_message_id;
     uint64 local_chat_message_id;
     char receive_type[32]; // what the receivers are told arrived: direct/channel chat picture or file
+    uint64 receiving_client_ids[]; // channel transfers allocate room for the startup slot count
 } data_for_file_send_thread_t;
 
 #endif

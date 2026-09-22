@@ -913,6 +913,9 @@ function connection__reset_chat_app_keep_identity()
     g_is_voice_chat_allowed_by_server = false;
     g_is_client_microphone_allowed_by_server = false;
     g_is_microphone_enabled = false;
+
+    // a stream we sent or watched is gone with the connection
+    video__reset_on_disconnect();
     g_is_microphone_active = false;
     g_last_sent_value_microphone_usage = false;
 

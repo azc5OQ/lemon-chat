@@ -8,7 +8,7 @@ extern const char* g_mark_warn;
 extern const char* g_mark_ask;
 
 
-extern char g_first_run_admin_password[];
+extern char* g_first_run_admin_password;
 
 void first_time_setup__run(char plaintext_keys[][256]);
 

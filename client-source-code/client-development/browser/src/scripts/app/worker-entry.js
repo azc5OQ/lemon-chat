@@ -38,5 +38,9 @@ if (IS_CURRENT_THREAD_WORKER)
     {
         global.onmessage = minimp3_worker__minimp3_worker_onmessage;
     }
+    else if (THREAD_NAME == "video_worker")
+    {
+        global.onmessage = video_worker__onmessage;
+    }
 
 }

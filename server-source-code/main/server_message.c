@@ -153,6 +153,8 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     cJSON_AddStringToObject(json_message_object1, "value", "success");
     cJSON_AddBoolToObject(json_message_object1, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
     cJSON_AddBoolToObject(json_message_object1, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
+    // video streaming policy: while off the client shows no stream ui at all (icon, popup, channel toggle)
+    cJSON_AddBoolToObject(json_message_object1, "is_video_streaming_allowed", g_server_settings.is_video_streaming_active);
     cJSON_AddBoolToObject(json_message_object1, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
     // the client attempts a fast reconnect only on a server that allows it
     cJSON_AddBoolToObject(json_message_object1, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
@@ -338,6 +340,7 @@ void server_msg__send_channel_list_to_single_client(ws_cli_conn_t* websocket, ch
         cJSON_AddStringToObject(single_channel, "description", g_channel_array[i].description);
         cJSON_AddBoolToObject(single_channel, "is_using_password", g_channel_array[i].is_using_password);
         cJSON_AddBoolToObject(single_channel, "is_audio_enabled", g_channel_array[i].is_audio_enabled);
+        cJSON_AddBoolToObject(single_channel, "is_video_stream_enabled", g_channel_array[i].is_video_stream_enabled);
         cJSON_AddBoolToObject(single_channel, "is_root_channel", g_channel_array[i].is_root_channel);
         cJSON_AddBoolToObject(single_channel, "has_maintainer", g_channel_array[i].is_channel_maintainer_present);
         cJSON_AddBoolToObject(single_channel, "is_temp_channel", g_channel_array[i].is_temp_channel);
@@ -496,6 +499,7 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
         // a stream already running when somebody logs in: the list is the only place a late
         // joiner can learn about it, start_song_stream went out before he was here
         cJSON_AddBoolToObject(single_client, "is_streaming_song", client_in_loop->is_streaming_song);
+        cJSON_AddBoolToObject(single_client, "is_streaming_video", client_in_loop->is_streaming_video);
         cJSON_AddStringToObject(single_client, "song_name", client_in_loop->song_name);
 
         cJSON_AddItemToArray(json_client_array, single_client);
@@ -838,6 +842,7 @@ void server_msg__send_active_microphone_usage_for_current_channel_to_single_clie
         cJSON_AddNumberToObject(single_object, "client_id", client_in_loop->client_id);
         cJSON_AddNumberToObject(single_object, "audio_state", client_in_loop->audio_state);
         cJSON_AddBoolToObject(single_object, "is_streaming_song", client_in_loop->is_streaming_song);
+        cJSON_AddBoolToObject(single_object, "is_streaming_video", client_in_loop->is_streaming_video);
         cJSON_AddStringToObject(single_object, "song_name", client_in_loop->song_name);
 
         cJSON_AddItemToArray(json_clients_array, single_object);
@@ -1318,6 +1323,7 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     cJSON_AddItemToObject(json_message_object1, "hide_admin_country_flag", cJSON_CreateBool(g_server_settings.hide_admin_country_flag == TRUE));
     cJSON_AddItemToObject(json_message_object1, "enable_audio", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "enable_music_bot_audio", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
+    cJSON_AddItemToObject(json_message_object1, "is_video_streaming_active", cJSON_CreateBool(g_server_settings.is_video_streaming_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "hide_clients_in_password_channels", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_temp_channels", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
     cJSON_AddItemToObject(json_message_object1, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
@@ -1486,6 +1492,7 @@ void server_msg__send_policy_update_to_all_clients(void)
         cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
         cJSON_AddBoolToObject(json_message_object1, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
         cJSON_AddBoolToObject(json_message_object1, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
+        cJSON_AddBoolToObject(json_message_object1, "is_video_streaming_allowed", g_server_settings.is_video_streaming_active);
 
         cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
@@ -1543,6 +1550,7 @@ void server_msg__send_channel_create_message_to_all_clients(uint64 created_chann
     cJSON_AddNumberToObject(json_message_object1, "maintainer_id", channel->maintainer_id);
     cJSON_AddBoolToObject(json_message_object1, "is_using_password", channel->is_using_password);
     cJSON_AddBoolToObject(json_message_object1, "is_audio_enabled", channel->is_audio_enabled);
+    cJSON_AddBoolToObject(json_message_object1, "is_video_stream_enabled", channel->is_video_stream_enabled);
     cJSON_AddBoolToObject(json_message_object1, "is_root_channel", channel->is_root_channel);
     cJSON_AddBoolToObject(json_message_object1, "has_maintainer", channel->is_channel_maintainer_present);
     cJSON_AddBoolToObject(json_message_object1, "is_temp_channel", channel->is_temp_channel);
@@ -1627,6 +1635,7 @@ void server_msg__send_channel_edit_message_to_all_clients(uint64 edited_channel_
     cJSON_AddStringToObject(json_message_object1, "channel_description", channel->description);
     cJSON_AddBoolToObject(json_message_object1, "is_using_password", (cJSON_bool)channel->is_using_password);
     cJSON_AddBoolToObject(json_message_object1, "is_audio_enabled", (cJSON_bool)channel->is_audio_enabled);
+    cJSON_AddBoolToObject(json_message_object1, "is_video_stream_enabled", (cJSON_bool)channel->is_video_stream_enabled);
     cJSON_AddBoolToObject(json_message_object1, "is_client_limit_active", (cJSON_bool)channel->is_client_limit_active);
     cJSON_AddNumberToObject(json_message_object1, "max_client_count", (double)channel->max_client_count);
     cJSON_AddBoolToObject(json_message_object1, "has_channel_icon", channel->has_channel_icon);
@@ -4785,4 +4794,300 @@ void server_msg__send_file_receive_completed_to_single_client(data_for_file_send
         ws_sendframe_txt(client_receiver->p_ws_connection, msg_text);
         memorymanager__free((nuint)msg_text);
     }
+}
+
+/**
+ * @brief tells every client in a channel that a video stream started or ended there, with what the streamer announced while it runs
+ *        the streamer gets it too, that is how its popup confirms the start; late joiners to the
+ *        server learn about a running stream from is_streaming_video in the client list instead
+ *
+ * @param uint64 channel_id -> the channel
+ * @param boole is_active -> TRUE for a start, FALSE for an end
+ * @param uint64 streamer_client_id -> the streamer (still valid on an end, its fields are already cleared then)
+ * @param cstring reason -> "started", "stopped", "streamer_left", "channel_disabled", "disabled", ...
+ *
+ * @return void
+ */
+void server_msg__send_video_stream_state_to_clients_in_same_channel(uint64 channel_id, boole is_active, uint64 streamer_client_id, cstring reason)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    uint64 i = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+    client_t* client = 0;
+    client_t* streamer = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_state_to_clients_in_same_channel \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_state");
+    cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)channel_id);
+    cJSON_AddNumberToObject(json_message_object1, "streamer_client_id", (double)streamer_client_id);
+    cJSON_AddBoolToObject(json_message_object1, "is_active", is_active);
+    cJSON_AddStringToObject(json_message_object1, "reason", reason);
+
+    if (is_active == TRUE && streamer_client_id < g_server_settings.max_client_count)
+    {
+        streamer = &g_clients_array[streamer_client_id];
+        cJSON_AddStringToObject(json_message_object1, "source", streamer->video_stream_source);
+        cJSON_AddStringToObject(json_message_object1, "codec", streamer->video_stream_codec);
+        cJSON_AddNumberToObject(json_message_object1, "width", (double)streamer->video_stream_width);
+        cJSON_AddNumberToObject(json_message_object1, "height", (double)streamer->video_stream_height);
+        cJSON_AddNumberToObject(json_message_object1, "fps", (double)streamer->video_stream_fps);
+    }
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+
+        if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        if (client->channel_id != channel_id)
+        {
+            continue;
+        }
+
+        size_of_allocated_message_buffer = 0;
+        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+        if (msg_text != NULL_POINTER)
+        {
+            ws_sendframe_txt(client->p_ws_connection, msg_text);
+            memorymanager__free((nuint)msg_text);
+        }
+    }
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+}
+
+/**
+ * @brief hands one member the stream's offer: it may now press connect. sent to everybody present at the start and to a later joiner the streamer allowed
+ *
+ * @param client_t* receiver -> the member
+ * @param client_t* streamer -> the streamer, whose announced source / codec / size ride along so the receiver can probe its decoder first
+ *
+ * @return void
+ */
+void server_msg__send_video_stream_offer_to_single_client(client_t* receiver, client_t* streamer)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_offer_to_single_client \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_offer");
+    cJSON_AddNumberToObject(json_message_object1, "streamer_client_id", (double)streamer->client_id);
+    cJSON_AddStringToObject(json_message_object1, "source", streamer->video_stream_source);
+    cJSON_AddStringToObject(json_message_object1, "codec", streamer->video_stream_codec);
+    cJSON_AddNumberToObject(json_message_object1, "width", (double)streamer->video_stream_width);
+    cJSON_AddNumberToObject(json_message_object1, "height", (double)streamer->video_stream_height);
+    cJSON_AddNumberToObject(json_message_object1, "fps", (double)streamer->video_stream_fps);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, receiver->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(receiver->p_ws_connection, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief asks the streamer whether a member that joined the channel after the start may watch
+ *
+ * @param client_t* streamer -> the streamer
+ * @param client_t* newcomer -> the member that just arrived
+ *
+ * @return void
+ */
+void server_msg__send_video_stream_viewer_request_to_single_client(client_t* streamer, client_t* newcomer)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_viewer_request_to_single_client \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_viewer_request");
+    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)newcomer->client_id);
+    cJSON_AddStringToObject(json_message_object1, "username", newcomer->username);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, streamer->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(streamer->p_ws_connection, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief tells the streamer that a viewer connected or disconnected, so it can count viewers and send a keyframe for a new one
+ *
+ * @param client_t* streamer -> the streamer
+ * @param uint64 viewer_client_id -> the viewer
+ * @param boole is_watching -> TRUE when it connected, FALSE when it dropped out
+ *
+ * @return void
+ */
+void server_msg__send_video_stream_viewer_state_to_single_client(client_t* streamer, uint64 viewer_client_id, boole is_watching)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_viewer_state_to_single_client \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_viewer_state");
+    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)viewer_client_id);
+    cJSON_AddBoolToObject(json_message_object1, "is_watching", is_watching);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, streamer->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(streamer->p_ws_connection, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief asks the streamer for a keyframe on behalf of a viewer that lost frames
+ *
+ * @param client_t* streamer -> the streamer
+ *
+ * @return void
+ */
+void server_msg__send_video_stream_keyframe_request_to_single_client(client_t* streamer)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_keyframe_request_to_single_client \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_keyframe_request");
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, streamer->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(streamer->p_ws_connection, msg_text);
+
+    memorymanager__free((nuint)msg_text);
+}
+
+/**
+ * @brief tells a client why its stream request was refused ("disabled", "channel_disabled", "busy", "not_allowed", "no_stream", "revoked")
+ *
+ * @param client_t* client -> the client that asked
+ * @param cstring reason -> the short wire reason
+ *
+ * @return void
+ */
+void server_msg__send_video_stream_refused_to_single_client(client_t* client, cstring reason)
+{
+    char* json_root_object1_string = 0;
+    int64 size_of_allocated_message_buffer = 0;
+    char* msg_text = 0;
+    cJSON* json_root_object1 = 0;
+    cJSON* json_message_object1 = 0;
+
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_refused_to_single_client \n");
+
+    json_root_object1 = cJSON_CreateObject();
+    json_message_object1 = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_refused");
+    cJSON_AddStringToObject(json_message_object1, "reason", reason);
+
+    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+
+    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+
+    size_of_allocated_message_buffer = 0;
+    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
+
+    base__free_json_message(json_root_object1, json_root_object1_string);
+
+    if (msg_text == NULL_POINTER)
+    {
+        return;
+    }
+
+    ws_sendframe_txt(client->p_ws_connection, msg_text);
+
+    memorymanager__free((nuint)msg_text);
 }

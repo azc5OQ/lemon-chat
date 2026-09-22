@@ -95,6 +95,7 @@
 /* @@INCLUDE: scripts/app/worker-entry.js @@ */
 /* @@INCLUDE: scripts/vendor/minimp3.js @@ */
 /* @@INCLUDE: scripts/app/minimp3-worker.js @@ */
+/* @@INCLUDE: scripts/app/video-worker.js @@ */
 /* @@INCLUDE: scripts/app/audio.js @@ */
 /* @@INCLUDE: scripts/app/sounds.js @@ */
 /* @@INCLUDE: scripts/app/messages.js @@ */
@@ -109,6 +110,7 @@
 /* @@INCLUDE: scripts/app/chat.js @@ */
 /* @@INCLUDE: scripts/app/layout.js @@ */
 /* @@INCLUDE: scripts/app/voice.js @@ */
+/* @@INCLUDE: scripts/app/video.js @@ */
 /* @@INCLUDE: scripts/app/server-settings-tab.js @@ */
 /* @@INCLUDE: scripts/app/dispatch.js @@ */
 /* @@INCLUDE: scripts/app/main.js @@ */
@@ -241,6 +243,10 @@
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-enable-music-bot-audio-checkbox">
                             <span>enable audio for music bots</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-enable-video-streaming-checkbox">
+                            <span>allow video streaming (screen share or a video file, to the streamer's channel; each channel has its own toggle too)</span>
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-hide-clients-in-password-protected-channels">
@@ -728,6 +734,13 @@
                             </label>
                         </div>
                     </div>
+                    <!-- video streaming (video.js): hidden unless the server allows it, the channel toggle is on and nobody else streams here -->
+                    <div id="upload-video-stream-container" style="display: none;">
+                        <div>
+                            <label class="custom-file-upload-button" id="video-stream-button" title="stream your screen or a video file to this channel"></label>
+                            <input id="choose-video-stream-file-input" onclick="this.value=null;" type="file" accept="video/*" style="display: none">
+                        </div>
+                    </div>
                     <div id='upload-file-container'>
                         <div>
                             <label class="custom-file-upload-button" id="custom-file-upload-button-file" title="attach a file">
@@ -743,6 +756,35 @@
         <input type="checkbox" id="toggle-microphone" class="offscreen">
         <input type="button" id="microphone-push-to-talk-button-touch-device">
         <label id="toggle-microphone-label" for="toggle-microphone"></label>
+        <!-- video streaming (video.js): the "screen or a video file" choice -->
+        <div id="video-stream-choice-container" style="display: none;">
+            <div id="video-stream-choice">
+                <p id="video-stream-choice-title">what do you want to stream to this channel?</p>
+                <input type="button" id="video-stream-choice-screen" value="share my screen">
+                <input type="button" id="video-stream-choice-file" value="share a video file">
+                <input type="button" id="video-stream-choice-cancel" value="cancel">
+            </div>
+        </div>
+        <!-- video streaming (video.js): the movable, resizable window; the streamer's preview or a viewer's picture -->
+        <div id="video-stream-popup" style="display: none;">
+            <div id="video-stream-popup-header">
+                <span id="video-stream-popup-title">stream</span>
+                <span id="video-stream-popup-close" title="close (a viewer disconnects)">&#10005;</span>
+            </div>
+            <div id="video-stream-popup-body">
+                <video id="video-stream-preview" autoplay muted playsinline style="display: none;"></video>
+                <canvas id="video-stream-canvas" style="display: none;"></canvas>
+                <p id="video-stream-popup-status" style="display: none;"></p>
+            </div>
+            <div id="video-stream-popup-requests" style="display: none;"></div>
+            <div id="video-stream-popup-footer">
+                <input type="button" id="video-stream-connect-button" value="connect" style="display: none;">
+                <input type="button" id="video-stream-disconnect-button" value="disconnect" style="display: none;">
+                <input type="button" id="video-stream-stop-button" value="stop streaming" style="display: none;">
+                <input type="button" id="video-stream-fullscreen-button" value="fullscreen">
+                <span id="video-stream-viewer-count"></span>
+            </div>
+        </div>
         <div id="contextmenus-container">
         </div>
         <div id="background-container">
@@ -780,6 +822,11 @@
                         <label class="dialog-form-label" for="channel-properties-disable-audio-checkbox">disable audio</label>
                         <div class="dialog-form-field">
                             <input type="checkbox" id="channel-properties-disable-audio-checkbox">
+                        </div>
+
+                        <label class="dialog-form-label" for="channel-properties-disable-video-checkbox" id="channel-properties-disable-video-label" style="display: none;">disable video streaming</label>
+                        <div class="dialog-form-field" id="channel-properties-disable-video-field" style="display: none;">
+                            <input type="checkbox" id="channel-properties-disable-video-checkbox">
                         </div>
 
                         <label class="dialog-form-label" for="channel-properties-limit-clients-checkbox">client limit</label>

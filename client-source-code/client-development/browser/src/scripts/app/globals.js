@@ -154,7 +154,8 @@ var g_server_policy = {
     file_upload_max_size: 10 * 1024 * 1024,    // largest raw chat file in bytes
     allow_chat_pictures: true,                 // inline pictures in chat; on unless the server says otherwise
     chat_picture_max_size: 4 * 1024 * 1024,    // largest raw inline picture in bytes; bigger images still travel as files
-    icon_max_size: 5000                        // largest raw tag/channel icon in bytes (the server settings tab upload)
+    icon_max_size: 5000,                       // largest raw tag/channel icon in bytes (the server settings tab upload)
+    is_video_streaming_allowed: false          // members may stream their screen or a video file to their channel; off = no stream ui at all
 };
 
 // ---- who is here ----
@@ -483,6 +484,34 @@ var g_iceconfig = null;
 var g_datachannel = null;
 
 var g_is_webrtc_datachannel_connected = false;
+
+// ---- video streaming (video.js, video-worker.js) ----
+
+var g_video_datachannel = null;                 // the second, reliable datachannel from the server (label "video")
+
+var g_is_video_datachannel_connected = false;
+
+var g_video_worker = null;                      // packetizes + encrypts on the streamer side, decrypts + decodes + draws on the viewer side
+
+// the one stream of the current channel as this client sees it
+var g_video_stream = {
+    is_active: false,               // somebody (maybe us) streams in the current channel
+    streamer_client_id: -1,
+    source: "",                     // "screen" or "file"
+    codec: "",
+    width: 0,
+    height: 0,
+    fps: 0,
+    role: "none",                   // "streamer", "viewer" or "none"
+    is_start_pending: false,        // we asked the server to start and wait for its video_stream_state
+    is_offered: false,              // the server sent us the offer, we may press connect
+    is_watching: false,             // we pressed connect and the server relays to us
+    is_decoder_supported: false,    // the announced codec decodes here
+    is_popup_open: false,
+    viewer_count: 0,                // streamer side
+    pending_viewer_requests: [],    // streamer side: [{ client_id, username }] waiting for yes / no
+    epoch: 0                        // bumped per stream we start, so viewers never mix two streams
+};
 
 var g_is_webrtc_datachannel_check_running = false;
 

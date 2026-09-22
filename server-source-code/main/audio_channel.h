@@ -7,8 +7,9 @@ extern webrtc_peer_t* g_webrtc_muggles_array;
 // handles for one disconnected peer's libdatachannel objects, passed to the detached teardown thread
 typedef struct webrtc_teardown_arg_t
 {
-    int peer_connection_handle;   // 0x0
-    int data_channel_handle;      // 0x4
+    int peer_connection_handle;    // 0x0
+    int data_channel_handle;       // 0x4 the audio channel
+    int video_data_channel_handle; // 0x8 the video channel (see video_stream.c), 0 when none
 } webrtc_teardown_arg_t;
 
 boole audio_channel__initialize_webrtc_datachannel_connection(client_t* client);

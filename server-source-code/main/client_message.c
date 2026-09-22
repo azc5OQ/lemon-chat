@@ -12,6 +12,7 @@
 #include "server_message.h"
 #include "server_logs.h"
 #include "audio_channel.h"
+#include "video_stream.h"
 #include "ip_tools.h"
 #include "musicbot.h"
 
@@ -23,7 +24,75 @@
 #include "util.h"
 
 // static functions are defined first
-static void _client_msg_internal__file_download_thread(data_for_file_send_thread_t* arg);
+static void* _client_msg_internal__file_download_thread(void* argument);
+
+static void* _client_msg_internal__add_song_thread(void* argument)
+{
+    client_t* bot = ((musicbot_add_song_arg_struct_t*)argument)->music_bot;
+    musicbot__add_song((musicbot_add_song_arg_struct_t*)argument);
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    bot->music_bot_client_extension.pending_song_uploads--;
+    clib__unlock(&g_clients_global_rwlock_guard);
+    return NULL_POINTER;
+}
+
+static void _client_msg_internal__start_file_download(data_for_file_send_thread_t* arg)
+{
+    if (util__start_detached_thread(_client_msg_internal__file_download_thread, arg) == FALSE)
+    {
+        server_msg__send_file_send_error_to_single_client(&g_clients_array[arg->client_sender_id], "server_busy", arg->local_chat_message_id);
+        memorymanager__free((nuint)arg->buffer);
+        memorymanager__free((nuint)arg);
+    }
+}
+
+#define ADMIN_PASSWORD_RATE_BUCKETS 1024
+#define ADMIN_PASSWORD_ATTEMPTS_PER_MINUTE 5
+#define ADMIN_PASSWORD_ATTEMPT_WINDOW_MS 60000
+
+typedef struct admin_password_attempts_t
+{
+    char ip_address[INET6_ADDRSTRLEN];
+    uint64 window_started_ms;
+    uint attempts;
+} admin_password_attempts_t;
+
+static admin_password_attempts_t* g_admin_password_attempts = NULL_POINTER;
+
+static boole _client_msg_internal__allow_admin_password_attempt(char* ip_address, uint64 now)
+{
+    admin_password_attempts_t* available = NULL_POINTER;
+    uint64 i;
+
+    if (g_admin_password_attempts == NULL_POINTER)
+    {
+        g_admin_password_attempts = calloc(ADMIN_PASSWORD_RATE_BUCKETS, sizeof(*g_admin_password_attempts));
+        if (g_admin_password_attempts == NULL_POINTER) { return FALSE; }
+    }
+    for (i = 0; i < ADMIN_PASSWORD_RATE_BUCKETS; i++)
+    {
+        admin_password_attempts_t* entry = &g_admin_password_attempts[i];
+        if (entry->attempts == 0 || now < entry->window_started_ms
+            || now - entry->window_started_ms >= ADMIN_PASSWORD_ATTEMPT_WINDOW_MS)
+        {
+            if (available == NULL_POINTER) { available = entry; }
+            continue;
+        }
+        if (strcmp(entry->ip_address, ip_address) == 0)
+        {
+            if (entry->attempts >= ADMIN_PASSWORD_ATTEMPTS_PER_MINUTE) { return FALSE; }
+            entry->attempts++;
+            return TRUE;
+        }
+    }
+
+    /* A full table fails closed until a bucket expires; never evict a live limit. */
+    if (available == NULL_POINTER) { return FALSE; }
+    snprintf(available->ip_address, sizeof(available->ip_address), "%s", ip_address);
+    available->window_started_ms = now;
+    available->attempts = 1;
+    return TRUE;
+}
 
 // declarations
 static boole _client_msg_internal__is_add_tag_to_client_valid(cJSON* json_root);
@@ -66,6 +135,29 @@ static boole _client_msg_internal__is_set_identity_alias_request_valid(cJSON* js
 static uint64 _client_msg_internal__get_max_chat_file_encrypted_length(void);
 static uint64 _client_msg_internal__get_max_chat_picture_encrypted_length(void);
 static uint64 _client_msg_internal__get_max_file_upload_length(void);
+
+/* Both entry paths use this while holding the clients/channels locks. Idle
+ * sessions may retain password authorization, but never a capacity exemption. */
+static boole _client_msg_internal__check_channel_access(client_t* client, channel_t* channel, char* password, boole password_already_proven)
+{
+    if (client->is_admin == TRUE)
+    {
+        return TRUE;
+    }
+    if (channel->is_client_limit_active == TRUE
+        && (channel->max_client_count == 0 || base__get_client_count_for_channel(channel->channel_id) >= channel->max_client_count))
+    {
+        server_msg__send_channel_full_to_single_client(client, channel->channel_id);
+        return FALSE;
+    }
+    if (channel->is_using_password == TRUE && password_already_proven == FALSE
+        && (password == NULL_POINTER || base__password_matches(password, channel->password) == FALSE))
+    {
+        server_msg__send_access_denied_to_single_client(client, NULL_POINTER);
+        return FALSE;
+    }
+    return TRUE;
+}
 
 /**
  * @brief the longest encrypted chat file body the server accepts, derived from the admin's raw-byte limit
@@ -2677,6 +2769,10 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
             if (is_resumed_session == FALSE)
             {
                 server_msg__send_client_connect_message_to_all_clients(current_client->client_id);
+
+                // a fresh login lands in the root channel: a stream running there asks its streamer
+                // whether the newcomer may watch. a resumed session never left, its consent survived
+                video_stream__process_client_joined_channel(current_client);
             }
 
             // hand over anything that was said to this identity while it was away, then forget it.
@@ -2927,6 +3023,7 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
     cJSON* json_channel_password = 0;
     cJSON* json_channel_name = 0;
     cJSON* json_is_audio_enabled = 0;
+    cJSON* json_is_video_stream_enabled = 0;
     cJSON* json_is_client_limit_active = 0;
     cJSON* json_max_client_count = 0;
     boole is_password_used = FALSE;
@@ -3046,6 +3143,11 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
                     is_password_used = (boole)(clib__utf8_string_length(json_channel_password->valuestring) > 0);
                     channel->is_using_password = is_password_used;
                     channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
+                    // optional on the wire (older clients never send it): a new channel streams unless told otherwise
+                    json_is_video_stream_enabled = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_video_stream_enabled");
+                    channel->is_video_stream_enabled = (boole)(cJSON_IsBool(json_is_video_stream_enabled) ? cJSON_IsTrue(json_is_video_stream_enabled) : TRUE);
+                    channel->is_video_stream_active = FALSE;
+                    channel->video_streamer_client_id = 0;
                     channel->is_temp_channel = creating_temp_channel;
                     channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
                     channel->max_client_count = 0;
@@ -3136,6 +3238,8 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
     boole is_channel_edited_successfully = FALSE;
     cJSON* json_message_object = 0;
     cJSON* json_is_audio_enabled = 0;
+    cJSON* json_is_video_stream_enabled = 0;
+    boole should_stop_video_stream = FALSE;
     cJSON* json_is_client_limit_active = 0;
     cJSON* json_max_client_count = 0;
     uint64 channel_index_to_edit = 0;
@@ -3214,6 +3318,15 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
             channel->is_using_password = is_password_used;
             channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
 
+            // the video toggle is optional on the wire (older clients never send it) and then keeps its
+            // value. switching it off under a running stream ends that stream, after the locks below
+            json_is_video_stream_enabled = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_video_stream_enabled");
+            if (cJSON_IsBool(json_is_video_stream_enabled))
+            {
+                channel->is_video_stream_enabled = (boole)cJSON_IsTrue(json_is_video_stream_enabled);
+                should_stop_video_stream = (boole)(channel->is_video_stream_enabled == FALSE && channel->is_video_stream_active == TRUE);
+            }
+
             // the root channel is always unlimited: every client lands there on login, and a
             // capacity (like a password) would leave people with nowhere to go
             if (channel->is_root_channel == TRUE)
@@ -3241,6 +3354,16 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
         }
 
         clib__unlock(&g_channels_global_rwlock_guard);
+
+        // the toggle went off under a running stream: end it, with the write locks in lock order
+        if (should_stop_video_stream == TRUE)
+        {
+            clib__write_lock(&g_clients_global_rwlock_guard);
+            clib__write_lock(&g_channels_global_rwlock_guard);
+            video_stream__process_channel_toggle_changed(channel_index_to_edit);
+            clib__unlock(&g_channels_global_rwlock_guard);
+            clib__unlock(&g_clients_global_rwlock_guard);
+        }
 
         // channel edited successfully, acquire read lock for channels and clients
         if (is_channel_edited_successfully == TRUE)
@@ -3561,7 +3684,6 @@ void client_msg__process_channel_chat_picture(uint64 client_sender_id, uint64 lo
     data_for_file_send_thread_t* arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
     char* message_copy = NULL_POINTER;
-    uint64 thread_id = 0;
 
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_channel_chat_picture got here \n");
 
@@ -3580,9 +3702,11 @@ void client_msg__process_channel_chat_picture(uint64 client_sender_id, uint64 lo
         buffer_to_send_total_size = clib__utf8_string_length(message_value);
         server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(client_sender_id, channel_id, server_chat_message_id, buffer_to_send_total_size);
 
-        arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+        arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t) + sizeof(uint64) * g_server_settings.max_client_count, MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+        if (arg == NULL_POINTER) { return; }
         clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
         message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); // old buffer points to file upload buffer, it's freed before download thread finishes sending this, need new one
+        if (message_copy == NULL_POINTER) { memorymanager__free((nuint)arg); return; }
         clib__copy_memory(message_value, message_copy, buffer_to_send_total_size, buffer_to_send_total_size);
         message_copy[buffer_to_send_total_size] = 0; // null terminator
         arg->buffer = message_copy;
@@ -3594,7 +3718,7 @@ void client_msg__process_channel_chat_picture(uint64 client_sender_id, uint64 lo
         arg->local_chat_message_id = local_message_id;
         clib__copy_memory("channel_chat_picture", &arg->receive_type[0], clib__utf8_string_length("channel_chat_picture"), sizeof(arg->receive_type) - 1);
 
-        pthread_create((pthread_t*)&thread_id, 0, (void*)&_client_msg_internal__file_download_thread, arg);
+        _client_msg_internal__start_file_download(arg);
     }
     else
     {
@@ -3620,7 +3744,6 @@ void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 rec
     data_for_file_send_thread_t* arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
     char* message_copy = NULL_POINTER;
-    uint64 thread_id = 0;
 
     // status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     // if (status == FALSE)
@@ -3640,8 +3763,10 @@ void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 rec
         server_msg__send_chat_picture_metadata_to_single_client(sender_client_id, receiver_id, server_chat_message_id, buffer_to_send_total_size);
 
         arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+        if (arg == NULL_POINTER) { return; }
         clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
         message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); // old buffer points to file upload buffer, it's freed before download thread finishes sending this, need new one
+        if (message_copy == NULL_POINTER) { memorymanager__free((nuint)arg); return; }
         clib__copy_memory(message_value, message_copy, buffer_to_send_total_size, buffer_to_send_total_size);
         message_copy[buffer_to_send_total_size] = 0; // null terminator
 
@@ -3654,7 +3779,7 @@ void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 rec
         arg->local_chat_message_id = local_message_id;
         clib__copy_memory("direct_chat_picture", &arg->receive_type[0], clib__utf8_string_length("direct_chat_picture"), sizeof(arg->receive_type) - 1);
 
-        pthread_create((pthread_t*)&thread_id, 0, (void*)&_client_msg_internal__file_download_thread, arg);
+        _client_msg_internal__start_file_download(arg);
     }
 }
 
@@ -3679,7 +3804,6 @@ void client_msg__process_channel_chat_file(uint64 client_sender_id, uint64 local
     data_for_file_send_thread_t* arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
     char* message_copy = NULL_POINTER;
-    uint64 thread_id = 0;
 
     channel_id = g_clients_array[client_sender_id].channel_id;
     is_channel_existing = (channel_id < g_server_settings.max_channel_count) && g_channel_array[channel_id].is_existing;
@@ -3697,9 +3821,11 @@ void client_msg__process_channel_chat_file(uint64 client_sender_id, uint64 local
     base__increment_chat_message_id();
     server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel(client_sender_id, channel_id, server_chat_message_id, file_header, buffer_to_send_total_size);
 
-    arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+    arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t) + sizeof(uint64) * g_server_settings.max_client_count, MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+    if (arg == NULL_POINTER) { return; }
     clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
     message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); // the upload buffer is freed before the relay thread finishes, so it gets its own copy
+    if (message_copy == NULL_POINTER) { memorymanager__free((nuint)arg); return; }
     clib__copy_memory(message_value, message_copy, buffer_to_send_total_size, buffer_to_send_total_size);
     message_copy[buffer_to_send_total_size] = 0;
     arg->buffer = message_copy;
@@ -3711,7 +3837,7 @@ void client_msg__process_channel_chat_file(uint64 client_sender_id, uint64 local
     arg->local_chat_message_id = local_message_id;
     clib__copy_memory("channel_chat_file", &arg->receive_type[0], clib__utf8_string_length("channel_chat_file"), sizeof(arg->receive_type) - 1);
 
-    pthread_create((pthread_t*)&thread_id, 0, (void*)&_client_msg_internal__file_download_thread, arg);
+    _client_msg_internal__start_file_download(arg);
 }
 
 /**
@@ -3734,7 +3860,6 @@ void client_msg__process_direct_chat_file(uint64 sender_client_id, uint64 receiv
     data_for_file_send_thread_t* arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
     char* message_copy = NULL_POINTER;
-    uint64 thread_id = 0;
 
     if (g_server_settings.allow_private_messages == FALSE)
     {
@@ -3756,8 +3881,10 @@ void client_msg__process_direct_chat_file(uint64 sender_client_id, uint64 receiv
     server_msg__send_chat_file_metadata_to_single_client(sender_client_id, receiver_id, server_chat_message_id, file_header, buffer_to_send_total_size);
 
     arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+    if (arg == NULL_POINTER) { return; }
     clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
     message_copy = (char*)memorymanager__allocate(buffer_to_send_total_size + 1, MEMALLOC_FILE_DOWNLOAD_BY_PARTS); // the upload buffer is freed before the relay thread finishes, so it gets its own copy
+    if (message_copy == NULL_POINTER) { memorymanager__free((nuint)arg); return; }
     clib__copy_memory(message_value, message_copy, buffer_to_send_total_size, buffer_to_send_total_size);
     message_copy[buffer_to_send_total_size] = 0;
     arg->buffer = message_copy;
@@ -3769,7 +3896,7 @@ void client_msg__process_direct_chat_file(uint64 sender_client_id, uint64 receiv
     arg->local_chat_message_id = local_message_id;
     clib__copy_memory("direct_chat_file", &arg->receive_type[0], clib__utf8_string_length("direct_chat_file"), sizeof(arg->receive_type) - 1);
 
-    pthread_create((pthread_t*)&thread_id, 0, (void*)&_client_msg_internal__file_download_thread, arg);
+    _client_msg_internal__start_file_download(arg);
 }
 
 /**
@@ -3850,37 +3977,15 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
         goto client_msg__process_join_channel_request_end;
     }
 
-    // channel capacity: a full channel rejects non-admins. the count excludes music bots already (see
-    // base__get_client_count_for_channel); admins bypass the limit
-    if (new_channel->is_client_limit_active == TRUE
-        && client_that_is_joining_channel->is_admin == FALSE
-        && (new_channel->max_client_count == 0
-            || base__get_client_count_for_channel(new_channel->channel_id) >= new_channel->max_client_count))
+    if (_client_msg_internal__check_channel_access(client_that_is_joining_channel, new_channel, json_channel_password->valuestring, FALSE) == FALSE)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request channel is full, or admin-only (limit 0) \n");
-        server_msg__send_channel_full_to_single_client(client_that_is_joining_channel, new_channel->channel_id);
         goto client_msg__process_join_channel_request_end;
     }
 
-    // check if password is valid
-    if (new_channel->is_using_password == TRUE)
-    {
-        status = base__password_matches(json_channel_password->valuestring, new_channel->password) || client_that_is_joining_channel->is_admin;
-        if (status == TRUE)
-        {
-            DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request correct password \n");
-            goto client_msg__process_join_channel_request_continue;
-        }
-        else
-        {
-            DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request wrong password \n");
-            server_msg__send_access_denied_to_single_client(client_that_is_joining_channel, NULL_POINTER);
-            goto client_msg__process_join_channel_request_end;
-        }
-    }
-
-client_msg__process_join_channel_request_continue:
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request_continue  \n");
+
+    // a streamer leaving ends its stream in the old channel, a viewer leaving drops off the streamer's count
+    video_stream__process_client_leaving_channel(client_that_is_joining_channel, old_channel->channel_id);
 
     // change channel in client struct
     client_that_is_joining_channel->channel_id = json_channel_id->valueint;
@@ -4036,6 +4141,9 @@ client_msg__process_join_channel_request_continue:
 
     audio_channel__process_client_channel_join(client_that_is_joining_channel);
 
+    // a stream running in the new channel: its streamer is asked whether the newcomer may watch
+    video_stream__process_client_joined_channel(client_that_is_joining_channel);
+
     // at this point channel is joined
     // but there is still some work to do, find out how many clients are there in newly joined channel,
     // if there is only one client, the newly joined client, he must be the maintainer of it
@@ -4176,12 +4284,15 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
                 // client found
                 DBG_CLIENT_MESSAGE log_info("%s %lld %s", "client_msg__process_delete_channel_request moving client ", client_to_move_maybe->client_id, "to root channel \n");
 
+                video_stream__process_client_leaving_channel(client_to_move_maybe, client_to_move_maybe->channel_id);
+
                 client_to_move_maybe->channel_id = ROOT_CHANNEL_ID;
                 client_to_move_maybe->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
 
                 // keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this
                 // client on the channel-mismatch check after the move to root
                 audio_channel__process_client_channel_join(client_to_move_maybe);
+                video_stream__process_client_joined_channel(client_to_move_maybe);
 
                 server_msg__send_channel_join_message_to_all_clients(client_to_move_maybe, &g_channel_array[ROOT_CHANNEL_ID]);
 
@@ -4623,6 +4734,12 @@ void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_
     client = &g_clients_array[sender_client_id];
 
     if (client->is_authenticated == FALSE || client->is_existing == FALSE)
+    {
+        goto label_client_msg__process_admin_password_message_end;
+    }
+
+    if (client->is_admin == TRUE
+        || _client_msg_internal__allow_admin_password_attempt(client->ip_address, base__get_timestamp_ms()) == FALSE)
     {
         goto label_client_msg__process_admin_password_message_end;
     }
@@ -6563,6 +6680,7 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     boole previous_display_country_flags = FALSE;
     boole previous_voice_chat_active = FALSE;
     boole previous_music_bot_audio_active = FALSE;
+    boole previous_video_streaming_active = FALSE;
     boole previous_hide_clients_in_password_channels = FALSE;
     boole previous_temp_channel_creation_allowed = FALSE;
     boole previous_hide_admin_country_flag = FALSE;
@@ -6581,18 +6699,18 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         return;
     }
 
-    // admin check only reads the sender's client slot, so a read lock is enough and it is released
-    // before applying/persisting
-    clib__read_lock(&g_clients_global_rwlock_guard);
+    // Serialize permission checks, settings changes and persistence with other
+    // admin saves and ban updates. Nested snapshot locks follow the normal order.
+    clib__write_lock(&g_clients_global_rwlock_guard);
     does_sender_have_permission_to_save_settings = util__is_client_valid_admin(sender_client_id);
     if (does_sender_have_permission_to_save_settings == TRUE)
     {
         snprintf(sender_username, sizeof(sender_username), "%s", g_clients_array[sender_client_id].username);
     }
-    clib__unlock(&g_clients_global_rwlock_guard);
 
     if (does_sender_have_permission_to_save_settings == FALSE)
     {
+        clib__unlock(&g_clients_global_rwlock_guard);
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_save_server_settings_request sender with sender_client_id", sender_client_id, "does not have permission to save server settings");
         return;
     }
@@ -6601,6 +6719,7 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     previous_display_country_flags = g_server_settings.is_display_country_flags_active;
     previous_voice_chat_active = g_server_settings.is_voice_chat_active;
     previous_music_bot_audio_active = g_server_settings.is_music_bot_audio_active;
+    previous_video_streaming_active = g_server_settings.is_video_streaming_active;
     previous_hide_clients_in_password_channels = g_server_settings.is_hide_clients_in_password_protected_channels_active;
     previous_temp_channel_creation_allowed = g_server_settings.is_temp_channel_creation_allowed;
 
@@ -6626,6 +6745,12 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     if (cJSON_IsBool(json_field))
     {
         g_server_settings.is_music_bot_audio_active = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_video_streaming_active");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.is_video_streaming_active = cJSON_IsTrue(json_field);
     }
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "hide_clients_in_password_channels");
@@ -6875,6 +7000,17 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         }
     }
 
+    // video streaming switched off: every running stream ends now, before the clients hear the new
+    // policy and hide their stream ui (the stop needs the write locks the save below does not)
+    if (previous_video_streaming_active == TRUE && g_server_settings.is_video_streaming_active == FALSE)
+    {
+        clib__write_lock(&g_clients_global_rwlock_guard);
+        clib__write_lock(&g_channels_global_rwlock_guard);
+        video_stream__stop_all("disabled");
+        clib__unlock(&g_channels_global_rwlock_guard);
+        clib__unlock(&g_clients_global_rwlock_guard);
+    }
+
     // persist everything into server_settings.json. the save reads channels, icons, tags and bans, so take
     // those read locks in lock order (bans is always last). the clients read lock is taken first (clients
     // before channels, matching the auth path) so the identity snapshot can read each client's tag list
@@ -6900,6 +7036,7 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         g_server_settings.is_display_country_flags_active = previous_display_country_flags;
         g_server_settings.is_voice_chat_active = previous_voice_chat_active;
         g_server_settings.is_music_bot_audio_active = previous_music_bot_audio_active;
+        g_server_settings.is_video_streaming_active = previous_video_streaming_active;
         g_server_settings.is_hide_clients_in_password_protected_channels_active = previous_hide_clients_in_password_channels;
         g_server_settings.is_temp_channel_creation_allowed = previous_temp_channel_creation_allowed;
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_save_server_settings_request: save failed, rolled back the general-settings toggles");
@@ -6921,6 +7058,7 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     }
 
     server_logs__server_settings_updated(sender_username, save_succeeded);
+    clib__unlock(&g_clients_global_rwlock_guard);
 }
 
 /**
@@ -7308,7 +7446,13 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
 
     old_channel = &g_channel_array[client->channel_id];
 
+    // idle leaves the channel for video purposes: a streamer's stream ends, a viewer drops off
+    video_stream__process_client_leaving_channel(client, client->channel_id);
+
     // change channel id and idle state at this
+    client->idle_return_channel_id = client->channel_id;
+    clib__copy_memory(old_channel->password, client->idle_return_channel_password,
+        sizeof(client->idle_return_channel_password), sizeof(client->idle_return_channel_password));
     client->is_idle = TRUE;
     client->channel_id = -2; // -2 marks the client as being in idle mode rather than in a real channel
     client->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
@@ -7379,6 +7523,8 @@ void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint
     boole status = FALSE;
     cJSON* json_message_object = 0;
     cJSON* json_channel_id = 0;
+    cJSON* json_channel_password = 0;
+    boole password_already_proven = FALSE;
     client_t* client = 0;
     channel_t* channel_to_join = 0;
 
@@ -7399,19 +7545,29 @@ void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint
     // this was checked before but not within write lock like here
     client = &g_clients_array[sender_client_id];
 
-    if (client->is_authenticated == FALSE || client->is_existing == FALSE)
+    if (client->is_authenticated == FALSE || client->is_existing == FALSE || client->is_idle == FALSE)
     {
         goto label_client_msg__process_come_back_from_idle_mode_request_end;
     }
 
     channel_to_join = &g_channel_array[json_channel_id->valueint];
 
-    if (channel_to_join->is_existing == FALSE)
+    json_channel_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_password");
+    password_already_proven = (boole)(client->idle_return_channel_id == channel_to_join->channel_id
+        && clib__is_string_equal(client->idle_return_channel_password, channel_to_join->password));
+
+    if (channel_to_join->is_existing == FALSE
+        || _client_msg_internal__check_channel_access(client, channel_to_join,
+            cJSON_IsString(json_channel_password) ? json_channel_password->valuestring : NULL_POINTER,
+            password_already_proven) == FALSE)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_come_back_from_idle_mode_request channel not is_existing \n");
-        goto label_client_msg__process_come_back_from_idle_mode_request_end;
+        /* Older clients send no password on resume. Return to the lobby on
+         * refusal so they can use the normal channel/password UI. */
+        channel_to_join = &g_channel_array[ROOT_CHANNEL_ID];
     }
 
+    client->idle_return_channel_id = ROOT_CHANNEL_ID;
+    clib__null_memory(client->idle_return_channel_password, sizeof(client->idle_return_channel_password));
     client->is_idle = FALSE;
     client->channel_id = channel_to_join->channel_id;
     client->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
@@ -7419,6 +7575,7 @@ void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint
     // keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this client on the
     // channel-mismatch check after it returns from idle
     audio_channel__process_client_channel_join(client);
+    video_stream__process_client_joined_channel(client);
 
     server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(sender_client_id, channel_to_join->channel_id);
 
@@ -7622,10 +7779,9 @@ void client_msg__process_ban_request(cJSON* json_root, uint64 sender_client_id)
     ws_close_client(receiver->p_ws_connection);
 
 label_client_msg__process_ban_request_end:
-    clib__unlock(&g_clients_global_rwlock_guard);
 
-    // record + persist the ban outside the clients lock. lock order puts bans last, so take channels,
-    // icons and tags (read, for the save) before the bans write lock
+    // Keep the clients lock through persistence. Lock order puts bans last,
+    // after channels, icons and tags.
     if (should_ban == TRUE)
     {
         clib__read_lock(&g_channels_global_rwlock_guard);
@@ -7641,6 +7797,7 @@ label_client_msg__process_ban_request_end:
         clib__unlock(&g_icons_global_rwlock_guard);
         clib__unlock(&g_channels_global_rwlock_guard);
     }
+    clib__unlock(&g_clients_global_rwlock_guard);
 }
 
 /**
@@ -7665,14 +7822,14 @@ void client_msg__process_remove_ban_request(cJSON* json_root, uint64 sender_clie
         return;
     }
 
-    clib__read_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_clients_global_rwlock_guard);
     is_admin = (boole)(g_clients_array[sender_client_id].is_authenticated == TRUE
         && g_clients_array[sender_client_id].is_existing == TRUE
         && g_clients_array[sender_client_id].is_admin == TRUE);
-    clib__unlock(&g_clients_global_rwlock_guard);
 
     if (is_admin == FALSE)
     {
+        clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
@@ -7691,6 +7848,7 @@ void client_msg__process_remove_ban_request(cJSON* json_root, uint64 sender_clie
     clib__unlock(&g_tags_global_rwlock_guard);
     clib__unlock(&g_icons_global_rwlock_guard);
     clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
 }
 
 /**
@@ -7823,9 +7981,14 @@ void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sende
         goto label_client_msg__process_create_music_bot_end;
     }
 
-    g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = TRUE;
-
     music_bot = &g_clients_array[new_music_bot_index];
+    music_bot->music_bot_client_extension.songs = (music_bot_single_song_data_t*)memorymanager__allocate(
+        sizeof(music_bot_single_song_data_t) * MUSIC_BOT_MAX_FILE_COUNT, MEMALLOC_MUSICBOT_SONG);
+    if (music_bot->music_bot_client_extension.songs == NULL_POINTER)
+    {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
 
     music_bot->is_authenticated = TRUE;
     music_bot->timestamp_connected = base__get_timestamp_ms();
@@ -7844,10 +8007,15 @@ void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sende
     clib__null_memory(music_bot->username, USERNAME_MAX_LENGTH);
     clib__copy_memory(json_music_bot_username->valuestring, music_bot->username, clib__utf8_string_length(json_music_bot_username->valuestring), USERNAME_MAX_LENGTH);
 
-    server_msg__send_client_connect_message_to_all_clients(music_bot->client_id);
-
     music_bot->music_bot_client_extension.is_music_bot_running = TRUE;
-    pthread_create((pthread_t*)&music_bot->music_bot_client_extension.music_bot_pthread_handle, 0, (void*)&musicbot__threadstart, (void*)music_bot);
+    if (pthread_create((pthread_t*)&music_bot->music_bot_client_extension.music_bot_pthread_handle, 0, musicbot__threadstart, (void*)music_bot) != 0)
+    {
+        memorymanager__free((nuint)music_bot->music_bot_client_extension.songs);
+        clib__null_memory(music_bot, sizeof(*music_bot));
+        goto label_client_msg__process_create_music_bot_end;
+    }
+    g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = TRUE;
+    server_msg__send_client_connect_message_to_all_clients(music_bot->client_id);
 
 label_client_msg__process_create_music_bot_end:
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -7925,12 +8093,23 @@ void client_msg__process_delete_music_bot_request(cJSON* json_root, uint64 sende
         DBG_CLIENT_MESSAGE log_info("%s %lld %s", "client_msg__process_delete_music_bot_request music bot id -> ", music_bot->client_id, "\n");
         DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__process_delete_music_bot_request music bot username -> ", music_bot->username, "\n");
 
-        server_msg__send_client_disconnect_message_to_all_clients(music_bot->client_id);
-
-        musicbot__begin_delete(music_bot);
+        if (musicbot__begin_delete(music_bot) == TRUE)
+        {
+            server_msg__send_client_disconnect_message_to_all_clients(music_bot->client_id);
+        }
     }
 
     g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = FALSE;
+    for (bot_loop_index = 0; bot_loop_index < g_server_settings.max_client_count; bot_loop_index++)
+    {
+        music_bot = &g_clients_array[bot_loop_index];
+        if (music_bot->is_existing == TRUE && music_bot->is_music_bot == TRUE
+            && music_bot->channel_id == (uint64)json_channel_id->valueint)
+        {
+            g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = TRUE;
+            break;
+        }
+    }
 
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_delete_music_bot_request END \n");
 
@@ -8255,6 +8434,11 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
         // copy of song name must be initialized here because by the time the add_music_bot thread gets to it
         // main thread deletes the json holding the song name
         arguments = (musicbot_add_song_arg_struct_t*)memorymanager__allocate(sizeof(musicbot_add_song_arg_struct_t), MEMALLOC_MUSICBOT_SONG);
+        if (arguments == NULL_POINTER)
+        {
+            memorymanager__free((nuint)mp3_data_buffer);
+            goto label_client_msg__process_file_send_completed_request_end;
+        }
         clib__null_memory(arguments, sizeof(musicbot_add_song_arg_struct_t));
 
         arguments->music_bot = music_bot;
@@ -8263,7 +8447,13 @@ void client_msg__process_file_send_completed_request(cJSON* json_root, uint64 se
         arguments->sender_client_id = sender_client_id;
         clib__copy_memory(json_song_name->valuestring, arguments->song_name, clib__utf8_string_length(json_song_name->valuestring), SONG_NAME_MAX_LENGTH - 1);
 
-        pthread_create((pthread_t*)&thread_id, 0, (void*)&musicbot__add_song, arguments);
+        music_bot->music_bot_client_extension.pending_song_uploads++;
+        if (util__start_detached_thread(_client_msg_internal__add_song_thread, arguments) == FALSE)
+        {
+            memorymanager__free((nuint)mp3_data_buffer);
+            memorymanager__free((nuint)arguments);
+            music_bot->music_bot_client_extension.pending_song_uploads--;
+        }
     }
     else if (clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_picture_file") == TRUE)
     {
@@ -8399,8 +8589,9 @@ label_client_msg__process_remove_song_from_music_bot_request_end:
  *
  * @return void
  */
-static void _client_msg_internal__file_download_thread(data_for_file_send_thread_t* arg)
+static void* _client_msg_internal__file_download_thread(void* argument)
 {
+    data_for_file_send_thread_t* arg = (data_for_file_send_thread_t*)argument;
     uint64 parts_count = 400;
     uint64 chunk_size = 0;
     uint64 offset = 0;
@@ -8425,6 +8616,7 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
             chunk = 0;
 
             chunk = malloc(current_size + 1);
+            if (chunk == NULL_POINTER) { goto file_download_end; }
             clib__copy_memory(arg->buffer + offset, chunk, current_size, current_size + 1);
             chunk[current_size] = '\0';
 
@@ -8460,8 +8652,6 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
 
         clib__unlock(&g_clients_global_rwlock_guard);
 
-        memorymanager__free((nuint)arg->buffer);
-        memorymanager__free((nuint)arg);
     }
     else if (arg->send_type == FILE_SEND_TYPE_TO_CHANNEL)
     {
@@ -8476,6 +8666,7 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
             chunk = 0;
 
             chunk = malloc(current_size + 1);
+            if (chunk == NULL_POINTER) { goto file_download_end; }
             clib__copy_memory(arg->buffer + offset, chunk, current_size, current_size + 1);
             chunk[current_size] = '\0';
 
@@ -8532,7 +8723,302 @@ static void _client_msg_internal__file_download_thread(data_for_file_send_thread
 
         clib__unlock(&g_clients_global_rwlock_guard);
 
-        memorymanager__free((nuint)arg->buffer);
-        memorymanager__free((nuint)arg);
     }
+file_download_end:
+    memorymanager__free((nuint)arg->buffer);
+    memorymanager__free((nuint)arg);
+    return NULL_POINTER;
+}
+
+
+// ---------------------------------------------------------------------------------------------------
+// video streaming (see video_stream.c and VIDEO_STREAMING_DESIGN.md at the repo root)
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * @brief checks a video_stream_start request: source is "screen" or "file", codec is a short webcodecs string of letters, digits and dots, width / height / fps are numbers inside the server's caps
+ *
+ * @param cJSON* json_root -> the parsed client request
+ *
+ * @return boole TRUE when every field is present and sane
+ */
+static boole _client_msg_internal__is_json_video_stream_start_valid(cJSON* json_root)
+{
+    cJSON* json_message_object = 0;
+    cJSON* json_source = 0;
+    cJSON* json_codec = 0;
+    cJSON* json_width = 0;
+    cJSON* json_height = 0;
+    cJSON* json_fps = 0;
+    uint64 codec_length = 0;
+    uint64 i = 0;
+    char c = 0;
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    json_source = cJSON_GetObjectItemCaseSensitive(json_message_object, "source");
+    if (cJSON_IsString(json_source) == FALSE || json_source->valuestring == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    if (clib__is_string_equal(json_source->valuestring, "screen") == FALSE && clib__is_string_equal(json_source->valuestring, "file") == FALSE)
+    {
+        return FALSE;
+    }
+
+    json_codec = cJSON_GetObjectItemCaseSensitive(json_message_object, "codec");
+    if (cJSON_IsString(json_codec) == FALSE || json_codec->valuestring == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    codec_length = clib__utf8_string_length(json_codec->valuestring);
+    if (codec_length == 0 || codec_length >= VIDEO_STREAM_CODEC_MAX_LENGTH)
+    {
+        return FALSE;
+    }
+
+    // a webcodecs codec string: "avc1.42E01E", "vp8", "vp09.00.10.08" - nothing else gets stored or echoed
+    for (i = 0; i < codec_length; i++)
+    {
+        c = json_codec->valuestring[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.')
+        {
+            continue;
+        }
+        return FALSE;
+    }
+
+    json_width = cJSON_GetObjectItemCaseSensitive(json_message_object, "width");
+    json_height = cJSON_GetObjectItemCaseSensitive(json_message_object, "height");
+    json_fps = cJSON_GetObjectItemCaseSensitive(json_message_object, "fps");
+
+    if (cJSON_IsNumber(json_width) == FALSE || json_width->valuedouble < 16 || json_width->valuedouble > VIDEO_STREAM_MAX_DIMENSION)
+    {
+        return FALSE;
+    }
+    if (cJSON_IsNumber(json_height) == FALSE || json_height->valuedouble < 16 || json_height->valuedouble > VIDEO_STREAM_MAX_DIMENSION)
+    {
+        return FALSE;
+    }
+    if (cJSON_IsNumber(json_fps) == FALSE || json_fps->valuedouble < 1 || json_fps->valuedouble > VIDEO_STREAM_MAX_FPS)
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief a client wants to stream its screen or a video file to its channel
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_video_stream_start(cJSON* json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    client_t* client = 0;
+    cJSON* json_message_object = 0;
+    cstring refusal_reason = "";
+
+    status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
+    if (status == FALSE)
+    {
+        return;
+    }
+
+    status = _client_msg_internal__is_json_video_stream_start_valid(json_root);
+    if (status == FALSE)
+    {
+        DBG_VIDEO_STREAM log_info("%s", "client_msg__process_video_stream_start request is not valid \n");
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_channels_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+
+    if (client->is_existing == TRUE && client->is_authenticated == TRUE)
+    {
+        status = video_stream__start(client,
+                                     cJSON_GetObjectItemCaseSensitive(json_message_object, "source")->valuestring,
+                                     cJSON_GetObjectItemCaseSensitive(json_message_object, "codec")->valuestring,
+                                     (int64)cJSON_GetObjectItemCaseSensitive(json_message_object, "width")->valuedouble,
+                                     (int64)cJSON_GetObjectItemCaseSensitive(json_message_object, "height")->valuedouble,
+                                     (int64)cJSON_GetObjectItemCaseSensitive(json_message_object, "fps")->valuedouble,
+                                     &refusal_reason);
+
+        if (status == FALSE)
+        {
+            server_msg__send_video_stream_refused_to_single_client(client, refusal_reason);
+        }
+    }
+
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief the streamer ends its own stream
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_video_stream_stop(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* client = 0;
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_channels_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+
+    if (client->is_existing == TRUE && client->is_authenticated == TRUE && client->is_streaming_video == TRUE
+        && client->channel_id < g_server_settings.max_channel_count
+        && g_channel_array[client->channel_id].video_streamer_client_id == sender_client_id)
+    {
+        video_stream__stop(client->channel_id, "stopped");
+    }
+
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief a viewer presses connect or disconnect on the stream of its channel
+ *
+ * @param cJSON* json_root -> the parsed client request, "is_watching" says which
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_video_stream_watch(cJSON* json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    client_t* client = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_is_watching = 0;
+    cstring refusal_reason = "";
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == NULL_POINTER)
+    {
+        return;
+    }
+
+    json_is_watching = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_watching");
+    if (cJSON_IsBool(json_is_watching) == FALSE)
+    {
+        return;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_channels_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+
+    if (client->is_existing == TRUE && client->is_authenticated == TRUE)
+    {
+        status = video_stream__set_viewer_watching(client, (boole)cJSON_IsTrue(json_is_watching), &refusal_reason);
+
+        if (status == FALSE)
+        {
+            server_msg__send_video_stream_refused_to_single_client(client, refusal_reason);
+        }
+    }
+
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief the streamer answers whether a member that joined after the start may watch (or revokes one)
+ *
+ * @param cJSON* json_root -> the parsed client request, "client_id" and "is_allowed"
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_video_stream_allow_viewer(cJSON* json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    client_t* client = 0;
+    cJSON* json_message_object = 0;
+    cJSON* json_client_id = 0;
+    cJSON* json_is_allowed = 0;
+
+    status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
+    if (status == FALSE)
+    {
+        return;
+    }
+
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (json_message_object == NULL_POINTER)
+    {
+        return;
+    }
+
+    json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
+    json_is_allowed = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_allowed");
+
+    if (cJSON_IsNumber(json_client_id) == FALSE || json_client_id->valuedouble < 0 || json_client_id->valuedouble >= (double)g_server_settings.max_client_count)
+    {
+        return;
+    }
+    if (cJSON_IsBool(json_is_allowed) == FALSE)
+    {
+        return;
+    }
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_channels_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+
+    if (client->is_existing == TRUE && client->is_authenticated == TRUE)
+    {
+        video_stream__allow_viewer(client, (uint64)json_client_id->valuedouble, (boole)cJSON_IsTrue(json_is_allowed));
+    }
+
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief a watching viewer lost frames and asks the streamer for a keyframe (rate limited per streamer)
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__process_video_stream_keyframe_request(cJSON* json_root, uint64 sender_client_id)
+{
+    client_t* client = 0;
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_channels_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+
+    if (client->is_existing == TRUE && client->is_authenticated == TRUE)
+    {
+        video_stream__forward_keyframe_request(client);
+    }
+
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
 }

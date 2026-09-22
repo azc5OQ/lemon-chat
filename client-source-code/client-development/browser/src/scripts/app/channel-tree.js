@@ -569,6 +569,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                         </div>\n\
                         <p>]</p>\n\
                     </div>\n\
+                    <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
                     <div class='client-tags' id =\"client-tags-" + client_id + "\">\n\
                     </div>\n\
                 </div>";
@@ -598,6 +599,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                         </div>\n\
                         <p>]</p>\n\
                     </div>\n\
+                    <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
                     <div class='client-tags' id=\"client-tags-" + client_id + "\">\n\
                     </div>\n\
                     <svg class=\"client-ignore-state\" style=\"margin-left: "+indentation_level * 20+"px; display: "+client_ignore_state_display+";\"  viewBox=\"0 0 100 20\">\n\

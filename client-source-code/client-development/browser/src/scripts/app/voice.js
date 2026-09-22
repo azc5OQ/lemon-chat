@@ -405,6 +405,8 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
     }
 
     g_datachannel = null;
+    g_video_datachannel = null;
+    g_is_video_datachannel_connected = false;
     g_peer_connection_with_server = null;
 
     // added when missing rather than keyed on is_this_reconnect: the audio_enabled handler

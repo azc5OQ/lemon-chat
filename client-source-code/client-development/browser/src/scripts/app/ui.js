@@ -1161,6 +1161,7 @@ var UI = {
             document.getElementById("channel-properties-input-channel-name").value = g_channel_list[index].name;
             document.getElementById("channel-properties-input-channel-description").value = g_channel_list[index].description;
             document.getElementById("channel-properties-disable-audio-checkbox").checked = g_channel_list[index].is_audio_enabled == false;
+            document.getElementById("channel-properties-disable-video-checkbox").checked = g_channel_list[index].is_video_stream_enabled == false;
             document.getElementById("channel-properties-limit-clients-checkbox").checked = g_channel_list[index].is_client_limit_active == true;
             document.getElementById("channel-properties-input-max-clients").value = (g_channel_list[index].is_client_limit_active == true && g_channel_list[index].max_client_count > 0) ? g_channel_list[index].max_client_count : "";
             UI.refresh_channel_limit_input_visibility();
@@ -2677,6 +2678,7 @@ var UI = {
                 channel_description: channel_description,
                 channel_password: channel_password,
                 is_audio_enabled: is_audio_enabled,
+                is_video_stream_enabled: (document.getElementById("channel-properties-disable-video-checkbox").checked == false),
                 is_client_limit_active: is_client_limit_active,
                 max_client_count: max_client_count
             }
@@ -2730,6 +2732,7 @@ var UI = {
                 channel_password: channel_password,
                 parent_channel_id: parent_channel_id,
                 is_audio_enabled: is_audio_enabled,
+                is_video_stream_enabled: (document.getElementById("channel-properties-disable-video-checkbox").checked == false),
                 is_client_limit_active: is_client_limit_active,
                 max_client_count: max_client_count
             }
@@ -4560,6 +4563,14 @@ var webrtc = {
         {
             console.log("datachannel from a replaced peer connection ignored");
             try { event.channel.close(); } catch (stale_channel_close_error) { }
+            return;
+        }
+
+        // the server opens two channels on this peer connection: the audio one and, after it, the
+        // video one (label "video", see video.js); the latter must not replace g_datachannel
+        if (event.channel.label == "video")
+        {
+            video__on_datachannel_received(event.channel);
             return;
         }
 

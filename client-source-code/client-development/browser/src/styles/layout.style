@@ -1956,3 +1956,193 @@ div#local-settings-container.closing {
 #another-buttons-loading-container {
     background-image: url("data:image/gif;base64,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");
 }
+
+
+/* ---- video streaming (video.js): the chat row button, the tree icon, the choice and the popup ---- */
+
+/* a monitor with a play triangle, same white stroke style as the file button */
+#video-stream-button {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='14' rx='2'/%3E%3Cpath d='M8 21h8M12 17v4'/%3E%3Cpath d='M10 7l5 3-5 3z' fill='%23ffffff'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+#video-stream-button.chat-file-uploads-off {
+    opacity: 0.4;
+    filter: grayscale(1);
+}
+
+/* the streamer's row in the channel tree */
+.client-video-stream-icon {
+    display: none;
+    width: 16px;
+    height: 12px;
+    margin-left: 4px;
+    vertical-align: middle;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='14' rx='2'/%3E%3Cpath d='M10 7l5 3-5 3z' fill='%23ffffff'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    animation: video-stream-icon-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes video-stream-icon-pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.45; }
+    100% { opacity: 1; }
+}
+
+/* the "screen or a video file" choice, a card like the set-alias dialog */
+#video-stream-choice-container {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 46;
+    background: rgba(0, 0, 0, 0.35);
+}
+
+#video-stream-choice {
+    position: fixed;
+    left: 50%;
+    top: 40%;
+    transform: translate(-50%, -50%);
+    width: 320px;
+    max-width: 94vw;
+    background: var(--set-panel, rgba(38, 48, 62, 0.97));
+    color: var(--set-text, #f0f0f0);
+    border: 1px solid var(--set-line, transparent);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+    padding: 12px 14px 14px 14px;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+#video-stream-choice-title {
+    margin: 0 0 10px 0;
+}
+
+#video-stream-choice input[type="button"] {
+    display: block;
+    width: 100%;
+    margin: 6px 0;
+    padding: 8px;
+    cursor: pointer;
+}
+
+/* the stream window: fixed, dragged by its header, resized by its corner */
+#video-stream-popup {
+    display: none;
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    width: 480px;
+    height: 330px;
+    min-width: 240px;
+    min-height: 170px;
+    max-width: 100vw;
+    max-height: 100vh;
+    z-index: 45;
+    resize: both;
+    overflow: hidden;
+    flex-direction: column;
+    background: var(--set-panel, rgba(38, 48, 62, 0.97));
+    color: var(--set-text, #f0f0f0);
+    border: 1px solid var(--set-line, transparent);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+    box-sizing: border-box;
+}
+
+#video-stream-popup:fullscreen {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    resize: none;
+}
+
+#video-stream-popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 10px;
+    cursor: move;
+    user-select: none;
+    background: var(--set-row-hover, rgba(255, 255, 255, 0.06));
+    font-size: 13px;
+}
+
+#video-stream-popup-close {
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+#video-stream-popup-body {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    background: #000;
+}
+
+#video-stream-preview,
+#video-stream-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+}
+
+#video-stream-popup-status {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 45%;
+    margin: 0;
+    padding: 0 10px;
+    text-align: center;
+    font-size: 13px;
+    color: #ddd;
+    text-shadow: 0 1px 2px #000;
+    pointer-events: none;
+}
+
+#video-stream-popup-requests {
+    padding: 4px 8px;
+    font-size: 13px;
+    border-top: 1px solid var(--set-line-soft, rgba(255, 255, 255, 0.08));
+}
+
+.video-stream-request-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+}
+
+.video-stream-request-row span {
+    flex: 1 1 auto;
+}
+
+#video-stream-popup-footer {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    font-size: 12px;
+    border-top: 1px solid var(--set-line-soft, rgba(255, 255, 255, 0.08));
+}
+
+#video-stream-popup-footer input[type="button"] {
+    cursor: pointer;
+}
+
+#video-stream-viewer-count {
+    margin-left: auto;
+    opacity: 0.8;
+}

@@ -49,6 +49,7 @@ typedef int http_socket_t;
 #define HTTP_SERVER_HEADER_SIZE 512
 #define HTTP_CLIENT_CONFIG_SIZE 2048
 #define HTTP_SERVER_RECV_TIMEOUT_SECONDS 10
+#define HTTP_SERVER_SEND_TIMEOUT_SECONDS 10
 #define HTTP_SERVER_LISTEN_BACKLOG 16
 
 /* one extension -> Content-Type mapping for the static file server */
@@ -60,14 +61,14 @@ typedef struct http_mime_entry_t
 
 /* the single http server's configuration, set by http_server__start before the thread is spawned */
 static int64 g_http_server_port = 0;
-static char g_http_server_webroot[512];
+static char* g_http_server_webroot = NULL_POINTER;
 
 /* when TRUE, direct http visitors (not stunnel-forwarded https backend requests) are 301'd to https */
 static boole g_http_https_redirect_enabled = FALSE;
 static int64 g_http_https_redirect_port = 443;
 
 /* window.__SERVER_CONFIG__ script (websocket port + connect keys) injected into the served client.html so it can autoconnect; empty until http_server__set_client_config runs */
-static char g_http_client_config_script[HTTP_CLIENT_CONFIG_SIZE];
+static char* g_http_client_config_script = NULL_POINTER;
 static boole g_http_client_config_set = FALSE;
 
 #ifndef DEBUG_ACTIVE
@@ -107,7 +108,7 @@ static void* _http_server_internal__server_thread(void* arg_unused);
 static void _http_server_internal__handle_connection(http_socket_t client_socket);
 static void _http_server_internal__serve_file(http_socket_t client_socket, char* request_path);
 static void _http_server_internal__send_simple_response(http_socket_t client_socket, const char* status_line, const char* body);
-static void _http_server_internal__send_all(http_socket_t client_socket, void* data, uint64 length);
+static boole _http_server_internal__send_all(http_socket_t client_socket, void* data, uint64 length);
 static boole _http_server_internal__is_request_path_safe(const char* request_path);
 static const char* _http_server_internal__content_type_for_path(const char* file_path);
 
@@ -120,7 +121,7 @@ static const char* _http_server_internal__content_type_for_path(const char* file
  *
  * @return void
  */
-static void _http_server_internal__send_all(http_socket_t client_socket, void* data, uint64 length)
+static boole _http_server_internal__send_all(http_socket_t client_socket, void* data, uint64 length)
 {
     uint64 total_sent = 0;
     int sent_now = 0;
@@ -131,11 +132,12 @@ static void _http_server_internal__send_all(http_socket_t client_socket, void* d
 
         if (sent_now <= 0)
         {
-            break;
+            return FALSE;
         }
 
         total_sent = total_sent + (uint64)sent_now;
     }
+    return TRUE;
 }
 
 /**
@@ -237,8 +239,13 @@ static const char* _http_server_internal__content_type_for_path(const char* file
  */
 void http_server__set_client_config(char* config_script)
 {
-    clib__null_memory(g_http_client_config_script, sizeof(g_http_client_config_script));
-    clib__copy_memory(config_script, g_http_client_config_script, clib__utf8_string_length(config_script), sizeof(g_http_client_config_script) - 1);
+    if (g_http_client_config_script == NULL_POINTER)
+    {
+        g_http_client_config_script = calloc(HTTP_CLIENT_CONFIG_SIZE, 1);
+        if (g_http_client_config_script == NULL_POINTER) { return; }
+    }
+    clib__null_memory(g_http_client_config_script, HTTP_CLIENT_CONFIG_SIZE);
+    clib__copy_memory(config_script, g_http_client_config_script, clib__utf8_string_length(config_script), HTTP_CLIENT_CONFIG_SIZE - 1);
     g_http_client_config_set = TRUE;
 }
 
@@ -436,6 +443,14 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
 
     is_client_page = clib__is_string_equal((char* )serve_target, "/client.html");
 
+    /* The browser client is self-contained. The default root also contains
+       settings, keys and logs, so this endpoint must never be a directory server. */
+    if (is_client_page == FALSE)
+    {
+        _http_server_internal__send_simple_response(client_socket, "404 Not Found", "404 Not Found");
+        return;
+    }
+
 #ifndef DEBUG_ACTIVE
     /* the client page is served straight from the ram cache: no disk i/o per request, and a
        swapped client.html on disk only takes effect after a server restart */
@@ -446,8 +461,10 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
         clib__null_memory(header, sizeof(header));
         snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nConnection: close\r\nCache-Control: no-cache\r\n\r\n", content_type, (long long)g_http_client_page_cache_size);
 
-        _http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header));
-        _http_server_internal__send_all(client_socket, g_http_client_page_cache, g_http_client_page_cache_size);
+        if (_http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header)) == TRUE)
+        {
+            _http_server_internal__send_all(client_socket, g_http_client_page_cache, g_http_client_page_cache_size);
+        }
         return;
     }
 #endif
@@ -478,7 +495,11 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
     clib__null_memory(header, sizeof(header));
     snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nConnection: close\r\nCache-Control: no-cache\r\n\r\n", content_type, (long long)file_size);
 
-    _http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header));
+    if (_http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header)) == FALSE)
+    {
+        fclose(file);
+        return;
+    }
 
     for (;;)
     {
@@ -495,7 +516,10 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
         }
         is_first_chunk = FALSE;
 
-        _http_server_internal__send_all(client_socket, send_chunk, read_count);
+        if (_http_server_internal__send_all(client_socket, send_chunk, read_count) == FALSE)
+        {
+            break;
+        }
     }
 
     fclose(file);
@@ -525,12 +549,24 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
        milliseconds on Windows but a struct timeval on POSIX, so it has to be set per platform. */
 #ifdef WIN32
     DWORD recv_timeout_ms = HTTP_SERVER_RECV_TIMEOUT_SECONDS * 1000;
-    setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&recv_timeout_ms, (int)sizeof(recv_timeout_ms));
+    DWORD send_timeout_ms = HTTP_SERVER_SEND_TIMEOUT_SECONDS * 1000;
+    if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&recv_timeout_ms, (int)sizeof(recv_timeout_ms)) != 0
+        || setsockopt(client_socket, SOL_SOCKET, SO_SNDTIMEO, (const char*)&send_timeout_ms, (int)sizeof(send_timeout_ms)) != 0)
+    {
+        return;
+    }
 #else
     struct timeval recv_timeout;
+    struct timeval send_timeout;
     clib__null_memory(&recv_timeout, sizeof(recv_timeout));
     recv_timeout.tv_sec = HTTP_SERVER_RECV_TIMEOUT_SECONDS;
-    setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&recv_timeout, sizeof(recv_timeout));
+    clib__null_memory(&send_timeout, sizeof(send_timeout));
+    send_timeout.tv_sec = HTTP_SERVER_SEND_TIMEOUT_SECONDS;
+    if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&recv_timeout, sizeof(recv_timeout)) != 0
+        || setsockopt(client_socket, SOL_SOCKET, SO_SNDTIMEO, (const char*)&send_timeout, sizeof(send_timeout)) != 0)
+    {
+        return;
+    }
 #ifdef SO_NOSIGPIPE
     /* macOS/BSD have no MSG_NOSIGNAL; suppress SIGPIPE on this socket so a client vanishing
        mid-send returns EPIPE instead of killing the server. no-op define on Linux */
@@ -694,10 +730,10 @@ static void* _http_server_internal__server_thread(void* arg_unused)
 }
 
 /**
- * @brief starts the static-file http server on its own background thread and returns immediately
+ * @brief starts the client-page http server on its own background thread and returns immediately
  *
  * @param int64 port -> tcp port to listen on (80 is the standard http port)
- * @param char* webroot -> directory whose files are served; a request for "/" maps to client.html in it
+ * @param char* webroot -> directory containing client.html; only "/" and "/client.html" are served
  *
  * @attention the server thread is detached and runs until the process exits; binding port 80 needs admin/root
  *
@@ -715,10 +751,16 @@ void http_server__start(int64 port, char* webroot)
 
     g_http_server_port = port;
 
-    clib__null_memory(g_http_server_webroot, sizeof(g_http_server_webroot));
+    if (g_http_server_webroot != NULL_POINTER) { return; } // initialized once, before the serving thread
+    g_http_server_webroot = calloc(512, 1);
+    if (g_http_server_webroot == NULL_POINTER)
+    {
+        log_error("http server: could not allocate webroot");
+        return;
+    }
     if (webroot != NULL_POINTER)
     {
-        clib__copy_memory(webroot, g_http_server_webroot, clib__utf8_string_length(webroot), sizeof(g_http_server_webroot) - 1);
+        clib__copy_memory(webroot, g_http_server_webroot, clib__utf8_string_length(webroot), 511);
     }
 
 #ifndef DEBUG_ACTIVE

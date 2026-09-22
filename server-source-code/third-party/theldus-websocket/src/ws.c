@@ -100,17 +100,52 @@ struct ws_connection
 /**
  * @brief Clients list.
  */
-static struct ws_connection client_socks[MAX_CLIENTS];
+static struct ws_connection* client_socks = NULL;
+static uint32_t client_capacity = 0;
+
+size_t ws_client_slot_size(void)
+{
+    return sizeof(struct ws_connection);
+}
+
+int ws_init_client_slots(uint32_t capacity)
+{
+    uint32_t i;
+    /* Slot addresses are retained by connection threads and must never move. */
+    if (client_socks != NULL || capacity == 0 || capacity > SIZE_MAX / sizeof(*client_socks))
+    {
+        return -1;
+    }
+    client_socks = calloc(capacity, sizeof(*client_socks));
+    if (client_socks == NULL) { return -1; }
+    client_capacity = capacity;
+    for (i = 0; i < capacity; i++) { client_socks[i].client_sock = -1; }
+    return 0;
+}
 
 /**
  * @brief Timeout to a single send().
  */
 static uint32_t timeout;
 
+/* Only the HTTP upgrade read is timed; established idle clients use the
+ * application's heartbeat policy. Windows expects milliseconds, POSIX timeval. */
+static int set_socket_timeout(int sock, int option, uint32_t milliseconds)
+{
+#ifdef _WIN32
+	DWORD value = milliseconds;
+#else
+	struct timeval value;
+	value.tv_sec = milliseconds / 1000;
+	value.tv_usec = (milliseconds % 1000) * 1000;
+#endif
+	return setsockopt(sock, SOL_SOCKET, option, (const char *)&value, sizeof(value));
+}
+
 /**
  * @brief Client validity macro
  */
-#define CLIENT_VALID(cli) ((cli) != NULL && (cli) >= &client_socks[0] && (cli) <= &client_socks[MAX_CLIENTS - 1] && (cli)->client_sock > -1)
+#define CLIENT_VALID(cli) (client_socks != NULL && (cli) != NULL && (cli) >= &client_socks[0] && (cli) <= &client_socks[client_capacity - 1] && (cli)->client_sock > -1)
 
 /**
  * @brief WebSocket frame data
@@ -305,7 +340,7 @@ static ssize_t send_all(ws_cli_conn_t *client, const void *buf, size_t len, int 
 		while (len)
 		{
 			r = send(client->client_sock, p, len, flags);
-			if (r == -1)
+			if (r <= 0)
 			{
 				pthread_mutex_unlock(&client->mtx_snd);
 				return (-1);
@@ -605,7 +640,7 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 	{
 		pthread_mutex_lock(&mutex);
 
-		for (i = 0; i < MAX_CLIENTS; i++)
+		for (i = 0; i < client_capacity; i++)
 		{
 			cli = &client_socks[i];
 			if ((cli->client_sock > -1) && get_client_state(cli) == WS_STATE_OPEN)
@@ -761,7 +796,7 @@ void ws_ping(ws_cli_conn_t *cli, int threshold)
 	{
 		/* clang-format off */
 		pthread_mutex_lock(&mutex);
-			for (i = 0; i < MAX_CLIENTS; i++)
+			for (i = 0; i < client_capacity; i++)
 				send_ping_close(&client_socks[i], threshold, 0
 );
 		pthread_mutex_unlock(&mutex);
@@ -886,8 +921,20 @@ static int do_handshake(struct ws_frame_data *wfd)
 	char *p; /* Last request line pointer.  */
 	ssize_t n; /* Read/Write bytes.           */
 
-	/* Read the very first client message. */
-	if ((n = RECV(wfd->client, wfd->frm, sizeof(wfd->frm) - 1)) < 0)
+	/* A socket is not visible to the application's auth timeout until onopen.
+	 * Bound this initial read, then remove the timeout for established clients. */
+	#ifndef AFL_FUZZ
+	if (set_socket_timeout(wfd->client->client_sock, SO_RCVTIMEO, 10000) != 0)
+	{
+		return (-1);
+	}
+	#endif
+	n = RECV(wfd->client, wfd->frm, sizeof(wfd->frm) - 1);
+	if (n <= 0
+#ifndef AFL_FUZZ
+        || set_socket_timeout(wfd->client->client_sock, SO_RCVTIMEO, 0) != 0
+#endif
+       )
 	{
 		return (-1);
 	}
@@ -1152,8 +1199,6 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 				(((uint64_t)next_byte(wfd)) << 40) | (((uint64_t)next_byte(wfd)) << 32) | (((uint64_t)next_byte(wfd)) << 24) | (((uint64_t)next_byte(wfd)) << 16) | (((uint64_t)next_byte(wfd)) << 8) | (((uint64_t)next_byte(wfd))); /* frame[9]. */
 	}
 
-	*frame_size += *frame_length;
-
 	/*
 	 * Check frame size
 	 *
@@ -1162,7 +1207,9 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 	 * bytes. Also keep in mind that this is still true
 	 * for continuation frames.
 	 */
-	if (*frame_size > MAX_FRAME_LENGTH)
+	/* Check BEFORE addition: a malicious 64-bit continuation length can wrap
+	 * both the cumulative size and the allocation below to a tiny value. */
+	if (*frame_size > MAX_FRAME_LENGTH || *frame_length > MAX_FRAME_LENGTH - *frame_size)
 	{
 		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Current frame from client %d, exceeds the maximum\n"
 					       "amount of bytes allowed (%" PRId64 "/%d)!",
@@ -1171,6 +1218,7 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 		wfd->error = 1;
 		return (-1);
 	}
+	*frame_size += *frame_length;
 
 	/* Read masks. */
 	masks[0] = next_byte(wfd);
@@ -1647,7 +1695,6 @@ static void *ws_accept(void *data)
 {
 	struct sockaddr_in client; /* Client.                */
 	pthread_t client_thread; /* Client thread.         */
-	struct timeval time; /* Client socket timeout. */
 	int new_sock; /* New opened connection. */
 	int sock; /* Server sock.           */
 	int len; /* Length of sockaddr.    */
@@ -1668,23 +1715,16 @@ static void *ws_accept(void *data)
 
 		if (timeout)
 		{
-			time.tv_sec = timeout / 1000;
-			time.tv_usec = (timeout % 1000) * 1000;
-
-			/*
-			 * Socket timeout
-			 * This feature seems to be supported on Linux, Windows,
-			 * macOS and FreeBSD.
-			 *
-			 * See:
-			 *   https://linux.die.net/man/3/setsockopt
-			 */
-			setsockopt(new_sock, SOL_SOCKET, SO_SNDTIMEO, (const char *)&time, sizeof(struct timeval));
+			if (set_socket_timeout(new_sock, SO_SNDTIMEO, timeout) != 0)
+			{
+				close_socket(new_sock);
+				continue;
+			}
 		}
 
 		/* Adds client socket to socks list. */
 		pthread_mutex_lock(&mutex);
-		for (i = 0; i < MAX_CLIENTS; i++)
+		for (i = 0; i < client_capacity; i++)
 		{
 			if (client_socks[i].client_sock == -1)
 			{
@@ -1717,7 +1757,7 @@ static void *ws_accept(void *data)
 		pthread_mutex_unlock(&mutex);
 
 		/* Client socket added to socks list ? */
-		if (i != MAX_CLIENTS)
+		if (i != client_capacity)
 		{
 			if (pthread_create(&client_thread, NULL, ws_establishconnection, &client_socks[i]))
 			{
@@ -1757,6 +1797,11 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop, uint32_t ti
 	pthread_t accept_thread; /* Accept thread.         */
 	int reuse; /* Socket option.         */
 	int *sock; /* Client sock.           */
+
+	if (client_socks == NULL && ws_init_client_slots(MAX_CLIENTS) != 0)
+	{
+		panic("Unable to allocate websocket slots");
+	}
 
 	timeout = timeout_ms;
 
@@ -1825,11 +1870,11 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop, uint32_t ti
 	}
 
 	/* Listen. */
-	listen(*sock, MAX_CLIENTS);
+	listen(*sock, SOMAXCONN);
 
 	/* Wait for incoming connections. */
 	DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Waiting for incoming connections..!.\n");
-	memset(client_socks, -1, sizeof(client_socks));
+
 
 	/* Accept connections. */
 	if (!thread_loop)
@@ -1882,7 +1927,7 @@ int ws_file(struct ws_events *evs, const char *file)
 	memcpy(&cli_events, evs, sizeof(struct ws_events));
 
 	/* Clear client socks list. */
-	memset(client_socks, -1, sizeof(client_socks));
+	if (client_socks == NULL && ws_init_client_slots(1) != 0) { return -1; }
 
 	/* Set client settings. */
 	client_socks[0].client_sock = sock;

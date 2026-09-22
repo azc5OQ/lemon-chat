@@ -10,6 +10,27 @@
 
 #include "util.h"
 
+/* On failure the caller still owns argument. On success no join is required,
+ * even if the worker finishes before pthread_create returns. */
+boole util__start_detached_thread(void* (*entry)(void*), void* argument)
+{
+    pthread_attr_t attributes;
+    pthread_t thread;
+    int result;
+
+    if (pthread_attr_init(&attributes) != 0)
+    {
+        return FALSE;
+    }
+    result = pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
+    if (result == 0)
+    {
+        result = pthread_create(&thread, &attributes, entry, argument);
+    }
+    pthread_attr_destroy(&attributes);
+    return (boole)(result == 0);
+}
+
 /**
  * @brief ment to be used within acquired lock on clients
  *
@@ -20,7 +41,8 @@
  */
 boole util__is_client_valid(int client_id)
 {
-    boole status0 = (boole)(client_id >= 0 && client_id < MAX_CLIENTS);
+    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count) { return FALSE; }
+    boole status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
     boole status1 = g_clients_array[client_id].is_existing;
     boole status2 = g_clients_array[client_id].is_authenticated;
     boole status3 = g_clients_array[client_id].p_ws_connection != NULL_POINTER;
@@ -51,7 +73,8 @@ boole util__is_client_valid(int client_id)
  */
 boole util__is_client_valid_and_not_music_bot(int client_id)
 {
-    boole status0 = (boole)(client_id >= 0 && client_id < MAX_CLIENTS);
+    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count) { return FALSE; }
+    boole status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
     boole status1 = g_clients_array[client_id].is_existing;
     boole status2 = g_clients_array[client_id].is_authenticated;
     boole status3 = g_clients_array[client_id].p_ws_connection != NULL_POINTER;
@@ -82,7 +105,8 @@ boole util__is_client_valid_and_not_music_bot(int client_id)
  */
 boole util__is_client_valid_admin(int client_id)
 {
-    boole status0 = (boole)(client_id >= 0 && client_id < MAX_CLIENTS);
+    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count) { return FALSE; }
+    boole status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
     boole status1 = g_clients_array[client_id].is_existing;
     boole status2 = g_clients_array[client_id].is_authenticated;
     boole status3 = g_clients_array[client_id].p_ws_connection != NULL_POINTER;
@@ -113,7 +137,8 @@ boole util__is_client_valid_admin(int client_id)
  */
 boole util__is_client_valid_musicbot(int client_id)
 {
-    boole status0 = (boole)(client_id >= 0 && client_id < MAX_CLIENTS);
+    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count) { return FALSE; }
+    boole status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
     boole status1 = g_clients_array[client_id].is_existing;
     boole status2 = g_clients_array[client_id].is_music_bot;
 
@@ -143,7 +168,8 @@ boole util__is_client_valid_musicbot(int client_id)
  */
 boole util__is_music_bot_and_song_slot_valid(int client_id)
 {
-    boole status0 = (boole)(client_id >= 0 && client_id < MAX_CLIENTS);
+    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count) { return FALSE; }
+    boole status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
     boole status1 = g_clients_array[client_id].is_existing;
     boole status2 = g_clients_array[client_id].is_music_bot;
     boole status3 = g_clients_array[client_id].music_bot_client_extension.music_bot_songs_count != MUSIC_BOT_MAX_FILE_COUNT;

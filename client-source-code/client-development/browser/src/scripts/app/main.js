@@ -1456,6 +1456,10 @@ async function main__window_onload()
     g_opus_encoder_worker = audio_opus_glue__create_new_webworker_in_same_file("opus_encoder_worker");
     g_opus_decoder_worker = audio_opus_glue__create_new_webworker_in_same_file("opus_decoder_worker");
     g_minimp3_worker = audio_opus_glue__create_new_webworker_in_same_file("minimp3_worker");
+    g_video_worker = audio_opus_glue__create_new_webworker_in_same_file("video_worker");
+
+    // the video streaming buttons and popup; needs the video worker above (the viewer's canvas is handed to it)
+    video__init_ui();
 
     // restore a persisted identity: the 200-char passphrase deterministically recreates the keypair,
     // so the same identity survives relaunches. it is private-key-equivalent in localStorage, hence

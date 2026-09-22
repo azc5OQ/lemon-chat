@@ -48,9 +48,7 @@ static void* _musicbot_internal__reaper_thread(void* arg_void);
  * @param int64 song_index -> index of the song slot to prepare
  * @param musicbot_prepared_song_t* out_prepared -> receives the buffers and counts; is_valid says if usable
  *
- * @note runs on the bot thread (first song and fallback) or on the preload thread (next song prepared
- *       while the current one streams). reads the slot's mp3 buffer without a lock - the same exposure to
- *       a concurrent admin song-delete the previous inline decode had
+ * @note runs on the bot or preload thread, decoding a private copy taken under the clients lock.
  *
  * @return void
  */
@@ -124,20 +122,20 @@ static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 s
         return;
     }
 
-    decoded_pcm = (float*)memorymanager__allocate(decoded_frame_count * mp3_decoder.channels * sizeof(float), MEMALLOC_MUSICBOT_SONG);
-    drmp3_read_pcm_frames_f32(&mp3_decoder, decoded_frame_count, decoded_pcm);
-
     out_prepared->channels = mp3_decoder.channels;
     out_prepared->song_length_seconds = decoded_frame_count / mp3_decoder.sampleRate;
 
     // reject songs that are empty or unreasonably long
     if (out_prepared->song_length_seconds == 0 || out_prepared->song_length_seconds > 1000)
     {
-        memorymanager__free((nuint)decoded_pcm);
         drmp3_uninit(&mp3_decoder);
         memorymanager__free((nuint)mp3_copy);
         return;
     }
+
+    decoded_pcm = (float*)memorymanager__allocate(decoded_frame_count * mp3_decoder.channels * sizeof(float), MEMALLOC_MUSICBOT_SONG);
+    if (decoded_pcm == NULL_POINTER) { goto prepare_song_cleanup; }
+    drmp3_read_pcm_frames_f32(&mp3_decoder, decoded_frame_count, decoded_pcm);
 
     // resample to 48 kHz if the source rate differs. catmull-rom cubic over 4 taps: audibly cleaner
     // high end than the linear interpolation used before, still cheap and dependency-free
@@ -148,6 +146,7 @@ static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 s
     {
         resampled_frame_count = (drmp3_uint64)(decoded_frame_count * (double)opus_sample_rate / mp3_decoder.sampleRate);
         resampled_pcm = (float*)memorymanager__allocate(resampled_frame_count * mp3_decoder.channels * sizeof(float), MEMALLOC_MUSICBOT_SONG);
+        if (resampled_pcm == NULL_POINTER) { goto prepare_song_cleanup; }
 
         last_frame_index = decoded_frame_count - 1;
 
@@ -181,6 +180,7 @@ static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 s
 
     // convert the float PCM to clipped int16, which is what Opus encodes
     out_prepared->pcm_int16 = (opus_int16*)memorymanager__allocate(resampled_frame_count * mp3_decoder.channels * sizeof(opus_int16), MEMALLOC_MUSICBOT_SONG);
+    if (out_prepared->pcm_int16 == NULL_POINTER) { goto prepare_song_cleanup; }
 
     for (sample_index = 0; sample_index < resampled_frame_count * mp3_decoder.channels; sample_index++)
     {
@@ -197,7 +197,9 @@ static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 s
     }
 
     out_prepared->frame_count = resampled_frame_count;
+    out_prepared->is_valid = TRUE;
 
+prepare_song_cleanup:
     if (resampled_pcm != decoded_pcm)
     {
         memorymanager__free((nuint)resampled_pcm);
@@ -206,7 +208,6 @@ static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 s
     drmp3_uninit(&mp3_decoder);
     memorymanager__free((nuint)mp3_copy);
 
-    out_prepared->is_valid = TRUE;
 }
 
 /**
@@ -248,8 +249,15 @@ static void* _musicbot_internal__reaper_thread(void* arg_void)
 
     pthread_join((pthread_t)music_bot_client->music_bot_client_extension.music_bot_pthread_handle, NULL_POINTER);
 
-    // the stream and preload threads are gone; nothing else touches a bot's songs
-    clib__write_lock(&g_clients_global_rwlock_guard);
+    // Detached uploads also hold pointers into the song table. Their count is
+    // changed under this lock, and they drop it only after their final access.
+    for (;;)
+    {
+        clib__write_lock(&g_clients_global_rwlock_guard);
+        if (music_bot_client->music_bot_client_extension.pending_song_uploads == 0) { break; }
+        clib__unlock(&g_clients_global_rwlock_guard);
+        base__sleep_for_milliseconds(10);
+    }
 
     for (song_slot_index = 0; song_slot_index < MUSIC_BOT_MAX_FILE_COUNT; song_slot_index++)
     {
@@ -261,6 +269,7 @@ static void* _musicbot_internal__reaper_thread(void* arg_void)
         }
     }
 
+    memorymanager__free((nuint)music_bot_client->music_bot_client_extension.songs);
     clib__null_memory((void*)music_bot_client, sizeof(client_t));
 
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -279,21 +288,23 @@ static void* _musicbot_internal__reaper_thread(void* arg_void)
  * @attention caller must hold the clients write lock. this function returns immediately; it never waits
  *            for the bot thread, so holding the lock here cannot stall the server
  *
- * @return void
+ * @return boole FALSE if cleanup could not be started; the bot then remains usable for a later retry
  */
-void musicbot__begin_delete(client_t* music_bot_client)
+boole musicbot__begin_delete(client_t* music_bot_client)
 {
-    pthread_t reaper_thread = 0;
+    // The caller holds the clients write lock, so cleanup cannot release the
+    // table before these flags are set. If creation fails, leave the bot alive.
+    if (util__start_detached_thread(_musicbot_internal__reaper_thread, music_bot_client) == FALSE)
+    {
+        return FALSE;
+    }
 
     music_bot_client->music_bot_client_extension.is_music_bot_running = FALSE;
 
     // hidden from client lists and every relay loop, but the slot stays reserved for the reaper
     music_bot_client->is_existing = FALSE;
 
-    if (pthread_create(&reaper_thread, 0, _musicbot_internal__reaper_thread, (void*)music_bot_client) == 0)
-    {
-        pthread_detach(reaper_thread);
-    }
+    return TRUE;
 }
 
 /**
@@ -466,6 +477,13 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
         break;
     }
 
+    if (i == MUSIC_BOT_MAX_FILE_COUNT && is_song_added_succesfully == FALSE)
+    {
+        memorymanager__free((nuint)arg->mp3_data_buffer);
+        memorymanager__free((nuint)arg);
+        return;
+    }
+
     if (is_song_added_succesfully == TRUE)
     {
         clib__read_lock(&g_clients_global_rwlock_guard);
@@ -484,12 +502,13 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
  * @brief music bot playback thread; repeatedly walks the bot's song list and
  *        streams each song to its channel as Opus frames over the WebRTC datachannel
  *
- * @param client_t* music_bot_client -> the client_t that represents the music bot
+ * @param void* argument -> the client_t that represents the music bot
  *
- * @return void
+ * @return void* always NULL
  */
-void musicbot__threadstart(client_t* music_bot_client)
+void* musicbot__threadstart(void* argument)
 {
+    client_t* music_bot_client = (client_t*)argument;
     music_bot_single_song_data_t* current_song = 0;
     int64 song_index = 0;
     const int64 frame_size = 960;         // samples per frame, 20 ms @ 48 kHz
@@ -761,4 +780,5 @@ void musicbot__threadstart(client_t* music_bot_client)
         }
         memorymanager__free((nuint)preload_arg);
     }
+    return NULL_POINTER;
 }

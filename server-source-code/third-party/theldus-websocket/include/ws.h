@@ -29,6 +29,7 @@
 extern "C" {
 #endif
 
+	#include <stddef.h>
 	#include <stdbool.h>
 	#include <stdint.h>
 	#include <inttypes.h>
@@ -265,6 +266,9 @@ extern "C" {
 	extern int ws_get_state(ws_cli_conn_t *cli);
 	extern int ws_close_client(ws_cli_conn_t *cli);
 	extern int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop,uint32_t timeout_ms);
+	/* Call once before ws_socket; live capacity changes are rejected. */
+	extern int ws_init_client_slots(uint32_t capacity);
+	extern size_t ws_client_slot_size(void);
 
 	/* Ping routines. */
 	extern void ws_ping(ws_cli_conn_t *cli, int threshold);

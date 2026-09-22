@@ -464,6 +464,72 @@ var server_msg = {
         }
     },
     /**
+     * @brief video_stream_state: a stream started or ended in a channel (see video.js)
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_state_from_server: function(msg)
+    {
+        video__on_state(msg);
+    },
+    /**
+     * @brief video_stream_offer: the channel's stream is offered to this client, it may press connect
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_offer_from_server: function(msg)
+    {
+        video__on_offer(msg);
+    },
+    /**
+     * @brief video_stream_viewer_request: a member joined our streaming channel, may they watch?
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_viewer_request_from_server: function(msg)
+    {
+        video__on_viewer_request(msg);
+    },
+    /**
+     * @brief video_stream_viewer_state: a viewer of our stream connected or dropped
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_viewer_state_from_server: function(msg)
+    {
+        video__on_viewer_state(msg);
+    },
+    /**
+     * @brief video_stream_keyframe_request: a viewer of our stream lost frames
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_keyframe_request_from_server: function(msg)
+    {
+        video__on_keyframe_request();
+    },
+    /**
+     * @brief video_stream_refused: the server said no to a stream start or a connect
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_refused_from_server: function(msg)
+    {
+        video__on_refused(msg);
+    },
+    /**
      * @brief somebody connected: adds them to g_client_list (and the id map), renders their row with handlers, promotes their offline chat, re-keys the root channel if we maintain it, and requests their avatar
      *
      * @param object msg -> the server message, msg.message holds the client's fields
@@ -804,6 +870,7 @@ var server_msg = {
         if (msg.message.client_id == g_local_client_id)
         {
             g_current_channel_id = msg.message.channel_id;
+            video__on_local_channel_changed();
             g_current_channel_keys = null;
 
             // the server answered, so we are allowed to go idle again
@@ -1079,6 +1146,9 @@ var server_msg = {
         g_channel_list[index].is_using_password = msg.message.is_using_password;
         g_channel_list[index].name = msg.message.channel_name;
         g_channel_list[index].is_audio_enabled = msg.message.is_audio_enabled;
+        // an older server sends no toggle: the channel then streams (the server side defaults the same way)
+        g_channel_list[index].is_video_stream_enabled = (msg.message.is_video_stream_enabled != false);
+        video__refresh_controls();
         g_channel_list[index].is_client_limit_active = msg.message.is_client_limit_active;
         g_channel_list[index].max_client_count = msg.message.max_client_count;
         UI.refresh_all_channel_fullness();
@@ -1187,6 +1257,7 @@ var server_msg = {
             has_maintainer: msg.message.has_maintainer,
             is_using_password: msg.message.is_using_password,
             is_audio_enabled: msg.message.is_audio_enabled,
+            is_video_stream_enabled: (msg.message.is_video_stream_enabled != false),
             is_temp_channel: msg.message.is_temp_channel,
             is_client_limit_active: msg.message.is_client_limit_active,
             max_client_count: msg.message.max_client_count,
@@ -2119,6 +2190,9 @@ var server_msg = {
                     value: g_current_channel_keys
                 });
 
+                // the video worker encrypts and decrypts stream packets with the same keys
+                video__post_channel_keys_to_worker();
+
                 // valid keys arrived from the announced maintainer - stop the reset countdown
                 keys__cancel_maintainer_keys_wait_timer();
 
@@ -2682,6 +2756,9 @@ var server_msg = {
             server_msg.process_start_song_stream_from_server({ message: { client_id: listed.client_id, song_name: listed.song_name } });
         }
 
+        // a video stream already running in our channel: its icon appears; the offer, if we may watch, comes separately
+        video__apply_client_list(msg.message.clients);
+
         // a saved strip theme is applied before the server policy allowed avatars, so the grid never
         // armed; re-evaluate now that the flag and the clients exist (the refresh bulk-enqueues itself)
         UI.refresh_member_list_state();
@@ -2786,6 +2863,7 @@ var server_msg = {
                 { let rename_input = document.getElementById('connected-local-client-input'); if (rename_input != null) { rename_input.addEventListener("focusout", UI.connected_local_user_input_on_focusout); } }
 
                 g_current_channel_id = msg.message.channel_id;
+            video__on_local_channel_changed();
                 g_current_channel_keys = null;
 
                 console.log("local_user joined new channel, nulling out current_channel_keys");

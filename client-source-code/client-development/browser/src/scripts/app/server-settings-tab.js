@@ -10,6 +10,7 @@ var SERVER_SETTINGS_FIELDS = [
     { key: "hide_admin_country_flag", id: "server-settings-general-hide-admin-flag-checkbox", kind: "bool", tab: "general" },
     { key: "enable_audio", id: "server-settings-general-enable-audio", kind: "bool", tab: "general" },
     { key: "enable_music_bot_audio", id: "server-settings-general-enable-music-bot-audio-checkbox", kind: "bool", tab: "general" },
+    { key: "is_video_streaming_active", id: "server-settings-general-enable-video-streaming-checkbox", kind: "bool", tab: "general" },
     { key: "hide_clients_in_password_channels", id: "server-settings-general-hide-clients-in-password-protected-channels", kind: "bool", tab: "general" },
     { key: "allow_temp_channels", id: "server-settings-general-allow-temp-channels-checkbox", kind: "bool", tab: "general" },
     { key: "allow_typing_indicator", id: "server-settings-general-allow-typing-indicator-checkbox", kind: "bool", tab: "general" },
@@ -144,6 +145,7 @@ function server_settings_tab__apply_server_policy_fields(data)
     server_settings_tab__apply_rename_policy_to_ui();
     chat_files__apply_file_upload_policy_to_ui();
     chat_files__apply_chat_picture_policy_to_ui();
+    video__apply_policy_to_ui();
 }
 
 /**

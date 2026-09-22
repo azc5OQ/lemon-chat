@@ -1113,6 +1113,31 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
+        // video streaming: the six control messages ride through untouched, video.js reads them on the main thread
+        else if (msg.message.type == "video_stream_state")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_state_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_offer")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_offer_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_viewer_request")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_viewer_request_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_viewer_state")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_viewer_state_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_keyframe_request")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_keyframe_request_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_refused")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_refused_from_server", value: msg });
+        }
         else if (msg.message.type == "chat_message_delete")
         {
             global.postMessage({

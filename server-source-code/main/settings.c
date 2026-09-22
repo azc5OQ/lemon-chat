@@ -33,6 +33,7 @@ void settings__init_channel_list(void)
     root_channel->is_root_channel = TRUE;
     root_channel->is_existing = TRUE;
     root_channel->is_audio_enabled = TRUE;
+    root_channel->is_video_stream_enabled = TRUE;
 
     clib__copy_memory((void*)&channel_name, (void*)&root_channel->name, strlen(channel_name), CHANNEL_NAME_MAX_LENGTH);
     clib__copy_memory((void*)&description, (void*)&root_channel->description, strlen(description), CHANNEL_DESCRIPTION_MAX_LENGTH);
@@ -172,6 +173,11 @@ void settings__load_persisted_state(void)
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "is_audio_enabled");
             if (cJSON_IsBool(json_field)) { channel_in_loop->is_audio_enabled = cJSON_IsTrue(json_field); }
+
+            // a settings file written before video streaming existed has no such key: those channels stream
+            channel_in_loop->is_video_stream_enabled = TRUE;
+            json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "is_video_stream_enabled");
+            if (cJSON_IsBool(json_field)) { channel_in_loop->is_video_stream_enabled = cJSON_IsTrue(json_field); }
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "is_client_limit_active");
             if (cJSON_IsBool(json_field)) { channel_in_loop->is_client_limit_active = cJSON_IsTrue(json_field); }
@@ -558,6 +564,7 @@ void settings__load(void)
     g_server_settings.is_same_ip_address_allowed = TRUE;
     g_server_settings.is_voice_chat_active = TRUE;
     g_server_settings.is_music_bot_audio_active = TRUE;
+    g_server_settings.is_video_streaming_active = FALSE; // explicit opt-in by the admin in the settings tab
     g_server_settings.is_hide_clients_in_password_protected_channels_active = TRUE;
     g_server_settings.is_temp_channel_creation_allowed = FALSE;
     g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active = FALSE;
@@ -603,7 +610,7 @@ void settings__load(void)
     g_server_settings.admin_log_retention_days = ADMIN_LOG_DEFAULT_RETENTION_DAYS;
 
     // set the max client/channel counts here too; the JSON path below returns early, so without this the arrays would allocate at size 0
-    g_server_settings.max_client_count = MAX_CLIENTS;
+    g_server_settings.max_client_count = DEFAULT_SERVER_SLOTS;
     g_server_settings.max_channel_count = MAX_CHANNELS;
 
     clib__copy_memory(default_client_name, g_server_settings.default_client_name, strlen(default_client_name), 100);
@@ -635,6 +642,19 @@ void settings__load(void)
 
             if (json_root != NULL_POINTER)
             {
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "server_slots");
+                if (json_field != NULL_POINTER)
+                {
+                    if (cJSON_IsNumber(json_field) == FALSE || !(json_field->valuedouble >= 1 && json_field->valuedouble <= MAX_SERVER_SLOTS)
+                        || json_field->valuedouble != (double)(uint64)json_field->valuedouble)
+                    {
+                        fprintf(stderr, "server_slots must be an integer from 1 to %d; fix server_settings.json before starting.\n", MAX_SERVER_SLOTS);
+                        cJSON_Delete(json_root);
+                        exit(EXIT_FAILURE);
+                    }
+                    g_server_settings.max_client_count = (uint64)json_field->valuedouble;
+                }
+
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "websocket_port");
                 if (cJSON_IsNumber(json_field) == TRUE)
                 {
@@ -670,6 +690,8 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_voice_chat_active = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_music_bot_audio_active");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_music_bot_audio_active = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_video_streaming_active");
+                if (cJSON_IsBool(json_field)) { g_server_settings.is_video_streaming_active = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_same_ip_address_allowed");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_same_ip_address_allowed = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_display_country_flags_active");

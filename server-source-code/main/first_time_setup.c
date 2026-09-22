@@ -187,6 +187,7 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     }
 
     cJSON_AddNumberToObject(json_root, "websocket_port", g_server_settings.websocket_port);
+    cJSON_AddNumberToObject(json_root, "server_slots", (double)g_server_settings.max_client_count);
     cJSON_AddStringToObject(json_root, "admin_password", &g_server_settings.admin_password[0]);
     cJSON_AddItemToObject(json_root, "admin_password_is_initial", cJSON_CreateBool(g_server_settings.admin_password_is_initial == TRUE));
 
@@ -199,6 +200,8 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
 
     cJSON_AddItemToObject(json_root, "is_voice_chat_active", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
     cJSON_AddItemToObject(json_root, "is_music_bot_audio_active", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
+    // never a wizard question: off until the admin switches it on in the server settings tab
+    cJSON_AddItemToObject(json_root, "is_video_streaming_active", cJSON_CreateBool(g_server_settings.is_video_streaming_active == TRUE));
     cJSON_AddItemToObject(json_root, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
     cJSON_AddNumberToObject(json_root, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
     cJSON_AddItemToObject(json_root, "announce_minimum_rsa_key_bits", cJSON_CreateBool(g_server_settings.announce_minimum_rsa_key_bits == TRUE));
@@ -603,7 +606,7 @@ static void _first_time_setup_internal__prompt_stunnel_setup(void)
  *        flags, idle, auto-restart, identities, avatars and - only while identities are on - aliases,
  *        the stored clients list, last seen and offline messages), then stunnel/wss and the built-in
  *        HTTP(S) server, including a default theme picked from the themes found in client.html.
- *        client counts are not asked for; they are fixed to MAX_CLIENTS / MAX_CHANNELS.
+ *        the client slot count is selected at startup; the channel count remains fixed.
  *
  * @param char plaintext_keys[][256] -> receives the entered metadata keys as plaintext, one per row;
  *        must have at least 100 rows, and is handed straight to the settings writer
@@ -689,32 +692,26 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     clib__null_memory(input, sizeof(input));
 
-    // clib__null_memory(input, sizeof(input));
-    // printf("%s", "max allowed number of clients {from 1 to 499} : ");
-    // fgets(input, sizeof(input), stdin);
-    // clib__sanitize_stdin(input);
-
-    g_server_settings.max_client_count = MAX_CLIENTS;
+    /* This setting is read only at startup, before any client storage exists. */
+    g_server_settings.max_client_count = DEFAULT_SERVER_SLOTS;
     g_server_settings.max_channel_count = MAX_CHANNELS;
-
-    // g_server_settings.max_client_count = atoi(input);
-    // if(g_server_settings.max_client_count > 499)
-    // {
-    // printf("SETUP FAIL");
-    // return;
-    // }
-
-    // clib__null_memory(input, sizeof(input));
-    // printf("%s", "max allowed number of channels {from 1 to 99} : ");
-    // fgets(input, sizeof(input), stdin);
-    // clib__sanitize_stdin(input);
-    // g_server_settings.max_channel_count = atoi(input);
-
-    // if(g_server_settings.max_client_count > 99)
-    // {
-    // printf("SETUP FAIL");
-    // return;
-    // }
+    for (;;)
+    {
+        char* end = NULL_POINTER;
+        long slots;
+        printf("%s Server slots (1-%d) [%d]: ", g_mark_ask, MAX_SERVER_SLOTS, DEFAULT_SERVER_SLOTS);
+        clib__null_memory(input, sizeof(input));
+        if (fgets(input, sizeof(input), stdin) == NULL_POINTER) { break; }
+        clib__sanitize_stdin(input);
+        if (input[0] == 0) { break; }
+        slots = strtol(input, &end, 10);
+        if (end != input && *end == 0 && slots >= 1 && slots <= MAX_SERVER_SLOTS)
+        {
+            g_server_settings.max_client_count = (uint64)slots;
+            break;
+        }
+        printf("%s Enter a whole number from 1 to %d.\n", g_mark_warn, MAX_SERVER_SLOTS);
+    }
 
     _first_time_setup_internal__ask_admin_password(input, sizeof(input));
     base__hash_password_to_base64(input, &g_server_settings.admin_password[0], ADMIN_PASSWORD_MAX_LENGTH);

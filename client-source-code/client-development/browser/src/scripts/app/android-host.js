@@ -931,6 +931,8 @@ function android_host__enter_deep_idle(is_forced)
         }
         g_peer_connection_with_server = null;
         g_datachannel = null;
+        g_video_datachannel = null;
+        g_is_video_datachannel_connected = false;
         g_is_webrtc_datachannel_connected = false;
     }
 }

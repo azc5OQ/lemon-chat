@@ -75,4 +75,12 @@ void server_msg__send_file_receive_completed_to_single_client(data_for_file_send
 // audio related
 void server_msg__send_webrtc_sdp_offer_to_single_client(const char* cand, const char* mid, client_t* client);
 
+// video streaming (see video_stream.c)
+void server_msg__send_video_stream_state_to_clients_in_same_channel(uint64 channel_id, boole is_active, uint64 streamer_client_id, cstring reason);
+void server_msg__send_video_stream_offer_to_single_client(client_t* receiver, client_t* streamer);
+void server_msg__send_video_stream_viewer_request_to_single_client(client_t* streamer, client_t* newcomer);
+void server_msg__send_video_stream_viewer_state_to_single_client(client_t* streamer, uint64 viewer_client_id, boole is_watching);
+void server_msg__send_video_stream_keyframe_request_to_single_client(client_t* streamer);
+void server_msg__send_video_stream_refused_to_single_client(client_t* client, cstring reason);
+
 #endif // TEST0S_SOLUTION_SERVER_MESSAGE_H

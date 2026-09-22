@@ -21,6 +21,8 @@ else()
 endif()
 
 
+
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     # Apple clang / ld64 do not accept -static-libgcc/-static-libstdc++ (those are GCC-only).
     # instead give the executable an rpath so it finds libdatachannel.dylib sitting next to it.
@@ -41,6 +43,7 @@ add_executable(chat-server
         settings.c
         base.c
         audio_channel.c
+        video_stream.c
         ../third-party/rxi-log/log.c
         ../third-party/zhicheng/base64.c
         ../third-party/kokke-tiny-aes-c/aes.c
@@ -60,10 +63,23 @@ add_executable(chat-server
         )
 
 
+# Build the parser from source so security fixes cannot be bypassed by a stale
+# prebuilt libws.a in linkage-files.
+find_package(Threads REQUIRED)
+add_library(server-websocket STATIC
+    ../third-party/theldus-websocket/src/ws.c
+    ../third-party/theldus-websocket/src/base64.c
+    ../third-party/theldus-websocket/src/sha1.c
+    ../third-party/theldus-websocket/src/handshake.c
+    ../third-party/theldus-websocket/src/utf8.c)
+target_compile_definitions(server-websocket PRIVATE VALIDATE_UTF8)
+target_include_directories(server-websocket PRIVATE ../third-party/theldus-websocket/include)
+target_link_libraries(server-websocket PUBLIC Threads::Threads)
+target_link_libraries(chat-server PRIVATE server-websocket)
+
 #linux uses forward slash for path, windows two backward slashes
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}\\linkage-files\\windows\\libws.a)
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}\\linkage-files\\windows\\libdatachannel.dll.a) #dll needs complementary .lib (.a) file in this case
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}\\linkage-files\\windows\\libtommath.a)
     target_link_libraries(chat-server PRIVATE ${PROJECT_SOURCE_DIR}\\linkage-files\\windows\\libtomcrypt.a)
@@ -80,7 +96,6 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(chat-server
     PRIVATE
-    ${PROJECT_SOURCE_DIR}/linkage-files/linux/libws.a
     ${PROJECT_SOURCE_DIR}/linkage-files/linux/libtommath.a
     ${PROJECT_SOURCE_DIR}/linkage-files/linux/libtomcrypt.a
     ${PROJECT_SOURCE_DIR}/linkage-files/linux/libviolet.a
@@ -103,7 +118,6 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     target_link_libraries(chat-server
     PRIVATE
-    ${PROJECT_SOURCE_DIR}/linkage-files/macos/libws.a
     ${PROJECT_SOURCE_DIR}/linkage-files/macos/libtommath.a
     ${PROJECT_SOURCE_DIR}/linkage-files/macos/libtomcrypt.a
     ${PROJECT_SOURCE_DIR}/linkage-files/macos/libviolet.a
@@ -123,4 +137,36 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     add_library(datachannel SHARED IMPORTED GLOBAL)
     set_target_properties(datachannel PROPERTIES IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/linkage-files/macos/libdatachannel.dylib)
     target_link_libraries(chat-server PRIVATE datachannel)
+endif()
+
+option(SERVER_REGRESSION_TESTS "Build server regression checks" OFF)
+if(SERVER_REGRESSION_TESTS)
+    enable_testing()
+    get_target_property(server_sources chat-server SOURCES)
+    list(REMOVE_ITEM server_sources main.c client_message.c memory_manager.c musicbot.c util.c)
+    get_target_property(server_libraries chat-server LINK_LIBRARIES)
+    add_executable(server_regressions ../tests/server_regressions.c ${server_sources})
+    target_link_libraries(server_regressions PRIVATE ${server_libraries})
+    add_executable(websocket_regressions
+        ../tests/websocket_regressions.c
+        ../third-party/theldus-websocket/src/base64.c
+        ../third-party/theldus-websocket/src/sha1.c
+        ../third-party/theldus-websocket/src/handshake.c
+        ../third-party/theldus-websocket/src/utf8.c)
+    target_include_directories(websocket_regressions PRIVATE ../third-party/theldus-websocket/include)
+    target_compile_definitions(websocket_regressions PRIVATE VALIDATE_UTF8)
+    target_link_libraries(websocket_regressions PRIVATE Threads::Threads)
+    if(WIN32)
+        target_link_libraries(websocket_regressions PRIVATE ws2_32)
+        add_custom_command(TARGET server_regressions POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${PROJECT_SOURCE_DIR}/linkage-files/windows/libdatachannel.dll"
+                "$<TARGET_FILE_DIR:server_regressions>")
+    endif()
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(NAME server_regressions
+        COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/../tests/run_regressions.py"
+            --server $<TARGET_FILE:server_regressions>
+            --websocket $<TARGET_FILE:websocket_regressions>)
+    set_tests_properties(server_regressions PROPERTIES TIMEOUT 90)
 endif()

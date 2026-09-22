@@ -27,6 +27,7 @@
 
 #include "memory_manager.h"
 #include "audio_channel.h"
+#include "video_stream.h"
 
 #include "../third-party/eteran-cvector/cvector.h"
 
@@ -87,52 +88,72 @@ static boole _base_internal__are_strings_equal_ignoring_ascii_case(char* string1
  */
 boole base__write_file_atomically(char* path, char* contents)
 {
+    /* A leaf mutex: callers may hold state locks, but no state lock is acquired
+     * here. Concurrent writers must not truncate the same temporary file. */
+    static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER;
     char tmp_path[1024];
     FILE* file = NULL_POINTER;
     uint64 contents_length = 0;
-    uint64 written = 0;
+    boole succeeded = FALSE;
+    boole io_failed = FALSE;
+    int path_length;
 
-    clib__null_memory(tmp_path, sizeof(tmp_path));
-    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+    if (path == NULL_POINTER || contents == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    path_length = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+    if (path_length < 0 || (size_t)path_length >= sizeof(tmp_path))
+    {
+        return FALSE;
+    }
 
+    pthread_mutex_lock(&write_mutex);
     file = fopen(tmp_path, "wb");
     if (file == NULL_POINTER)
     {
-        return FALSE;
+        goto atomic_write_end;
     }
 
     contents_length = strlen(contents);
-    written = fwrite(contents, 1, contents_length, file);
-    fflush(file);
+    io_failed = (boole)(fwrite(contents, 1, contents_length, file) != contents_length);
+    if (fflush(file) != 0) { io_failed = TRUE; }
 #ifdef WIN32
-    _commit(_fileno(file));
+    if (_commit(_fileno(file)) != 0) { io_failed = TRUE; }
 #else
-    fsync(fileno(file));
+    if (fsync(fileno(file)) != 0) { io_failed = TRUE; }
 #endif
-    fclose(file);
+    if (fclose(file) != 0) { io_failed = TRUE; }
 
-    if (written != contents_length)
+    if (io_failed == FALSE)
     {
-        remove(tmp_path);
-        return FALSE;
-    }
-
 #ifdef WIN32
-    // rename() on windows fails if the destination already exists, so use MoveFileEx with replace
-    if (MoveFileExA(tmp_path, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0)
-    {
-        remove(tmp_path);
-        return FALSE;
-    }
+        DWORD replace_error = 0;
+        // Windows scanners/editors may briefly hold a handle without delete
+        // sharing. Retry only those errors, with a bounded wait; never remove
+        // the original file to make replacement succeed.
+        for (int attempt = 0; attempt < 10; attempt++)
+        {
+            succeeded = (boole)(MoveFileExA(tmp_path, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0);
+            if (succeeded == TRUE) { break; }
+            replace_error = GetLastError();
+            if (replace_error != ERROR_ACCESS_DENIED && replace_error != ERROR_SHARING_VIOLATION
+                && replace_error != ERROR_LOCK_VIOLATION) { break; }
+            if (attempt < 9) { Sleep(20); }
+        }
+        if (succeeded == FALSE) { log_error("Atomic replacement of %s failed (Windows error %lu)", path, replace_error); }
 #else
-    if (rename(tmp_path, path) != 0)
+        succeeded = (boole)(rename(tmp_path, path) == 0);
+#endif
+    }
+    if (succeeded == FALSE)
     {
         remove(tmp_path);
-        return FALSE;
     }
-#endif
 
-    return TRUE;
+atomic_write_end:
+    pthread_mutex_unlock(&write_mutex);
+    return succeeded;
 }
 
 /**
@@ -481,6 +502,8 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "is_voice_chat_active", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_music_bot_audio_active");
     cJSON_AddItemToObject(json_root, "is_music_bot_audio_active", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_video_streaming_active");
+    cJSON_AddItemToObject(json_root, "is_video_streaming_active", cJSON_CreateBool(g_server_settings.is_video_streaming_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_hide_clients_in_password_protected_channels_active");
     cJSON_AddItemToObject(json_root, "is_hide_clients_in_password_protected_channels_active", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_temp_channel_creation_allowed");
@@ -582,6 +605,7 @@ boole base__save_server_settings_to_file(void)
         cJSON_AddItemToObject(json_channel, "is_root_channel", cJSON_CreateBool(channel_in_loop->is_root_channel == TRUE));
         cJSON_AddItemToObject(json_channel, "is_using_password", cJSON_CreateBool(channel_in_loop->is_using_password == TRUE));
         cJSON_AddItemToObject(json_channel, "is_audio_enabled", cJSON_CreateBool(channel_in_loop->is_audio_enabled == TRUE));
+        cJSON_AddItemToObject(json_channel, "is_video_stream_enabled", cJSON_CreateBool(channel_in_loop->is_video_stream_enabled == TRUE));
         cJSON_AddItemToObject(json_channel, "is_client_limit_active", cJSON_CreateBool(channel_in_loop->is_client_limit_active == TRUE));
         cJSON_AddNumberToObject(json_channel, "max_client_count", (double)channel_in_loop->max_client_count);
         cJSON_AddItemToObject(json_channel, "has_channel_icon", cJSON_CreateBool(channel_in_loop->has_channel_icon == TRUE));
@@ -1242,15 +1266,14 @@ int64 base__get_new_index_for_client(void)
     int64 new_index = -1;
     uint64 i = 0;
 
-    if ((g_server_settings.client_count + 1) < g_server_settings.max_client_count)
+    /* Reserved slots include bots and bots still winding down, while the
+     * socket counter does not. The actual slot table is the source of truth. */
+    for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        for (i = 0; i < g_server_settings.max_client_count; i++)
+        if (g_clients_array[i].timestamp_connected == 0)
         {
-            if (g_clients_array[i].timestamp_connected == 0)
-            {
-                new_index = i;
-                break;
-            }
+            new_index = i;
+            break;
         }
     }
 
@@ -1547,6 +1570,12 @@ int64 base__adopt_socket_into_existing_session(uint64 new_client_index, cstring 
     clib__copy_memory(new_entry->country_iso_code, old_session->country_iso_code, clib__utf8_string_length(new_entry->country_iso_code), sizeof(old_session->country_iso_code));
     old_session->timestamp_last_maintain_connection_message_received = timestamp_now;
     old_session->timestamp_last_action = timestamp_now;
+    if (old_session->is_idle == TRUE)
+    {
+        old_session->channel_id = ROOT_CHANNEL_ID;
+        old_session->idle_return_channel_id = ROOT_CHANNEL_ID;
+        clib__null_memory(old_session->idle_return_channel_password, sizeof(old_session->idle_return_channel_password));
+    }
     old_session->is_idle = FALSE;
     old_session->has_pending_maintainer_reset_vote = FALSE;
 
@@ -3594,12 +3623,15 @@ void base__destroy_temp_channel(uint64 temp_channel_id)
             continue;
         }
 
+        video_stream__process_client_leaving_channel(client_to_move, temp_channel_id);
+
         client_to_move->channel_id = ROOT_CHANNEL_ID;
         client_to_move->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
 
         // keep the webrtc peer's channel in sync, otherwise the audio relay keeps skipping this client
         // on the channel-mismatch check after the move to root
         audio_channel__process_client_channel_join(client_to_move);
+        video_stream__process_client_joined_channel(client_to_move);
 
         server_msg__send_channel_join_message_to_all_clients(client_to_move, &g_channel_array[ROOT_CHANNEL_ID]);
 
@@ -3674,10 +3706,13 @@ void base__move_client_into_channel(uint64 client_id, uint64 destination_channel
     }
 
     // move the client and tell everyone (same message order as the delete -> move-to-root path)
+    video_stream__process_client_leaving_channel(client, old_channel->channel_id);
+
     client->channel_id = destination_channel_id;
     client->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
     server_msg__send_channel_join_message_to_all_clients(client, new_channel);
     audio_channel__process_client_channel_join(client);
+    video_stream__process_client_joined_channel(client);
 
     // if the client is now the only member of the channel, they become its maintainer
     if (base__get_client_count_for_channel(destination_channel_id) == 1)
@@ -3731,9 +3766,16 @@ void base__process_client_disconnect(uint64 client_index)
 
         audio_channel__process_client_disconnect(client);
 
+        // a streamer leaving ends its stream for the channel, a viewer leaving drops off the streamer's count
+        video_stream__process_client_leaving_channel(client, client->channel_id);
+
         channel_id = g_clients_array[client_index].channel_id;
 
-        is_client_also_channel_maintainer = (boole)(g_channel_array[channel_id].maintainer_id == client_index);
+        /* Idle clients use an out-of-range sentinel instead of a real channel. */
+        is_client_also_channel_maintainer = (boole)(channel_id < g_server_settings.max_channel_count
+            && g_channel_array[channel_id].is_existing == TRUE
+            && g_channel_array[channel_id].is_channel_maintainer_present == TRUE
+            && g_channel_array[channel_id].maintainer_id == client_index);
 
         owns_temp_channel = client->is_temp_admin_channel;
         owned_temp_channel_id = client->temp_channel_id;
@@ -3934,6 +3976,26 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "stop_song_stream"))
             {
                 client_msg__process_stop_song_stream_message(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "video_stream_start"))
+            {
+                client_msg__process_video_stream_start(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "video_stream_stop"))
+            {
+                client_msg__process_video_stream_stop(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "video_stream_watch"))
+            {
+                client_msg__process_video_stream_watch(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "video_stream_allow_viewer"))
+            {
+                client_msg__process_video_stream_allow_viewer(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "video_stream_keyframe_request"))
+            {
+                client_msg__process_video_stream_keyframe_request(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "admin_password"))
             {

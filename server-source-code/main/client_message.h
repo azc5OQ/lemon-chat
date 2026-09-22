@@ -29,6 +29,11 @@ void client_msg__process_ice_candidate(cJSON* json_root, uint64 sender_client_id
 void client_msg__process_microphone_usage(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_start_song_stream_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_stop_song_stream_message(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_video_stream_start(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_video_stream_stop(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_video_stream_watch(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_video_stream_allow_viewer(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_video_stream_keyframe_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_change_admin_password_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 sender_client_id);

@@ -126,12 +126,12 @@ nuint memorymanager__allocate(uint64 size, uint64 type)
     memorymanager_header_t* header = 0;
     nuint result = 0;
 
-    if (size == 0)
+    if (size == 0 || size > SIZE_MAX - sizeof(memorymanager_header_t))
     {
         return 0;
     }
 
-    header = (memorymanager_header_t*)malloc(sizeof(memorymanager_header_t) + size);
+    header = (memorymanager_header_t*)calloc(1, sizeof(memorymanager_header_t) + (size_t)size);
 
     if (header == NULL_POINTER)
     {
@@ -144,8 +144,7 @@ nuint memorymanager__allocate(uint64 size, uint64 type)
 
     result = (nuint)(header + 1);
 
-    // hand back zeroed memory, matching the old calloc-backed contract callers rely on
-    clib__null_memory((void*)result, size);
+    // calloc has already zeroed the user region.
 
     pthread_mutex_lock(&g_memorymanager_lock);
 

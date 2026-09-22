@@ -54,7 +54,7 @@ static const char* g_color_reset = "";
 #endif
 
 static int g_stunnel_pid = 0; // pid of the optional bundled stunnel child, 0 = none
-char g_first_run_admin_password[ADMIN_PASSWORD_MAX_LENGTH]; // plaintext admin password, kept only through this run's startup summary, then wiped
+char* g_first_run_admin_password = NULL_POINTER; // plaintext admin password, kept only through this run's startup summary, then wiped
 static pthread_mutex_t g_log_mutex = PTHREAD_MUTEX_INITIALIZER; // serializes console log output across threads
 
 static void _main_internal__renew_certificate_if_due(void);
@@ -132,13 +132,6 @@ void onopen(ws_cli_conn_t* client)
     // log_info("%s %d", "client_count , ", g_server_settings.client_count);
     DBG_AUTHENTICATION log_info("%s %p %s", "client connected , ", client, "\n");
     index = base__get_new_index_for_client();
-
-    if ((g_server_settings.client_count + 1) >= g_server_settings.max_client_count)
-    {
-        DBG_AUTHENTICATION log_info("%s", "max client reached. Closing connection with client");
-        ws_close_client(client);
-        goto label_onopen_end;
-    }
 
     if (index == -1)
     {
@@ -362,6 +355,12 @@ void websocket_connection_check_thread(void)
     int64 number_of_marked_clients = 0;
 
     marked_client_ids_for_disconnect = (int64*)memorymanager__allocate(sizeof(int64) * g_server_settings.max_client_count, MEMALLOC_MARKED_CLIENT_INDICES);
+    if (marked_client_ids_for_disconnect == NULL_POINTER)
+    {
+        fprintf(stderr, "Unable to reserve heartbeat storage; reduce server_slots.\n");
+        exit(EXIT_FAILURE);
+    }
+
 
     while (g_is_server_running)
     {
@@ -729,6 +728,15 @@ static void _main_internal__print_startup_summary(void)
         printf("  %s  %-18s off\n", g_mark_off, "music bot audio");
     }
 
+    if (g_server_settings.is_video_streaming_active == TRUE)
+    {
+        printf("  %s  %-18s on\n", g_mark_ok, "video streaming");
+    }
+    else
+    {
+        printf("  %s  %-18s off\n", g_mark_off, "video streaming");
+    }
+
     // optional bundled http server that serves the client
     if (g_server_settings.serve_client_http == TRUE)
     {
@@ -787,7 +795,9 @@ static void _main_internal__print_startup_summary(void)
     printf("  ============================================================\n");
 
     // do not let the plaintext admin password linger in memory past this one-time summary
-    clib__null_memory(g_first_run_admin_password, sizeof(g_first_run_admin_password));
+    clib__null_memory(g_first_run_admin_password, ADMIN_PASSWORD_MAX_LENGTH);
+    free(g_first_run_admin_password);
+    g_first_run_admin_password = NULL_POINTER;
 
     printf("\n");
 }
@@ -1018,6 +1028,7 @@ int main(void)
     clib__rwlock_init(&g_channels_global_rwlock_guard);
     clib__rwlock_init(&g_tags_global_rwlock_guard);
     clib__rwlock_init(&g_icons_global_rwlock_guard);
+    clib__rwlock_init(&g_bans_global_rwlock_guard);
 
     if (pthread_mutex_init(&g_chat_message_id_mutex, NULL_POINTER))
     {
@@ -1027,23 +1038,37 @@ int main(void)
 
     memorymanager__init();
 
+    g_first_run_admin_password = calloc(ADMIN_PASSWORD_MAX_LENGTH, 1);
+    if (g_first_run_admin_password == NULL_POINTER) { exit(EXIT_FAILURE); }
     settings__load();
+
+
     g_clients_array = (client_t*)memorymanager__allocate(sizeof(client_t) * g_server_settings.max_client_count, MEMALLOC_CLIENTS_ARRAY);
     g_channel_array = (channel_t*)memorymanager__allocate(sizeof(channel_t) * g_server_settings.max_channel_count, MEMALLOC_CHANNELS_ARRAY);
     g_client_stored_data = (client_stored_data_t*)memorymanager__allocate(sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
     g_icons_array = (icon_t*)memorymanager__allocate(sizeof(icon_t) * MAX_ICONS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
     g_tags_array = (tag_t*)memorymanager__allocate(sizeof(tag_t) * MAX_TAGS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
     g_ban_array = (ban_entry_t*)memorymanager__allocate(sizeof(ban_entry_t) * MAX_BANS, MEMALLOC_BANS_ARRAY);
-    clib__null_memory(g_ban_array, sizeof(ban_entry_t) * MAX_BANS);
+
 
     // offline message queue: ram only, allocated once, never persisted. the payloads themselves are
     // allocated per message, so an empty queue costs only these slot headers
     if (g_server_settings.allow_offline_messages == TRUE)
     {
         g_offline_messages = (offline_chat_message_t*)memorymanager__allocate(sizeof(offline_chat_message_t) * MAX_OFFLINE_MESSAGES, MEMALLOC_OFFLINE_MESSAGES_ARRAY);
-        clib__null_memory(g_offline_messages, sizeof(offline_chat_message_t) * MAX_OFFLINE_MESSAGES);
+
     }
     g_webrtc_muggles_array = (webrtc_peer_t*)memorymanager__allocate(sizeof(webrtc_peer_t) * g_server_settings.max_client_count, MEMALLOC_WEBRTC_PEERS);
+    if (g_clients_array == NULL_POINTER || g_channel_array == NULL_POINTER || g_client_stored_data == NULL_POINTER
+        || g_icons_array == NULL_POINTER || g_tags_array == NULL_POINTER || g_ban_array == NULL_POINTER
+        || g_webrtc_muggles_array == NULL_POINTER
+        || (g_server_settings.allow_offline_messages == TRUE && g_offline_messages == NULL_POINTER)
+        || ws_init_client_slots((uint32_t)g_server_settings.max_client_count) != 0)
+    {
+        fprintf(stderr, "Unable to reserve startup arrays. Reduce server_slots in server_settings.json or provide more memory.\n");
+        exit(EXIT_FAILURE);
+    }
+
 
     settings__init_channel_list();
     settings__init_tags_and_icons();
