@@ -425,7 +425,7 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
         }
     }
 
-    if (is_turn_server_present == false)
+    if (is_turn_server_present == false && g_iceconfig.iceServers.length > 0)
     {
         let turn_server = {
             urls: [

@@ -176,7 +176,9 @@ void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* webs
     cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
     cJSON_AddNumberToObject(json_message_object1, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
     cJSON_AddBoolToObject(json_message_object1, "allow_chat_pictures", g_server_settings.allow_chat_pictures);
-    cJSON_AddNumberToObject(json_message_object1, "stun_port", 3478);
+    // A masquerading tunnel cannot report the visitor's reflexive address.
+    // Clients initiate ICE toward our explicitly advertised public candidates instead.
+    cJSON_AddNumberToObject(json_message_object1, "stun_port", g_server_settings.is_wireguard_mode_active ? 0 : 3478);
     cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
 
     json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);

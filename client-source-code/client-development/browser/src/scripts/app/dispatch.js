@@ -361,9 +361,9 @@ function dispatch__mainthread_onmessage(e)
         // default stun port is 3478 for this chat. Stun port is given to client with websocket connection, stun port can be changed if needed, there are two places that need to be edited in code of server to set different stun port
 
         g_iceconfig = {
-            iceServers: [{
+            iceServers: Number(e.data.stun_port) > 0 ? [{
                 urls: "stun:" + g_host + ":" + e.data.stun_port,
-            }],
+            }] : [],
         };
 
         // the datachannel/playback below is set up whenever audio is on for clients or music bots,

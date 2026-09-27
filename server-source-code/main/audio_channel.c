@@ -180,6 +180,76 @@ void RTC_API peerconnection_on_datachannel_callback(int pc, int dc, void* ptr)
 }
 
 /**
+ * @brief wireguard mode: resends a host candidate with the router's public address, same port
+ *
+ * @param const char* candidate -> the candidate string from libdatachannel
+ * @param const char* mid -> its sdpMid
+ * @param client_t* client -> the client to send the copy to
+ *
+ * @return void
+ */
+static void _audio_channel_internal__send_public_candidate(const char* candidate, const char* mid, client_t* client)
+{
+    char foundation[64];
+    char component[8];
+    char transport[8];
+    char ip[64];
+    char port[16];
+    char typ[8];
+    char type[16];
+    unsigned long long priority = 0;
+    char rewritten[512];
+    uint64 i = 0;
+
+    if (g_server_settings.is_wireguard_mode_active == FALSE || g_server_settings.webrtc_public_address[0] == 0 || candidate == NULL_POINTER)
+    {
+        return;
+    }
+
+    if (sscanf(candidate, "%63s %7s %7s %llu %63s %15s %7s %15s", foundation, component, transport, &priority, ip, port, typ, type) != 8)
+    {
+        return;
+    }
+
+    if (clib__is_string_equal(type, "host") == FALSE || clib__is_string_equal(typ, "typ") == FALSE)
+    {
+        return;
+    }
+
+    if (clib__is_string_equal(transport, "UDP") == FALSE && clib__is_string_equal(transport, "udp") == FALSE)
+    {
+        return;
+    }
+
+    // ipv6 (a colon in the address) and a candidate that already names the public address are skipped
+    for (i = 0; ip[i] != 0; i++)
+    {
+        if (ip[i] == ':')
+        {
+            return;
+        }
+    }
+
+    if (clib__is_string_equal(ip, g_server_settings.webrtc_public_address) == TRUE)
+    {
+        return;
+    }
+
+    // libjuice's type preferences are host 126 and srflx 100, each shifted by 24 bits into the priority
+    if (priority > ((unsigned long long)26 << 24))
+    {
+        priority = priority - ((unsigned long long)26 << 24);
+    }
+
+    clib__null_memory(rewritten, sizeof(rewritten));
+    snprintf(rewritten, sizeof(rewritten), "%sp %s %s %llu %s %s typ srflx raddr %s rport %s", foundation, component, transport, priority, g_server_settings.webrtc_public_address, port, ip, port);
+
+    DBG_AUDIOCHANNEL_WEBRTC log_info("%s %s", "public candidate:", rewritten);
+
+    server_msg__send_webrtc_sdp_offer_to_single_client(rewritten, mid, client);
+}
+
+/**
  * @brief forwards a locally-gathered ICE candidate to the client so it can add it on its side
  *
  * @param int pc -> peer connection handle
@@ -219,6 +289,9 @@ void RTC_API peerconnection_on_icecandidate_callback(int pc, const char* cand, c
 
         DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "sending sdp offer to client \n");
         server_msg__send_webrtc_sdp_offer_to_single_client(cand, mid, &g_clients_array[peer->client_id]);
+
+        // wireguard mode: the same candidate once more with the router's public address (no-op otherwise)
+        _audio_channel_internal__send_public_candidate(cand, mid, &g_clients_array[peer->client_id]);
     }
 
 _label_peerconnection_on_icecandidate_callback_end:
@@ -950,6 +1023,14 @@ boole audio_channel__initialize_webrtc_datachannel_connection(client_t* client)
     // const char* iceServers[1] = { "stun:stun.l.google.com:19302" };
     config.iceServers = iceServers;
     config.iceServersCount = 1;
+
+    // wireguard mode: the datachannel sockets stay inside the udp range the router forwards to this
+    // machine (the matching public candidate is built in _audio_channel_internal__send_public_candidate)
+    if (g_server_settings.is_wireguard_mode_active == TRUE)
+    {
+        config.portRangeBegin = (uint16_t)g_server_settings.webrtc_port_range_begin;
+        config.portRangeEnd = (uint16_t)g_server_settings.webrtc_port_range_end;
+    }
 
     clib__write_lock(&g_webrtc_muggles_rwlock_guard);
 

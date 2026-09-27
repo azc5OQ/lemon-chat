@@ -10,19 +10,37 @@
 #include "base.h"
 #include "../third-party/ITH-sha/sha256.h"
 #include "first_time_setup.h"
+#include "settings.h"
 #include <string.h>
+
+#ifdef WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>   // GetFullPathNameA, CreateProcessA (starting the tunnel setup)
+#endif
 
 #ifndef WIN32
 #include <unistd.h>    // fork, execlp, access, _exit, R_OK
 #include <dirent.h>    // opendir / readdir (Let's Encrypt cert detection)
-#include <sys/wait.h>  // waitpid (certbot)
+#include <sys/wait.h>  // waitpid (certbot, tunnel setup)
 #include <termios.h>   // tcgetattr / tcsetattr (hiding the admin password while it is typed)
 #endif
 
+// the tunnel setup of tools/wireguard, as a path from the working directory (the repository's buildresult)
+#ifdef WIN32
+static const char* g_tunnel_setup_script_path = "..\\server-source-code\\tools\\wireguard\\run_setup.bat";
+#else
+static const char* g_tunnel_setup_script_path = "../server-source-code/tools/wireguard/setup.sh";
+#endif
+
+static boole _first_time_setup_internal__is_tunnel_setup_available(void);
+static void _first_time_setup_internal__run_tunnel_setup(void);
+static void _first_time_setup_internal__reload_tunnel_settings(void);
 static void _first_time_setup_internal__save_server_settings(char plaintext_keys[][256], uint64 keys_count);
 static int64 _first_time_setup_internal__scan_client_themes(char* client_html_path, char out_themes[][32], int64 max_themes);
 static void _first_time_setup_internal__prompt_stunnel_setup(void);
 static boole _first_time_setup_internal__ask_yes_no(const char* question, boole default_answer);
+static boole _first_time_setup_internal__ask_yes_no_with_note(const char* question, const char* note, boole default_answer);
+static void _first_time_setup_internal__ask_wireguard_details(char* input, uint64 input_size);
 static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, uint64 out_capacity);
 
 /**
@@ -40,13 +58,41 @@ static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, 
  */
 static boole _first_time_setup_internal__ask_yes_no(const char* question, boole default_answer)
 {
+    return _first_time_setup_internal__ask_yes_no_with_note(question, NULL_POINTER, default_answer);
+}
+
+/**
+ * @brief asks one yes/no question with a note printed under it, and returns the answer
+ *
+ *        layout: the question on its own line, the note under it, then the (Y/n) or (y/N) hint
+ *        where the answer is typed. the note is printed on the first round only. without a note
+ *        the question and the hint share one line.
+ *
+ * @param const char* question -> the question text, without the trailing (y/n)
+ * @param const char* note -> lines printed under the question, each indented by four spaces and ended by a newline; 0 for none
+ * @param boole default_answer -> TRUE or FALSE; what a blank line means
+ *
+ * @return boole -> TRUE or FALSE
+ */
+static boole _first_time_setup_internal__ask_yes_no_with_note(const char* question, const char* note, boole default_answer)
+{
     char input[256];
     uint64 i = 0;
+    boole is_note_printed = FALSE;
 
     while (TRUE)
     {
         clib__null_memory(input, sizeof(input));
-        printf("%s %s %s", g_mark_ask, question, (default_answer == TRUE) ? "(Y/n): " : "(y/N): ");
+
+        if (note != NULL_POINTER && is_note_printed == FALSE)
+        {
+            printf("%s %s\n%s%s %s", g_mark_ask, question, note, "   ", (default_answer == TRUE) ? "(Y/n): " : "(y/N): ");
+            is_note_printed = TRUE;
+        }
+        else
+        {
+            printf("%s %s %s", g_mark_ask, question, (default_answer == TRUE) ? "(Y/n): " : "(y/N): ");
+        }
 
         if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
         {
@@ -187,6 +233,10 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     }
 
     cJSON_AddNumberToObject(json_root, "websocket_port", g_server_settings.websocket_port);
+    cJSON_AddItemToObject(json_root, "is_wireguard_mode_active", cJSON_CreateBool(g_server_settings.is_wireguard_mode_active == TRUE));
+    cJSON_AddStringToObject(json_root, "webrtc_public_address", g_server_settings.webrtc_public_address);
+    cJSON_AddNumberToObject(json_root, "webrtc_port_range_begin", (double)g_server_settings.webrtc_port_range_begin);
+    cJSON_AddNumberToObject(json_root, "webrtc_port_range_end", (double)g_server_settings.webrtc_port_range_end);
     cJSON_AddNumberToObject(json_root, "server_slots", (double)g_server_settings.max_client_count);
     cJSON_AddStringToObject(json_root, "admin_password", &g_server_settings.admin_password[0]);
     cJSON_AddItemToObject(json_root, "admin_password_is_initial", cJSON_CreateBool(g_server_settings.admin_password_is_initial == TRUE));
@@ -594,6 +644,109 @@ static void _first_time_setup_internal__prompt_stunnel_setup(void)
     printf("%s", "Path to privkey.pem: ");
     fgets(g_server_settings.stunnel_cert_privkey, sizeof(g_server_settings.stunnel_cert_privkey), stdin);
     clib__sanitize_stdin(g_server_settings.stunnel_cert_privkey);
+#else
+    // windows: the server starts the bundled tstunnel.exe / stunnel.exe itself, but the certificate has
+    // to be obtained once by the operator (certbot from pip, or win-acme). a certificate under
+    // certbot's default directory C:\Certbot\live\<domain>\ is picked up by name, anything else by path
+    char input[600];
+    char probe_fullchain[600];
+    char probe_privkey[600];
+
+    clib__null_memory(input, sizeof(input));
+
+    if (_first_time_setup_internal__ask_yes_no("Enable HTTPS (wss) via the bundled stunnel, for use on a live website?", FALSE) == FALSE)
+    {
+        g_server_settings.use_stunnel = FALSE;
+        return;
+    }
+
+    g_server_settings.use_stunnel = TRUE;
+    if (g_server_settings.wss_port == 0)
+    {
+        g_server_settings.wss_port = 1112;
+    }
+
+    while (TRUE)
+    {
+        clib__null_memory(input, sizeof(input));
+        printf("%s %s%lld%s", g_mark_ask, "wss (secure websocket) port [default ", g_server_settings.wss_port, "]: ");
+        if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
+        {
+            break;
+        }
+        clib__sanitize_stdin(input);
+        if (input[0] != 0)
+        {
+            g_server_settings.wss_port = strtol(input, 0, 10);
+        }
+        if (g_server_settings.wss_port <= 0 || g_server_settings.wss_port > 65535)
+        {
+            printf("%s %s\n", g_mark_warn, "invalid port (must be 1-65535)");
+            g_server_settings.wss_port = 1112;
+            continue;
+        }
+        if (g_server_settings.wss_port == g_server_settings.websocket_port)
+        {
+            printf("%s %s%lld%s\n", g_mark_warn, "port ", g_server_settings.wss_port, " is the plain ws port - pick another");
+            continue;
+        }
+        break;
+    }
+
+    printf("%s", "The server starts the bundled stunnel (tstunnel.exe or stunnel.exe next to chat-server.exe) at every\n");
+    printf("%s", "start and needs a certificate for your domain. Two ways to get one on Windows:\n");
+    printf("%s", "  certbot : pip install certbot, then in an administrator prompt:\n");
+    printf("%s", "            certbot certonly --standalone -d <your-domain>\n");
+    printf("%s", "            it validates over port 80 and stores the files under C:\\Certbot\\live\\<your-domain>\\\n");
+    printf("%s", "            the server runs 'certbot renew' at every start for a certificate stored there\n");
+    printf("%s", "  win-acme: wacs.exe with the PEM files store; renewal is its own scheduled task\n");
+    printf("%s", "The domain's DNS 'A' record must point at the address clients use (this machine, or the VPS in\n");
+    printf("%s", "WireGuard mode), and port 80 must reach this machine while the certificate is requested.\n");
+
+    while (TRUE)
+    {
+        clib__null_memory(g_server_settings.stunnel_domain, sizeof(g_server_settings.stunnel_domain));
+        printf("%s %s", g_mark_ask, "Domain name (e.g. chat.example.com): ");
+        if (fgets(g_server_settings.stunnel_domain, sizeof(g_server_settings.stunnel_domain), stdin) == NULL_POINTER)
+        {
+            break;
+        }
+        clib__sanitize_stdin(g_server_settings.stunnel_domain);
+        if (g_server_settings.stunnel_domain[0] != 0)
+        {
+            break;
+        }
+    }
+
+    // certbot's default location on windows
+    clib__null_memory(probe_fullchain, sizeof(probe_fullchain));
+    clib__null_memory(probe_privkey, sizeof(probe_privkey));
+    snprintf(probe_fullchain, sizeof(probe_fullchain), "C:\\Certbot\\live\\%s\\fullchain.pem", g_server_settings.stunnel_domain);
+    snprintf(probe_privkey, sizeof(probe_privkey), "C:\\Certbot\\live\\%s\\privkey.pem", g_server_settings.stunnel_domain);
+
+    if (access(probe_fullchain, R_OK) == 0 && access(probe_privkey, R_OK) == 0)
+    {
+        snprintf(g_server_settings.stunnel_cert_fullchain, 512, "%s", probe_fullchain);
+        snprintf(g_server_settings.stunnel_cert_privkey, 512, "%s", probe_privkey);
+        printf("%s %s%s\n", g_mark_ok, "found the certbot certificate under C:\\Certbot\\live\\", g_server_settings.stunnel_domain);
+        return;
+    }
+
+    printf("%s %s\n", g_mark_info, "no certificate under C:\\Certbot\\live\\ for that domain; enter the paths of an existing one, or leave them empty");
+    printf("%s %s", g_mark_ask, "Path to fullchain.pem: ");
+    fgets(g_server_settings.stunnel_cert_fullchain, sizeof(g_server_settings.stunnel_cert_fullchain), stdin);
+    clib__sanitize_stdin(g_server_settings.stunnel_cert_fullchain);
+    printf("%s %s", g_mark_ask, "Path to privkey.pem: ");
+    fgets(g_server_settings.stunnel_cert_privkey, sizeof(g_server_settings.stunnel_cert_privkey), stdin);
+    clib__sanitize_stdin(g_server_settings.stunnel_cert_privkey);
+
+    // only enable wss with a readable cert + key; the answers stay in the settings, so a certificate
+    // obtained later at these paths is picked up by switching use_stunnel on again
+    if (access(g_server_settings.stunnel_cert_privkey, R_OK) != 0 || access(g_server_settings.stunnel_cert_fullchain, R_OK) != 0)
+    {
+        printf("%s %s\n", g_mark_warn, "certificate files not found; wss stays off. get the certificate, then set use_stunnel to true in server_settings.json");
+        g_server_settings.use_stunnel = FALSE;
+    }
 #endif
 }
 
@@ -607,6 +760,8 @@ static void _first_time_setup_internal__prompt_stunnel_setup(void)
  *        the stored clients list, last seen and offline messages), then stunnel/wss and the built-in
  *        HTTP(S) server, including a default theme picked from the themes found in client.html.
  *        the client slot count is selected at startup; the channel count remains fixed.
+ *        the last question is the usage of WireGuard. with a yes the wizard offers to start the
+ *        tunnel setup of tools/wireguard; that setup runs after the settings are saved.
  *
  * @param char plaintext_keys[][256] -> receives the entered metadata keys as plaintext, one per row;
  *        must have at least 100 rows, and is handed straight to the settings writer
@@ -623,6 +778,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     char theme_scan_path[600];
     ITH_SHA256_CTX ctx;
     int64 requested_key_count = 0;
+    boole is_tunnel_setup_requested = FALSE;
 
     printf("\n%s %s\n", g_mark_info, "First-time setup (answers are saved to server_settings.json; delete that file to redo)");
     printf("%s %s\n", "   ", "each question shows its default in brackets - (Y/n) takes yes on Enter, (y/N) takes no.");
@@ -1032,6 +1188,43 @@ void first_time_setup__run(char plaintext_keys[][256])
     }
     clib__null_memory(input, sizeof(input));
 
+    // a server behind a router that forwards its ports through a tunnel (server-source-code/tools/wireguard/README.md): voice
+    // and video need the router's public address announced and a fixed udp range the router forwards
+    printf("\n");
+
+    if (_first_time_setup_internal__ask_yes_no_with_note("Make this lemon-chat server reachable from the internet using WireGuard?",
+            "    This solution is handy if the lemon-chat server is running inside an environment not reachable\n"
+            "    from the internet, typically behind a router in a home LAN/WAN.\n"
+            "    Because there are many ports to forward (http, websocket, webrtc, stun, wss, https), the easiest,\n"
+            "    most straightforward solution is to use WireGuard with some cheap VPS acting as a router.\n"
+            "    This solution launches some prepared scripts to automatically set up WireGuard for you.\n"
+            "    You might ask: why not just run it on the VPS at that point? Also doable, but this solution\n"
+            "    assumes the VPS has low processing power and you want to make use of your own processing\n"
+            "    power, while the VPS with its cheap, low processing power only acts as a cheap router.\n",
+            FALSE) == TRUE)
+    {
+        // the tunnel setup asks for the router itself and writes the address and the range, so
+        // the two detail questions are asked only when it does not run
+        if (_first_time_setup_internal__is_tunnel_setup_available() == TRUE)
+        {
+            printf("\n");
+            is_tunnel_setup_requested = _first_time_setup_internal__ask_yes_no_with_note("Run the tunnel setup now?",
+                "    it configures the VPS over ssh and installs the tunnel on this device.\n"
+                "    answer no when the VPS is already set up. its address and the UDP range are then asked here.\n",
+                TRUE);
+        }
+        else
+        {
+            printf("%s %s\n", g_mark_info, "the tunnel setup of tools/wireguard can be started from here only when the server runs from the repository's buildresult directory.");
+        }
+
+        if (is_tunnel_setup_requested == FALSE)
+        {
+            _first_time_setup_internal__ask_wireguard_details(input, sizeof(input));
+        }
+    }
+    clib__null_memory(input, sizeof(input));
+
     // read the answers back before writing them: the file is only redone by deleting it, so a
     // wrong answer noticed here saves the operator that round trip
     printf("\n%s %s\n", g_mark_info, "Setup summary:");
@@ -1060,7 +1253,310 @@ void first_time_setup__run(char plaintext_keys[][256])
     {
         printf("      %s%s\n", "file uploads ......... ", "off");
     }
-    printf("      %s%s\n\n", "browser access ....... ", (g_server_settings.serve_client_http == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "browser access ....... ", (g_server_settings.serve_client_http == TRUE) ? "on" : "off");
+    if (is_tunnel_setup_requested == TRUE)
+    {
+        printf("      %s%s\n\n", "wireguard mode ....... ", "set by the tunnel setup, which starts after the settings are saved");
+    }
+    else if (g_server_settings.is_wireguard_mode_active == TRUE)
+    {
+        printf("      %s%s%s%lld%s%lld\n\n", "wireguard mode ....... on, public address ", g_server_settings.webrtc_public_address, ", udp ", (long long)g_server_settings.webrtc_port_range_begin, "-", (long long)g_server_settings.webrtc_port_range_end);
+    }
+    else
+    {
+        printf("      %s%s\n\n", "wireguard mode ....... ", "off");
+    }
 
     _first_time_setup_internal__save_server_settings(plaintext_keys, g_server_settings.keys_count);
+
+    // after the save: the tunnel setup reads the ports from server_settings.json and writes its values into it
+    if (is_tunnel_setup_requested == TRUE)
+    {
+        _first_time_setup_internal__run_tunnel_setup();
+    }
+}
+
+/**
+ * @brief tells whether the wizard can start the tunnel setup of tools/wireguard
+ *
+ *        two conditions: the setup script is found from the working directory, and the working
+ *        directory is the repository's buildresult directory. the scripts update
+ *        buildresult/server_settings.json and this server reads the file in its working directory,
+ *        so both must be the same file.
+ *
+ * @return boole -> TRUE when the tunnel setup can be started from here
+ */
+static boole _first_time_setup_internal__is_tunnel_setup_available(void)
+{
+    FILE* script_file = 0;
+    boole is_same_directory = FALSE;
+
+#ifdef WIN32
+    char working_directory[1024];
+    char settings_directory[1024];
+    DWORD working_directory_length = 0;
+    DWORD settings_directory_length = 0;
+#else
+    char* working_directory = 0;
+    char* settings_directory = 0;
+#endif
+
+    script_file = fopen(g_tunnel_setup_script_path, "rb");
+
+    if (script_file == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    fclose(script_file);
+
+#ifdef WIN32
+    clib__null_memory(working_directory, sizeof(working_directory));
+    clib__null_memory(settings_directory, sizeof(settings_directory));
+
+    working_directory_length = GetFullPathNameA(".", sizeof(working_directory), working_directory, NULL_POINTER);
+    settings_directory_length = GetFullPathNameA("..\\buildresult", sizeof(settings_directory), settings_directory, NULL_POINTER);
+
+    if (working_directory_length > 0 && working_directory_length < sizeof(working_directory)
+        && settings_directory_length > 0 && settings_directory_length < sizeof(settings_directory)
+        && lstrcmpiA(working_directory, settings_directory) == 0)
+    {
+        is_same_directory = TRUE;
+    }
+#else
+    working_directory = realpath(".", NULL_POINTER);
+    settings_directory = realpath("../buildresult", NULL_POINTER);
+
+    if (working_directory != NULL_POINTER && settings_directory != NULL_POINTER && strcmp(working_directory, settings_directory) == 0)
+    {
+        is_same_directory = TRUE;
+    }
+
+    free(working_directory);
+    free(settings_directory);
+#endif
+
+    return is_same_directory;
+}
+
+/**
+ * @brief starts the tunnel setup, waits until it ended, then reads the values it wrote
+ *
+ *        Windows: run_setup.bat opens in its own console window. it restarts itself with
+ *        administrator rights, so its end cannot be observed and the wizard waits for Enter.
+ *        elsewhere: setup.sh runs in this terminal and the wizard waits for its exit.
+ *
+ * @attention server_settings.json must be written before: the tunnel setup reads the ports from it
+ *
+ * @return void
+ */
+static void _first_time_setup_internal__run_tunnel_setup(void)
+{
+#ifdef WIN32
+    char script_path[1024];
+    char command_line[1100];
+    char input[64];
+    DWORD script_path_length = 0;
+    STARTUPINFOA startup_info;
+    PROCESS_INFORMATION process_info;
+
+    clib__null_memory(script_path, sizeof(script_path));
+    clib__null_memory(command_line, sizeof(command_line));
+    clib__null_memory(input, sizeof(input));
+    clib__null_memory(&startup_info, sizeof(startup_info));
+    clib__null_memory(&process_info, sizeof(process_info));
+    startup_info.cb = sizeof(startup_info);
+
+    script_path_length = GetFullPathNameA(g_tunnel_setup_script_path, sizeof(script_path), script_path, NULL_POINTER);
+
+    if (script_path_length == 0 || script_path_length >= sizeof(script_path))
+    {
+        printf("%s %s\n", g_mark_warn, "the path of the tunnel setup is not usable; wireguard mode stays off");
+        return;
+    }
+
+    // cmd.exe removes the outer pair of quotes; the inner pair keeps a path with spaces in one piece
+    snprintf(command_line, sizeof(command_line), "cmd.exe /c \"\"%s\"\"", script_path);
+
+    if (CreateProcessA(NULL_POINTER, command_line, NULL_POINTER, NULL_POINTER, FALSE, CREATE_NEW_CONSOLE, NULL_POINTER, NULL_POINTER, &startup_info, &process_info) == 0)
+    {
+        printf("%s %s%s\n", g_mark_warn, "the tunnel setup could not be started; wireguard mode stays off. start it by hand: ", script_path);
+        return;
+    }
+
+    CloseHandle(process_info.hThread);
+    CloseHandle(process_info.hProcess);
+
+    printf("\n%s %s\n", g_mark_info, "the tunnel setup runs in its own window. Windows asks for administrator rights first.");
+    printf("%s %s", g_mark_ask, "press Enter here after that window reported that the setup finished: ");
+    fgets(input, (int)sizeof(input), stdin);
+#else
+    pid_t setup_pid = 0;
+    int status = 0;
+
+    printf("\n%s %s\n", g_mark_info, "the tunnel setup runs in this terminal now; the server setup continues when it ends");
+    fflush(stdout);
+
+    setup_pid = fork();
+
+    if (setup_pid == 0)
+    {
+        // started through POSIX sh, so the script needs no executable bit
+        execlp("sh", "sh", g_tunnel_setup_script_path, (char* )NULL_POINTER);
+        _exit(127); // exec failed -> sh is not installed / not on PATH
+    }
+    else if (setup_pid > 0)
+    {
+        waitpid(setup_pid, &status, 0);
+    }
+    else
+    {
+        printf("%s %s\n", g_mark_warn, "fork() failed; the tunnel setup was not started, wireguard mode stays off");
+        return;
+    }
+
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 127)
+    {
+        printf("%s %s\n", g_mark_warn, "sh was not found; the tunnel setup was not started, wireguard mode stays off");
+        return;
+    }
+#endif
+
+    _first_time_setup_internal__reload_tunnel_settings();
+}
+
+/**
+ * @brief reads the values the tunnel setup wrote into server_settings.json into g_server_settings:
+ *        the wireguard mode fields and the same-IP rule
+ *
+ * @return void
+ */
+static void _first_time_setup_internal__reload_tunnel_settings(void)
+{
+    FILE* settings_file = 0;
+    int64 file_length = 0;
+    uint64 bytes_read = 0;
+    char* file_buffer = NULL_POINTER;
+    cJSON* json_root = NULL_POINTER;
+    cJSON* json_field = NULL_POINTER;
+
+    settings_file = fopen("server_settings.json", "rb");
+
+    if (settings_file != NULL_POINTER)
+    {
+        fseek(settings_file, 0, SEEK_END);
+        file_length = ftell(settings_file);
+        fseek(settings_file, 0, SEEK_SET);
+
+        if (file_length > 0)
+        {
+            file_buffer = (char* )malloc(file_length + 1);
+
+            if (file_buffer != NULL_POINTER)
+            {
+                bytes_read = fread(file_buffer, 1, file_length, settings_file);
+                file_buffer[bytes_read] = 0;
+            }
+        }
+
+        fclose(settings_file);
+    }
+
+    if (file_buffer != NULL_POINTER)
+    {
+        json_root = cJSON_Parse(file_buffer);
+        free(file_buffer);
+    }
+
+    if (json_root == NULL_POINTER)
+    {
+        printf("%s %s\n", g_mark_warn, "server_settings.json could not be read after the tunnel setup; wireguard mode stays off");
+        return;
+    }
+
+    settings__read_wireguard_fields(json_root);
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_same_ip_address_allowed");
+    if (cJSON_IsBool(json_field)) { g_server_settings.is_same_ip_address_allowed = cJSON_IsTrue(json_field); }
+
+    cJSON_Delete(json_root);
+
+    if (g_server_settings.is_wireguard_mode_active == TRUE)
+    {
+        printf("%s %s%s%s%lld%s%lld\n", g_mark_ok, "wireguard mode: on, public address ", g_server_settings.webrtc_public_address, ", udp ", (long long)g_server_settings.webrtc_port_range_begin, "-", (long long)g_server_settings.webrtc_port_range_end);
+    }
+    else
+    {
+        printf("%s %s\n", g_mark_warn, "wireguard mode is off: the tunnel setup did not write its values. run it again from tools/wireguard, then restart the server");
+    }
+}
+
+/**
+ * @brief the two answers behind the WireGuard question of the wizard: the router's public IPv4 address, and the UDP port range the router forwards for voice and video
+ *        both are asked until they parse; an empty range takes the default. the mode is switched on
+ *        only when both answers are usable
+ *
+ * @param char* input -> the wizard's input buffer
+ * @param uint64 input_size -> its size
+ *
+ * @return void
+ */
+static void _first_time_setup_internal__ask_wireguard_details(char* input, uint64 input_size)
+{
+    unsigned int octets[4];
+    long long range_begin = 0;
+    long long range_end = 0;
+    char trailing = 0;
+
+    for (;;)
+    {
+        clib__null_memory(input, input_size);
+        printf("%s %s", g_mark_ask, "Public IPv4 address clients connect to (the router / VPS address): ");
+        if (fgets(input, (int)input_size, stdin) == NULL_POINTER)
+        {
+            return;
+        }
+        clib__sanitize_stdin(input);
+
+        if (sscanf(input, "%u.%u.%u.%u%c", &octets[0], &octets[1], &octets[2], &octets[3], &trailing) == 4
+            && octets[0] <= 255 && octets[1] <= 255 && octets[2] <= 255 && octets[3] <= 255
+            && clib__utf8_string_length(input) < sizeof(g_server_settings.webrtc_public_address))
+        {
+            clib__null_memory(g_server_settings.webrtc_public_address, sizeof(g_server_settings.webrtc_public_address));
+            clib__copy_memory(input, g_server_settings.webrtc_public_address, clib__utf8_string_length(input), sizeof(g_server_settings.webrtc_public_address) - 1);
+            break;
+        }
+
+        printf("%s %s\n", g_mark_warn, "enter an IPv4 address such as 203.0.113.10");
+    }
+
+    for (;;)
+    {
+        clib__null_memory(input, input_size);
+        printf("%s %s%lld-%lld%s", g_mark_ask, "UDP port range for voice and video, forwarded by the router (BEGIN-END) [", (long long)g_server_settings.webrtc_port_range_begin, (long long)g_server_settings.webrtc_port_range_end, "]: ");
+        if (fgets(input, (int)input_size, stdin) == NULL_POINTER)
+        {
+            return;
+        }
+        clib__sanitize_stdin(input);
+
+        if (input[0] == 0)
+        {
+            break; // the default shown in the prompt stays
+        }
+
+        if (sscanf(input, "%lld-%lld%c", &range_begin, &range_end, &trailing) == 2
+            && range_begin >= 1024 && range_begin <= 65535 && range_end >= range_begin && range_end <= 65535)
+        {
+            g_server_settings.webrtc_port_range_begin = range_begin;
+            g_server_settings.webrtc_port_range_end = range_end;
+            break;
+        }
+
+        printf("%s %s\n", g_mark_warn, "enter two ports from 1024 to 65535 as BEGIN-END, the second not below the first");
+    }
+
+    g_server_settings.is_wireguard_mode_active = TRUE;
+    printf("%s %s%s%s%lld%s%lld\n", g_mark_ok, "wireguard mode: on, public address ", g_server_settings.webrtc_public_address, ", udp ", (long long)g_server_settings.webrtc_port_range_begin, "-", (long long)g_server_settings.webrtc_port_range_end);
+    printf("%s %s\n", "   ", "the router must forward the websocket port, the http port, udp 3478 and this udp range to this machine (server-source-code/tools/wireguard/README.md)");
 }

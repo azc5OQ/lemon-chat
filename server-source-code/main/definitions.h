@@ -248,6 +248,15 @@ typedef struct server_settings
     uint64 max_client_count;
     uint64 keys_count;
     int64 websocket_port;
+    // wireguard mode (see server-source-code/tools/wireguard/README.md): this server sits behind a router that forwards its ports
+    // through a tunnel. while the switch is on, the webrtc datachannel sockets use the fixed udp port
+    // range below so the router can forward it, and every host candidate is also announced with the
+    // public address so clients know where to send. off = the machine has a public address, the three
+    // values below are ignored
+    boole is_wireguard_mode_active;
+    char webrtc_public_address[64];   // ipv4 as text, the router's public address
+    int64 webrtc_port_range_begin;
+    int64 webrtc_port_range_end;
     int64 websocket_message_max_length;
     int64 websocket_chat_message_string_max_length;
     key_data_t keys[100];

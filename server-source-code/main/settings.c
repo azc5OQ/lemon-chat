@@ -527,6 +527,45 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
 }
 
 /**
+ * @brief reads the wireguard mode fields from a parsed server_settings.json: the switch, the router's
+ *        public address and the forwarded udp range. called by settings__load and by the first time
+ *        setup after the tunnel setup wrote the file.
+ *
+ * @param cJSON* json_root -> the parsed settings file
+ *
+ * @attention an unusable address or range switches the mode off
+ *
+ * @return void
+ */
+void settings__read_wireguard_fields(cJSON* json_root)
+{
+    cJSON* json_field = NULL_POINTER;
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_wireguard_mode_active");
+    if (cJSON_IsBool(json_field)) { g_server_settings.is_wireguard_mode_active = cJSON_IsTrue(json_field); }
+    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "webrtc_public_address");
+    if (cJSON_IsString(json_field) && json_field->valuestring != NULL_POINTER)
+    {
+        clib__null_memory(g_server_settings.webrtc_public_address, sizeof(g_server_settings.webrtc_public_address));
+        clib__copy_memory(json_field->valuestring, g_server_settings.webrtc_public_address, clib__utf8_string_length(json_field->valuestring), sizeof(g_server_settings.webrtc_public_address) - 1);
+    }
+    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "webrtc_port_range_begin");
+    if (cJSON_IsNumber(json_field)) { g_server_settings.webrtc_port_range_begin = json_field->valueint; }
+    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "webrtc_port_range_end");
+    if (cJSON_IsNumber(json_field)) { g_server_settings.webrtc_port_range_end = json_field->valueint; }
+
+    // an unusable address or range switches the mode off rather than starting with a broken voice path
+    if (g_server_settings.is_wireguard_mode_active == TRUE
+        && (g_server_settings.webrtc_public_address[0] == 0
+            || g_server_settings.webrtc_port_range_begin < 1024 || g_server_settings.webrtc_port_range_begin > 65535
+            || g_server_settings.webrtc_port_range_end < g_server_settings.webrtc_port_range_begin || g_server_settings.webrtc_port_range_end > 65535))
+    {
+        printf("%s %s\n", g_mark_warn, "wireguard mode: webrtc_public_address or the webrtc_port_range is not usable, mode switched off for this run");
+        g_server_settings.is_wireguard_mode_active = FALSE;
+    }
+}
+
+/**
  * @brief fills g_server_settings with the built-in defaults, then overrides them from server_settings.json
  *        or, when there is no usable file, from the interactive first time setup.
  *
@@ -613,6 +652,13 @@ void settings__load(void)
     g_server_settings.max_client_count = DEFAULT_SERVER_SLOTS;
     g_server_settings.max_channel_count = MAX_CHANNELS;
 
+    // wireguard mode is off unless the setup wizard or tools/wireguard/ scripts switch it on; the range is the
+    // default the scripts forward
+    g_server_settings.is_wireguard_mode_active = FALSE;
+    clib__null_memory(g_server_settings.webrtc_public_address, sizeof(g_server_settings.webrtc_public_address));
+    g_server_settings.webrtc_port_range_begin = 20000;
+    g_server_settings.webrtc_port_range_end = 20099;
+
     clib__copy_memory(default_client_name, g_server_settings.default_client_name, strlen(default_client_name), 100);
 
     // optional non-interactive setup: if server_settings.json exists, load it and skip the prompts below; any omitted field keeps the default set above
@@ -660,6 +706,8 @@ void settings__load(void)
                 {
                     g_server_settings.websocket_port = json_field->valueint;
                 }
+
+                settings__read_wireguard_fields(json_root);
 
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_password");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))

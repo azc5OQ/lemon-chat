@@ -100,3 +100,9 @@ client-source-code/nodejs-client/node-log.txt*
 
 # gradle native build output (regenerated from src/main/cpp/CMakeLists.txt on every build)
 client-source-code/android/app/.cxx/
+
+# server-source-code/tools/wireguard/ setup: saved answers, key pairs and the tunnel config of this machine
+server-source-code/tools/wireguard/answers.json
+server-source-code/tools/wireguard/keys/
+server-source-code/tools/wireguard/ssh/
+server-source-code/tools/wireguard/lemon-wg0.conf

@@ -173,7 +173,7 @@ set "THIRD_PARTY_DIRECTORY=%ROOT_DIRECTORY%third-party"
 echo.
 echo Tools used for building : cmake, ninja, w64devkit  [gcc, g++, ld, make, windres]
 echo Missing ones were just auto-downloaded to %TOOLDOWNLOADS% by the bootstrap above.
-echo The optional stunnel/wss build also needs a full Perl, e.g. Strawberry Perl.
+echo The optional stunnel/wss build runs in Git for Windows' bash (no extra Perl needed).
 
 :: ---- show the paths this build will use, and confirm before doing anything ----
 echo.
@@ -277,6 +277,7 @@ IF /i "%choice%"=="y" (
   rd "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\obj" /S /Q
   rd "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\bin" /S /Q
   del "%ROOT_DIRECTORY%\..\buildresult\stunnel.exe"
+  del "%ROOT_DIRECTORY%\..\buildresult\tstunnel.exe"
 )
 
 
@@ -497,32 +498,24 @@ if exist "%ROOT_DIRECTORY%\..\client-source-code\client.html" (
 ::********************************************************
 ::****** optional: bundled stunnel - wss front-end ******
 ::********************************************************
-:: stunnel.exe lets the server also serve wss:// on Windows, but building it needs
-:: a FULL Perl for OpenSSL. Git-for-Windows' Perl is too minimal; Strawberry Perl
-:: works. If no suitable Perl is found we SKIP stunnel and still finish the build -
-:: the server runs fine over ws:// without it.
+:: stunnel.exe and tstunnel.exe let the server also serve wss:// and https:// on Windows.
+:: the build runs in Git for Windows' bash with its own perl (the perl modules OpenSSL
+:: needs are vendored in third-party\stunnel\perl-extra-lib). without bash the stunnel
+:: build is SKIPPED and the server still builds - it runs over ws:// without it.
 
 echo.
-perl -MExtUtils::MakeMaker -MLocale::Maketext::Simple -e "exit 0" 2>nul
-if errorlevel 1 goto stunnel_noperl
-echo Perl found - building the bundled stunnel wss front-end...
+echo building the bundled stunnel wss/https front-end...
 where bash >nul 2>nul
 if errorlevel 1 goto stunnel_nobash
 bash "%THIRD_PARTY_DIRECTORY%\stunnel\_bundle_and_build_windows.sh"
 if exist "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\bin\MGW32\stunnel.exe" copy /Y "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\bin\MGW32\stunnel.exe" "%ROOT_DIRECTORY%\..\buildresult\stunnel.exe"
+:: the console build is what the server starts by preference (no tray icon, no window); the gui build above is the fallback
+if exist "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\bin\MGW32\tstunnel.exe" copy /Y "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\bin\MGW32\tstunnel.exe" "%ROOT_DIRECTORY%\..\buildresult\tstunnel.exe"
 goto stunnel_done
 
 :stunnel_nobash
 echo   bash not on PATH - run third-party\stunnel\_bundle_and_build_windows.sh manually to build stunnel.
 goto stunnel_done
-
-:stunnel_noperl
-echo ==========================================================================
-echo  NOTE: no suitable Perl found - SKIPPING the optional stunnel wss build.
-echo  The chat server is built and runs over ws:// without it. For wss on Windows
-echo  install Strawberry Perl from https://strawberryperl.com and then run
-echo  third-party\stunnel\_bundle_and_build_windows.sh with perl + w64devkit on PATH.
-echo ==========================================================================
 
 :stunnel_done
 echo.
