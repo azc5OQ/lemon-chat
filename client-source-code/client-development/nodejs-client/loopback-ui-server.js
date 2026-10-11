@@ -25,6 +25,10 @@ function start(bundle, on_ready)
 
     // the same idea for the channel keys, because they can arrive before the ui attaches
     let cached_keys_frame = null;
+
+    // the session and server keys for the webview's media frames (dispatch.js, local_media_keys);
+    // replay the complete key set when a webview attaches, just like the channel keys
+    let cached_media_keys_frame = null;
     let ui_needs_burst = false;
 
     // frames that arrive while the burst is still pending. the maintainer frame used to land in
@@ -41,6 +45,11 @@ function start(bundle, on_ready)
         if (cached_keys_frame != null)
         {
             socket.send(cached_keys_frame);
+        }
+
+        if (cached_media_keys_frame != null)
+        {
+            socket.send(cached_media_keys_frame);
         }
 
         // flush what arrived during the wait, minus the kinds the burst itself just replayed
@@ -76,6 +85,7 @@ function start(bundle, on_ready)
             // used to lead a burst that showed connected with no channels
             cached_auth_frame = null;
             cached_keys_frame = null;
+            cached_media_keys_frame = null;
             pre_burst_frames = [];
 
             if (ui_socket != null)
@@ -134,6 +144,10 @@ function start(bundle, on_ready)
             if (frame.message && frame.message.type === "authentication_status")
             {
                 cached_auth_frame = json_string;
+            }
+            if (frame.message && frame.message.type === "local_media_keys")
+            {
+                cached_media_keys_frame = json_string;
             }
 
         }

@@ -51,9 +51,8 @@ function dispatch__mainthread_onmessage(e)
                 sequenced_chunk.set(opus_chunk_bytes, 2);
                 g_voice_send_sequence_number = (g_voice_send_sequence_number + 1) & 0xffff;
 
-                let data = keys__encrypt_data_with_aes_keys(g_current_channel_keys, sequenced_chunk);
-                if (data != null && data.byteLength > 0) { g_session.bytes_sent += data.byteLength; }
-                g_datachannel.send(data);
+                // the encryption layers and the sending are in audio-transport.js
+                audio_transport__send_voice(sequenced_chunk);
             }
         }
         else
@@ -105,6 +104,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "websocket_worker_onclose")
     {
+        audio_transport__reset();
         // the driver awaits this signal; it decides whether and when to redial
         g_last_connect_attempt_failed = true;
 
@@ -155,6 +155,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "websocket_worker_onerror")
     {
+        audio_transport__reset();
         g_last_connect_attempt_failed = true;
 
         if (g_last_disconnect_reason === "")
@@ -282,6 +283,8 @@ function dispatch__mainthread_onmessage(e)
             }
 
             g_is_authenticated = true;
+            // the audio connection mode was picked above, with the policy; the socket of a previous session is dropped here
+            audio_transport__reset();
             console.log("client authenticated");
 
             // the attempt is over once the adopted session accepted the login; the refreshed
@@ -453,6 +456,24 @@ function dispatch__mainthread_onmessage(e)
             android_host__enter_deep_idle();
         }
     }
+    else if (e.data.type == "data_processing_worker__music_bot_key")
+    {
+        audio_transport__set_music_bot_key(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__audio_websocket_session")
+    {
+        audio_transport__session(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_websocket_session")
+    {
+        video_transport__session(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__local_media_keys")
+    {
+        // android webview only: the node runtime handed over the complete media key set
+        keys__set_media_keys_from_host(e.data.value.encryption_key, e.data.value.checksum_key, e.data.value.server_keys);
+        video__post_transport_keys_to_worker();
+    }
     else if (e.data.type == "data_processing_worker__metadata_keys_accepted")
     {
         g_keys_init_status = true;
@@ -461,7 +482,7 @@ function dispatch__mainthread_onmessage(e)
     {
         if (connection__fast_reconnect_buffer_list("client", e.data.value) == false)
         {
-            server_msg.process_client_list_from_server(e.data.value);
+            channel_tree__apply_server_update(server_msg.process_client_list_from_server, e.data.value);
         }
     }
     else if (e.data.type == "data_processing_worker__client_avatar_from_server")
@@ -499,7 +520,7 @@ function dispatch__mainthread_onmessage(e)
     {
         if (connection__fast_reconnect_buffer_list("channel", e.data.value) == false)
         {
-            server_msg.process_channel_list_from_server(e.data.value);
+            channel_tree__apply_server_update(server_msg.process_channel_list_from_server, e.data.value);
         }
     }
     else if (e.data.type == "data_processing_worker__tag_list_from_server")
@@ -642,6 +663,34 @@ function dispatch__mainthread_onmessage(e)
 
         g_metadata_keys.unshift(single_key);
 
+        // on android the node runtime does this key exchange for a webview that has no shared secret of
+        // its own. the webview needs the session and server keys to encrypt and check its audio and video frames
+        // (keys.js, keys__media_session_layer), so the node runtime hands them over through the loopback
+        // connection as a local message; it never leaves the device. a browser page has no listener here
+        if (android_host__is_ui_only_runtime() == false && typeof g_node_frame_listener !== "undefined" && g_node_frame_listener != null)
+        {
+            try
+            {
+                g_node_frame_listener(JSON.stringify(
+                {
+                    message:
+                    {
+                        type: "local_media_keys",
+                        encryption_key: keys__bytes_to_hex(dh_keys.enc_key),
+                        checksum_key: keys__bytes_to_hex(dh_keys.mac_key),
+                        server_keys: keys__media_server_key_layers().map(function(layer)
+                        {
+                            return keys__bytes_to_hex(layer.key_bytes);
+                        })
+                    }
+                }));
+            }
+            catch (listener_error)
+            {
+                console.log("the media keys could not be handed to the ui: " + listener_error.message);
+            }
+        }
+
         // removed: never log key material (g_metadata_keys holds the session key)
 
         // here the g_metadata_keys object within data_processing web worker is updated aswell
@@ -708,6 +757,7 @@ function dispatch__mainthread_onmessage(e)
         let msg = e.data.value;
         server_settings_tab__apply_server_settings_values_to_tab(msg.message);
         server_settings_tab__refresh_hide_admin_flag_row_visibility();
+        server_settings_tab__refresh_audio_connections_row_visibility();
         chat_files__refresh_file_upload_size_visibility();
         chat_files__refresh_picture_size_visibility();
         server_settings_tab__set_blocked_countries_from_server(msg.message.blocked_countries);
@@ -718,13 +768,17 @@ function dispatch__mainthread_onmessage(e)
     {
         server_msg.process_admin_log_from_server(e.data.value);
     }
+    else if (e.data.type == "data_processing_worker__url_resolved")
+    {
+        link_previews__resolved(e.data.value);
+    }
     else if (e.data.type == "data_processing_worker__server_policy_from_server")
     {
         server_settings_tab__apply_server_policy_fields(e.data.value.message);
     }
     else if (e.data.type == "data_processing_worker__channel_join_from_server")
     {
-        server_msg.process_channel_join_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_join_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__server_chat_message_id_for_local_message_id_from_server")
     {
@@ -732,15 +786,15 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__client_connect_from_server")
     {
-        server_msg.process_client_connect_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_connect_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_rename_from_server")
     {
-        server_msg.process_client_rename_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_rename_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_disconnect_from_server")
     {
-        server_msg.process_client_disconnect_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_disconnect_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__audio_state_of_single_client_from_server")
     {
@@ -775,23 +829,23 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__channel_edit_from_server")
     {
-        server_msg.process_channel_edit_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_edit_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_going_to_idle_mode")
     {
-        server_msg.process_client_client_going_to_idle_mode_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_client_going_to_idle_mode_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_coming_back_from_idle_mode")
     {
-        server_msg.process_client_coming_back_from_idle_mode_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_coming_back_from_idle_mode_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_delete_from_server")
     {
-        server_msg.process_channel_delete_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_delete_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_create_from_server")
     {
-        server_msg.process_channel_create_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_create_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_chat_picture_metadata")
     {

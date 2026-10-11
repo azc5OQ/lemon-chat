@@ -579,7 +579,10 @@ var server_msg = {
         single_client.is_muted_by_local_client = false;
         single_client.unread_count = 0;
         single_client.is_music_bot = msg.message.is_music_bot;
+        single_client.music_bot_encryption = msg.message.music_bot_encryption || 0;
+        single_client.music_bot_keys = msg.message.music_bot_keys || null;
 
+        channel_tree__forget_client(single_client.client_id);
         g_client_list.push(single_client);
         g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
 
@@ -728,10 +731,13 @@ var server_msg = {
      */
     process_client_disconnect_from_server: function(msg)
     {
-        chat__clear_typing_from_client(msg.message.client_id);  // gone, so nothing is being typed
-
         let disconnecting_client = channel_tree__get_client_by_client_id(msg.message.client_id);
         let local_client = channel_tree__get_client_by_client_id(g_local_client_id);
+
+        // Remove the user before updating chat panels or playing a sound.
+        // A missing panel must not leave a disconnected user in the channel list.
+        channel_tree__forget_client(msg.message.client_id);
+        chat__clear_typing_from_client(msg.message.client_id);
 
         // a disconnect can arrive for a client we never fully registered locally (e.g. one still
         // mid key-exchange). the map guard further down returns cleanly in that case, but this
@@ -797,26 +803,6 @@ var server_msg = {
             g_offline_chat_recipient_alias = ""; // back on a channel: no offline target
             UI.schedule_member_list_sync(); // active ring moves back to the channel circle
         }
-
-        let index = g_map_client_id_to_array_index.get(parseInt(msg.message.client_id));
-        if (index === undefined || index == -1)
-        {
-            // disconnect for a client that was never in our local list (e.g. one that dropped
-            // mid key-exchange). we skip the array removal, but say so instead of silently returning
-            console.warn("process_client_disconnect_from_server: no local entry for client_id " + msg.message.client_id + " (index " + index + "); skipping client_list removal");
-            return;
-        }
-
-        let lastIndex = g_client_list.length - 1;
-        let lastClient = g_client_list[lastIndex];
-
-        // move last client into removed spot
-        g_client_list[index] = lastClient;
-        g_map_client_id_to_array_index.set(lastClient.client_id, index);
-
-        // remove last
-        g_client_list.pop();
-        g_map_client_id_to_array_index.delete(parseInt(msg.message.client_id));
 
         UI.refresh_all_channel_fullness();
     },
@@ -1023,7 +1009,7 @@ var server_msg = {
     process_channel_delete_from_server: function(msg)
     {
         console.log("channel deleted: channel_id=" + msg.message.channel_id);
-        if (msg.message.channel_deletor_id == g_local_client_id)
+        if (Number.isInteger(msg.message.channel_deletor_id) && msg.message.channel_deletor_id === g_local_client_id)
         {
             if (g_are_sound_effects_enabled)
             {
@@ -2534,6 +2520,8 @@ var server_msg = {
                 single_client.is_muted_by_local_client = false;
                 single_client.unread_count = 0;
                 single_client.is_music_bot = msg.message.clients[i].is_music_bot;
+                single_client.music_bot_encryption = msg.message.clients[i].music_bot_encryption || 0;
+                single_client.music_bot_keys = msg.message.clients[i].music_bot_keys || null;
 
                 g_client_list.push(single_client);
                 g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
@@ -2572,6 +2560,8 @@ var server_msg = {
                 single_client.is_muted_by_local_client = false;
                 single_client.unread_count = 0;
                 single_client.is_music_bot = msg.message.clients[i].is_music_bot;
+                single_client.music_bot_encryption = msg.message.clients[i].music_bot_encryption || 0;
+                single_client.music_bot_keys = msg.message.clients[i].music_bot_keys || null;
 
                 g_client_list.push(single_client);
                 g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
@@ -2642,6 +2632,8 @@ var server_msg = {
                 single_client.is_muted_by_local_client = false;
                 single_client.unread_count = 0;
                 single_client.is_music_bot = msg.message.clients[i].is_music_bot;
+                single_client.music_bot_encryption = msg.message.clients[i].music_bot_encryption || 0;
+                single_client.music_bot_keys = msg.message.clients[i].music_bot_keys || null;
 
                 g_client_list.push(single_client);
                 g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);

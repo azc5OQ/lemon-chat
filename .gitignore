@@ -106,3 +106,12 @@ server-source-code/tools/wireguard/answers.json
 server-source-code/tools/wireguard/keys/
 server-source-code/tools/wireguard/ssh/
 server-source-code/tools/wireguard/lemon-wg0.conf
+
+# written by server-source-code/tests/audio-websocket-test.js on every run
+.audio-test-runtime/
+
+# ---- local test suites: node scripts for the server (tests/server) and the headless client (tests/client) ----
+/tests/
+
+# Reuse the extracted OpenSSL sources locally; do not commit the build cache.
+/server-source-code/third-party/stunnel/win-build/

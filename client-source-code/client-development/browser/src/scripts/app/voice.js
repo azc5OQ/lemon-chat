@@ -292,6 +292,14 @@ function voice__probe_webrtc_udp_and_warn()
  */
 async function voice__webrtc_datachannel_connection_check(is_this_reconnect = false)
 {
+    audio_transport__start();
+    // the datachannel is needed for voice over webrtc, as the fallback of a websocket that does not come up, or for video
+    if (audio_transport__wants_webrtc() === false)
+    {
+        g_is_webrtc_datachannel_check_running = false;
+        return;
+    }
+
     // voice lives in the webview only; node has no webrtc and must never enter this.
     // the caller set the running flag, so it must be dropped here too
     if (typeof RTCPeerConnection === "undefined")
@@ -306,6 +314,11 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
     while (true)
     {
         console.log("voice__webrtc_datachannel_connection_check ran");
+        if (audio_transport__wants_webrtc() === false)
+        {
+            g_is_webrtc_datachannel_check_running = false;
+            break;
+        }
 
         if (g_is_voice_chat_allowed_by_server == true && g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
         {
@@ -335,7 +348,11 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
             // whether the browser is even capable of direct udp before retrying forever
             if (g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
             {
-                voice__probe_webrtc_udp_and_warn();
+                // with a websocket as the fallback the warning about blocked udp is not needed
+                if (g_audio_transport.mode === "webrtc" && g_server_policy.is_audio_over_websocket_allowed !== true)
+                {
+                    voice__probe_webrtc_udp_and_warn();
+                }
             }
 
             // the server refused for a while (10 attempts never connected): wait it out here instead
@@ -731,7 +748,7 @@ function voice__process_audio_state_of_single_client(client)
 
         document.getElementById("client-audio-state-" + client.client_id).classList.add("client-audio-state-completely-disabled");
 
-        if (client.client_id == g_local_client_id)
+        if (client.client_id == g_local_client_id && audio_transport__active() == null)
         {
             g_is_microphone_available = false;
             voice__update_microphone_button();

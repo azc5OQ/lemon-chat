@@ -1040,64 +1040,23 @@ function audio_opus_glue__opus_decoder_worker_interval_function()
 function audio_opus_glue__opus_decoder_worker_onmessage(event)
 {
     // voice frame: [4B sender client id][encrypted(2B sequence + opus)]
-    if (event.data.type == "mainthread__add_data_to_opus_decoder")
+    if (event.data.type == "mainthread__add_decrypted_data_to_opus_decoder")
     {
-        let dataView = new DataView(event.data.value);
-
-        // clientid is always first 4 bytes of received chunk of bytes and is in every chunk of bytes
-        let extracted_client_id = dataView.getInt32(0, true);
-
-        let opus_ArrayBuffer_encrypted = event.data.value.slice(4);
-        let decrypted_bytes = keys__decrypt_data_with_aes_keys(g_current_channel_keys, opus_ArrayBuffer_encrypted);
-
-        // after decryption: [2B sequence little endian][opus]. too-short frames are dropped
-        if (decrypted_bytes == null || decrypted_bytes.length < 3)
+        // the main thread removed every encryption layer already (audio_transport__receive), for a member
+        // and for a music bot alike: [4B sender client id, little endian][2B sequence number, little endian][opus]
+        if (event.data.value.byteLength < 7)
         {
             return;
         }
 
+        let dataView = new DataView(event.data.value);
+        let extracted_client_id = dataView.getInt32(0, true);
         let chunk_entry = {
-            sequence_number: decrypted_bytes[0] | (decrypted_bytes[1] << 8),
-            opus_chunk: decrypted_bytes.subarray(2)
+            sequence_number: dataView.getUint16(4, true),
+            opus_chunk: event.data.value.slice(6)
         };
 
         // direct mode decodes right now and pipes to the worklet; tick mode queues for the mixer
-        if (opus_decoder_direct_worklet_port != null)
-        {
-            audio_opus_glue__opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
-            return;
-        }
-
-        audio_opus_glue__opus_decoder_worker_queue_chunk_for_tick(extracted_client_id, chunk_entry);
-    }
-    else if (event.data.type == "mainthread__add_data_to_opus_decoder_musicbot")
-    {
-        let dataView = new DataView(event.data.value);
-        let extracted_client_id = dataView.getInt32(0, true);
-        let chunk_entry = null;
-
-        if (extracted_client_id == -2)
-        {
-            // legacy format from an old server binary: [4B -2][opus], no sequence number
-            chunk_entry = {
-                sequence_number: null,
-                opus_chunk: event.data.value.slice(4)
-            };
-        }
-        else
-        {
-            // new format: [4B bot client id][2B sequence little endian][opus]
-            if (event.data.value.byteLength < 7)
-            {
-                return;
-            }
-
-            chunk_entry = {
-                sequence_number: dataView.getUint16(4, true),
-                opus_chunk: event.data.value.slice(6)
-            };
-        }
-
         if (opus_decoder_direct_worklet_port != null)
         {
             audio_opus_glue__opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);

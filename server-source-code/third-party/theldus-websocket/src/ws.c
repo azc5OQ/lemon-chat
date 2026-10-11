@@ -32,6 +32,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #else
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -63,6 +64,44 @@ typedef int socklen_t;
  */
 static struct ws_events cli_events;
 
+// the frames waiting for a media socket's writer thread sit in a ring of bytes, each as a record of
+// [8 B queued_at][2 B size][1 B kind][data]. a burst fits whole: a music bot's lead at song start is a few
+// hundred frames of about 150 bytes, a video keyframe is up to 256 packets. a frame that waited past its
+// kind's stale limit is dropped when its turn comes; a control frame (the attachment acknowledgement)
+// never goes stale and is never dropped for room; video is never stale either, a viewer that falls behind
+// loses the oldest packets and asks for a keyframe
+#define WS_AUDIO_QUEUE_BYTES (64 * 1024)
+#define WS_VIDEO_QUEUE_BYTES (512 * 1024)
+#define WS_MEDIA_RECORD_HEADER 11
+#define WS_MEDIA_STALE_VOICE_MS 150
+#define WS_MEDIA_STALE_MUSIC_MS 2500
+// every attached media socket gets an empty frame on this interval, including during continuous playback.
+// the client answers with an empty frame, keeping the server's receive timeout alive even for listeners.
+// no client timer is needed, so background-page timer throttling cannot suppress the reply.
+#define WS_AUDIO_KEEPALIVE_INTERVAL_MS 5000
+// a media socket must present its attachment proof within the hello timeout; from the bind on it may be idle
+// for the idle timeout (the keepalive above keeps an attached socket within it)
+#define WS_AUDIO_HELLO_TIMEOUT_MS 5000
+#define WS_AUDIO_IDLE_TIMEOUT_MS 15000
+
+static int set_socket_timeout(int sock, int option, uint32_t milliseconds);
+
+struct ws_media_buffer
+{
+    pthread_mutex_t mutex;
+    pthread_cond_t ready;
+    pthread_t writer;
+    bool stopping;
+    bool is_bound;          // the socket is attached to a client
+    uint64_t next_keepalive_at; // monotonic deadline, protected by mutex; outgoing media never postpones it
+    size_t head;            // offset of the oldest record in the ring
+    size_t used;            // bytes of the ring in use
+    size_t ring_bytes;      // the ring's size, by the socket's purpose
+    size_t frame_max;       // the largest frame received or queued, by the socket's purpose
+    unsigned char* received;
+    unsigned char* ring;
+};
+
 #ifndef INET6_ADDRSTRLEN
 #define INET6_ADDRSTRLEN 1025
 #endif
@@ -72,6 +111,10 @@ static struct ws_events cli_events;
  */
 struct ws_connection
 {
+
+    int media_purpose;      // WS_MEDIA_PURPOSE_NONE for the chat socket, else the /audio or /video socket
+    uint64_t media_client_id;
+    struct ws_media_buffer* media;
 	int client_sock; /**< Client socket FD.        */
 	int state; /**< WebSocket current state. */
 
@@ -127,6 +170,204 @@ int ws_init_client_slots(uint32_t capacity)
  * @brief Timeout to a single send().
  */
 static uint32_t timeout;
+
+static uint64_t audio_clock_ms(void)
+{
+    struct timespec now;
+
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (uint64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}
+
+int ws_media_purpose(ws_cli_conn_t* client)
+{
+    return client->media_purpose;
+}
+
+uint64_t ws_media_client_id(ws_cli_conn_t* client)
+{
+    return client->media_client_id;
+}
+
+void ws_media_bind(ws_cli_conn_t* client, uint64_t id)
+{
+    client->media_client_id = id;
+    set_socket_timeout(client->client_sock, SO_RCVTIMEO, WS_AUDIO_IDLE_TIMEOUT_MS);
+    if (client->media != NULL)
+    {
+        pthread_mutex_lock(&client->media->mutex);
+        client->media->next_keepalive_at = audio_clock_ms() + WS_AUDIO_KEEPALIVE_INTERVAL_MS;
+        client->media->is_bound = true;
+        pthread_mutex_unlock(&client->media->mutex);
+    }
+}
+
+// Shutdown wakes the reader. Only that reader may release and reuse the slot.
+void ws_abort_client(ws_cli_conn_t* client)
+{
+    if (client != NULL && client->client_sock != -1)
+    {
+        shutdown(client->client_sock, 2);
+    }
+}
+
+/** @brief copies bytes into the ring at an offset, wrapping at its end */
+static void media_ring_write(struct ws_media_buffer* media, size_t offset, const unsigned char* source, size_t size)
+{
+    size_t first = 0;
+
+    offset = offset % media->ring_bytes;
+    first = media->ring_bytes - offset;
+    if (first > size)
+    {
+        first = size;
+    }
+    memcpy(media->ring + offset, source, first);
+    if (size > first)
+    {
+        memcpy(media->ring, source + first, size - first);
+    }
+}
+
+/** @brief copies bytes out of the ring from an offset, wrapping at its end */
+static void media_ring_read(struct ws_media_buffer* media, size_t offset, unsigned char* destination, size_t size)
+{
+    size_t first = 0;
+
+    offset = offset % media->ring_bytes;
+    first = media->ring_bytes - offset;
+    if (first > size)
+    {
+        first = size;
+    }
+    memcpy(destination, media->ring + offset, first);
+    if (size > first)
+    {
+        memcpy(destination + first, media->ring, size - first);
+    }
+}
+
+/** @brief reads the header of the record at an offset: when it was queued, its payload size and its kind */
+static void media_ring_header(struct ws_media_buffer* media, size_t offset, uint64_t* queued_at, size_t* size, int* kind)
+{
+    unsigned char header[WS_MEDIA_RECORD_HEADER];
+    int i = 0;
+
+    media_ring_read(media, offset, header, sizeof(header));
+    *queued_at = 0;
+    for (i = 0; i < 8; i++)
+    {
+        *queued_at = (*queued_at << 8) | header[i];
+    }
+    *size = ((size_t)header[8] << 8) | header[9];
+    *kind = header[10];
+}
+
+/** @brief drops every queued media frame; the control frames stay. used when the client changes channel, so nothing of the old channel follows it */
+void ws_media_clear_queue(ws_cli_conn_t* client)
+{
+    struct ws_media_buffer* media = client->media;
+    unsigned char* kept = NULL;
+    size_t kept_size = 0;
+    size_t offset = 0;
+    size_t walked = 0;
+    uint64_t queued_at = 0;
+    size_t size = 0;
+    int kind = 0;
+
+    if (media == NULL)
+    {
+        return;
+    }
+    pthread_mutex_lock(&media->mutex);
+    kept = malloc(media->used > 0 ? media->used : 1);
+    if (kept != NULL)
+    {
+        offset = media->head;
+        while (walked < media->used)
+        {
+            media_ring_header(media, offset, &queued_at, &size, &kind);
+            if (kind == WS_MEDIA_KIND_CONTROL)
+            {
+                media_ring_read(media, offset, kept + kept_size, WS_MEDIA_RECORD_HEADER + size);
+                kept_size += WS_MEDIA_RECORD_HEADER + size;
+            }
+            offset += WS_MEDIA_RECORD_HEADER + size;
+            walked += WS_MEDIA_RECORD_HEADER + size;
+        }
+        media->head = 0;
+        media->used = kept_size;
+        if (kept_size > 0)
+        {
+            memcpy(media->ring, kept, kept_size);
+        }
+        free(kept);
+    }
+    pthread_mutex_unlock(&media->mutex);
+}
+
+/**
+ * @brief queues one frame for the socket's writer thread
+ *
+ *        when the ring is full the oldest media frames make room; a control frame at the head is never
+ *        dropped, the new frame is dropped instead
+ *
+ * @param ws_cli_conn_t* client -> the media socket
+ * @param const unsigned char* data -> the frame payload
+ * @param size_t size -> its length, at most the socket's frame limit
+ * @param int kind -> WS_MEDIA_KIND_CONTROL, WS_MEDIA_KIND_VOICE, WS_MEDIA_KIND_MUSIC or WS_MEDIA_KIND_VIDEO
+ *
+ * @return int -> 0 when queued or dropped for a control frame, -1 when the socket has no queue or the frame is too large
+ */
+int ws_media_queue_frame(ws_cli_conn_t* client, const unsigned char* data, size_t size, int kind)
+{
+    struct ws_media_buffer* media = client->media;
+    unsigned char header[WS_MEDIA_RECORD_HEADER];
+    size_t record_size = WS_MEDIA_RECORD_HEADER + size;
+    uint64_t now = audio_clock_ms();
+    uint64_t oldest_queued_at = 0;
+    size_t oldest_size = 0;
+    int oldest_kind = 0;
+    int i = 0;
+
+    if (media == NULL || size > media->frame_max || record_size > media->ring_bytes)
+    {
+        return -1;
+    }
+    pthread_mutex_lock(&media->mutex);
+    if (media->stopping)
+    {
+        pthread_mutex_unlock(&media->mutex);
+        return -1;
+    }
+    while (media->used + record_size > media->ring_bytes)
+    {
+        media_ring_header(media, media->head, &oldest_queued_at, &oldest_size, &oldest_kind);
+        if (oldest_kind == WS_MEDIA_KIND_CONTROL)
+        {
+            pthread_mutex_unlock(&media->mutex);
+            return 0;
+        }
+        media->head = (media->head + WS_MEDIA_RECORD_HEADER + oldest_size) % media->ring_bytes;
+        media->used -= WS_MEDIA_RECORD_HEADER + oldest_size;
+    }
+    for (i = 0; i < 8; i++)
+    {
+        header[i] = (unsigned char)(now >> (56 - i * 8));
+    }
+    header[8] = (unsigned char)(size >> 8);
+    header[9] = (unsigned char)size;
+    header[10] = (unsigned char)kind;
+    media_ring_write(media, media->head + media->used, header, sizeof(header));
+    if (size > 0)
+    {
+        media_ring_write(media, media->head + media->used + WS_MEDIA_RECORD_HEADER, data, size);
+    }
+    media->used += record_size;
+    pthread_cond_signal(&media->ready);
+    pthread_mutex_unlock(&media->mutex);
+    return 0;
+}
 
 /* Only the HTTP upgrade read is timed; established idle clients use the
  * application's heartbeat policy. Windows expects milliseconds, POSIX timeval. */
@@ -342,6 +583,9 @@ static ssize_t send_all(ws_cli_conn_t *client, const void *buf, size_t len, int 
 			r = send(client->client_sock, p, len, flags);
 			if (r <= 0)
 			{
+                // The receiver may have only part of this frame. It must reconnect
+                // before receiving more messages, including changes to the user list.
+                ws_abort_client(client);
 				pthread_mutex_unlock(&client->mtx_snd);
 				return (-1);
 			}
@@ -364,6 +608,166 @@ static ssize_t send_all(ws_cli_conn_t *client, const void *buf, size_t len, int 
  * @attention This is part of the internal API and is documented just
  * for completeness.
  */
+static void* media_writer(void* argument)
+{
+    ws_cli_conn_t* client = argument;
+    struct ws_media_buffer* media = client->media;
+    unsigned char frame[WS_VIDEO_FRAME_MAX + 4];
+    unsigned char keepalive[2];
+    struct timespec deadline;
+    size_t header_size = 0;
+    uint64_t queued_at = 0;
+    size_t size = 0;
+    int kind = 0;
+    uint64_t stale_after_ms = 0;
+    uint64_t now = 0;
+    uint64_t wait_ms = 0;
+
+    for (;;)
+    {
+        pthread_mutex_lock(&media->mutex);
+        while (media->used == 0 && !media->stopping)
+        {
+            wait_ms = WS_AUDIO_KEEPALIVE_INTERVAL_MS;
+            if (media->is_bound)
+            {
+                now = audio_clock_ms();
+                if (now >= media->next_keepalive_at)
+                {
+                    break;
+                }
+                wait_ms = media->next_keepalive_at - now;
+            }
+            clock_gettime(CLOCK_REALTIME, &deadline);
+            deadline.tv_sec += wait_ms / 1000;
+            deadline.tv_nsec += (wait_ms % 1000) * 1000000;
+            if (deadline.tv_nsec >= 1000000000)
+            {
+                deadline.tv_sec++;
+                deadline.tv_nsec -= 1000000000;
+            }
+            pthread_cond_timedwait(&media->ready, &media->mutex, &deadline);
+        }
+        if (media->stopping)
+        {
+            pthread_mutex_unlock(&media->mutex);
+            break;
+        }
+        now = audio_clock_ms();
+        if (media->is_bound && now >= media->next_keepalive_at)
+        {
+            // Check the deadline even when media is queued: a listener otherwise sends no reply.
+            media->next_keepalive_at = now + WS_AUDIO_KEEPALIVE_INTERVAL_MS;
+            pthread_mutex_unlock(&media->mutex);
+            keepalive[0] = WS_FIN | WS_FR_OP_BIN;
+            keepalive[1] = 0;
+            if (SEND(client, keepalive, 2) < 0)
+            {
+                ws_abort_client(client);
+                return NULL;
+            }
+            continue;
+        }
+        // the oldest record leaves the ring; the websocket frame is built around its payload
+        media_ring_header(media, media->head, &queued_at, &size, &kind);
+        header_size = size < 126 ? 2 : 4;
+        media_ring_read(media, media->head + WS_MEDIA_RECORD_HEADER, frame + header_size, size);
+        media->head = (media->head + WS_MEDIA_RECORD_HEADER + size) % media->ring_bytes;
+        media->used -= WS_MEDIA_RECORD_HEADER + size;
+        pthread_mutex_unlock(&media->mutex);
+        stale_after_ms = kind == WS_MEDIA_KIND_VOICE ? WS_MEDIA_STALE_VOICE_MS : kind == WS_MEDIA_KIND_MUSIC ? WS_MEDIA_STALE_MUSIC_MS : 0;
+        if (stale_after_ms > 0 && audio_clock_ms() - queued_at > stale_after_ms)
+        {
+            continue;
+        }
+        frame[0] = WS_FIN | WS_FR_OP_BIN;
+        frame[1] = size < 126 ? (unsigned char)size : 126;
+        if (header_size == 4)
+        {
+            frame[2] = (unsigned char)(size >> 8);
+            frame[3] = (unsigned char)size;
+        }
+        if (SEND(client, frame, header_size + size) < 0)
+        {
+            // A partially sent frame cannot be skipped; terminate that connection.
+            ws_abort_client(client);
+            break;
+        }
+    }
+    return NULL;
+}
+
+/** @brief gives a media socket its ring, receive buffer and writer thread, sized by its purpose */
+static int media_start(ws_cli_conn_t* client)
+{
+    struct ws_media_buffer* media = calloc(1, sizeof(*media));
+
+    if (media == NULL)
+    {
+        return -1;
+    }
+    media->ring_bytes = client->media_purpose == WS_MEDIA_PURPOSE_VIDEO ? WS_VIDEO_QUEUE_BYTES : WS_AUDIO_QUEUE_BYTES;
+    media->frame_max = client->media_purpose == WS_MEDIA_PURPOSE_VIDEO ? WS_VIDEO_FRAME_MAX : WS_AUDIO_FRAME_MAX;
+    media->ring = malloc(media->ring_bytes);
+    media->received = malloc(media->frame_max + 1);
+    if (media->ring == NULL || media->received == NULL)
+    {
+        free(media->ring);
+        free(media->received);
+        free(media);
+        return -1;
+    }
+    if (pthread_mutex_init(&media->mutex, NULL) != 0)
+    {
+        free(media->ring);
+        free(media->received);
+        free(media);
+        return -1;
+    }
+    if (pthread_cond_init(&media->ready, NULL) != 0)
+    {
+        pthread_mutex_destroy(&media->mutex);
+        free(media->ring);
+        free(media->received);
+        free(media);
+        return -1;
+    }
+    client->media = media;
+    if (pthread_create(&media->writer, NULL, media_writer, client) != 0)
+    {
+        client->media = NULL;
+        pthread_cond_destroy(&media->ready);
+        pthread_mutex_destroy(&media->mutex);
+        free(media->ring);
+        free(media->received);
+        free(media);
+        return -1;
+    }
+    return 0;
+}
+
+static void media_stop(ws_cli_conn_t* client)
+{
+    struct ws_media_buffer* media = client->media;
+
+    if (media == NULL)
+    {
+        return;
+    }
+    ws_abort_client(client);
+    pthread_mutex_lock(&media->mutex);
+    media->stopping = true;
+    pthread_cond_signal(&media->ready);
+    pthread_mutex_unlock(&media->mutex);
+    pthread_join(media->writer, NULL);
+    pthread_cond_destroy(&media->ready);
+    pthread_mutex_destroy(&media->mutex);
+    free(media->ring);
+    free(media->received);
+    free(media);
+    client->media = NULL;
+}
+
 static void close_client(ws_cli_conn_t *client, int lock)
 {
 	if (!CLIENT_VALID(client))
@@ -435,7 +839,7 @@ static void *close_timeout(void *p)
 
 	DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] Timer expired, closing client \n");
 
-	close_client(conn, 1);
+    ws_abort_client(conn);
 quit:
 	return (NULL);
 }
@@ -976,6 +1380,16 @@ static int do_handshake(struct ws_frame_data *wfd)
 	}
 
 	/* Get response. */
+    wfd->client->media_purpose = WS_MEDIA_PURPOSE_NONE;
+    if (strncmp((char*)wfd->frm, "GET /audio HTTP/1.1\r\n", 21) == 0)
+    {
+        wfd->client->media_purpose = WS_MEDIA_PURPOSE_AUDIO;
+    }
+    else if (strncmp((char*)wfd->frm, "GET /video HTTP/1.1\r\n", 21) == 0)
+    {
+        wfd->client->media_purpose = WS_MEDIA_PURPOSE_VIDEO;
+    }
+
 	if (get_handshake_response((char *)wfd->frm, &response) < 0)
 	{
 		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Cannot get handshake response, request was: %s\n", wfd->frm);
@@ -1001,6 +1415,18 @@ static int do_handshake(struct ws_frame_data *wfd)
 	set_client_state(wfd->client, WS_STATE_OPEN);
 
 	/* Trigger events and clean up buffers. */
+    if ((wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
+    {
+        int enabled = 1;
+        setsockopt(wfd->client->client_sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&enabled, sizeof(enabled));
+        if (set_socket_timeout(wfd->client->client_sock, SO_RCVTIMEO, WS_AUDIO_HELLO_TIMEOUT_MS) != 0
+            || set_socket_timeout(wfd->client->client_sock, SO_SNDTIMEO, 100) != 0
+            || media_start(wfd->client) != 0)
+        {
+            free(response);
+            return -1;
+        }
+    }
 	cli_events.onopen(wfd->client);
 	free(response);
 	return (0);
@@ -1182,8 +1608,14 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 	unsigned char *msg; /* Current message. */
 	int cur_byte; /* Curr byte read.  */
 	uint64_t i; /* Loop index.      */
+    uint64_t limit = wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE ? wfd->client->media->frame_max : MAX_FRAME_LENGTH;
 
 	msg = *buf;
+    if ((wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE) && !is_control_frame(opcode))
+    {
+        msg = wfd->client->media->received;
+        *buf = msg;
+    }
 
 	/* Decode masks and length for 16-bit messages. */
 	if (*frame_length == 126)
@@ -1209,7 +1641,7 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 	 */
 	/* Check BEFORE addition: a malicious 64-bit continuation length can wrap
 	 * both the cumulative size and the allocation below to a tiny value. */
-	if (*frame_size > MAX_FRAME_LENGTH || *frame_length > MAX_FRAME_LENGTH - *frame_size)
+	if (*frame_size > limit || *frame_length > limit - *frame_size)
 	{
 		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Current frame from client %d, exceeds the maximum\n"
 					       "amount of bytes allowed (%" PRId64 "/%d)!",
@@ -1251,7 +1683,7 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 	 */
 	if (*frame_length > 0)
 	{
-		if (!is_control_frame(opcode))
+		if (!is_control_frame(opcode) && !(wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
 		{
 			tmp = realloc(msg, sizeof(unsigned char) * (*msg_idx + *frame_length + is_fin));
 			if (!tmp)
@@ -1283,7 +1715,7 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 	if (is_fin && *frame_size > 0)
 	{
 		/* Increase memory if our FIN frame is of length 0. */
-		if (!*frame_length && !is_control_frame(opcode))
+		if (!*frame_length && !is_control_frame(opcode) && !(wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
 		{
 			tmp = realloc(msg, sizeof(unsigned char) * (*msg_idx + 1));
 			if (!tmp)
@@ -1563,7 +1995,10 @@ static int next_frame(struct ws_frame_data *wfd)
 				 * vars here. */
 				wfd->frame_size = frame_size;
 				wfd->frame_type = WS_FR_OP_CLSE;
-				free(msg_data);
+				if (!(wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
+                {
+                    free(msg_data);
+                }
 				return (0);
 			}
 		}
@@ -1582,7 +2017,10 @@ static int next_frame(struct ws_frame_data *wfd)
 	/* Check for error. */
 	if (wfd->error)
 	{
-		free(msg_data);
+		if (!(wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
+                {
+                    free(msg_data);
+                }
 		wfd->msg = NULL;
 		return (-1);
 	}
@@ -1646,11 +2084,17 @@ static void *ws_establishconnection(void *vclient)
 				do_close(&wfd, -1);
 			}
 
-			free(wfd.msg);
+			if (client->media_purpose == WS_MEDIA_PURPOSE_NONE)
+            {
+                free(wfd.msg);
+            }
 			break;
 		}
 
-		free(wfd.msg);
+		if (client->media_purpose == WS_MEDIA_PURPOSE_NONE)
+            {
+                free(wfd.msg);
+            }
 	}
 
 	/*
@@ -1661,6 +2105,7 @@ static void *ws_establishconnection(void *vclient)
 	cli_events.onclose(client);
 
 closed:
+    media_stop(client);
 	clse_thrd = client->close_thrd;
 
 	/* Wait for timeout thread if necessary. */
@@ -1730,6 +2175,9 @@ static void *ws_accept(void *data)
 			{
 				client_socks[i].client_sock = new_sock;
 				client_socks[i].state = WS_STATE_CONNECTING;
+                client_socks[i].media_purpose = WS_MEDIA_PURPOSE_NONE;
+                client_socks[i].media = NULL;
+                client_socks[i].media_client_id = UINT64_MAX;
 				client_socks[i].close_thrd = false;
 				client_socks[i].last_pong_id = -1;
 				client_socks[i].current_ping_id = -1;
@@ -1870,7 +2318,10 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop, uint32_t ti
 	}
 
 	/* Listen. */
-	listen(*sock, SOMAXCONN);
+	if (listen(*sock, SOMAXCONN) < 0)
+	{
+		panic("[theldus-websocket] Listen failed");
+	}
 
 	/* Wait for incoming connections. */
 	DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Waiting for incoming connections..!.\n");

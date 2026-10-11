@@ -914,25 +914,8 @@ function audio__recorder_onaudioprocess(event)
  */
 function audio__process_captured_microphone_pcm(webaudio_captured_bytes)
 {
-    if (typeof (g_datachannel) == 'undefined')
+    if (audio_transport__ready() === false)
     {
-        console.log("%c datachannel is undefined, cannot sent audio", "color: red");
-        return;
-    }
-
-    if (g_datachannel == null)
-    {
-        return;
-    }
-
-    if (g_datachannel.readyState == null)
-    {
-        return;
-    }
-
-    if (g_datachannel.readyState != "open")
-    {
-        console.log("%c datachannel exists but is not open, cannot sent audio", "color: red");
         return;
     }
 

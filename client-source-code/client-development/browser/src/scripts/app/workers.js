@@ -966,6 +966,10 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
+        else if (msg.message.type == "url_resolved")
+        {
+            global.postMessage({ type: "data_processing_worker__url_resolved", value: msg.message });
+        }
         else if (msg.message.type == "server_policy")
         {
             global.postMessage({
@@ -1206,6 +1210,40 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             global.postMessage({
                 type: "data_processing_worker__current_channel_active_microphone_usage_from_server",
                 value: msg
+            });
+        }
+        else if (msg.message.type == "music_bot_key")
+        {
+            global.postMessage(
+            {
+                type: "data_processing_worker__music_bot_key",
+                value: msg.message
+            });
+        }
+        else if (msg.message.type == "audio_websocket_session")
+        {
+            global.postMessage(
+            {
+                type: "data_processing_worker__audio_websocket_session",
+                value: msg.message
+            });
+        }
+        else if (msg.message.type == "video_websocket_session")
+        {
+            global.postMessage(
+            {
+                type: "data_processing_worker__video_websocket_session",
+                value: msg.message
+            });
+        }
+        else if (msg.message.type == "local_media_keys" && g_loopback_port > 0)
+        {
+            // only over the loopback: the node runtime on the same device hands the webview the two keys
+            // for its media frames. a real server never gets to send this
+            global.postMessage(
+            {
+                type: "data_processing_worker__local_media_keys",
+                value: msg.message
             });
         }
         else if (msg.message.type == "sdp_offer")

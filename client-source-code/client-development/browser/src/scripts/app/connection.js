@@ -647,6 +647,9 @@ function connection__try_start_fast_reconnect(reason)
     }
 
     g_fast_reconnect.in_progress = true;
+    // Pending website replies belong to the old connection. Ask again after
+    // login so an interrupted lookup does not leave its message without a card.
+    link_previews__reset();
     g_fast_reconnect.resumed = false;
     g_fast_reconnect.pending_lists = null;
 
@@ -796,6 +799,8 @@ function connection__fast_reconnect_apply_lists()
  */
 function connection__reset_chat_app_keep_identity()
 {
+    link_previews__reset();
+    g_server_policy.allow_link_previews = false;
     // no connection, nobody is typing - drop the notices and the ticker with them
     g_typing.state = {};
     chat__render_typing_indicator();
@@ -873,6 +878,10 @@ function connection__reset_chat_app_keep_identity()
     g_chat_message_receiver_id = "main";
     g_is_client_list_retrieved = false;
     g_is_channel_list_retrieved = false;
+    audio_transport__reset();
+    g_media_keys_from_host = null;
+    g_media_server_key_layers_from_host = null;
+    g_audio_transport.mode = "webrtc";
     g_is_webrtc_datachannel_connected = false;
 
     // emptied in place, not reassigned: a fresh array would leave anything still
@@ -915,7 +924,10 @@ function connection__reset_chat_app_keep_identity()
     g_is_microphone_enabled = false;
 
     // a stream we sent or watched is gone with the connection
-    video__reset_on_disconnect();
+    if (typeof video__reset_on_disconnect === "function")
+    {
+        video__reset_on_disconnect();
+    }
     g_is_microphone_active = false;
     g_last_sent_value_microphone_usage = false;
 
@@ -1101,6 +1113,7 @@ async function connection__attempt_connection(target, identity)
     {
         g_host = g_autoconnect_details.host;
         port = g_autoconnect_details.port;
+        g_audio_transport.url = "ws://" + (g_host.indexOf(":") >= 0 && g_host[0] !== "[" ? "[" + g_host + "]" : g_host) + ":" + port + "/";
 
         let loopback_connection_string = "ws://127.0.0.1:" + target.port + "/";
         console.log("connection_string -> " + loopback_connection_string + " (loopback)");
@@ -1147,6 +1160,7 @@ async function connection__attempt_connection(target, identity)
     }
 
     let connection_string = protocol_part_of_connection_string + '' + g_host + ':' + connection_port + '/';
+    g_audio_transport.url = connection_string;
     console.log("connection_string -> " + connection_string);
 
     // say WHERE we are connecting: only now are the real host/port known

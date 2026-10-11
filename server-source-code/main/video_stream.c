@@ -1,9 +1,15 @@
+// This file manages video streams in Lemon Chat channels. It checks who may start a stream,
+// who may watch it, and when streaming must stop. It forwards the streamer's encrypted packets
+// to the viewers through video_websocket.c or video_webrtc.c.
+//
+// Functions that change stream or viewer state require the clients and channels write locks.
+// When the WebRTC peers lock is also needed, the order is clients, WebRTC peers, then channels.
+// The packet relay takes its own read locks in that order.
 #include "definitions.h"
 
 #include "../third-party/dave-g-json/cJSON.h" // needed by base.h
 #include "base.h"
 
-#include "../third-party/libdatachannel-0.24.2/include/rtc/rtc.h"
 #include "../third-party/rxi-log/log.h"
 
 #include "clib/clib_memory.h"
@@ -12,9 +18,12 @@
 #include "memory_manager.h"
 #include "server_message.h"
 #include "audio_channel.h"
+#include "video_webrtc.h"
 #include "util.h"
 
 #include "video_stream.h"
+#include "video_websocket.h"
+#include "media_auth.h"
 
 /**
  * @brief forgets a client's viewer consent and connection, the streamer is told when it was watching
@@ -271,6 +280,9 @@ void video_stream__process_client_leaving_channel(client_t* client, uint64 old_c
         return;
     }
 
+    // no packet of the old channel follows the client over its video socket
+    video_websocket__clear_queue(client);
+
     channel = &g_channel_array[old_channel_id];
 
     if (channel->is_video_stream_active == FALSE)
@@ -469,7 +481,7 @@ void video_stream__forward_keyframe_request(client_t* viewer)
 }
 
 /**
- * @brief a client's webrtc transport died (peer state left connected, or its audio channel closed and took the peer with it): a streamer's stream ends, a viewer stops receiving and has to press connect again once the transport is back
+ * @brief a client's video connection died (its webrtc peer left connected, its video data channel closed, or its video websocket closed): when no other video connection remains, a streamer's stream ends and a viewer stops receiving until it presses connect again
  *        the consent (allowed) survives, only the connection does not
  *
  * @param uint64 client_id -> the client whose transport is gone
@@ -487,6 +499,12 @@ void video_stream__process_transport_lost(uint64 client_id)
     }
 
     client = &g_clients_array[client_id];
+
+    // the video websocket still carries the client's video: nothing is lost
+    if (client->is_video_websocket_authenticated == TRUE)
+    {
+        return;
+    }
 
     if (client->channel_id >= g_server_settings.max_channel_count)
     {
@@ -514,182 +532,108 @@ void video_stream__process_transport_lost(uint64 client_id)
 }
 
 /**
- * @brief the video data channel opened: the slot may now be relayed to
+ * @brief relays one video packet from the channel's streamer to every member that is allowed, watching and has a video connection up
  *
- * @param int id -> data channel handle
- * @param void* ptr -> the webrtc_peer_t this data channel belongs to
+ *        the packet's authentication code is checked and the streamer's encryption is removed (media_auth.c
+ *        explains both). what is left is still encrypted with the channel keys, which the server does not
+ *        have. every viewer gets its own copy, encrypted with the viewer's keys, over its video websocket when
+ *        one is attached, else over its video data channel. a data channel receiver with more than
+ *        VIDEO_RELAY_MAX_BUFFERED_BYTES queued is skipped, a websocket receiver's queue drops its oldest
+ *        packets itself; either way one slow viewer never stalls the others, and it asks for a keyframe
  *
- * @return void
- */
-void RTC_API video_stream__datachannel_on_open_callback(int id, void* ptr)
-{
-    webrtc_peer_t* peer = (webrtc_peer_t*)ptr;
-
-    DBG_VIDEO_STREAM log_info("%s", "video_stream__datachannel_on_open_callback");
-
-    clib__write_lock(&g_webrtc_muggles_rwlock_guard);
-
-    // only the slot's current video channel may mark it connected; a stale one opening late must not
-    if (peer != NULL_POINTER && peer->video_data_channel_handle == id)
-    {
-        peer->is_video_channel_connected = TRUE;
-    }
-
-    clib__unlock(&g_webrtc_muggles_rwlock_guard);
-}
-
-/**
- * @brief the video data channel closed while the peer itself lives on: no more relaying to (or from) this slot; a streamer's stream ends, a viewer drops to disconnected
- *        when the whole peer goes down the audio channel's close callback wipes the slot first and
- *        detaches this handle, so this then sees a NULL user pointer and does nothing
+ * @param uint64 sender_id -> slot of the sending client
+ * @param ws_cli_conn_t* socket -> the video websocket the packet arrived on, or NULL_POINTER
+ * @param int data_channel -> the video data channel handle the packet arrived on, 0 with a socket
+ * @param const unsigned char* data -> the packet
+ * @param uint64 size -> its length in bytes
  *
- * @param int id -> data channel handle
- * @param void* ptr -> the webrtc_peer_t this data channel belongs to
+ * @attention takes the clients, peers and channels read locks for the whole relay loop, like the audio relay
  *
  * @return void
  */
-void RTC_API video_stream__datachannel_on_closed_callback(int id, void* ptr)
+void video_stream__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int data_channel, const unsigned char* data, uint64 size)
 {
-    webrtc_peer_t* peer = (webrtc_peer_t*)ptr;
-    uint64 client_id = 0;
-    boole is_current = FALSE;
-
-    DBG_VIDEO_STREAM log_info("%s", "video_stream__datachannel_on_closed_callback");
-
-    if (peer == NULL_POINTER)
-    {
-        return;
-    }
-
-    clib__write_lock(&g_clients_global_rwlock_guard);
-    clib__write_lock(&g_webrtc_muggles_rwlock_guard);
-    clib__write_lock(&g_channels_global_rwlock_guard);
-
-    if (peer->is_existing == TRUE && peer->video_data_channel_handle == id)
-    {
-        is_current = TRUE;
-        client_id = peer->client_id;
-        peer->is_video_channel_connected = FALSE;
-    }
-
-    if (is_current == TRUE)
-    {
-        video_stream__process_transport_lost(client_id);
-    }
-
-    clib__unlock(&g_channels_global_rwlock_guard);
-    clib__unlock(&g_webrtc_muggles_rwlock_guard);
-    clib__unlock(&g_clients_global_rwlock_guard);
-}
-
-/**
- * @brief relays one encrypted video packet from the channel's streamer to every member that is allowed, watching and has its video channel up
- *        the packet is opaque: [encrypted header + chunk piece], the server only prepends the 4 byte
- *        sender client id like the audio relay does. one copy serves every receiver. a receiver with
- *        more than VIDEO_RELAY_MAX_BUFFERED_BYTES queued is skipped, so one slow viewer never stalls
- *        the others; it notices the gap and asks for a keyframe
- *
- * @param int id -> data channel handle the packet arrived on
- * @param const char* message -> the packet
- * @param int size -> its length in bytes
- * @param void* ptr -> the webrtc_peer_t of the sending client
- *
- * @attention lock free like the audio relay, for the same reason: taking the rwlocks per packet would
- *            be too slow. every read is of a plain field that the locked paths set atomically enough
- *
- * @return void
- */
-void RTC_API video_stream__datachannel_on_message_callback(int id, const char* message, int size, void* ptr)
-{
-    webrtc_peer_t* peer_sender = (webrtc_peer_t*)ptr;
-    webrtc_peer_t* peer_receiver = NULL_POINTER;
+    unsigned char body[WS_VIDEO_FRAME_MAX];
+    unsigned char frame[WS_VIDEO_FRAME_MAX];
+    uint64 body_size = 0;
+    uint64 frame_size = 0;
+    client_t* sender = NULL_POINTER;
     client_t* receiver = NULL_POINTER;
     channel_t* channel = NULL_POINTER;
-    void* relayed_message = NULL_POINTER;
-    uint64 sender_client_id = 0;
     uint64 channel_id = 0;
     uint64 i = 0;
 
-    if (size <= 0 || peer_sender == NULL_POINTER || peer_sender->is_existing == FALSE)
+    if (sender_id >= g_server_settings.max_client_count || size <= MEDIA_FRAME_OVERHEAD || size > WS_VIDEO_FRAME_MAX)
     {
         return;
     }
-
-    sender_client_id = peer_sender->client_id;
-    channel_id = peer_sender->channel_id;
-
-    if (sender_client_id >= g_server_settings.max_client_count || channel_id >= g_server_settings.max_channel_count)
+    clib__read_lock(&g_clients_global_rwlock_guard);
+    clib__read_lock(&g_webrtc_muggles_rwlock_guard);
+    clib__read_lock(&g_channels_global_rwlock_guard);
+    sender = &g_clients_array[sender_id];
+    channel_id = sender->channel_id;
+    if (sender->is_existing == FALSE || sender->is_authenticated == FALSE || sender->is_idle == TRUE
+        || sender->is_streaming_video == FALSE || channel_id >= g_server_settings.max_channel_count)
     {
-        return;
+        goto done;
     }
-
     channel = &g_channel_array[channel_id];
-
     // the server-wide switch and the channel toggle are checked live, exactly like the audio relay
-    if (g_server_settings.is_video_streaming_active == FALSE || channel->is_existing == FALSE || channel->is_video_stream_enabled == FALSE)
+    if (g_server_settings.is_video_streaming_active == FALSE || channel->is_existing == FALSE || channel->is_video_stream_enabled == FALSE
+        || channel->is_video_stream_active == FALSE || channel->video_streamer_client_id != sender_id)
     {
-        return;
+        goto done;
     }
-
-    if (channel->is_video_stream_active == FALSE || channel->video_streamer_client_id != sender_client_id || g_clients_array[sender_client_id].is_streaming_video == FALSE)
+    // a packet from a replaced socket or data channel of a reused slot is dropped
+    if (socket != NULL_POINTER)
     {
-        return;
+        if (g_server_settings.is_audio_over_websocket_allowed == FALSE || video_websocket__owns_socket(sender, socket) == FALSE)
+        {
+            DBG_VIDEO_STREAM log_info("%s %llu %s", "relay: websocket packet of client", sender_id, "dropped: websocket media is not allowed, or the socket is not the client's current one");
+            goto done;
+        }
     }
-
-    relayed_message = (void*)memorymanager__allocate(size + 4, MEMALLOC_VIDEOCHANNEL_ONMESSAGE);
-
-    if (relayed_message == NULL_POINTER)
+    else if (video_webrtc__is_data_channel_current(sender_id, data_channel) == FALSE)
     {
-        return;
+        DBG_VIDEO_STREAM log_info("%s %llu %s", "relay: data channel packet of client", sender_id, "dropped: the channel is not the client's current one");
+        goto done;
     }
-
-    ((int*)relayed_message)[0] = (int)sender_client_id;
-    clib__copy_memory((void*)message, ((unsigned char*)relayed_message + 4), size, size);
-
+    body_size = media_auth__decrypt_from_client(sender, MEDIA_STREAM_VIDEO, data, size, body, sizeof(body));
+    if (body_size == 0)
+    {
+        DBG_VIDEO_STREAM log_info("%s %llu %s", "relay: packet of client", sender_id, "dropped: the authentication code or the sender id inside did not match");
+        goto done;
+    }
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        peer_receiver = &g_webrtc_muggles_array[i];
-
-        if (peer_receiver->is_existing == FALSE || i == sender_client_id)
-        {
-            continue;
-        }
-
-        if (peer_receiver->channel_id != channel_id || peer_receiver->is_video_channel_connected == FALSE || peer_receiver->video_data_channel_handle == 0)
-        {
-            continue;
-        }
-
         receiver = &g_clients_array[i];
-
-        if (receiver->is_existing == FALSE || receiver->is_video_viewer_allowed == FALSE || receiver->is_video_viewer_watching == FALSE)
+        if (i == sender_id || receiver->is_existing == FALSE || receiver->is_authenticated == FALSE || receiver->is_idle == TRUE
+            || receiver->is_music_bot == TRUE || receiver->channel_id != channel_id
+            || receiver->is_video_viewer_allowed == FALSE || receiver->is_video_viewer_watching == FALSE)
         {
             continue;
         }
-
-        // a negative value is an error from the library, treated like a full queue
-        if (rtcGetBufferedAmount(peer_receiver->video_data_channel_handle) > VIDEO_RELAY_MAX_BUFFERED_BYTES
-            || rtcGetBufferedAmount(peer_receiver->video_data_channel_handle) < 0)
+        if (receiver->is_video_websocket_authenticated == TRUE)
+        {
+            frame_size = media_auth__encrypt_for_client(receiver, MEDIA_STREAM_VIDEO, body, body_size, frame, sizeof(frame));
+            if (frame_size > 0)
+            {
+                video_websocket__send(receiver, frame, frame_size);
+            }
+            continue;
+        }
+        if (video_webrtc__can_send(i) == FALSE)
         {
             continue;
         }
-
-        rtcSendMessage(peer_receiver->video_data_channel_handle, relayed_message, size + 4);
+        frame_size = media_auth__encrypt_for_client(receiver, MEDIA_STREAM_VIDEO, body, body_size, frame, sizeof(frame));
+        if (frame_size > 0)
+        {
+            video_webrtc__send(i, frame, frame_size);
+        }
     }
-
-    memorymanager__free((nuint)relayed_message);
-}
-
-/**
- * @brief error callback of the video data channel, logged only
- *
- * @param int id -> data channel handle
- * @param const char* error -> the error description string
- * @param void* ptr -> the webrtc_peer_t this data channel belongs to
- *
- * @return void
- */
-void RTC_API video_stream__datachannel_on_error_callback(int id, const char* error, void* ptr)
-{
-    DBG_VIDEO_STREAM log_info("%s %s", "video_stream__datachannel_on_error_callback", error);
+done:
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_webrtc_muggles_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
 }

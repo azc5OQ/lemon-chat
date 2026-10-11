@@ -1447,7 +1447,9 @@ div#local-settings-container.closing {
 
 /* file-upload paperclip container: stays clickable even while the uploads-off class dims it,
    because the click handler explains why uploads are off */
-#upload-file-container {
+#upload-file-container,
+#upload-video-stream-container
+{
     display: inline-block;
     vertical-align: top;
 }

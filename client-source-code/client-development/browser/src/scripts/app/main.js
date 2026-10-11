@@ -691,6 +691,7 @@ async function main__window_onload()
     document.getElementById("server-settings-general-allow-pictures-checkbox").onchange = chat_files__refresh_picture_size_visibility;
     document.getElementById("server-settings-general-country-blocking-checkbox").onchange = server_settings_tab__refresh_country_blocking_visibility;
     document.getElementById("server-settings-general-display-flags-checkbox").onchange = server_settings_tab__refresh_hide_admin_flag_row_visibility;
+    document.getElementById("server-settings-general-enable-audio").onchange = server_settings_tab__refresh_audio_connections_row_visibility;
     document.getElementById("server-settings-country-block-select").onchange = server_settings_tab__country_block_select_onchange;
     chat_files__setup_chat_file_drag_and_drop();
     chat_files__setup_chat_file_card_glow();
@@ -1151,6 +1152,13 @@ async function main__window_onload()
             };
         }
     }
+
+    // the audio connection preference: stored locally, applied at once within the server's policy
+    document.getElementById("local-settings-audio-connection").value = g_audio_connection_preference;
+    document.getElementById("local-settings-audio-connection").onchange = function()
+    {
+        audio_transport__set_preference(this.value);
+    };
 
     // press the button, then press the key you want. escape cancels
     document.getElementById("local-settings-ptt-key").onclick = function()
@@ -1858,6 +1866,9 @@ return {
             g_icons: g_icons,
             current_channel_id: g_current_channel_id,
             current_channel_keys: g_current_channel_keys,
+            // the keys of this client's media frames, for the test harness (keys.js)
+            media_session_layer: keys__media_session_layer(),
+            media_server_key_layers: keys__media_server_key_layers(),
             local_client_id: g_local_client_id,
             g_local_username: g_local_username,
             g_current_chat_context_id: g_current_chat_context_id,

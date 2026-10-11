@@ -108,6 +108,9 @@ function android_host__node_apply_idle_for_ui_state()
 
 g_show_message_avatars = (utils__storage_get("lemon_show_message_avatars") === "1");
 
+let stored_audio_connection = utils__storage_get("lemon_audio_connection", "");
+if (["webrtc", "websocket"].indexOf(stored_audio_connection) >= 0) { g_audio_connection_preference = stored_audio_connection; }
+
 let stored_rsa_key_bits = parseInt(utils__storage_get("lemon_rsa_key_bits", ""));
 if (G_ALLOWED_RSA_KEY_BITS.indexOf(stored_rsa_key_bits) >= 0) { g_rsa_key_bits = stored_rsa_key_bits; }
 
@@ -887,6 +890,7 @@ function android_host__enter_deep_idle(is_forced)
     console.log("connect-path: going idle" + (is_forced == true ? " (forced)" : ""));
 
     g_is_deep_idle = true;
+    audio_transport__reset();
 
     client_msg.send_go_to_idle_mode_request();
 

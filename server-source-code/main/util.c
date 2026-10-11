@@ -9,6 +9,7 @@
 #include "base.h"
 
 #include "util.h"
+#include "../third-party/rxi-log/log.h"
 
 /* On failure the caller still owns argument. On success no join is required,
  * even if the worker finishes before pthread_create returns. */
@@ -28,6 +29,10 @@ boole util__start_detached_thread(void* (*entry)(void*), void* argument)
         result = pthread_create(&thread, &attributes, entry, argument);
     }
     pthread_attr_destroy(&attributes);
+    if (result != 0)
+    {
+        DBG_UTIL log_info("%s %d", "detached thread could not be started, error", result);
+    }
     return (boole)(result == 0);
 }
 
@@ -203,6 +208,7 @@ boole util__normalize_country_code(cJSON* json_entry, char* out_code)
 
     if (clib__utf8_string_length(json_entry->valuestring) != 2)
     {
+        DBG_UTIL log_info("%s %s", "country code rejected, not two characters:", json_entry->valuestring);
         return FALSE;
     }
 
@@ -214,6 +220,7 @@ boole util__normalize_country_code(cJSON* json_entry, char* out_code)
 
     if (first < 'A' || first > 'Z' || second < 'A' || second > 'Z')
     {
+        DBG_UTIL log_info("%s %s", "country code rejected, not two letters:", json_entry->valuestring);
         return FALSE;
     }
 

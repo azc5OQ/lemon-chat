@@ -108,6 +108,8 @@ function keys__hide_rsa_key_too_weak_dialog()
 function keys__init_keys_object()
 {
     g_metadata_keys.length = 0; // clear it in case client is reconnecting
+    g_media_keys_from_host = null;
+    g_media_server_key_layers_from_host = null;
 
     if (g_are_server_details_predefined == true)
     {
@@ -247,69 +249,83 @@ function keys__decrypt_data_with_aes_keys(keys, data)
 }
 
 /**
- * @brief utf8 string -> zero-padded buffer (1024 bytes minimum) -> AES-CTR key layers -> base64
+ * @brief encrypts a text with a set of keys for a channel message or a channel picture
+ *
+ *        the text is written into a buffer of at least 1024 bytes that is otherwise zero, so a short message
+ *        and a long one look alike on the wire. then every key of the set is applied as one AES-CTR layer.
+ *        every message gets its own random 16 byte starting value, the message iv. without it, two messages
+ *        encrypted with the same key would use the same keystream, and anybody holding both could combine
+ *        them so that the encryption cancels out; the zero padding would even expose the keystream directly.
+ *        the message iv is not secret: it travels next to the ciphertext, and a receiver combines it with the
+ *        key's own iv to get the starting value for that key (keys__media_xor_blocks).
  *
  * @param array keys -> the key layers, each with key_bytes and iv_bytes
  * @param string string_to_encrypt -> the plaintext
  *
- * @return string the base64 ciphertext
+ * @return string a JSON text { "iv": <base64 of the message iv>, "data": <base64 of the ciphertext> }
  */
 function keys__encrypt_with_aes_keys_and_convert_to_base64(keys, string_to_encrypt)
 {
-    let byteArrayToSend = new Uint8Array(1024);
-    if (string_to_encrypt.length > 1024)
-    {
-        byteArrayToSend = new Uint8Array(string_to_encrypt.length);
-    }
-
     let textBytes = aesjs.utils.utf8.toBytes(string_to_encrypt);
+    let byteArrayToSend = new Uint8Array(textBytes.length > 1024 ? textBytes.length : 1024);
+    let message_iv = new Uint8Array(16);
 
-    for (i = 0; i < textBytes.length; i++)
-    {
-        byteArrayToSend[i] = textBytes[i];
-    }
+    byteArrayToSend.set(textBytes, 0);
+    crypto.getRandomValues(message_iv);
 
-    let base64EncryptedData = "";
     let encrypted_data_in_current_iteration = byteArrayToSend;
 
     for (let i = 0; i < keys.length; i++)
     {
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(keys[i].key_bytes, new aesjs.Counter(keys[i].iv_bytes));
-        encrypted_data_in_current_iteration = aesCtrCustom.encrypt(encrypted_data_in_current_iteration);
-
-        if (i + 1 == keys.length) // if end has been reached, convert encrypted bytes to base64string
-        {
-            base64EncryptedData = utils__bytesToBase64String(encrypted_data_in_current_iteration);
-        }
+        encrypted_data_in_current_iteration = keys__aes_ctr(keys[i].key_bytes, keys__media_xor_blocks(keys[i].iv_bytes, message_iv), encrypted_data_in_current_iteration);
     }
-    return base64EncryptedData;
+    return JSON.stringify({ iv: utils__bytesToBase64String(message_iv), data: utils__bytesToBase64String(encrypted_data_in_current_iteration) });
 }
 
 /**
- * @brief base64 -> AES-CTR key layers in reverse -> utf8 string cut at the first null terminator
- *        the encrypt side pads short messages up to 1024 bytes
+ * @brief the reverse of keys__encrypt_with_aes_keys_and_convert_to_base64: the key layers come off in reverse order, the text is cut at the first zero byte
+ *
+ *        a message from before the message iv existed is a bare base64 text, not a JSON text starting with
+ *        "{"; such a message was encrypted with each key's own iv as the starting value, and is decrypted
+ *        that way, so stored old messages still open
  *
  * @param array keys -> the key layers, each with key_bytes and iv_bytes
- * @param string string_to_decrypt -> the base64 ciphertext
+ * @param string string_to_decrypt -> the JSON text from the encrypt function, or an old bare base64 text
  *
  * @return string the plaintext
  */
 function keys__decrypt_base64_contents_with_aes_keys(keys, string_to_decrypt)
 {
-    let encrypted_data_in_current_iteration = utils__base64StringToBytes(string_to_decrypt);
+    let message_iv = null;
+    let payload = string_to_decrypt;
+
+    if (typeof string_to_decrypt === "string" && string_to_decrypt.charAt(0) === "{")
+    {
+        try
+        {
+            let envelope = JSON.parse(string_to_decrypt);
+            if (envelope != null && typeof envelope.iv === "string" && typeof envelope.data === "string")
+            {
+                message_iv = new Uint8Array(utils__base64StringToBytes(envelope.iv));
+                payload = envelope.data;
+            }
+        }
+        catch (parse_error)
+        {
+            // not an envelope after all: decrypted as an old message below
+        }
+    }
+
+    let encrypted_data_in_current_iteration = new Uint8Array(utils__base64StringToBytes(payload));
 
     // decrypt by applying keys in reverse order
     for (let i = (keys.length - 1); i >= 0; i--)
     {
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(keys[i].key_bytes, new aesjs.Counter(keys[i].iv_bytes));
-        encrypted_data_in_current_iteration = aesCtrCustom.decrypt(encrypted_data_in_current_iteration);
+        let block = message_iv != null ? keys__media_xor_blocks(keys[i].iv_bytes, message_iv) : new Uint8Array(keys[i].iv_bytes);
+        encrypted_data_in_current_iteration = keys__aes_ctr(keys[i].key_bytes, block, encrypted_data_in_current_iteration);
     }
 
-    decryptedBytes = encrypted_data_in_current_iteration;
-
-    // coerce to Uint8Array: when no cipher layer is applied (zero metadata keys) the value is still the
-    // plain array from utils__base64StringToBytes, and TextDecoder.decode rejects a plain array
-    let str1 = new TextDecoder().decode(new Uint8Array(decryptedBytes));
+    let str1 = new TextDecoder().decode(encrypted_data_in_current_iteration);
     let decrypted_metadata = utils__substringByNullTerminator(str1);
     return decrypted_metadata;
 }
@@ -395,9 +411,33 @@ function keys__dh_derive_keys(shared_secret_string)
     return { enc_key: okm.slice(0, 32), mac_key: okm.slice(32, 64) };
 }
 
+// Read the type stored in a metadata key and use the encryption method that
+// belongs to it. If another method is added, the server must support it too,
+// and both ends must build its encryption starting value in the same way.
+// Refuse an unknown type instead of silently treating its bytes as an AES key.
+function keys__crypt_metadata_layer(key, message_iv, data, encrypt)
+{
+    switch (key.info)
+    {
+        case "aes-ctr":
+        {
+            if (key.key_bytes.length !== 32 || message_iv.length !== 16)
+            {
+                throw new Error("Invalid AES-256-CTR metadata key or IV");
+            }
+            let cipher = new aesjs.ModeOfOperation.ctr(key.key_bytes, new aesjs.Counter(Array.from(message_iv)));
+            return encrypt ? cipher.encrypt(data) : cipher.decrypt(data);
+        }
+        default:
+        {
+            throw new Error("Unsupported metadata cipher: " + key.info);
+        }
+    }
+}
+
 /**
  * @brief wraps an outgoing message for the wire
- *        pads, AES-CTR encrypts with every metadata key under a fresh random IV, base64s, and
+ *        pads, encrypts with every typed metadata key under a fresh random IV, base64s, and
  *        builds the { iv, data [, tag] } envelope; on the loopback (a ui-only runtime) the text
  *        stays plain, node wraps it toward the real server
  *
@@ -421,18 +461,9 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
         return string_to_encrypt;
     }
 
-    let byteArrayToSend = new Uint8Array(1024);
-    if (string_to_encrypt.length > 1024)
-    {
-        byteArrayToSend = new Uint8Array(string_to_encrypt.length);
-    }
-
     let textBytes = aesjs.utils.utf8.toBytes(string_to_encrypt);
-
-    for (i = 0; i < textBytes.length; i++)
-    {
-        byteArrayToSend[i] = textBytes[i];
-    }
+    let byteArrayToSend = new Uint8Array(Math.max(1024, textBytes.length));
+    byteArrayToSend.set(textBytes);
 
     // fresh random IV per message (CSPRNG). the same IV seeds every metadata layer's AES-CTR counter;
     // it is not secret, so it travels as a separate "iv" field in the JSON envelope next to the ciphertext.
@@ -443,10 +474,10 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
 
     for (let i = 0; i < g_metadata_keys.length; i++)
     {
-        let key_bytes = g_metadata_keys[i].key_bytes;
-
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(key_bytes, new aesjs.Counter(Array.from(message_iv)));
-        encrypted_data_in_current_iteration = aesCtrCustom.encrypt(encrypted_data_in_current_iteration);
+        // The key made from this connection's shared secret is first in the
+        // list. Encrypt with it first, then with the keys from the server settings.
+        encrypted_data_in_current_iteration = keys__crypt_metadata_layer(
+            g_metadata_keys[i], message_iv, encrypted_data_in_current_iteration, true);
     }
 
     // base64 the result after all layers. with 0 metadata keys this is just the plaintext bytes,
@@ -460,7 +491,11 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
     let dh_mac_key = null;
     for (let i = 0; i < g_metadata_keys.length; i++)
     {
-        if (g_metadata_keys[i].mac_bytes) { dh_mac_key = g_metadata_keys[i].mac_bytes; break; }
+        if (g_metadata_keys[i].mac_bytes)
+        {
+            dh_mac_key = g_metadata_keys[i].mac_bytes;
+            break;
+        }
     }
     if (dh_mac_key)
     {
@@ -503,33 +538,58 @@ function keys__decrypt_message_metadata(envelope_json)
     let dh_mac_key = null;
     for (let i = 0; i < g_metadata_keys.length; i++)
     {
-        if (g_metadata_keys[i].mac_bytes) { dh_mac_key = g_metadata_keys[i].mac_bytes; break; }
+        if (g_metadata_keys[i].mac_bytes)
+        {
+            dh_mac_key = g_metadata_keys[i].mac_bytes;
+            break;
+        }
     }
     if (dh_mac_key)
     {
-        if (typeof envelope.tag != "string") { return ""; }
+        if (typeof envelope.tag != "string")
+        {
+            return "";
+        }
         let expected_tag = utils__bytesToBase64String(keys___hmac_sha256(dh_mac_key, aesjs.utils.utf8.toBytes(envelope.iv + envelope.data)));
-        if (expected_tag !== envelope.tag) { return ""; }
+        if (expected_tag !== envelope.tag)
+        {
+            return "";
+        }
     }
 
-    let message_iv = utils__base64StringToBytes(envelope.iv);
-    let encrypted_data_in_current_iteration = utils__base64StringToBytes(envelope.data);
-
-    for (let i = (g_metadata_keys.length - 1); i >= 0; i--)
+    try
     {
-        let key_bytes = g_metadata_keys[i].key_bytes;
+        let message_iv = utils__base64StringToBytes(envelope.iv);
+        let current = new Uint8Array(utils__base64StringToBytes(envelope.data));
+        if (message_iv.length !== 16)
+        {
+            return "";
+        }
+        // The server encrypts with its configured keys first and this client's
+        // connection key last. Undo the connection's encryption first, then
+        // use the configured keys from last to first. Keep that order so this
+        // also works with methods where changing the key order changes the result.
+        for (let i = g_metadata_keys.length - 1; i >= 0; i--)
+        {
+            if (g_metadata_keys[i].mac_bytes)
+            {
+                current = keys__crypt_metadata_layer(g_metadata_keys[i], message_iv, current, false);
+            }
+        }
+        for (let i = g_metadata_keys.length - 1; i >= 0; i--)
+        {
+            if (!g_metadata_keys[i].mac_bytes)
+            {
+                current = keys__crypt_metadata_layer(g_metadata_keys[i], message_iv, current, false);
+            }
+        }
 
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(key_bytes, new aesjs.Counter(Array.from(message_iv)));
-        encrypted_data_in_current_iteration = aesCtrCustom.decrypt(encrypted_data_in_current_iteration);
+        return utils__substringByNullTerminator(new TextDecoder().decode(current));
     }
-
-    decryptedBytes = encrypted_data_in_current_iteration;
-
-    // coerce to Uint8Array: when no cipher layer is applied (zero metadata keys) the value is still the
-    // plain array from utils__base64StringToBytes, and TextDecoder.decode rejects a plain array
-    let str1 = new TextDecoder().decode(new Uint8Array(decryptedBytes));
-    let decrypted_metadata = utils__substringByNullTerminator(str1);
-    return decrypted_metadata;
+    catch (exception)
+    {
+        return "";
+    }
 }
 
 // ---- channel keys ----
@@ -667,4 +727,357 @@ function keys__create_and_send_new_channel_keys()
 
     // rsa stays in the data-processing worker (the private key lives only there), so each public key
     // is posted to it and the encrypted keys come back for the main thread to route
+}
+
+// ================================================================================================
+// the encryption of audio and video frames on the way between this client and the server
+// ================================================================================================
+//
+// why this exists: a voice frame or a video packet is encrypted with the channel keys, which only the
+// members of the channel have, so the server cannot listen in. two things are still open on the way to
+// the server. first, a few bytes next to the channel key encryption, for example who sent the frame, can
+// be read by anybody on the network path when the connection has no TLS. second, nothing proves that a
+// frame really comes from the client it claims to come from: somebody on the path could change a frame or
+// insert one. so every frame is encrypted a second time, with the two keys this client and the server
+// derived from the Diffie-Hellman shared secret at login (the encryption key and the checksum key, the
+// same ones that encrypt the JSON messages), and an authentication code is appended: a checksum that only
+// somebody with the checksum key can compute, HMAC-SHA256. the server checks the code, removes this
+// client's encryption, and encrypts the frame again for every receiver with the receiver's keys. the
+// server side is media_auth.c, which also explains why every frame needs a counter.
+//
+// a frame on the wire:           [1 byte version 2][8 bytes frame counter][encrypted part][8 bytes authentication code]
+// the encrypted part, decrypted: [4 bytes sender id, least significant byte first][8 bytes sender counter][the inner ciphertext]
+// the inner ciphertext is the frame content under the channel keys (or a music bot's keys) and then under
+// the server keys. the counter block (the 16 byte starting value of AES-CTR) of every inner layer is
+// [4 bytes sender id][8 bytes sender counter][4 bytes zero], combined by XOR with the key's iv when the key
+// has one. the counter block of the second encryption is [8 bytes frame counter][1 byte direction: 0 to
+// the server, 1 from the server][1 byte stream: 0 audio, 1 video][6 bytes zero].
+var MEDIA_FRAME_VERSION = 2;
+var MEDIA_FRAME_HEADER = 9;
+var MEDIA_BODY_HEADER = 12;
+var MEDIA_FRAME_CODE = 8;
+var MEDIA_FRAME_OVERHEAD = MEDIA_FRAME_HEADER + MEDIA_BODY_HEADER + MEDIA_FRAME_CODE;
+var MEDIA_STREAM_AUDIO = 0;
+var MEDIA_STREAM_VIDEO = 1;
+var MEDIA_DIRECTION_TO_SERVER = 0;
+var MEDIA_DIRECTION_FROM_SERVER = 1;
+
+// on android the node runtime hands the session and configured server keys to the webview over loopback
+var g_media_keys_from_host = null;
+var g_media_server_key_layers_from_host = null;
+
+/**
+ * @brief turns a hex text into bytes
+ *
+ * @param string hex -> two hex digits per byte
+ *
+ * @return Uint8Array the bytes
+ */
+function keys__hex_to_bytes(hex)
+{
+    let bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++)
+    {
+        bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+    return bytes;
+}
+
+/**
+ * @brief turns bytes into a hex text
+ *
+ * @param array bytes -> plain or typed
+ *
+ * @return string two hex digits per byte
+ */
+function keys__bytes_to_hex(bytes)
+{
+    let hex = "";
+    for (let i = 0; i < bytes.length; i++)
+    {
+        hex += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
+    }
+    return hex;
+}
+
+/**
+ * @brief keeps the complete media key set the host runtime handed over (android: node to webview)
+ *
+ * @param string encryption_key_hex -> the 32 byte encryption key as hex
+ * @param string checksum_key_hex -> the 32 byte checksum key as hex
+ * @param array server_key_hexes -> the ordered 32 byte server keys as hex
+ *
+ * @return void
+ */
+function keys__set_media_keys_from_host(encryption_key_hex, checksum_key_hex, server_key_hexes = [])
+{
+    let key_pattern = /^[0-9a-f]{64}$/i;
+    if (typeof encryption_key_hex !== "string" || typeof checksum_key_hex !== "string"
+        || !key_pattern.test(encryption_key_hex) || !key_pattern.test(checksum_key_hex) || !Array.isArray(server_key_hexes))
+    {
+        return;
+    }
+    let server_layers = [];
+    for (let i = 0; i < server_key_hexes.length; i++)
+    {
+        if (typeof server_key_hexes[i] !== "string" || !key_pattern.test(server_key_hexes[i]))
+        {
+            return;
+        }
+        server_layers.push(
+        {
+            key_bytes: keys__hex_to_bytes(server_key_hexes[i]),
+            iv_bytes: null
+        });
+    }
+    g_media_keys_from_host =
+    {
+        key_bytes: keys__hex_to_bytes(encryption_key_hex),
+        mac_bytes: keys__hex_to_bytes(checksum_key_hex)
+    };
+    g_media_server_key_layers_from_host = server_layers;
+}
+
+/**
+ * @brief the two keys of this client for the media frames
+ *
+ *        the Diffie-Hellman entry of g_metadata_keys is the one that carries a checksum key (mac_bytes);
+ *        on android the webview has none and uses the keys the node runtime handed over
+ *
+ * @return object { key_bytes, mac_bytes } or null before the key exchange
+ */
+function keys__media_session_layer()
+{
+    for (let i = 0; i < g_metadata_keys.length; i++)
+    {
+        if (g_metadata_keys[i].mac_bytes)
+        {
+            return { key_bytes: g_metadata_keys[i].key_bytes, mac_bytes: g_metadata_keys[i].mac_bytes };
+        }
+    }
+    return g_media_keys_from_host;
+}
+
+/**
+ * @brief the server keys as layers for the inner encryption of media frames: every entry of g_metadata_keys without a checksum key
+ *
+ * @return array [{ key_bytes, iv_bytes: null }]
+ */
+function keys__media_server_key_layers()
+{
+    if (g_media_server_key_layers_from_host != null)
+    {
+        return g_media_server_key_layers_from_host;
+    }
+    let layers = [];
+    for (let i = 0; i < g_metadata_keys.length; i++)
+    {
+        if (!g_metadata_keys[i].mac_bytes)
+        {
+            layers.push({ key_bytes: g_metadata_keys[i].key_bytes, iv_bytes: null });
+        }
+    }
+    return layers;
+}
+
+/**
+ * @brief a fresh frame counter: 8 random bytes, so the counters of this session differ from those of any earlier session
+ *
+ * @return Uint8Array 8 bytes
+ */
+function keys__counter_create()
+{
+    let counter = new Uint8Array(8);
+    crypto.getRandomValues(counter);
+    return counter;
+}
+
+/**
+ * @brief adds one to a frame counter, in place; the last byte is the least significant one
+ *
+ * @param Uint8Array counter -> 8 bytes
+ *
+ * @return void
+ */
+function keys__counter_increment(counter)
+{
+    for (let i = 7; i >= 0; i--)
+    {
+        counter[i] = (counter[i] + 1) & 0xff;
+        if (counter[i] !== 0)
+        {
+            return;
+        }
+    }
+}
+
+/**
+ * @brief combines two 16 byte blocks with XOR; a missing block counts as zero
+ *
+ * @param array left -> 16 bytes or null
+ * @param array right -> 16 bytes or null
+ *
+ * @return Uint8Array the combined block
+ */
+function keys__media_xor_blocks(left, right)
+{
+    let block = new Uint8Array(16);
+    for (let i = 0; i < 16; i++)
+    {
+        block[i] = ((left != null ? left[i] : 0) ^ (right != null ? right[i] : 0)) & 0xff;
+    }
+    return block;
+}
+
+/**
+ * @brief the counter block of an inner layer: the sender id, the sender counter, and the key's own iv when it has one
+ *
+ * @param number sender_id -> the sending client's id
+ * @param Uint8Array counter_bytes -> the sender counter, 8 bytes
+ * @param array layer_iv -> the key's iv, 16 bytes, or null
+ *
+ * @return Uint8Array 16 bytes
+ */
+function keys__media_inner_block(sender_id, counter_bytes, layer_iv)
+{
+    let block = new Uint8Array(16);
+    block[0] = sender_id & 0xff;
+    block[1] = (sender_id >> 8) & 0xff;
+    block[2] = (sender_id >> 16) & 0xff;
+    block[3] = (sender_id >> 24) & 0xff;
+    block.set(counter_bytes, 4);
+    return keys__media_xor_blocks(block, layer_iv);
+}
+
+/**
+ * @brief the counter block of the second encryption, the one between this client and the server
+ *
+ * @param Uint8Array counter_bytes -> the frame counter, 8 bytes
+ * @param number direction -> MEDIA_DIRECTION_TO_SERVER or MEDIA_DIRECTION_FROM_SERVER
+ * @param number stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ *
+ * @return Uint8Array 16 bytes
+ */
+function keys__media_session_block(counter_bytes, direction, stream)
+{
+    let block = new Uint8Array(16);
+    block.set(counter_bytes, 0);
+    block[8] = direction;
+    block[9] = stream;
+    return block;
+}
+
+/**
+ * @brief one AES-CTR pass over bytes; the same call encrypts and decrypts
+ *
+ * @param array key_bytes -> the 32 byte key
+ * @param Uint8Array block -> the 16 byte counter block to start from
+ * @param Uint8Array data -> the bytes
+ *
+ * @return Uint8Array the result, a new array
+ */
+function keys__aes_ctr(key_bytes, block, data)
+{
+    return new aesjs.ModeOfOperation.ctr(key_bytes, new aesjs.Counter(Array.from(block))).encrypt(data);
+}
+
+/**
+ * @brief applies the inner layers (channel keys, a music bot's keys, or the server keys) to the content of a frame
+ *
+ * @param array layers -> [{ key_bytes, iv_bytes }], iv_bytes may be null
+ * @param number sender_id -> the sending client's id, part of every counter block
+ * @param Uint8Array counter_bytes -> the sender counter, part of every counter block
+ * @param Uint8Array data -> the bytes
+ * @param boolean is_encrypt -> true applies the layers first to last, false last to first
+ *
+ * @return Uint8Array the result
+ */
+function keys__media_apply_inner_layers(layers, sender_id, counter_bytes, data, is_encrypt)
+{
+    let current = new Uint8Array(data);
+    for (let step = 0; step < layers.length; step++)
+    {
+        let i = is_encrypt ? step : (layers.length - 1 - step);
+        current = keys__aes_ctr(layers[i].key_bytes, keys__media_inner_block(sender_id, counter_bytes, layers[i].iv_bytes), current);
+    }
+    return current;
+}
+
+/**
+ * @brief puts the sender id and the sender counter in front of the inner ciphertext: that is the part the second encryption covers
+ *
+ * @return Uint8Array [4 bytes sender id][8 bytes counter][inner]
+ */
+function keys__media_build_body(sender_id, counter_bytes, inner)
+{
+    let body = new Uint8Array(MEDIA_BODY_HEADER + inner.length);
+    body[0] = sender_id & 0xff;
+    body[1] = (sender_id >> 8) & 0xff;
+    body[2] = (sender_id >> 16) & 0xff;
+    body[3] = (sender_id >> 24) & 0xff;
+    body.set(counter_bytes, 4);
+    body.set(inner, MEDIA_BODY_HEADER);
+    return body;
+}
+
+/**
+ * @brief the second encryption of a frame this client sends: the body is encrypted with the encryption key and the authentication code is appended
+ *
+ * @param object session_layer -> { key_bytes, mac_bytes } from keys__media_session_layer
+ * @param number stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ * @param Uint8Array counter_bytes -> the frame counter, 8 bytes, increased before every frame
+ * @param Uint8Array body -> from keys__media_build_body
+ *
+ * @return Uint8Array the frame for the wire, or null without keys
+ */
+function keys__media_encrypt_frame(session_layer, stream, counter_bytes, body)
+{
+    if (session_layer == null || body.length < MEDIA_BODY_HEADER)
+    {
+        return null;
+    }
+    let frame = new Uint8Array(MEDIA_FRAME_HEADER + body.length + MEDIA_FRAME_CODE);
+    frame[0] = MEDIA_FRAME_VERSION;
+    frame.set(counter_bytes, 1);
+    frame.set(keys__aes_ctr(session_layer.key_bytes, keys__media_session_block(counter_bytes, MEDIA_DIRECTION_TO_SERVER, stream), body), MEDIA_FRAME_HEADER);
+    let code = keys___hmac_sha256(session_layer.mac_bytes, frame.subarray(0, MEDIA_FRAME_HEADER + body.length));
+    frame.set(code.slice(0, MEDIA_FRAME_CODE), MEDIA_FRAME_HEADER + body.length);
+    return frame;
+}
+
+/**
+ * @brief a frame that came from the server: the authentication code is checked and the second encryption removed
+ *
+ *        the code is compared byte by byte without stopping early, so the time the comparison takes tells
+ *        nothing about where the first difference is
+ *
+ * @param object session_layer -> { key_bytes, mac_bytes } from keys__media_session_layer
+ * @param number stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ * @param Uint8Array frame -> the frame from the wire
+ *
+ * @return object { sender_id, counter_bytes, inner } or null when the frame is not a valid frame of this client
+ */
+function keys__media_decrypt_frame(session_layer, stream, frame)
+{
+    if (session_layer == null || !(frame instanceof Uint8Array) || frame.length <= MEDIA_FRAME_OVERHEAD || frame[0] !== MEDIA_FRAME_VERSION)
+    {
+        return null;
+    }
+    let code_offset = frame.length - MEDIA_FRAME_CODE;
+    let expected = keys___hmac_sha256(session_layer.mac_bytes, frame.subarray(0, code_offset));
+    let difference = 0;
+    for (let i = 0; i < MEDIA_FRAME_CODE; i++)
+    {
+        difference |= expected[i] ^ frame[code_offset + i];
+    }
+    if (difference !== 0)
+    {
+        return null;
+    }
+    let body = keys__aes_ctr(session_layer.key_bytes, keys__media_session_block(frame.subarray(1, MEDIA_FRAME_HEADER), MEDIA_DIRECTION_FROM_SERVER, stream), frame.subarray(MEDIA_FRAME_HEADER, code_offset));
+    return {
+        sender_id: (body[0] | (body[1] << 8) | (body[2] << 16) | (body[3] << 24)) >>> 0,
+        counter_bytes: body.slice(4, MEDIA_BODY_HEADER),
+        inner: body.subarray(MEDIA_BODY_HEADER)
+    };
 }

@@ -8,12 +8,12 @@
 
 #include "../third-party/zhicheng/base64.h"
 #include "../third-party/ITH-sha/sha256.h"
-#include "../third-party/kokke-tiny-aes-c/aes.h"
 
 #include "../third-party/rxi-log/log.h"
 
 #include "client_message.h"
 #include "server_message.h"
+#include "httpclient/url_resolver.h"
 #include "server_logs.h"
 
 #include "../third-party/libtom/libtommath/tommath.h"
@@ -22,11 +22,11 @@
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/entropy.h"
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/ctr_drbg.h"
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/bignum.h"
-#include "../third-party/mbedtls-3.6.6/include/mbedtls/hkdf.h"
-#include "../third-party/mbedtls-3.6.6/include/mbedtls/md.h"
 
 #include "memory_manager.h"
 #include "audio_channel.h"
+#include "audio_websocket.h"
+#include "video_websocket.h"
 #include "video_stream.h"
 
 #include "../third-party/eteran-cvector/cvector.h"
@@ -71,9 +71,6 @@ ban_entry_t* g_ban_array;
 server_settings_t g_server_settings;
 
 static void _base_internal__serialize_identities(cJSON* json_root);
-static boole _base_internal__derive_keys_from_shared_secret(char* dh_shared_secret, unsigned char* out_enc_key, unsigned char* out_mac_key);
-static boole _base_internal__compute_metadata_tag(unsigned char* mac_key, char* iv_base64, char* data_base64, unsigned char* out_tag);
-static boole _base_internal__constant_time_str_equal(char* a, char* b);
 static boole _base_internal__are_strings_equal_ignoring_ascii_case(char* string1, char* string2);
 
 /**
@@ -500,6 +497,10 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "hide_admin_country_flag", cJSON_CreateBool(g_server_settings.hide_admin_country_flag == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_voice_chat_active");
     cJSON_AddItemToObject(json_root, "is_voice_chat_active", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_audio_over_websocket_allowed");
+    cJSON_AddItemToObject(json_root, "is_audio_over_websocket_allowed", cJSON_CreateBool(g_server_settings.is_audio_over_websocket_allowed == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_audio_over_webrtc_allowed");
+    cJSON_AddItemToObject(json_root, "is_audio_over_webrtc_allowed", cJSON_CreateBool(g_server_settings.is_audio_over_webrtc_allowed == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_music_bot_audio_active");
     cJSON_AddItemToObject(json_root, "is_music_bot_audio_active", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_video_streaming_active");
@@ -513,6 +514,8 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_client_renames");
     cJSON_AddItemToObject(json_root, "allow_client_renames", cJSON_CreateBool(g_server_settings.allow_client_renames == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_link_previews");
+    cJSON_AddBoolToObject(json_root, "allow_link_previews", g_server_settings.allow_link_previews);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_sending_text_to_idle_clients_allowed");
     cJSON_AddItemToObject(json_root, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_private_messages");
@@ -1006,7 +1009,7 @@ boole base__is_public_key_present_in_client_stored_data(char* public_key)
         status = clib__is_string_equal(g_client_stored_data[i].public_key, public_key);
         if (status == TRUE)
         {
-            log_info("%s %s %s %s", "public key found in client stored data ", g_client_stored_data[i].public_key, public_key, "\n");
+            DBG_IDENTITIES log_info("%s %s %s %s", "public key found in client stored data ", g_client_stored_data[i].public_key, public_key, "\n");
             result = TRUE;
             break;
         }
@@ -1555,6 +1558,8 @@ int64 base__adopt_socket_into_existing_session(uint64 new_client_index, cstring 
     }
 
     new_entry = &g_clients_array[new_client_index];
+    audio_websocket__disconnect(old_session);
+    video_websocket__disconnect(old_session);
     old_ws_connection = old_session->p_ws_connection;
     timestamp_now = base__get_timestamp_ms();
 
@@ -1563,6 +1568,8 @@ int64 base__adopt_socket_into_existing_session(uint64 new_client_index, cstring 
     old_session->is_dh_shared_secret_agreed_upon = new_entry->is_dh_shared_secret_agreed_upon;
     old_session->is_public_key_challenge_sent = new_entry->is_public_key_challenge_sent;
     clib__copy_memory(new_entry->dh_shared_secret, old_session->dh_shared_secret, SHARED_SECRET_LENGTH, SHARED_SECRET_LENGTH);
+    old_session->session_keys = new_entry->session_keys;
+    old_session->media_send_counter = new_entry->media_send_counter;
     clib__copy_memory(new_entry->challenge_string, old_session->challenge_string, CHALLENGE_STRING_LENGTH, CHALLENGE_STRING_LENGTH);
     clib__null_memory(old_session->ip_address, sizeof(old_session->ip_address));
     clib__copy_memory(new_entry->ip_address, old_session->ip_address, clib__utf8_string_length(new_entry->ip_address), sizeof(old_session->ip_address));
@@ -1735,121 +1742,6 @@ boole base__is_there_another_authenticated_client_with_same_ip_address(uint64 cl
     }
 
     return FALSE;
-}
-
-/**
- * @brief derives an AES encryption key and an HMAC key from the already-established shared secret via HKDF-SHA256 (RFC 5869)
- *
- * @param char* dh_shared_secret -> the shared secret as a decimal string (HKDF input keying material)
- * @param unsigned char* out_enc_key -> receives the 32-byte AES-256 encryption key (OKM bytes 0..31)
- * @param unsigned char* out_mac_key -> receives the 32-byte HMAC-SHA256 key (OKM bytes 32..63)
- *
- * @return boole -> TRUE on success, FALSE if HKDF failed
- *
- * @note salt/info are fixed labels that MUST match the client's HKDF (js side), or decryption breaks
- */
-static boole _base_internal__derive_keys_from_shared_secret(char* dh_shared_secret, unsigned char* out_enc_key, unsigned char* out_mac_key)
-{
-    const mbedtls_md_info_t* md = NULL_POINTER;
-    unsigned char okm[64];
-    int ret = 0;
-    static const char* hkdf_salt = "lemonchat-hkdf-salt-v1";
-    static const char* hkdf_info = "lemonchat-dh-keys-v1";
-
-    clib__null_memory(okm, sizeof(okm));
-
-    md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-    if (md == NULL_POINTER)
-    {
-        return FALSE;
-    }
-
-    ret = mbedtls_hkdf(md, (const unsigned char*)hkdf_salt, strlen(hkdf_salt), (const unsigned char*)dh_shared_secret, strlen(dh_shared_secret), (const unsigned char*)hkdf_info, strlen(hkdf_info), okm, sizeof(okm));
-    if (ret != 0)
-    {
-        return FALSE;
-    }
-
-    clib__copy_memory(okm, out_enc_key, 32, 32);
-    clib__copy_memory(okm + 32, out_mac_key, 32, 32);
-    return TRUE;
-}
-
-/**
- * @brief computes the encrypt-then-MAC tag: HMAC-SHA256(mac_key, iv_base64 || data_base64)
- *
- * @param unsigned char* mac_key -> the 32-byte HMAC key from _base_internal__derive_keys_from_shared_secret
- * @param char* iv_base64 -> the base64 IV string (first part of the MAC input)
- * @param char* data_base64 -> the base64 ciphertext string (second part of the MAC input)
- * @param unsigned char* out_tag -> receives the 32-byte HMAC tag
- *
- * @return boole -> TRUE on success, FALSE if the HMAC failed
- */
-static boole _base_internal__compute_metadata_tag(unsigned char* mac_key, char* iv_base64, char* data_base64, unsigned char* out_tag)
-{
-    const mbedtls_md_info_t* md = NULL_POINTER;
-    mbedtls_md_context_t md_ctx;
-    int ret = 0;
-
-    md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-    if (md == NULL_POINTER)
-    {
-        return FALSE;
-    }
-
-    mbedtls_md_init(&md_ctx);
-    ret = mbedtls_md_setup(&md_ctx, md, 1);
-    if (ret == 0)
-    {
-        ret = mbedtls_md_hmac_starts(&md_ctx, mac_key, 32);
-    }
-    if (ret == 0)
-    {
-        ret = mbedtls_md_hmac_update(&md_ctx, (const unsigned char*)iv_base64, strlen(iv_base64));
-    }
-    if (ret == 0)
-    {
-        ret = mbedtls_md_hmac_update(&md_ctx, (const unsigned char*)data_base64, strlen(data_base64));
-    }
-    if (ret == 0)
-    {
-        ret = mbedtls_md_hmac_finish(&md_ctx, out_tag);
-    }
-    mbedtls_md_free(&md_ctx);
-
-    return (ret == 0) ? TRUE : FALSE;
-}
-
-/**
- * @brief constant-time equality for two null-terminated strings (used to compare base64 auth tags)
- *
- * @param char* a -> first string
- * @param char* b -> second string
- *
- * @return boole -> TRUE if equal, FALSE otherwise
- *
- * @note length is compared first (lengths are not secret); the byte loop avoids early-out timing leaks
- */
-static boole _base_internal__constant_time_str_equal(char* a, char* b)
-{
-    uint64 length_a = 0;
-    uint64 length_b = 0;
-    uint64 i = 0;
-    unsigned char diff = 0;
-
-    length_a = clib__utf8_string_length(a);
-    length_b = clib__utf8_string_length(b);
-    if (length_a != length_b)
-    {
-        return FALSE;
-    }
-
-    for (i = 0; i < length_a; i++)
-    {
-        diff |= (unsigned char)(a[i] ^ b[i]);
-    }
-
-    return (diff == 0) ? TRUE : FALSE;
 }
 
 /**
@@ -3108,314 +3000,6 @@ boole base__modify_identity_tag_in_store(char* identity_hash, uint64 tag_id, boo
 }
 
 /**
- * @brief encrypts string and converts it to base64 string.
- *
- * @param char* string_to_encrypt -> the null-terminated string to encrypt
- * @param int64* out_allocated_buffer_size -> receives the size of the returned buffer
- * @param char* dh_shared_secret -> optional DH shared secret to mix in, or 0
- *
- * @return char* encrypted string
- *
- * @attention the input string needs to be null-terminated. Its length is determined by position of null-terminator
- */
-char* base__encrypt_cstring_and_convert_to_base64(char* string_to_encrypt, int64* out_allocated_buffer_size, char* dh_shared_secret)
-{
-    int64 encryption_buffer_size = 0;
-    int64 base64_out_string_size = 0;
-    unsigned char* encryption_buffer = 0;
-    char* base64_out_string = 0;
-    struct AES_ctx ctx;
-    uint64 i = 0;
-    unsigned char message_iv[16];
-    char iv_base64[28];
-    cJSON* envelope_object = 0;
-    char* envelope_string = 0;
-    char* printed_envelope = 0;
-    int64 printed_envelope_length = 0;
-    unsigned char enc_key[32];
-    unsigned char mac_key[32];
-    unsigned char metadata_tag[32];
-    char tag_base64[48];
-    boole has_shared_secret_layer = FALSE;
-    int64 passed_string_length = 0;
-
-    clib__null_memory(iv_base64, sizeof(iv_base64));
-    clib__null_memory(enc_key, sizeof(enc_key));
-    clib__null_memory(mac_key, sizeof(mac_key));
-    clib__null_memory(metadata_tag, sizeof(metadata_tag));
-    clib__null_memory(tag_base64, sizeof(tag_base64));
-
-    passed_string_length = (int64)clib__utf8_string_length(string_to_encrypt);
-
-    DBG_ENCRYPTION log_info("%s %lld %s", "base__encrypt_cstring_and_convert_to_base64() string length, ", passed_string_length, "\n");
-
-    // why is this done this way?
-    if (passed_string_length < 1026)
-    {
-        encryption_buffer_size = 1026;
-        base64_out_string_size = ((4 * encryption_buffer_size / 3) + 3) & ~3;
-    }
-    else
-    {
-        encryption_buffer_size = passed_string_length;
-        base64_out_string_size = ((4 * encryption_buffer_size / 3) + 3) & ~3;
-    }
-
-    base64_out_string_size += 4;
-
-    // check size
-    if (base64_out_string_size > g_server_settings.websocket_message_max_length)
-    {
-        DBG_ENCRYPTION log_info("%s", "base__encrypt_cstring_and_convert_to_base64()  base64_out_string_size > g_server_settings.websocket_message_max_length) returning null \n");
-        return 0;
-    }
-
-    // fresh random IV for this message; it seeds every metadata layer's AES-CTR counter and travels on the
-    // wire as the plaintext "iv" field of the JSON envelope (an IV is not secret, only unique-per-message)
-    if (base__fill_secure_random_bytes(message_iv, sizeof(message_iv)) == FALSE)
-    {
-        return 0;
-    }
-
-    DBG_ENCRYPTION log_info("%s %lld %s", "base__encrypt_cstring_and_convert_to_base64() encryption_buffer_size", encryption_buffer_size, "\n");
-    DBG_ENCRYPTION log_info("%s %lld %s", "base__encrypt_cstring_and_convert_to_base64() passed_string_length", passed_string_length, "\n");
-    DBG_ENCRYPTION log_info("%s %lld %s", "base64_out_string_size() base64_out_string_size", base64_out_string_size, "\n");
-
-    encryption_buffer = (unsigned char*)memorymanager__allocate(encryption_buffer_size, MEMALLOC_TYPE_ENCRYPT);
-    base64_out_string = (char*)memorymanager__allocate(base64_out_string_size, MEMALLOC_TYPE_ENCRYPT);
-
-    clib__copy_memory(string_to_encrypt, encryption_buffer, passed_string_length, encryption_buffer_size);
-
-    for (i = 0; i < g_server_settings.keys_count; i++)
-    {
-        AES_init_ctx_iv(&ctx, g_server_settings.keys[i].key_value, message_iv);
-        AES_CTR_xcrypt_buffer(&ctx, encryption_buffer, encryption_buffer_size);
-    }
-
-    // if a shared secret has been established, add a layer encrypted with an HKDF-derived AES key (same
-    // per-message IV), and keep the HKDF-derived MAC key for the authentication tag computed after base64 below
-    if (dh_shared_secret != NULL_POINTER)
-    {
-        if (_base_internal__derive_keys_from_shared_secret(dh_shared_secret, enc_key, mac_key) == FALSE)
-        {
-            memorymanager__free((nuint)encryption_buffer);
-            memorymanager__free((nuint)base64_out_string);
-            return 0;
-        }
-        has_shared_secret_layer = TRUE;
-
-        AES_init_ctx_iv(&ctx, enc_key, message_iv);
-        AES_CTR_xcrypt_buffer(&ctx, encryption_buffer, encryption_buffer_size);
-    }
-
-    zchg_base64_encode(encryption_buffer, encryption_buffer_size, base64_out_string);
-    zchg_base64_encode(message_iv, sizeof(message_iv), iv_base64);
-
-    // encrypt-then-MAC: tag = HMAC-SHA256(mac_key, iv_base64 || data_base64). only present once a shared
-    // secret has been established; the receiver then requires it, which blocks a tag-stripping downgrade.
-    if (has_shared_secret_layer == TRUE)
-    {
-        if (_base_internal__compute_metadata_tag(mac_key, iv_base64, base64_out_string, metadata_tag) == FALSE)
-        {
-            memorymanager__free((nuint)encryption_buffer);
-            memorymanager__free((nuint)base64_out_string);
-            return 0;
-        }
-        zchg_base64_encode(metadata_tag, sizeof(metadata_tag), tag_base64);
-    }
-
-    if (encryption_buffer != NULL_POINTER)
-    {
-        memorymanager__free((nuint)encryption_buffer);
-    }
-
-    // wrap the ciphertext and its (public, per-message) IV in a JSON envelope { "iv":..., "data":... }.
-    // cJSON_PrintUnformatted returns a malloc'd string, so copy it into a memorymanager buffer (the caller
-    // frees the return with memorymanager__free) and free the cJSON string with free().
-    envelope_object = cJSON_CreateObject();
-    cJSON_AddStringToObject(envelope_object, "iv", iv_base64);
-    cJSON_AddStringToObject(envelope_object, "data", base64_out_string);
-    if (has_shared_secret_layer == TRUE)
-    {
-        cJSON_AddStringToObject(envelope_object, "tag", tag_base64);
-    }
-    printed_envelope = cJSON_PrintUnformatted(envelope_object);
-    cJSON_Delete(envelope_object);
-
-    if (base64_out_string != NULL_POINTER)
-    {
-        memorymanager__free((nuint)base64_out_string);
-    }
-
-    if (printed_envelope == NULL_POINTER)
-    {
-        return 0;
-    }
-
-    printed_envelope_length = (int64)clib__utf8_string_length(printed_envelope);
-
-    // the envelope (not the bare ciphertext) is what goes on the wire, so enforce the same size cap the
-    // receiver applies in onmessage against the FULL envelope length, including the iv field + scaffolding
-    if (printed_envelope_length > g_server_settings.websocket_message_max_length)
-    {
-        free(printed_envelope);
-        return 0;
-    }
-
-    envelope_string = (char*)memorymanager__allocate(printed_envelope_length + 1, MEMALLOC_TYPE_ENCRYPT);
-    clib__copy_memory(printed_envelope, envelope_string, printed_envelope_length, printed_envelope_length + 1);
-    envelope_string[printed_envelope_length] = '\0';
-
-    free(printed_envelope);
-
-    *out_allocated_buffer_size = printed_envelope_length + 1;
-
-    return envelope_string;
-}
-
-/**
- * @brief decrypts base64 string (used for decrypting metadata of message, not contents, contents are decrypted on clients end)
- *
- * @param uint64 client_id -> id of the client the data is from
- * @param char* base64_string -> the base64 input to decode and decrypt
- * @param unsigned char* out_buffer -> receives the decrypted bytes
- * @param int64 out_buffer_length -> size of out_buffer
- *
- * @attention this function is used within read lock on clients_array, result from this function must be manually freed
- *
- * @return void
- */
-void base__get_data_from_base64_and_decrypt_it(uint64 client_id, char* base64_string, unsigned char* out_buffer, int64 out_buffer_length)
-{
-    int64 base64_decoded_size = 0; // 25 percent smaller
-    int64 iv_decoded_size = 0;
-    client_t* client = &g_clients_array[client_id];
-    struct AES_ctx ctx;
-    int64 i = 0;
-    unsigned char message_iv[32];
-    cJSON* envelope = 0;
-    cJSON* iv_item = 0;
-    cJSON* data_item = 0;
-    cJSON* tag_item = 0;
-    unsigned char enc_key[32];
-    unsigned char mac_key[32];
-    unsigned char expected_tag[32];
-    char expected_tag_base64[48];
-
-    clib__null_memory(message_iv, sizeof(message_iv));
-    clib__null_memory(enc_key, sizeof(enc_key));
-    clib__null_memory(mac_key, sizeof(mac_key));
-    clib__null_memory(expected_tag, sizeof(expected_tag));
-    clib__null_memory(expected_tag_base64, sizeof(expected_tag_base64));
-
-    // the wire payload is a JSON envelope { "iv": <base64>, "data": <base64 ciphertext> }. the per-message
-    // IV is public and seeds every metadata layer's AES-CTR counter, mirroring the encrypt side.
-    envelope = cJSON_Parse(base64_string);
-    if (envelope == NULL_POINTER)
-    {
-        DBG_ENCRYPTION log_info("%s", "base__get_data_from_base64_and_decrypt_it: malformed envelope\n");
-        return;
-    }
-
-    iv_item = cJSON_GetObjectItem(envelope, "iv");
-    data_item = cJSON_GetObjectItem(envelope, "data");
-
-    if (iv_item == NULL_POINTER || data_item == NULL_POINTER || iv_item->valuestring == NULL_POINTER || data_item->valuestring == NULL_POINTER)
-    {
-        DBG_ENCRYPTION log_info("%s", "base__get_data_from_base64_and_decrypt_it: envelope missing iv/data\n");
-        cJSON_Delete(envelope);
-        return;
-    }
-
-    // the iv field is attacker-controlled: bound its length, then require it to decode to exactly 16 bytes,
-    // so the fixed message_iv buffer can never overflow (16 bytes -> 24 base64 chars).
-    if (strlen(iv_item->valuestring) > 24)
-    {
-        DBG_ENCRYPTION log_info("%s", "base__get_data_from_base64_and_decrypt_it: iv field too long\n");
-        cJSON_Delete(envelope);
-        return;
-    }
-
-    iv_decoded_size = zchg_base64_decode(iv_item->valuestring, strlen(iv_item->valuestring), message_iv);
-    if (iv_decoded_size != 16)
-    {
-        DBG_ENCRYPTION log_info("%s", "base__get_data_from_base64_and_decrypt_it: iv is not 16 bytes\n");
-        cJSON_Delete(envelope);
-        return;
-    }
-
-    // once a shared secret has been agreed, this message MUST carry a valid HMAC tag (encrypt-then-MAC).
-    // derive the enc + mac keys via HKDF, then verify the tag over iv_base64 || data_base64 BEFORE decoding
-    // or decrypting. requiring the tag whenever a shared secret exists blocks an attacker stripping it (downgrade).
-    if (client != NULL_POINTER && client->is_existing == TRUE && client->is_dh_shared_secret_agreed_upon == TRUE)
-    {
-        if (_base_internal__derive_keys_from_shared_secret(client->dh_shared_secret, enc_key, mac_key) == FALSE)
-        {
-            DBG_ENCRYPTION log_info("%s", "base__get_data_from_base64_and_decrypt_it: HKDF failed\n");
-            cJSON_Delete(envelope);
-            return;
-        }
-
-        tag_item = cJSON_GetObjectItem(envelope, "tag");
-        if (tag_item == NULL_POINTER || tag_item->valuestring == NULL_POINTER)
-        {
-            DBG_ENCRYPTION log_info("%s", "base__get_data_from_base64_and_decrypt_it: missing auth tag while a shared secret is agreed\n");
-            cJSON_Delete(envelope);
-            return;
-        }
-
-        if (_base_internal__compute_metadata_tag(mac_key, iv_item->valuestring, data_item->valuestring, expected_tag) == FALSE)
-        {
-            cJSON_Delete(envelope);
-            return;
-        }
-        zchg_base64_encode(expected_tag, sizeof(expected_tag), expected_tag_base64);
-
-        if (_base_internal__constant_time_str_equal(expected_tag_base64, tag_item->valuestring) == FALSE)
-        {
-            DBG_ENCRYPTION log_info("%s", "base__get_data_from_base64_and_decrypt_it: auth tag mismatch\n");
-            cJSON_Delete(envelope);
-            return;
-        }
-    }
-
-    // the data field is attacker-controlled; guard its decode against out_buffer_length (the caller's buffer
-    // size) so this function is self-defending regardless of caller, mirroring the iv guard above
-    if ((int64)(strlen(data_item->valuestring) / 4 * 3) > out_buffer_length)
-    {
-        DBG_ENCRYPTION log_info("%s", "base__get_data_from_base64_and_decrypt_it: data field too large for buffer\n");
-        cJSON_Delete(envelope);
-        return;
-    }
-
-    base64_decoded_size = zchg_base64_decode(data_item->valuestring, strlen(data_item->valuestring), out_buffer);
-
-    // one per-message IV drives every layer; key order does not matter because layered CTR keystreams XOR
-    if (client != NULL_POINTER && client->is_existing == TRUE && client->is_dh_shared_secret_agreed_upon == TRUE)
-    {
-        for (i = (g_server_settings.keys_count - 1); i >= 0; i--)
-        {
-            AES_init_ctx_iv(&ctx, g_server_settings.keys[i].key_value, message_iv);
-            AES_CTR_xcrypt_buffer(&ctx, out_buffer, base64_decoded_size);
-        }
-
-        // enc_key was derived (and the tag already verified) in the validation block above
-        AES_init_ctx_iv(&ctx, enc_key, message_iv);
-        AES_CTR_xcrypt_buffer(&ctx, out_buffer, base64_decoded_size);
-    }
-    else
-    {
-        for (i = (g_server_settings.keys_count - 1); i >= 0; i--)
-        {
-            AES_init_ctx_iv(&ctx, g_server_settings.keys[i].key_value, message_iv);
-            AES_CTR_xcrypt_buffer(&ctx, out_buffer, base64_decoded_size);
-        }
-    }
-
-    cJSON_Delete(envelope);
-}
-
-/**
  * @brief encrypts string with public key
  *
  * @param char* public_key_modulus -> the RSA modulus as a base64 string
@@ -3637,15 +3221,16 @@ void base__destroy_temp_channel(uint64 temp_channel_id)
 
         if (g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present == TRUE)
         {
-            server_msg__send_maintainer_id_to_single_client(client_to_move, ROOT_CHANNEL_ID, g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
+            server_msg__send_maintainer_id_to_single_client(client_to_move, &g_channel_array[ROOT_CHANNEL_ID], g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
         }
 
-        server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client_to_move->p_ws_connection, client_to_move->dh_shared_secret, ROOT_CHANNEL_ID);
+        server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client_to_move, ROOT_CHANNEL_ID);
     }
 
     // free the channel slot and tell everyone the channel is gone
     clib__null_memory(&g_channel_array[temp_channel_id], sizeof(channel_t));
-    server_msg__send_channel_delete_message_to_all_clients(temp_channel_id, 0);
+    // No client clicked delete: the owner left this temporary channel.
+    server_msg__send_channel_delete_message_to_all_clients(temp_channel_id, UINT64_MAX);
 
     // the root channel may have just gained members and have no maintainer; pick one
     if (g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present == FALSE)
@@ -3656,7 +3241,7 @@ void base__destroy_temp_channel(uint64 temp_channel_id)
             g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present = TRUE;
             g_channel_array[ROOT_CHANNEL_ID].maintainer_id = index_of_new_maintainer;
             g_channel_array[ROOT_CHANNEL_ID].maintainer_generation++;
-            server_msg__send_maintainer_id_to_clients_in_same_channel(ROOT_CHANNEL_ID, g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
+            server_msg__send_maintainer_id_to_clients_in_same_channel(&g_channel_array[ROOT_CHANNEL_ID], g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
         }
     }
 }
@@ -3695,7 +3280,7 @@ void base__move_client_into_channel(uint64 client_id, uint64 destination_channel
             old_channel->is_channel_maintainer_present = TRUE;
             old_channel->maintainer_id = new_maintainer_index;
             old_channel->maintainer_generation++;
-            server_msg__send_maintainer_id_to_clients_in_same_channel(old_channel->channel_id, old_channel->maintainer_id);
+            server_msg__send_maintainer_id_to_clients_in_same_channel(old_channel, old_channel->maintainer_id);
         }
         else
         {
@@ -3722,8 +3307,8 @@ void base__move_client_into_channel(uint64 client_id, uint64 destination_channel
         new_channel->maintainer_generation++;
     }
 
-    server_msg__send_maintainer_id_to_single_client(client, destination_channel_id, new_channel->maintainer_id);
-    server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client->p_ws_connection, client->dh_shared_secret, destination_channel_id);
+    server_msg__send_maintainer_id_to_single_client(client, new_channel, new_channel->maintainer_id);
+    server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client, destination_channel_id);
 }
 
 /**
@@ -3765,6 +3350,7 @@ void base__process_client_disconnect(uint64 client_index)
         }
 
         audio_channel__process_client_disconnect(client);
+        video_websocket__disconnect(client);
 
         // a streamer leaving ends its stream for the channel, a viewer leaving drops off the streamer's count
         video_stream__process_client_leaving_channel(client, client->channel_id);
@@ -3826,7 +3412,7 @@ void base__process_client_disconnect(uint64 client_index)
                 g_channel_array[channel_id].maintainer_id = new_maintainer_index;
                 g_channel_array[channel_id].maintainer_generation++;
 
-                server_msg__send_maintainer_id_to_clients_in_same_channel(channel_id, new_maintainer_index);
+                server_msg__send_maintainer_id_to_clients_in_same_channel(&g_channel_array[channel_id], new_maintainer_index);
             }
             else
             {
@@ -3900,6 +3486,51 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     {
         client_msg__process_create_new_webrtc_datachannel_connection(json_root, client_index);
     }
+    else if (clib__is_string_equal(message_type, "request_audio_websocket"))
+    {
+        clib__write_lock(&g_clients_global_rwlock_guard);
+        client = &g_clients_array[client_index];
+        if (client->is_existing == TRUE && client->p_ws_connection == websocket)
+        {
+            audio_websocket__request(client);
+        }
+        clib__unlock(&g_clients_global_rwlock_guard);
+    }
+    else if (clib__is_string_equal(message_type, "request_video_websocket"))
+    {
+        clib__write_lock(&g_clients_global_rwlock_guard);
+        client = &g_clients_array[client_index];
+        if (client->is_existing == TRUE && client->p_ws_connection == websocket)
+        {
+            video_websocket__request(client);
+        }
+        clib__unlock(&g_clients_global_rwlock_guard);
+    }
+    else if (clib__is_string_equal(message_type, "request_music_bot_key"))
+    {
+        cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+        cJSON* bot_id = cJSON_GetObjectItemCaseSensitive(message, "client_id");
+        uint64 now = base__get_timestamp_ms();
+        client_t* bot = NULL_POINTER;
+
+        clib__write_lock(&g_clients_global_rwlock_guard);
+        client = &g_clients_array[client_index];
+        if (client->is_existing == TRUE && client->is_authenticated == TRUE && client->p_ws_connection == websocket
+            && cJSON_IsNumber(bot_id) && bot_id->valuedouble >= 0
+            && bot_id->valuedouble < g_server_settings.max_client_count
+            && bot_id->valuedouble == bot_id->valueint
+            && now - client->timestamp_last_music_bot_key_request >= 250)
+        {
+            client->timestamp_last_music_bot_key_request = now;
+            // the keys go only to a client that stands in the bot's channel and is not idle
+            bot = &g_clients_array[bot_id->valueint];
+            if (bot->is_existing == TRUE && bot->is_music_bot == TRUE && client->is_idle == FALSE && client->channel_id == bot->channel_id)
+            {
+                server_msg__send_music_bot_key(client, bot);
+            }
+        }
+        clib__unlock(&g_clients_global_rwlock_guard);
+    }
     else if (clib__is_string_equal(message_type, "sdp_answer"))
     {
         client_msg__process_sdp_answer(json_root, client_index);
@@ -3916,6 +3547,10 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             if (clib__is_string_equal(message_type, "change_client_username"))
             {
                 client_msg__process_change_client_username(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "resolve_url"))
+            {
+                url_resolver__request(json_root, client_index, websocket);
             }
             else if (clib__is_string_equal(message_type, "create_channel_request"))
             {

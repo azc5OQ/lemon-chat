@@ -81,6 +81,7 @@
          class must stay off this element - apply_theme() disables every sheet carrying it -->
     <style id="style-layout">
 /* @@INCLUDE: styles/layout.style @@ */
+/* @@INCLUDE: styles/link-previews.style @@ */
     </style>
 
     <script type="text/javascript">
@@ -108,8 +109,11 @@
 /* @@INCLUDE: scripts/app/keys.js @@ */
 /* @@INCLUDE: scripts/app/channel-tree.js @@ */
 /* @@INCLUDE: scripts/app/chat.js @@ */
+/* @@INCLUDE: scripts/app/link-previews.js @@ */
 /* @@INCLUDE: scripts/app/layout.js @@ */
 /* @@INCLUDE: scripts/app/voice.js @@ */
+/* @@INCLUDE: scripts/app/audio-transport.js @@ */
+/* @@INCLUDE: scripts/app/video-transport.js @@ */
 /* @@INCLUDE: scripts/app/video.js @@ */
 /* @@INCLUDE: scripts/app/server-settings-tab.js @@ */
 /* @@INCLUDE: scripts/app/dispatch.js @@ */
@@ -182,6 +186,10 @@
                             <span>hide admin's flag</span>
                         </label>
                         <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-link-previews-checkbox">
+                            <span>show link previews (URLs are sent to this server for lookup)</span>
+                        </label>
+                        <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-renames-checkbox">
                             <span>allow users to rename themselves (admins always can)</span>
                         </label>
@@ -241,12 +249,21 @@
                             <span>enable audio server-wide</span>
                         </label>
                         <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-enable-video-streaming-checkbox">
+                            <span>allow video streaming</span>
+                        </label>
+                        <!-- These connections carry both audio and video. -->
+                        <div class="server-settings-general-row" id="server-settings-general-audio-connections-row">
+                            <span>audio and video connections</span>
+                            <select id="server-settings-general-audio-connections">
+                                <option value="both">WebSocket and WebRTC (clients choose)</option>
+                                <option value="websocket">WebSocket only</option>
+                                <option value="webrtc">WebRTC only</option>
+                            </select>
+                        </div>
+                        <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-enable-music-bot-audio-checkbox">
                             <span>enable audio for music bots</span>
-                        </label>
-                        <label class="server-settings-general-row">
-                            <input type="checkbox" id="server-settings-general-enable-video-streaming-checkbox">
-                            <span>allow video streaming (screen share or a video file, to the streamer's channel; each channel has its own toggle too)</span>
                         </label>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-hide-clients-in-password-protected-channels">
@@ -461,6 +478,16 @@
                             <span class="local-settings-hint">the keyboard key you hold down while speaking</span>
                         </span>
                         <input type="button" id="local-settings-ptt-key" value="Q">
+                    </div>
+                    <div class="local-settings-row local-settings-row-select">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">audio connection</span>
+                            <span class="local-settings-hint">how voice reaches the server; the server decides which connections it allows</span>
+                        </span>
+                        <select id="local-settings-audio-connection">
+                            <option value="webrtc">prefer datachannel (webrtc)</option>
+                            <option value="websocket">prefer websocket</option>
+                        </select>
                     </div>
                     <!-- the device list fills once the microphone permission has been granted -->
                     <div class="local-settings-row local-settings-row-select" id="local-settings-mic-device-row" style="display: none;">

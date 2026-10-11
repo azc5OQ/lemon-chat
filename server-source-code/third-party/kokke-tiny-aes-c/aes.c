@@ -177,16 +177,24 @@ static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
 void AES_init_ctx(struct AES_ctx *ctx, const uint8_t *key)
 {
 	KeyExpansion(ctx->RoundKey, key);
+#if defined(CTR) && (CTR == 1)
+    memset(ctx->CtrBlock, 0, sizeof(ctx->CtrBlock));
+    ctx->CtrOffset = AES_BLOCKLEN;
+#endif
 }
 #if (defined(CBC) && (CBC == 1)) || (defined(CTR) && (CTR == 1))
 void AES_init_ctx_iv(struct AES_ctx *ctx, const uint8_t *key, const uint8_t *iv)
 {
-	KeyExpansion(ctx->RoundKey, key);
-	memcpy(ctx->Iv, iv, AES_BLOCKLEN);
+    AES_init_ctx(ctx, key);
+    AES_ctx_set_iv(ctx, iv);
 }
 void AES_ctx_set_iv(struct AES_ctx *ctx, const uint8_t *iv)
 {
 	memcpy(ctx->Iv, iv, AES_BLOCKLEN);
+#if defined(CTR) && (CTR == 1)
+    memset(ctx->CtrBlock, 0, sizeof(ctx->CtrBlock));
+    ctx->CtrOffset = AES_BLOCKLEN;
+#endif
 }
 #endif
 
@@ -474,36 +482,34 @@ void AES_CBC_decrypt_buffer(struct AES_ctx *ctx, uint8_t *buf, uint32_t length)
 #if defined(CTR) && (CTR == 1)
 
 /* Symmetrical operation: same function for encrypting as for decrypting. Note any IV/nonce should never be reused with the same key */
-void AES_CTR_xcrypt_buffer(struct AES_ctx *ctx, uint8_t *buf, uint32_t length)
+void AES_CTR_xcrypt_buffer(struct AES_ctx *ctx, uint8_t *buf, size_t length)
 {
-	uint8_t buffer[AES_BLOCKLEN];
+    size_t i = 0;
+    int counter_byte = 0;
 
-	unsigned i;
-	int bi;
-	for (i = 0, bi = AES_BLOCKLEN; i < length; ++i, ++bi)
-	{
-		if (bi == AES_BLOCKLEN) /* we need to regen xor compliment in buffer */
-		{
-			memcpy(buffer, ctx->Iv, AES_BLOCKLEN);
-			Cipher((state_t *)buffer, ctx->RoundKey);
+    for (i = 0; i < length; i++)
+    {
+        if (ctx->CtrOffset == AES_BLOCKLEN)
+        {
+            memcpy(ctx->CtrBlock, ctx->Iv, AES_BLOCKLEN);
+            Cipher((state_t*)ctx->CtrBlock, ctx->RoundKey);
 
-			/* Increment Iv and handle overflow */
-			for (bi = (AES_BLOCKLEN - 1); bi >= 0; --bi)
-			{
-				/* inc will overflow */
-				if (ctx->Iv[bi] == 255)
-				{
-					ctx->Iv[bi] = 0;
-					continue;
-				}
-				ctx->Iv[bi] += 1;
-				break;
-			}
-			bi = 0;
-		}
-
-		buf[i] = (buf[i] ^ buffer[bi]);
-	}
+            // Treat the 16-byte IV as one number and increase it by one. Its
+            // last byte is the lowest-value byte; if that byte wraps to zero,
+            // carry into the preceding byte, just as the client's aes-js does.
+            for (counter_byte = AES_BLOCKLEN - 1; counter_byte >= 0; counter_byte--)
+            {
+                ctx->Iv[counter_byte]++;
+                if (ctx->Iv[counter_byte] != 0)
+                {
+                    break;
+                }
+            }
+            ctx->CtrOffset = 0;
+        }
+        buf[i] ^= ctx->CtrBlock[ctx->CtrOffset];
+        ctx->CtrOffset++;
+    }
 }
 
 #endif // #if defined(CTR) && (CTR == 1)

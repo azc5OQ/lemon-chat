@@ -1,0 +1,108 @@
+plugins
+{
+    id 'com.android.application'
+}
+
+dependencies
+{
+    testImplementation 'junit:junit:4.13.2'
+}
+
+def serverAbis = providers.gradleProperty('serverAbis').get().split(',').collect
+{
+    it.trim()
+}
+if (!serverAbis || serverAbis.any
+{
+    !(it in ['arm64-v8a', 'armeabi-v7a', 'x86_64'])
+})
+{
+    throw new GradleException('serverAbis must contain arm64-v8a, armeabi-v7a or x86_64')
+}
+
+android
+{
+    namespace 'com.lemonchat.server'
+    compileSdk 36
+    ndkVersion '27.2.12479018'
+
+    defaultConfig
+    {
+        applicationId 'com.lemonchat.server'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '1.0'
+        ndk
+        {
+            abiFilters.addAll(serverAbis)
+        }
+    }
+    compileOptions
+    {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+    // This .so is a PIE executable, not a JNI library. It must be extracted so
+    // ProcessBuilder can execute it from the installer's nativeLibraryDir.
+    sourceSets.main.jniLibs.srcDir layout.buildDirectory.dir('generated/server-libs')
+    packagingOptions
+    {
+        jniLibs
+        {
+            useLegacyPackaging = true
+            keepDebugSymbols += '**/libchat-server.so'
+        }
+    }
+    buildTypes
+    {
+        release
+        {
+            minifyEnabled false
+        }
+    }
+}
+
+// Build from vendored source with the same NDK as the client. No host libraries
+// or generated files are copied into third-party/ or the desktop build folders.
+def windows = System.getProperty('os.name').toLowerCase().contains('windows')
+def cmakeExecutable = new File(android.sdkDirectory, 'cmake/3.22.1/bin/cmake' + (windows ? '.exe' : ''))
+def ninjaExecutable = new File(android.sdkDirectory, 'cmake/3.22.1/bin/ninja' + (windows ? '.exe' : ''))
+def toolchain = new File(android.sdkDirectory, "ndk/${android.ndkVersion}/build/cmake/android.toolchain.cmake")
+def nativeTasks = serverAbis.collect
+{
+    abi ->
+    tasks.register('buildServer' + abi.replaceAll('[^a-zA-Z0-9]', '_'))
+    {
+        // Always let Ninja check dependencies, including headers in vendored libraries.
+        doLast
+        {
+            [cmakeExecutable, ninjaExecutable, toolchain].each
+            {
+                if (!it.isFile())
+                {
+                    throw new GradleException("Install NDK ${android.ndkVersion} and CMake 3.22.1 in SDK Manager. Missing: $it")
+                }
+            }
+            def nativeBuild = layout.buildDirectory.dir("native/${abi}").get().asFile
+            def libraries = layout.buildDirectory.dir("generated/server-libs/${abi}").get().asFile
+            exec
+            {
+                commandLine cmakeExecutable, '-S', rootProject.file('native'), '-B', nativeBuild,
+                    '-G', 'Ninja', "-DCMAKE_MAKE_PROGRAM=${ninjaExecutable}",
+                    "-DCMAKE_TOOLCHAIN_FILE=${toolchain}", "-DANDROID_ABI=${abi}",
+                    '-DANDROID_PLATFORM=android-26', '-DANDROID_STL=c++_static',
+                    '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON', '-DCMAKE_BUILD_TYPE=Release',
+                    "-DSERVER_OUTPUT_DIR=${libraries}"
+            }
+            exec
+            {
+                commandLine cmakeExecutable, '--build', nativeBuild, '--target', 'chat-server', '--parallel', '4'
+            }
+        }
+    }
+}
+tasks.named('preBuild')
+{
+    dependsOn nativeTasks
+}

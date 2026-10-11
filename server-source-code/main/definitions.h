@@ -1,7 +1,7 @@
 #ifndef MYTYPEDEF_H
 #define MYTYPEDEF_H
 
-// #define DEBUG_ACTIVE 1
+#undef DEBUG_ACTIVE
 
 #define ARCHITECTURE_AMD64 1
 // #define ARCHITECTURE_I386 1
@@ -36,6 +36,8 @@ typedef unsigned long long timestamp; // 8 bytes always
 typedef const char* cstring;
 // typedef wchar_t* wstring;
 
+#define DBG_CONNECTION_PROGRESS if (0)
+
 #ifdef DEBUG_ACTIVE
 #define DBG_DLLMAIN if (0)
 #define DBG_CLIENT_MESSAGE if (0)
@@ -49,7 +51,7 @@ typedef const char* cstring;
 #define DBG_MEMORY_MANAGER if (0)
 #define DBG_CONNECTION_CHECK_THREAD if (0)
 #define DBG_CLIENT_DISCONNECT if (0)
-#define DBG_AUDIOCHANNEL_WEBRTC if (0)
+#define DBG_AUDIO_WEBRTC if (0)
 #define DBG_VIOLET if (0)
 #define DBG_DBG_MEMORY_ALLOCATIONS if (0)
 #define DBG_IP_TOOLS if (0)
@@ -58,6 +60,16 @@ typedef const char* cstring;
 #define DBG_RWLOCKS if (0)
 #define DBG_IDENTITIES if (0)
 #define DBG_VIDEO_STREAM if (0)
+#define DBG_AUDIO_CHANNEL if (0)
+#define DBG_AUDIO_WEBSOCKET if (0)
+#define DBG_MEDIA_AUTH if (0)
+#define DBG_VIDEO_WEBSOCKET if (0)
+#define DBG_VIDEO_WEBRTC if (0)
+#define DBG_HTTP_SERVER if (0)
+#define DBG_SETTINGS if (0)
+#define DBG_FIRST_TIME_SETUP if (0)
+#define DBG_SERVER_LOGS if (0)
+#define DBG_UTIL if (0)
 
 #endif
 
@@ -74,16 +86,25 @@ typedef const char* cstring;
 #define DBG_MEMORY_MANAGER if (0) 
 #define DBG_CONNECTION_CHECK_THREAD if (0) 
 #define DBG_CLIENT_DISCONNECT if (0) 
-#define DBG_AUDIOCHANNEL_WEBRTC if (0) 
+#define DBG_AUDIO_WEBRTC if (0) 
 #define DBG_VIOLET if (0) 
 #define DBG_DBG_MEMORY_ALLOCATIONS if (0) 
 #define DBG_IP_TOOLS if (0) 
 #define DBG_FILE_UPLOAD if (0) 
 #define DBG_MUSIC_BOT if (0) 
 #define DBG_RWLOCKS if (0) 
-// force-on even in a release build: identity-restore debugging (flip to if (0) when done)
 #define DBG_IDENTITIES if (0)
 #define DBG_VIDEO_STREAM if (0)
+#define DBG_AUDIO_CHANNEL if (0)
+#define DBG_AUDIO_WEBSOCKET if (0)
+#define DBG_MEDIA_AUTH if (0)
+#define DBG_VIDEO_WEBSOCKET if (0)
+#define DBG_VIDEO_WEBRTC if (0)
+#define DBG_HTTP_SERVER if (0)
+#define DBG_SETTINGS if (0)
+#define DBG_FIRST_TIME_SETUP if (0)
+#define DBG_SERVER_LOGS if (0)
+#define DBG_UTIL if (0)
 #endif
 
 #ifdef DONT_USE_AUDIO_CHANNEL
@@ -99,6 +120,7 @@ int mytypedef__check_data_types_for_consistency(void);
 #define MAX_CHANNELS 100
 #define DEFAULT_SERVER_SLOTS 500
 #define MAX_SERVER_SLOTS 100000
+#define WEBSOCKET_CONNECTIONS_PER_CLIENT 3 // chat, audio and video may each have their own socket
 #define MAX_CLIENT_STORED_DATA 100
 #define MAX_ICONS 1000
 #define MAX_TAGS 1000
@@ -201,15 +223,47 @@ int mytypedef__check_data_types_for_consistency(void);
 #include <sys/time.h>   // struct timeval + gettimeofday, used by base__get_timestamp_ms; POSIX (Linux + macOS + BSD), absent on Windows
 #endif
 
-typedef struct key_data
+// Each key stores its type as well as the bytes needed to use it. The type tells
+// metadata_crypto.c what to do with those bytes, instead of assuming every key is AES.
+// These numbers are used inside the server; they are not sent to the client.
+// To add an encryption method, add its key storage below and the code that uses
+// it in metadata_crypto.c. The client must support the same method and both ends must
+// agree on which key types they use and in what order.
+typedef enum crypto_key_type
 {
-    int64 key_data_type;
-    unsigned char key_value[32];
-} key_data_t;
+    CRYPTO_KEY_NONE = 0,
+    CRYPTO_KEY_AES_256_CTR,
+    CRYPTO_KEY_HMAC_SHA256
+} crypto_key_type_t;
+
+typedef struct crypto_key
+{
+    crypto_key_type_t type;
+    union
+    {
+        unsigned char aes_256_ctr[32];
+        unsigned char hmac_sha256[32];
+    } material;
+} crypto_key_t;
+
+typedef struct crypto_session_keys
+{
+    crypto_key_t encryption;
+    crypto_key_t authentication;
+    int is_ready;
+} crypto_session_keys_t;
+
+typedef enum crypto_direction
+{
+    CRYPTO_ENCRYPT,
+    CRYPTO_DECRYPT
+} crypto_direction_t;
 
 // todo, use int64 whenever possible
 typedef struct server_settings
 {
+    boole is_audio_over_websocket_allowed; // voice may use the /audio websocket; the admin's "audio connections" select, changeable at run time
+    boole is_audio_over_webrtc_allowed;    // voice may use the webrtc datachannel; both on means the client picks by its own preference
     boole is_same_ip_address_allowed;
     boole is_hide_clients_in_password_protected_channels_active;
     boole is_restrict_channel_deletion_creation_editing_to_admin_active;
@@ -236,6 +290,7 @@ typedef struct server_settings
     boole allow_offline_messages;  // queue text messages for registered identities that are offline and deliver them on reconnect. asked ONCE at first-time setup and never editable afterwards, because switching it on makes the server retain each identity's RAW public key (peers need it to encrypt while the owner is away). needs identities + allow_stored_clients_list; default off
     boole allow_typing_indicator;  // clients may tell the people they are writing to that they are typing ("x is typing ..."). carries no message content, only who is typing and where; editable in the server settings tab; default off
     boole allow_client_renames;  // users may rename themselves after connecting; when off a rename request is silently ignored, because the switch is meant against name games - an admin still renames freely; default on
+    boole allow_link_previews;
     int64 avatar_max_size_bytes;  // largest accepted raw image size (bytes) for an avatar; larger uploads are silently dropped
     int64 icon_max_size_bytes;  // largest accepted raw image size (bytes) for a tag/channel icon, 1000-30000; editable in the server settings tab
     uint64 chat_cooldown_milliseconds;
@@ -259,7 +314,7 @@ typedef struct server_settings
     int64 webrtc_port_range_end;
     int64 websocket_message_max_length;
     int64 websocket_chat_message_string_max_length;
-    key_data_t keys[100];
+    crypto_key_t keys[100];
     // char client_verificaton_message_cleartext[1024]; not used right now, but it was supposed to be a welcome message that the server sends when somebody joins
     char default_client_name[30];
     char admin_password[ADMIN_PASSWORD_MAX_LENGTH];
@@ -337,8 +392,15 @@ typedef struct music_bot_single_song_data_t
     uint64 mp3_data_buffer_length;
 } music_bot_single_song_data_t;
 
+typedef struct music_bot_audio_keys_t
+{
+    unsigned char keys[4][32];
+    uint64 packet_counter;
+} music_bot_audio_keys_t;
+
 typedef struct music_bot_client_extension_t
 {
+    music_bot_audio_keys_t* audio_keys;
     uint64 music_bot_pthread_handle;
     boole is_music_bot_running;
     uint64 music_bot_songs_count;
@@ -355,11 +417,15 @@ typedef struct client_file_upload_extension_t
 
 typedef struct client_t
 {
+    struct audio_websocket_session* audio_websocket; // the session of this client's /audio socket (audio_websocket.c), NULL_POINTER without one
+    struct video_websocket_session* video_websocket; // the session of this client's /video socket (video_websocket.c), NULL_POINTER without one
+    uint64 timestamp_last_music_bot_key_request;
     ws_cli_conn_t* p_ws_connection;
     boole is_existing;
     boole is_authenticated;
     boole is_admin;
     boole is_audio_websocket_authenticated;
+    boole is_video_websocket_authenticated;
     boole is_dh_shared_secret_agreed_upon;
     boole is_streaming_song;
     boole is_public_key_challenge_sent;
@@ -374,6 +440,7 @@ typedef struct client_t
     int64 audio_state; // 1 -> active, 2 -> not active but enabled, 3 -> disabled but audio still active, 4 -> audio disabled
     uint64 timestamp_connected;
     uint64 timestamp_last_action;
+    uint64 timestamp_last_url_lookup;
     uint64 timestamp_last_maintain_connection_message_received;
     boole has_pending_maintainer_reset_vote;
     uint64 maintainer_reset_vote_channel_id;
@@ -383,6 +450,12 @@ typedef struct client_t
     boole is_registered;  // the admin has registered this identity (it carries an alias); only such users may list the stored clients
     char public_key[MAX_PUBLIC_KEY_LENGTH];
     char dh_shared_secret[SHARED_SECRET_LENGTH];
+    // These keys are made from the shared secret when the client connects.
+    // Metadata messages, audio and video all use them. When a new connection
+    // takes over an existing session, copy both keys and their types together
+    // so the server uses the same keys as the client that just reconnected.
+    crypto_session_keys_t session_keys;
+    uint64 media_send_counter; // counts the frames the server sent to this client; every relay thread increases it atomically
     char challenge_string[CHALLENGE_STRING_LENGTH];
     char song_name[SONG_NAME_MAX_LENGTH];
     char ip_address[INET6_ADDRSTRLEN]; // max size of an ipv6 address

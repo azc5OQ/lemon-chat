@@ -148,6 +148,7 @@ var g_server_policy = {
     is_alias_registration_allowed: false,      // admins may register aliases (display names) on identities
     allow_typing_indicator: false,             // "x is typing ..." is sent and shown
     allow_client_renames: true,                // users may rename themselves (admins always may); on unless the server says otherwise
+    allow_link_previews: false, // URL lookup is available only when the server enables it.
     allow_avatars: false,                      // image avatars on identities
     avatar_max_size: 51200,                    // largest raw avatar image in bytes
     allow_file_uploads: false,                 // any file may be sent in chat; off until the server says so
@@ -155,8 +156,16 @@ var g_server_policy = {
     allow_chat_pictures: true,                 // inline pictures in chat; on unless the server says otherwise
     chat_picture_max_size: 4 * 1024 * 1024,    // largest raw inline picture in bytes; bigger images still travel as files
     icon_max_size: 5000,                       // largest raw tag/channel icon in bytes (the server settings tab upload)
-    is_video_streaming_allowed: false          // members may stream their screen or a video file to their channel; off = no stream ui at all
+    is_video_streaming_allowed: false,         // members may stream their screen or a video file to their channel; off = no stream ui at all
+    is_audio_over_websocket_allowed: false,    // voice may use the /audio websocket; a server from before this setting sends nothing and keeps it off
+    is_audio_over_webrtc_allowed: true,        // voice may use the webrtc datachannel
+    is_voice_chat_active: true,                // the server relays client voice; with both audio switches off no audio connection is attempted
+    is_music_bot_audio_active: true            // the server relays music bot audio
 };
+
+// the user's audio connection preference from the local settings: "webrtc" (the datachannel),
+// "websocket", or "none" for no audio connection at all. the server policy decides what is possible
+var g_audio_connection_preference = "webrtc";
 
 // ---- who is here ----
 

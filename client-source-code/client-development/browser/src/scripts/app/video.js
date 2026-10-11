@@ -12,12 +12,16 @@
 // browser is happy to receive on a datachannel
 var VIDEO_PACKET_MAX_BYTES = 15000;
 
-// keyframe every this often, so a viewer that connects or lost frames waits at most this long
-var VIDEO_KEYFRAME_INTERVAL_MS = 2000;
+// keyframe every this often. a viewer that joins or lost frames asks for one and gets it within about
+// a second, so the interval only bounds the recovery after a loss that went unnoticed. a keyframe is
+// ten to twenty times the size of a normal frame, so a long interval keeps those bursts rare
+var VIDEO_KEYFRAME_INTERVAL_MS = 8000;
 
-// above this much queued on the datachannel the streamer skips frames; a long run of skips halves the bitrate
-var VIDEO_SEND_BUFFER_HIGH_WATER_BYTES = 512 * 1024;
-var VIDEO_SKIPS_BEFORE_BITRATE_STEP = 30;
+// above this much queued on the datachannel the streamer skips frames: two frames of bytes at the
+// current bitrate, at least the minimum below (video__send_buffer_limit). a run of skips halves the
+// bitrate, stepped back up slowly once the queue drains
+var VIDEO_SEND_BUFFER_MIN_BYTES = 32 * 1024;
+var VIDEO_SKIPS_BEFORE_BITRATE_STEP = 8;
 
 // a viewer asks for a keyframe at most this often, the server rate limits per streamer on top
 var VIDEO_KEYFRAME_REQUEST_MIN_INTERVAL_MS = 1000;
@@ -28,12 +32,26 @@ var VIDEO_PRESETS = {
     file: { max_edge: 1280, fps: 30, bitrate: 2500000, content_hint: "motion" }
 };
 
-// h.264 first (hardware nearly everywhere, annex b keeps the parameter sets in-band with every
-// keyframe so a viewer can join on any of them), vp8 as the software fallback
+// h.264 first, annex b keeps the parameter sets in-band with every keyframe so a viewer can join on
+// any of them. level 3.1 covers 1280x720 at 30 frames; level 3.0 did not, so a hardware encoder could
+// refuse it. the hardware encoder is asked for first, the browser's software encoder second, vp8 last
 var VIDEO_CODEC_CANDIDATES = [
-    { codec: "avc1.42E01E", avc: { format: "annexb" } },
-    { codec: "vp8" }
+    { codec: "avc1.42E01F", avc: { format: "annexb" }, hardware: "prefer-hardware" },
+    { codec: "avc1.42E01F", avc: { format: "annexb" }, hardware: "no-preference" },
+    { codec: "vp8", hardware: "no-preference" }
 ];
+
+/**
+ * @brief the send queue size above which the streamer skips frames: two frames of bytes at the current bitrate
+ *
+ * @return number bytes
+ */
+function video__send_buffer_limit()
+{
+    let two_frames = Math.floor(2 * video_current_bitrate / 8 / Math.max(1, g_video_stream.fps));
+
+    return Math.max(VIDEO_SEND_BUFFER_MIN_BYTES, two_frames);
+}
 
 // ---- state private to this file (the shared state object is g_video_stream in globals.js) ----
 
@@ -540,6 +558,11 @@ function video__pick_codec(width, height, preset)
             config.avc = candidate.avc;
         }
 
+        if (candidate.hardware != null)
+        {
+            config.hardwareAcceleration = candidate.hardware;
+        }
+
         return VideoEncoder.isConfigSupported(config).then(function(result)
         {
             if (result != null && result.supported == true)
@@ -574,6 +597,8 @@ function video__on_stream_confirmed()
     video_force_keyframe = true;
     video_skip_streak = 0;
     video_current_bitrate = video_encoder_config.bitrate;
+    video__post_transport_keys_to_worker();
+    video_transport__tick();
 
     try
     {
@@ -660,7 +685,7 @@ function video__pump_frame(now, metadata)
 
     // backpressure: a full send queue means the link cannot keep up; skip, and after a run of skips
     // halve the bitrate (stepped back up slowly once it drains)
-    if (g_video_datachannel != null && g_video_datachannel.bufferedAmount > VIDEO_SEND_BUFFER_HIGH_WATER_BYTES)
+    if (video_transport__buffered_amount() > video__send_buffer_limit())
     {
         video_skip_streak++;
 
@@ -797,7 +822,7 @@ function video__on_encoded_chunk(chunk, metadata)
 }
 
 /**
- * @brief the worker's encrypted packets for one frame: sent on the video datachannel in order
+ * @brief the worker's encrypted packets for one frame: sent over the video connection in order
  *
  * @param array packets -> ArrayBuffers
  *
@@ -805,22 +830,17 @@ function video__on_encoded_chunk(chunk, metadata)
  */
 function video__send_packets(packets)
 {
-    if (g_video_stream.role != "streamer" || g_video_datachannel == null || g_video_datachannel.readyState != "open")
+    if (g_video_stream.role != "streamer")
     {
         return;
     }
 
     for (let i = 0; i < packets.length; i++)
     {
-        try
+        // the video socket or the video data channel, whichever carries video right now (video-transport.js)
+        if (video_transport__send(packets[i]) == true)
         {
-            g_video_datachannel.send(packets[i]);
             g_session.bytes_sent += packets[i].byteLength;
-        }
-        catch (send_error)
-        {
-            console.log("video packet not sent: " + send_error.message);
-            return;
         }
     }
 }
@@ -853,7 +873,7 @@ function video__stop_stream(tell_server, reason)
 
     video__release_source();
 
-    if (tell_server == true && was_streaming == true && g_is_websocket_connected == true)
+    if (tell_server == true && was_streaming == true && g_is_authenticated == true)
     {
         connection__send_message_object({ message: { type: "video_stream_stop" } });
     }
@@ -999,7 +1019,8 @@ function video__connect()
         type: "mainthread__video_worker_decoder_setup",
         codec: g_video_stream.codec,
         width: g_video_stream.width,
-        height: g_video_stream.height
+        height: g_video_stream.height,
+        streamer_client_id: g_video_stream.streamer_client_id
     });
 
     video__post_channel_keys_to_worker();
@@ -1007,6 +1028,8 @@ function video__connect()
     connection__send_message_object({ message: { type: "video_stream_watch", is_watching: true } });
 
     g_video_stream.is_watching = true;
+    // when video prefers the websocket, the video socket is requested now rather than at the next tick
+    video_transport__tick();
     document.getElementById("video-stream-canvas").style.display = "block";
     document.getElementById("video-stream-preview").style.display = "none";
     video__set_popup_status("connecting ...");
@@ -1022,7 +1045,7 @@ function video__connect()
  */
 function video__disconnect(tell_server)
 {
-    if (g_video_stream.is_watching == true && tell_server == true && g_is_websocket_connected == true)
+    if (g_video_stream.is_watching == true && tell_server == true && g_is_authenticated == true)
     {
         connection__send_message_object({ message: { type: "video_stream_watch", is_watching: false } });
     }
@@ -1070,8 +1093,8 @@ function video__on_datachannel_received(channel)
         g_is_video_datachannel_connected = false;
         console.log("video datachannel closed");
 
-        // the server drops a watching viewer whose transport died; mirror it here so connect works again
-        if (g_video_stream.is_watching == true)
+        // A closed datachannel does not end viewing while the video WebSocket still works.
+        if (g_video_stream.is_watching == true && video_transport__active() == null)
         {
             video__disconnect(false);
         }
@@ -1081,7 +1104,7 @@ function video__on_datachannel_received(channel)
 }
 
 /**
- * @brief a packet from the video datachannel: [4B sender id][encrypted packet]; only the channel's streamer is decoded, and only while we watch
+ * @brief a packet from the video datachannel: handed on like a packet from the video websocket (video__on_media_frame)
  *
  * @param MessageEvent event -> event.data is the ArrayBuffer
  *
@@ -1089,28 +1112,35 @@ function video__on_datachannel_received(channel)
  */
 function video__on_datachannel_message(event)
 {
-    if (event.data == null || event.data.byteLength <= 4)
+    video__on_media_frame(event.data);
+}
+
+/**
+ * @brief a video frame from either connection, the video data channel or the video websocket
+ *
+ *        only a watching viewer decodes. the frame goes to the video worker as it is: the worker checks the
+ *        authentication code, removes the encryption layers and checks that the channel's streamer sent it
+ *        (video-worker.js, keys.js)
+ *
+ * @param ArrayBuffer frame -> the frame from the wire
+ *
+ * @return void
+ */
+function video__on_media_frame(frame)
+{
+    if (!(frame instanceof ArrayBuffer) || frame.byteLength <= MEDIA_FRAME_OVERHEAD)
     {
         return;
     }
 
-    g_session.bytes_received += event.data.byteLength;
+    g_session.bytes_received += frame.byteLength;
 
     if (g_video_stream.role != "viewer" || g_video_stream.is_watching != true || g_video_worker == null)
     {
         return;
     }
 
-    let sender_client_id = new DataView(event.data).getInt32(0, true);
-
-    if (sender_client_id != g_video_stream.streamer_client_id)
-    {
-        return;
-    }
-
-    let payload = event.data.slice(4);
-
-    g_video_worker.postMessage({ type: "mainthread__video_worker_decode_packet", value: payload }, [payload]);
+    g_video_worker.postMessage({ type: "mainthread__video_worker_decode_packet", value: frame }, [frame]);
 }
 
 /**
@@ -1190,11 +1220,34 @@ function video__post_channel_keys_to_worker()
         type: "mainthread__channel_keys_for_video_worker",
         value: g_current_channel_keys
     });
+    video__post_transport_keys_to_worker();
 
     if (g_video_stream.role == "streamer")
     {
         video_force_keyframe = true;
     }
+}
+
+/**
+ * @brief hands the worker the keys of the second encryption of every packet: this client's session keys and the server keys (keys.js)
+ *
+ *        sent together with the channel keys, when a stream starts, when a viewer connects, and on android
+ *        when the node runtime hands the keys to the webview
+ *
+ * @return void
+ */
+function video__post_transport_keys_to_worker()
+{
+    if (g_video_worker == null)
+    {
+        return;
+    }
+    g_video_worker.postMessage({
+        type: "mainthread__transport_keys_for_video_worker",
+        session: keys__media_session_layer(),
+        server_layers: keys__media_server_key_layers(),
+        local_client_id: g_local_client_id
+    });
 }
 
 // ---- protocol handlers (messages.js calls these) ----
@@ -1564,6 +1617,7 @@ function video__reset_on_disconnect()
 
     g_video_datachannel = null;
     g_is_video_datachannel_connected = false;
+    video_transport__reset();
     video__teardown_all("disconnected");
     video__close_popup(false);
 }

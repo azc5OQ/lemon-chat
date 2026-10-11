@@ -4582,7 +4582,8 @@ var webrtc = {
         event.channel.binaryType = "arraybuffer";
         g_is_webrtc_datachannel_connected = true;
 
-        if (g_is_microphone_always_on)
+        // the capture starts early; frames are only sent once a connection carries the audio
+        if (g_is_microphone_always_on && g_audio_transport.mode !== "none" && g_audio_transport.ready === false)
         {
             voice__activate_microphone();
         }
@@ -4595,41 +4596,7 @@ var webrtc = {
      */
     datachannel_onopen: function()
     {
-        console.log("datachannelonopen");
-
-        let is_client_existing = channel_tree__get_client_index_in_array_by_client_id(g_local_client_id) != -1;
-
-        // not found
-        if (is_client_existing == false)
-        {
-            return;
-        }
-
-        let target_element = document.getElementById("client-audio-state-" + g_local_client_id);
-
-        if (g_is_client_running_under_touch_device)
-        {
-            g_is_microphone_available = true;
-            voice__update_microphone_button();
-        }
-        else
-        {
-            document.getElementById("toggle-microphone-label").style.display = "block";
-        }
-
-        let local_index = channel_tree__get_client_index_in_array_by_client_id(g_local_client_id);
-
-        if (local_index != -1)
-        {
-            g_client_list[local_index].audio_state = G_AUDIO_STATE.PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS;
-        }
-
-        if (target_element.classList.contains("client-audio-state-completely-disabled"))
-        {
-            document.getElementById("client-audio-state-" + g_local_client_id).classList.remove("client-audio-state-completely-disabled");
-        }
-
-        document.getElementById("client-audio-state-" + g_local_client_id).classList.add("client-audio-state-microphone-disabled");
+        audio_transport__on_datachannel_open();
 
     },
 
@@ -4652,9 +4619,12 @@ var webrtc = {
             return;
         }
 
-        g_is_microphone_available = false;
-        voice__update_microphone_button();
-        document.getElementById("toggle-microphone-label").style.display = "none";
+        if (audio_transport__active() == null)
+        {
+            g_is_microphone_available = false;
+            voice__update_microphone_button();
+            document.getElementById("toggle-microphone-label").style.display = "none";
+        }
 
         // the server's disabled-audio broadcast was the only recovery trigger here, and that
         // edge can be lost when the server slot is wiped first - recover from our own close too
@@ -4678,57 +4648,9 @@ var webrtc = {
      */
     datachannel_onmessage: function(event)
     {
-        if (event.data != null && event.data.byteLength > 0) { g_session.bytes_received += event.data.byteLength; }
-
-        // find out if client is ignored or muted, before sending it to opus decoder
-
-        let dataView = new DataView(event.data);
-        let extracted_client_id = dataView.getInt32(0, true);     // clientid is always first 4 bytes of received chunk of bytes
-        if (extracted_client_id == -2)
+        if (event.target === g_datachannel)
         {
-            // old servers mark every music bot frame with the constant -2; new servers send the
-            // bot's real client id instead (handled below), so each bot gets its own decoder
-            g_opus_decoder_worker.postMessage({
-                type: "mainthread__add_data_to_opus_decoder_musicbot",
-                value: event.data
-            });
-        }
-        else
-        {
-            let client_index = channel_tree__get_client_index_in_array_by_client_id(extracted_client_id);
-
-            if (client_index == -1 || extracted_client_id == g_local_client_id)
-            {
-                return; // not found
-            }
-
-            if (g_client_list[client_index].is_muted_by_local_client == true || g_client_list[client_index].is_ignored_by_local_client == true)
-            {
-                return;
-            }
-
-            // audio from a channel we are not in is a stale straggler (e.g. after a switch): discard
-            if (g_client_list[client_index].channel_id != g_current_channel_id)
-            {
-                return;
-            }
-
-            // music bot frames are plaintext opus (no channel-key layer), voice frames are encrypted;
-            // the sender's is_music_bot flag from the client list picks the right worker path
-            if (g_client_list[client_index].is_music_bot == true)
-            {
-                g_opus_decoder_worker.postMessage({
-                    type: "mainthread__add_data_to_opus_decoder_musicbot",
-                    value: event.data
-                });
-            }
-            else
-            {
-                g_opus_decoder_worker.postMessage({
-                    type: "mainthread__add_data_to_opus_decoder",
-                    value: event.data
-                });
-            }
+            audio_transport__on_datachannel_message(event.data);
         }
     }
 }

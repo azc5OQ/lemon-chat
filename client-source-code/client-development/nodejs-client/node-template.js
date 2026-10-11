@@ -40,8 +40,12 @@
 /* @@INCLUDE: scripts/app/keys.js @@ */
 /* @@INCLUDE: scripts/app/channel-tree.js @@ */
 /* @@INCLUDE: scripts/app/chat.js @@ */
+/* @@INCLUDE: scripts/app/link-previews.js @@ */
 /* @@INCLUDE: scripts/app/layout.js @@ */
 /* @@INCLUDE: scripts/app/voice.js @@ */
+/* @@INCLUDE: scripts/app/audio-transport.js @@ */
+/* @@INCLUDE: scripts/app/video-transport.js @@ */
+/* @@INCLUDE: node/video-stubs.js @@ */
 /* @@INCLUDE: scripts/app/server-settings-tab.js @@ */
 /* @@INCLUDE: scripts/app/dispatch.js @@ */
 /* @@INCLUDE: scripts/app/main.js @@ */

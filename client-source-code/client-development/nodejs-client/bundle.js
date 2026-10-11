@@ -1704,14 +1704,24 @@ var g_server_policy = {
     is_alias_registration_allowed: false,      // admins may register aliases (display names) on identities
     allow_typing_indicator: false,             // "x is typing ..." is sent and shown
     allow_client_renames: true,                // users may rename themselves (admins always may); on unless the server says otherwise
+    allow_link_previews: false, // URL lookup is available only when the server enables it.
     allow_avatars: false,                      // image avatars on identities
     avatar_max_size: 51200,                    // largest raw avatar image in bytes
     allow_file_uploads: false,                 // any file may be sent in chat; off until the server says so
     file_upload_max_size: 10 * 1024 * 1024,    // largest raw chat file in bytes
     allow_chat_pictures: true,                 // inline pictures in chat; on unless the server says otherwise
     chat_picture_max_size: 4 * 1024 * 1024,    // largest raw inline picture in bytes; bigger images still travel as files
-    icon_max_size: 5000                        // largest raw tag/channel icon in bytes (the server settings tab upload)
+    icon_max_size: 5000,                       // largest raw tag/channel icon in bytes (the server settings tab upload)
+    is_video_streaming_allowed: false,         // members may stream their screen or a video file to their channel; off = no stream ui at all
+    is_audio_over_websocket_allowed: false,    // voice may use the /audio websocket; a server from before this setting sends nothing and keeps it off
+    is_audio_over_webrtc_allowed: true,        // voice may use the webrtc datachannel
+    is_voice_chat_active: true,                // the server relays client voice; with both audio switches off no audio connection is attempted
+    is_music_bot_audio_active: true            // the server relays music bot audio
 };
+
+// the user's audio connection preference from the local settings: "webrtc" (the datachannel),
+// "websocket", or "none" for no audio connection at all. the server policy decides what is possible
+var g_audio_connection_preference = "webrtc";
 
 // ---- who is here ----
 
@@ -2039,6 +2049,34 @@ var g_iceconfig = null;
 var g_datachannel = null;
 
 var g_is_webrtc_datachannel_connected = false;
+
+// ---- video streaming (video.js, video-worker.js) ----
+
+var g_video_datachannel = null;                 // the second, reliable datachannel from the server (label "video")
+
+var g_is_video_datachannel_connected = false;
+
+var g_video_worker = null;                      // packetizes + encrypts on the streamer side, decrypts + decodes + draws on the viewer side
+
+// the one stream of the current channel as this client sees it
+var g_video_stream = {
+    is_active: false,               // somebody (maybe us) streams in the current channel
+    streamer_client_id: -1,
+    source: "",                     // "screen" or "file"
+    codec: "",
+    width: 0,
+    height: 0,
+    fps: 0,
+    role: "none",                   // "streamer", "viewer" or "none"
+    is_start_pending: false,        // we asked the server to start and wait for its video_stream_state
+    is_offered: false,              // the server sent us the offer, we may press connect
+    is_watching: false,             // we pressed connect and the server relays to us
+    is_decoder_supported: false,    // the announced codec decodes here
+    is_popup_open: false,
+    viewer_count: 0,                // streamer side
+    pending_viewer_requests: [],    // streamer side: [{ client_id, username }] waiting for yes / no
+    epoch: 0                        // bumped per stream we start, so viewers never mix two streams
+};
 
 var g_is_webrtc_datachannel_check_running = false;
 
@@ -4812,64 +4850,23 @@ function audio_opus_glue__opus_decoder_worker_interval_function()
 function audio_opus_glue__opus_decoder_worker_onmessage(event)
 {
     // voice frame: [4B sender client id][encrypted(2B sequence + opus)]
-    if (event.data.type == "mainthread__add_data_to_opus_decoder")
+    if (event.data.type == "mainthread__add_decrypted_data_to_opus_decoder")
     {
-        let dataView = new DataView(event.data.value);
-
-        // clientid is always first 4 bytes of received chunk of bytes and is in every chunk of bytes
-        let extracted_client_id = dataView.getInt32(0, true);
-
-        let opus_ArrayBuffer_encrypted = event.data.value.slice(4);
-        let decrypted_bytes = keys__decrypt_data_with_aes_keys(g_current_channel_keys, opus_ArrayBuffer_encrypted);
-
-        // after decryption: [2B sequence little endian][opus]. too-short frames are dropped
-        if (decrypted_bytes == null || decrypted_bytes.length < 3)
+        // the main thread removed every encryption layer already (audio_transport__receive), for a member
+        // and for a music bot alike: [4B sender client id, little endian][2B sequence number, little endian][opus]
+        if (event.data.value.byteLength < 7)
         {
             return;
         }
 
+        let dataView = new DataView(event.data.value);
+        let extracted_client_id = dataView.getInt32(0, true);
         let chunk_entry = {
-            sequence_number: decrypted_bytes[0] | (decrypted_bytes[1] << 8),
-            opus_chunk: decrypted_bytes.subarray(2)
+            sequence_number: dataView.getUint16(4, true),
+            opus_chunk: event.data.value.slice(6)
         };
 
         // direct mode decodes right now and pipes to the worklet; tick mode queues for the mixer
-        if (opus_decoder_direct_worklet_port != null)
-        {
-            audio_opus_glue__opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
-            return;
-        }
-
-        audio_opus_glue__opus_decoder_worker_queue_chunk_for_tick(extracted_client_id, chunk_entry);
-    }
-    else if (event.data.type == "mainthread__add_data_to_opus_decoder_musicbot")
-    {
-        let dataView = new DataView(event.data.value);
-        let extracted_client_id = dataView.getInt32(0, true);
-        let chunk_entry = null;
-
-        if (extracted_client_id == -2)
-        {
-            // legacy format from an old server binary: [4B -2][opus], no sequence number
-            chunk_entry = {
-                sequence_number: null,
-                opus_chunk: event.data.value.slice(4)
-            };
-        }
-        else
-        {
-            // new format: [4B bot client id][2B sequence little endian][opus]
-            if (event.data.value.byteLength < 7)
-            {
-                return;
-            }
-
-            chunk_entry = {
-                sequence_number: dataView.getUint16(4, true),
-                opus_chunk: event.data.value.slice(6)
-            };
-        }
-
         if (opus_decoder_direct_worklet_port != null)
         {
             audio_opus_glue__opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
@@ -5415,6 +5412,72 @@ var server_msg = {
         }
     },
     /**
+     * @brief video_stream_state: a stream started or ended in a channel (see video.js)
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_state_from_server: function(msg)
+    {
+        video__on_state(msg);
+    },
+    /**
+     * @brief video_stream_offer: the channel's stream is offered to this client, it may press connect
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_offer_from_server: function(msg)
+    {
+        video__on_offer(msg);
+    },
+    /**
+     * @brief video_stream_viewer_request: a member joined our streaming channel, may they watch?
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_viewer_request_from_server: function(msg)
+    {
+        video__on_viewer_request(msg);
+    },
+    /**
+     * @brief video_stream_viewer_state: a viewer of our stream connected or dropped
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_viewer_state_from_server: function(msg)
+    {
+        video__on_viewer_state(msg);
+    },
+    /**
+     * @brief video_stream_keyframe_request: a viewer of our stream lost frames
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_keyframe_request_from_server: function(msg)
+    {
+        video__on_keyframe_request();
+    },
+    /**
+     * @brief video_stream_refused: the server said no to a stream start or a connect
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_refused_from_server: function(msg)
+    {
+        video__on_refused(msg);
+    },
+    /**
      * @brief somebody connected: adds them to g_client_list (and the id map), renders their row with handlers, promotes their offline chat, re-keys the root channel if we maintain it, and requests their avatar
      *
      * @param object msg -> the server message, msg.message holds the client's fields
@@ -5464,7 +5527,10 @@ var server_msg = {
         single_client.is_muted_by_local_client = false;
         single_client.unread_count = 0;
         single_client.is_music_bot = msg.message.is_music_bot;
+        single_client.music_bot_encryption = msg.message.music_bot_encryption || 0;
+        single_client.music_bot_keys = msg.message.music_bot_keys || null;
 
+        channel_tree__forget_client(single_client.client_id);
         g_client_list.push(single_client);
         g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
 
@@ -5613,10 +5679,13 @@ var server_msg = {
      */
     process_client_disconnect_from_server: function(msg)
     {
-        chat__clear_typing_from_client(msg.message.client_id);  // gone, so nothing is being typed
-
         let disconnecting_client = channel_tree__get_client_by_client_id(msg.message.client_id);
         let local_client = channel_tree__get_client_by_client_id(g_local_client_id);
+
+        // Remove the user before updating chat panels or playing a sound.
+        // A missing panel must not leave a disconnected user in the channel list.
+        channel_tree__forget_client(msg.message.client_id);
+        chat__clear_typing_from_client(msg.message.client_id);
 
         // a disconnect can arrive for a client we never fully registered locally (e.g. one still
         // mid key-exchange). the map guard further down returns cleanly in that case, but this
@@ -5683,26 +5752,6 @@ var server_msg = {
             UI.schedule_member_list_sync(); // active ring moves back to the channel circle
         }
 
-        let index = g_map_client_id_to_array_index.get(parseInt(msg.message.client_id));
-        if (index === undefined || index == -1)
-        {
-            // disconnect for a client that was never in our local list (e.g. one that dropped
-            // mid key-exchange). we skip the array removal, but say so instead of silently returning
-            console.warn("process_client_disconnect_from_server: no local entry for client_id " + msg.message.client_id + " (index " + index + "); skipping client_list removal");
-            return;
-        }
-
-        let lastIndex = g_client_list.length - 1;
-        let lastClient = g_client_list[lastIndex];
-
-        // move last client into removed spot
-        g_client_list[index] = lastClient;
-        g_map_client_id_to_array_index.set(lastClient.client_id, index);
-
-        // remove last
-        g_client_list.pop();
-        g_map_client_id_to_array_index.delete(parseInt(msg.message.client_id));
-
         UI.refresh_all_channel_fullness();
     },
     /**
@@ -5755,6 +5804,7 @@ var server_msg = {
         if (msg.message.client_id == g_local_client_id)
         {
             g_current_channel_id = msg.message.channel_id;
+            video__on_local_channel_changed();
             g_current_channel_keys = null;
 
             // the server answered, so we are allowed to go idle again
@@ -5907,7 +5957,7 @@ var server_msg = {
     process_channel_delete_from_server: function(msg)
     {
         console.log("channel deleted: channel_id=" + msg.message.channel_id);
-        if (msg.message.channel_deletor_id == g_local_client_id)
+        if (Number.isInteger(msg.message.channel_deletor_id) && msg.message.channel_deletor_id === g_local_client_id)
         {
             if (g_are_sound_effects_enabled)
             {
@@ -6030,6 +6080,9 @@ var server_msg = {
         g_channel_list[index].is_using_password = msg.message.is_using_password;
         g_channel_list[index].name = msg.message.channel_name;
         g_channel_list[index].is_audio_enabled = msg.message.is_audio_enabled;
+        // an older server sends no toggle: the channel then streams (the server side defaults the same way)
+        g_channel_list[index].is_video_stream_enabled = (msg.message.is_video_stream_enabled != false);
+        video__refresh_controls();
         g_channel_list[index].is_client_limit_active = msg.message.is_client_limit_active;
         g_channel_list[index].max_client_count = msg.message.max_client_count;
         UI.refresh_all_channel_fullness();
@@ -6138,6 +6191,7 @@ var server_msg = {
             has_maintainer: msg.message.has_maintainer,
             is_using_password: msg.message.is_using_password,
             is_audio_enabled: msg.message.is_audio_enabled,
+            is_video_stream_enabled: (msg.message.is_video_stream_enabled != false),
             is_temp_channel: msg.message.is_temp_channel,
             is_client_limit_active: msg.message.is_client_limit_active,
             max_client_count: msg.message.max_client_count,
@@ -7070,6 +7124,9 @@ var server_msg = {
                     value: g_current_channel_keys
                 });
 
+                // the video worker encrypts and decrypts stream packets with the same keys
+                video__post_channel_keys_to_worker();
+
                 // valid keys arrived from the announced maintainer - stop the reset countdown
                 keys__cancel_maintainer_keys_wait_timer();
 
@@ -7411,6 +7468,8 @@ var server_msg = {
                 single_client.is_muted_by_local_client = false;
                 single_client.unread_count = 0;
                 single_client.is_music_bot = msg.message.clients[i].is_music_bot;
+                single_client.music_bot_encryption = msg.message.clients[i].music_bot_encryption || 0;
+                single_client.music_bot_keys = msg.message.clients[i].music_bot_keys || null;
 
                 g_client_list.push(single_client);
                 g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
@@ -7449,6 +7508,8 @@ var server_msg = {
                 single_client.is_muted_by_local_client = false;
                 single_client.unread_count = 0;
                 single_client.is_music_bot = msg.message.clients[i].is_music_bot;
+                single_client.music_bot_encryption = msg.message.clients[i].music_bot_encryption || 0;
+                single_client.music_bot_keys = msg.message.clients[i].music_bot_keys || null;
 
                 g_client_list.push(single_client);
                 g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
@@ -7519,6 +7580,8 @@ var server_msg = {
                 single_client.is_muted_by_local_client = false;
                 single_client.unread_count = 0;
                 single_client.is_music_bot = msg.message.clients[i].is_music_bot;
+                single_client.music_bot_encryption = msg.message.clients[i].music_bot_encryption || 0;
+                single_client.music_bot_keys = msg.message.clients[i].music_bot_keys || null;
 
                 g_client_list.push(single_client);
                 g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
@@ -7633,6 +7696,9 @@ var server_msg = {
             server_msg.process_start_song_stream_from_server({ message: { client_id: listed.client_id, song_name: listed.song_name } });
         }
 
+        // a video stream already running in our channel: its icon appears; the offer, if we may watch, comes separately
+        video__apply_client_list(msg.message.clients);
+
         // a saved strip theme is applied before the server policy allowed avatars, so the grid never
         // armed; re-evaluate now that the flag and the clients exist (the refresh bulk-enqueues itself)
         UI.refresh_member_list_state();
@@ -7737,6 +7803,7 @@ var server_msg = {
                 { let rename_input = document.getElementById('connected-local-client-input'); if (rename_input != null) { rename_input.addEventListener("focusout", UI.connected_local_user_input_on_focusout); } }
 
                 g_current_channel_id = msg.message.channel_id;
+            video__on_local_channel_changed();
                 g_current_channel_keys = null;
 
                 console.log("local_user joined new channel, nulling out current_channel_keys");
@@ -10568,6 +10635,9 @@ function android_host__node_apply_idle_for_ui_state()
 
 g_show_message_avatars = (utils__storage_get("lemon_show_message_avatars") === "1");
 
+let stored_audio_connection = utils__storage_get("lemon_audio_connection", "");
+if (["webrtc", "websocket"].indexOf(stored_audio_connection) >= 0) { g_audio_connection_preference = stored_audio_connection; }
+
 let stored_rsa_key_bits = parseInt(utils__storage_get("lemon_rsa_key_bits", ""));
 if (G_ALLOWED_RSA_KEY_BITS.indexOf(stored_rsa_key_bits) >= 0) { g_rsa_key_bits = stored_rsa_key_bits; }
 
@@ -11347,6 +11417,7 @@ function android_host__enter_deep_idle(is_forced)
     console.log("connect-path: going idle" + (is_forced == true ? " (forced)" : ""));
 
     g_is_deep_idle = true;
+    audio_transport__reset();
 
     client_msg.send_go_to_idle_mode_request();
 
@@ -11391,6 +11462,8 @@ function android_host__enter_deep_idle(is_forced)
         }
         g_peer_connection_with_server = null;
         g_datachannel = null;
+        g_video_datachannel = null;
+        g_is_video_datachannel_connected = false;
         g_is_webrtc_datachannel_connected = false;
     }
 }
@@ -12124,6 +12197,9 @@ function connection__try_start_fast_reconnect(reason)
     }
 
     g_fast_reconnect.in_progress = true;
+    // Pending website replies belong to the old connection. Ask again after
+    // login so an interrupted lookup does not leave its message without a card.
+    link_previews__reset();
     g_fast_reconnect.resumed = false;
     g_fast_reconnect.pending_lists = null;
 
@@ -12273,6 +12349,8 @@ function connection__fast_reconnect_apply_lists()
  */
 function connection__reset_chat_app_keep_identity()
 {
+    link_previews__reset();
+    g_server_policy.allow_link_previews = false;
     // no connection, nobody is typing - drop the notices and the ticker with them
     g_typing.state = {};
     chat__render_typing_indicator();
@@ -12350,6 +12428,10 @@ function connection__reset_chat_app_keep_identity()
     g_chat_message_receiver_id = "main";
     g_is_client_list_retrieved = false;
     g_is_channel_list_retrieved = false;
+    audio_transport__reset();
+    g_media_keys_from_host = null;
+    g_media_server_key_layers_from_host = null;
+    g_audio_transport.mode = "webrtc";
     g_is_webrtc_datachannel_connected = false;
 
     // emptied in place, not reassigned: a fresh array would leave anything still
@@ -12390,6 +12472,12 @@ function connection__reset_chat_app_keep_identity()
     g_is_voice_chat_allowed_by_server = false;
     g_is_client_microphone_allowed_by_server = false;
     g_is_microphone_enabled = false;
+
+    // a stream we sent or watched is gone with the connection
+    if (typeof video__reset_on_disconnect === "function")
+    {
+        video__reset_on_disconnect();
+    }
     g_is_microphone_active = false;
     g_last_sent_value_microphone_usage = false;
 
@@ -12575,6 +12663,7 @@ async function connection__attempt_connection(target, identity)
     {
         g_host = g_autoconnect_details.host;
         port = g_autoconnect_details.port;
+        g_audio_transport.url = "ws://" + (g_host.indexOf(":") >= 0 && g_host[0] !== "[" ? "[" + g_host + "]" : g_host) + ":" + port + "/";
 
         let loopback_connection_string = "ws://127.0.0.1:" + target.port + "/";
         console.log("connection_string -> " + loopback_connection_string + " (loopback)");
@@ -12621,6 +12710,7 @@ async function connection__attempt_connection(target, identity)
     }
 
     let connection_string = protocol_part_of_connection_string + '' + g_host + ':' + connection_port + '/';
+    g_audio_transport.url = connection_string;
     console.log("connection_string -> " + connection_string);
 
     // say WHERE we are connecting: only now are the real host/port known
@@ -13792,6 +13882,10 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
+        else if (msg.message.type == "url_resolved")
+        {
+            global.postMessage({ type: "data_processing_worker__url_resolved", value: msg.message });
+        }
         else if (msg.message.type == "server_policy")
         {
             global.postMessage({
@@ -13939,6 +14033,31 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
+        // video streaming: the six control messages ride through untouched, video.js reads them on the main thread
+        else if (msg.message.type == "video_stream_state")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_state_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_offer")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_offer_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_viewer_request")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_viewer_request_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_viewer_state")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_viewer_state_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_keyframe_request")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_keyframe_request_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_refused")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_refused_from_server", value: msg });
+        }
         else if (msg.message.type == "chat_message_delete")
         {
             global.postMessage({
@@ -14007,6 +14126,40 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             global.postMessage({
                 type: "data_processing_worker__current_channel_active_microphone_usage_from_server",
                 value: msg
+            });
+        }
+        else if (msg.message.type == "music_bot_key")
+        {
+            global.postMessage(
+            {
+                type: "data_processing_worker__music_bot_key",
+                value: msg.message
+            });
+        }
+        else if (msg.message.type == "audio_websocket_session")
+        {
+            global.postMessage(
+            {
+                type: "data_processing_worker__audio_websocket_session",
+                value: msg.message
+            });
+        }
+        else if (msg.message.type == "video_websocket_session")
+        {
+            global.postMessage(
+            {
+                type: "data_processing_worker__video_websocket_session",
+                value: msg.message
+            });
+        }
+        else if (msg.message.type == "local_media_keys" && g_loopback_port > 0)
+        {
+            // only over the loopback: the node runtime on the same device hands the webview the two keys
+            // for its media frames. a real server never gets to send this
+            global.postMessage(
+            {
+                type: "data_processing_worker__local_media_keys",
+                value: msg.message
             });
         }
         else if (msg.message.type == "sdp_offer")
@@ -14640,6 +14793,8 @@ function keys__hide_rsa_key_too_weak_dialog()
 function keys__init_keys_object()
 {
     g_metadata_keys.length = 0; // clear it in case client is reconnecting
+    g_media_keys_from_host = null;
+    g_media_server_key_layers_from_host = null;
 
     if (g_are_server_details_predefined == true)
     {
@@ -14779,69 +14934,83 @@ function keys__decrypt_data_with_aes_keys(keys, data)
 }
 
 /**
- * @brief utf8 string -> zero-padded buffer (1024 bytes minimum) -> AES-CTR key layers -> base64
+ * @brief encrypts a text with a set of keys for a channel message or a channel picture
+ *
+ *        the text is written into a buffer of at least 1024 bytes that is otherwise zero, so a short message
+ *        and a long one look alike on the wire. then every key of the set is applied as one AES-CTR layer.
+ *        every message gets its own random 16 byte starting value, the message iv. without it, two messages
+ *        encrypted with the same key would use the same keystream, and anybody holding both could combine
+ *        them so that the encryption cancels out; the zero padding would even expose the keystream directly.
+ *        the message iv is not secret: it travels next to the ciphertext, and a receiver combines it with the
+ *        key's own iv to get the starting value for that key (keys__media_xor_blocks).
  *
  * @param array keys -> the key layers, each with key_bytes and iv_bytes
  * @param string string_to_encrypt -> the plaintext
  *
- * @return string the base64 ciphertext
+ * @return string a JSON text { "iv": <base64 of the message iv>, "data": <base64 of the ciphertext> }
  */
 function keys__encrypt_with_aes_keys_and_convert_to_base64(keys, string_to_encrypt)
 {
-    let byteArrayToSend = new Uint8Array(1024);
-    if (string_to_encrypt.length > 1024)
-    {
-        byteArrayToSend = new Uint8Array(string_to_encrypt.length);
-    }
-
     let textBytes = aesjs.utils.utf8.toBytes(string_to_encrypt);
+    let byteArrayToSend = new Uint8Array(textBytes.length > 1024 ? textBytes.length : 1024);
+    let message_iv = new Uint8Array(16);
 
-    for (i = 0; i < textBytes.length; i++)
-    {
-        byteArrayToSend[i] = textBytes[i];
-    }
+    byteArrayToSend.set(textBytes, 0);
+    crypto.getRandomValues(message_iv);
 
-    let base64EncryptedData = "";
     let encrypted_data_in_current_iteration = byteArrayToSend;
 
     for (let i = 0; i < keys.length; i++)
     {
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(keys[i].key_bytes, new aesjs.Counter(keys[i].iv_bytes));
-        encrypted_data_in_current_iteration = aesCtrCustom.encrypt(encrypted_data_in_current_iteration);
-
-        if (i + 1 == keys.length) // if end has been reached, convert encrypted bytes to base64string
-        {
-            base64EncryptedData = utils__bytesToBase64String(encrypted_data_in_current_iteration);
-        }
+        encrypted_data_in_current_iteration = keys__aes_ctr(keys[i].key_bytes, keys__media_xor_blocks(keys[i].iv_bytes, message_iv), encrypted_data_in_current_iteration);
     }
-    return base64EncryptedData;
+    return JSON.stringify({ iv: utils__bytesToBase64String(message_iv), data: utils__bytesToBase64String(encrypted_data_in_current_iteration) });
 }
 
 /**
- * @brief base64 -> AES-CTR key layers in reverse -> utf8 string cut at the first null terminator
- *        the encrypt side pads short messages up to 1024 bytes
+ * @brief the reverse of keys__encrypt_with_aes_keys_and_convert_to_base64: the key layers come off in reverse order, the text is cut at the first zero byte
+ *
+ *        a message from before the message iv existed is a bare base64 text, not a JSON text starting with
+ *        "{"; such a message was encrypted with each key's own iv as the starting value, and is decrypted
+ *        that way, so stored old messages still open
  *
  * @param array keys -> the key layers, each with key_bytes and iv_bytes
- * @param string string_to_decrypt -> the base64 ciphertext
+ * @param string string_to_decrypt -> the JSON text from the encrypt function, or an old bare base64 text
  *
  * @return string the plaintext
  */
 function keys__decrypt_base64_contents_with_aes_keys(keys, string_to_decrypt)
 {
-    let encrypted_data_in_current_iteration = utils__base64StringToBytes(string_to_decrypt);
+    let message_iv = null;
+    let payload = string_to_decrypt;
+
+    if (typeof string_to_decrypt === "string" && string_to_decrypt.charAt(0) === "{")
+    {
+        try
+        {
+            let envelope = JSON.parse(string_to_decrypt);
+            if (envelope != null && typeof envelope.iv === "string" && typeof envelope.data === "string")
+            {
+                message_iv = new Uint8Array(utils__base64StringToBytes(envelope.iv));
+                payload = envelope.data;
+            }
+        }
+        catch (parse_error)
+        {
+            // not an envelope after all: decrypted as an old message below
+        }
+    }
+
+    let encrypted_data_in_current_iteration = new Uint8Array(utils__base64StringToBytes(payload));
 
     // decrypt by applying keys in reverse order
     for (let i = (keys.length - 1); i >= 0; i--)
     {
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(keys[i].key_bytes, new aesjs.Counter(keys[i].iv_bytes));
-        encrypted_data_in_current_iteration = aesCtrCustom.decrypt(encrypted_data_in_current_iteration);
+        let block = message_iv != null ? keys__media_xor_blocks(keys[i].iv_bytes, message_iv) : new Uint8Array(keys[i].iv_bytes);
+        encrypted_data_in_current_iteration = keys__aes_ctr(keys[i].key_bytes, block, encrypted_data_in_current_iteration);
     }
 
-    decryptedBytes = encrypted_data_in_current_iteration;
-
-    // coerce to Uint8Array: when no cipher layer is applied (zero metadata keys) the value is still the
-    // plain array from utils__base64StringToBytes, and TextDecoder.decode rejects a plain array
-    let str1 = new TextDecoder().decode(new Uint8Array(decryptedBytes));
+    let str1 = new TextDecoder().decode(encrypted_data_in_current_iteration);
     let decrypted_metadata = utils__substringByNullTerminator(str1);
     return decrypted_metadata;
 }
@@ -14927,9 +15096,33 @@ function keys__dh_derive_keys(shared_secret_string)
     return { enc_key: okm.slice(0, 32), mac_key: okm.slice(32, 64) };
 }
 
+// Read the type stored in a metadata key and use the encryption method that
+// belongs to it. If another method is added, the server must support it too,
+// and both ends must build its encryption starting value in the same way.
+// Refuse an unknown type instead of silently treating its bytes as an AES key.
+function keys__crypt_metadata_layer(key, message_iv, data, encrypt)
+{
+    switch (key.info)
+    {
+        case "aes-ctr":
+        {
+            if (key.key_bytes.length !== 32 || message_iv.length !== 16)
+            {
+                throw new Error("Invalid AES-256-CTR metadata key or IV");
+            }
+            let cipher = new aesjs.ModeOfOperation.ctr(key.key_bytes, new aesjs.Counter(Array.from(message_iv)));
+            return encrypt ? cipher.encrypt(data) : cipher.decrypt(data);
+        }
+        default:
+        {
+            throw new Error("Unsupported metadata cipher: " + key.info);
+        }
+    }
+}
+
 /**
  * @brief wraps an outgoing message for the wire
- *        pads, AES-CTR encrypts with every metadata key under a fresh random IV, base64s, and
+ *        pads, encrypts with every typed metadata key under a fresh random IV, base64s, and
  *        builds the { iv, data [, tag] } envelope; on the loopback (a ui-only runtime) the text
  *        stays plain, node wraps it toward the real server
  *
@@ -14953,18 +15146,9 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
         return string_to_encrypt;
     }
 
-    let byteArrayToSend = new Uint8Array(1024);
-    if (string_to_encrypt.length > 1024)
-    {
-        byteArrayToSend = new Uint8Array(string_to_encrypt.length);
-    }
-
     let textBytes = aesjs.utils.utf8.toBytes(string_to_encrypt);
-
-    for (i = 0; i < textBytes.length; i++)
-    {
-        byteArrayToSend[i] = textBytes[i];
-    }
+    let byteArrayToSend = new Uint8Array(Math.max(1024, textBytes.length));
+    byteArrayToSend.set(textBytes);
 
     // fresh random IV per message (CSPRNG). the same IV seeds every metadata layer's AES-CTR counter;
     // it is not secret, so it travels as a separate "iv" field in the JSON envelope next to the ciphertext.
@@ -14975,10 +15159,10 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
 
     for (let i = 0; i < g_metadata_keys.length; i++)
     {
-        let key_bytes = g_metadata_keys[i].key_bytes;
-
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(key_bytes, new aesjs.Counter(Array.from(message_iv)));
-        encrypted_data_in_current_iteration = aesCtrCustom.encrypt(encrypted_data_in_current_iteration);
+        // The key made from this connection's shared secret is first in the
+        // list. Encrypt with it first, then with the keys from the server settings.
+        encrypted_data_in_current_iteration = keys__crypt_metadata_layer(
+            g_metadata_keys[i], message_iv, encrypted_data_in_current_iteration, true);
     }
 
     // base64 the result after all layers. with 0 metadata keys this is just the plaintext bytes,
@@ -14992,7 +15176,11 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
     let dh_mac_key = null;
     for (let i = 0; i < g_metadata_keys.length; i++)
     {
-        if (g_metadata_keys[i].mac_bytes) { dh_mac_key = g_metadata_keys[i].mac_bytes; break; }
+        if (g_metadata_keys[i].mac_bytes)
+        {
+            dh_mac_key = g_metadata_keys[i].mac_bytes;
+            break;
+        }
     }
     if (dh_mac_key)
     {
@@ -15035,33 +15223,58 @@ function keys__decrypt_message_metadata(envelope_json)
     let dh_mac_key = null;
     for (let i = 0; i < g_metadata_keys.length; i++)
     {
-        if (g_metadata_keys[i].mac_bytes) { dh_mac_key = g_metadata_keys[i].mac_bytes; break; }
+        if (g_metadata_keys[i].mac_bytes)
+        {
+            dh_mac_key = g_metadata_keys[i].mac_bytes;
+            break;
+        }
     }
     if (dh_mac_key)
     {
-        if (typeof envelope.tag != "string") { return ""; }
+        if (typeof envelope.tag != "string")
+        {
+            return "";
+        }
         let expected_tag = utils__bytesToBase64String(keys___hmac_sha256(dh_mac_key, aesjs.utils.utf8.toBytes(envelope.iv + envelope.data)));
-        if (expected_tag !== envelope.tag) { return ""; }
+        if (expected_tag !== envelope.tag)
+        {
+            return "";
+        }
     }
 
-    let message_iv = utils__base64StringToBytes(envelope.iv);
-    let encrypted_data_in_current_iteration = utils__base64StringToBytes(envelope.data);
-
-    for (let i = (g_metadata_keys.length - 1); i >= 0; i--)
+    try
     {
-        let key_bytes = g_metadata_keys[i].key_bytes;
+        let message_iv = utils__base64StringToBytes(envelope.iv);
+        let current = new Uint8Array(utils__base64StringToBytes(envelope.data));
+        if (message_iv.length !== 16)
+        {
+            return "";
+        }
+        // The server encrypts with its configured keys first and this client's
+        // connection key last. Undo the connection's encryption first, then
+        // use the configured keys from last to first. Keep that order so this
+        // also works with methods where changing the key order changes the result.
+        for (let i = g_metadata_keys.length - 1; i >= 0; i--)
+        {
+            if (g_metadata_keys[i].mac_bytes)
+            {
+                current = keys__crypt_metadata_layer(g_metadata_keys[i], message_iv, current, false);
+            }
+        }
+        for (let i = g_metadata_keys.length - 1; i >= 0; i--)
+        {
+            if (!g_metadata_keys[i].mac_bytes)
+            {
+                current = keys__crypt_metadata_layer(g_metadata_keys[i], message_iv, current, false);
+            }
+        }
 
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(key_bytes, new aesjs.Counter(Array.from(message_iv)));
-        encrypted_data_in_current_iteration = aesCtrCustom.decrypt(encrypted_data_in_current_iteration);
+        return utils__substringByNullTerminator(new TextDecoder().decode(current));
     }
-
-    decryptedBytes = encrypted_data_in_current_iteration;
-
-    // coerce to Uint8Array: when no cipher layer is applied (zero metadata keys) the value is still the
-    // plain array from utils__base64StringToBytes, and TextDecoder.decode rejects a plain array
-    let str1 = new TextDecoder().decode(new Uint8Array(decryptedBytes));
-    let decrypted_metadata = utils__substringByNullTerminator(str1);
-    return decrypted_metadata;
+    catch (exception)
+    {
+        return "";
+    }
 }
 
 // ---- channel keys ----
@@ -15201,10 +15414,439 @@ function keys__create_and_send_new_channel_keys()
     // is posted to it and the encrypted keys come back for the main thread to route
 }
 
+// ================================================================================================
+// the encryption of audio and video frames on the way between this client and the server
+// ================================================================================================
+//
+// why this exists: a voice frame or a video packet is encrypted with the channel keys, which only the
+// members of the channel have, so the server cannot listen in. two things are still open on the way to
+// the server. first, a few bytes next to the channel key encryption, for example who sent the frame, can
+// be read by anybody on the network path when the connection has no TLS. second, nothing proves that a
+// frame really comes from the client it claims to come from: somebody on the path could change a frame or
+// insert one. so every frame is encrypted a second time, with the two keys this client and the server
+// derived from the Diffie-Hellman shared secret at login (the encryption key and the checksum key, the
+// same ones that encrypt the JSON messages), and an authentication code is appended: a checksum that only
+// somebody with the checksum key can compute, HMAC-SHA256. the server checks the code, removes this
+// client's encryption, and encrypts the frame again for every receiver with the receiver's keys. the
+// server side is media_auth.c, which also explains why every frame needs a counter.
+//
+// a frame on the wire:           [1 byte version 2][8 bytes frame counter][encrypted part][8 bytes authentication code]
+// the encrypted part, decrypted: [4 bytes sender id, least significant byte first][8 bytes sender counter][the inner ciphertext]
+// the inner ciphertext is the frame content under the channel keys (or a music bot's keys) and then under
+// the server keys. the counter block (the 16 byte starting value of AES-CTR) of every inner layer is
+// [4 bytes sender id][8 bytes sender counter][4 bytes zero], combined by XOR with the key's iv when the key
+// has one. the counter block of the second encryption is [8 bytes frame counter][1 byte direction: 0 to
+// the server, 1 from the server][1 byte stream: 0 audio, 1 video][6 bytes zero].
+var MEDIA_FRAME_VERSION = 2;
+var MEDIA_FRAME_HEADER = 9;
+var MEDIA_BODY_HEADER = 12;
+var MEDIA_FRAME_CODE = 8;
+var MEDIA_FRAME_OVERHEAD = MEDIA_FRAME_HEADER + MEDIA_BODY_HEADER + MEDIA_FRAME_CODE;
+var MEDIA_STREAM_AUDIO = 0;
+var MEDIA_STREAM_VIDEO = 1;
+var MEDIA_DIRECTION_TO_SERVER = 0;
+var MEDIA_DIRECTION_FROM_SERVER = 1;
+
+// on android the node runtime hands the session and configured server keys to the webview over loopback
+var g_media_keys_from_host = null;
+var g_media_server_key_layers_from_host = null;
+
+/**
+ * @brief turns a hex text into bytes
+ *
+ * @param string hex -> two hex digits per byte
+ *
+ * @return Uint8Array the bytes
+ */
+function keys__hex_to_bytes(hex)
+{
+    let bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++)
+    {
+        bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+    return bytes;
+}
+
+/**
+ * @brief turns bytes into a hex text
+ *
+ * @param array bytes -> plain or typed
+ *
+ * @return string two hex digits per byte
+ */
+function keys__bytes_to_hex(bytes)
+{
+    let hex = "";
+    for (let i = 0; i < bytes.length; i++)
+    {
+        hex += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
+    }
+    return hex;
+}
+
+/**
+ * @brief keeps the complete media key set the host runtime handed over (android: node to webview)
+ *
+ * @param string encryption_key_hex -> the 32 byte encryption key as hex
+ * @param string checksum_key_hex -> the 32 byte checksum key as hex
+ * @param array server_key_hexes -> the ordered 32 byte server keys as hex
+ *
+ * @return void
+ */
+function keys__set_media_keys_from_host(encryption_key_hex, checksum_key_hex, server_key_hexes = [])
+{
+    let key_pattern = /^[0-9a-f]{64}$/i;
+    if (typeof encryption_key_hex !== "string" || typeof checksum_key_hex !== "string"
+        || !key_pattern.test(encryption_key_hex) || !key_pattern.test(checksum_key_hex) || !Array.isArray(server_key_hexes))
+    {
+        return;
+    }
+    let server_layers = [];
+    for (let i = 0; i < server_key_hexes.length; i++)
+    {
+        if (typeof server_key_hexes[i] !== "string" || !key_pattern.test(server_key_hexes[i]))
+        {
+            return;
+        }
+        server_layers.push(
+        {
+            key_bytes: keys__hex_to_bytes(server_key_hexes[i]),
+            iv_bytes: null
+        });
+    }
+    g_media_keys_from_host =
+    {
+        key_bytes: keys__hex_to_bytes(encryption_key_hex),
+        mac_bytes: keys__hex_to_bytes(checksum_key_hex)
+    };
+    g_media_server_key_layers_from_host = server_layers;
+}
+
+/**
+ * @brief the two keys of this client for the media frames
+ *
+ *        the Diffie-Hellman entry of g_metadata_keys is the one that carries a checksum key (mac_bytes);
+ *        on android the webview has none and uses the keys the node runtime handed over
+ *
+ * @return object { key_bytes, mac_bytes } or null before the key exchange
+ */
+function keys__media_session_layer()
+{
+    for (let i = 0; i < g_metadata_keys.length; i++)
+    {
+        if (g_metadata_keys[i].mac_bytes)
+        {
+            return { key_bytes: g_metadata_keys[i].key_bytes, mac_bytes: g_metadata_keys[i].mac_bytes };
+        }
+    }
+    return g_media_keys_from_host;
+}
+
+/**
+ * @brief the server keys as layers for the inner encryption of media frames: every entry of g_metadata_keys without a checksum key
+ *
+ * @return array [{ key_bytes, iv_bytes: null }]
+ */
+function keys__media_server_key_layers()
+{
+    if (g_media_server_key_layers_from_host != null)
+    {
+        return g_media_server_key_layers_from_host;
+    }
+    let layers = [];
+    for (let i = 0; i < g_metadata_keys.length; i++)
+    {
+        if (!g_metadata_keys[i].mac_bytes)
+        {
+            layers.push({ key_bytes: g_metadata_keys[i].key_bytes, iv_bytes: null });
+        }
+    }
+    return layers;
+}
+
+/**
+ * @brief a fresh frame counter: 8 random bytes, so the counters of this session differ from those of any earlier session
+ *
+ * @return Uint8Array 8 bytes
+ */
+function keys__counter_create()
+{
+    let counter = new Uint8Array(8);
+    crypto.getRandomValues(counter);
+    return counter;
+}
+
+/**
+ * @brief adds one to a frame counter, in place; the last byte is the least significant one
+ *
+ * @param Uint8Array counter -> 8 bytes
+ *
+ * @return void
+ */
+function keys__counter_increment(counter)
+{
+    for (let i = 7; i >= 0; i--)
+    {
+        counter[i] = (counter[i] + 1) & 0xff;
+        if (counter[i] !== 0)
+        {
+            return;
+        }
+    }
+}
+
+/**
+ * @brief combines two 16 byte blocks with XOR; a missing block counts as zero
+ *
+ * @param array left -> 16 bytes or null
+ * @param array right -> 16 bytes or null
+ *
+ * @return Uint8Array the combined block
+ */
+function keys__media_xor_blocks(left, right)
+{
+    let block = new Uint8Array(16);
+    for (let i = 0; i < 16; i++)
+    {
+        block[i] = ((left != null ? left[i] : 0) ^ (right != null ? right[i] : 0)) & 0xff;
+    }
+    return block;
+}
+
+/**
+ * @brief the counter block of an inner layer: the sender id, the sender counter, and the key's own iv when it has one
+ *
+ * @param number sender_id -> the sending client's id
+ * @param Uint8Array counter_bytes -> the sender counter, 8 bytes
+ * @param array layer_iv -> the key's iv, 16 bytes, or null
+ *
+ * @return Uint8Array 16 bytes
+ */
+function keys__media_inner_block(sender_id, counter_bytes, layer_iv)
+{
+    let block = new Uint8Array(16);
+    block[0] = sender_id & 0xff;
+    block[1] = (sender_id >> 8) & 0xff;
+    block[2] = (sender_id >> 16) & 0xff;
+    block[3] = (sender_id >> 24) & 0xff;
+    block.set(counter_bytes, 4);
+    return keys__media_xor_blocks(block, layer_iv);
+}
+
+/**
+ * @brief the counter block of the second encryption, the one between this client and the server
+ *
+ * @param Uint8Array counter_bytes -> the frame counter, 8 bytes
+ * @param number direction -> MEDIA_DIRECTION_TO_SERVER or MEDIA_DIRECTION_FROM_SERVER
+ * @param number stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ *
+ * @return Uint8Array 16 bytes
+ */
+function keys__media_session_block(counter_bytes, direction, stream)
+{
+    let block = new Uint8Array(16);
+    block.set(counter_bytes, 0);
+    block[8] = direction;
+    block[9] = stream;
+    return block;
+}
+
+/**
+ * @brief one AES-CTR pass over bytes; the same call encrypts and decrypts
+ *
+ * @param array key_bytes -> the 32 byte key
+ * @param Uint8Array block -> the 16 byte counter block to start from
+ * @param Uint8Array data -> the bytes
+ *
+ * @return Uint8Array the result, a new array
+ */
+function keys__aes_ctr(key_bytes, block, data)
+{
+    return new aesjs.ModeOfOperation.ctr(key_bytes, new aesjs.Counter(Array.from(block))).encrypt(data);
+}
+
+/**
+ * @brief applies the inner layers (channel keys, a music bot's keys, or the server keys) to the content of a frame
+ *
+ * @param array layers -> [{ key_bytes, iv_bytes }], iv_bytes may be null
+ * @param number sender_id -> the sending client's id, part of every counter block
+ * @param Uint8Array counter_bytes -> the sender counter, part of every counter block
+ * @param Uint8Array data -> the bytes
+ * @param boolean is_encrypt -> true applies the layers first to last, false last to first
+ *
+ * @return Uint8Array the result
+ */
+function keys__media_apply_inner_layers(layers, sender_id, counter_bytes, data, is_encrypt)
+{
+    let current = new Uint8Array(data);
+    for (let step = 0; step < layers.length; step++)
+    {
+        let i = is_encrypt ? step : (layers.length - 1 - step);
+        current = keys__aes_ctr(layers[i].key_bytes, keys__media_inner_block(sender_id, counter_bytes, layers[i].iv_bytes), current);
+    }
+    return current;
+}
+
+/**
+ * @brief puts the sender id and the sender counter in front of the inner ciphertext: that is the part the second encryption covers
+ *
+ * @return Uint8Array [4 bytes sender id][8 bytes counter][inner]
+ */
+function keys__media_build_body(sender_id, counter_bytes, inner)
+{
+    let body = new Uint8Array(MEDIA_BODY_HEADER + inner.length);
+    body[0] = sender_id & 0xff;
+    body[1] = (sender_id >> 8) & 0xff;
+    body[2] = (sender_id >> 16) & 0xff;
+    body[3] = (sender_id >> 24) & 0xff;
+    body.set(counter_bytes, 4);
+    body.set(inner, MEDIA_BODY_HEADER);
+    return body;
+}
+
+/**
+ * @brief the second encryption of a frame this client sends: the body is encrypted with the encryption key and the authentication code is appended
+ *
+ * @param object session_layer -> { key_bytes, mac_bytes } from keys__media_session_layer
+ * @param number stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ * @param Uint8Array counter_bytes -> the frame counter, 8 bytes, increased before every frame
+ * @param Uint8Array body -> from keys__media_build_body
+ *
+ * @return Uint8Array the frame for the wire, or null without keys
+ */
+function keys__media_encrypt_frame(session_layer, stream, counter_bytes, body)
+{
+    if (session_layer == null || body.length < MEDIA_BODY_HEADER)
+    {
+        return null;
+    }
+    let frame = new Uint8Array(MEDIA_FRAME_HEADER + body.length + MEDIA_FRAME_CODE);
+    frame[0] = MEDIA_FRAME_VERSION;
+    frame.set(counter_bytes, 1);
+    frame.set(keys__aes_ctr(session_layer.key_bytes, keys__media_session_block(counter_bytes, MEDIA_DIRECTION_TO_SERVER, stream), body), MEDIA_FRAME_HEADER);
+    let code = keys___hmac_sha256(session_layer.mac_bytes, frame.subarray(0, MEDIA_FRAME_HEADER + body.length));
+    frame.set(code.slice(0, MEDIA_FRAME_CODE), MEDIA_FRAME_HEADER + body.length);
+    return frame;
+}
+
+/**
+ * @brief a frame that came from the server: the authentication code is checked and the second encryption removed
+ *
+ *        the code is compared byte by byte without stopping early, so the time the comparison takes tells
+ *        nothing about where the first difference is
+ *
+ * @param object session_layer -> { key_bytes, mac_bytes } from keys__media_session_layer
+ * @param number stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ * @param Uint8Array frame -> the frame from the wire
+ *
+ * @return object { sender_id, counter_bytes, inner } or null when the frame is not a valid frame of this client
+ */
+function keys__media_decrypt_frame(session_layer, stream, frame)
+{
+    if (session_layer == null || !(frame instanceof Uint8Array) || frame.length <= MEDIA_FRAME_OVERHEAD || frame[0] !== MEDIA_FRAME_VERSION)
+    {
+        return null;
+    }
+    let code_offset = frame.length - MEDIA_FRAME_CODE;
+    let expected = keys___hmac_sha256(session_layer.mac_bytes, frame.subarray(0, code_offset));
+    let difference = 0;
+    for (let i = 0; i < MEDIA_FRAME_CODE; i++)
+    {
+        difference |= expected[i] ^ frame[code_offset + i];
+    }
+    if (difference !== 0)
+    {
+        return null;
+    }
+    let body = keys__aes_ctr(session_layer.key_bytes, keys__media_session_block(frame.subarray(1, MEDIA_FRAME_HEADER), MEDIA_DIRECTION_FROM_SERVER, stream), frame.subarray(MEDIA_FRAME_HEADER, code_offset));
+    return {
+        sender_id: (body[0] | (body[1] << 8) | (body[2] << 16) | (body[3] << 24)) >>> 0,
+        counter_bytes: body.slice(4, MEDIA_BODY_HEADER),
+        inner: body.subarray(MEDIA_BODY_HEADER)
+    };
+}
+
 // channel-tree.js is embedded in template.html along with the other client files, and in the node bundle
 // it holds the lookups over g_channel_list, g_client_list, g_icons and g_tags, the html of a client row,
 // and the avatars on those rows (the cache, the lazy loading queue and the prefetch after joining)
 // messages.js and ui.js call it while rendering the tree
+
+// Keep the row the user is looking at in the same place when server updates add
+// or remove rows above it. If the current channel is outside the visible area,
+// keep the first visible row instead, so reading another channel still works.
+function channel_tree__apply_server_update(handler, message)
+{
+    let container = typeof document === "undefined" ? null : document.getElementById("channel-list-container");
+    let anchors = [];
+    if (container != null && container.clientHeight > 0)
+    {
+        let viewport = container.getBoundingClientRect();
+        let rows = container.querySelectorAll(".single-channel, .connected-client");
+        for (let row of rows)
+        {
+            let bounds = row.getBoundingClientRect();
+            if (bounds.height <= 0 || bounds.bottom <= viewport.top || bounds.top >= viewport.bottom)
+            {
+                continue;
+            }
+            let attribute = row.classList.contains("single-channel") ? "data-channel-id" : "data-connected-client-id";
+            let id = row.getAttribute(attribute);
+            let anchor = { attribute: attribute, id: id, top: bounds.top };
+            if (attribute === "data-channel-id" && Number(id) === g_current_channel_id)
+            {
+                anchors.unshift(anchor);
+            }
+            else
+            {
+                anchors.push(anchor);
+            }
+        }
+    }
+    try
+    {
+        return handler.call(server_msg, message);
+    }
+    finally
+    {
+        for (let anchor of anchors)
+        {
+            let row = container.querySelector('[' + anchor.attribute + '="' + anchor.id + '"]');
+            if (row == null || row.getBoundingClientRect().height <= 0)
+            {
+                continue;
+            }
+            container.scrollTop += row.getBoundingClientRect().top - anchor.top;
+            break;
+        }
+    }
+}
+
+// Remove every copy of a client row and its list entry. Repeated connection
+// notices must not leave an older copy behind when that client disconnects.
+function channel_tree__forget_client(client_id)
+{
+    client_id = Number(client_id);
+    if (typeof document !== "undefined")
+    {
+        for (let row of document.querySelectorAll('.connected-client[data-connected-client-id="' + client_id + '"]'))
+        {
+            row.remove();
+        }
+    }
+    g_map_client_id_to_array_index.clear();
+    let kept = 0;
+    for (let client of g_client_list)
+    {
+        if (client.client_id !== client_id)
+        {
+            g_client_list[kept] = client;
+            g_map_client_id_to_array_index.set(client.client_id, kept);
+            kept++;
+        }
+    }
+    g_client_list.length = kept;
+}
 
 // state private to this file
 var PREFETCH_AVATARS_AUTOMATICALLY = true;
@@ -15772,6 +16414,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                         </div>\n\
                         <p>]</p>\n\
                     </div>\n\
+                    <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
                     <div class='client-tags' id =\"client-tags-" + client_id + "\">\n\
                     </div>\n\
                 </div>";
@@ -15801,6 +16444,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                         </div>\n\
                         <p>]</p>\n\
                     </div>\n\
+                    <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
                     <div class='client-tags' id=\"client-tags-" + client_id + "\">\n\
                     </div>\n\
                     <svg class=\"client-ignore-state\" style=\"margin-left: "+indentation_level * 20+"px; display: "+client_ignore_state_display+";\"  viewBox=\"0 0 100 20\">\n\
@@ -17730,6 +18374,349 @@ function chat__render_unread_badge(client_id, is_visible)
     badge.innerHTML = chat__get_unread_count(client_id);
 }
 
+// This file adds a small card below a chat message that contains a website link.
+// The client sends the URL to its chat server, which looks up the page title,
+// description and picture. These requests and replies use the same metadata
+// encryption as channel names and other messages between client and server.
+var g_link_previews =
+{
+    observer: null,
+    timer: null,
+    sequence: 0,
+    messages: new Map(),
+    urls: new Map()
+};
+
+function link_previews__url(value)
+{
+    try
+    {
+        let url = new URL(value);
+        if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password)
+        {
+            return null;
+        }
+        url.hash = "";
+        return url.href.length <= 2048 ? url.href : null;
+    }
+    catch (error)
+    {
+        return null;
+    }
+}
+
+function link_previews__extract(text)
+{
+    let urls = [];
+    let matches = text.match(/https?:\/\/[^\s<>"']+/gi) || [];
+    for (let match of matches)
+    {
+        match = match.replace(/[.,;!?]+$/, "");
+        for (let pair of ["()", "[]", "{}"])
+        {
+            while (match.endsWith(pair[1]) && match.split(pair[1]).length > match.split(pair[0]).length)
+            {
+                match = match.slice(0, -1);
+            }
+        }
+        let url = link_previews__url(match);
+        if (url !== null && !urls.includes(url))
+        {
+            urls.push(url);
+        }
+        if (urls.length === 2)
+        {
+            break;
+        }
+    }
+    return urls;
+}
+
+// Page text is displayed as text, never as HTML supplied by the website. The
+// picture must be image bytes returned by the server; it cannot be a remote
+// address that would make every reader contact the website separately.
+function link_previews__render(paragraph, state)
+{
+    if (state.cards !== null)
+    {
+        state.cards.remove();
+        state.cards = null;
+    }
+    if (!paragraph.isConnected || !g_server_policy.allow_link_previews)
+    {
+        return;
+    }
+    let cards = document.createElement("div");
+    cards.className = "chat-link-previews";
+    for (let url of state.urls)
+    {
+        let entry = g_link_previews.urls.get(url);
+        let result = entry && entry.result;
+        if (!result || result.status !== "ok")
+        {
+            continue;
+        }
+        let card = document.createElement("a");
+        card.className = "chat-link-preview";
+        card.href = url;
+        card.target = "_blank";
+        card.rel = "noopener noreferrer";
+        for (let field of ["site_name", "title", "description"])
+        {
+            let value = typeof result[field] === "string" ? result[field].slice(0, 1024) : "";
+            if (field === "site_name" && !value)
+            {
+                value = new URL(url).hostname;
+            }
+            if (value)
+            {
+                let line = document.createElement("span");
+                line.className = "chat-link-preview-" + field;
+                line.textContent = value;
+                card.appendChild(line);
+            }
+        }
+        if (typeof result.image === "string" && result.image.length <= 350000
+            && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(result.image))
+        {
+            let image = document.createElement("img");
+            image.src = result.image;
+            image.alt = "";
+            image.loading = "lazy";
+            image.addEventListener("load", function()
+            {
+                chat__scroll_chat_to_end(false);
+            });
+            image.addEventListener("error", function()
+            {
+                image.remove();
+            });
+            card.appendChild(image);
+        }
+        cards.appendChild(card);
+    }
+    if (cards.childElementCount > 0)
+    {
+        paragraph.insertAdjacentElement("afterend", cards);
+        state.cards = cards;
+        chat__scroll_chat_to_end(false);
+    }
+}
+
+function link_previews__forget(paragraph)
+{
+    let state = g_link_previews.messages.get(paragraph);
+    if (state)
+    {
+        if (state.cards)
+        {
+            state.cards.remove();
+        }
+        g_link_previews.messages.delete(paragraph);
+    }
+}
+
+function link_previews__scan(paragraph)
+{
+    let text = paragraph.textContent;
+    let previous = g_link_previews.messages.get(paragraph);
+    if (previous && previous.text === text)
+    {
+        return;
+    }
+    link_previews__forget(paragraph);
+    let urls = link_previews__extract(text);
+    if (urls.length === 0)
+    {
+        return;
+    }
+    let state = { text: text, urls: urls, cards: null };
+    g_link_previews.messages.set(paragraph, state);
+    for (let url of urls)
+    {
+        if (!g_link_previews.urls.has(url))
+        {
+            // Bound the stored images and requests even in a very long chat.
+            if (g_link_previews.urls.size >= 64)
+            {
+                let removed = false;
+                for (let [old_url, entry] of g_link_previews.urls)
+                {
+                    if (entry.finished)
+                    {
+                        g_link_previews.urls.delete(old_url);
+                        removed = true;
+                        break;
+                    }
+                }
+                if (!removed)
+                {
+                    continue;
+                }
+            }
+            g_link_previews.urls.set(url, { request_id: null, sent: 0, finished: false, result: null });
+        }
+    }
+    link_previews__render(paragraph, state);
+}
+
+// Send a few requests at a time. A missing reply must not keep the queue stuck
+// forever, for example when the connection drops during a website lookup.
+function link_previews__pump()
+{
+    if (!g_is_authenticated || !g_server_policy.allow_link_previews)
+    {
+        return;
+    }
+    let in_flight = 0;
+    for (let entry of g_link_previews.urls.values())
+    {
+        if (entry.sent && !entry.finished)
+        {
+            if (Date.now() - entry.sent > 90000)
+            {
+                entry.finished = true;
+            }
+            else
+            {
+                in_flight++;
+            }
+        }
+    }
+    if (in_flight >= 4)
+    {
+        return;
+    }
+    for (let [url, entry] of g_link_previews.urls)
+    {
+        if (!entry.sent && !entry.finished)
+        {
+            let needed = false;
+            for (let [paragraph, state] of g_link_previews.messages)
+            {
+                if (paragraph.isConnected && state.urls.includes(url))
+                {
+                    needed = true;
+                    break;
+                }
+            }
+            if (!needed)
+            {
+                g_link_previews.urls.delete(url);
+                continue;
+            }
+            entry.request_id = "preview-" + (++g_link_previews.sequence);
+            entry.sent = Date.now();
+            connection__send_message_object({ message: { type: "resolve_url", request_id: entry.request_id, url: url } });
+            break;
+        }
+    }
+}
+
+function link_previews__resolved(message)
+{
+    if (!message || !g_server_policy.allow_link_previews)
+    {
+        return;
+    }
+    let entry = g_link_previews.urls.get(message.url);
+    if (!entry || entry.finished || !entry.request_id || entry.request_id !== message.request_id)
+    {
+        return;
+    }
+    entry.finished = true;
+    entry.result = message;
+    for (let [paragraph, state] of g_link_previews.messages)
+    {
+        if (state.urls.includes(message.url))
+        {
+            link_previews__render(paragraph, state);
+        }
+    }
+}
+
+function link_previews__reset()
+{
+    if (g_link_previews.observer)
+    {
+        g_link_previews.observer.disconnect();
+        g_link_previews.observer = null;
+    }
+    clearInterval(g_link_previews.timer);
+    g_link_previews.timer = null;
+    for (let paragraph of g_link_previews.messages.keys())
+    {
+        link_previews__forget(paragraph);
+    }
+    g_link_previews.urls.clear();
+}
+
+function link_previews__apply_policy()
+{
+    if (!g_server_policy.allow_link_previews)
+    {
+        link_previews__reset();
+        return;
+    }
+    if (typeof MutationObserver === "undefined" || g_link_previews.observer)
+    {
+        return;
+    }
+    let container = document.getElementById("chat-context-container");
+    if (!container)
+    {
+        return;
+    }
+    let selector = ".single-chat-message-content-p";
+    g_link_previews.observer = new MutationObserver(function(changes)
+    {
+        for (let paragraph of g_link_previews.messages.keys())
+        {
+            if (!container.contains(paragraph))
+            {
+                link_previews__forget(paragraph);
+            }
+        }
+        let paragraphs = new Set();
+        for (let change of changes)
+        {
+            let target = change.target.nodeType === 1 ? change.target : change.target.parentElement;
+            let paragraph = target && target.closest(selector);
+            if (paragraph)
+            {
+                paragraphs.add(paragraph);
+            }
+            for (let node of change.addedNodes)
+            {
+                if (node.nodeType === 1 && !node.closest(".chat-link-previews"))
+                {
+                    if (node.matches(selector))
+                    {
+                        paragraphs.add(node);
+                    }
+                    for (let added of node.querySelectorAll(selector))
+                    {
+                        paragraphs.add(added);
+                    }
+                }
+            }
+        }
+        for (let paragraph of paragraphs)
+        {
+            if (container.contains(paragraph))
+            {
+                link_previews__scan(paragraph);
+            }
+        }
+    });
+    g_link_previews.observer.observe(container, { childList: true, subtree: true, characterData: true });
+    for (let paragraph of container.querySelectorAll(selector))
+    {
+        link_previews__scan(paragraph);
+    }
+    g_link_previews.timer = setInterval(link_previews__pump, 750);
+}
+
 // layout.js is embedded in template.html along with the other client files
 // it is the desktop grid layout engine: column order and widths, the chat-input row and the edit mode,
 // persisted in localStorage under lemon_layout; touch devices keep the legacy layout and skip it
@@ -18374,6 +19361,14 @@ function voice__probe_webrtc_udp_and_warn()
  */
 async function voice__webrtc_datachannel_connection_check(is_this_reconnect = false)
 {
+    audio_transport__start();
+    // the datachannel is needed for voice over webrtc, as the fallback of a websocket that does not come up, or for video
+    if (audio_transport__wants_webrtc() === false)
+    {
+        g_is_webrtc_datachannel_check_running = false;
+        return;
+    }
+
     // voice lives in the webview only; node has no webrtc and must never enter this.
     // the caller set the running flag, so it must be dropped here too
     if (typeof RTCPeerConnection === "undefined")
@@ -18388,6 +19383,11 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
     while (true)
     {
         console.log("voice__webrtc_datachannel_connection_check ran");
+        if (audio_transport__wants_webrtc() === false)
+        {
+            g_is_webrtc_datachannel_check_running = false;
+            break;
+        }
 
         if (g_is_voice_chat_allowed_by_server == true && g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
         {
@@ -18417,7 +19417,11 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
             // whether the browser is even capable of direct udp before retrying forever
             if (g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
             {
-                voice__probe_webrtc_udp_and_warn();
+                // with a websocket as the fallback the warning about blocked udp is not needed
+                if (g_audio_transport.mode === "webrtc" && g_server_policy.is_audio_over_websocket_allowed !== true)
+                {
+                    voice__probe_webrtc_udp_and_warn();
+                }
             }
 
             // the server refused for a while (10 attempts never connected): wait it out here instead
@@ -18487,6 +19491,8 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
     }
 
     g_datachannel = null;
+    g_video_datachannel = null;
+    g_is_video_datachannel_connected = false;
     g_peer_connection_with_server = null;
 
     // added when missing rather than keyed on is_this_reconnect: the audio_enabled handler
@@ -18505,7 +19511,7 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
         }
     }
 
-    if (is_turn_server_present == false)
+    if (is_turn_server_present == false && g_iceconfig.iceServers.length > 0)
     {
         let turn_server = {
             urls: [
@@ -18811,7 +19817,7 @@ function voice__process_audio_state_of_single_client(client)
 
         document.getElementById("client-audio-state-" + client.client_id).classList.add("client-audio-state-completely-disabled");
 
-        if (client.client_id == g_local_client_id)
+        if (client.client_id == g_local_client_id && audio_transport__active() == null)
         {
             g_is_microphone_available = false;
             voice__update_microphone_button();
@@ -18973,6 +19979,1377 @@ function voice__chunk_buffers(arrayBuffer, chunkLength)
     return chunkedBuffers;
 }
 
+// voice travels either over the webrtc datachannel or over a second websocket on the chat port.
+// mode is the connection this client prefers, "webrtc" or "websocket", from the user's preference
+// (g_audio_connection_preference) within what the server allows (g_server_policy); "none" only when
+// the server serves no audio connection at all, which is the server's decision, never the client's.
+// when the preferred connection has not come up for AUDIO_TRANSPORT_FALLBACK_AFTER_MS, the other
+// allowed one is tried as well, and whichever is up carries the audio (audio_transport__active).
+// once the preferred one comes up again it takes over. the chat connection negotiates a websocket
+// session; audio packets then use the /audio socket.
+// the server sends an empty frame to an idle audio socket every few seconds and this client answers it,
+// so no timer is needed to keep the socket. a session request that leads to no attached socket is
+// repeated with a growing delay, from AUDIO_TRANSPORT_REQUEST_INTERVAL_MS up to the maximum below.
+// after every attach the client reports its audio state (talking, microphone ready or listening),
+// because the server resets that state when a connection attaches.
+// the data channel is probed with a one-byte frame, which the server echoes, after a few seconds of
+// silence; when nothing comes back for AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS the channel is rebuilt, and
+// the websocket is tried at once, instead of waiting for the browser to notice the dead transport.
+// every frame on either connection is encrypted a second time with this client's two session keys and
+// carries an authentication code, so that a frame on a plain websocket can neither be read nor forged on
+// the network path; keys.js (the block "the encryption of audio and video frames") and media_auth.c on
+// the server explain it. the voice itself stays under the channel keys, which the server does not have.
+var AUDIO_TRANSPORT_FALLBACK_AFTER_MS = 10000;
+var AUDIO_TRANSPORT_REQUEST_INTERVAL_MS = 10000;
+var AUDIO_TRANSPORT_REQUEST_INTERVAL_MAX_MS = 60000;
+var AUDIO_TRANSPORT_DATACHANNEL_PROBE_MS = 5000;
+var AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS = 15000;
+// the largest frame content; with the 29 bytes the encryption adds, a frame stays under the server's limit of 4132 bytes
+var AUDIO_TRANSPORT_MAX_CONTENT_BYTES = 4080;
+
+var g_audio_transport =
+{
+    mode: "webrtc",
+    url: "",
+    socket: null,
+    ready: false,              // the websocket is attached and authenticated
+    pending_until: 0,          // no new session request before this time
+    request_attempts: 0,       // session requests since the last attached socket; sets the delay to the next one
+    preferred_down_since: 0,   // when the preferred connection was last up, or when the attempt began
+    last_received: 0,
+    datachannel_last_received: 0, // the last frame of any kind from the data channel
+    datachannel_last_probe: 0,
+    frame_counter: null,       // counts the frames this client sent; part of every counter block of a frame's encryption (keys.js)
+    timer: null
+};
+
+/**
+ * @brief whether the server has audio on at all: voice or music bot audio
+ *
+ * @return boolean
+ */
+function audio_transport__is_audio_on()
+{
+    return g_server_policy.is_voice_chat_active === true || g_server_policy.is_music_bot_audio_active === true;
+}
+
+function audio_transport__is_datachannel_open()
+{
+    return g_datachannel != null && g_datachannel.readyState === "open";
+}
+
+/**
+ * @brief whether the preferred connection has been down long enough for the other one to be tried
+ *
+ * @return boolean
+ */
+function audio_transport__is_fallback_due()
+{
+    return Date.now() - g_audio_transport.preferred_down_since >= AUDIO_TRANSPORT_FALLBACK_AFTER_MS;
+}
+
+/**
+ * @brief the connection that carries the audio right now
+ *
+ *        the preferred one whenever it is up, otherwise the other one when it is up and the server
+ *        allows voice over it (the fallback time only decides when the other one is established).
+ *        the server relays to a client over its websocket whenever one is attached, so a fallback
+ *        websocket is dropped as soon as the preferred datachannel is back (see audio_transport__tick).
+ *
+ * @return string "webrtc", "websocket" or null
+ */
+function audio_transport__active()
+{
+    let state = g_audio_transport;
+
+    if (state.mode === "none")
+    {
+        return null;
+    }
+
+    if (state.mode === "webrtc")
+    {
+        if (audio_transport__is_datachannel_open())
+        {
+            return "webrtc";
+        }
+        return state.ready ? "websocket" : null;
+    }
+
+    if (state.ready)
+    {
+        return "websocket";
+    }
+
+    if (g_server_policy.is_audio_over_webrtc_allowed === true && audio_transport__is_datachannel_open())
+    {
+        return "webrtc";
+    }
+
+    return null;
+}
+
+/**
+ * @brief whether the datachannel should be kept up: voice over webrtc, the fallback of a websocket that does not come up, or video streaming
+ *
+ * @return boolean
+ */
+function audio_transport__wants_webrtc()
+{
+    let state = g_audio_transport;
+
+    // video keeps the peer connection only while it does not prefer the video websocket (video-transport.js)
+    if (g_server_policy.is_video_streaming_allowed === true
+        && (typeof video_transport__prefers_websocket !== "function" || video_transport__prefers_websocket() === false))
+    {
+        return true;
+    }
+
+    if (state.mode === "webrtc")
+    {
+        return true;
+    }
+
+    return state.mode === "websocket" && g_server_policy.is_audio_over_webrtc_allowed === true
+        && state.ready === false && audio_transport__is_fallback_due();
+}
+
+/**
+ * @brief whether a websocket session should be requested: voice over websocket, or the fallback of a datachannel that does not come up
+ *
+ * @return boolean
+ */
+function audio_transport__wants_websocket()
+{
+    let state = g_audio_transport;
+
+    if (g_server_policy.is_audio_over_websocket_allowed !== true)
+    {
+        return false;
+    }
+
+    if (state.mode === "websocket")
+    {
+        return true;
+    }
+
+    return state.mode === "webrtc" && audio_transport__is_datachannel_open() === false && audio_transport__is_fallback_due();
+}
+
+/**
+ * @brief starts the datachannel connection loop when the datachannel is wanted and no loop runs
+ *
+ * @return void
+ */
+function audio_transport__start_webrtc_if_wanted()
+{
+    // nothing to start while the data channel is up or being set up: the loop would only log and leave
+    if (g_is_webrtc_datachannel_connected === true || audio_transport__is_datachannel_open())
+    {
+        return;
+    }
+    if (audio_transport__wants_webrtc() === false || g_is_webrtc_datachannel_check_running == true
+        || g_is_deep_idle == true || g_is_authenticated == false || g_is_voice_chat_allowed_by_server != true
+        || typeof RTCPeerConnection === "undefined")
+    {
+        return;
+    }
+
+    g_is_webrtc_datachannel_check_running = true;
+    voice__webrtc_datachannel_connection_check(true);
+}
+
+/**
+ * @brief the datachannel opened: a fallback websocket gives way to it, and the microphone controls follow
+ *
+ * @return void
+ */
+function audio_transport__on_datachannel_open()
+{
+    let state = g_audio_transport;
+
+    state.datachannel_last_received = Date.now();
+    state.datachannel_last_probe = 0;
+
+    if (state.mode === "webrtc" && state.ready === true)
+    {
+        utils__custom_log("Audio back on the datachannel");
+        audio_transport__drop_socket();
+    }
+
+    if (audio_transport__active() === "webrtc")
+    {
+        audio_transport__on_ready();
+    }
+}
+
+/**
+ * @brief a frame from the data channel: an answer to a probe (one byte) or audio, which is played
+ *
+ *        the server relays to this client over one connection at a time, its choice, so whatever
+ *        arrives here is played
+ *
+ * @param ArrayBuffer data -> the frame
+ *
+ * @return void
+ */
+function audio_transport__on_datachannel_message(data)
+{
+    g_audio_transport.datachannel_last_received = Date.now();
+
+    if (data instanceof ArrayBuffer && data.byteLength > 1 && g_audio_transport.mode !== "none")
+    {
+        audio_transport__receive(data);
+    }
+}
+
+/**
+ * @brief keeps watch over an open data channel: a probe after a quiet spell, a rebuild when nothing comes back
+ *
+ *        a transport whose udp path died stays "open" in the browser until its consent checks time out,
+ *        which takes about half a minute; the probe shortens that to AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS
+ *
+ * @param number now -> Date.now()
+ *
+ * @return void
+ */
+function audio_transport__probe_datachannel(now)
+{
+    let state = g_audio_transport;
+
+    // a channel seen open before any frame or open callback: the clock starts now
+    if (state.datachannel_last_received === 0)
+    {
+        state.datachannel_last_received = now;
+    }
+    if (now - state.datachannel_last_received > AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS)
+    {
+        audio_transport__restart_datachannel("gave no answer for " + Math.round(AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS / 1000) + " s");
+        return;
+    }
+    if (now - state.datachannel_last_received >= AUDIO_TRANSPORT_DATACHANNEL_PROBE_MS && now - state.datachannel_last_probe >= AUDIO_TRANSPORT_DATACHANNEL_PROBE_MS)
+    {
+        state.datachannel_last_probe = now;
+        try
+        {
+            g_datachannel.send(new Uint8Array(1));
+        }
+        catch (error)
+        {
+            // a channel that refuses the probe is as good as silent; the dead check above takes it from here
+        }
+    }
+}
+
+/**
+ * @brief drops a data channel the server no longer answers on and starts the connection loop for a new one
+ *
+ *        the dead channel is detached first, so its late close event cannot touch the new state. in webrtc
+ *        mode the websocket fallback is due at once: the dead time already passed.
+ *
+ * @param string reason -> for the log
+ *
+ * @return void
+ */
+function audio_transport__restart_datachannel(reason)
+{
+    let state = g_audio_transport;
+
+    utils__custom_log("Audio datachannel " + reason + "; rebuilding it");
+
+    g_datachannel = null;
+    g_video_datachannel = null;
+    g_is_video_datachannel_connected = false;
+    g_is_webrtc_datachannel_connected = false;
+
+    if (g_peer_connection_with_server != null)
+    {
+        try
+        {
+            g_peer_connection_with_server.close();
+        }
+        catch (error)
+        {
+            console.log("closing the dead peer connection failed: " + error.message);
+        }
+        g_peer_connection_with_server = null;
+    }
+
+    if (state.mode === "webrtc")
+    {
+        state.preferred_down_since = Math.min(state.preferred_down_since, Date.now() - AUDIO_TRANSPORT_FALLBACK_AFTER_MS);
+    }
+
+    audio_transport__start_webrtc_if_wanted();
+    audio_transport__refresh_ui();
+}
+
+/**
+ * @brief picks the audio connection from the user's preference and the server's policy, and applies a change
+ *
+ *        the preference names the first choice; the other allowed connection is the second. a
+ *        websocket that the new choice no longer wants is dropped; the tick and the datachannel
+ *        callbacks then establish the chosen one.
+ *
+ * @return void
+ */
+function audio_transport__select_mode()
+{
+    let previous = g_audio_transport.mode;
+    let is_websocket_allowed = (g_server_policy.is_audio_over_websocket_allowed === true);
+    let is_webrtc_allowed = (g_server_policy.is_audio_over_webrtc_allowed === true);
+    let mode = "none";
+
+    // the preference only orders the two connections; whether audio is served at all is the server's call
+    if (g_audio_connection_preference === "websocket")
+    {
+        mode = is_websocket_allowed ? "websocket" : (is_webrtc_allowed ? "webrtc" : "none");
+    }
+    else
+    {
+        mode = is_webrtc_allowed ? "webrtc" : (is_websocket_allowed ? "websocket" : "none");
+    }
+
+    // audio off on the server: no connection is attempted, so nothing asks the server for one
+    if (audio_transport__is_audio_on() === false)
+    {
+        mode = "none";
+    }
+
+    g_audio_transport.mode = mode;
+
+    if (mode === previous)
+    {
+        return;
+    }
+
+    // no audio at all, or back to the datachannel by choice: the websocket goes. a fallback socket
+    // that is now the chosen connection stays
+    if (g_audio_transport.socket != null && (mode === "none" || (mode === "webrtc" && previous === "websocket")))
+    {
+        audio_transport__drop_socket();
+    }
+
+    g_audio_transport.preferred_down_since = Date.now();
+    g_audio_transport.pending_until = 0;
+    g_audio_transport.request_attempts = 0;
+    audio_transport__start_webrtc_if_wanted();
+    audio_transport__refresh_ui();
+}
+
+/**
+ * @brief stores the user's audio connection preference and applies it
+ *
+ * @param string preference -> "webrtc" or "websocket"
+ *
+ * @return void
+ */
+function audio_transport__set_preference(preference)
+{
+    if (["webrtc", "websocket"].indexOf(preference) < 0)
+    {
+        return;
+    }
+    g_audio_connection_preference = preference;
+    utils__storage_set("lemon_audio_connection", preference);
+    audio_transport__select_mode();
+}
+
+/**
+ * @brief shows or hides the microphone controls according to whether an audio connection is usable now
+ *
+ * @return void
+ */
+function audio_transport__refresh_ui()
+{
+    // the headless node runtime has no webaudio and no microphone controls
+    if (typeof window === "undefined" || (typeof window.AudioContext !== "function" && typeof window.webkitAudioContext !== "function")
+        || document.getElementById("toggle-microphone-label") == null)
+    {
+        return;
+    }
+
+    if (audio_transport__ready())
+    {
+        audio_transport__on_ready();
+        return;
+    }
+
+    g_is_microphone_available = false;
+    voice__update_microphone_button();
+    document.getElementById("toggle-microphone-label").style.display = "none";
+}
+
+/**
+ * @brief reports this client's audio state to the server: talking, microphone ready, or listening only
+ *
+ *        the server sets a client to "listening" when an audio connection attaches and to "audio disabled"
+ *        when its last one drops, so the current state is reported after every attach: a push-to-talk key
+ *        that is still held keeps talking across a handover
+ *
+ * @return void
+ */
+function audio_transport__report_audio_state()
+{
+    let value = 3;  // the microphone_usage values: 1 talking, 2 microphone ready, 3 listening only
+
+    if (g_is_authenticated !== true || g_local_client_id < 0 || g_audio_transport.mode === "none")
+    {
+        return;
+    }
+    if (g_is_microphone_active === true)
+    {
+        value = 1;
+    }
+    else if (g_is_microphone_enabled === true)
+    {
+        value = 2;
+    }
+    connection__send_message_object(
+    {
+        message:
+        {
+            type: "microphone_usage",
+            value: value
+        }
+    });
+}
+
+function audio_transport__hex_bytes(text, length)
+{
+    if (typeof text !== "string" || text.length !== length * 2 || !/^[0-9a-f]+$/i.test(text))
+    {
+        throw new Error("invalid audio session keys");
+    }
+    let bytes = new Uint8Array(length);
+    for (let i = 0; i < length; i++)
+    {
+        bytes[i] = parseInt(text.substring(i * 2, i * 2 + 2), 16);
+    }
+    return bytes;
+}
+
+function audio_transport__ready()
+{
+    return audio_transport__active() != null;
+}
+
+function audio_transport__drop_socket()
+{
+    let socket = g_audio_transport.socket;
+    g_audio_transport.socket = null;
+    g_audio_transport.ready = false;
+    if (socket != null)
+    {
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.close();
+    }
+}
+
+function audio_transport__reset()
+{
+    if (g_audio_transport.timer != null)
+    {
+        clearInterval(g_audio_transport.timer);
+    }
+    g_audio_transport.timer = null;
+    g_audio_transport.pending_until = 0;
+    g_audio_transport.request_attempts = 0;
+    g_audio_transport.preferred_down_since = 0;
+    audio_transport__drop_socket();
+    if (typeof video_transport__reset === "function")
+    {
+        video_transport__reset();
+    }
+}
+
+function audio_transport__send_packet(data)
+{
+    let state = g_audio_transport;
+    if (!state.ready || state.socket == null || state.socket.readyState !== WebSocket.OPEN)
+    {
+        return false;
+    }
+    // The browser owns the TCP queue. Do not add old voice behind a stalled send.
+    if (state.socket.bufferedAmount > 8192)
+    {
+        return false;
+    }
+    state.socket.send(data);
+    return true;
+}
+
+/**
+ * @brief sends one voice frame of this client over the connection that carries the audio right now
+ *
+ *        the frame content ([2 bytes sequence number][opus]) is encrypted with the channel keys, then with
+ *        the server keys, and then a second time with this client's session keys plus an authentication code
+ *        (keys.js explains the layers). every frame gets the next value of the frame counter, so no two
+ *        frames are ever encrypted with the same counter block
+ *
+ * @param Uint8Array sequenced_chunk -> [2 bytes sequence number, least significant first][opus packet]
+ *
+ * @return void
+ */
+function audio_transport__send_voice(sequenced_chunk)
+{
+    let state = g_audio_transport;
+    let session_layer = keys__media_session_layer();
+    let active = audio_transport__active();
+
+    if (sequenced_chunk == null || sequenced_chunk.byteLength < 2 || sequenced_chunk.byteLength > AUDIO_TRANSPORT_MAX_CONTENT_BYTES
+        || g_is_deep_idle || active == null || session_layer == null || g_current_channel_keys == null || g_local_client_id < 0)
+    {
+        return;
+    }
+    if (state.frame_counter == null)
+    {
+        state.frame_counter = keys__counter_create();
+    }
+    keys__counter_increment(state.frame_counter);
+    let inner = keys__media_apply_inner_layers(g_current_channel_keys, g_local_client_id, state.frame_counter, sequenced_chunk, true);
+    inner = keys__media_apply_inner_layers(keys__media_server_key_layers(), g_local_client_id, state.frame_counter, inner, true);
+    let frame = keys__media_encrypt_frame(session_layer, MEDIA_STREAM_AUDIO, state.frame_counter, keys__media_build_body(g_local_client_id, state.frame_counter, inner));
+    if (frame == null)
+    {
+        return;
+    }
+    g_session.bytes_sent += frame.byteLength;
+    if (active === "websocket")
+    {
+        audio_transport__send_packet(frame);
+    }
+    else
+    {
+        g_datachannel.send(frame);
+    }
+}
+
+function audio_transport__tick()
+{
+    let state = g_audio_transport;
+    let now = Date.now();
+
+    if (!g_is_authenticated || g_is_deep_idle || state.mode === "none")
+    {
+        if (state.socket != null)
+        {
+            audio_transport__drop_socket();
+        }
+        return;
+    }
+
+    if (audio_transport__is_datachannel_open())
+    {
+        audio_transport__probe_datachannel(now);
+    }
+
+    // while the preferred connection is up, the fallback clock stays at now
+    if ((state.mode === "webrtc" && audio_transport__is_datachannel_open()) || (state.mode === "websocket" && state.ready))
+    {
+        state.preferred_down_since = now;
+    }
+
+    if (state.ready)
+    {
+        // a fallback websocket gives way to the preferred datachannel: the server relays over one connection only
+        if (state.mode === "webrtc" && audio_transport__is_datachannel_open())
+        {
+            utils__custom_log("Audio back on the datachannel");
+            audio_transport__drop_socket();
+            audio_transport__refresh_ui();
+            return;
+        }
+        // the server's keepalive frames refresh last_received; a socket without any frame for this long is dead
+        if (now - state.last_received > 15000)
+        {
+            audio_transport__drop_socket();
+        }
+        return;
+    }
+
+    // a websocket that does not come up: the datachannel is tried after the fallback time
+    audio_transport__start_webrtc_if_wanted();
+
+    if (audio_transport__wants_websocket() === false)
+    {
+        if (state.socket != null)
+        {
+            audio_transport__drop_socket();
+        }
+        return;
+    }
+    if (now < state.pending_until)
+    {
+        return;
+    }
+    if (state.socket != null)
+    {
+        // an attempt that did not attach within the request window
+        audio_transport__drop_socket();
+    }
+    if (g_local_client_id < 0 || !g_is_client_list_retrieved)
+    {
+        return;
+    }
+    // a request that leads nowhere is repeated with a growing delay, so a blocked /audio path costs the
+    // server one session per minute at most; an attached socket resets the delay
+    state.pending_until = now + Math.min(AUDIO_TRANSPORT_REQUEST_INTERVAL_MS * Math.pow(2, state.request_attempts), AUDIO_TRANSPORT_REQUEST_INTERVAL_MAX_MS);
+    state.request_attempts++;
+    connection__send_message_object(
+    {
+        message:
+        {
+            type: "request_audio_websocket"
+        }
+    });
+}
+
+function audio_transport__start()
+{
+    if (typeof window.AudioContext !== "function" && typeof window.webkitAudioContext !== "function")
+    {
+        return;
+    }
+    if (g_audio_transport.timer == null)
+    {
+        g_audio_transport.preferred_down_since = Date.now();
+        g_audio_transport.timer = setInterval(audio_transport__tick, 1000);
+        audio_transport__tick();
+    }
+    // the video connection follows the audio one, so it starts and stops with it (video-transport.js)
+    if (typeof video_transport__start === "function")
+    {
+        video_transport__start();
+    }
+}
+
+function audio_transport__session(message)
+{
+    let state = g_audio_transport;
+    if (state.timer == null || g_is_deep_idle || !g_is_authenticated || state.socket != null
+        || state.mode === "none" || g_server_policy.is_audio_over_websocket_allowed !== true
+        || Date.now() > state.pending_until || message.client_id !== g_local_client_id)
+    {
+        return;
+    }
+    try
+    {
+        let auth_key = audio_transport__hex_bytes(message.auth_key, 32);
+        let ticket = audio_transport__hex_bytes(message.ticket, 16);
+        let url = new URL(state.url);
+        url.pathname = "/audio";
+        url.search = "";
+        url.hash = "";
+        let socket = new WebSocket(url.href);
+        state.socket = socket;
+        socket.binaryType = "arraybuffer";
+        socket.onopen = function()
+        {
+            if (state.socket !== socket)
+            {
+                return;
+            }
+            let hello = new Uint8Array(53);
+            hello[0] = 1;
+            new DataView(hello.buffer).setUint32(1, message.client_id, false);
+            hello.set(ticket, 5);
+            hello.set(keys___hmac_sha256(auth_key, hello.subarray(0, 21)), 21);
+            socket.send(hello);
+        };
+        socket.onmessage = function(event)
+        {
+            if (state.socket !== socket)
+            {
+                return;
+            }
+            try
+            {
+                if (!(event.data instanceof ArrayBuffer))
+                {
+                    throw new Error("expected binary audio");
+                }
+                state.last_received = Date.now();
+                if (!state.ready)
+                {
+                    let acknowledgement = new Uint8Array(event.data);
+                    if (acknowledgement.length !== 49 || acknowledgement[0] !== 2)
+                    {
+                        throw new Error("invalid audio attachment acknowledgement");
+                    }
+                    let tag = keys___hmac_sha256(auth_key, acknowledgement.subarray(0, 17));
+                    let difference = 0;
+                    for (let i = 0; i < 16; i++)
+                    {
+                        difference |= ticket[i] ^ acknowledgement[i + 1];
+                    }
+                    for (let i = 0; i < 32; i++)
+                    {
+                        difference |= tag[i] ^ acknowledgement[i + 17];
+                    }
+                    if (difference !== 0)
+                    {
+                        throw new Error("audio attachment authentication failed");
+                    }
+                    auth_key.fill(0);
+                    state.ready = true;
+                    state.pending_until = 0;
+                    state.request_attempts = 0;
+
+                    // the preferred datachannel came up while this attached: it carries the audio, the socket goes
+                    if (audio_transport__active() !== "websocket")
+                    {
+                        audio_transport__drop_socket();
+                        return;
+                    }
+
+                    utils__custom_log("Audio connected through WebSocket");
+                    audio_transport__on_ready();
+                    if (g_is_microphone_always_on)
+                    {
+                        voice__activate_microphone();
+                    }
+                }
+                else if (event.data.byteLength > 0)
+                {
+                    audio_transport__receive(event.data);
+                }
+                else
+                {
+                    // the server's keepalive on an idle socket: answered at once, no timer involved
+                    audio_transport__send_packet(new Uint8Array(0));
+                }
+            }
+            catch (error)
+            {
+                utils__custom_log("Audio connection rejected a packet: " + error.message);
+                audio_transport__drop_socket();
+            }
+        };
+        socket.onclose = function()
+        {
+            if (state.socket === socket)
+            {
+                // a socket that was attached is requested again soon; one that never attached keeps the delay its request set
+                let was_ready = state.ready;
+                audio_transport__drop_socket();
+                if (was_ready)
+                {
+                    state.pending_until = Date.now() + 3000;
+                }
+                utils__custom_log("Audio WebSocket disconnected; reconnecting");
+            }
+        };
+        socket.onerror = function()
+        {
+            // onclose handles reconnection.
+        };
+    }
+    catch (error)
+    {
+        audio_transport__drop_socket();
+        utils__custom_log("Audio connection failed: " + error.message);
+    }
+}
+
+function audio_transport__on_ready()
+{
+    console.log("datachannelonopen");
+
+    let is_client_existing = channel_tree__get_client_index_in_array_by_client_id(g_local_client_id) != -1;
+
+    // not found
+    if (is_client_existing == false)
+    {
+        return;
+    }
+
+    let target_element = document.getElementById("client-audio-state-" + g_local_client_id);
+
+    if (g_is_client_running_under_touch_device)
+    {
+        g_is_microphone_available = true;
+        voice__update_microphone_button();
+    }
+    else
+    {
+        document.getElementById("toggle-microphone-label").style.display = "block";
+    }
+
+    let local_index = channel_tree__get_client_index_in_array_by_client_id(g_local_client_id);
+
+    if (local_index != -1)
+    {
+        g_client_list[local_index].audio_state = g_is_microphone_active
+            ? G_AUDIO_STATE.PUSH_TO_TALK_ACTIVE : G_AUDIO_STATE.PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS;
+    }
+
+    if (target_element.classList.contains("client-audio-state-completely-disabled"))
+    {
+        document.getElementById("client-audio-state-" + g_local_client_id).classList.remove("client-audio-state-completely-disabled");
+    }
+
+    document.getElementById("client-audio-state-" + g_local_client_id).classList.add("client-audio-state-microphone-disabled");
+
+    // the server reset this client to listening when the connection attached: tell it the real state
+    audio_transport__report_audio_state();
+}
+
+/**
+ * @brief a frame that arrived over the websocket or the data channel: checked, decrypted and handed to the decoder worker
+ *
+ *        first the authentication code is checked and the server's encryption removed (keys.js); that gives the
+ *        sender id and the sender counter. a sender that is muted, ignored, in another channel, or this client
+ *        itself is dropped. then the server keys come off, and either the music bot's keys (a bot) or the
+ *        channel keys (a member). what is left, [2 bytes sequence number][opus], goes to the decoder worker
+ *        behind the sender id
+ *
+ * @param ArrayBuffer buffer -> the frame from the wire
+ *
+ * @return void
+ */
+function audio_transport__receive(buffer)
+{
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength <= MEDIA_FRAME_OVERHEAD)
+    {
+        return;
+    }
+    let opened = keys__media_decrypt_frame(keys__media_session_layer(), MEDIA_STREAM_AUDIO, new Uint8Array(buffer));
+    if (opened == null)
+    {
+        return;
+    }
+    g_session.bytes_received += buffer.byteLength;
+
+    let client_index = channel_tree__get_client_index_in_array_by_client_id(opened.sender_id);
+    if (client_index == -1 || opened.sender_id == g_local_client_id)
+    {
+        return; // not found
+    }
+    if (g_client_list[client_index].is_muted_by_local_client == true || g_client_list[client_index].is_ignored_by_local_client == true)
+    {
+        return;
+    }
+    // audio from a channel we are not in is a stale straggler (e.g. after a switch): discard
+    if (g_client_list[client_index].channel_id != g_current_channel_id)
+    {
+        return;
+    }
+    let inner = keys__media_apply_inner_layers(keys__media_server_key_layers(), opened.sender_id, opened.counter_bytes, opened.inner, false);
+    let content = null;
+    if (g_client_list[client_index].is_music_bot == true)
+    {
+        content = audio_transport__decrypt_music_bot(g_client_list[client_index], opened.sender_id, opened.counter_bytes, inner);
+    }
+    else if (g_current_channel_keys != null)
+    {
+        content = keys__media_apply_inner_layers(g_current_channel_keys, opened.sender_id, opened.counter_bytes, inner, false);
+    }
+    if (content == null || content.length < 3)
+    {
+        return;
+    }
+    let decoded = new Uint8Array(4 + content.length);
+    new DataView(decoded.buffer).setInt32(0, opened.sender_id, true);
+    decoded.set(content, 4);
+    g_opus_decoder_worker.postMessage({
+        type: "mainthread__add_decrypted_data_to_opus_decoder",
+        value: decoded.buffer
+    }, [decoded.buffer]);
+}
+
+function audio_transport__set_music_bot_key(message)
+{
+    let index = channel_tree__get_client_index_in_array_by_client_id(message.client_id);
+    if (index < 0 || !g_client_list[index].is_music_bot
+        || message.channel_id !== g_current_channel_id || g_client_list[index].channel_id !== message.channel_id)
+    {
+        return;
+    }
+    g_client_list[index].music_bot_keys = message.music_bot_keys;
+    g_client_list[index].music_bot_encryption = message.music_bot_encryption;
+    g_client_list[index].music_bot_key_bytes = null;
+}
+
+/**
+ * @brief removes a music bot's own encryption from a frame content
+ *
+ *        the server encrypts every bot frame with the bot's four keys under the counter block of the bot id
+ *        and the bot's counter (media_auth.c). the four keys reach the client over the encrypted chat
+ *        connection; a client that does not have them yet asks for them, once per second at most
+ *
+ * @param object bot -> the bot's entry in g_client_list
+ * @param number sender_id -> the bot's client id, from the frame
+ * @param Uint8Array counter_bytes -> the bot's counter, from the frame
+ * @param Uint8Array inner -> the frame content after the server keys came off
+ *
+ * @return Uint8Array [2 bytes sequence number][opus], or null without the keys
+ */
+function audio_transport__decrypt_music_bot(bot, sender_id, counter_bytes, inner)
+{
+    if (!Array.isArray(bot.music_bot_keys) || bot.music_bot_keys.length !== 4)
+    {
+        if (!bot.music_bot_key_requested_at || Date.now() - bot.music_bot_key_requested_at > 1000)
+        {
+            bot.music_bot_key_requested_at = Date.now();
+            connection__send_message_object(
+            {
+                message:
+                {
+                    type: "request_music_bot_key",
+                    client_id: bot.client_id
+                }
+            });
+        }
+        return null;
+    }
+    if (bot.music_bot_key_bytes == null)
+    {
+        try
+        {
+            bot.music_bot_key_bytes = bot.music_bot_keys.map(function(key)
+            {
+                return audio_transport__hex_bytes(key, 32);
+            });
+        }
+        catch (error)
+        {
+            bot.music_bot_keys = null;
+            return null;
+        }
+    }
+    let layers = bot.music_bot_key_bytes.map(function(key)
+    {
+        return { key_bytes: key, iv_bytes: null };
+    });
+    return keys__media_apply_inner_layers(layers, sender_id, counter_bytes, inner, false);
+}
+
+// why this file exists
+// --------------------
+// a video stream normally travels over the webrtc data channel. a client that cannot or does not want to
+// use webrtc already gets its voice over a second websocket (audio-transport.js); this file gives video the
+// same second way: a websocket at /video on the chat port. the server passes a streamer's packets on to
+// every viewer over whichever of the two connections that viewer has, so a client on the websocket and a
+// client on webrtc see each other's streams.
+//
+// how the choice is made
+// ----------------------
+// video follows audio. when this client's audio travels over the websocket right now, or when the server
+// does not allow webrtc at all, video uses the video socket too; otherwise it uses the video data channel
+// of the webrtc peer connection. the choice is looked at once a second (video_transport__tick). while
+// video is in use, that is while this client streams or watches a stream, and the socket is wanted but not
+// attached, a session is requested from the server; when the socket is attached but no longer wanted, it
+// is closed, and the server then relays over the data channel again. a session request that leads to no
+// attached socket is repeated with a growing delay. the socket is attached with the same ticket and proof
+// frame as the audio socket (the server handles video connections in video_websocket.c).
+//
+// what travels over the socket
+// ----------------------------
+// video packets, each encrypted the same way as a voice frame: with the channel keys, the server keys, and
+// a second time with this client's session keys plus an authentication code (keys.js, the block "the
+// encryption of audio and video frames"). the video worker (video-worker.js) does that encryption and
+// decryption; this file only moves the finished frames. the server sends an empty frame to an idle socket
+// every few seconds and this client answers it with an empty frame, like on the audio socket.
+var VIDEO_TRANSPORT_REQUEST_INTERVAL_MS = 5000;
+var VIDEO_TRANSPORT_REQUEST_INTERVAL_MAX_MS = 60000;
+// bytes waiting in the browser's send buffer of the socket above which a packet is dropped instead of queued
+var VIDEO_TRANSPORT_SEND_BUFFER_LIMIT = 1024 * 1024;
+
+var g_video_transport =
+{
+    socket: null,
+    ready: false,              // the websocket is attached and acknowledged
+    pending_until: 0,          // no new session request before this time
+    request_attempts: 0,       // session requests since the last attached socket; sets the delay to the next one
+    last_received: 0,          // the server's keepalive frames refresh it; a socket without any frame for 15 s is dead
+    timer: null
+};
+
+/**
+ * @brief whether video should travel over the websocket rather than the webrtc data channel right now
+ *
+ *        the websocket must be allowed by the server. then: when the server allows no webrtc, the socket is
+ *        the only way; when the audio travels over the websocket at the moment, video goes the same way;
+ *        when no audio connection is up, the client's preference decides, which is also what audio does
+ *
+ * @return boolean
+ */
+function video_transport__prefers_websocket()
+{
+    if (g_server_policy.is_audio_over_websocket_allowed !== true)
+    {
+        return false;
+    }
+    if (g_server_policy.is_audio_over_webrtc_allowed !== true)
+    {
+        return true;
+    }
+    let active = audio_transport__active();
+    if (active != null)
+    {
+        return active === "websocket";
+    }
+    if (g_audio_transport.mode === "none")
+    {
+        return g_audio_connection_preference === "websocket";
+    }
+    return g_audio_transport.mode === "websocket";
+}
+
+/**
+ * @brief whether the webrtc peer connection has to be kept up for video: video is allowed and does not prefer the websocket
+ *
+ * @return boolean
+ */
+function video_transport__wants_webrtc()
+{
+    return g_server_policy.is_video_streaming_allowed === true && video_transport__prefers_websocket() === false;
+}
+
+/**
+ * @brief whether this client sends or receives video right now: it streams, or it watches a stream
+ *
+ * @return boolean
+ */
+function video_transport__is_in_use()
+{
+    return g_video_stream.role === "streamer" || (g_video_stream.role === "viewer" && g_video_stream.is_watching === true);
+}
+
+/**
+ * @brief the connection that would carry a video packet right now
+ *
+ * @return string "websocket", "webrtc" or null
+ */
+function video_transport__active()
+{
+    if (g_video_transport.ready && g_video_transport.socket != null && g_video_transport.socket.readyState === WebSocket.OPEN)
+    {
+        return "websocket";
+    }
+    if (g_video_datachannel != null && g_video_datachannel.readyState === "open")
+    {
+        return "webrtc";
+    }
+    return null;
+}
+
+/**
+ * @brief how many bytes wait in the send buffer of the active connection; the streamer skips frames when it grows too large
+ *
+ * @return number bytes, 0 without a connection
+ */
+function video_transport__buffered_amount()
+{
+    let active = video_transport__active();
+    if (active === "websocket")
+    {
+        return g_video_transport.socket.bufferedAmount;
+    }
+    if (active === "webrtc")
+    {
+        return g_video_datachannel.bufferedAmount;
+    }
+    return 0;
+}
+
+/**
+ * @brief sends one finished video frame over the active connection
+ *
+ * @param ArrayBuffer frame -> the frame, encrypted by the video worker
+ *
+ * @return boolean true when it was handed to a connection
+ */
+function video_transport__send(frame)
+{
+    let active = video_transport__active();
+    if (active === "websocket")
+    {
+        if (g_video_transport.socket.bufferedAmount > VIDEO_TRANSPORT_SEND_BUFFER_LIMIT)
+        {
+            return false;
+        }
+        g_video_transport.socket.send(frame);
+        return true;
+    }
+    if (active === "webrtc")
+    {
+        try
+        {
+            g_video_datachannel.send(frame);
+            return true;
+        }
+        catch (send_error)
+        {
+            console.log("video packet not sent: " + send_error.message);
+            return false;
+        }
+    }
+    return false;
+}
+
+function video_transport__drop_socket()
+{
+    let socket = g_video_transport.socket;
+    g_video_transport.socket = null;
+    g_video_transport.ready = false;
+    if (socket != null)
+    {
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.close();
+    }
+}
+
+function video_transport__reset()
+{
+    if (g_video_transport.timer != null)
+    {
+        clearInterval(g_video_transport.timer);
+    }
+    g_video_transport.timer = null;
+    g_video_transport.pending_until = 0;
+    g_video_transport.request_attempts = 0;
+    video_transport__drop_socket();
+}
+
+/**
+ * @brief starts the once-a-second check; called when the audio transport starts (audio_transport__start)
+ *
+ * @return void
+ */
+function video_transport__start()
+{
+    if (g_video_transport.timer == null)
+    {
+        g_video_transport.timer = setInterval(video_transport__tick, 1000);
+    }
+}
+
+/**
+ * @brief the once-a-second check: requests a session when the socket is wanted and missing, drops the socket when it is not wanted or dead
+ *
+ * @return void
+ */
+function video_transport__tick()
+{
+    let state = g_video_transport;
+    let now = Date.now();
+
+    if (!g_is_authenticated || g_is_deep_idle || g_server_policy.is_video_streaming_allowed !== true
+        || video_transport__is_in_use() === false || video_transport__prefers_websocket() === false)
+    {
+        if (state.socket != null)
+        {
+            video_transport__drop_socket();
+        }
+        return;
+    }
+    if (state.ready)
+    {
+        // the server's keepalive frames refresh last_received; a socket without any frame for this long is dead
+        if (now - state.last_received > 15000)
+        {
+            video_transport__drop_socket();
+        }
+        return;
+    }
+    if (now < state.pending_until)
+    {
+        return;
+    }
+    if (state.socket != null)
+    {
+        // an attempt that did not attach within the request window
+        video_transport__drop_socket();
+    }
+    if (g_local_client_id < 0 || !g_is_client_list_retrieved)
+    {
+        return;
+    }
+    // a request that leads nowhere is repeated with a growing delay; an attached socket resets the delay
+    state.pending_until = now + Math.min(VIDEO_TRANSPORT_REQUEST_INTERVAL_MS * Math.pow(2, state.request_attempts), VIDEO_TRANSPORT_REQUEST_INTERVAL_MAX_MS);
+    state.request_attempts++;
+    connection__send_message_object(
+    {
+        message:
+        {
+            type: "request_video_websocket"
+        }
+    });
+}
+
+/**
+ * @brief the server issued a video session (the message video_websocket_session): the socket is opened and attached with the proof frame
+ *
+ *        the proof frame is [1][4 bytes client id][16 bytes ticket][32 bytes HMAC-SHA256 with the session key
+ *        over the first 21 bytes]; the server answers with [2][16 bytes ticket][32 bytes HMAC-SHA256 over the
+ *        first 17 bytes], which is checked here, so the socket talks to the server that issued the session.
+ *        after that every frame from the socket is a video packet for video__on_media_frame, and an empty
+ *        frame is the server's keepalive, answered at once
+ *
+ * @param object message -> client_id, auth_key (hex), ticket (hex)
+ *
+ * @return void
+ */
+function video_transport__session(message)
+{
+    let state = g_video_transport;
+    if (state.timer == null || g_is_deep_idle || !g_is_authenticated || state.socket != null
+        || g_server_policy.is_audio_over_websocket_allowed !== true
+        || Date.now() > state.pending_until || message.client_id !== g_local_client_id)
+    {
+        return;
+    }
+    try
+    {
+        let auth_key = audio_transport__hex_bytes(message.auth_key, 32);
+        let ticket = audio_transport__hex_bytes(message.ticket, 16);
+        let url = new URL(g_audio_transport.url);
+        url.pathname = "/video";
+        url.search = "";
+        url.hash = "";
+        let socket = new WebSocket(url.href);
+        state.socket = socket;
+        socket.binaryType = "arraybuffer";
+        socket.onopen = function()
+        {
+            if (state.socket !== socket)
+            {
+                return;
+            }
+            let hello = new Uint8Array(53);
+            hello[0] = 1;
+            new DataView(hello.buffer).setUint32(1, message.client_id, false);
+            hello.set(ticket, 5);
+            hello.set(keys___hmac_sha256(auth_key, hello.subarray(0, 21)), 21);
+            socket.send(hello);
+        };
+        socket.onmessage = function(event)
+        {
+            if (state.socket !== socket)
+            {
+                return;
+            }
+            try
+            {
+                if (!(event.data instanceof ArrayBuffer))
+                {
+                    throw new Error("expected binary video");
+                }
+                state.last_received = Date.now();
+                if (!state.ready)
+                {
+                    let acknowledgement = new Uint8Array(event.data);
+                    if (acknowledgement.length !== 49 || acknowledgement[0] !== 2)
+                    {
+                        throw new Error("invalid video attachment acknowledgement");
+                    }
+                    let code = keys___hmac_sha256(auth_key, acknowledgement.subarray(0, 17));
+                    let difference = 0;
+                    for (let i = 0; i < 16; i++)
+                    {
+                        difference |= ticket[i] ^ acknowledgement[i + 1];
+                    }
+                    for (let i = 0; i < 32; i++)
+                    {
+                        difference |= code[i] ^ acknowledgement[i + 17];
+                    }
+                    if (difference !== 0)
+                    {
+                        throw new Error("video attachment authentication failed");
+                    }
+                    auth_key.fill(0);
+                    state.ready = true;
+                    state.pending_until = 0;
+                    state.request_attempts = 0;
+                    // Losing the previous socket clears the server's watch flag. Restore current
+                    // viewing intent only after this attachment has been authenticated.
+                    if (g_video_stream.role === "viewer" && g_video_stream.is_watching === true)
+                    {
+                        connection__send_message_object(
+                        {
+                            message:
+                            {
+                                type: "video_stream_watch",
+                                is_watching: true
+                            }
+                        });
+                        video__request_keyframe();
+                    }
+                    utils__custom_log("Video connected through WebSocket");
+                }
+                else if (event.data.byteLength > 0)
+                {
+                    video__on_media_frame(event.data);
+                }
+                else
+                {
+                    // the server's keepalive on an idle socket: answered at once
+                    socket.send(new Uint8Array(0));
+                }
+            }
+            catch (error)
+            {
+                utils__custom_log("Video connection rejected a packet: " + error.message);
+                video_transport__drop_socket();
+            }
+        };
+        socket.onclose = function()
+        {
+            if (state.socket === socket)
+            {
+                // a socket that was attached is requested again soon; one that never attached keeps the delay its request set
+                let was_ready = state.ready;
+                video_transport__drop_socket();
+                if (was_ready)
+                {
+                    state.pending_until = Date.now() + 3000;
+                }
+                utils__custom_log("Video WebSocket disconnected");
+            }
+        };
+        socket.onerror = function()
+        {
+            // onclose handles the retry
+        };
+    }
+    catch (error)
+    {
+        video_transport__drop_socket();
+        utils__custom_log("Video connection failed: " + error.message);
+    }
+}
+
+// video-stubs.js - the video streaming functions that the shared client code calls, as no-ops
+// for the headless node runtime. video.js itself needs WebCodecs and the DOM, so the node bundle
+// leaves it out; without these stubs the authentication, client list and channel key handlers
+// in dispatch.js, messages.js and server-settings-tab.js throw a ReferenceError in node.
+
+function video__apply_client_list(clients) { }
+function video__apply_policy_to_ui() { }
+function video__init_ui() { }
+function video__on_datachannel_received(channel) { }
+function video__on_keyframe_request() { }
+function video__on_local_channel_changed() { }
+function video__on_offer(message) { }
+function video__on_refused(message) { }
+function video__on_state(message) { }
+function video__on_viewer_request(message) { }
+function video__on_viewer_state(message) { }
+function video__on_worker_message(data) { }
+function video__post_channel_keys_to_worker() { }
+function video__refresh_controls() { }
+function video__reset_on_disconnect() { }
+function video__on_media_frame(frame) { }
+function video__post_transport_keys_to_worker() { }
+
 // server-settings-tab.js is embedded in template.html along with the other client files
 // it is the admin's server settings tab: the field table that loads and saves the general and log
 // settings, the policy the server announces, the icon upload queue and the country block list
@@ -18984,11 +21361,14 @@ var SERVER_SETTINGS_FIELDS = [
     { key: "display_country_flags", id: "server-settings-general-display-flags-checkbox", kind: "bool", tab: "general" },
     { key: "hide_admin_country_flag", id: "server-settings-general-hide-admin-flag-checkbox", kind: "bool", tab: "general" },
     { key: "enable_audio", id: "server-settings-general-enable-audio", kind: "bool", tab: "general" },
+    { key: "audio_connections", id: "server-settings-general-audio-connections", kind: "select", fallback: "both", tab: "general" },
     { key: "enable_music_bot_audio", id: "server-settings-general-enable-music-bot-audio-checkbox", kind: "bool", tab: "general" },
+    { key: "is_video_streaming_active", id: "server-settings-general-enable-video-streaming-checkbox", kind: "bool", tab: "general" },
     { key: "hide_clients_in_password_channels", id: "server-settings-general-hide-clients-in-password-protected-channels", kind: "bool", tab: "general" },
     { key: "allow_temp_channels", id: "server-settings-general-allow-temp-channels-checkbox", kind: "bool", tab: "general" },
     { key: "allow_typing_indicator", id: "server-settings-general-allow-typing-indicator-checkbox", kind: "bool", tab: "general" },
     { key: "allow_client_renames", id: "server-settings-general-allow-renames-checkbox", kind: "bool", tab: "general" },
+    { key: "allow_link_previews", id: "server-settings-general-link-previews-checkbox", kind: "bool", tab: "general" },
     { key: "is_sending_text_to_idle_clients_allowed", id: "server-settings-general-allow-text-to-idle-clients-checkbox", kind: "bool", tab: "general" },
     { key: "allow_private_messages", id: "server-settings-general-allow-private-messages-checkbox", kind: "bool", tab: "general" },
     { key: "allow_file_uploads", id: "server-settings-general-allow-file-uploads-checkbox", kind: "bool", tab: "general" },
@@ -19042,6 +21422,10 @@ function server_settings_tab__apply_server_settings_values_to_tab(values)
         {
             element.checked = (values[field.key] == true);
         }
+        else if (field.kind == "select")
+        {
+            element.value = (typeof values[field.key] === "string") ? values[field.key] : field.fallback;
+        }
         else
         {
             element.value = (typeof values[field.key] === "number") ? values[field.key] : field.fallback;
@@ -19076,6 +21460,10 @@ function server_settings_tab__collect_server_settings_from_tab(tab)
         {
             settings[field.key] = element.checked;
         }
+        else if (field.kind == "select")
+        {
+            settings[field.key] = element.value;
+        }
         else
         {
             let number = parseInt(element.value);
@@ -19084,6 +21472,24 @@ function server_settings_tab__collect_server_settings_from_tab(tab)
     }
 
     return settings;
+}
+
+/**
+ * @brief the audio switch shows or hides the "audio connections" select below it
+ *
+ * @return void
+ */
+function server_settings_tab__refresh_audio_connections_row_visibility()
+{
+    let audio_checkbox = document.getElementById("server-settings-general-enable-audio");
+    let row = document.getElementById("server-settings-general-audio-connections-row");
+
+    if (audio_checkbox == null || row == null)
+    {
+        return;
+    }
+
+    row.style.display = (audio_checkbox.checked == true) ? "" : "none";
 }
 
 /**
@@ -19117,8 +21523,11 @@ function server_settings_tab__apply_server_policy_fields(data)
     }
 
     server_settings_tab__apply_rename_policy_to_ui();
+    link_previews__apply_policy();
     chat_files__apply_file_upload_policy_to_ui();
     chat_files__apply_chat_picture_policy_to_ui();
+    video__apply_policy_to_ui();
+    audio_transport__select_mode();
 }
 
 /**
@@ -19502,6 +21911,11 @@ function dispatch__mainthread_onmessage(e)
     {
         utils__custom_log(e.data.value);
     }
+    else if (typeof e.data.type === "string" && e.data.type.indexOf("video_worker__") == 0)
+    {
+        // everything the video worker posts back: packets to send, keyframe requests, decoder state
+        video__on_worker_message(e.data);
+    }
     else if (e.data.type == "opus_encoder_worker__encode_result")
     {
         // chunks already inside the encoder when push-to-talk ended arrive here after
@@ -19528,9 +21942,8 @@ function dispatch__mainthread_onmessage(e)
                 sequenced_chunk.set(opus_chunk_bytes, 2);
                 g_voice_send_sequence_number = (g_voice_send_sequence_number + 1) & 0xffff;
 
-                let data = keys__encrypt_data_with_aes_keys(g_current_channel_keys, sequenced_chunk);
-                if (data != null && data.byteLength > 0) { g_session.bytes_sent += data.byteLength; }
-                g_datachannel.send(data);
+                // the encryption layers and the sending are in audio-transport.js
+                audio_transport__send_voice(sequenced_chunk);
             }
         }
         else
@@ -19582,6 +21995,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "websocket_worker_onclose")
     {
+        audio_transport__reset();
         // the driver awaits this signal; it decides whether and when to redial
         g_last_connect_attempt_failed = true;
 
@@ -19632,6 +22046,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "websocket_worker_onerror")
     {
+        audio_transport__reset();
         g_last_connect_attempt_failed = true;
 
         if (g_last_disconnect_reason === "")
@@ -19759,6 +22174,8 @@ function dispatch__mainthread_onmessage(e)
             }
 
             g_is_authenticated = true;
+            // the audio connection mode was picked above, with the policy; the socket of a previous session is dropped here
+            audio_transport__reset();
             console.log("client authenticated");
 
             // the attempt is over once the adopted session accepted the login; the refreshed
@@ -19838,9 +22255,9 @@ function dispatch__mainthread_onmessage(e)
         // default stun port is 3478 for this chat. Stun port is given to client with websocket connection, stun port can be changed if needed, there are two places that need to be edited in code of server to set different stun port
 
         g_iceconfig = {
-            iceServers: [{
+            iceServers: Number(e.data.stun_port) > 0 ? [{
                 urls: "stun:" + g_host + ":" + e.data.stun_port,
-            }],
+            }] : [],
         };
 
         // the datachannel/playback below is set up whenever audio is on for clients or music bots,
@@ -19930,6 +22347,24 @@ function dispatch__mainthread_onmessage(e)
             android_host__enter_deep_idle();
         }
     }
+    else if (e.data.type == "data_processing_worker__music_bot_key")
+    {
+        audio_transport__set_music_bot_key(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__audio_websocket_session")
+    {
+        audio_transport__session(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_websocket_session")
+    {
+        video_transport__session(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__local_media_keys")
+    {
+        // android webview only: the node runtime handed over the complete media key set
+        keys__set_media_keys_from_host(e.data.value.encryption_key, e.data.value.checksum_key, e.data.value.server_keys);
+        video__post_transport_keys_to_worker();
+    }
     else if (e.data.type == "data_processing_worker__metadata_keys_accepted")
     {
         g_keys_init_status = true;
@@ -19938,7 +22373,7 @@ function dispatch__mainthread_onmessage(e)
     {
         if (connection__fast_reconnect_buffer_list("client", e.data.value) == false)
         {
-            server_msg.process_client_list_from_server(e.data.value);
+            channel_tree__apply_server_update(server_msg.process_client_list_from_server, e.data.value);
         }
     }
     else if (e.data.type == "data_processing_worker__client_avatar_from_server")
@@ -19976,7 +22411,7 @@ function dispatch__mainthread_onmessage(e)
     {
         if (connection__fast_reconnect_buffer_list("channel", e.data.value) == false)
         {
-            server_msg.process_channel_list_from_server(e.data.value);
+            channel_tree__apply_server_update(server_msg.process_channel_list_from_server, e.data.value);
         }
     }
     else if (e.data.type == "data_processing_worker__tag_list_from_server")
@@ -20053,6 +22488,30 @@ function dispatch__mainthread_onmessage(e)
     {
         server_msg.process_stop_song_stream_from_server(e.data.value);
     }
+    else if (e.data.type == "data_processing_worker__video_stream_state_from_server")
+    {
+        server_msg.process_video_stream_state_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_offer_from_server")
+    {
+        server_msg.process_video_stream_offer_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_viewer_request_from_server")
+    {
+        server_msg.process_video_stream_viewer_request_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_viewer_state_from_server")
+    {
+        server_msg.process_video_stream_viewer_state_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_keyframe_request_from_server")
+    {
+        server_msg.process_video_stream_keyframe_request_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_refused_from_server")
+    {
+        server_msg.process_video_stream_refused_from_server(e.data.value);
+    }
     else if (e.data.type == "data_processing_worker__chat_message_delete_from_server")
     {
         server_msg.process_chat_message_delete_from_server(e.data.value);
@@ -20094,6 +22553,34 @@ function dispatch__mainthread_onmessage(e)
         };
 
         g_metadata_keys.unshift(single_key);
+
+        // on android the node runtime does this key exchange for a webview that has no shared secret of
+        // its own. the webview needs the session and server keys to encrypt and check its audio and video frames
+        // (keys.js, keys__media_session_layer), so the node runtime hands them over through the loopback
+        // connection as a local message; it never leaves the device. a browser page has no listener here
+        if (android_host__is_ui_only_runtime() == false && typeof g_node_frame_listener !== "undefined" && g_node_frame_listener != null)
+        {
+            try
+            {
+                g_node_frame_listener(JSON.stringify(
+                {
+                    message:
+                    {
+                        type: "local_media_keys",
+                        encryption_key: keys__bytes_to_hex(dh_keys.enc_key),
+                        checksum_key: keys__bytes_to_hex(dh_keys.mac_key),
+                        server_keys: keys__media_server_key_layers().map(function(layer)
+                        {
+                            return keys__bytes_to_hex(layer.key_bytes);
+                        })
+                    }
+                }));
+            }
+            catch (listener_error)
+            {
+                console.log("the media keys could not be handed to the ui: " + listener_error.message);
+            }
+        }
 
         // removed: never log key material (g_metadata_keys holds the session key)
 
@@ -20161,6 +22648,7 @@ function dispatch__mainthread_onmessage(e)
         let msg = e.data.value;
         server_settings_tab__apply_server_settings_values_to_tab(msg.message);
         server_settings_tab__refresh_hide_admin_flag_row_visibility();
+        server_settings_tab__refresh_audio_connections_row_visibility();
         chat_files__refresh_file_upload_size_visibility();
         chat_files__refresh_picture_size_visibility();
         server_settings_tab__set_blocked_countries_from_server(msg.message.blocked_countries);
@@ -20171,13 +22659,17 @@ function dispatch__mainthread_onmessage(e)
     {
         server_msg.process_admin_log_from_server(e.data.value);
     }
+    else if (e.data.type == "data_processing_worker__url_resolved")
+    {
+        link_previews__resolved(e.data.value);
+    }
     else if (e.data.type == "data_processing_worker__server_policy_from_server")
     {
         server_settings_tab__apply_server_policy_fields(e.data.value.message);
     }
     else if (e.data.type == "data_processing_worker__channel_join_from_server")
     {
-        server_msg.process_channel_join_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_join_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__server_chat_message_id_for_local_message_id_from_server")
     {
@@ -20185,15 +22677,15 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__client_connect_from_server")
     {
-        server_msg.process_client_connect_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_connect_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_rename_from_server")
     {
-        server_msg.process_client_rename_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_rename_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_disconnect_from_server")
     {
-        server_msg.process_client_disconnect_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_disconnect_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__audio_state_of_single_client_from_server")
     {
@@ -20228,23 +22720,23 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__channel_edit_from_server")
     {
-        server_msg.process_channel_edit_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_edit_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_going_to_idle_mode")
     {
-        server_msg.process_client_client_going_to_idle_mode_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_client_going_to_idle_mode_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_coming_back_from_idle_mode")
     {
-        server_msg.process_client_coming_back_from_idle_mode_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_coming_back_from_idle_mode_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_delete_from_server")
     {
-        server_msg.process_channel_delete_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_delete_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_create_from_server")
     {
-        server_msg.process_channel_create_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_create_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_chat_picture_metadata")
     {
@@ -20338,6 +22830,9 @@ function dispatch__mainthread_onmessage(e)
             type: "mainthread__channel_keys_for_opus_decoder",
             value: g_current_channel_keys
         });
+
+        // the video worker encrypts and decrypts stream packets with the same keys
+        video__post_channel_keys_to_worker();
     }
     else if (e.data.type == "data_processing_worker__tell_websocket_worker_to_send_data")
     {
@@ -21100,6 +23595,7 @@ async function main__window_onload()
     document.getElementById("server-settings-general-allow-pictures-checkbox").onchange = chat_files__refresh_picture_size_visibility;
     document.getElementById("server-settings-general-country-blocking-checkbox").onchange = server_settings_tab__refresh_country_blocking_visibility;
     document.getElementById("server-settings-general-display-flags-checkbox").onchange = server_settings_tab__refresh_hide_admin_flag_row_visibility;
+    document.getElementById("server-settings-general-enable-audio").onchange = server_settings_tab__refresh_audio_connections_row_visibility;
     document.getElementById("server-settings-country-block-select").onchange = server_settings_tab__country_block_select_onchange;
     chat_files__setup_chat_file_drag_and_drop();
     chat_files__setup_chat_file_card_glow();
@@ -21561,6 +24057,13 @@ async function main__window_onload()
         }
     }
 
+    // the audio connection preference: stored locally, applied at once within the server's policy
+    document.getElementById("local-settings-audio-connection").value = g_audio_connection_preference;
+    document.getElementById("local-settings-audio-connection").onchange = function()
+    {
+        audio_transport__set_preference(this.value);
+    };
+
     // press the button, then press the key you want. escape cancels
     document.getElementById("local-settings-ptt-key").onclick = function()
     {
@@ -21865,6 +24368,10 @@ async function main__window_onload()
     g_opus_encoder_worker = audio_opus_glue__create_new_webworker_in_same_file("opus_encoder_worker");
     g_opus_decoder_worker = audio_opus_glue__create_new_webworker_in_same_file("opus_decoder_worker");
     g_minimp3_worker = audio_opus_glue__create_new_webworker_in_same_file("minimp3_worker");
+    g_video_worker = audio_opus_glue__create_new_webworker_in_same_file("video_worker");
+
+    // the video streaming buttons and popup; needs the video worker above (the viewer's canvas is handed to it)
+    video__init_ui();
 
     // restore a persisted identity: the 200-char passphrase deterministically recreates the keypair,
     // so the same identity survives relaunches. it is private-key-equivalent in localStorage, hence
@@ -22263,6 +24770,9 @@ return {
             g_icons: g_icons,
             current_channel_id: g_current_channel_id,
             current_channel_keys: g_current_channel_keys,
+            // the keys of this client's media frames, for the test harness (keys.js)
+            media_session_layer: keys__media_session_layer(),
+            media_server_key_layers: keys__media_server_key_layers(),
             local_client_id: g_local_client_id,
             g_local_username: g_local_username,
             g_current_chat_context_id: g_current_chat_context_id,

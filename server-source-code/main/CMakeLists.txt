@@ -1,13 +1,15 @@
 #set(CMAKE_VERBOSE_MAKEFILE ON)
 
-cmake_minimum_required(VERSION 3.23)
+cmake_minimum_required(VERSION 3.22)
 project(untitled C)
 set(CMAKE_C_STANDARD 99)
 
 
 get_filename_component(PROJECT_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(ANDROID)
+    message(STATUS "Configuring ${PROJECT_NAME} for Android")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(STATUS "Configuring ${PROJECT_NAME} for Linux")
     # Additional configurations for Linux
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -27,7 +29,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     # Apple clang / ld64 do not accept -static-libgcc/-static-libstdc++ (those are GCC-only).
     # instead give the executable an rpath so it finds libdatachannel.dylib sitting next to it.
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,@loader_path")
-else()
+elseif(NOT ANDROID)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 endif()
 
@@ -43,7 +45,13 @@ add_executable(chat-server
         settings.c
         base.c
         audio_channel.c
+        audio_webrtc.c
+        audio_websocket.c
+        metadata_crypto.c
+        media_auth.c
         video_stream.c
+        video_websocket.c
+        video_webrtc.c
         ../third-party/rxi-log/log.c
         ../third-party/zhicheng/base64.c
         ../third-party/kokke-tiny-aes-c/aes.c
@@ -59,7 +67,10 @@ add_executable(chat-server
         ip_tools.c
         musicbot.c
         util.c
-        http/http_server.c
+        httpserver/http_server.c
+        httpclient/httpclient.c
+        httpclient/url_preview.c
+        httpclient/url_resolver.c
         )
 
 
@@ -76,6 +87,24 @@ target_compile_definitions(server-websocket PRIVATE VALIDATE_UTF8)
 target_include_directories(server-websocket PRIVATE ../third-party/theldus-websocket/include)
 target_link_libraries(server-websocket PUBLIC Threads::Threads)
 target_link_libraries(chat-server PRIVATE server-websocket)
+
+if(WIN32)
+    target_sources(chat-server PRIVATE httpclient/httpclient_windows.c)
+    set_source_files_properties(httpclient/httpclient.c httpclient/httpclient_windows.c
+        PROPERTIES COMPILE_DEFINITIONS "_WIN32_WINNT=0x0A00")
+    target_link_libraries(chat-server PRIVATE secur32)
+else()
+    target_sources(chat-server PRIVATE httpclient/httpclient_posix.c)
+    if(APPLE)
+        target_link_libraries(chat-server PRIVATE "-framework Security" "-framework CoreFoundation")
+    endif()
+endif()
+
+if(ANDROID)
+    # These source-built targets are provided by android-server-app/native.
+    target_link_libraries(chat-server PRIVATE datachannel-static libtommath
+        android_violet MbedTLS::MbedTLS android_maxminddb opus dl m)
+endif()
 
 #linux uses forward slash for path, windows two backward slashes
 

@@ -270,6 +270,11 @@ static void* _musicbot_internal__reaper_thread(void* arg_void)
     }
 
     memorymanager__free((nuint)music_bot_client->music_bot_client_extension.songs);
+    if (music_bot_client->music_bot_client_extension.audio_keys != NULL_POINTER)
+    {
+        clib__null_memory(music_bot_client->music_bot_client_extension.audio_keys, sizeof(music_bot_audio_keys_t));
+        free(music_bot_client->music_bot_client_extension.audio_keys);
+    }
     clib__null_memory((void*)music_bot_client, sizeof(client_t));
 
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -488,8 +493,11 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
     {
         clib__read_lock(&g_clients_global_rwlock_guard);
 
-        // server_msg__send_music_bot_song_list_to_single_client checks validity of client
-        server_msg__send_music_bot_song_list_to_single_client(arg->sender_client_id, arg->music_bot->client_id);
+        // the requester may have left and the bot's slot may have been reused while the song loaded
+        if (util__is_client_valid_admin((int)arg->sender_client_id) == TRUE && util__is_client_valid_musicbot((int)arg->music_bot->client_id) == TRUE)
+        {
+            server_msg__send_music_bot_song_list_to_single_client(&g_clients_array[arg->sender_client_id], arg->music_bot);
+        }
 
         clib__unlock(&g_clients_global_rwlock_guard);
         DBG_CLIENT_MESSAGE log_info("%s", "calling server_msg__send_music_bot_song_list_to_single_client");

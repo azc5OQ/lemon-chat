@@ -4,6 +4,7 @@
 #include "clib/clib_memory.h"
 #include "../third-party/dave-g-json/cJSON.h" // needed by base.h
 #include "base.h"
+#include "metadata_crypto.h"
 #include "server_logs.h"
 
 #include "../third-party/ITH-sha/sha256.h"
@@ -15,7 +16,10 @@
 
 #include "memory_manager.h"
 #include "audio_channel.h"
-#include "http/http_server.h"
+#include "audio_webrtc.h"
+#include "audio_websocket.h"
+#include "video_websocket.h"
+#include "httpserver/http_server.h"
 #include "first_time_setup.h"
 #include "settings.h"
 
@@ -128,9 +132,20 @@ void onopen(ws_cli_conn_t* client)
     char* ip_address = NULL_POINTER;
     int64 index = 0;
 
+    if (ws_media_purpose(client) == WS_MEDIA_PURPOSE_AUDIO)
+    {
+        audio_websocket__onopen(client);
+        return;
+    }
+    if (ws_media_purpose(client) == WS_MEDIA_PURPOSE_VIDEO)
+    {
+        video_websocket__onopen(client);
+        return;
+    }
 
-
+    uint64 started_ms = base__get_timestamp_ms();
     clib__write_lock(&g_clients_global_rwlock_guard);
+    uint64 acquired_ms = base__get_timestamp_ms();
     g_server_settings.client_count = g_server_settings.client_count + 1;
     // log_info("%s %d", "client_count , ", g_server_settings.client_count);
     DBG_AUTHENTICATION log_info("%s %p %s", "client connected , ", client, "\n");
@@ -188,6 +203,9 @@ void onopen(ws_cli_conn_t* client)
 
 label_onopen_end:
     clib__unlock(&g_clients_global_rwlock_guard);
+    DBG_CONNECTION_PROGRESS log_info("[connection] onopen client=%lld wait_ms=%llu work_ms=%llu",
+        (long long)index, (unsigned long long)(acquired_ms - started_ms),
+        (unsigned long long)(base__get_timestamp_ms() - acquired_ms));
 }
 
 /**
@@ -205,7 +223,20 @@ void onclose(ws_cli_conn_t* websocket)
     uint64 i = 0;
     int64 client_index = -1;
 
+    if (ws_media_purpose(websocket) == WS_MEDIA_PURPOSE_AUDIO)
+    {
+        audio_websocket__onclose(websocket);
+        return;
+    }
+    if (ws_media_purpose(websocket) == WS_MEDIA_PURPOSE_VIDEO)
+    {
+        video_websocket__onclose(websocket);
+        return;
+    }
+
+    uint64 started_ms = base__get_timestamp_ms();
     clib__write_lock(&g_clients_global_rwlock_guard);
+    uint64 acquired_ms = base__get_timestamp_ms();
     clib__write_lock(&g_channels_global_rwlock_guard);
 
     g_server_settings.client_count = g_server_settings.client_count - 1;
@@ -245,6 +276,9 @@ void onclose(ws_cli_conn_t* websocket)
 label_onclose_end:
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
+    DBG_CONNECTION_PROGRESS log_info("[connection] onclose client=%lld wait_ms=%llu work_ms=%llu",
+        (long long)client_index, (unsigned long long)(acquired_ms - started_ms),
+        (unsigned long long)(base__get_timestamp_ms() - acquired_ms));
 }
 
 /**
@@ -265,12 +299,26 @@ void onmessage(ws_cli_conn_t* websocket, unsigned char* base64_to_process_and_de
     int64 client_index = 0;
     char* decrypted_metadata_cstring = 0;
 
-    // will this affect negatively
+    if (ws_media_purpose(websocket) == WS_MEDIA_PURPOSE_AUDIO)
+    {
+        audio_websocket__onmessage(websocket, base64_to_process_and_decrypt, size, type);
+        return;
+    }
+    if (ws_media_purpose(websocket) == WS_MEDIA_PURPOSE_VIDEO)
+    {
+        video_websocket__onmessage(websocket, base64_to_process_and_decrypt, size, type);
+        return;
+    }
+
+    // These timings report delays without recording the message or its keys.
+    uint64 started_ms = base__get_timestamp_ms();
     client_index = _main_internal__get_client_index_by_ws_client_pointer(websocket);
     if (client_index == -1)
     {
         return;
     }
+
+    uint64 found_ms = base__get_timestamp_ms();
 
     DBG_ONMESSAGE log_info("%s %d %s", "onmessage() : ", client_index, "\n");
 
@@ -304,9 +352,17 @@ void onmessage(ws_cli_conn_t* websocket, unsigned char* base64_to_process_and_de
 
     is_authenticated = g_clients_array[client_index].is_authenticated;
     is_existing = g_clients_array[client_index].is_existing;
-    base__get_data_from_base64_and_decrypt_it(client_index, (char* )base64_to_process_and_decrypt, decrypted_metadata_cstring, size);
+    if (!metadata_crypto__decrypt_from_client(&g_clients_array[client_index],
+        (const char*)base64_to_process_and_decrypt, (unsigned char*)decrypted_metadata_cstring, size))
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        memorymanager__free((nuint)decrypted_metadata_cstring);
+        return;
+    }
 
     clib__unlock(&g_clients_global_rwlock_guard);
+
+    uint64 decrypted_ms = base__get_timestamp_ms();
 
     if (is_existing == TRUE)
     {
@@ -322,6 +378,14 @@ void onmessage(ws_cli_conn_t* websocket, unsigned char* base64_to_process_and_de
 
     memorymanager__free((nuint)decrypted_metadata_cstring);
     decrypted_metadata_cstring = 0;
+    uint64 finished_ms = base__get_timestamp_ms();
+    if (finished_ms - started_ms >= 250)
+    {
+        DBG_CONNECTION_PROGRESS log_info("[connection] slow request client=%lld bytes=%llu authenticated=%d lookup_ms=%llu decrypt_ms=%llu handler_ms=%llu",
+            (long long)client_index, (unsigned long long)size, (int)is_authenticated,
+            (unsigned long long)(found_ms - started_ms), (unsigned long long)(decrypted_ms - found_ms),
+            (unsigned long long)(finished_ms - decrypted_ms));
+    }
 }
 
 /**
@@ -338,7 +402,15 @@ void websocket_thread(void)
     evs.onopen = &onopen;
     evs.onclose = &onclose;
     evs.onmessage = &onmessage;
-    ws_socket(&evs, g_server_settings.websocket_port, 1, 2000); // Never returns.
+    if (ws_socket(&evs, g_server_settings.websocket_port, 1, 2000) != 0)
+    {
+        exit(EXIT_FAILURE);
+    }
+#ifdef __ANDROID__
+    // the wrapper must not report hosting until the listener actually exists
+    puts("LEMON_ANDROID_READY");
+    fflush(stdout);
+#endif
 }
 
 /**
@@ -1250,7 +1322,7 @@ static void _main_internal__print_debug_information(void)
     DBG_MEMORY_MANAGER printf("%s", "DBG_MEMORY_MANAGER active \n");
     DBG_CONNECTION_CHECK_THREAD printf("%s", "DBG_CONNECTION_CHECK_THREAD active \n");
     DBG_CLIENT_DISCONNECT printf("%s", "DBG_CLIENT_DISCONNECT active \n");
-    DBG_AUDIOCHANNEL_WEBRTC printf("%s", "DBG_AUDIOCHANNEL_WEBRTC active \n");
+    DBG_AUDIO_WEBRTC printf("%s", "DBG_AUDIO_WEBRTC active \n");
     DBG_VIOLET printf("%s", "DBG_VIOLET active \n");
     DBG_DBG_MEMORY_ALLOCATIONS printf("%s", "DBG_DBG_MEMORY_ALLOCATIONS active \n");
     DBG_IP_TOOLS printf("%s", "DBG_IP_TOOLS active \n");
@@ -1339,7 +1411,11 @@ static void _main_internal__print_banner(void)
  *
  * @return int process exit code
  */
+#ifdef __ANDROID__
+int lemon_server_main(void)
+#else
 int main(void)
+#endif
 {
     char input[50];
     char http_webroot_resolved[512];
@@ -1356,6 +1432,7 @@ int main(void)
 
     _main_internal__init_terminal();
     _main_internal__print_banner();
+    DBG_CONNECTION_PROGRESS puts("Connection timing logs enabled; message contents and keys are not logged.");
 
 #ifdef DEBUG_ACTIVE
     printf("%s", "this is debug build \n");
@@ -1405,12 +1482,22 @@ int main(void)
         || g_icons_array == NULL_POINTER || g_tags_array == NULL_POINTER || g_ban_array == NULL_POINTER
         || g_webrtc_muggles_array == NULL_POINTER
         || (g_server_settings.allow_offline_messages == TRUE && g_offline_messages == NULL_POINTER)
-        || ws_init_client_slots((uint32_t)g_server_settings.max_client_count) != 0)
+        // reserve chat, audio and video sockets even when media is enabled later at run time
+        || ws_init_client_slots((uint32_t)g_server_settings.max_client_count * WEBSOCKET_CONNECTIONS_PER_CLIENT) != 0)
     {
         fprintf(stderr, "Unable to reserve startup arrays. Reduce server_slots in server_settings.json or provide more memory.\n");
         exit(EXIT_FAILURE);
     }
 
+    printf("Audio connections: %s (changeable in the server settings tab). About %llu bytes per client slot; an attached audio websocket adds about 70 KiB and two threads, a video websocket about 530 KiB.\n",
+        audio_channel__policy_value(),
+        (uint64)(sizeof(client_t) + sizeof(webrtc_peer_t) + ws_client_slot_size() * WEBSOCKET_CONNECTIONS_PER_CLIENT));
+
+    if ((g_server_settings.is_voice_chat_active == TRUE || g_server_settings.is_music_bot_audio_active == TRUE)
+        && g_server_settings.is_audio_over_websocket_allowed == FALSE && g_server_settings.is_audio_over_webrtc_allowed == FALSE)
+    {
+        printf("Warning: audio is enabled but no audio connection is allowed (is_audio_over_websocket_allowed and is_audio_over_webrtc_allowed are both false in server_settings.json); no client can send or receive audio.\n");
+    }
 
     settings__init_channel_list();
     settings__init_tags_and_icons();
@@ -1469,6 +1556,12 @@ int main(void)
     _main_internal__launch_stunnel();
 
     _main_internal__print_startup_summary();
+
+#ifndef DEBUG_ACTIVE
+    // Console writes can block network threads on a slow Windows terminal.
+    // Release builds show the startup summary, then stop writing runtime logs.
+    log_set_quiet(true);
+#endif
 
     pthread_create((pthread_t*)&g_thread_id0, 0, (void*)&websocket_thread, 0);
     pthread_create((pthread_t*)&g_thread_id1, 0, (void*)&websocket_connection_check_thread, 0);

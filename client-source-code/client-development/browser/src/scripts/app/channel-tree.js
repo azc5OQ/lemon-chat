@@ -3,6 +3,82 @@
 // and the avatars on those rows (the cache, the lazy loading queue and the prefetch after joining)
 // messages.js and ui.js call it while rendering the tree
 
+// Keep the row the user is looking at in the same place when server updates add
+// or remove rows above it. If the current channel is outside the visible area,
+// keep the first visible row instead, so reading another channel still works.
+function channel_tree__apply_server_update(handler, message)
+{
+    let container = typeof document === "undefined" ? null : document.getElementById("channel-list-container");
+    let anchors = [];
+    if (container != null && container.clientHeight > 0)
+    {
+        let viewport = container.getBoundingClientRect();
+        let rows = container.querySelectorAll(".single-channel, .connected-client");
+        for (let row of rows)
+        {
+            let bounds = row.getBoundingClientRect();
+            if (bounds.height <= 0 || bounds.bottom <= viewport.top || bounds.top >= viewport.bottom)
+            {
+                continue;
+            }
+            let attribute = row.classList.contains("single-channel") ? "data-channel-id" : "data-connected-client-id";
+            let id = row.getAttribute(attribute);
+            let anchor = { attribute: attribute, id: id, top: bounds.top };
+            if (attribute === "data-channel-id" && Number(id) === g_current_channel_id)
+            {
+                anchors.unshift(anchor);
+            }
+            else
+            {
+                anchors.push(anchor);
+            }
+        }
+    }
+    try
+    {
+        return handler.call(server_msg, message);
+    }
+    finally
+    {
+        for (let anchor of anchors)
+        {
+            let row = container.querySelector('[' + anchor.attribute + '="' + anchor.id + '"]');
+            if (row == null || row.getBoundingClientRect().height <= 0)
+            {
+                continue;
+            }
+            container.scrollTop += row.getBoundingClientRect().top - anchor.top;
+            break;
+        }
+    }
+}
+
+// Remove every copy of a client row and its list entry. Repeated connection
+// notices must not leave an older copy behind when that client disconnects.
+function channel_tree__forget_client(client_id)
+{
+    client_id = Number(client_id);
+    if (typeof document !== "undefined")
+    {
+        for (let row of document.querySelectorAll('.connected-client[data-connected-client-id="' + client_id + '"]'))
+        {
+            row.remove();
+        }
+    }
+    g_map_client_id_to_array_index.clear();
+    let kept = 0;
+    for (let client of g_client_list)
+    {
+        if (client.client_id !== client_id)
+        {
+            g_client_list[kept] = client;
+            g_map_client_id_to_array_index.set(client.client_id, kept);
+            kept++;
+        }
+    }
+    g_client_list.length = kept;
+}
+
 // state private to this file
 var PREFETCH_AVATARS_AUTOMATICALLY = true;
 

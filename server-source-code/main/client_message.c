@@ -1,4 +1,5 @@
 #include "definitions.h"
+#include "metadata_crypto.h"
 #include "dh_primes.h"
 
 #include "../third-party/dave-g-json/cJSON.h"
@@ -12,6 +13,9 @@
 #include "server_message.h"
 #include "server_logs.h"
 #include "audio_channel.h"
+#include "audio_webrtc.h"
+#include "audio_websocket.h"
+#include "video_websocket.h"
 #include "video_stream.h"
 #include "ip_tools.h"
 #include "musicbot.h"
@@ -751,13 +755,13 @@ static boole _client_msg_internal__is_json_process_microphone_usage_valid(cJSON*
     json_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
     if (cJSON_IsNumber(json_value) == FALSE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "_client_msg_internal__is_json_process_microphone_usage_valid cJSON_IsNumber(json_value_object) \n");
+        DBG_AUDIO_WEBRTC log_info("%s", "_client_msg_internal__is_json_process_microphone_usage_valid cJSON_IsNumber(json_value_object) \n");
         return FALSE;
     }
 
     if (json_value->valueint < 1 || json_value->valueint > 3)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "_client_msg_internal__is_json_process_microphone_usage_valid json_value->valueint < 1 || json_value->valueint > 3 \n");
+        DBG_AUDIO_WEBRTC log_info("%s", "_client_msg_internal__is_json_process_microphone_usage_valid json_value->valueint < 1 || json_value->valueint > 3 \n");
         return FALSE;
     }
 
@@ -785,50 +789,50 @@ static boole _client_msg_internal__is_ice_candidate_format_valid(cJSON* json_roo
     json_value_object = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
     if (cJSON_IsObject(json_value_object) == FALSE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsObject(json_value_object) \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsObject(json_value_object) \n");
         return FALSE;
     }
 
     json_candidate = cJSON_GetObjectItemCaseSensitive(json_value_object, "candidate");
     if (cJSON_IsString(json_candidate) == FALSE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsString(json_candidate) \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsString(json_candidate) \n");
         return FALSE;
     }
 
     if (json_candidate->valuestring == NULL_POINTER)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_candidate->valuestring == NULL \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_candidate->valuestring == NULL \n");
         return FALSE;
     }
 
     // if (clib__utf8_string_length(json_sdp_message_type->valuestring) == 0)
     // {
-    // DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s","client : ", client_id, " clib__utf8_string_length(json_sdp_message_type->valuestring) \n");
+    // DBG_AUDIO_WEBRTC log_info("%s %llu %s","client : ", client_id, " clib__utf8_string_length(json_sdp_message_type->valuestring) \n");
     // return FALSE;
     // }
     json_sdpMid = cJSON_GetObjectItemCaseSensitive(json_value_object, "sdpMid");
     if (cJSON_IsString(json_sdpMid) == FALSE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsString(json_sdpMid) \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsString(json_sdpMid) \n");
         return FALSE;
     }
 
     if (json_sdpMid->valuestring == NULL_POINTER)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_sdpMid->valuestring == NULL \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_sdpMid->valuestring == NULL \n");
         return FALSE;
     }
 
     // if (clib__utf8_string_length(json_sdp_message_value->valuestring) == 0)
     // {
-    // DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s","client : ", client_id, " clib__utf8_string_length(json_sdp_message_value->valuestring) \n");
+    // DBG_AUDIO_WEBRTC log_info("%s %llu %s","client : ", client_id, " clib__utf8_string_length(json_sdp_message_value->valuestring) \n");
     // return FALSE;
     // }
     json_sdpMLineIndex = cJSON_GetObjectItemCaseSensitive(json_value_object, "sdpMLineIndex");
     if (cJSON_IsNumber(json_sdpMLineIndex) == FALSE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsNumber(json_sdpMLineIndex) \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsNumber(json_sdpMLineIndex) \n");
         return FALSE;
     }
 
@@ -894,45 +898,45 @@ static boole _client_msg_internal__is_json_sdp_answer_format_valid(cJSON* json_r
     json_value_object = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
     if (cJSON_IsObject(json_value_object) == FALSE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsObject(json_value_object) \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsObject(json_value_object) \n");
         return FALSE;
     }
 
     json_sdp_message_type = cJSON_GetObjectItemCaseSensitive(json_value_object, "type");
     if (cJSON_IsString(json_sdp_message_type) == FALSE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsString(json_sdp_message_type) \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsString(json_sdp_message_type) \n");
         return FALSE;
     }
 
     if (json_sdp_message_type->valuestring == NULL_POINTER)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_sdp_message_type->valuestring == NULL \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_sdp_message_type->valuestring == NULL \n");
         return FALSE;
     }
 
     if (clib__utf8_string_length(json_sdp_message_type->valuestring) == 0)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " clib__utf8_string_length(json_sdp_message_type->valuestring) \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " clib__utf8_string_length(json_sdp_message_type->valuestring) \n");
         return FALSE;
     }
 
     json_sdp_message_value = cJSON_GetObjectItemCaseSensitive(json_value_object, "sdp");
     if (cJSON_IsString(json_sdp_message_value) == FALSE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsString(json_sdp_message_value) \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsString(json_sdp_message_value) \n");
         return FALSE;
     }
 
     if (json_sdp_message_value->valuestring == NULL_POINTER)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_sdp_message_value->valuestring == NULL \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_sdp_message_value->valuestring == NULL \n");
         return FALSE;
     }
 
     if (clib__utf8_string_length(json_sdp_message_value->valuestring) == 0)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s %llu %s", "client : ", client_id, " clib__utf8_string_length(json_sdp_message_value->valuestring) \n");
+        DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " clib__utf8_string_length(json_sdp_message_value->valuestring) \n");
         return FALSE;
     }
 
@@ -1361,7 +1365,7 @@ boole client_msg__is_message_correct_at_first_sight_and_get_message_type(cJSON* 
 
     if (objectCount != 1)
     {
-        log_info("%s %llu %s", "client : ", client_id, " objectCount = cJSON_GetArraySize(json_root) is not 1");
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " objectCount = cJSON_GetArraySize(json_root) is not 1");
         return FALSE;
     }
 
@@ -2081,21 +2085,35 @@ const char* g_dh_known_modulus_str = DH_MODULUS_STR;
  * @param cJSON* json_root -> parsed json message from the client
  * @param uint64 sender_client_id -> index into g_clients_array for this client
  *
- * @note takes the global clients write lock for everything after the initial validation, every
- *       early exit past that point goes through the goto label so the lock is released
+ * @note the clients write lock is taken twice and only briefly: once to check the slot and store the
+ *       public key, once to store the results and send the challenge. the Diffie-Hellman arithmetic
+ *       (two exponentiations with an 8192-bit modulus, hundreds of milliseconds) and the RSA encryption
+ *       of the challenge run without any lock, so one login never stalls the relays or the other
+ *       logins. between the two locks the slot may have been given to another connection (the client
+ *       dropped and the slot was reused, or an identity takeover closed it), which the second lock
+ *       checks before anything is stored
  *
  * @return void
  */
 void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_id)
 {
+    uint64 started_ms = base__get_timestamp_ms();
+    uint64 crypto_started_ms = 0;
+    uint64 crypto_finished_ms = 0;
     boole status = FALSE;
     mp_err mp_status = 0;
     size_t mp_written = 0;
+    boole is_bignums_initialized = FALSE;
+    boole is_failed = TRUE;           // only a run that reaches the end turns this off; a failure closes the connection
+    boole is_slot_changed = FALSE;    // the slot belongs to another connection now: nothing to close, nothing to store
 
     // data extracted from JSON
     char* public_key = 0;
     char* verification_string = 0;
     char* dh_received_public_mix_from_client = 0;
+
+    // the connection this login belongs to, remembered under the first lock and checked under the second
+    ws_cli_conn_t* socket = NULL_POINTER;
 
     // DH bignums
     mp_int bignum_modulus;
@@ -2106,17 +2124,18 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
     mp_int bignum_server_public_mix;
     mp_int bignum_modulus_minus_one;
 
-    // challenge + server's DH public mix as strings for transmission
+    // the results of the arithmetic, computed without a lock and stored into the slot under the second lock
+    char* shared_secret_string = 0;
+    char* dh_public_mix_from_server_string_for_client = 0;
     char* challenge_string = 0;
     char* challenge_value_for_client = 0;
-    char* dh_public_mix_from_server_string_for_client = 0;
 
     char exponent_bits[DH_EXPONENT_BITS + 1];
     unsigned char exponent_random_bytes[DH_EXPONENT_BITS / 8];
     uint64 i = 0;
 
     // ──────────────────────────────────────────────────────────────────
-    // STEP 1: Basic validation (before acquiring write lock)
+    // STEP 1: Basic validation (no lock)
     // ──────────────────────────────────────────────────────────────────
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     if (status == FALSE)
@@ -2134,45 +2153,28 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // Acquire write lock for the rest of the function.
-    // All early exits below use goto to ensure the lock is released.
+    // STEP 2: the first, short write lock: the slot must be live, the verification string must be
+    // "welcome", the key must be large enough; the public key is stored and the connection remembered
     // ──────────────────────────────────────────────────────────────────
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    // Initialize every DH bignum up front
-    mp_status = mp_init_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int*)NULL_POINTER);
-    if (mp_status != MP_OKAY)
+    if (g_clients_array[sender_client_id].is_existing == FALSE)
     {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: failed to initialize DH bignums", sender_client_id);
         base__close_websocket_connection(sender_client_id, FALSE);
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
-    if (g_clients_array[sender_client_id].is_existing == FALSE)
-    {
-        base__close_websocket_connection(sender_client_id, FALSE);
-        goto _label_client_msg__process_public_key_info_end;
-    }
-
     DBG_AUTHENTICATION log_info("[auth] client %llu: message valid, proceeding with authentication", sender_client_id);
-
-    // ──────────────────────────────────────────────────────────────────
-    // STEP 2: Extract and verify fields from JSON
-    // - verification_string must be "welcome" (protocol handshake)
-    // - public_key must not already be in use by another client
-    // ──────────────────────────────────────────────────────────────────
-    public_key = 0;
-    verification_string = 0;
-    dh_received_public_mix_from_client = 0;
 
     client_msg__get_public_key_and_verification_string_and_dh_public_mix(json_root, &public_key, &verification_string, &dh_received_public_mix_from_client);
 
     if (clib__is_string_equal(verification_string, "welcome") == FALSE)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: verification string is not 'welcome'", sender_client_id);
-        base__close_websocket_connection(sender_client_id, TRUE);
-        goto _label_client_msg__process_public_key_info_end;
+        base__close_websocket_connection(sender_client_id, FALSE);
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
     }
 
     // a public key already in use is NOT refused here: after a connection drops the server can
@@ -2181,13 +2183,9 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
     // proves he holds the private key - judging it any earlier would let anyone kick anyone off,
     // because a public key is public
 
-    // ──────────────────────────────────────────────────────────────────
-    // STEP 2b: Enforce the configured minimum RSA key size
-    //
-    // A modulus may legitimately come out one bit under its nominal size
-    // (both primes near their lower bound), so minimum-1 still passes.
-    // Too-weak (or invalid / oversized) keys are dropped silently.
-    // ──────────────────────────────────────────────────────────────────
+    // the configured minimum RSA key size. a modulus may legitimately come out one bit under its
+    // nominal size (both primes near their lower bound), so minimum-1 still passes. too-weak (or
+    // invalid / oversized) keys are dropped silently
     {
         uint64 client_key_bits = base__get_public_key_bit_length(public_key);
         boole is_too_weak = (client_key_bits < (uint64)(g_server_settings.minimum_rsa_key_bits - 1)) ? TRUE : FALSE;
@@ -2202,124 +2200,122 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
             // so there is nobody to help, only a prober to inform
             if (is_too_weak == TRUE && is_unusable == FALSE && g_server_settings.announce_minimum_rsa_key_bits == TRUE)
             {
-                server_msg__send_rsa_key_too_weak_to_single_client(g_clients_array[sender_client_id].p_ws_connection);
+                server_msg__send_rsa_key_too_weak_to_single_client(&g_clients_array[sender_client_id]);
             }
 
-            base__close_websocket_connection(sender_client_id, TRUE);
-            goto _label_client_msg__process_public_key_info_end;
+            base__close_websocket_connection(sender_client_id, FALSE);
+            clib__unlock(&g_clients_global_rwlock_guard);
+            return;
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    // STEP 3: Store client's RSA public key
-    // ──────────────────────────────────────────────────────────────────
     DBG_AUTHENTICATION log_info("[auth] client %llu: storing public key", sender_client_id);
     clib__copy_memory(public_key, &g_clients_array[sender_client_id].public_key[0], clib__utf8_string_length(public_key), MAX_PUBLIC_KEY_LENGTH - 1);
+    socket = g_clients_array[sender_client_id].p_ws_connection;
+
+    clib__unlock(&g_clients_global_rwlock_guard);
 
     // ──────────────────────────────────────────────────────────────────
-    // STEP 4: Diffie-Hellman key exchange
+    // STEP 3: Diffie-Hellman key exchange, without a lock
     //
     // Both client and server know:
     // p = dh_known_modulus_str  (shared prime, defined at top of file)
     // g = 2                    (generator)
     //
     // Client sent:   A = g^a mod p   (dh_received_public_mix_from_client)
-    // Server picks:  b              (random 256-bit secret exponent)
+    // Server picks:  b              (random secret exponent)
     // Server computes:
     // shared_secret = A^b mod p   (same value as g^(a*b) mod p)
     // B = g^b mod p               (sent back to client)
     // Client will compute:
     // shared_secret = B^a mod p   (same value as g^(a*b) mod p)
     // ──────────────────────────────────────────────────────────────────
+    mp_status = mp_init_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int*)NULL_POINTER);
+    if (mp_status != MP_OKAY)
+    {
+        DBG_AUTHENTICATION log_info("[auth] client %llu: failed to initialize DH bignums", sender_client_id);
+        goto _label_client_msg__process_public_key_info_end;
+    }
+    is_bignums_initialized = TRUE;
 
-    // 4a. load the shared prime modulus
+    crypto_started_ms = base__get_timestamp_ms();
+
+    // 3a. load the shared prime modulus
     mp_status = mp_read_radix(&bignum_modulus, g_dh_known_modulus_str, 10);
     if (mp_status != MP_OKAY)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: failed to parse DH modulus", sender_client_id);
-        base__close_websocket_connection(sender_client_id, FALSE);
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    // 4b. generate the server's secret exponent (DH_EXPONENT_BITS random bits, sized to the modulus)
+    // 3b. generate the server's secret exponent (DH_EXPONENT_BITS random bits, sized to the modulus)
     // first bit forced to 1 to guarantee the full length, the rest from a cryptographically secure
     // RNG. rand() must never be used here: it is a predictable PRNG seeded from the clock, so an
     // exponent built from it could be reconstructed by an attacker, breaking the key exchange.
+    if (base__fill_secure_random_bytes(exponent_random_bytes, sizeof(exponent_random_bytes)) == FALSE)
     {
-        if (base__fill_secure_random_bytes(exponent_random_bytes, sizeof(exponent_random_bytes)) == FALSE)
-        {
-            DBG_AUTHENTICATION log_info("[auth] client %llu: failed to generate DH exponent randomness", sender_client_id);
-            base__close_websocket_connection(sender_client_id, FALSE);
-            goto _label_client_msg__process_public_key_info_end;
-        }
-
-        clib__null_memory(exponent_bits, sizeof(exponent_bits));
-
-        exponent_bits[0] = '1';
-        for (i = 1; i < DH_EXPONENT_BITS; i++)
-        {
-            exponent_bits[i] = (((exponent_random_bytes[i / 8] >> (7 - (i % 8))) & 1) == 0) ? '0' : '1';
-        }
-        exponent_bits[DH_EXPONENT_BITS] = '\0';
-
-        mp_status = mp_read_radix(&bignum_server_exponent, exponent_bits, 2);
-        if (mp_status != MP_OKAY)
-        {
-            DBG_AUTHENTICATION log_info("[auth] client %llu: failed to create DH exponent", sender_client_id);
-            base__close_websocket_connection(sender_client_id, FALSE);
-            goto _label_client_msg__process_public_key_info_end;
-        }
+        DBG_AUTHENTICATION log_info("[auth] client %llu: failed to generate DH exponent randomness", sender_client_id);
+        goto _label_client_msg__process_public_key_info_end;
+    }
+    clib__null_memory(exponent_bits, sizeof(exponent_bits));
+    exponent_bits[0] = '1';
+    for (i = 1; i < DH_EXPONENT_BITS; i++)
+    {
+        exponent_bits[i] = (((exponent_random_bytes[i / 8] >> (7 - (i % 8))) & 1) == 0) ? '0' : '1';
+    }
+    exponent_bits[DH_EXPONENT_BITS] = '\0';
+    mp_status = mp_read_radix(&bignum_server_exponent, exponent_bits, 2);
+    if (mp_status != MP_OKAY)
+    {
+        DBG_AUTHENTICATION log_info("[auth] client %llu: failed to create DH exponent", sender_client_id);
+        goto _label_client_msg__process_public_key_info_end;
     }
     DBG_AUTHENTICATION log_info("[auth] client %llu: generated DH exponent", sender_client_id);
 
-    // 4c. parse client's public mix: A = g^a mod p (received as decimal string)
+    // 3c. parse client's public mix: A = g^a mod p (received as decimal string)
     mp_status = mp_read_radix(&bignum_client_public_mix, (char*)dh_received_public_mix_from_client, 10);
     if (mp_status != MP_OKAY)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: failed to parse client's DH public mix", sender_client_id);
-        base__close_websocket_connection(sender_client_id, FALSE);
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    // 4c-validate: reject a degenerate client public mix before exponentiating. A in {0, 1, p-1} (or outside
+    // 3c-validate: reject a degenerate client public mix before exponentiating. A in {0, 1, p-1} (or outside
     // [2, p-2]) forces a known / tiny shared secret; for a safe prime the only dangerous small-order elements
     // are 1 and p-1, so requiring 2 <= A <= p-2 is sufficient.
     mp_status = mp_sub_d(&bignum_modulus, 1uL, &bignum_modulus_minus_one);
     if (mp_status != MP_OKAY)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: failed to compute p-1 for DH validation", sender_client_id);
-        base__close_websocket_connection(sender_client_id, FALSE);
         goto _label_client_msg__process_public_key_info_end;
     }
-
     if (mp_cmp_d(&bignum_client_public_mix, 1uL) != MP_GT || mp_cmp(&bignum_client_public_mix, &bignum_modulus_minus_one) != MP_LT)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: rejected degenerate DH public mix (not in [2, p-2])", sender_client_id);
-        base__close_websocket_connection(sender_client_id, FALSE);
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    // 4d. compute shared_secret = A^b mod p
+    // 3d. compute shared_secret = A^b mod p, as a decimal string
     mp_status = mp_exptmod(&bignum_client_public_mix, &bignum_server_exponent, &bignum_modulus, &bignum_shared_secret);
     if (mp_status != MP_OKAY)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: mp_exptmod failed for shared secret", sender_client_id);
         goto _label_client_msg__process_public_key_info_end;
     }
-
-    // 4e. store shared secret as decimal string in client slot
-    mp_status = mp_to_radix(&bignum_shared_secret, g_clients_array[sender_client_id].dh_shared_secret, SHARED_SECRET_LENGTH, &mp_written, 10);
+    shared_secret_string = (char*)memorymanager__allocate(SHARED_SECRET_LENGTH, MEMALLOC_DHPROCESS);
+    if (shared_secret_string == NULL_POINTER)
+    {
+        goto _label_client_msg__process_public_key_info_end;
+    }
+    clib__null_memory(shared_secret_string, SHARED_SECRET_LENGTH);
+    mp_status = mp_to_radix(&bignum_shared_secret, shared_secret_string, SHARED_SECRET_LENGTH, &mp_written, 10);
     if (mp_status != MP_OKAY)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: failed to convert shared secret to string", sender_client_id);
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    g_clients_array[sender_client_id].is_dh_shared_secret_agreed_upon = TRUE;
-    DBG_AUTHENTICATION log_info("[auth] client %llu: shared secret computed and stored", sender_client_id);
-
-    // 4f. compute server's public mix: B = g^b mod p.
-    // bignum_generator was initialized to 0 above; set it to the generator g = 2.
+    // 3e. compute server's public mix: B = g^b mod p, as a decimal string
     mp_set_i64(&bignum_generator, 2);
     mp_status = mp_exptmod(&bignum_generator, &bignum_server_exponent, &bignum_modulus, &bignum_server_public_mix);
     if (mp_status != MP_OKAY)
@@ -2327,62 +2323,110 @@ void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_
         DBG_AUTHENTICATION log_info("[auth] client %llu: mp_exptmod failed for server public mix", sender_client_id);
         goto _label_client_msg__process_public_key_info_end;
     }
-
-    // 4g. convert B to decimal string for JSON transmission
     dh_public_mix_from_server_string_for_client = (char*)memorymanager__allocate(SHARED_SECRET_LENGTH, MEMALLOC_DHPROCESS);
+    if (dh_public_mix_from_server_string_for_client == NULL_POINTER)
+    {
+        goto _label_client_msg__process_public_key_info_end;
+    }
     mp_status = mp_to_radix(&bignum_server_public_mix, dh_public_mix_from_server_string_for_client, SHARED_SECRET_LENGTH, &mp_written, 10);
     if (mp_status != MP_OKAY)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: failed to convert server public mix to string", sender_client_id);
-        base__close_websocket_connection(sender_client_id, FALSE);
         goto _label_client_msg__process_public_key_info_end;
     }
-
     DBG_AUTHENTICATION log_info("[auth] client %llu: server public mix computed", sender_client_id);
 
     // ──────────────────────────────────────────────────────────────────
-    // STEP 5: RSA challenge - prove the client owns the public key
-    //
-    // Generate a random string, encrypt it with client's RSA public key,
-    // and send it along with the server's DH public mix.
-    // Only the real owner of the private key can decrypt the challenge.
+    // STEP 4: the RSA challenge, without a lock: a random string, encrypted with the client's public
+    // key. only the real owner of the private key can decrypt it
     // ──────────────────────────────────────────────────────────────────
     challenge_string = (char*)memorymanager__allocate(128, MEMALLOC_TYPE_CHALLENGE);
-    if (base__fill_block_of_data_with_ascii_characters(challenge_string, CHALLENGE_STRING_SIZE) == FALSE)
+    if (challenge_string == NULL_POINTER || base__fill_block_of_data_with_ascii_characters(challenge_string, CHALLENGE_STRING_SIZE) == FALSE)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: failed to generate RSA challenge randomness", sender_client_id);
-        memorymanager__free((nuint)challenge_string);
-        memorymanager__free((nuint)dh_public_mix_from_server_string_for_client);
-        base__close_websocket_connection(sender_client_id, FALSE);
+        goto _label_client_msg__process_public_key_info_end;
+    }
+    DBG_AUTHENTICATION log_info("[auth] client %llu: generated %d-byte challenge", sender_client_id, CHALLENGE_STRING_SIZE);
+    challenge_value_for_client = base__encrypt_string_with_public_key(public_key, (unsigned char*)challenge_string, (uint64)clib__utf8_string_length(challenge_string));
+    if (challenge_value_for_client == NULL_POINTER || challenge_value_for_client[0] == 0)
+    {
+        DBG_AUTHENTICATION log_info("[auth] client %llu: the challenge could not be encrypted with the client's key", sender_client_id);
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    DBG_AUTHENTICATION log_info("[auth] client %llu: generated %d-byte challenge", sender_client_id, CHALLENGE_STRING_SIZE);
-
-    // encrypt challenge with client's RSA public key
-    challenge_value_for_client = base__encrypt_string_with_public_key(public_key, (unsigned char*)challenge_string, (uint64)clib__utf8_string_length(challenge_string));
-
-    // send server's DH public mix + encrypted challenge to client
-    server_msg__send_public_key_challenge_to_single_client(g_clients_array[sender_client_id].p_ws_connection, challenge_value_for_client, dh_public_mix_from_server_string_for_client);
-
-    memorymanager__free((nuint)challenge_value_for_client);
-
     // ──────────────────────────────────────────────────────────────────
-    // STEP 6: Store plaintext challenge for verification when client responds
+    // STEP 5: the second, short write lock: the slot must still belong to the same connection, then
+    // the shared secret and the challenge are stored and the challenge is sent
     // ──────────────────────────────────────────────────────────────────
+    crypto_finished_ms = base__get_timestamp_ms();
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    if (g_clients_array[sender_client_id].is_existing == FALSE || g_clients_array[sender_client_id].p_ws_connection != socket
+        || g_clients_array[sender_client_id].is_authenticated == TRUE || g_clients_array[sender_client_id].is_public_key_challenge_sent == TRUE)
+    {
+        DBG_AUTHENTICATION log_info("[auth] client %llu: the slot changed hands during the key exchange, nothing stored", sender_client_id);
+        is_slot_changed = TRUE;
+        clib__unlock(&g_clients_global_rwlock_guard);
+        goto _label_client_msg__process_public_key_info_end;
+    }
+    clib__null_memory(g_clients_array[sender_client_id].dh_shared_secret, SHARED_SECRET_LENGTH);
+    clib__copy_memory(shared_secret_string, g_clients_array[sender_client_id].dh_shared_secret, clib__utf8_string_length(shared_secret_string), SHARED_SECRET_LENGTH - 1);
+    g_clients_array[sender_client_id].is_dh_shared_secret_agreed_upon = TRUE;
+    // Make the keys that this connection will use for metadata, audio and video.
+    // Also choose a random starting packet number for media sent to this client.
+    // If this connection later takes over the client's earlier session, those
+    // keys and the packet number must move into that session together.
+    if (!metadata_crypto__derive_session_keys(shared_secret_string, &g_clients_array[sender_client_id].session_keys)
+        || !base__fill_secure_random_bytes((unsigned char*)&g_clients_array[sender_client_id].media_send_counter,
+            sizeof(g_clients_array[sender_client_id].media_send_counter)))
+    {
+        metadata_crypto__clear_session_keys(&g_clients_array[sender_client_id].session_keys);
+        clib__unlock(&g_clients_global_rwlock_guard);
+        goto _label_client_msg__process_public_key_info_end;
+    }
+    DBG_AUTHENTICATION log_info("[auth] client %llu: shared secret computed and stored", sender_client_id);
+
+    // send server's DH public mix + encrypted challenge to client, keep the plaintext challenge for the answer
+    server_msg__send_public_key_challenge_to_single_client(&g_clients_array[sender_client_id], challenge_value_for_client, dh_public_mix_from_server_string_for_client);
     clib__copy_memory(challenge_string, &g_clients_array[sender_client_id].challenge_string[0], CHALLENGE_STRING_SIZE, 128);
     g_clients_array[sender_client_id].is_public_key_challenge_sent = TRUE;
-
+    is_failed = FALSE;
+    clib__unlock(&g_clients_global_rwlock_guard);
     DBG_AUTHENTICATION log_info("[auth] client %llu: challenge stored, waiting for response", sender_client_id);
 
-    memorymanager__free((nuint)challenge_string);
-    memorymanager__free((nuint)dh_public_mix_from_server_string_for_client);
-
 _label_client_msg__process_public_key_info_end:
-    // Release every DH bignum. All goto paths land here only after the
-    // mp_init_multi above succeeded, so all six are guaranteed initialized.
-    mp_clear_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int*)NULL_POINTER);
-    clib__unlock(&g_clients_global_rwlock_guard);
+    if (crypto_finished_ms == 0)
+    {
+        crypto_finished_ms = base__get_timestamp_ms();
+    }
+    DBG_CONNECTION_PROGRESS log_info("[connection] key exchange client=%llu ready=%d total_ms=%llu crypto_ms=%llu",
+        (unsigned long long)sender_client_id, (int)!is_failed,
+        (unsigned long long)(base__get_timestamp_ms() - started_ms),
+        (unsigned long long)(crypto_started_ms == 0 ? 0 : crypto_finished_ms - crypto_started_ms));
+    if (is_failed == TRUE && is_slot_changed == FALSE)
+    {
+        base__close_websocket_connection(sender_client_id, TRUE);
+    }
+    if (shared_secret_string != NULL_POINTER)
+    {
+        clib__null_memory(shared_secret_string, SHARED_SECRET_LENGTH);
+        memorymanager__free((nuint)shared_secret_string);
+    }
+    if (dh_public_mix_from_server_string_for_client != NULL_POINTER)
+    {
+        memorymanager__free((nuint)dh_public_mix_from_server_string_for_client);
+    }
+    if (challenge_string != NULL_POINTER)
+    {
+        memorymanager__free((nuint)challenge_string);
+    }
+    if (challenge_value_for_client != NULL_POINTER)
+    {
+        memorymanager__free((nuint)challenge_value_for_client);
+    }
+    if (is_bignums_initialized == TRUE)
+    {
+        mp_clear_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int*)NULL_POINTER);
+    }
 }
 
 /**
@@ -2759,16 +2803,16 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
                 server_logs__client_joined(current_client);
             }
 
-            server_msg__send_authentication_status_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
-            server_msg__send_channel_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
-            server_msg__send_client_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret, current_client->username, current_client->client_id);
-            server_msg__send_icon_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
-            server_msg__send_tag_list_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret);
-            server_msg__send_active_microphone_usage_for_current_channel_to_single_client(current_client->p_ws_connection, current_client->dh_shared_secret, current_client->channel_id);
+            server_msg__send_authentication_status_to_single_client(current_client);
+            server_msg__send_channel_list_to_single_client(current_client);
+            server_msg__send_client_list_to_single_client(current_client);
+            server_msg__send_icon_list_to_single_client(current_client);
+            server_msg__send_tag_list_to_single_client(current_client);
+            server_msg__send_active_microphone_usage_for_current_channel_to_single_client(current_client, current_client->channel_id);
             // a resumed session never left, so the others get no connect broadcast
             if (is_resumed_session == FALSE)
             {
-                server_msg__send_client_connect_message_to_all_clients(current_client->client_id);
+                server_msg__send_client_connect_message_to_all_clients(current_client);
 
                 // a fresh login lands in the root channel: a stream running there asks its streamer
                 // whether the newcomer may watch. a resumed session never left, its consent survived
@@ -2796,11 +2840,11 @@ void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 
                     root_channel->maintainer_id = current_client->client_id;
                     root_channel->is_channel_maintainer_present = TRUE;
                     root_channel->maintainer_generation++;
-                    server_msg__send_maintainer_id_to_single_client(current_client, ROOT_CHANNEL_ID, current_client->client_id);
+                    server_msg__send_maintainer_id_to_single_client(current_client, &g_channel_array[ROOT_CHANNEL_ID], current_client->client_id);
                 }
                 else
                 {
-                    server_msg__send_maintainer_id_to_single_client(current_client, ROOT_CHANNEL_ID, root_channel->maintainer_id);
+                    server_msg__send_maintainer_id_to_single_client(current_client, root_channel, root_channel->maintainer_id);
                 }
             }
 
@@ -2997,7 +3041,7 @@ label_client_msg__process_change_client_username_end:
         DBG_CLIENT_MESSAGE log_info("%s", "calling server_msg__send_client_rename_message_to_all_clients \n");
 
         clib__read_lock(&g_clients_global_rwlock_guard);
-        server_msg__send_client_rename_message_to_all_clients(client_to_alter->client_id, client_to_alter->username);
+        server_msg__send_client_rename_message_to_all_clients(client_to_alter, client_to_alter->username);
         clib__unlock(&g_clients_global_rwlock_guard);
     }
 }
@@ -3184,7 +3228,7 @@ void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_
             clib__read_lock(&g_clients_global_rwlock_guard);
             clib__read_lock(&g_channels_global_rwlock_guard);
 
-            server_msg__send_channel_create_message_to_all_clients(created_channel_index, channel_creator_client_id);
+            server_msg__send_channel_create_message_to_all_clients(&g_channel_array[created_channel_index], &g_clients_array[channel_creator_client_id]);
 
             clib__unlock(&g_channels_global_rwlock_guard);
             clib__unlock(&g_clients_global_rwlock_guard);
@@ -3371,7 +3415,7 @@ void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_cl
             clib__read_lock(&g_clients_global_rwlock_guard);
             clib__read_lock(&g_channels_global_rwlock_guard);
 
-            server_msg__send_channel_edit_message_to_all_clients(channel_index_to_edit, sender_client_id);
+            server_msg__send_channel_edit_message_to_all_clients(&g_channel_array[channel_index_to_edit], &g_clients_array[sender_client_id]);
 
             clib__unlock(&g_channels_global_rwlock_guard);
             clib__unlock(&g_clients_global_rwlock_guard);
@@ -3458,8 +3502,8 @@ void client_msg__process_direct_chat_message(cJSON* json_root, uint64 sender_cli
 
         server_chat_message_id = base__get_chat_message_id();
         base__increment_chat_message_id();
-        server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(sender_client_id, server_chat_message_id, json_local_message_id->valueint);
-        server_msg__send_chat_message_to_single_client(sender_client_id, json_receiver_id->valueint, server_chat_message_id, json_chat_message_value->valuestring);
+        server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(&g_clients_array[sender_client_id], server_chat_message_id, json_local_message_id->valueint);
+        server_msg__send_chat_message_to_single_client(&g_clients_array[json_receiver_id->valueint], &g_clients_array[sender_client_id], server_chat_message_id, json_chat_message_value->valuestring);
     }
     else
     {
@@ -3521,8 +3565,8 @@ void client_msg__process_channel_chat_message(cJSON* json_root, uint64 sender_cl
 
         server_chat_message_id = base__get_chat_message_id();
         base__increment_chat_message_id();
-        server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(sender_client_id, server_chat_message_id, json_local_message_id->valueint);
-        server_msg__send_chat_message_to_clients_in_same_channel(sender_client_id, channel_id, server_chat_message_id, json_chat_message_value->valuestring);
+        server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(&g_clients_array[sender_client_id], server_chat_message_id, json_local_message_id->valueint);
+        server_msg__send_chat_message_to_clients_in_same_channel(&g_clients_array[sender_client_id], channel_id, server_chat_message_id, json_chat_message_value->valuestring);
     }
     else
     {
@@ -3625,8 +3669,8 @@ static void _client_msg_internal__process_chat_message_action(cJSON* json_root, 
             if (receiver_id >= 0 && receiver_id < g_server_settings.max_client_count && g_clients_array[receiver_id].is_authenticated == TRUE)
             {
                 // deliver to the private counterpart and back to the requester so both views update
-                server_msg__send_chat_message_action_to_single_client((uint64)receiver_id, outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
-                server_msg__send_chat_message_action_to_single_client(sender_client_id, outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
+                server_msg__send_chat_message_action_to_single_client(&g_clients_array[receiver_id], outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
+                server_msg__send_chat_message_action_to_single_client(&g_clients_array[sender_client_id], outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
             }
         }
     }
@@ -3700,7 +3744,7 @@ void client_msg__process_channel_chat_picture(uint64 client_sender_id, uint64 lo
         server_chat_message_id = base__get_chat_message_id();
         base__increment_chat_message_id();
         buffer_to_send_total_size = clib__utf8_string_length(message_value);
-        server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(client_sender_id, channel_id, server_chat_message_id, buffer_to_send_total_size);
+        server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(&g_clients_array[client_sender_id], channel_id, server_chat_message_id, buffer_to_send_total_size);
 
         arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t) + sizeof(uint64) * g_server_settings.max_client_count, MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
         if (arg == NULL_POINTER) { return; }
@@ -3760,7 +3804,7 @@ void client_msg__process_direct_chat_picture(uint64 sender_client_id, uint64 rec
         server_chat_message_id = base__get_chat_message_id();
         base__increment_chat_message_id();
         buffer_to_send_total_size = clib__utf8_string_length(message_value);
-        server_msg__send_chat_picture_metadata_to_single_client(sender_client_id, receiver_id, server_chat_message_id, buffer_to_send_total_size);
+        server_msg__send_chat_picture_metadata_to_single_client(&g_clients_array[receiver_id], &g_clients_array[sender_client_id], server_chat_message_id, buffer_to_send_total_size);
 
         arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
         if (arg == NULL_POINTER) { return; }
@@ -3819,7 +3863,7 @@ void client_msg__process_channel_chat_file(uint64 client_sender_id, uint64 local
 
     server_chat_message_id = base__get_chat_message_id();
     base__increment_chat_message_id();
-    server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel(client_sender_id, channel_id, server_chat_message_id, file_header, buffer_to_send_total_size);
+    server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel(&g_clients_array[client_sender_id], channel_id, server_chat_message_id, file_header, buffer_to_send_total_size);
 
     arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t) + sizeof(uint64) * g_server_settings.max_client_count, MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
     if (arg == NULL_POINTER) { return; }
@@ -3878,7 +3922,7 @@ void client_msg__process_direct_chat_file(uint64 sender_client_id, uint64 receiv
 
     server_chat_message_id = base__get_chat_message_id();
     base__increment_chat_message_id();
-    server_msg__send_chat_file_metadata_to_single_client(sender_client_id, receiver_id, server_chat_message_id, file_header, buffer_to_send_total_size);
+    server_msg__send_chat_file_metadata_to_single_client(&g_clients_array[receiver_id], &g_clients_array[sender_client_id], server_chat_message_id, file_header, buffer_to_send_total_size);
 
     arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
     if (arg == NULL_POINTER) { return; }
@@ -4054,11 +4098,11 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
                         continue;
                     }
 
-                    server_msg__send_channel_join_message_to_single_client(existing_channel_member, new_channel, client_that_is_joining_channel);
+                    server_msg__send_channel_join_message_to_single_client(client_that_is_joining_channel, existing_channel_member, new_channel);
                 }
             }
 
-            server_msg__send_maintainer_id_to_clients_in_same_channel(old_channel->channel_id, old_channel->maintainer_id);
+            server_msg__send_maintainer_id_to_clients_in_same_channel(old_channel, old_channel->maintainer_id);
         }
         else
         {
@@ -4096,7 +4140,7 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
                         continue;
                     }
 
-                    server_msg__send_channel_join_message_to_single_client(existing_channel_member, new_channel, client_that_is_joining_channel);
+                    server_msg__send_channel_join_message_to_single_client(client_that_is_joining_channel, existing_channel_member, new_channel);
                 }
             }
         }
@@ -4134,7 +4178,7 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
                     continue;
                 }
 
-                server_msg__send_channel_join_message_to_single_client(existing_channel_member, new_channel, client_that_is_joining_channel);
+                server_msg__send_channel_join_message_to_single_client(client_that_is_joining_channel, existing_channel_member, new_channel);
             }
         }
     }
@@ -4155,9 +4199,9 @@ void client_msg__process_join_channel_request(cJSON* json_root, uint64 sender_cl
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_join_channel_request_continue client that joined channel is the only one in the channel, he is maintainer of it \n");
     }
 
-    server_msg__send_maintainer_id_to_single_client(client_that_is_joining_channel, new_channel->channel_id, new_channel->maintainer_id);
+    server_msg__send_maintainer_id_to_single_client(client_that_is_joining_channel, new_channel, new_channel->maintainer_id);
 
-    server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client_that_is_joining_channel->p_ws_connection, client_that_is_joining_channel->dh_shared_secret, client_that_is_joining_channel->channel_id);
+    server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client_that_is_joining_channel, client_that_is_joining_channel->channel_id);
 
 client_msg__process_join_channel_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -4299,10 +4343,10 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
                 if (g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present == TRUE)
                 {
                     DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__process_delete_channel_request also sending maintainer id of root channel to moving client ", g_channel_array[ROOT_CHANNEL_ID].maintainer_id, "\n");
-                    server_msg__send_maintainer_id_to_single_client(client_to_move_maybe, ROOT_CHANNEL_ID, g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
+                    server_msg__send_maintainer_id_to_single_client(client_to_move_maybe, &g_channel_array[ROOT_CHANNEL_ID], g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
                 }
 
-                server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client_to_move_maybe->p_ws_connection, client_to_move_maybe->dh_shared_secret, ROOT_CHANNEL_ID);
+                server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client_to_move_maybe, ROOT_CHANNEL_ID);
             }
         }
 
@@ -4323,7 +4367,7 @@ void client_msg__process_delete_channel_request(cJSON* json_root, uint64 sender_
                 g_channel_array[ROOT_CHANNEL_ID].is_channel_maintainer_present = TRUE;
                 g_channel_array[ROOT_CHANNEL_ID].maintainer_id = index_of_new_maintainer;
                 g_channel_array[ROOT_CHANNEL_ID].maintainer_generation++;
-                server_msg__send_maintainer_id_to_clients_in_same_channel(ROOT_CHANNEL_ID, g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
+                server_msg__send_maintainer_id_to_clients_in_same_channel(&g_channel_array[ROOT_CHANNEL_ID], g_channel_array[ROOT_CHANNEL_ID].maintainer_id);
             }
         }
 
@@ -4389,7 +4433,7 @@ void client_msg__process_poke_client_request(cJSON* json_root, uint64 sender_cli
 
     if (g_clients_array[json_receiver_id->valueint].is_authenticated == TRUE)
     {
-        server_msg__send_poke_to_single_client(&g_clients_array[json_receiver_id->valueint], sender_client_id, json_poke_message->valuestring);
+        server_msg__send_poke_to_single_client(&g_clients_array[json_receiver_id->valueint], &g_clients_array[sender_client_id], json_poke_message->valuestring);
     }
 
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -4467,7 +4511,7 @@ void client_msg__process_typing_indicator_request(cJSON* json_root, uint64 sende
         goto label_client_msg__process_typing_indicator_request_end;
     }
 
-    server_msg__send_typing_indicator(sender_client_id, json_receiver_type->valuestring, (uint64)json_receiver_id->valueint);
+    server_msg__send_typing_indicator(&g_clients_array[sender_client_id], json_receiver_type->valuestring, (uint64)json_receiver_id->valueint);
 
 label_client_msg__process_typing_indicator_request_end:
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -4487,12 +4531,12 @@ void client_msg__process_sdp_answer(cJSON* json_root, uint64 sender_client_id)
     cJSON* json_message_object = 0;
     cJSON* json_message_value = 0;
 
-    DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "client_msg__process_sdp_answer");
+    DBG_AUDIO_WEBRTC log_info("%s", "client_msg__process_sdp_answer");
 
     status = _client_msg_internal__is_json_sdp_answer_format_valid(json_root, sender_client_id);
     if (status == FALSE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "client_msg__process_sdp_answer client_msg__is_json_sdp_answer_format_valid == FALSE \n");
+        DBG_AUDIO_WEBRTC log_info("%s", "client_msg__process_sdp_answer client_msg__is_json_sdp_answer_format_valid == FALSE \n");
         return;
     }
 
@@ -4504,9 +4548,9 @@ void client_msg__process_sdp_answer(cJSON* json_root, uint64 sender_client_id)
 
     if (g_clients_array[sender_client_id].is_authenticated == TRUE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "client_msg__process_sdp_answer got here");
+        DBG_AUDIO_WEBRTC log_info("%s", "client_msg__process_sdp_answer got here");
 
-        audio_channel__process_sdp_answer_from_remote_peer(&g_clients_array[sender_client_id], json_message_value);
+        audio_webrtc__process_sdp_answer_from_remote_peer(&g_clients_array[sender_client_id], json_message_value);
     }
 
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -4526,12 +4570,12 @@ void client_msg__process_ice_candidate(cJSON* json_root, uint64 sender_client_id
     cJSON* json_message_object = 0;
     cJSON* json_message_value = 0;
 
-    DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "client_msg__process_ice_candidate");
+    DBG_AUDIO_WEBRTC log_info("%s", "client_msg__process_ice_candidate");
 
     status = _client_msg_internal__is_ice_candidate_format_valid(json_root, sender_client_id);
     if (status == FALSE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "client_msg__process_ice_candidate client_msg__is_ice_candidate_format_valid == FALSE \n");
+        DBG_AUDIO_WEBRTC log_info("%s", "client_msg__process_ice_candidate client_msg__is_ice_candidate_format_valid == FALSE \n");
         return;
     }
 
@@ -4543,9 +4587,9 @@ void client_msg__process_ice_candidate(cJSON* json_root, uint64 sender_client_id
 
     if (g_clients_array[sender_client_id].is_authenticated == TRUE)
     {
-        DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "client_msg__process_ice_candidate got here");
+        DBG_AUDIO_WEBRTC log_info("%s", "client_msg__process_ice_candidate got here");
 
-        audio_channel__process_ice_candidate_from_remote_peer(&g_clients_array[sender_client_id], json_message_value);
+        audio_webrtc__process_ice_candidate_from_remote_peer(&g_clients_array[sender_client_id], json_message_value);
     }
 
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -4566,6 +4610,7 @@ void client_msg__process_microphone_usage(cJSON* json_root, uint64 sender_client
     boole status = FALSE;
     int received_microphone_usage = 0;
     client_t* client = 0;
+    boole is_served = FALSE;
 
     status = _client_msg_internal__is_json_process_microphone_usage_valid(json_root);
     if (status == FALSE)
@@ -4588,16 +4633,24 @@ void client_msg__process_microphone_usage(cJSON* json_root, uint64 sender_client
 
     received_microphone_usage = json_value->valueint;
 
-    // only allow changing audio state if audio is not completely disabled
-    if (client->audio_state != AUDIO_STATE__AUDIO_COMPLETELY_DISABLED)
+    // every state needs an audio connection the server holds for this client while audio is on: a
+    // dropped connection set "audio disabled", an attach resets it to listening, and the client then
+    // reports its state again (talking, microphone ready, or listening only)
+    clib__read_lock(&g_webrtc_muggles_rwlock_guard);
+    is_served = (g_server_settings.is_voice_chat_active == TRUE || g_server_settings.is_music_bot_audio_active == TRUE)
+        && (client->is_audio_websocket_authenticated == TRUE
+            || (g_server_settings.is_audio_over_webrtc_allowed == TRUE && audio_webrtc__is_connected(client->client_id) == TRUE));
+    clib__unlock(&g_webrtc_muggles_rwlock_guard);
+
+    if (is_served == TRUE)
     {
         if (received_microphone_usage == MICROPHONE_USAGE__KEEP_PUSH_TO_TALK_READY_BUT_DONT_SEND_AUDIO)
         {
             if (client->audio_state != AUDIO_STATE__PUSH_TO_TALK_ENABLED)
             {
                 client->audio_state = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
-                audio_channel__set_is_client_sending_audio(client->client_id, FALSE);
-                server_msg__send_audio_state_of_client_to_all_clients(sender_client_id, client->audio_state);
+                audio_webrtc__set_is_client_sending_audio(client->client_id, FALSE);
+                server_msg__send_audio_state_of_client_to_all_clients(client, client->audio_state);
             }
         }
         else if (received_microphone_usage == MICROPHONE_USAGE__DISABLE_PUSH_TO_TALK)
@@ -4612,8 +4665,8 @@ void client_msg__process_microphone_usage(cJSON* json_root, uint64 sender_client
                     server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client);
                 }
 
-                audio_channel__set_is_client_sending_audio(client->client_id, FALSE);
-                server_msg__send_audio_state_of_client_to_all_clients(sender_client_id, client->audio_state);
+                audio_webrtc__set_is_client_sending_audio(client->client_id, FALSE);
+                server_msg__send_audio_state_of_client_to_all_clients(client, client->audio_state);
             }
         }
         else if (received_microphone_usage == MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
@@ -4621,8 +4674,8 @@ void client_msg__process_microphone_usage(cJSON* json_root, uint64 sender_client
             if (client->audio_state != MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
             {
                 client->audio_state = MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO;
-                audio_channel__set_is_client_sending_audio(client->client_id, TRUE);
-                server_msg__send_audio_state_of_client_to_all_clients(sender_client_id, client->audio_state);
+                audio_webrtc__set_is_client_sending_audio(client->client_id, TRUE);
+                server_msg__send_audio_state_of_client_to_all_clients(client, client->audio_state);
             }
         }
     }
@@ -4780,7 +4833,7 @@ void client_msg__process_admin_password_message(cJSON* json_root, uint64 sender_
                 cvector_push_back(client->tag_ids, ADMIN_TAG_ID);
             }
 
-            server_msg__send_add_tag_to_client_event_to_all_clients(client->client_id, ADMIN_TAG_ID);
+            server_msg__send_add_tag_to_client_event_to_all_clients(client, ADMIN_TAG_ID);
         }
 
         // an admin's flag may be withheld, so the rows showing him learn the code they show from now on
@@ -4943,7 +4996,7 @@ void client_msg__process_add_tag_to_client_message(cJSON* json_root, uint64 send
         client_to_add_tag_to->is_admin = TRUE;
     }
 
-    server_msg__send_add_tag_to_client_event_to_all_clients(client_to_add_tag_to->client_id, json_tag_id->valueint);
+    server_msg__send_add_tag_to_client_event_to_all_clients(client_to_add_tag_to, json_tag_id->valueint);
 
     // an admin's flag may be withheld, so the rows showing him learn the code they show from now on
     if (json_tag_id->valueint == ADMIN_TAG_ID && g_server_settings.hide_admin_country_flag == TRUE)
@@ -5314,12 +5367,12 @@ void client_msg__process_set_identity_alias_request(cJSON* json_root, uint64 sen
         clib__copy_memory(json_alias->valuestring, &client->alias[0], clib__utf8_string_length(json_alias->valuestring), USERNAME_MAX_LENGTH - 1);
         client->is_registered = (boole)(client->alias[0] != 0);
 
-        server_msg__send_client_alias_changed_to_all_clients(client->client_id, &client->alias[0]);
+        server_msg__send_client_alias_changed_to_all_clients(client, &client->alias[0]);
 
         // just became registered: hand over the offline roster without making them reconnect
         if (client->is_registered == TRUE && g_server_settings.allow_stored_clients_list == TRUE)
         {
-            server_msg__send_stored_clients_to_single_client(client->p_ws_connection, client->dh_shared_secret);
+            server_msg__send_stored_clients_to_single_client(client);
         }
         break;
     }
@@ -5439,7 +5492,7 @@ void client_msg__process_set_alias_request(cJSON* json_root, uint64 sender_clien
     {
         clib__null_memory(&client_to_alias->username[0], USERNAME_MAX_LENGTH);
         clib__copy_memory(client_to_alias->alias, &client_to_alias->username[0], clib__utf8_string_length(client_to_alias->alias), USERNAME_MAX_LENGTH - 1);
-        server_msg__send_client_rename_message_to_all_clients(client_to_alias->client_id, client_to_alias->username);
+        server_msg__send_client_rename_message_to_all_clients(client_to_alias, client_to_alias->username);
     }
 
     // this is the moment an identity BECOMES registered, so it is also the moment its raw public key
@@ -5461,12 +5514,12 @@ void client_msg__process_set_alias_request(cJSON* json_root, uint64 sender_clien
         base__clear_identity_raw_public_key(identity_hash);
     }
 
-    server_msg__send_client_alias_changed_to_all_clients(client_to_alias->client_id, &client_to_alias->alias[0]);
+    server_msg__send_client_alias_changed_to_all_clients(client_to_alias, &client_to_alias->alias[0]);
 
     // just became registered: hand him the roster now instead of making him reconnect for it
     if (client_to_alias->is_registered == TRUE && g_server_settings.allow_stored_clients_list == TRUE)
     {
-        server_msg__send_stored_clients_to_single_client(client_to_alias->p_ws_connection, client_to_alias->dh_shared_secret);
+        server_msg__send_stored_clients_to_single_client(client_to_alias);
     }
 
 label_client_msg__process_set_alias_request_end:
@@ -5516,7 +5569,7 @@ void client_msg__process_request_stored_clients(cJSON* json_root, uint64 sender_
         goto label_client_msg__process_request_stored_clients_end;
     }
 
-    server_msg__send_stored_clients_to_single_client(client->p_ws_connection, client->dh_shared_secret);
+    server_msg__send_stored_clients_to_single_client(client);
 
 label_client_msg__process_request_stored_clients_end:
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -5600,7 +5653,7 @@ void client_msg__process_avatar_upload(cJSON* json_root, uint64 sender_client_id
     base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
     base__set_identity_avatar_by_hash(identity_hash, json_base64_avatar->valuestring);
 
-    server_msg__send_avatar_changed_event_to_all_clients(client->client_id);
+    server_msg__send_avatar_changed_event_to_all_clients(client);
 
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -5649,7 +5702,7 @@ void client_msg__process_delete_avatar(cJSON* json_root, uint64 sender_client_id
     base__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
     base__set_identity_avatar_by_hash(identity_hash, "");  // empty string clears it
 
-    server_msg__send_avatar_changed_event_to_all_clients(client->client_id);
+    server_msg__send_avatar_changed_event_to_all_clients(client);
 
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -5710,7 +5763,7 @@ void client_msg__process_request_avatar_for_client(cJSON* json_root, uint64 send
         return;
     }
 
-    server_msg__send_client_avatar_to_single_client(sender->p_ws_connection, sender->dh_shared_secret, target_client_id, (target->base64_avatar != NULL_POINTER) ? target->base64_avatar : "");
+    server_msg__send_client_avatar_to_single_client(sender, target_client_id, (target->base64_avatar != NULL_POINTER) ? target->base64_avatar : "");
 
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -5789,7 +5842,7 @@ void client_msg__process_request_avatars_batch(cJSON* json_root, uint64 sender_c
             continue;  // skip clients without a live avatar; the client keeps its placeholder
         }
 
-        server_msg__send_client_avatar_to_single_client(sender->p_ws_connection, sender->dh_shared_secret, target_client_id, target->base64_avatar);
+        server_msg__send_client_avatar_to_single_client(sender, target_client_id, target->base64_avatar);
         sent++;
     }
 
@@ -5893,7 +5946,7 @@ void client_msg__process_remove_tag_from_client_message(cJSON* json_root, uint64
             client_to_remove_tag_id_from->is_admin = FALSE;
         }
 
-        server_msg__send_remove_tag_from_client_event_to_all_clients(client_to_remove_tag_id_from->client_id, json_tag_id->valueint);
+        server_msg__send_remove_tag_from_client_event_to_all_clients(client_to_remove_tag_id_from, json_tag_id->valueint);
 
         // his flag was withheld as an admin's; the rows showing him get the real code back
         if (json_tag_id->valueint == ADMIN_TAG_ID && g_server_settings.hide_admin_country_flag == TRUE)
@@ -6204,7 +6257,7 @@ void client_msg__process_request_identity_list(cJSON* json_root, uint64 sender_c
         goto label_client_msg__process_request_identity_list_end;
     }
 
-    server_msg__send_identity_list_to_single_client(sender_client->p_ws_connection, sender_client->dh_shared_secret);
+    server_msg__send_identity_list_to_single_client(sender_client);
 
 label_client_msg__process_request_identity_list_end:
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -6305,7 +6358,7 @@ void client_msg__process_delete_identity(cJSON* json_root, uint64 sender_client_
     // tell everyone about each stripped tag (one event per tag; there is no bulk-removal event)
     for (t = 0; t < tags_to_remove_count; t++)
     {
-        server_msg__send_remove_tag_from_client_event_to_all_clients(holder_client_id, tags_to_remove[t]);
+        server_msg__send_remove_tag_from_client_event_to_all_clients(&g_clients_array[holder_client_id], tags_to_remove[t]);
     }
 
     // his flag was withheld as an admin's; the rows showing him get the real code back
@@ -6315,7 +6368,7 @@ void client_msg__process_delete_identity(cJSON* json_root, uint64 sender_client_
     }
 
     // refresh the requesting admin's identity list so the deleted row disappears
-    server_msg__send_identity_list_to_single_client(sender_client->p_ws_connection, sender_client->dh_shared_secret);
+    server_msg__send_identity_list_to_single_client(sender_client);
 
 label_client_msg__process_delete_identity_end:
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -6413,7 +6466,7 @@ void client_msg__process_modify_identity_tag(cJSON* json_root, uint64 sender_cli
             {
                 cvector_push_back(holder->tag_ids, (int)tag_id);
                 if (tag_id == ADMIN_TAG_ID) { holder->is_admin = TRUE; }
-                server_msg__send_add_tag_to_client_event_to_all_clients(holder->client_id, tag_id);
+                server_msg__send_add_tag_to_client_event_to_all_clients(holder, tag_id);
 
                 // an admin's flag may be withheld, so the rows showing him learn the code they show from now on
                 if (tag_id == ADMIN_TAG_ID && g_server_settings.hide_admin_country_flag == TRUE) { server_msg__send_client_country_code_changed_to_all_clients(holder); }
@@ -6425,7 +6478,7 @@ void client_msg__process_modify_identity_tag(cJSON* json_root, uint64 sender_cli
             {
                 cvector_erase(holder->tag_ids, tag_index);
                 if (tag_id == ADMIN_TAG_ID) { holder->is_admin = FALSE; }
-                server_msg__send_remove_tag_from_client_event_to_all_clients(holder->client_id, tag_id);
+                server_msg__send_remove_tag_from_client_event_to_all_clients(holder, tag_id);
 
                 // his flag was withheld as an admin's; the rows showing him get the real code back
                 if (tag_id == ADMIN_TAG_ID && g_server_settings.hide_admin_country_flag == TRUE) { server_msg__send_client_country_code_changed_to_all_clients(holder); }
@@ -6436,7 +6489,7 @@ void client_msg__process_modify_identity_tag(cJSON* json_root, uint64 sender_cli
     }
 
     // refresh the requesting admin's identity list
-    server_msg__send_identity_list_to_single_client(sender_client->p_ws_connection, sender_client->dh_shared_secret);
+    server_msg__send_identity_list_to_single_client(sender_client);
 
 label_client_msg__process_modify_identity_tag_end:
     clib__unlock(&g_tags_global_rwlock_guard);
@@ -6679,6 +6732,8 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     boole save_succeeded = FALSE;
     boole previous_display_country_flags = FALSE;
     boole previous_voice_chat_active = FALSE;
+    boole previous_is_audio_over_websocket_allowed = FALSE;
+    boole previous_is_audio_over_webrtc_allowed = FALSE;
     boole previous_music_bot_audio_active = FALSE;
     boole previous_video_streaming_active = FALSE;
     boole previous_hide_clients_in_password_channels = FALSE;
@@ -6718,6 +6773,8 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     // snapshot the current toggles so they can be rolled back if the persist fails
     previous_display_country_flags = g_server_settings.is_display_country_flags_active;
     previous_voice_chat_active = g_server_settings.is_voice_chat_active;
+    previous_is_audio_over_websocket_allowed = g_server_settings.is_audio_over_websocket_allowed;
+    previous_is_audio_over_webrtc_allowed = g_server_settings.is_audio_over_webrtc_allowed;
     previous_music_bot_audio_active = g_server_settings.is_music_bot_audio_active;
     previous_video_streaming_active = g_server_settings.is_video_streaming_active;
     previous_hide_clients_in_password_channels = g_server_settings.is_hide_clients_in_password_protected_channels_active;
@@ -6739,6 +6796,27 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     if (cJSON_IsBool(json_field))
     {
         g_server_settings.is_voice_chat_active = cJSON_IsTrue(json_field);
+    }
+
+    // the audio connections the admin allows (the select under the audio switch): both, websocket or webrtc
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "audio_connections");
+    if (cJSON_IsString(json_field) && json_field->valuestring != NULL_POINTER)
+    {
+        if (clib__is_string_equal(json_field->valuestring, "both") == TRUE)
+        {
+            g_server_settings.is_audio_over_websocket_allowed = TRUE;
+            g_server_settings.is_audio_over_webrtc_allowed = TRUE;
+        }
+        else if (clib__is_string_equal(json_field->valuestring, "websocket") == TRUE)
+        {
+            g_server_settings.is_audio_over_websocket_allowed = TRUE;
+            g_server_settings.is_audio_over_webrtc_allowed = FALSE;
+        }
+        else if (clib__is_string_equal(json_field->valuestring, "webrtc") == TRUE)
+        {
+            g_server_settings.is_audio_over_websocket_allowed = FALSE;
+            g_server_settings.is_audio_over_webrtc_allowed = TRUE;
+        }
     }
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "enable_music_bot_audio");
@@ -6769,6 +6847,12 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     if (cJSON_IsBool(json_field))
     {
         g_server_settings.allow_client_renames = cJSON_IsTrue(json_field);
+    }
+
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "allow_link_previews");
+    if (cJSON_IsBool(json_field))
+    {
+        g_server_settings.allow_link_previews = cJSON_IsTrue(json_field);
     }
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_sending_text_to_idle_clients_allowed");
@@ -7007,6 +7091,7 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
         clib__write_lock(&g_clients_global_rwlock_guard);
         clib__write_lock(&g_channels_global_rwlock_guard);
         video_stream__stop_all("disabled");
+        video_websocket__disconnect_all();
         clib__unlock(&g_channels_global_rwlock_guard);
         clib__unlock(&g_clients_global_rwlock_guard);
     }
@@ -7035,11 +7120,23 @@ void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 s
     {
         g_server_settings.is_display_country_flags_active = previous_display_country_flags;
         g_server_settings.is_voice_chat_active = previous_voice_chat_active;
+        g_server_settings.is_audio_over_websocket_allowed = previous_is_audio_over_websocket_allowed;
+        g_server_settings.is_audio_over_webrtc_allowed = previous_is_audio_over_webrtc_allowed;
         g_server_settings.is_music_bot_audio_active = previous_music_bot_audio_active;
         g_server_settings.is_video_streaming_active = previous_video_streaming_active;
         g_server_settings.is_hide_clients_in_password_protected_channels_active = previous_hide_clients_in_password_channels;
         g_server_settings.is_temp_channel_creation_allowed = previous_temp_channel_creation_allowed;
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_save_server_settings_request: save failed, rolled back the general-settings toggles");
+    }
+
+    // a connection switched off, or audio switched off, is ended for the clients that use it, before they learn the new policy
+    if (save_succeeded == TRUE
+        && (previous_is_audio_over_websocket_allowed != g_server_settings.is_audio_over_websocket_allowed
+            || previous_is_audio_over_webrtc_allowed != g_server_settings.is_audio_over_webrtc_allowed
+            || previous_voice_chat_active != g_server_settings.is_voice_chat_active
+            || previous_music_bot_audio_active != g_server_settings.is_music_bot_audio_active))
+    {
+        audio_channel__apply_policy_change();
     }
 
     // connected clients learn policy changes right away, not only on their next join
@@ -7209,7 +7306,7 @@ void client_msg__process_call_idle_client_message(cJSON* json_root, uint64 sende
         goto label_client_msg__process_call_idle_client_message_end;
     }
 
-    server_msg__send_call_event_to_idle_client(caller, callee);
+    server_msg__send_call_event_to_idle_client(callee, caller);
 
 label_client_msg__process_call_idle_client_message_end:
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -7384,7 +7481,7 @@ void client_msg__process_reset_channel_maintainer_request(cJSON* json_root, uint
 
     // same announcement as any other maintainer change; the new maintainer's client reacts to it
     // by generating and distributing fresh channel keys to everyone in the channel
-    server_msg__send_maintainer_id_to_clients_in_same_channel(channel_id, channel->maintainer_id);
+    server_msg__send_maintainer_id_to_clients_in_same_channel(channel, channel->maintainer_id);
 
 label_reset_channel_maintainer_end:
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -7478,8 +7575,8 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
             old_channel->maintainer_generation++;
 
             // first send join message, then maintainer message for clients in that channel
-            server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_id);
-            server_msg__send_maintainer_id_to_clients_in_same_channel(old_channel->channel_id, old_channel->maintainer_id);
+            server_msg__send_client_going_to_idle_mode_info_to_all_clients(&g_clients_array[sender_client_id]);
+            server_msg__send_maintainer_id_to_clients_in_same_channel(old_channel, old_channel->maintainer_id);
         }
         else
         {
@@ -7487,23 +7584,24 @@ void client_msg__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender
             old_channel->is_channel_maintainer_present = FALSE;
             old_channel->maintainer_id = 0;
             old_channel->maintainer_generation++;
-            server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_id);
+            server_msg__send_client_going_to_idle_mode_info_to_all_clients(&g_clients_array[sender_client_id]);
         }
     }
     else
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_go_to_idle_mode_request is_client_that_is_leaving_channel_maintainer_of_that_channel FALSE  \n");
-        server_msg__send_client_going_to_idle_mode_info_to_all_clients(sender_client_id);
+        server_msg__send_client_going_to_idle_mode_info_to_all_clients(&g_clients_array[sender_client_id]);
     }
 
     // the client closes its end of the datachannel right after sending this request; drop the server
     // side too - a slot left "connected" on a dead transport made the re-create request on resume be
     // refused until the ICE consent timeout noticed, tens of seconds without working audio
     audio_channel__process_client_disconnect(client);
+    video_websocket__disconnect(client);
 
     // the transport is gone, say so; the fresh peer built on resume re-announces the real state
     client->audio_state = AUDIO_STATE__AUDIO_COMPLETELY_DISABLED;
-    server_msg__send_audio_state_of_client_to_all_clients(client->client_id, AUDIO_STATE__AUDIO_COMPLETELY_DISABLED);
+    server_msg__send_audio_state_of_client_to_all_clients(client, AUDIO_STATE__AUDIO_COMPLETELY_DISABLED);
 
 label_go_to_idle_mode_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -7577,7 +7675,7 @@ void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint
     audio_channel__process_client_channel_join(client);
     video_stream__process_client_joined_channel(client);
 
-    server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(sender_client_id, channel_to_join->channel_id);
+    server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(&g_clients_array[sender_client_id], channel_to_join->channel_id);
 
     // parity with the normal join tail: alone in the channel means the returner IS its maintainer,
     // and the returner must always be told the maintainer id - without both it never received (or
@@ -7589,9 +7687,9 @@ void client_msg__process_come_back_from_idle_mode_request(cJSON* json_root, uint
         channel_to_join->maintainer_generation++;
     }
 
-    server_msg__send_maintainer_id_to_single_client(client, channel_to_join->channel_id, channel_to_join->maintainer_id);
+    server_msg__send_maintainer_id_to_single_client(client, channel_to_join, channel_to_join->maintainer_id);
 
-    server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client->p_ws_connection, client->dh_shared_secret, client->channel_id);
+    server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client, client->channel_id);
 
 label_client_msg__process_come_back_from_idle_mode_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -7622,6 +7720,13 @@ void client_msg__process_create_new_webrtc_datachannel_connection(cJSON* json_ro
     client = &g_clients_array[sender_client_id];
 
     if (client->is_authenticated == FALSE || client->is_existing == FALSE)
+    {
+        goto label_process_create_new_webrtc_datachannel_connection_end;
+    }
+
+    // nothing would travel on the datachannel: no voice, no music bot audio and no video streaming
+    if (g_server_settings.is_voice_chat_active == FALSE && g_server_settings.is_music_bot_audio_active == FALSE
+        && g_server_settings.is_video_streaming_active == FALSE)
     {
         goto label_process_create_new_webrtc_datachannel_connection_end;
     }
@@ -7657,7 +7762,7 @@ void client_msg__process_create_new_webrtc_datachannel_connection(cJSON* json_ro
     peer->attempts_since_connected++;
 
     // log_info("%s", "attempting reconnect");
-    audio_channel__initialize_webrtc_datachannel_connection(client);
+    audio_webrtc__initialize_datachannel_connection(client);
 
 label_process_create_new_webrtc_datachannel_connection_end:
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -7969,7 +8074,7 @@ void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sende
     // load mp3 file on server side from disk. don't upload it yet, that will on on the end
 
     // first create client
-    // assign him some random keys (client will be music client, messaging to him won't be possible), he will get channel keys but he won't get public key
+    // Bot audio uses its own keys. The server never receives clients' channel keys.
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_create_music_bot_request \n");
 
     new_music_bot_index = base__get_new_index_for_client();
@@ -7986,6 +8091,19 @@ void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sende
         sizeof(music_bot_single_song_data_t) * MUSIC_BOT_MAX_FILE_COUNT, MEMALLOC_MUSICBOT_SONG);
     if (music_bot->music_bot_client_extension.songs == NULL_POINTER)
     {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
+    music_bot->music_bot_client_extension.audio_keys = calloc(1, sizeof(music_bot_audio_keys_t));
+    if (music_bot->music_bot_client_extension.audio_keys == NULL_POINTER
+        || base__fill_secure_random_bytes(&music_bot->music_bot_client_extension.audio_keys->keys[0][0], 128) == FALSE
+        // the packet counter goes into the encryption of every bot frame and must never repeat under the same
+        // keys; a random start keeps it apart from the counters of an earlier bot in the same slot
+        || base__fill_secure_random_bytes((unsigned char*)&music_bot->music_bot_client_extension.audio_keys->packet_counter, 8) == FALSE)
+    {
+        free(music_bot->music_bot_client_extension.audio_keys);
+        memorymanager__free((nuint)music_bot->music_bot_client_extension.songs);
+        clib__null_memory(music_bot, sizeof(*music_bot));
         goto label_client_msg__process_create_music_bot_end;
     }
 
@@ -8010,12 +8128,13 @@ void client_msg__process_create_music_bot_request(cJSON* json_root, uint64 sende
     music_bot->music_bot_client_extension.is_music_bot_running = TRUE;
     if (pthread_create((pthread_t*)&music_bot->music_bot_client_extension.music_bot_pthread_handle, 0, musicbot__threadstart, (void*)music_bot) != 0)
     {
+        free(music_bot->music_bot_client_extension.audio_keys);
         memorymanager__free((nuint)music_bot->music_bot_client_extension.songs);
         clib__null_memory(music_bot, sizeof(*music_bot));
         goto label_client_msg__process_create_music_bot_end;
     }
     g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = TRUE;
-    server_msg__send_client_connect_message_to_all_clients(music_bot->client_id);
+    server_msg__send_client_connect_message_to_all_clients(music_bot);
 
 label_client_msg__process_create_music_bot_end:
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -8275,7 +8394,7 @@ void client_msg__process_musicbot_get_song_list_request(cJSON* json_root, uint64
     status = _client_msg_internal__is_musicbot_get_song_list_request_valid(json_root);
     if (status == FALSE)
     {
-        log_info("%s", "client_msg__process_musicbot_get_song_list_request is not valid");
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_musicbot_get_song_list_request is not valid");
         return;
     }
 
@@ -8310,7 +8429,7 @@ void client_msg__process_musicbot_get_song_list_request(cJSON* json_root, uint64
 
     DBG_CLIENT_MESSAGE log_info("%s", "calling server_msg__send_music_bot_song_list_to_single_client");
 
-    server_msg__send_music_bot_song_list_to_single_client(sender_client_id, music_bot->client_id);
+    server_msg__send_music_bot_song_list_to_single_client(&g_clients_array[sender_client_id], music_bot);
 
 label_client_msg__process_musicbot_get_song_list_request_end:
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -8571,7 +8690,7 @@ void client_msg__process_remove_song_from_music_bot_request(cJSON* json_root, ui
     // questionable thread safety
     musicbot__remove_song(music_bot, json_song_id->valueint);
 
-    server_msg__send_music_bot_song_list_to_single_client(sender_client_id, music_bot->client_id);
+    server_msg__send_music_bot_song_list_to_single_client(&g_clients_array[sender_client_id], music_bot);
 
     if (music_bot->music_bot_client_extension.music_bot_songs_count == 0)
     {
@@ -8627,7 +8746,7 @@ static void* _client_msg_internal__file_download_thread(void* argument)
 
             if (is_sender_valid == TRUE && is_receiver_valid == TRUE)
             {
-                server_msg__send_file_by_chunk_to_single_client(chunk, current_size, arg->client_sender_id, arg->client_receiver_id, arg->server_chat_message_id);
+                server_msg__send_file_by_chunk_to_single_client(&g_clients_array[arg->client_receiver_id], &g_clients_array[arg->client_sender_id], chunk, current_size, arg->server_chat_message_id);
             }
 
             clib__unlock(&g_clients_global_rwlock_guard);
@@ -8645,9 +8764,9 @@ static void* _client_msg_internal__file_download_thread(void* argument)
 
         if (is_sender_valid == TRUE && is_receiver_valid == TRUE)
         {
-            server_msg__send_file_receive_completed_to_single_client(arg, arg->client_receiver_id, &arg->receive_type[0]);
+            server_msg__send_file_receive_completed_to_single_client(&g_clients_array[arg->client_receiver_id], arg, &arg->receive_type[0]);
             server_msg__send_image_status_to_single_client(&g_clients_array[arg->client_sender_id], "success"); // this is for client that sent it
-            server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(arg->client_sender_id, arg->server_chat_message_id, arg->local_chat_message_id);
+            server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(&g_clients_array[arg->client_sender_id], arg->server_chat_message_id, arg->local_chat_message_id);
         }
 
         clib__unlock(&g_clients_global_rwlock_guard);
@@ -8680,7 +8799,7 @@ static void* _client_msg_internal__file_download_thread(void* argument)
 
                 if (is_sender_valid == TRUE && is_receiver_valid == TRUE)
                 {
-                    server_msg__send_file_by_chunk_to_single_client(chunk, current_size, arg->client_sender_id, client_receiver_id, arg->server_chat_message_id);
+                    server_msg__send_file_by_chunk_to_single_client(&g_clients_array[client_receiver_id], &g_clients_array[arg->client_sender_id], chunk, current_size, arg->server_chat_message_id);
                 }
 
                 clib__unlock(&g_clients_global_rwlock_guard);
@@ -8705,7 +8824,7 @@ static void* _client_msg_internal__file_download_thread(void* argument)
 
             if (is_sender_valid == TRUE && is_receiver_valid == TRUE)
             {
-                server_msg__send_file_receive_completed_to_single_client(arg, client_receiver_id, &arg->receive_type[0]);
+                server_msg__send_file_receive_completed_to_single_client(&g_clients_array[client_receiver_id], arg, &arg->receive_type[0]);
             }
 
             clib__unlock(&g_clients_global_rwlock_guard);
@@ -8718,7 +8837,7 @@ static void* _client_msg_internal__file_download_thread(void* argument)
         if (util__is_client_valid_and_not_music_bot(arg->client_sender_id) == TRUE)
         {
             server_msg__send_image_status_to_single_client(&g_clients_array[arg->client_sender_id], "success");
-            server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(arg->client_sender_id, arg->server_chat_message_id, arg->local_chat_message_id);
+            server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(&g_clients_array[arg->client_sender_id], arg->server_chat_message_id, arg->local_chat_message_id);
         }
 
         clib__unlock(&g_clients_global_rwlock_guard);

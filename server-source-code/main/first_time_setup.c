@@ -1,4 +1,5 @@
 #include "definitions.h"
+#include "metadata_crypto.h"
 
 // first-run interactive configuration wizard, split out of main.c (see first_time_setup.h). runs only
 // when there is no valid server_settings.json. the settings-LOAD path and the push-config-to-client step
@@ -8,9 +9,10 @@
 #include "clib/clib_memory.h"
 #include "../third-party/dave-g-json/cJSON.h"
 #include "base.h"
-#include "../third-party/ITH-sha/sha256.h"
 #include "first_time_setup.h"
 #include "settings.h"
+#include "audio_channel.h"
+#include "../third-party/rxi-log/log.h"
 #include <string.h>
 
 #ifdef WIN32
@@ -237,6 +239,8 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     cJSON_AddStringToObject(json_root, "webrtc_public_address", g_server_settings.webrtc_public_address);
     cJSON_AddNumberToObject(json_root, "webrtc_port_range_begin", (double)g_server_settings.webrtc_port_range_begin);
     cJSON_AddNumberToObject(json_root, "webrtc_port_range_end", (double)g_server_settings.webrtc_port_range_end);
+    cJSON_AddItemToObject(json_root, "is_audio_over_websocket_allowed", cJSON_CreateBool(g_server_settings.is_audio_over_websocket_allowed == TRUE));
+    cJSON_AddItemToObject(json_root, "is_audio_over_webrtc_allowed", cJSON_CreateBool(g_server_settings.is_audio_over_webrtc_allowed == TRUE));
     cJSON_AddNumberToObject(json_root, "server_slots", (double)g_server_settings.max_client_count);
     cJSON_AddStringToObject(json_root, "admin_password", &g_server_settings.admin_password[0]);
     cJSON_AddItemToObject(json_root, "admin_password_is_initial", cJSON_CreateBool(g_server_settings.admin_password_is_initial == TRUE));
@@ -291,6 +295,7 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     cJSON_AddItemToObject(json_root, "allow_offline_messages", cJSON_CreateBool(g_server_settings.allow_offline_messages == TRUE));
     cJSON_AddItemToObject(json_root, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
     cJSON_AddItemToObject(json_root, "allow_client_renames", cJSON_CreateBool(g_server_settings.allow_client_renames == TRUE));
+    cJSON_AddBoolToObject(json_root, "allow_link_previews", g_server_settings.allow_link_previews);
     cJSON_AddItemToObject(json_root, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
     cJSON_AddItemToObject(json_root, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
@@ -776,7 +781,6 @@ void first_time_setup__run(char plaintext_keys[][256])
     int64 client_theme_count = 0;
     int64 theme_choice = 0;
     char theme_scan_path[600];
-    ITH_SHA256_CTX ctx;
     int64 requested_key_count = 0;
     boole is_tunnel_setup_requested = FALSE;
 
@@ -826,9 +830,13 @@ void first_time_setup__run(char plaintext_keys[][256])
 
             clib__copy_memory(input, &plaintext_keys[i][0], clib__utf8_string_length(input), 255);
 
-            ith_sha256_init(&ctx);
-            ith_sha256_update(&ctx, (unsigned char* )input, strlen(input));
-            ith_sha256_final(&ctx, g_server_settings.keys[i].key_value);
+            // Turn the entered password into an AES key. Store its type with
+            // its bytes so the encryption code knows which method to use.
+            if (!metadata_crypto__key_from_password(&g_server_settings.keys[i], CRYPTO_KEY_AES_256_CTR, input))
+            {
+                fprintf(stderr, "Failed to derive a configured encryption key.\n");
+                exit(EXIT_FAILURE);
+            }
         }
 
         if (g_server_settings.keys_count == 1)
@@ -885,6 +893,38 @@ void first_time_setup__run(char plaintext_keys[][256])
         g_server_settings.is_voice_chat_active = FALSE;
         printf("%s %s\n", g_mark_off, "voice chat: off");
     }
+
+    // the connections voice may use; each client picks within this by its own preference
+    printf("\n%s %s\n", g_mark_info, "Audio connections: websocket (tcp, passes proxies and a forwarding router) and webrtc (udp datachannel, lower delay).");
+    for (;;)
+    {
+        clib__null_memory(input, sizeof(input));
+        printf("%s %s", g_mark_ask, "Serve audio over: 1 = websocket, 2 = webrtc, 3 = both, clients choose [3]: ");
+
+        if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
+        {
+            break;
+        }
+        clib__sanitize_stdin(input);
+
+        if (input[0] == 0 || clib__is_string_equal(input, "3") == TRUE)
+        {
+            break; // both stay on, the default
+        }
+        if (clib__is_string_equal(input, "1") == TRUE)
+        {
+            g_server_settings.is_audio_over_webrtc_allowed = FALSE;
+            break;
+        }
+        if (clib__is_string_equal(input, "2") == TRUE)
+        {
+            g_server_settings.is_audio_over_websocket_allowed = FALSE;
+            break;
+        }
+        printf("%s %s\n", g_mark_warn, "enter 1, 2 or 3");
+    }
+    printf("%s %s%s\n", g_mark_ok, "audio connections: ", audio_channel__policy_value());
+    clib__null_memory(input, sizeof(input));
 
     if (_first_time_setup_internal__ask_yes_no("Allow more than one client to connect from the same IP address?", TRUE) == FALSE)
     {
@@ -1231,6 +1271,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     printf("      %s%lld\n", "websocket port ....... ", g_server_settings.websocket_port);
     printf("      %s%s\n", "connect password ..... ", (g_server_settings.keys_count > 0) ? "set" : "none");
     printf("      %s%s\n", "voice chat ........... ", (g_server_settings.is_voice_chat_active == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "audio connections .... ", audio_channel__policy_value());
     printf("      %s%s\n", "same-IP clients ...... ", (g_server_settings.is_same_ip_address_allowed == TRUE) ? "allowed" : "blocked");
     printf("      %s%lld%s%s\n", "min rsa key size ..... ", g_server_settings.minimum_rsa_key_bits, " bits",
         (g_server_settings.announce_minimum_rsa_key_bits == TRUE) ? " (announced to clients)" : " (not announced)");
@@ -1305,6 +1346,7 @@ static boole _first_time_setup_internal__is_tunnel_setup_available(void)
 
     if (script_file == NULL_POINTER)
     {
+        DBG_FIRST_TIME_SETUP log_info("%s %s", "tunnel setup not offered: script not found at", g_tunnel_setup_script_path);
         return FALSE;
     }
 
@@ -1335,6 +1377,8 @@ static boole _first_time_setup_internal__is_tunnel_setup_available(void)
     free(working_directory);
     free(settings_directory);
 #endif
+
+    DBG_FIRST_TIME_SETUP log_info("%s %s", "tunnel setup available:", is_same_directory == TRUE ? "yes" : "no, the server is not running from buildresult");
 
     return is_same_directory;
 }

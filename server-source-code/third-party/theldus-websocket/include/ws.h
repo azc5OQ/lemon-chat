@@ -270,6 +270,24 @@ extern "C" {
 	extern int ws_init_client_slots(uint32_t capacity);
 	extern size_t ws_client_slot_size(void);
 
+    // the media sockets: /audio and /video next to the chat socket, each with a writer queue (see ws.c)
+    #define WS_AUDIO_FRAME_MAX 4132
+    #define WS_VIDEO_FRAME_MAX 16384
+    #define WS_MEDIA_PURPOSE_NONE 0
+    #define WS_MEDIA_PURPOSE_AUDIO 1
+    #define WS_MEDIA_PURPOSE_VIDEO 2
+    extern int ws_media_purpose(ws_cli_conn_t* client);
+    extern void ws_abort_client(ws_cli_conn_t* client);
+    extern uint64_t ws_media_client_id(ws_cli_conn_t* client);
+    extern void ws_media_bind(ws_cli_conn_t* client, uint64_t id);
+    // the kind of a queued frame sets how long it may wait before the writer drops it as stale
+    #define WS_MEDIA_KIND_CONTROL 0
+    #define WS_MEDIA_KIND_VOICE 1
+    #define WS_MEDIA_KIND_MUSIC 2
+    #define WS_MEDIA_KIND_VIDEO 3
+    extern int ws_media_queue_frame(ws_cli_conn_t* client, const unsigned char* data, size_t size, int kind);
+    extern void ws_media_clear_queue(ws_cli_conn_t* client);
+
 	/* Ping routines. */
 	extern void ws_ping(ws_cli_conn_t *cli, int threshold);
 

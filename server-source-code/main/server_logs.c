@@ -5,6 +5,7 @@
 #include "base.h"
 #include "memory_manager.h"
 #include "server_logs.h"
+#include "../third-party/rxi-log/log.h"
 
 #include <time.h> // the log lines are stamped with local date and time
 
@@ -126,6 +127,8 @@ static void _server_logs_internal__append(char* text)
     g_admin_log_total_bytes += sizeof(admin_log_entry_t);
     g_admin_log_count++;
 
+    DBG_SERVER_LOGS log_info("%s %llu %s %llu %s", "admin log: entry appended, now", (unsigned long long)g_admin_log_count, "entries,", (unsigned long long)g_admin_log_total_bytes, "bytes");
+
     _server_logs_internal__purge_over_cap_locked();
 
     pthread_mutex_unlock(&g_admin_log_mutex);
@@ -142,6 +145,7 @@ void server_logs__purge_tick(void)
 {
     uint64 now_ms = base__get_timestamp_ms();
     time_t cutoff = 0;
+    uint64 removed_count = 0;
 
     if (g_admin_log_last_purge_ms != 0 && now_ms - g_admin_log_last_purge_ms < ADMIN_LOG_PURGE_INTERVAL_MS)
     {
@@ -157,7 +161,10 @@ void server_logs__purge_tick(void)
     while (g_admin_log_head != NULL_POINTER && g_admin_log_head->created < cutoff)
     {
         _server_logs_internal__pop_oldest_locked();
+        removed_count++;
     }
+
+    DBG_SERVER_LOGS log_info("%s %llu %s", "admin log: purge removed", (unsigned long long)removed_count, "entries older than the retention period");
 
     _server_logs_internal__purge_over_cap_locked();
 

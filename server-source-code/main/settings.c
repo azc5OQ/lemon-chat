@@ -1,16 +1,17 @@
 #include "definitions.h"
+#include "metadata_crypto.h"
 
 
 #include "clib/clib_string.h"
 #include "clib/clib_memory.h"
 #include "../third-party/dave-g-json/cJSON.h"
 #include "base.h"
-#include "../third-party/ITH-sha/sha256.h"
 #include "../third-party/rxi-log/log.h"
-#include "http/http_server.h"
+#include "httpserver/http_server.h"
 #include "util.h"
 #include "first_time_setup.h"
 #include "settings.h"
+#include "audio_websocket.h"
 #include <string.h>
 
 static void _settings_internal__build_and_push_client_config(int64 websocket_port, char plaintext_keys[][256], uint64 keys_count);
@@ -97,12 +98,14 @@ void settings__load_persisted_state(void)
     settings_file = fopen("server_settings.json", "rb");
     if (settings_file == NULL_POINTER)
     {
+        DBG_SETTINGS log_info("%s", "persisted state: server_settings.json not found, nothing to restore");
         return;
     }
 
     fseek(settings_file, 0, SEEK_END);
     file_length = ftell(settings_file);
     fseek(settings_file, 0, SEEK_SET);
+    DBG_SETTINGS log_info("%s %lld %s", "persisted state: reading", (long long)file_length, "bytes of server_settings.json");
     if (file_length > 0)
     {
         file_buffer = (char* )malloc(file_length + 1);
@@ -554,6 +557,8 @@ void settings__read_wireguard_fields(cJSON* json_root)
     json_field = cJSON_GetObjectItemCaseSensitive(json_root, "webrtc_port_range_end");
     if (cJSON_IsNumber(json_field)) { g_server_settings.webrtc_port_range_end = json_field->valueint; }
 
+    DBG_SETTINGS log_info("%s %s %s %s %s %lld %s %lld", "wireguard fields: mode", g_server_settings.is_wireguard_mode_active == TRUE ? "on" : "off", ", public address", g_server_settings.webrtc_public_address, ", port range", (long long)g_server_settings.webrtc_port_range_begin, "to", (long long)g_server_settings.webrtc_port_range_end);
+
     // an unusable address or range switches the mode off rather than starting with a broken voice path
     if (g_server_settings.is_wireguard_mode_active == TRUE
         && (g_server_settings.webrtc_public_address[0] == 0
@@ -583,7 +588,6 @@ void settings__load(void)
     char plaintext_keys[100][256];
     char default_client_name[30] = "user";
 
-    ITH_SHA256_CTX ctx;
     FILE* settings_file = 0;
     int64 file_length = 0;
     char* file_buffer = NULL_POINTER;
@@ -601,6 +605,8 @@ void settings__load(void)
     g_server_settings.join_channel_request_cooldown_milliseconds = 100;
     g_server_settings.create_channel_request_cooldown_milliseconds = 1000;
     g_server_settings.is_same_ip_address_allowed = TRUE;
+    g_server_settings.is_audio_over_websocket_allowed = TRUE; // both connections allowed: the client picks by its own preference
+    g_server_settings.is_audio_over_webrtc_allowed = TRUE;
     g_server_settings.is_voice_chat_active = TRUE;
     g_server_settings.is_music_bot_audio_active = TRUE;
     g_server_settings.is_video_streaming_active = FALSE; // explicit opt-in by the admin in the settings tab
@@ -627,6 +633,7 @@ void settings__load(void)
     g_server_settings.allow_offline_messages = FALSE;
     g_server_settings.allow_typing_indicator = FALSE;
     g_server_settings.allow_client_renames = TRUE;
+    g_server_settings.allow_link_previews = FALSE;
     g_server_settings.avatar_max_size_bytes = 51200;  // 50 KB raw image (~68 KB base64, fits MAX_CLIENT_AVATAR_LENGTH)
     g_server_settings.icon_max_size_bytes = 5000;
     g_server_settings.allow_file_uploads = FALSE;
@@ -724,9 +731,14 @@ void settings__load(void)
                     {
                         if ((key_index < 100) && cJSON_IsString(json_key) && (json_key->valuestring != NULL_POINTER))
                         {
-                            ith_sha256_init(&ctx);
-                            ith_sha256_update(&ctx, (unsigned char* )json_key->valuestring, strlen(json_key->valuestring));
-                            ith_sha256_final(&ctx, g_server_settings.keys[key_index].key_value);
+                            // The settings file stores these passwords as text.
+                            // Turn each one into an AES key and store its type
+                            // with its bytes, so later code knows how to use it.
+                            if (!metadata_crypto__key_from_password(&g_server_settings.keys[key_index], CRYPTO_KEY_AES_256_CTR, json_key->valuestring))
+                            {
+                                fprintf(stderr, "Failed to derive a configured encryption key.\n");
+                                exit(EXIT_FAILURE);
+                            }
                             clib__copy_memory(json_key->valuestring, &plaintext_keys[key_index][0], clib__utf8_string_length(json_key->valuestring), 255);
                             key_index++;
                         }
@@ -736,6 +748,26 @@ void settings__load(void)
 
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_voice_chat_active");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_voice_chat_active = cJSON_IsTrue(json_field); }
+                // Older Android server apps saved one mode string. Honor it when the explicit
+                // policy fields below are absent; those fields remain authoritative when present.
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "audio_transport");
+                if (cJSON_IsString(json_field) && json_field->valuestring != NULL_POINTER)
+                {
+                    if (clib__is_string_equal(json_field->valuestring, "webrtc") == TRUE)
+                    {
+                        g_server_settings.is_audio_over_websocket_allowed = FALSE;
+                        g_server_settings.is_audio_over_webrtc_allowed = TRUE;
+                    }
+                    else if (clib__is_string_equal(json_field->valuestring, "websocket") == TRUE)
+                    {
+                        g_server_settings.is_audio_over_websocket_allowed = TRUE;
+                        g_server_settings.is_audio_over_webrtc_allowed = FALSE;
+                    }
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_audio_over_websocket_allowed");
+                if (cJSON_IsBool(json_field)) { g_server_settings.is_audio_over_websocket_allowed = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_audio_over_webrtc_allowed");
+                if (cJSON_IsBool(json_field)) { g_server_settings.is_audio_over_webrtc_allowed = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_music_bot_audio_active");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_music_bot_audio_active = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_video_streaming_active");
@@ -788,6 +820,11 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.allow_typing_indicator = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_client_renames");
                 if (cJSON_IsBool(json_field)) { g_server_settings.allow_client_renames = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "allow_link_previews");
+                if (cJSON_IsBool(json_field))
+                {
+                    g_server_settings.allow_link_previews = cJSON_IsTrue(json_field);
+                }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "avatar_max_size_bytes");
                 if (cJSON_IsNumber(json_field)) { g_server_settings.avatar_max_size_bytes = (int64)json_field->valuedouble; }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "icon_max_size_bytes");

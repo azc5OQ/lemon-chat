@@ -1,5 +1,5 @@
-
 #include "definitions.h"
+#include "audio_channel.h"
 
 #ifdef WIN32
 #include <Windows.h>
@@ -7,6 +7,7 @@
 
 #include "../third-party/dave-g-json/cJSON.h"
 #include "base.h"
+#include "metadata_crypto.h"
 #include "server_message.h"
 #include "server_logs.h"
 #include "memory_manager.h"
@@ -17,6 +18,223 @@
 #include "../third-party/zhicheng/base64.h"  // BASE64_ENCODE_OUT_SIZE (identity hash buffer)
 
 #include "util.h"
+
+/**
+ * @brief starts a message: the root object with a "message" object inside that already carries the type
+ *
+ * @param const char* type -> the message type the client dispatches on
+ * @param cJSON** out_message -> receives the "message" object the fields go into
+ *
+ * @return cJSON* -> the root, to send and then delete
+ */
+static cJSON* _server_msg_internal__new_message(const char* type, cJSON** out_message)
+{
+    cJSON* root = cJSON_CreateObject();
+
+    *out_message = cJSON_AddObjectToObject(root, "message");
+    cJSON_AddStringToObject(*out_message, "type", type);
+    return root;
+}
+
+/**
+ * @brief encrypts one printed message for a socket and sends it; the lowest sender, every other one ends here
+ *
+ * @param ws_cli_conn_t* socket -> the receiving chat socket
+ * @param char* dh_shared_secret -> the secret that encrypts for it, NULL_POINTER before the key exchange
+ * @param char* plaintext -> the message text, printed once by the caller
+ *
+ * @return void
+ */
+static void _server_msg_internal__send_text(ws_cli_conn_t* socket, char* dh_shared_secret, char* plaintext)
+{
+    int64 allocated_size = 0;
+    char* encrypted = NULL_POINTER;
+
+    if (socket == NULL_POINTER || plaintext == NULL_POINTER)
+    {
+        return;
+    }
+    // every message the server sends passes here: one trace for all of them
+    DBG_SERVER_MESSAGE log_info("%s %s", "outgoing:", plaintext);
+    encrypted = metadata_crypto__encrypt_with_secret(plaintext, &allocated_size, dh_shared_secret);
+    if (encrypted == NULL_POINTER)
+    {
+        return;
+    }
+    ws_sendframe_txt(socket, encrypted);
+    memorymanager__free((nuint)encrypted);
+}
+
+/**
+ * @brief prints a message once and sends it over a socket; the message object stays the caller's to delete
+ */
+static void _server_msg_internal__send_json(ws_cli_conn_t* socket, char* dh_shared_secret, cJSON* json_root)
+{
+    char* plaintext = cJSON_PrintUnformatted(json_root);
+
+    _server_msg_internal__send_text(socket, dh_shared_secret, plaintext);
+    cJSON_free(plaintext);
+}
+
+/**
+ * @brief sends a printed message to one client over its chat socket, encrypted with its secret
+ *
+ * @attention clients read lock held by the caller, like every function in this file
+ */
+static void _server_msg_internal__send_text_to_client(client_t* client, char* plaintext)
+{
+    int64 allocated_size = 0;
+    char* encrypted = NULL_POINTER;
+
+    if (client->session_keys.is_ready == FALSE)
+    {
+        // before the key exchange, or for a session that never stored its keys: the slow path derives them
+        _server_msg_internal__send_text(client->p_ws_connection, client->dh_shared_secret, plaintext);
+        return;
+    }
+    if (client->p_ws_connection == NULL_POINTER || plaintext == NULL_POINTER)
+    {
+        return;
+    }
+    DBG_SERVER_MESSAGE log_info("%s %s", "outgoing:", plaintext);
+    // the keys stored at the key exchange: no derivation per message
+    encrypted = metadata_crypto__encrypt(plaintext, &allocated_size, &client->session_keys);
+    if (encrypted == NULL_POINTER)
+    {
+        return;
+    }
+    ws_sendframe_txt(client->p_ws_connection, encrypted);
+    memorymanager__free((nuint)encrypted);
+}
+
+/**
+ * @brief prints a message once and sends it to one client; the message object stays the caller's to delete
+ */
+static void _server_msg_internal__send_json_to_client(client_t* client, cJSON* json_root)
+{
+    char* plaintext = cJSON_PrintUnformatted(json_root);
+
+    _server_msg_internal__send_text_to_client(client, plaintext);
+    cJSON_free(plaintext);
+}
+
+/**
+ * @brief sends a printed message to every authenticated client that is not a music bot
+ *
+ * @param char* plaintext -> the message text, printed once by the caller
+ * @param client_t* except -> one client that does not get it, or NULL_POINTER
+ *
+ * @attention clients read lock held by the caller
+ */
+static void _server_msg_internal__send_text_to_all_clients(char* plaintext, client_t* except)
+{
+    uint64 i = 0;
+    client_t* client = NULL_POINTER;
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+        if (client == except || client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+        _server_msg_internal__send_text_to_client(client, plaintext);
+    }
+}
+
+/**
+ * @brief like _server_msg_internal__send_text_to_all_clients, limited to the clients standing in one channel
+ */
+static void _server_msg_internal__send_text_to_channel(char* plaintext, uint64 channel_id, client_t* except)
+{
+    uint64 i = 0;
+    client_t* client = NULL_POINTER;
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+        if (client == except || client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE
+            || client->channel_id != channel_id)
+        {
+            continue;
+        }
+        _server_msg_internal__send_text_to_client(client, plaintext);
+    }
+}
+
+/** @brief prints a message once and sends it to every authenticated client that is not a music bot; the object stays the caller's to delete */
+static void _server_msg_internal__send_json_to_all_clients(cJSON* json_root, client_t* except)
+{
+    char* plaintext = cJSON_PrintUnformatted(json_root);
+
+    _server_msg_internal__send_text_to_all_clients(plaintext, except);
+    cJSON_free(plaintext);
+}
+
+/** @brief prints a message once and sends it to the clients standing in one channel; the object stays the caller's to delete */
+static void _server_msg_internal__send_json_to_channel(cJSON* json_root, uint64 channel_id, client_t* except)
+{
+    char* plaintext = cJSON_PrintUnformatted(json_root);
+
+    _server_msg_internal__send_text_to_channel(plaintext, channel_id, except);
+    cJSON_free(plaintext);
+}
+
+/** @brief attaches a bot's own keys for a receiver in its channel. Clients lock required. */
+void server_msg__add_music_bot_keys(cJSON* object, client_t* receiver, client_t* bot)
+{
+    cJSON* keys = NULL_POINTER;
+    music_bot_audio_keys_t* audio_keys = bot->music_bot_client_extension.audio_keys;
+    char key_hex[65] = {0};
+    uint64 i = 0;
+    uint64 j = 0;
+
+    if (bot->is_music_bot == FALSE || audio_keys == NULL_POINTER)
+    {
+        return;
+    }
+    cJSON_AddNumberToObject(object, "music_bot_encryption", 1);
+    if (receiver->is_idle == TRUE || receiver->channel_id != bot->channel_id)
+    {
+        return;
+    }
+    keys = cJSON_AddArrayToObject(object, "music_bot_keys");
+    if (keys == NULL_POINTER)
+    {
+        return;
+    }
+    for (i = 0; i < 4; i++)
+    {
+        for (j = 0; j < 32; j++)
+        {
+            snprintf(key_hex + j * 2, 3, "%02x", audio_keys->keys[i][j]);
+        }
+        cJSON_AddItemToArray(keys, cJSON_CreateString(key_hex));
+    }
+}
+
+/** @brief delivers a bot key to a late channel joiner through the existing encrypted chat connection. the caller has checked that the receiver stands in the bot's channel and is not idle. */
+void server_msg__send_music_bot_key(client_t* receiver, client_t* bot)
+{
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
+    char* plaintext = NULL_POINTER;
+
+    root = _server_msg_internal__new_message("music_bot_key", &message);
+    if (message != NULL_POINTER)
+    {
+        cJSON_AddNumberToObject(message, "client_id", (double)bot->client_id);
+        cJSON_AddNumberToObject(message, "channel_id", (double)bot->channel_id);
+        server_msg__add_music_bot_keys(message, receiver, bot);
+        plaintext = cJSON_PrintUnformatted(root);
+    }
+    if (plaintext != NULL_POINTER)
+    {
+        _server_msg_internal__send_text_to_client(receiver, plaintext);
+        cJSON_free(plaintext);
+    }
+    cJSON_Delete(root);
+}
 
 /**
  * @brief the country code users may learn about a client: nothing unless flags are displayed, and
@@ -43,15 +261,6 @@ static cstring _server_msg_internal__country_code_to_send(client_t* client)
 }
 
 /**
- * @brief gets called by invididuals websocket thread
- *
- * @param ws_cli_conn_t* websocket -> websocket connection of client to send this message to
- * @param char* random_value_challenge_string -> randomly generated string to be sent as challenge
- * @param char* dh_public_mix_for_client -> dh public mix that client needs to set on his side, result of diffie hellman key exchange
- *
- * @return void
- */
-/**
  * @brief tells a client its rsa key is too weak, naming the required size, so it can offer to
  *        regenerate. only sent when the admin enabled announce_minimum_rsa_key_bits; otherwise
  *        the client is dropped without a word and never learns the requirement.
@@ -60,273 +269,189 @@ static cstring _server_msg_internal__country_code_to_send(client_t* client)
  *            exchange completes, so there is no shared secret to encrypt with yet. the message
  *            carries nothing secret - only the already-public policy the admin chose to publish
  *
- * @param ws_cli_conn_t* websocket -> websocket connection of the rejected client
+ * @param client_t* receiver -> the rejected client
  *
  * @return void
  */
-void server_msg__send_rsa_key_too_weak_to_single_client(ws_cli_conn_t* websocket)
+void server_msg__send_rsa_key_too_weak_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    char* plaintext = NULL_POINTER;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("rsa_key_too_weak", &message);
+    cJSON_AddNumberToObject(message, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "rsa_key_too_weak");
-    cJSON_AddNumberToObject(json_message_object1, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    if (json_root_object1_string != NULL_POINTER)
+    // in plaintext on purpose, see above: no shared secret exists for this socket yet
+    plaintext = cJSON_PrintUnformatted(root);
+    if (plaintext != NULL_POINTER)
     {
-        ws_sendframe_txt(websocket, json_root_object1_string);
+        ws_sendframe_txt(receiver->p_ws_connection, plaintext);
     }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    base__free_json_message(root, plaintext);
 }
 
-void server_msg__send_public_key_challenge_to_single_client(ws_cli_conn_t* websocket, char* random_value_challenge_string, char* dh_public_mix_for_client)
+/**
+ * @brief the first message of the key exchange: the challenge the client must sign and the server's diffie hellman mix
+ *
+ * @param client_t* receiver -> the client that receives it; no shared secret exists for it yet
+ * @param char* random_value_challenge_string -> randomly generated string to be sent as challenge
+ * @param char* dh_public_mix_for_client -> dh public mix that client needs to set on his side, result of diffie hellman key exchange
+ *
+ * @return void
+ */
+void server_msg__send_public_key_challenge_to_single_client(client_t* receiver, char* random_value_challenge_string, char* dh_public_mix_for_client)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_AUTHENTICATION log_info("%s ", "server_msg__send_public_key_challenge_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_public_key_challenge_to_single_client");
+    root = _server_msg_internal__new_message("public_key_challenge", &message);
+    cJSON_AddStringToObject(message, "value", random_value_challenge_string);
+    cJSON_AddStringToObject(message, "dh_public_mix", dh_public_mix_for_client);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
-
-    cJSON_AddStringToObject(json_message_object1, "type", "public_key_challenge");
-    cJSON_AddStringToObject(json_message_object1, "value", random_value_challenge_string);
-    cJSON_AddStringToObject(json_message_object1, "dh_public_mix", dh_public_mix_for_client);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, NULL_POINTER);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(websocket, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    // the key exchange has not happened yet, so the lowest sender gets no secret
+    _server_msg_internal__send_json(receiver->p_ws_connection, NULL_POINTER, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief part of authentication process. Sends authentication status to client along with information whether server is using voice chan and stun port , for UDP voice chat to set on clients side
  *
- * @param ws_cli_conn_t* websocket -> websocket connection of client to send this message to
- * @param char* ws_connection_dh_shared_secret -> self exlanatory
+ * @param client_t* receiver -> the client that receives it
  *
  * @return void
  *
  */
-void server_msg__send_authentication_status_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret)
+void server_msg__send_authentication_status_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_authentication_status_to_single_client");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("authentication_status", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "authentication_status");
-    cJSON_AddStringToObject(json_message_object1, "value", "success");
-    cJSON_AddBoolToObject(json_message_object1, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
-    cJSON_AddBoolToObject(json_message_object1, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
-    // video streaming policy: while off the client shows no stream ui at all (icon, popup, channel toggle)
-    cJSON_AddBoolToObject(json_message_object1, "is_video_streaming_allowed", g_server_settings.is_video_streaming_active);
-    cJSON_AddBoolToObject(json_message_object1, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
-    // the client attempts a fast reconnect only on a server that allows it
-    cJSON_AddBoolToObject(json_message_object1, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
-    // the client keeps marquees of streaming bots in other channels visible when this is on
-    cJSON_AddBoolToObject(json_message_object1, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
-    cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
+    cJSON_AddStringToObject(message, "value", "success");
+    cJSON_AddBoolToObject(message, "is_audio_over_websocket_allowed", g_server_settings.is_audio_over_websocket_allowed);
+    cJSON_AddBoolToObject(message, "is_audio_over_webrtc_allowed", g_server_settings.is_audio_over_webrtc_allowed);
+    cJSON_AddBoolToObject(message, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
+    cJSON_AddBoolToObject(message, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
+    // video streaming policy: while off the receiver shows no stream ui at all (icon, popup, channel toggle)
+    cJSON_AddBoolToObject(message, "is_video_streaming_allowed", g_server_settings.is_video_streaming_active);
+    cJSON_AddBoolToObject(message, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
+    // the receiver attempts a fast reconnect only on a server that allows it
+    cJSON_AddBoolToObject(message, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
+    // the receiver keeps marquees of streaming bots in other channels visible when this is on
+    cJSON_AddBoolToObject(message, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
+    cJSON_AddBoolToObject(message, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
     // avatars policy travels in-protocol so clients that were NOT served by this server's http
     // server (the android app loads the page from its assets) still learn it - otherwise they
     // fall back to "avatars off" and hide the set/delete avatar actions
-    cJSON_AddBoolToObject(json_message_object1, "allow_avatars", g_server_settings.allow_avatars);
-    cJSON_AddBoolToObject(json_message_object1, "allow_typing_indicator", g_server_settings.allow_typing_indicator);
-    // rename policy travels in-protocol so the client can grey its rename input out when users may not rename
-    cJSON_AddBoolToObject(json_message_object1, "allow_client_renames", g_server_settings.allow_client_renames);
-    cJSON_AddNumberToObject(json_message_object1, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
+    cJSON_AddBoolToObject(message, "allow_avatars", g_server_settings.allow_avatars);
+    cJSON_AddBoolToObject(message, "allow_typing_indicator", g_server_settings.allow_typing_indicator);
+    // rename policy travels in-protocol so the receiver can grey its rename input out when users may not rename
+    cJSON_AddBoolToObject(message, "allow_client_renames", g_server_settings.allow_client_renames);
+    cJSON_AddBoolToObject(message, "allow_link_previews", g_server_settings.allow_link_previews);
+    cJSON_AddNumberToObject(message, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
     // the settings tab's icon upload refuses oversize files itself, with the same cap the server enforces
-    cJSON_AddNumberToObject(json_message_object1, "icon_max_size", (double)g_server_settings.icon_max_size_bytes);
-    // chat file policy: the client refuses oversize/forbidden files itself, with a reason, before uploading
-    cJSON_AddBoolToObject(json_message_object1, "allow_file_uploads", g_server_settings.allow_file_uploads);
-    cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
-    cJSON_AddNumberToObject(json_message_object1, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
-    cJSON_AddBoolToObject(json_message_object1, "allow_chat_pictures", g_server_settings.allow_chat_pictures);
+    cJSON_AddNumberToObject(message, "icon_max_size", (double)g_server_settings.icon_max_size_bytes);
+    // chat file policy: the receiver refuses oversize/forbidden files itself, with a reason, before uploading
+    cJSON_AddBoolToObject(message, "allow_file_uploads", g_server_settings.allow_file_uploads);
+    cJSON_AddNumberToObject(message, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
+    cJSON_AddNumberToObject(message, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
+    cJSON_AddBoolToObject(message, "allow_chat_pictures", g_server_settings.allow_chat_pictures);
     // A masquerading tunnel cannot report the visitor's reflexive address.
     // Clients initiate ICE toward our explicitly advertised public candidates instead.
-    cJSON_AddNumberToObject(json_message_object1, "stun_port", g_server_settings.is_wireguard_mode_active ? 0 : 3478);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddNumberToObject(message, "stun_port", g_server_settings.is_wireguard_mode_active ? 0 : 3478);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    // DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n");
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, ws_connection_dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(websocket, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief sends one client's info (connected duration, ip, country, identity, last action) to a single
  *        admin client, in reply to a get_client_info request
  *
- * @param client_t* receiving_client -> the admin the reply is sent to (provides the websocket + shared secret)
- * @param client_t* target_client -> the client the info is about
+ * @param client_t* receiver -> the admin the reply is sent to (provides the websocket + shared secret)
+ * @param client_t* subject -> the client the info is about
  *
  * @attention caller must hold at least the clients read lock
  *
  * @return void
  */
-void server_msg__send_client_info_to_single_client(client_t* receiving_client, client_t* target_client)
+void server_msg__send_client_info_to_single_client(client_t* receiver, client_t* subject)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     uint64 now_ms = 0;
     uint64 connected_seconds = 0;
     uint64 last_action_seconds_ago = 0;
 
     now_ms = base__get_timestamp_ms();
-    if (now_ms >= target_client->timestamp_connected)
+    if (now_ms >= subject->timestamp_connected)
     {
-        connected_seconds = (now_ms - target_client->timestamp_connected) / 1000;
+        connected_seconds = (now_ms - subject->timestamp_connected) / 1000;
     }
-    if (now_ms >= target_client->timestamp_last_action)
+    if (now_ms >= subject->timestamp_last_action)
     {
-        last_action_seconds_ago = (now_ms - target_client->timestamp_last_action) / 1000;
-    }
-
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
-
-    cJSON_AddStringToObject(json_message_object1, "type", "client_info");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)target_client->client_id);
-    cJSON_AddNumberToObject(json_message_object1, "connected_seconds", (double)connected_seconds);
-    cJSON_AddNumberToObject(json_message_object1, "last_action_seconds_ago", (double)last_action_seconds_ago);
-    cJSON_AddStringToObject(json_message_object1, "ip_address", &target_client->ip_address[0]);
-    cJSON_AddStringToObject(json_message_object1, "country_iso_code", &target_client->country_iso_code[0]);
-    cJSON_AddStringToObject(json_message_object1, "identity", &target_client->public_key[0]);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, receiving_client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
+        last_action_seconds_ago = (now_ms - subject->timestamp_last_action) / 1000;
     }
 
-    ws_sendframe_txt(receiving_client->p_ws_connection, msg_text);
+    root = _server_msg_internal__new_message("client_info", &message);
 
-    memorymanager__free((nuint)msg_text);
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
+    cJSON_AddNumberToObject(message, "connected_seconds", (double)connected_seconds);
+    cJSON_AddNumberToObject(message, "last_action_seconds_ago", (double)last_action_seconds_ago);
+    cJSON_AddStringToObject(message, "ip_address", &subject->ip_address[0]);
+    cJSON_AddStringToObject(message, "country_iso_code", &subject->country_iso_code[0]);
+    cJSON_AddStringToObject(message, "identity", &subject->public_key[0]);
+
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief tells a single client that the channel they tried to join is full (used by the capacity gate)
  *
- * @param client_t* client -> the client to notify
+ * @param client_t* receiver -> the client to notify
  * @param uint64 channel_id -> the full channel
  *
  * @return void
  */
-void server_msg__send_channel_full_to_single_client(client_t* client, uint64 channel_id)
+void server_msg__send_channel_full_to_single_client(client_t* receiver, uint64 channel_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_full", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_full");
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)channel_id);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddNumberToObject(message, "channel_id", (double)channel_id);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function sends channel list to single client. Called when client sents challenge_response message to server during authentication process.
  *
- * @param ws_cli_conn_t* websocket -> websocket connection
- * @param char* ws_connection_dh_shared_secret -> DH key exchange generated shared secret, that must be used later within this function.
+ * @param client_t* receiver -> the client that receives it
  *
  * @return void
  */
-void server_msg__send_channel_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret)
+void server_msg__send_channel_list_to_single_client(client_t* receiver)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_channel_array = 0;
-    char* json_root_object1_string = 0;
-    char* msg_text = 0;
-    int64 size_of_allocated_message_buffer = 0;
     uint64 i = 0;
     cJSON* single_channel = 0;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_list_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_list", &message);
     json_channel_array = cJSON_CreateArray();
-    json_root_object1_string = 0;
-    msg_text = 0;
-    size_of_allocated_message_buffer = 0;
 
     for (i = 0; i < g_server_settings.max_channel_count; i++)
     {
@@ -353,36 +478,18 @@ void server_msg__send_channel_list_to_single_client(ws_cli_conn_t* websocket, ch
         cJSON_AddItemToArray(json_channel_array, single_channel);
     }
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_list");
-    cJSON_AddItemToObject(json_message_object1, "channels", json_channel_array);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddItemToObject(message, "channels", json_channel_array);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_channel_list_to_single_client: json_root_object1_string ", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, ws_connection_dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(websocket, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function sends client list to single client. Called when client sents challenge_response message to server during authentication process.
  *
- * @param ws_cli_conn_t* websocket -> websocket connection
- * @param char* ws_connection_dh_shared_secret -> DH key exchange generated shared secret, that must be used later within this function.
+ * @param client_t* client -> the client that receives it
  * @param char* local_clients_username -> username of local client
- * @param uint64 client_receiver_id -> id of the client that receives the list, used to compare his channel
+ * @param client_t* receiver -> the client to send the action to
  *                                     against every listed client when hiding clients that sit in
  *                                     password protected channels
  *
@@ -390,23 +497,18 @@ void server_msg__send_channel_list_to_single_client(ws_cli_conn_t* websocket, ch
  *
  * @return void
  */
-void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret, char* local_clients_username, uint64 client_receiver_id)
+void server_msg__send_client_list_to_single_client(client_t* receiver)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_client_array = 0;
     cJSON* json_tag_ids_array = 0;
     client_t* client_in_loop = 0;
     uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 tag_id_index = 0;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_list_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("client_list", &message);
     json_client_array = cJSON_CreateArray();
 
     // create array of clients
@@ -438,7 +540,7 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
 
         if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE)
         {
-            if (g_clients_array[client_receiver_id].channel_id != client_in_loop->channel_id)
+            if (receiver->channel_id != client_in_loop->channel_id)
             {
                 // bounds check, channel_id is not validated anywhere
                 if (client_in_loop->channel_id < g_server_settings.max_channel_count
@@ -461,6 +563,7 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
         cJSON_AddNumberToObject(single_client, "client_id", (double)client_in_loop->client_id);
 
         cJSON_AddBoolToObject(single_client, "is_music_bot", client_in_loop->is_music_bot);
+        server_msg__add_music_bot_keys(single_client, receiver, client_in_loop);
 
         if (client_in_loop->is_music_bot == TRUE)
         {
@@ -507,53 +610,32 @@ void server_msg__send_client_list_to_single_client(ws_cli_conn_t* websocket, cha
         cJSON_AddItemToArray(json_client_array, single_client);
     }
 
-    cJSON_AddStringToObject(json_message_object1, "type", "client_list");
-    cJSON_AddItemToObject(json_message_object1, "clients", json_client_array);
-    cJSON_AddStringToObject(json_message_object1, "local_username", local_clients_username);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddItemToObject(message, "clients", json_client_array);
+    cJSON_AddStringToObject(message, "local_username", receiver->username);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: json_root_object1_string ", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, ws_connection_dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text != NULL_POINTER)
-    {
-        DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-        ws_sendframe_txt(websocket, msg_text);
-        memorymanager__free((nuint)msg_text);
-    }
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function sends icon list to single client. Called when client sents challenge_response message to server during authentication process.
  *
- * @param ws_cli_conn_t* websocket -> websocket connection
- * @param char* ws_connection_dh_shared_secret -> DH key exchange generated shared secret, that must be used later within this function.
+ * @param client_t* receiver -> the client that receives it
  *
  * @attention it doesnt need readlock, already called within writelock in client_message.c
  *
  * @return void
  */
-void server_msg__send_icon_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret)
+void server_msg__send_icon_list_to_single_client(client_t* receiver)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_icons_array = 0;
-    client_t* client_in_loop = 0;
     uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_icon_list_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("icon_list", &message);
     json_icons_array = cJSON_CreateArray();
 
     // create array of clients
@@ -572,58 +654,31 @@ void server_msg__send_icon_list_to_single_client(ws_cli_conn_t* websocket, char*
         cJSON_AddItemToArray(json_icons_array, single_client);
     }
 
-    cJSON_AddStringToObject(json_message_object1, "type", "icon_list");
-    cJSON_AddItemToObject(json_message_object1, "icons", json_icons_array);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddItemToObject(message, "icons", json_icons_array);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_icon_list_to_single_client: json_root_object1_string ", json_root_object1_string, "\n");
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, ws_connection_dh_shared_secret);
-
-    DBG_SERVER_MESSAGE log_info("%s", "server_msg__send_icon_list_to_single_client 1 \n");
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    DBG_SERVER_MESSAGE log_info("%s", "server_msg__send_icon_list_to_single_client 2 \n");
-
-    ws_sendframe_txt(websocket, msg_text);
-
-    DBG_SERVER_MESSAGE log_info("%s", "server_msg__send_icon_list_to_single_client 3 \n");
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function sends tag list to single client. Called when client sents challenge_response message to server during authentication process.
  *
- * @param ws_cli_conn_t* websocket -> websocket connection
- * @param char* ws_connection_dh_shared_secret -> DH key exchange generated shared secret, that must be used later within this function.
+ * @param client_t* receiver -> the client that receives it
  *
  * @attention it doesnt need readlock, already called within writelock in client_message.c
  *
  * @return void
  */
-void server_msg__send_tag_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret)
+void server_msg__send_tag_list_to_single_client(client_t* receiver)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_tags_array = 0;
     uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_tag_list_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("tag_list", &message);
     json_tags_array = cJSON_CreateArray();
 
     // create array of clients
@@ -644,28 +699,10 @@ void server_msg__send_tag_list_to_single_client(ws_cli_conn_t* websocket, char* 
         cJSON_AddItemToArray(json_tags_array, single_tag_id_object);
     }
 
-    cJSON_AddStringToObject(json_message_object1, "type", "tag_list");
-    cJSON_AddItemToObject(json_message_object1, "tags", json_tags_array);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddItemToObject(message, "tags", json_tags_array);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_tag_list_to_single_client: json_root_object1_string ", json_root_object1_string, "\n");
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, ws_connection_dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-    ws_sendframe_txt(websocket, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
@@ -673,31 +710,26 @@ void server_msg__send_tag_list_to_single_client(ws_cli_conn_t* websocket, char* 
  *        tag_ids[], is_online }. is_online is TRUE when a currently-connected authenticated client
  *        hashes to the same identity. admin-only; the caller checks that and holds the clients lock.
  *
- * @param ws_cli_conn_t* websocket -> the requesting admin's connection
- * @param char* ws_connection_dh_shared_secret -> that connection's DH secret for encryption
+ * @param client_t* receiver -> the client that receives it
  *
  * @note the caller must hold the clients read lock (g_clients_array is read for online status). the
  *       identity store is guarded by g_client_stored_data_mutex, taken here.
  *
  * @return void
  */
-void server_msg__send_identity_list_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret)
+void server_msg__send_identity_list_to_single_client(client_t* receiver)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_identities_array = 0;
     char client_hash[BASE64_ENCODE_OUT_SIZE(32)];
     uint64 i = 0;
     uint64 t = 0;
     uint64 c = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_identity_list_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("identity_list", &message);
     json_identities_array = cJSON_CreateArray();
 
     pthread_mutex_lock(&g_client_stored_data_mutex);
@@ -730,7 +762,7 @@ void server_msg__send_identity_list_to_single_client(ws_cli_conn_t* websocket, c
         }
         cJSON_AddItemToObject(single_identity_object, "tag_ids", identity_tag_ids_array);
 
-        // mark online if any connected authenticated non-bot client hashes to this identity
+        // mark online if any connected authenticated non-bot receiver hashes to this identity
         for (c = 0; c < g_server_settings.max_client_count; c++)
         {
             client_t* connected_client = &g_clients_array[c];
@@ -758,53 +790,33 @@ void server_msg__send_identity_list_to_single_client(ws_cli_conn_t* websocket, c
 
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "identity_list");
-    cJSON_AddItemToObject(json_message_object1, "identities", json_identities_array);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddItemToObject(message, "identities", json_identities_array);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, ws_connection_dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(websocket, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function microphone usage of all clients for current clients channel.
  *
- * @param ws_cli_conn_t* websocket -> websocket connection
- * @param char* ws_connection_dh_shared_secret -> DH key exchange generated shared secret, that must be used later within this function.
+ * @param client_t* receiver -> the client that receives it
  * @param uint64 current_channel_id -> current channel id
  *
  * @attention it doesnt need readlock, already called within writelock in client_message.c
  *
  * @return void
  */
-void server_msg__send_active_microphone_usage_for_current_channel_to_single_client(ws_cli_conn_t* websocket, char* ws_connection_dh_shared_secret, uint64 current_channel_id)
+void server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client_t* receiver, uint64 channel_id)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_clients_array = 0;
     uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
     client_t* client_in_loop = 0;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_active_microphone_usage_for_current_channel_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("current_channel_active_microphone_usage", &message);
     json_clients_array = cJSON_CreateArray();
 
     // create array of clients
@@ -823,13 +835,13 @@ void server_msg__send_active_microphone_usage_for_current_channel_to_single_clie
             continue;
         }
 
-        if (client_in_loop->channel_id != current_channel_id)
+        if (client_in_loop->channel_id != channel_id)
         {
             continue;
         }
 
         // have to send even to ourselves
-        // if client.client_id == current_client_id {
+        // if receiver.client_id == current_client_id {
         // continue;
         // }
 
@@ -850,30 +862,16 @@ void server_msg__send_active_microphone_usage_for_current_channel_to_single_clie
         cJSON_AddItemToArray(json_clients_array, single_object);
     }
 
-    cJSON_AddStringToObject(json_message_object1, "type", "current_channel_active_microphone_usage");
-    cJSON_AddItemToObject(json_message_object1, "clients", json_clients_array);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddItemToObject(message, "clients", json_clients_array);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_send_active_microphone_usage_for_current_channel_to_single_client: json_root_object1_string ", json_root_object1_string, "\n");
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, ws_connection_dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text != NULL_POINTER)
-    {
-        DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-        ws_sendframe_txt(websocket, msg_text);
-        memorymanager__free((nuint)msg_text);
-    }
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function sends tag list to single client. Called when client sents challenge_response message to server during authentication process.
  *
- * @param uint64 client_id_of_connected_client -> self explanatory
+ * @param client_t* subject -> the client that connected
  *
  * @attention it doesnt need readlock, already called within writelock in client_message.c
  *
@@ -882,21 +880,15 @@ void server_msg__send_active_microphone_usage_for_current_channel_to_single_clie
  *
  * @return void
  */
-void server_msg__send_client_connect_message_to_all_clients(uint64 client_id_of_connected_client)
+void server_msg__send_client_connect_message_to_all_clients(client_t* subject)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_tag_ids_array = 0;
-    client_t* new_client = 0;
     uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
     client_t* client_in_loop = 0;
 
-    new_client = &g_clients_array[client_id_of_connected_client];
-
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_connect_message_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
@@ -914,7 +906,7 @@ void server_msg__send_client_connect_message_to_all_clients(uint64 client_id_of_
             continue;
         }
 
-        if (client_in_loop->client_id == client_id_of_connected_client)
+        if (client_in_loop == subject)
         {
             continue;
         }
@@ -924,448 +916,275 @@ void server_msg__send_client_connect_message_to_all_clients(uint64 client_id_of_
             continue;
         }
 
-        json_root_object1 = cJSON_CreateObject();
-        json_message_object1 = cJSON_CreateObject();
+        root = _server_msg_internal__new_message("client_connect", &message);
         // carry the connecting client's tags so identity-restored tags show up on join without a page reload
-        json_tag_ids_array = cJSON_CreateIntArray(new_client->tag_ids, (int)cvector_size(new_client->tag_ids));
+        json_tag_ids_array = cJSON_CreateIntArray(subject->tag_ids, (int)cvector_size(subject->tag_ids));
 
-        cJSON_AddStringToObject(json_message_object1, "type", "client_connect");
-        cJSON_AddStringToObject(json_message_object1, "username", new_client->username);
-        cJSON_AddStringToObject(json_message_object1, "alias", new_client->alias);
-        cJSON_AddStringToObject(json_message_object1, "public_key", new_client->public_key);
-        cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)new_client->channel_id);
-        cJSON_AddNumberToObject(json_message_object1, "client_id", (double)new_client->client_id);
-        cJSON_AddBoolToObject(json_message_object1, "is_music_bot", new_client->is_music_bot);
+        server_msg__add_music_bot_keys(message, client_in_loop, subject);
+        cJSON_AddStringToObject(message, "username", subject->username);
+        cJSON_AddStringToObject(message, "alias", subject->alias);
+        cJSON_AddStringToObject(message, "public_key", subject->public_key);
+        cJSON_AddNumberToObject(message, "channel_id", (double)subject->channel_id);
+        cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
+        cJSON_AddBoolToObject(message, "is_music_bot", subject->is_music_bot);
 
-        audio_state_to_send = new_client->audio_state;
+        audio_state_to_send = subject->audio_state;
 
         // only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
         // privacy reasons
-        if (new_client->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != new_client->channel_id)
+        if (subject->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != subject->channel_id)
         {
             audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
         }
 
-        cJSON_AddNumberToObject(json_message_object1, "audio_state", audio_state_to_send);
-        cJSON_AddStringToObject(json_message_object1, "country_iso_code", _server_msg_internal__country_code_to_send(new_client));
-        cJSON_AddItemToObject(json_message_object1, "tag_ids", json_tag_ids_array);
+        cJSON_AddNumberToObject(message, "audio_state", audio_state_to_send);
+        cJSON_AddStringToObject(message, "country_iso_code", _server_msg_internal__country_code_to_send(subject));
+        cJSON_AddItemToObject(message, "tag_ids", json_tag_ids_array);
 
-        cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-        json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        base__free_json_message(json_root_object1, json_root_object1_string);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
+        _server_msg_internal__send_json_to_client(client_in_loop, root);
+        cJSON_Delete(root);
     }
 }
 
 /**
  * @brief This function sends maintainer of current channel where client just joined. Used when client joins the server or when he swiches channel
  *
- * @param client_t* client -> the client to send the maintainer id to
- * @param uint64 channel_id -> id of the channel
- * @param uint64 id_of_client_that_is_maintainer_of_channel -> id of the channel's current maintainer
+ * @param client_t* receiver -> the client to send the maintainer id to
+ * @param channel_t* channel -> the channel
+ * @param uint64 maintainer_id -> the maintainer client id to announce, as a payload value
  *
  * @attention sometimes parameter id_of_client_that_joined_the_channel can have the value as id_of_client_that_is_maintainer_of_channel
  *
  * @return void
  */
-void server_msg__send_maintainer_id_to_single_client(client_t* client, uint64 channel_id, uint64 id_of_client_that_is_maintainer_of_channel)
+void server_msg__send_maintainer_id_to_single_client(client_t* receiver, channel_t* channel, uint64 maintainer_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_maintainer_id_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_maintainer_id", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_maintainer_id");
-    cJSON_AddNumberToObject(json_message_object1, "maintainer_id", (double)id_of_client_that_is_maintainer_of_channel);
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)channel_id);
-    cJSON_AddBoolToObject(json_message_object1, "has_maintainer", g_channel_array[channel_id].is_channel_maintainer_present);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddNumberToObject(message, "maintainer_id", (double)maintainer_id);
+    cJSON_AddNumberToObject(message, "channel_id", (double)channel->channel_id);
+    cJSON_AddBoolToObject(message, "has_maintainer", channel->is_channel_maintainer_present);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    // DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n");
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text != NULL_POINTER)
-    {
-        ws_sendframe_txt(client->p_ws_connection, msg_text);
-        memorymanager__free((nuint)msg_text);
-    }
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function sends connection check response to client
  *
- * @param client_t* client -> self explanatory
+ * @param client_t* receiver -> self explanatory
  *
  * @attention thanks for your attention
  *
  * @return void
  */
-void server_msg__send_connection_check_response_to_single_client(client_t* client)
+void server_msg__send_connection_check_response_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_connection_check_response_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("connection_check_response", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "connection_check_response");
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    // DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n");
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text != NULL_POINTER)
-    {
-        ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-        memorymanager__free((nuint)msg_text);
-    }
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief tells a returning client that its session was adopted (fast reconnect), so it keeps its
  *        state and treats the lists that follow as a refresh. sent before authentication_status
  *
- * @param client_t* client -> the resumed session, already carrying the new socket
+ * @param client_t* receiver -> the resumed session, already carrying the new socket
  *
  * @return void
  */
-void server_msg__send_fast_reconnect_ok_to_single_client(client_t* client)
+void server_msg__send_fast_reconnect_ok_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_fast_reconnect_ok_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("fast_reconnect_ok", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "fast_reconnect_ok");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client->client_id);
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)client->channel_id);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddNumberToObject(message, "client_id", (double)receiver->client_id);
+    cJSON_AddNumberToObject(message, "channel_id", (double)receiver->channel_id);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text != NULL_POINTER)
-    {
-        ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-        memorymanager__free((nuint)msg_text);
-    }
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief tells a client the server will build no datachannel for it for a while: its attempts kept
  *        failing (blocked udp, usually). the client sleeps that long instead of asking every 10 s
  *
- * @param client_t* client -> the client whose request was refused
+ * @param client_t* receiver -> the client whose request was refused
  * @param uint64 seconds_left -> how long the refusal lasts
  *
  * @return void
  */
-void server_msg__send_datachannel_cooldown_to_single_client(client_t* client, uint64 seconds_left)
+void server_msg__send_datachannel_cooldown_to_single_client(client_t* receiver, uint64 seconds_left)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_datachannel_cooldown_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("datachannel_cooldown", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "datachannel_cooldown");
-    cJSON_AddNumberToObject(json_message_object1, "seconds_left", (double)seconds_left);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddNumberToObject(message, "seconds_left", (double)seconds_left);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text != NULL_POINTER)
-    {
-        ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-        memorymanager__free((nuint)msg_text);
-    }
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function sends client_rename_message to all authenticated clients
  *
- * @param uint64 id_of_client_that_changed_his_username -> self explanatory
+ * @param client_t* subject -> the client that changed its username
  * @param char* new_username -> self explanatory
  *
  * @attention this function is used within acquired readlock within client_message.c client_msg__process_change_client_username function
  *
  * @return void
  */
-void server_msg__send_client_rename_message_to_all_clients(uint64 id_of_client_that_changed_his_username, char* new_username)
+void server_msg__send_client_rename_message_to_all_clients(client_t* subject, char* new_username)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    client_t* client_in_loop = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_rename_message_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("client_rename", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "client_rename");
-    cJSON_AddStringToObject(json_message_object1, "new_username", new_username);
-    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)id_of_client_that_changed_his_username);
+    cJSON_AddStringToObject(message, "new_username", new_username);
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_client_rename_message_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (x = 0; x < g_server_settings.max_client_count; x++)
-    {
-        client_in_loop = &g_clients_array[x];
-
-        if (client_in_loop->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief tells a single client it should change the admin password (sent once after the first admin login,
  *        because the initial password was typed in cleartext at setup)
  *
- * @param client_t* client -> the client to notify
+ * @param client_t* receiver -> the client to notify
  *
  * @return void
  */
-void server_msg__send_force_admin_password_change_to_single_client(client_t* client)
+void server_msg__send_force_admin_password_change_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("force_admin_password_change", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "force_admin_password_change");
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief sends an access-denied message to a single client
  *
- * @param client_t* client -> self explanatory
+ * @param client_t* receiver -> self explanatory
  * @param char* reason -> optional text the client shows instead of its generic denial line; NULL omits it
  *
  * @attention this function is used within acquired readlock within client_message.c , multiple functions
  *
  * @return void
  */
-void server_msg__send_access_denied_to_single_client(client_t* client, char* reason)
+void server_msg__send_access_denied_to_single_client(client_t* receiver, char* reason)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("access_denied", &message);
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_access_denied_to_single_client \n");
-
-    cJSON_AddStringToObject(json_message_object1, "type", "access_denied");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     if (reason != NULL_POINTER && reason[0] != 0)
     {
-        cJSON_AddStringToObject(json_message_object1, "reason", reason);
+        cJSON_AddStringToObject(message, "reason", reason);
     }
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief replies to a single client with the current general-settings toggle values, so the client can
  *        reflect the live server state (used when an admin opens the general-settings tab)
  *
- * @param client_t* client -> the client to reply to
+ * @param client_t* receiver -> the client to reply to
  *
  * @return void
  */
-void server_msg__send_server_settings_to_single_client(client_t* client)
+void server_msg__send_server_settings_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_bans = 0;
     cJSON* json_ban = 0;
     cJSON* json_blocked_countries = 0;
     ban_entry_t* ban_in_loop = 0;
     uint64 i = 0;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("server_settings_values", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "server_settings_values");
-    cJSON_AddItemToObject(json_message_object1, "display_country_flags", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "hide_admin_country_flag", cJSON_CreateBool(g_server_settings.hide_admin_country_flag == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "enable_audio", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "enable_music_bot_audio", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "is_video_streaming_active", cJSON_CreateBool(g_server_settings.is_video_streaming_active == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "hide_clients_in_password_channels", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "allow_temp_channels", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "allow_client_renames", cJSON_CreateBool(g_server_settings.allow_client_renames == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "is_fast_reconnect_allowed", cJSON_CreateBool(g_server_settings.is_fast_reconnect_allowed == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
-    cJSON_AddNumberToObject(json_message_object1, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
-    cJSON_AddNumberToObject(json_message_object1, "icon_max_size_bytes", (double)g_server_settings.icon_max_size_bytes);
-    cJSON_AddItemToObject(json_message_object1, "show_music_bot_marquee_to_everyone", cJSON_CreateBool(g_server_settings.show_music_bot_marquee_to_everyone == TRUE));
-    cJSON_AddNumberToObject(json_message_object1, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
-    cJSON_AddItemToObject(json_message_object1, "announce_minimum_rsa_key_bits", cJSON_CreateBool(g_server_settings.announce_minimum_rsa_key_bits == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
-    cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size_mb", (double)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)));
-    cJSON_AddNumberToObject(json_message_object1, "chat_picture_max_size_mb", (double)(g_server_settings.chat_picture_max_size_bytes / (1024 * 1024)));
-    cJSON_AddItemToObject(json_message_object1, "allow_chat_pictures", cJSON_CreateBool(g_server_settings.allow_chat_pictures == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "is_country_blocking_active", cJSON_CreateBool(g_server_settings.is_country_blocking_active == TRUE));
+    cJSON_AddItemToObject(message, "display_country_flags", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
+    cJSON_AddItemToObject(message, "hide_admin_country_flag", cJSON_CreateBool(g_server_settings.hide_admin_country_flag == TRUE));
+    cJSON_AddItemToObject(message, "enable_audio", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
+    cJSON_AddStringToObject(message, "audio_connections", audio_channel__policy_value());
+    cJSON_AddItemToObject(message, "enable_music_bot_audio", cJSON_CreateBool(g_server_settings.is_music_bot_audio_active == TRUE));
+    cJSON_AddItemToObject(message, "is_video_streaming_active", cJSON_CreateBool(g_server_settings.is_video_streaming_active == TRUE));
+    cJSON_AddItemToObject(message, "hide_clients_in_password_channels", cJSON_CreateBool(g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE));
+    cJSON_AddItemToObject(message, "allow_temp_channels", cJSON_CreateBool(g_server_settings.is_temp_channel_creation_allowed == TRUE));
+    cJSON_AddItemToObject(message, "allow_typing_indicator", cJSON_CreateBool(g_server_settings.allow_typing_indicator == TRUE));
+    cJSON_AddItemToObject(message, "allow_client_renames", cJSON_CreateBool(g_server_settings.allow_client_renames == TRUE));
+    cJSON_AddBoolToObject(message, "allow_link_previews", g_server_settings.allow_link_previews);
+    cJSON_AddItemToObject(message, "is_sending_text_to_idle_clients_allowed", cJSON_CreateBool(g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE));
+    cJSON_AddItemToObject(message, "allow_private_messages", cJSON_CreateBool(g_server_settings.allow_private_messages == TRUE));
+    cJSON_AddItemToObject(message, "is_same_ip_address_allowed", cJSON_CreateBool(g_server_settings.is_same_ip_address_allowed == TRUE));
+    cJSON_AddItemToObject(message, "is_fast_reconnect_allowed", cJSON_CreateBool(g_server_settings.is_fast_reconnect_allowed == TRUE));
+    cJSON_AddItemToObject(message, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
+    cJSON_AddItemToObject(message, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
+    cJSON_AddNumberToObject(message, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
+    cJSON_AddNumberToObject(message, "icon_max_size_bytes", (double)g_server_settings.icon_max_size_bytes);
+    cJSON_AddItemToObject(message, "show_music_bot_marquee_to_everyone", cJSON_CreateBool(g_server_settings.show_music_bot_marquee_to_everyone == TRUE));
+    cJSON_AddNumberToObject(message, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
+    cJSON_AddItemToObject(message, "announce_minimum_rsa_key_bits", cJSON_CreateBool(g_server_settings.announce_minimum_rsa_key_bits == TRUE));
+    cJSON_AddItemToObject(message, "allow_file_uploads", cJSON_CreateBool(g_server_settings.allow_file_uploads == TRUE));
+    cJSON_AddNumberToObject(message, "file_upload_max_size_mb", (double)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)));
+    cJSON_AddNumberToObject(message, "chat_picture_max_size_mb", (double)(g_server_settings.chat_picture_max_size_bytes / (1024 * 1024)));
+    cJSON_AddItemToObject(message, "allow_chat_pictures", cJSON_CreateBool(g_server_settings.allow_chat_pictures == TRUE));
+    cJSON_AddItemToObject(message, "is_country_blocking_active", cJSON_CreateBool(g_server_settings.is_country_blocking_active == TRUE));
     json_blocked_countries = cJSON_CreateArray();
-    cJSON_AddItemToObject(json_message_object1, "blocked_countries", json_blocked_countries);
+    cJSON_AddItemToObject(message, "blocked_countries", json_blocked_countries);
     for (i = 0; i < g_server_settings.blocked_countries_count; i++)
     {
         cJSON_AddItemToArray(json_blocked_countries, cJSON_CreateString(&g_server_settings.blocked_countries[i][0]));
     }
-    cJSON_AddItemToObject(json_message_object1, "log_client_joins", cJSON_CreateBool(g_server_settings.log_client_joins == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "log_username_changes", cJSON_CreateBool(g_server_settings.log_username_changes == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "log_tag_changes", cJSON_CreateBool(g_server_settings.log_tag_changes == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "log_server_settings_updates", cJSON_CreateBool(g_server_settings.log_server_settings_updates == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "log_kicks_and_bans", cJSON_CreateBool(g_server_settings.log_kicks_and_bans == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "log_client_disconnects", cJSON_CreateBool(g_server_settings.log_client_disconnects == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "log_socket_opens_and_closes", cJSON_CreateBool(g_server_settings.log_socket_opens_and_closes == TRUE));
-    cJSON_AddItemToObject(json_message_object1, "log_failed_attempts", cJSON_CreateBool(g_server_settings.log_failed_attempts == TRUE));
-    cJSON_AddNumberToObject(json_message_object1, "admin_log_max_size_mb", (double)(g_server_settings.admin_log_max_size_bytes / (1024 * 1024)));
-    cJSON_AddNumberToObject(json_message_object1, "admin_log_retention_days", (double)g_server_settings.admin_log_retention_days);
+    cJSON_AddItemToObject(message, "log_client_joins", cJSON_CreateBool(g_server_settings.log_client_joins == TRUE));
+    cJSON_AddItemToObject(message, "log_username_changes", cJSON_CreateBool(g_server_settings.log_username_changes == TRUE));
+    cJSON_AddItemToObject(message, "log_tag_changes", cJSON_CreateBool(g_server_settings.log_tag_changes == TRUE));
+    cJSON_AddItemToObject(message, "log_server_settings_updates", cJSON_CreateBool(g_server_settings.log_server_settings_updates == TRUE));
+    cJSON_AddItemToObject(message, "log_kicks_and_bans", cJSON_CreateBool(g_server_settings.log_kicks_and_bans == TRUE));
+    cJSON_AddItemToObject(message, "log_client_disconnects", cJSON_CreateBool(g_server_settings.log_client_disconnects == TRUE));
+    cJSON_AddItemToObject(message, "log_socket_opens_and_closes", cJSON_CreateBool(g_server_settings.log_socket_opens_and_closes == TRUE));
+    cJSON_AddItemToObject(message, "log_failed_attempts", cJSON_CreateBool(g_server_settings.log_failed_attempts == TRUE));
+    cJSON_AddNumberToObject(message, "admin_log_max_size_mb", (double)(g_server_settings.admin_log_max_size_bytes / (1024 * 1024)));
+    cJSON_AddNumberToObject(message, "admin_log_retention_days", (double)g_server_settings.admin_log_retention_days);
 
     // include the current ban list so the admin's bans section can render it
     json_bans = cJSON_CreateArray();
-    cJSON_AddItemToObject(json_message_object1, "bans", json_bans);
+    cJSON_AddItemToObject(message, "bans", json_bans);
     clib__read_lock(&g_bans_global_rwlock_guard);
     for (i = 0; i < MAX_BANS; i++)
     {
@@ -1384,40 +1203,22 @@ void server_msg__send_server_settings_to_single_client(client_t* client)
     }
     clib__unlock(&g_bans_global_rwlock_guard);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief replies to a single client with every admin log line, oldest first (used when an admin
  *        opens or refreshes the log tab). the caller must have checked the client is an admin
  *
- * @param client_t* client -> the client to reply to
+ * @param client_t* receiver -> the client to reply to
  *
  * @return void
  */
-void server_msg__send_admin_log_to_single_client(client_t* client)
+void server_msg__send_admin_log_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_lines = 0;
 
     json_lines = server_logs__build_json_array();
@@ -1426,29 +1227,12 @@ void server_msg__send_admin_log_to_single_client(client_t* client)
         return;
     }
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("admin_log", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "admin_log");
-    cJSON_AddItemToObject(json_message_object1, "lines", json_lines);
+    cJSON_AddItemToObject(message, "lines", json_lines);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
@@ -1461,233 +1245,116 @@ void server_msg__send_admin_log_to_single_client(client_t* client)
  */
 void server_msg__send_policy_update_to_all_clients(void)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    client_t* client_in_loop = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    for (x = 0; x < g_server_settings.max_client_count; x++)
-    {
-        client_in_loop = &g_clients_array[x];
+    root = _server_msg_internal__new_message("server_policy", &message);
 
-        if (client_in_loop->is_existing == FALSE || client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
+    cJSON_AddBoolToObject(message, "allow_file_uploads", g_server_settings.allow_file_uploads);
+    cJSON_AddNumberToObject(message, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
+    cJSON_AddNumberToObject(message, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
+    cJSON_AddBoolToObject(message, "allow_chat_pictures", g_server_settings.allow_chat_pictures);
+    cJSON_AddBoolToObject(message, "allow_typing_indicator", g_server_settings.allow_typing_indicator);
+    cJSON_AddBoolToObject(message, "allow_client_renames", g_server_settings.allow_client_renames);
+    cJSON_AddBoolToObject(message, "allow_link_previews", g_server_settings.allow_link_previews);
+    cJSON_AddBoolToObject(message, "allow_avatars", g_server_settings.allow_avatars);
+    cJSON_AddNumberToObject(message, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
+    cJSON_AddNumberToObject(message, "icon_max_size", (double)g_server_settings.icon_max_size_bytes);
+    cJSON_AddBoolToObject(message, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
+    cJSON_AddBoolToObject(message, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
+    cJSON_AddBoolToObject(message, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
+    cJSON_AddBoolToObject(message, "is_video_streaming_allowed", g_server_settings.is_video_streaming_active);
+    cJSON_AddBoolToObject(message, "is_audio_over_websocket_allowed", g_server_settings.is_audio_over_websocket_allowed);
+    cJSON_AddBoolToObject(message, "is_audio_over_webrtc_allowed", g_server_settings.is_audio_over_webrtc_allowed);
+    // the audio switches too: a client whose audio was switched off stops asking for connections
+    cJSON_AddBoolToObject(message, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
+    cJSON_AddBoolToObject(message, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
 
-        json_root_object1 = cJSON_CreateObject();
-        json_message_object1 = cJSON_CreateObject();
-
-        cJSON_AddStringToObject(json_message_object1, "type", "server_policy");
-        cJSON_AddBoolToObject(json_message_object1, "allow_file_uploads", g_server_settings.allow_file_uploads);
-        cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
-        cJSON_AddNumberToObject(json_message_object1, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
-        cJSON_AddBoolToObject(json_message_object1, "allow_chat_pictures", g_server_settings.allow_chat_pictures);
-        cJSON_AddBoolToObject(json_message_object1, "allow_typing_indicator", g_server_settings.allow_typing_indicator);
-        cJSON_AddBoolToObject(json_message_object1, "allow_client_renames", g_server_settings.allow_client_renames);
-        cJSON_AddBoolToObject(json_message_object1, "allow_avatars", g_server_settings.allow_avatars);
-        cJSON_AddNumberToObject(json_message_object1, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
-        cJSON_AddNumberToObject(json_message_object1, "icon_max_size", (double)g_server_settings.icon_max_size_bytes);
-        cJSON_AddBoolToObject(json_message_object1, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
-        cJSON_AddBoolToObject(json_message_object1, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
-        cJSON_AddBoolToObject(json_message_object1, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
-        cJSON_AddBoolToObject(json_message_object1, "is_video_streaming_allowed", g_server_settings.is_video_streaming_active);
-
-        cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-        json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        base__free_json_message(json_root_object1, json_root_object1_string);
-
-        if (msg_text == NULL_POINTER)
-        {
-            continue;
-        }
-
-        ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-
-        memorymanager__free((nuint)msg_text);
-    }
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief broadcasts a channel-created event to all clients
  *
- * @param uint64 created_channel_index -> self explanatory
- * @param uint64 channel_creator_client_index -> self explanatory
+ * @param channel_t* channel -> the new channel
+ * @param client_t* creator -> the client that created it
  *
  * @attention this function is called within two acquired read locks, clients_global_rwlock_guard and channels_global_rwlock_guard
  *
  * @return void
  */
-void server_msg__send_channel_create_message_to_all_clients(uint64 created_channel_index, uint64 channel_creator_client_index)
+void server_msg__send_channel_create_message_to_all_clients(channel_t* channel, client_t* creator)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    client_t* client_in_loop = 0;
-    channel_t* channel = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_create", &message);
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_create_message_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    channel = &g_channel_array[created_channel_index];
+    cJSON_AddNumberToObject(message, "channel_id", channel->channel_id);
+    cJSON_AddNumberToObject(message, "parent_channel_id", channel->parent_channel_id);
+    cJSON_AddStringToObject(message, "name", channel->name);
+    cJSON_AddStringToObject(message, "description", channel->description);
+    cJSON_AddNumberToObject(message, "maintainer_id", channel->maintainer_id);
+    cJSON_AddBoolToObject(message, "is_using_password", channel->is_using_password);
+    cJSON_AddBoolToObject(message, "is_audio_enabled", channel->is_audio_enabled);
+    cJSON_AddBoolToObject(message, "is_video_stream_enabled", channel->is_video_stream_enabled);
+    cJSON_AddBoolToObject(message, "is_root_channel", channel->is_root_channel);
+    cJSON_AddBoolToObject(message, "has_maintainer", channel->is_channel_maintainer_present);
+    cJSON_AddBoolToObject(message, "is_temp_channel", channel->is_temp_channel);
+    cJSON_AddBoolToObject(message, "is_client_limit_active", channel->is_client_limit_active);
+    cJSON_AddNumberToObject(message, "max_client_count", (double)channel->max_client_count);
+    cJSON_AddBoolToObject(message, "has_channel_icon", channel->has_channel_icon);
+    cJSON_AddNumberToObject(message, "channel_icon_id", (double)channel->icon_id);
+    cJSON_AddNumberToObject(message, "channel_creator_id", (double)creator->client_id);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_create");
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", channel->channel_id);
-    cJSON_AddNumberToObject(json_message_object1, "parent_channel_id", channel->parent_channel_id);
-    cJSON_AddStringToObject(json_message_object1, "name", channel->name);
-    cJSON_AddStringToObject(json_message_object1, "description", channel->description);
-    cJSON_AddNumberToObject(json_message_object1, "maintainer_id", channel->maintainer_id);
-    cJSON_AddBoolToObject(json_message_object1, "is_using_password", channel->is_using_password);
-    cJSON_AddBoolToObject(json_message_object1, "is_audio_enabled", channel->is_audio_enabled);
-    cJSON_AddBoolToObject(json_message_object1, "is_video_stream_enabled", channel->is_video_stream_enabled);
-    cJSON_AddBoolToObject(json_message_object1, "is_root_channel", channel->is_root_channel);
-    cJSON_AddBoolToObject(json_message_object1, "has_maintainer", channel->is_channel_maintainer_present);
-    cJSON_AddBoolToObject(json_message_object1, "is_temp_channel", channel->is_temp_channel);
-    cJSON_AddBoolToObject(json_message_object1, "is_client_limit_active", channel->is_client_limit_active);
-    cJSON_AddNumberToObject(json_message_object1, "max_client_count", (double)channel->max_client_count);
-    cJSON_AddBoolToObject(json_message_object1, "has_channel_icon", channel->has_channel_icon);
-    cJSON_AddNumberToObject(json_message_object1, "channel_icon_id", (double)channel->icon_id);
-    cJSON_AddNumberToObject(json_message_object1, "channel_creator_id", channel_creator_client_index);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_channel_create_message_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (x = 0; x < g_server_settings.max_client_count; x++)
-    {
-        client_in_loop = &g_clients_array[x];
-
-        if (client_in_loop->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief broadcasts a channel-edited event to all clients
  *
- * @param uint64 edited_channel_index -> self explanatory
- * @param uint64 channel_editor_id -> id of the client that performed the edit, sent along in the event
- *                                    so receivers know who changed the channel
+ * @param channel_t* channel -> the edited channel
+ * @param client_t* editor -> the client that performed the edit, sent along so receivers know who changed the channel
  *
  * @attention this function is called within two acquired read locks, clients_global_rwlock_guard and channels_global_rwlock_guard
  *
  * @return void
  */
-void server_msg__send_channel_edit_message_to_all_clients(uint64 edited_channel_index, uint64 channel_editor_id)
+void server_msg__send_channel_edit_message_to_all_clients(channel_t* channel, client_t* editor)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    client_t* client_in_loop = 0;
-    channel_t* channel = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_edit", &message);
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_edit_message_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    channel = &g_channel_array[edited_channel_index];
+    cJSON_AddNumberToObject(message, "channel_id", channel->channel_id);
+    cJSON_AddStringToObject(message, "channel_name", channel->name);
+    cJSON_AddStringToObject(message, "channel_description", channel->description);
+    cJSON_AddBoolToObject(message, "is_using_password", (cJSON_bool)channel->is_using_password);
+    cJSON_AddBoolToObject(message, "is_audio_enabled", (cJSON_bool)channel->is_audio_enabled);
+    cJSON_AddBoolToObject(message, "is_video_stream_enabled", (cJSON_bool)channel->is_video_stream_enabled);
+    cJSON_AddBoolToObject(message, "is_client_limit_active", (cJSON_bool)channel->is_client_limit_active);
+    cJSON_AddNumberToObject(message, "max_client_count", (double)channel->max_client_count);
+    cJSON_AddBoolToObject(message, "has_channel_icon", channel->has_channel_icon);
+    cJSON_AddNumberToObject(message, "channel_icon_id", (double)channel->icon_id);
+    cJSON_AddNumberToObject(message, "channel_editor_id", (double)editor->client_id);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_edit");
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", channel->channel_id);
-    cJSON_AddStringToObject(json_message_object1, "channel_name", channel->name);
-    cJSON_AddStringToObject(json_message_object1, "channel_description", channel->description);
-    cJSON_AddBoolToObject(json_message_object1, "is_using_password", (cJSON_bool)channel->is_using_password);
-    cJSON_AddBoolToObject(json_message_object1, "is_audio_enabled", (cJSON_bool)channel->is_audio_enabled);
-    cJSON_AddBoolToObject(json_message_object1, "is_video_stream_enabled", (cJSON_bool)channel->is_video_stream_enabled);
-    cJSON_AddBoolToObject(json_message_object1, "is_client_limit_active", (cJSON_bool)channel->is_client_limit_active);
-    cJSON_AddNumberToObject(json_message_object1, "max_client_count", (double)channel->max_client_count);
-    cJSON_AddBoolToObject(json_message_object1, "has_channel_icon", channel->has_channel_icon);
-    cJSON_AddNumberToObject(json_message_object1, "channel_icon_id", (double)channel->icon_id);
-    cJSON_AddNumberToObject(json_message_object1, "channel_editor_id", channel_editor_id);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_channel_edit_message_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (x = 0; x < g_server_settings.max_client_count; x++)
-    {
-        client_in_loop = &g_clients_array[x];
-
-        if (client_in_loop->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief metadata are sent, so that client knows image is being sent to him.
  *
- * @param uint64 client_index -> self explanatory
+ * @param client_t* receiver -> the client that sent the message
  * @param uint64 chat_message_id -> id of server message
  * @param uint64 local_message_id -> id of local message
  *
@@ -1695,53 +1362,27 @@ void server_msg__send_channel_edit_message_to_all_clients(uint64 edited_channel_
  *
  * @return void
  */
-void server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(uint64 client_index, uint64 chat_message_id, uint64 local_message_id)
+void server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client(client_t* receiver, uint64 chat_message_id, uint64 local_message_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("server_chat_message_id_for_local_message_id", &message);
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    client = &g_clients_array[client_index];
+    cJSON_AddNumberToObject(message, "server_chat_message_id", chat_message_id);
+    cJSON_AddNumberToObject(message, "local_message_id", local_message_id);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "server_chat_message_id_for_local_message_id");
-    cJSON_AddNumberToObject(json_message_object1, "server_chat_message_id", chat_message_id);
-    cJSON_AddNumberToObject(json_message_object1, "local_message_id", local_message_id);
-
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single_client", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief send chat message itself to client
  *
- * @param uint64 client_sender_id -> id of client that sent the chat message
- * @param uint64 client_receiver_id -> id of client to send the chat message to
+ * @param client_t* receiver -> the client that receives the message
+ * @param client_t* sender -> the client that sent it
  * @param uint64 server_chat_message_id -> server assigned id of the chat message
  * @param char* chat_message_value -> text content of the chat message
  *
@@ -1749,50 +1390,22 @@ void server_msg__send_server_chat_message_id_for_local_chat_message_id_to_single
  *
  * @return void
  */
-void server_msg__send_chat_message_to_single_client(uint64 client_sender_id, uint64 client_receiver_id, uint64 server_chat_message_id, char* chat_message_value)
+void server_msg__send_chat_message_to_single_client(client_t* receiver, client_t* sender, uint64 server_chat_message_id, char* chat_message_value)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_receiver = 0;
-    client_t* client_sender = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_chat_message_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("direct_chat_message", &message);
 
-    client_sender = &g_clients_array[client_sender_id];
-    client_receiver = &g_clients_array[client_receiver_id];
+    cJSON_AddStringToObject(message, "value", chat_message_value);
+    cJSON_AddStringToObject(message, "sender_username", sender->username);
+    cJSON_AddNumberToObject(message, "sender_id", sender->client_id);
+    cJSON_AddNumberToObject(message, "server_chat_message_id", server_chat_message_id);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "direct_chat_message");
-    cJSON_AddStringToObject(json_message_object1, "value", chat_message_value);
-    cJSON_AddStringToObject(json_message_object1, "sender_username", client_sender->username);
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender->client_id);
-    cJSON_AddNumberToObject(json_message_object1, "server_chat_message_id", server_chat_message_id);
-
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_chat_message_to_single_client", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_receiver->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client_receiver->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
@@ -1807,80 +1420,24 @@ void server_msg__send_chat_message_to_single_client(uint64 client_sender_id, uin
  *
  * @return void
  */
-void server_msg__send_chat_message_to_clients_in_same_channel(uint64 client_sender_id, uint64 receiving_channel_id, uint64 server_chat_message_id, char* chat_message_value)
+void server_msg__send_chat_message_to_clients_in_same_channel(client_t* sender, uint64 channel_id, uint64 server_chat_message_id, char* chat_message_value)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_sender = 0;
-    client_t* client_in_loop = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_chat_message_to_clients_in_same_channel \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_chat_message", &message);
 
-    client_sender = &g_clients_array[client_sender_id];
+    cJSON_AddStringToObject(message, "value", chat_message_value);
+    cJSON_AddStringToObject(message, "sender_username", sender->username);
+    cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
+    cJSON_AddNumberToObject(message, "channel_id", channel_id);
+    cJSON_AddNumberToObject(message, "server_chat_message_id", server_chat_message_id);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_message");
-    cJSON_AddStringToObject(json_message_object1, "value", chat_message_value);
-    cJSON_AddStringToObject(json_message_object1, "sender_username", client_sender->username);
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
-    cJSON_AddNumberToObject(json_message_object1, "server_chat_message_id", server_chat_message_id);
+    _server_msg_internal__send_json_to_channel(root, channel_id, sender);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_chat_message_to_clients_in_same_channel: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client_in_loop = &g_clients_array[i];
-
-        // if statements that are most probable to run should be first in loop
-        if (client_in_loop->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->channel_id != receiving_channel_id)
-        {
-            continue;
-        }
-
-        if (client_in_loop->client_id == client_sender_id)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -1888,7 +1445,7 @@ void server_msg__send_chat_message_to_clients_in_same_channel(uint64 client_send
  *        carries the target server chat id and the requester's public key + admin flag, so the receiver can
  *        decide for itself whether to honour it (author or admin). for an edit it also carries the new value.
  *
- * @param uint64 client_receiver_id -> id of the client to send the action to
+ * @param client_t* receiver -> the client to send the action to
  * @param char* action_type -> "chat_message_delete" or "chat_message_edit"
  * @param uint64 target_chat_message_id -> server chat id of the message to act on
  * @param char* requester_public_key -> public key of the client that requested the action
@@ -1899,45 +1456,23 @@ void server_msg__send_chat_message_to_clients_in_same_channel(uint64 client_send
  *
  * @return void
  */
-void server_msg__send_chat_message_action_to_single_client(uint64 client_receiver_id, char* action_type, uint64 target_chat_message_id, char* requester_public_key, boole requester_is_admin, char* new_message_value)
+void server_msg__send_chat_message_action_to_single_client(client_t* receiver, char* action_type, uint64 target_chat_message_id, char* requester_public_key, boole requester_is_admin, char* new_message_value)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_receiver = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    client_receiver = &g_clients_array[client_receiver_id];
+    root = _server_msg_internal__new_message(action_type, &message);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
-
-    cJSON_AddStringToObject(json_message_object1, "type", action_type);
-    cJSON_AddNumberToObject(json_message_object1, "chat_message_id", target_chat_message_id);
-    cJSON_AddStringToObject(json_message_object1, "requester_public_key", requester_public_key);
-    cJSON_AddBoolToObject(json_message_object1, "requester_is_admin", requester_is_admin == TRUE);
+    cJSON_AddNumberToObject(message, "chat_message_id", target_chat_message_id);
+    cJSON_AddStringToObject(message, "requester_public_key", requester_public_key);
+    cJSON_AddBoolToObject(message, "requester_is_admin", requester_is_admin == TRUE);
     if (new_message_value != NULL_POINTER)
     {
-        cJSON_AddStringToObject(json_message_object1, "new_message_value", new_message_value);
+        cJSON_AddStringToObject(message, "new_message_value", new_message_value);
     }
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_receiver->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client_receiver->p_ws_connection, msg_text);
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
@@ -1957,65 +1492,22 @@ void server_msg__send_chat_message_action_to_single_client(uint64 client_receive
  */
 void server_msg__send_chat_message_action_to_clients_in_same_channel(uint64 receiving_channel_id, char* action_type, uint64 target_chat_message_id, char* requester_public_key, boole requester_is_admin, char* new_message_value)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_in_loop = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message(action_type, &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", action_type);
-    cJSON_AddNumberToObject(json_message_object1, "chat_message_id", target_chat_message_id);
-    cJSON_AddStringToObject(json_message_object1, "requester_public_key", requester_public_key);
-    cJSON_AddBoolToObject(json_message_object1, "requester_is_admin", requester_is_admin == TRUE);
+    cJSON_AddNumberToObject(message, "chat_message_id", target_chat_message_id);
+    cJSON_AddStringToObject(message, "requester_public_key", requester_public_key);
+    cJSON_AddBoolToObject(message, "requester_is_admin", requester_is_admin == TRUE);
     if (new_message_value != NULL_POINTER)
     {
-        cJSON_AddStringToObject(json_message_object1, "new_message_value", new_message_value);
+        cJSON_AddStringToObject(message, "new_message_value", new_message_value);
     }
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_channel(root, receiving_channel_id, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client_in_loop = &g_clients_array[i];
-
-        if (client_in_loop->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->channel_id != receiving_channel_id)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -2029,91 +1521,31 @@ void server_msg__send_chat_message_action_to_clients_in_same_channel(uint64 rece
  *
  * @return void
  */
-void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(uint64 client_sender_id, uint64 receiving_channel_id, uint64 server_chat_message_id, uint64 encrypted_size)
+void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(client_t* sender, uint64 channel_id, uint64 server_chat_message_id, uint64 encrypted_size)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_sender = 0;
-    client_t* client_in_loop = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_chat_picture_metadata", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_picture_metadata");
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
-    cJSON_AddNumberToObject(json_message_object1, "picture_id", server_chat_message_id);
+    cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
+    cJSON_AddNumberToObject(message, "channel_id", channel_id);
+    cJSON_AddNumberToObject(message, "picture_id", server_chat_message_id);
     // the encrypted length the receiver counts its chunks against, for the progress ring
-    cJSON_AddNumberToObject(json_message_object1, "size", (double)encrypted_size);
+    cJSON_AddNumberToObject(message, "size", (double)encrypted_size);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_channel(root, channel_id, sender);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client_in_loop = &g_clients_array[i];
-
-        // if statements that are most probable to run should be first in loop
-        if (client_in_loop->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->channel_id != receiving_channel_id)
-        {
-            DBG_SERVER_MESSAGE log_info("%s", "server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel :client->channel_id != receiving_channel_id \n");
-            DBG_SERVER_MESSAGE log_info("%s %lld %s", "client->channel_id", client_in_loop->channel_id, "\n");
-            DBG_SERVER_MESSAGE log_info("%s %llu %s", "receiving_channel_id", receiving_channel_id, "\n");
-
-            continue;
-        }
-
-        if (client_in_loop->client_id == client_sender_id)
-        {
-            continue;
-        }
-
-        DBG_SERVER_MESSAGE log_info("%s %lld %s", "server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel: sending to client ", client_in_loop->client_id, "\n");
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief send chat message itself to all clients in same channel
  *
- * @param uint64 client_sender_id -> self explanatory
- * @param uint64 receiving_channel_id -> self explanatory
+ * @param client_t* sender -> the client that sent it
+ * @param uint64 channel_id -> the channel whose members receive it
  * @param uint64 server_chat_message_id -> server assigned id of the picture message
  * @param char* chat_message_value -> self explanatory
  *
@@ -2121,184 +1553,79 @@ void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(u
  *
  * @return void
  */
-void server_msg__send_channel_chat_picture_to_clients_in_same_channel(uint64 client_sender_id, uint64 receiving_channel_id, uint64 server_chat_message_id, char* chat_message_value)
+void server_msg__send_channel_chat_picture_to_clients_in_same_channel(client_t* sender, uint64 channel_id, uint64 server_chat_message_id, char* chat_message_value)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_sender = 0;
-    client_t* client_in_loop = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_chat_picture_to_clients_in_same_channel \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_chat_picture", &message);
 
-    client_sender = &g_clients_array[client_sender_id];
+    cJSON_AddStringToObject(message, "value", chat_message_value);
+    cJSON_AddStringToObject(message, "username", sender->username);
+    cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
+    cJSON_AddNumberToObject(message, "channel_id", channel_id);
+    cJSON_AddNumberToObject(message, "picture_id", server_chat_message_id);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_picture");
-    cJSON_AddStringToObject(json_message_object1, "value", chat_message_value);
-    cJSON_AddStringToObject(json_message_object1, "username", client_sender->username);
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
-    cJSON_AddNumberToObject(json_message_object1, "picture_id", server_chat_message_id);
+    _server_msg_internal__send_json_to_channel(root, channel_id, sender);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_chat_message_to_clients_in_same_channel: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client_in_loop = &g_clients_array[i];
-
-        // if statements that are most probable to run should be first in loop
-        if (client_in_loop->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->channel_id != receiving_channel_id)
-        {
-            continue;
-        }
-
-        if (client_in_loop->client_id == client_sender_id)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function sends image status to the client that SENT the image so client knows that server received and sent his message to other clients / client
  *
- * @param client_t* client -> self explanatory
+ * @param client_t* receiver -> self explanatory
  * @param char* status -> status string that is put into the "value" field of the image_sent_status message
  *
  * @attention thanks for your attention
  *
  * @return void
  */
-void server_msg__send_image_status_to_single_client(client_t* client, char* status)
+void server_msg__send_image_status_to_single_client(client_t* receiver, char* status)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("image_sent_status", &message);
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_image_status_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "image_sent_status");
-    cJSON_AddStringToObject(json_message_object1, "value", status);
+    cJSON_AddStringToObject(message, "value", status);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    // DBG_AUTHENTICATION log_info("%s %s %s", "json_root_object1_string ", json_root_object1_string , "\n");
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief send chat picture metadata to a single client
  *
- * @param uint64 client_sender_id -> id of client that sent the picture
- * @param uint64 client_receiver_id -> id of client to send the picture metadata to
+ * @param client_t* receiver -> the client that receives the message
+ * @param client_t* sender -> the client that sent it
  * @param uint64 server_chat_message_id -> server assigned id of the picture
  *
  * @attention this function is used within read lock on clinets array
  *
  * @return void
  */
-void server_msg__send_chat_picture_metadata_to_single_client(uint64 client_sender_id, uint64 client_receiver_id, uint64 server_chat_message_id, uint64 encrypted_size)
+void server_msg__send_chat_picture_metadata_to_single_client(client_t* receiver, client_t* sender, uint64 server_chat_message_id, uint64 encrypted_size)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_receiver = 0;
-    client_t* client_sender = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_chat_picture_metadata_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("direct_chat_picture_metadata", &message);
 
-    client_sender = &g_clients_array[client_sender_id];
-    client_receiver = &g_clients_array[client_receiver_id];
-
-    cJSON_AddStringToObject(json_message_object1, "type", "direct_chat_picture_metadata");
-    cJSON_AddStringToObject(json_message_object1, "sender_username", client_sender->username);
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender->client_id);
-    cJSON_AddNumberToObject(json_message_object1, "picture_id", server_chat_message_id);
+    cJSON_AddStringToObject(message, "sender_username", sender->username);
+    cJSON_AddNumberToObject(message, "sender_id", sender->client_id);
+    cJSON_AddNumberToObject(message, "picture_id", server_chat_message_id);
     // the encrypted length the receiver counts its chunks against, for the progress ring
-    cJSON_AddNumberToObject(json_message_object1, "size", (double)encrypted_size);
+    cJSON_AddNumberToObject(message, "size", (double)encrypted_size);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_chat_picture_to_single_client", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_receiver->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client_receiver->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
@@ -2316,80 +1643,32 @@ void server_msg__send_chat_picture_metadata_to_single_client(uint64 client_sende
  *
  * @return void
  */
-void server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel(uint64 client_sender_id, uint64 receiving_channel_id, uint64 server_chat_message_id, char* file_header, uint64 encrypted_size)
+void server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel(client_t* sender, uint64 channel_id, uint64 server_chat_message_id, char* file_header, uint64 encrypted_size)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_in_loop = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_chat_file_metadata", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_chat_file_metadata");
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender_id);
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", receiving_channel_id);
-    cJSON_AddNumberToObject(json_message_object1, "file_id", server_chat_message_id);
-    cJSON_AddStringToObject(json_message_object1, "file_header", file_header);
-    cJSON_AddNumberToObject(json_message_object1, "encrypted_size", (double)encrypted_size);
+    cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
+    cJSON_AddNumberToObject(message, "channel_id", channel_id);
+    cJSON_AddNumberToObject(message, "file_id", server_chat_message_id);
+    cJSON_AddStringToObject(message, "file_header", file_header);
+    cJSON_AddNumberToObject(message, "encrypted_size", (double)encrypted_size);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_channel(root, channel_id, sender);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client_in_loop = &g_clients_array[i];
-
-        if (client_in_loop->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->channel_id != receiving_channel_id)
-        {
-            continue;
-        }
-
-        if (client_in_loop->client_id == client_sender_id)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief sends chat-file metadata to a single client (direct chat): the sender's encrypted
  *        name/size/mime header (opaque here) and the encrypted body length
  *
- * @param uint64 client_sender_id -> id of client that sent the file
- * @param uint64 client_receiver_id -> id of client to send the file metadata to
+ * @param client_t* receiver -> the client that receives the message
+ * @param client_t* sender -> the client that sent it
  * @param uint64 server_chat_message_id -> server assigned id of the file
  * @param char* file_header -> the sender's encrypted header, forwarded as is
  * @param uint64 encrypted_size -> length of the encrypted body that follows in chunks
@@ -2398,48 +1677,23 @@ void server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel(uint
  *
  * @return void
  */
-void server_msg__send_chat_file_metadata_to_single_client(uint64 client_sender_id, uint64 client_receiver_id, uint64 server_chat_message_id, char* file_header, uint64 encrypted_size)
+void server_msg__send_chat_file_metadata_to_single_client(client_t* receiver, client_t* sender, uint64 server_chat_message_id, char* file_header, uint64 encrypted_size)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_receiver = 0;
-    client_t* client_sender = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_chat_file_metadata_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("direct_chat_file_metadata", &message);
 
-    client_sender = &g_clients_array[client_sender_id];
-    client_receiver = &g_clients_array[client_receiver_id];
+    cJSON_AddStringToObject(message, "sender_username", sender->username);
+    cJSON_AddNumberToObject(message, "sender_id", sender->client_id);
+    cJSON_AddNumberToObject(message, "file_id", server_chat_message_id);
+    cJSON_AddStringToObject(message, "file_header", file_header);
+    cJSON_AddNumberToObject(message, "encrypted_size", (double)encrypted_size);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "direct_chat_file_metadata");
-    cJSON_AddStringToObject(json_message_object1, "sender_username", client_sender->username);
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender->client_id);
-    cJSON_AddNumberToObject(json_message_object1, "file_id", server_chat_message_id);
-    cJSON_AddStringToObject(json_message_object1, "file_header", file_header);
-    cJSON_AddNumberToObject(json_message_object1, "encrypted_size", (double)encrypted_size);
-
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_receiver->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client_receiver->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
@@ -2447,7 +1701,7 @@ void server_msg__send_chat_file_metadata_to_single_client(uint64 client_sender_i
  *        silent on its side. reasons: file_uploads_disabled, file_too_large, receiver_unavailable,
  *        private_messages_disabled
  *
- * @param client_t* client -> the sender
+ * @param client_t* receiver -> the sender
  * @param char* reason -> one of the reason strings above
  * @param uint64 local_message_id -> the sender's own id of the refused message, so it can mark that card
  *
@@ -2455,47 +1709,27 @@ void server_msg__send_chat_file_metadata_to_single_client(uint64 client_sender_i
  *
  * @return void
  */
-void server_msg__send_file_send_error_to_single_client(client_t* client, char* reason, uint64 local_message_id)
+void server_msg__send_file_send_error_to_single_client(client_t* receiver, char* reason, uint64 local_message_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s %s %s", "server_msg__send_file_send_error_to_single_client", reason, "\n");
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("file_send_error", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "file_send_error");
-    cJSON_AddStringToObject(json_message_object1, "reason", reason);
-    cJSON_AddNumberToObject(json_message_object1, "local_message_id", (double)local_message_id);
-    cJSON_AddNumberToObject(json_message_object1, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
+    cJSON_AddStringToObject(message, "reason", reason);
+    cJSON_AddNumberToObject(message, "local_message_id", (double)local_message_id);
+    cJSON_AddNumberToObject(message, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief sends channel join message to all clients
  *
- * @param client_t* client_that_switched_channel -> self explanatory
+ * @param client_t* subject -> self explanatory
  * @param channel_t* new_channel -> id of server message
  *
  * @attention
@@ -2504,37 +1738,33 @@ void server_msg__send_file_send_error_to_single_client(client_t* client, char* r
  *
  * @return void
  */
-void server_msg__send_channel_join_message_to_all_clients(client_t* client_that_switched_channel, channel_t* new_channel)
+void server_msg__send_channel_join_message_to_all_clients(client_t* subject, channel_t* new_channel)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    cJSON* json_root_object1_client_hidden_type = 0;
-    cJSON* json_message_object1_client_hidden_type = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
+    cJSON* root_hidden = NULL_POINTER;
+    cJSON* message_hidden = NULL_POINTER;
     uint64 x = 0;
-    char* json_root_object1_string = 0;
-    char* json_root_object1_string_client_hidden_type = 0;
+    char* plaintext = NULL_POINTER;
+    char* plaintext_hidden = NULL_POINTER;
 
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
     client_t* client_in_loop = 0;
     char* song_name = 0;
     boole is_streaming_song = FALSE;
     int64 audio_state = 0;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_join_message_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_join", &message);
 
-    json_root_object1_client_hidden_type = cJSON_CreateObject();
-    json_message_object1_client_hidden_type = cJSON_CreateObject();
+    root_hidden = _server_msg_internal__new_message("channel_join", &message_hidden);
 
     // clients not in same channel will not receive real time microphone usage information from the client that switched the channel
-    is_streaming_song = client_that_switched_channel->is_streaming_song;
-    audio_state = client_that_switched_channel->audio_state;
-    song_name = client_that_switched_channel->song_name;
+    is_streaming_song = subject->is_streaming_song;
+    audio_state = subject->audio_state;
+    song_name = subject->song_name;
 
-    if (client_that_switched_channel->channel_id != new_channel->channel_id)
+    if (subject->channel_id != new_channel->channel_id)
     {
         if (audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE)
         {
@@ -2544,26 +1774,20 @@ void server_msg__send_channel_join_message_to_all_clients(client_t* client_that_
         song_name = "";
     }
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_join");
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", new_channel->channel_id);
-    cJSON_AddNumberToObject(json_message_object1, "client_id", client_that_switched_channel->client_id);
-    cJSON_AddNumberToObject(json_message_object1, "audio_state", audio_state);
-    cJSON_AddBoolToObject(json_message_object1, "is_streaming_song", is_streaming_song);
-    cJSON_AddStringToObject(json_message_object1, "song_name", song_name);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddNumberToObject(message, "channel_id", new_channel->channel_id);
+    cJSON_AddNumberToObject(message, "client_id", subject->client_id);
+    cJSON_AddNumberToObject(message, "audio_state", audio_state);
+    cJSON_AddBoolToObject(message, "is_streaming_song", is_streaming_song);
+    cJSON_AddStringToObject(message, "song_name", song_name);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+    plaintext = cJSON_PrintUnformatted(root);
 
-    cJSON_AddStringToObject(json_message_object1_client_hidden_type, "type", "channel_join");
-    cJSON_AddNumberToObject(json_message_object1_client_hidden_type, "channel_id", (double)-1);
-    cJSON_AddNumberToObject(json_message_object1_client_hidden_type, "client_id", client_that_switched_channel->client_id);
-    cJSON_AddNumberToObject(json_message_object1_client_hidden_type, "audio_state", audio_state);
-    cJSON_AddBoolToObject(json_message_object1_client_hidden_type, "is_streaming_song", is_streaming_song);
-    cJSON_AddStringToObject(json_message_object1_client_hidden_type, "song_name", song_name);
-    cJSON_AddItemToObject(json_root_object1_client_hidden_type, "message", json_message_object1_client_hidden_type);
-    json_root_object1_string_client_hidden_type = cJSON_PrintUnformatted(json_root_object1_client_hidden_type);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_channel_join_message_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
+    cJSON_AddNumberToObject(message_hidden, "channel_id", (double)-1);
+    cJSON_AddNumberToObject(message_hidden, "client_id", subject->client_id);
+    cJSON_AddNumberToObject(message_hidden, "audio_state", audio_state);
+    cJSON_AddBoolToObject(message_hidden, "is_streaming_song", is_streaming_song);
+    cJSON_AddStringToObject(message_hidden, "song_name", song_name);
+    plaintext_hidden = cJSON_PrintUnformatted(root_hidden);
 
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
@@ -2598,37 +1822,12 @@ void server_msg__send_channel_join_message_to_all_clients(client_t* client_that_
                 }
             }
         }
-        if (is_hide_client_active == TRUE)
-        {
-            size_of_allocated_message_buffer = 0;
-            msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string_client_hidden_type, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-            if (msg_text == NULL_POINTER)
-            {
-                goto label_server_msg__send_channel_join_message_to_all_clients_end;
-            }
-        }
-        else
-        {
-            size_of_allocated_message_buffer = 0;
-            msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-            if (msg_text == NULL_POINTER)
-            {
-                goto label_server_msg__send_channel_join_message_to_all_clients_end;
-            }
-        }
-
-        DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-        ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-        memorymanager__free((nuint)msg_text);
+        // a client that may not see the password protected channel gets the variant without the channel id
+        _server_msg_internal__send_text_to_client(client_in_loop, is_hide_client_active == TRUE ? plaintext_hidden : plaintext);
     }
 
-label_server_msg__send_channel_join_message_to_all_clients_end:
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-    base__free_json_message(json_root_object1_client_hidden_type, json_root_object1_string_client_hidden_type);
+    base__free_json_message(root, plaintext);
+    base__free_json_message(root_hidden, plaintext_hidden);
 }
 
 /**
@@ -2638,36 +1837,31 @@ label_server_msg__send_channel_join_message_to_all_clients_end:
  *        microphone information is stripped before sending, push to talk active is downgraded to push
  *        to talk enabled and the streamed song name is cleared.
  *
- * @param client_t* client_that_switched_channel -> the client whose channel change is being announced
+ * @param client_t* subject -> the client whose channel change is being announced
  * @param channel_t* new_channel -> the channel that client_that_switched_channel joined
  * @param client_t* receiving_client -> the single client this message is encrypted for and sent to
  *
  * @return void
  */
-void server_msg__send_channel_join_message_to_single_client(client_t* client_that_switched_channel, channel_t* new_channel, client_t* receiving_client)
+void server_msg__send_channel_join_message_to_single_client(client_t* receiver, client_t* subject, channel_t* new_channel)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    uint64 x = 0;
-    char* json_root_object1_string = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
     char* song_name = 0;
     boole is_streaming_song = FALSE;
     int64 audio_state = 0;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_join", &message);
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_join_message_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     // clients not in same channel will not receive real time microphone usage information from the client that switched the channel
-    is_streaming_song = client_that_switched_channel->is_streaming_song;
-    audio_state = client_that_switched_channel->audio_state;
-    song_name = client_that_switched_channel->song_name;
+    is_streaming_song = subject->is_streaming_song;
+    audio_state = subject->audio_state;
+    song_name = subject->song_name;
 
-    if (client_that_switched_channel->channel_id != new_channel->channel_id)
+    if (subject->channel_id != new_channel->channel_id)
     {
         if (audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE)
         {
@@ -2677,111 +1871,42 @@ void server_msg__send_channel_join_message_to_single_client(client_t* client_tha
         song_name = "";
     }
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_join");
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", new_channel->channel_id);
-    cJSON_AddNumberToObject(json_message_object1, "client_id", client_that_switched_channel->client_id);
-    cJSON_AddNumberToObject(json_message_object1, "audio_state", audio_state);
-    cJSON_AddBoolToObject(json_message_object1, "is_streaming_song", is_streaming_song);
-    cJSON_AddStringToObject(json_message_object1, "song_name", song_name);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddNumberToObject(message, "channel_id", new_channel->channel_id);
+    cJSON_AddNumberToObject(message, "client_id", subject->client_id);
+    cJSON_AddNumberToObject(message, "audio_state", audio_state);
+    cJSON_AddBoolToObject(message, "is_streaming_song", is_streaming_song);
+    cJSON_AddStringToObject(message, "song_name", song_name);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_channel_join_message_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, receiving_client->dh_shared_secret);
-
-    if (msg_text == NULL_POINTER)
-    {
-        goto label_server_msg__send_channel_join_message_to_all_clients_end;
-    }
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-    ws_sendframe_txt(receiving_client->p_ws_connection, msg_text);
-    memorymanager__free((nuint)msg_text);
-
-label_server_msg__send_channel_join_message_to_all_clients_end:
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief broadcasts the channel's maintainer id to all clients in that channel
  *
- * @param uint64 channel_id -> self explanatory
- * @param uint64 maintainer_id -> id of server message
+ * @param channel_t* channel -> the channel whose members receive it
+ * @param uint64 maintainer_id -> the maintainer client id to announce, as a payload value
  *
  * @attention used within write lock for clients and channels
  *
  * @return void
  */
-void server_msg__send_maintainer_id_to_clients_in_same_channel(uint64 channel_id, uint64 maintainer_id)
+void server_msg__send_maintainer_id_to_clients_in_same_channel(channel_t* channel, uint64 maintainer_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_sender = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_maintainer_id_to_clients_in_same_channel \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_maintainer_id", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_maintainer_id");
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", channel_id);
-    cJSON_AddNumberToObject(json_message_object1, "maintainer_id", maintainer_id);
-    cJSON_AddBoolToObject(json_message_object1, "has_maintainer", g_channel_array[channel_id].is_channel_maintainer_present);
+    cJSON_AddNumberToObject(message, "channel_id", (double)channel->channel_id);
+    cJSON_AddNumberToObject(message, "maintainer_id", maintainer_id);
+    cJSON_AddBoolToObject(message, "has_maintainer", channel->is_channel_maintainer_present);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_channel(root, channel->channel_id, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_maintainer_id_to_clients_in_same_channel: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        // if statements that are most probable to run should be first in loop
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->channel_id != channel_id)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -2796,68 +1921,32 @@ void server_msg__send_maintainer_id_to_clients_in_same_channel(uint64 channel_id
  */
 void server_msg__send_channel_delete_message_to_all_clients(uint64 deleted_channel_id, uint64 channel_deletor_id)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    client_t* client = 0;
-    channel_t* channel = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_delete_message_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_delete", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_delete");
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", deleted_channel_id);
-    cJSON_AddNumberToObject(json_message_object1, "channel_deletor_id", channel_deletor_id);
-
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_channel_delete_message_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (x = 0; x < g_server_settings.max_client_count; x++)
+    cJSON_AddNumberToObject(message, "channel_id", deleted_channel_id);
+    if (channel_deletor_id == UINT64_MAX)
     {
-        client = &g_clients_array[x];
-
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
+        cJSON_AddNullToObject(message, "channel_deletor_id");
+    }
+    else
+    {
+        cJSON_AddNumberToObject(message, "channel_deletor_id", channel_deletor_id);
     }
 
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
+
+    cJSON_Delete(root);
 }
 
 /**
  * @brief broadcasts a client-disconnected event to all clients
  *
- * @param uint64 client_index -> id of the disconnected client
+ * @param client_t* client -> the client that sent the message
  *
  * @attention used within acquired write lock for clients_array
  *
@@ -2865,113 +1954,43 @@ void server_msg__send_channel_delete_message_to_all_clients(uint64 deleted_chann
  */
 void server_msg__send_client_disconnect_message_to_all_clients(uint64 client_index)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("client_disconnect", &message);
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_disconnect_message_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "client_disconnect");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", client_index);
+    cJSON_AddNumberToObject(message, "client_id", client_index);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, &g_clients_array[client_index]);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_client_disconnect_message_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (x = 0; x < g_server_settings.max_client_count; x++)
-    {
-        client = &g_clients_array[x];
-
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->client_id == client_index)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief sends a poke message to a single client
  *
- * @param client_t* client -> the client to poke
- * @param uint64 sender_index -> id of the client sending the poke
+ * @param client_t* receiver -> the client to poke
+ * @param client_t* sender -> the client sending the poke
  * @param char* poke_message -> the poke text
  *
  * @return void
  */
-void server_msg__send_poke_to_single_client(client_t* client, uint64 sender_index, char* poke_message)
+void server_msg__send_poke_to_single_client(client_t* receiver, client_t* sender, char* poke_message)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_poke_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("poke", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "poke");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", sender_index);
-    cJSON_AddStringToObject(json_message_object1, "poke_message", poke_message);
+    cJSON_AddNumberToObject(message, "client_id", (double)sender->client_id);
+    cJSON_AddStringToObject(message, "poke_message", poke_message);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_chat_picture_to_single_client", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
@@ -2979,7 +1998,7 @@ void server_msg__send_poke_to_single_client(client_t* client, uint64 sender_inde
  *        all - only who is typing and which conversation it belongs to, so the receiver can show it
  *        against the right chat and drop it again when it stops being refreshed.
  *
- * @param uint64 sender_client_id -> the client that is typing
+ * @param client_t* subject -> the client that is typing
  * @param char* receiver_type -> "channel" or "user", the kind of conversation being written to
  * @param uint64 receiver_id -> channel id for "channel", target client id for "user"
  *
@@ -2987,34 +2006,23 @@ void server_msg__send_poke_to_single_client(client_t* client, uint64 sender_inde
  *
  * @return void
  */
-void server_msg__send_typing_indicator(uint64 sender_client_id, char* receiver_type, uint64 receiver_id)
+void server_msg__send_typing_indicator(client_t* subject, char* receiver_type, uint64 receiver_id)
 {
-    char* json_root_object_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
     uint64 i = 0;
     boole is_direct_message = FALSE;
     client_t* client_in_loop = 0;
-    client_t* client_sender = 0;
-    cJSON* json_root_object = 0;
-    cJSON* json_message_object = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_typing_indicator \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    client_sender = &g_clients_array[sender_client_id];
     is_direct_message = clib__is_string_equal(receiver_type, "user");
 
-    json_root_object = cJSON_CreateObject();
-    json_message_object = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("typing_indicator", &message);
 
-    cJSON_AddStringToObject(json_message_object, "type", "typing_indicator");
-    cJSON_AddNumberToObject(json_message_object, "client_id", sender_client_id);
-    cJSON_AddStringToObject(json_message_object, "receiver_type", receiver_type);
-    cJSON_AddNumberToObject(json_message_object, "receiver_id", (double)receiver_id);
-
-    cJSON_AddItemToObject(json_root_object, "message", json_message_object);
-
-    json_root_object_string = cJSON_PrintUnformatted(json_root_object);
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
+    cJSON_AddStringToObject(message, "receiver_type", receiver_type);
+    cJSON_AddNumberToObject(message, "receiver_id", (double)receiver_id);
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
@@ -3030,7 +2038,7 @@ void server_msg__send_typing_indicator(uint64 sender_client_id, char* receiver_t
             continue;
         }
 
-        if (client_in_loop->client_id == sender_client_id)
+        if (client_in_loop == subject)
         {
             continue;  // he knows he is typing
         }
@@ -3048,48 +2056,34 @@ void server_msg__send_typing_indicator(uint64 sender_client_id, char* receiver_t
             continue;
         }
 
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object_string, &size_of_allocated_message_buffer, client_in_loop->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client_in_loop->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
+        _server_msg_internal__send_json_to_client(client_in_loop, root);
     }
 
-    base__free_json_message(json_root_object, json_root_object_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief sends a WebRTC SDP offer to a single client
  *
+ * @param client_t* receiver -> the client to send the candidate to
  * @param const char* candidate -> the ICE candidate string
  * @param const char* mid -> the sdpMid the candidate belongs to
- * @param client_t* client -> the client to send the candidate to
  *
  * @return void
  */
-void server_msg__send_webrtc_sdp_offer_to_single_client(const char* candidate, const char* mid, client_t* client)
+void server_msg__send_webrtc_sdp_offer_to_single_client(client_t* receiver, const char* candidate, const char* mid)
 {
-    cJSON* json_root_object = NULL_POINTER;
-    cJSON* json_message_object = NULL_POINTER;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_message_value = NULL_POINTER;
     cJSON* jmid = NULL_POINTER;
     cJSON* jsoncandidate = NULL_POINTER;
     cJSON* jsonlineindex = NULL_POINTER;
-    char* json_root_object_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
 
-    json_root_object = cJSON_CreateObject();
-    json_message_object = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("ice_candidate", &message);
     json_message_value = cJSON_CreateObject();
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_webrtc_sdp_offer_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     jsoncandidate = cJSON_CreateString(candidate);
     cJSON_AddItemToObject(json_message_value, "candidate", jsoncandidate);
@@ -3100,147 +2094,98 @@ void server_msg__send_webrtc_sdp_offer_to_single_client(const char* candidate, c
     jsonlineindex = cJSON_CreateNumber(0.0);
     cJSON_AddItemToObject(json_message_value, "sdpMLineIndex", jsonlineindex);
 
-    cJSON_AddItemToObject(json_message_object, "value", json_message_value);
+    cJSON_AddItemToObject(message, "value", json_message_value);
 
-    cJSON_AddStringToObject(json_message_object, "type", "ice_candidate");
-
-    cJSON_AddItemToObject(json_root_object, "message", json_message_object);
-
-    json_root_object_string = cJSON_PrintUnformatted(json_root_object);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    DBG_AUDIOCHANNEL_WEBRTC log_info("%s", "peerconnection_oncandidate_callback CANDIDATE SEND \n");
-    base__free_json_message(json_root_object, json_root_object_string);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief broadcasts a client's audio state to all clients
  *
- * @param uint64 client_whose_audio_to_send -> id of the client whose audio state is broadcast
+ * @param client_t* subject -> the client whose audio state is broadcast
  * @param uint64 state -> the client's new audio state
+ *
+ * @attention clients read lock held by the caller; the channels array is read for the hidden check
  *
  * @return void
  */
-void server_msg__send_audio_state_of_client_to_all_clients(uint64 client_whose_audio_to_send, uint64 state)
+void server_msg__send_audio_state_of_client_to_all_clients(client_t* subject, uint64 state)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
+    cJSON* root_other_channel = NULL_POINTER;
+    cJSON* message_other_channel = NULL_POINTER;
+    char* plaintext = NULL_POINTER;
+    char* plaintext_other_channel = NULL_POINTER;
     uint64 i = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    client_t* client = 0;
-    int64 audio_state_to_send = 0;
-    boole is_hide_client_active = FALSE;
-    boole status = FALSE;
+    client_t* client = NULL_POINTER;
+    boole is_subject_hidden = FALSE;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_audio_state_of_client_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
+
+    // two variants, each printed once: the subject's channel hears the real state, the rest of the server
+    // only learns that the microphone is on or off, never that it is transmitting right now
+    root = _server_msg_internal__new_message("audio_state_of_single_client", &message);
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
+    cJSON_AddNumberToObject(message, "value", (double)state);
+    plaintext = cJSON_PrintUnformatted(root);
+
+    root_other_channel = _server_msg_internal__new_message("audio_state_of_single_client", &message_other_channel);
+    cJSON_AddNumberToObject(message_other_channel, "client_id", (double)subject->client_id);
+    cJSON_AddNumberToObject(message_other_channel, "value", (double)(state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE ? AUDIO_STATE__PUSH_TO_TALK_ENABLED : state));
+    plaintext_other_channel = cJSON_PrintUnformatted(root_other_channel);
+
+    // while clients in password protected channels are hidden, a subject standing in one is not reported outside it
+    is_subject_hidden = g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE
+        && subject->channel_id < g_server_settings.max_channel_count
+        && g_channel_array[subject->channel_id].is_existing == TRUE
+        && g_channel_array[subject->channel_id].is_using_password == TRUE;
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        status = util__is_client_valid_and_not_music_bot(i);
-
-        if (status == FALSE)
-        {
-            continue;
-        }
-
         client = &g_clients_array[i];
 
-        is_hide_client_active = FALSE;
-
-        if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE)
-        {
-            if (client->channel_id != g_clients_array[client_whose_audio_to_send].channel_id)
-            {
-                // if channel of receiving client and client that is sending audio state, isn't same
-                // and client that is sending audio state is located in password protected channel
-                // skip client
-                if (g_clients_array[client_whose_audio_to_send].channel_id < g_server_settings.max_channel_count
-                    && g_channel_array[g_clients_array[client_whose_audio_to_send].channel_id].is_existing == TRUE
-                    && g_channel_array[g_clients_array[client_whose_audio_to_send].channel_id].is_using_password == TRUE)
-                {
-                    is_hide_client_active = TRUE;
-                }
-            }
-        }
-
-        if (is_hide_client_active == TRUE)
+        if (util__is_client_valid_and_not_music_bot((int)i) == FALSE)
         {
             continue;
         }
-
-        audio_state_to_send = state;
-
-        // only send microphone active state to clients in same channel as sender
-        if (client->channel_id != g_clients_array[client_whose_audio_to_send].channel_id)
+        if (client->channel_id == subject->channel_id)
         {
-            if (state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE)
-            {
-                audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
-            }
+            _server_msg_internal__send_text_to_client(client, plaintext);
         }
-
-        json_root_object1 = cJSON_CreateObject();
-        json_message_object1 = cJSON_CreateObject();
-
-        cJSON_AddStringToObject(json_message_object1, "type", "audio_state_of_single_client");
-        cJSON_AddNumberToObject(json_message_object1, "client_id", client_whose_audio_to_send);
-        cJSON_AddNumberToObject(json_message_object1, "value", audio_state_to_send);
-        cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-        json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
+        else if (is_subject_hidden == FALSE)
         {
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-            base__free_json_message(json_root_object1, json_root_object1_string);
+            _server_msg_internal__send_text_to_client(client, plaintext_other_channel);
         }
     }
+
+    cJSON_free(plaintext);
+    cJSON_free(plaintext_other_channel);
+    cJSON_Delete(root);
+    cJSON_Delete(root_other_channel);
 }
 
 /**
  * @brief tells clients in the channel that a song stream has started
  *
- * @param client_t* client_that_streams -> the streaming client
+ * @param client_t* subject -> the streaming client
  *
  * @return void
  */
-void server_msg__send_start_song_stream_message_to_clients_in_same_channel(client_t* client_that_streams)
+void server_msg__send_start_song_stream_message_to_clients_in_same_channel(client_t* subject)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
     uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_sender = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     client_t* client = 0;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_start_song_stream_message_to_clients_in_same_channel \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("start_song_stream", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "start_song_stream");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", client_that_streams->client_id);
-    cJSON_AddStringToObject(json_message_object1, "song_name", client_that_streams->song_name);
-
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_start_song_stream_message_to_clients_in_same_channel ", json_root_object1_string, "\n");
+    cJSON_AddNumberToObject(message, "client_id", subject->client_id);
+    cJSON_AddStringToObject(message, "song_name", subject->song_name);
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
@@ -3258,7 +2203,7 @@ void server_msg__send_start_song_stream_message_to_clients_in_same_channel(clien
         }
 
         // only the streamer's channel hears about it, unless the marquee is shown to everyone
-        if (client->channel_id != client_that_streams->channel_id && g_server_settings.show_music_bot_marquee_to_everyone == FALSE)
+        if (client->channel_id != subject->channel_id && g_server_settings.show_music_bot_marquee_to_everyone == FALSE)
         {
             continue;
         }
@@ -3268,52 +2213,31 @@ void server_msg__send_start_song_stream_message_to_clients_in_same_channel(clien
             continue;
         }
 
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
+        _server_msg_internal__send_json_to_client(client, root);
     }
 
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief tells clients in the channel that a song stream has stopped
  *
- * @param client_t* client_that_streams -> the streaming client
+ * @param client_t* subject -> the streaming client
  *
  * @return void
  */
-void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client_t* client_that_streams)
+void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client_t* subject)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
     uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_sender = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     client_t* client = 0;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_stop_song_stream_message_to_clients_in_same_channel \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("stop_song_stream", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "stop_song_stream");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", client_that_streams->client_id);
-
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server__msg__send_stop_song_stream_message_to_clients_in_same_channel ", json_root_object1_string, "\n");
+    cJSON_AddNumberToObject(message, "client_id", subject->client_id);
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
@@ -3336,93 +2260,40 @@ void server_msg__send_stop_song_stream_message_to_clients_in_same_channel(client
         }
 
         // only the streamer's channel hears about it, unless the marquee is shown to everyone
-        if (client->channel_id != client_that_streams->channel_id && g_server_settings.show_music_bot_marquee_to_everyone == FALSE)
+        if (client->channel_id != subject->channel_id && g_server_settings.show_music_bot_marquee_to_everyone == FALSE)
         {
             continue;
         }
 
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "server__msg__send_stop_song_stream_message_to_clients_in_same_channel: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
+        _server_msg_internal__send_json_to_client(client, root);
     }
 
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief broadcasts a tag-added-to-client event to all clients
  *
- * @param uint64 client_id_of_client_that_got_the_new_tag -> id of the client that received the tag
+ * @param client_t* subject -> the client that received the tag
  * @param uint64 tag_id -> id of the tag added
  *
  * @return void
  */
-void server_msg__send_add_tag_to_client_event_to_all_clients(uint64 client_id_of_client_that_got_the_new_tag, uint64 tag_id)
+void server_msg__send_add_tag_to_client_event_to_all_clients(client_t* subject, uint64 tag_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_sender = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_add_tag_to_client_event_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("tag_add_to_client", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "tag_add_to_client");
-    cJSON_AddNumberToObject(json_message_object1, "tag_id", tag_id);
-    cJSON_AddNumberToObject(json_message_object1, "client_id", client_id_of_client_that_got_the_new_tag);
+    cJSON_AddNumberToObject(message, "tag_id", tag_id);
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_add_tag_to_client_event_to_all_clients ", json_root_object1_string, "\n");
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        // if statements that are most probable to run should be first in loop
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_add_tag_to_client_event_to_all_clients: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -3430,65 +2301,26 @@ void server_msg__send_add_tag_to_client_event_to_all_clients(uint64 client_id_of
  *        authenticated non-bot clients. must be called with the clients lock already held
  *        (like the tag-event broadcasts).
  *
- * @param uint64 client_id -> the client whose identity just got the alias
+ * @param client_t* subject -> the client whose identity just got the alias
  * @param char* alias -> the new alias text, empty or NULL when cleared
  *
  * @return void
  */
-void server_msg__send_client_alias_changed_to_all_clients(uint64 client_id, char* alias)
+void server_msg__send_client_alias_changed_to_all_clients(client_t* subject, char* alias)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_alias_changed_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("client_alias_changed", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "client_alias_changed");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", client_id);
-    cJSON_AddStringToObject(json_message_object1, "alias", (alias == NULL_POINTER) ? "" : alias);
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
+    cJSON_AddStringToObject(message, "alias", (alias == NULL_POINTER) ? "" : alias);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        // if statements that are most probable to run should be first in loop
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -3497,66 +2329,27 @@ void server_msg__send_client_alias_changed_to_all_clients(uint64 client_id, char
  *        is sent whenever the code the server is willing to show changed: the client became or
  *        stopped being an admin, or the admin toggled hide_admin_country_flag
  *
- * @param client_t* client_whose_code_changed -> the client whose shown code changed
+ * @param client_t* subject -> the client whose shown code changed
  *
  * @note must be called with the clients lock already held (like the tag-event broadcasts)
  *
  * @return void
  */
-void server_msg__send_client_country_code_changed_to_all_clients(client_t* client_whose_code_changed)
+void server_msg__send_client_country_code_changed_to_all_clients(client_t* subject)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_country_code_changed_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("client_country_code_changed", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "client_country_code_changed");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client_whose_code_changed->client_id);
-    cJSON_AddStringToObject(json_message_object1, "country_iso_code", _server_msg_internal__country_code_to_send(client_whose_code_changed));
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
+    cJSON_AddStringToObject(message, "country_iso_code", _server_msg_internal__country_code_to_send(subject));
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        // if statements that are most probable to run should be first in loop
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -3589,60 +2382,24 @@ void server_msg__send_admin_country_codes_to_all_clients(void)
  * @brief broadcasts a lightweight "this client's avatar changed" event (no image payload) to all
  *        authenticated non-bot clients, so they can re-request that client's avatar if they show it.
  *
- * @param uint64 client_id_whose_avatar_changed -> id of the client whose avatar was set/deleted
+ * @param client_t* subject -> the client whose avatar was set or deleted
  *
  * @note must be called with the clients lock already held (like the tag-event broadcasts)
  *
  * @return void
  */
-void server_msg__send_avatar_changed_event_to_all_clients(uint64 client_id_whose_avatar_changed)
+void server_msg__send_avatar_changed_event_to_all_clients(client_t* subject)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("avatar_changed", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "avatar_changed");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client_id_whose_avatar_changed);
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -3650,50 +2407,30 @@ void server_msg__send_avatar_changed_event_to_all_clients(uint64 client_id_whose
  *        requesting client. used for both the profile-pane request and the chunked tree lazy-load,
  *        so avatars are only ever sent to clients that asked for them.
  *
- * @param ws_cli_conn_t* websocket        -> the requester's connection
- * @param char*          dh_shared_secret -> the requester's shared secret (to encrypt with)
- * @param uint64         client_id        -> whose avatar this is
+ * @param client_t* receiver -> the client that asked for the avatar
+ * @param uint64 avatar_owner_client_id -> whose avatar this is
  * @param char*          base64_avatar    -> the avatar data-url, or "" for none
  *
  * @return void
  */
-void server_msg__send_client_avatar_to_single_client(ws_cli_conn_t* websocket, char* dh_shared_secret, uint64 client_id, char* base64_avatar)
+void server_msg__send_client_avatar_to_single_client(client_t* receiver, uint64 avatar_owner_client_id, char* base64_avatar)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    if (websocket == NULL_POINTER || dh_shared_secret == NULL_POINTER)
+    if (receiver == NULL_POINTER)
     {
         return;
     }
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("client_avatar", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "client_avatar");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client_id);
-    cJSON_AddStringToObject(json_message_object1, "base64_avatar", (base64_avatar != NULL_POINTER) ? base64_avatar : "");
+    cJSON_AddNumberToObject(message, "client_id", (double)avatar_owner_client_id);
+    cJSON_AddStringToObject(message, "base64_avatar", (base64_avatar != NULL_POINTER) ? base64_avatar : "");
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_client(receiver, root);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    if (json_root_object1_string != NULL_POINTER)
-    {
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(websocket, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -3709,37 +2446,30 @@ void server_msg__send_client_avatar_to_single_client(ws_cli_conn_t* websocket, c
  *        leaks while the setting is off. slots with no public key or no alias are skipped - they are
  *        free, or they have no name to show and nothing to pair on.
  *
- * @param ws_cli_conn_t* websocket -> the requesting client's connection
- * @param char* dh_shared_secret -> that client's shared secret, used for the encryption
+ * @param client_t* receiver -> the client that receives the list
  *
  * @note the store is guarded by g_client_stored_data_mutex, taken here (a leaf lock), exactly like
  *       the identity serializer in base.c.
  *
  * @return void
  */
-void server_msg__send_stored_clients_to_single_client(ws_cli_conn_t* websocket, char* dh_shared_secret)
+void server_msg__send_stored_clients_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
     uint64 i = 0;
     uint64 t = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_stored_clients = 0;
     cJSON* json_stored_client = 0;
     cJSON* json_tag_ids = 0;
 
-    if (websocket == NULL_POINTER || dh_shared_secret == NULL_POINTER)
+    if (receiver == NULL_POINTER)
     {
         return;
     }
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("stored_clients_list", &message);
     json_stored_clients = cJSON_CreateArray();
-
-    cJSON_AddStringToObject(json_message_object1, "type", "stored_clients_list");
 
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
@@ -3763,7 +2493,7 @@ void server_msg__send_stored_clients_to_single_client(ws_cli_conn_t* websocket, 
             cJSON_AddStringToObject(json_stored_client, "public_key", &g_client_stored_data[i].raw_public_key[0]);
         }
 
-        // when the admin enabled last-seen, tell the client when this identity was last connected
+        // when the admin enabled last-seen, tell the receiver when this identity was last connected
         // (unix seconds). left out entirely while the setting is off, so nothing leaks
         if (g_server_settings.allow_last_seen == TRUE && g_client_stored_data[i].last_seen_unix_seconds != 0)
         {
@@ -3782,24 +2512,11 @@ void server_msg__send_stored_clients_to_single_client(ws_cli_conn_t* websocket, 
 
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 
-    cJSON_AddItemToObject(json_message_object1, "stored_clients", json_stored_clients);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    cJSON_AddItemToObject(message, "stored_clients", json_stored_clients);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+    _server_msg_internal__send_json_to_client(receiver, root);
 
-    if (json_root_object1_string != NULL_POINTER)
-    {
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(websocket, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -3808,31 +2525,28 @@ void server_msg__send_stored_clients_to_single_client(ws_cli_conn_t* websocket, 
  *        offline_chat_message so the client can render them like any other direct message; the
  *        payload is the sender's ciphertext, untouched (the server never could read it).
  *
- * @param client_t* client -> the freshly authenticated client
+ * @param client_t* receiver -> the freshly authenticated client
  *
  * @return void
  *
  * @note takes g_offline_messages_mutex (leaf lock). caller holds the clients lock.
  */
-void server_msg__send_queued_offline_messages_to_single_client(client_t* client)
+void server_msg__send_queued_offline_messages_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     char recipient_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
     uint64 i = 0;
     uint64 delivered_count = 0;
     uint64 lowest_sequence_number = 0;
     int64 next_slot = 0;
 
-    if (g_offline_messages == NULL_POINTER || client == NULL_POINTER || client->public_key[0] == 0)
+    if (g_offline_messages == NULL_POINTER || receiver == NULL_POINTER || receiver->public_key[0] == 0)
     {
         return;
     }
 
-    base__hash_password_to_base64(client->public_key, recipient_identity_hash, sizeof(recipient_identity_hash));
+    base__hash_password_to_base64(receiver->public_key, recipient_identity_hash, sizeof(recipient_identity_hash));
 
     // deliver in the order they were sent: repeatedly pick the lowest sequence number still queued
     // for this identity. the queue is small and this runs once per connect
@@ -3868,14 +2582,12 @@ void server_msg__send_queued_offline_messages_to_single_client(client_t* client)
             break;
         }
 
-        json_root_object1 = cJSON_CreateObject();
-        json_message_object1 = cJSON_CreateObject();
+        root = _server_msg_internal__new_message("offline_chat_message", &message);
 
-        cJSON_AddStringToObject(json_message_object1, "type", "offline_chat_message");
-        cJSON_AddStringToObject(json_message_object1, "value", g_offline_messages[next_slot].base64_encrypted_message);
-        cJSON_AddStringToObject(json_message_object1, "sender_alias", &g_offline_messages[next_slot].sender_alias[0]);
-        cJSON_AddNumberToObject(json_message_object1, "queued_unix_seconds", (double)g_offline_messages[next_slot].queued_unix_seconds);
-        cJSON_AddNumberToObject(json_message_object1, "sequence_number", (double)g_offline_messages[next_slot].sequence_number);
+        cJSON_AddStringToObject(message, "value", g_offline_messages[next_slot].base64_encrypted_message);
+        cJSON_AddStringToObject(message, "sender_alias", &g_offline_messages[next_slot].sender_alias[0]);
+        cJSON_AddNumberToObject(message, "queued_unix_seconds", (double)g_offline_messages[next_slot].queued_unix_seconds);
+        cJSON_AddNumberToObject(message, "sequence_number", (double)g_offline_messages[next_slot].sequence_number);
 
         // free this one before sending, so a failing send cannot leave it queued forever
         if (g_offline_messages[next_slot].base64_encrypted_message != NULL_POINTER)
@@ -3886,22 +2598,9 @@ void server_msg__send_queued_offline_messages_to_single_client(client_t* client)
 
         pthread_mutex_unlock(&g_offline_messages_mutex);
 
-        cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-        json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+        _server_msg_internal__send_json_to_client(receiver, root);
 
-        if (json_root_object1_string != NULL_POINTER)
-        {
-            size_of_allocated_message_buffer = 0;
-            msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-            if (msg_text != NULL_POINTER)
-            {
-                ws_sendframe_txt(client->p_ws_connection, msg_text);
-                memorymanager__free((nuint)msg_text);
-            }
-        }
-
-        base__free_json_message(json_root_object1, json_root_object1_string);
+        cJSON_Delete(root);
 
         delivered_count++;
     }
@@ -3915,69 +2614,26 @@ void server_msg__send_queued_offline_messages_to_single_client(client_t* client)
 /**
  * @brief broadcasts a tag-removed-from-client event to all clients
  *
- * @param uint64 client_id_of_client_that_got_tag_removed -> id of the client that lost the tag
+ * @param client_t* subject -> the client that lost the tag
  * @param uint64 tag_id -> id of the tag removed
  *
  * @return void
  */
-void server_msg__send_remove_tag_from_client_event_to_all_clients(uint64 client_id_of_client_that_got_tag_removed, uint64 tag_id)
+void server_msg__send_remove_tag_from_client_event_to_all_clients(client_t* subject, uint64 tag_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_sender = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_remove_tag_from_client_event_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("remove_tag_from_client", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "remove_tag_from_client");
-    cJSON_AddNumberToObject(json_message_object1, "tag_id", tag_id);
-    cJSON_AddNumberToObject(json_message_object1, "client_id", client_id_of_client_that_got_tag_removed);
+    cJSON_AddNumberToObject(message, "tag_id", tag_id);
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_remove_tag_from_client_event_to_all_clients ", json_root_object1_string, "\n");
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        // if statements that are most probable to run should be first in loop
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_remove_tag_from_client_event_to_all_clients: msg_text ", msg_text, "\n");
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -3990,62 +2646,19 @@ void server_msg__send_remove_tag_from_client_event_to_all_clients(uint64 client_
  */
 void server_msg__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char* icon_base64_value)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_add_new_icon_event_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("icon_add", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "icon_add");
-    cJSON_AddNumberToObject(json_message_object1, "icon_id", new_icon_id);
-    cJSON_AddStringToObject(json_message_object1, "base64_icon", icon_base64_value);
+    cJSON_AddNumberToObject(message, "icon_id", new_icon_id);
+    cJSON_AddStringToObject(message, "base64_icon", icon_base64_value);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_add_new_icon_event_to_all_clients ", json_root_object1_string, "\n");
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        // if statements that are most probable to run should be first in loop
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_remove_tag_from_client_event_to_all_clients: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -4057,56 +2670,18 @@ void server_msg__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char
  */
 void server_msg__send_remove_tag_event_to_all_clients(uint64 tag_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_remove_tag_event_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("tag_delete", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "tag_delete");
-    cJSON_AddNumberToObject(json_message_object1, "tag_id", tag_id);
+    cJSON_AddNumberToObject(message, "tag_id", tag_id);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -4118,56 +2693,18 @@ void server_msg__send_remove_tag_event_to_all_clients(uint64 tag_id)
  */
 void server_msg__send_remove_icon_event_to_all_clients(uint64 icon_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_remove_icon_event_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("icon_delete", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "icon_delete");
-    cJSON_AddNumberToObject(json_message_object1, "icon_id", icon_id);
+    cJSON_AddNumberToObject(message, "icon_id", icon_id);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -4181,58 +2718,20 @@ void server_msg__send_remove_icon_event_to_all_clients(uint64 icon_id)
  */
 void server_msg__send_tag_icon_changed_event_to_all_clients(uint64 tag_id, boole has_icon, uint64 icon_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_tag_icon_changed_event_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("tag_icon_changed", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "tag_icon_changed");
-    cJSON_AddNumberToObject(json_message_object1, "tag_id", tag_id);
-    cJSON_AddItemToObject(json_message_object1, "has_icon", cJSON_CreateBool(has_icon == TRUE));
-    cJSON_AddNumberToObject(json_message_object1, "tag_linked_icon_id", icon_id);
+    cJSON_AddNumberToObject(message, "tag_id", tag_id);
+    cJSON_AddItemToObject(message, "has_icon", cJSON_CreateBool(has_icon == TRUE));
+    cJSON_AddNumberToObject(message, "tag_linked_icon_id", icon_id);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -4246,58 +2745,20 @@ void server_msg__send_tag_icon_changed_event_to_all_clients(uint64 tag_id, boole
  */
 void server_msg__send_channel_icon_changed_event_to_all_clients(uint64 channel_id, boole has_channel_icon, uint64 icon_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_channel_icon_changed_event_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("channel_icon_changed", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "channel_icon_changed");
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)channel_id);
-    cJSON_AddItemToObject(json_message_object1, "has_channel_icon", cJSON_CreateBool(has_channel_icon == TRUE));
-    cJSON_AddNumberToObject(json_message_object1, "channel_icon_id", (double)icon_id);
+    cJSON_AddNumberToObject(message, "channel_id", (double)channel_id);
+    cJSON_AddItemToObject(message, "has_channel_icon", cJSON_CreateBool(has_channel_icon == TRUE));
+    cJSON_AddNumberToObject(message, "channel_icon_id", (double)icon_id);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -4313,291 +2774,120 @@ void server_msg__send_channel_icon_changed_event_to_all_clients(uint64 channel_i
  */
 void server_msg__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* tag_name, uint64 tag_linked_icon_id, boole has_icon)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_create_new_tag_event_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("tag_add", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "tag_add");
-    cJSON_AddNumberToObject(json_message_object1, "tag_id", tag_id);
-    cJSON_AddStringToObject(json_message_object1, "tag_name", tag_name);
-    cJSON_AddNumberToObject(json_message_object1, "tag_linked_icon_id", tag_linked_icon_id);
-    cJSON_AddItemToObject(json_message_object1, "has_icon", cJSON_CreateBool(has_icon == TRUE));
+    cJSON_AddNumberToObject(message, "tag_id", tag_id);
+    cJSON_AddStringToObject(message, "tag_name", tag_name);
+    cJSON_AddNumberToObject(message, "tag_linked_icon_id", tag_linked_icon_id);
+    cJSON_AddItemToObject(message, "has_icon", cJSON_CreateBool(has_icon == TRUE));
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_create_new_tag_event_to_all_clients ", json_root_object1_string, "\n");
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        // if statements that are most probable to run should be first in loop
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_create_new_tag_event_to_all_clients: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief notifies an idle client that another client is calling them
  *
+ * @param client_t* receiver -> the idle client being called
  * @param client_t* caller -> the client placing the call
- * @param client_t* callee -> the idle client being called
  *
  * @return void
  */
-void server_msg__send_call_event_to_idle_client(client_t* caller, client_t* callee)
+void server_msg__send_call_event_to_idle_client(client_t* receiver, client_t* caller)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_call_event_to_idle_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("call", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "call");
-    cJSON_AddNumberToObject(json_message_object1, "caller_client_id", caller->client_id);
+    cJSON_AddNumberToObject(message, "caller_client_id", caller->client_id);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_call_event_to_idle_client", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, callee->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(callee->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function sends client_going_to_idle_mode to all authenticated clients
  *
- * @param uint64 client_that_goes_idle -> id of the client that is going to idle mode
+ * @param client_t* subject -> the client that is going to idle mode
  *
  * @attention
  *
  * @return void
  */
-void server_msg__send_client_going_to_idle_mode_info_to_all_clients(uint64 client_that_goes_idle)
+void server_msg__send_client_going_to_idle_mode_info_to_all_clients(client_t* subject)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_going_to_idle_mode_info_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("client_going_to_idle_mode", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "client_going_to_idle_mode");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client_that_goes_idle);
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_client_going_to_idle_mode_info_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (x = 0; x < g_server_settings.max_client_count; x++)
-    {
-        client = &g_clients_array[x];
-
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief This function sends client_coming_back_from_idle_mode to all authenticated clients
  *
- * @param uint64 client_that_comes_from_idle -> id of the client coming back from idle mode
+ * @param client_t* subject -> the client coming back from idle mode
  * @param uint64 channel_the_client_joins -> id of the channel the client joins on return
  *
  * @attention
  *
  * @return void
  */
-void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(uint64 client_that_comes_from_idle, uint64 channel_the_client_joins)
+void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(client_t* subject, uint64 channel_the_client_joins)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    uint64 x = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("client_coming_back_from_idle_mode", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "client_coming_back_from_idle_mode");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)client_that_comes_from_idle);
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)channel_the_client_joins);
+    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
+    cJSON_AddNumberToObject(message, "channel_id", (double)channel_the_client_joins);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients: json_root_object1_string ", json_root_object1_string, "\n");
-
-    for (x = 0; x < g_server_settings.max_client_count; x++)
-    {
-        client = &g_clients_array[x];
-
-        if (client->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief sends song list of music bot to single_client
  *
- * @param uint64 sender_client_index -> id of the client to send the song list to
- * @param uint64 music_bot_index -> id of the music bot whose song list is sent
+ * @param client_t* receiver -> the admin that asked for the list
+ * @param client_t* music_bot -> the music bot whose song list is sent
  *
- * @attention this function must be used within rdlock
+ * @attention clients read lock held by the caller, who has checked that the receiver is an admin and the bot a live music bot
  *
  * @return void
  */
-void server_msg__send_music_bot_song_list_to_single_client(uint64 sender_client_index, uint64 music_bot_index)
+void server_msg__send_music_bot_song_list_to_single_client(client_t* receiver, client_t* music_bot)
 {
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     cJSON* json_songs_array = 0;
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    client_t* client = 0;
     music_bot_single_song_data_t* single_song_in_loop = 0;
-    client_t* music_bot = NULL_POINTER;
     uint64 loop_index = 0;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_music_bot_song_list_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("music_bot_song_list", &message);
     json_songs_array = cJSON_CreateArray();
-
-    // create array of music bot data
-    client = &g_clients_array[sender_client_index];
-
-    status1 = util__is_client_valid_admin(sender_client_index);
-    status2 = util__is_client_valid_musicbot(music_bot_index);
-
-    if (status1 == FALSE || status2 == FALSE)
-    {
-        return;
-    }
-
-    music_bot = &g_clients_array[music_bot_index];
 
     // create array of clients
     for (loop_index = 0; loop_index < MUSIC_BOT_MAX_FILE_COUNT; loop_index++)
@@ -4618,71 +2908,33 @@ void server_msg__send_music_bot_song_list_to_single_client(uint64 sender_client_
         cJSON_AddItemToArray(json_songs_array, song);
     }
 
-    cJSON_AddStringToObject(json_message_object1, "type", "music_bot_song_list");
-    cJSON_AddItemToObject(json_message_object1, "songs", json_songs_array);
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
+    cJSON_AddItemToObject(message, "songs", json_songs_array);
 
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "json_root_object1_string: msg_text ", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "send_client_list_to_client: msg_text ", msg_text, "\n");
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-    memorymanager__free((nuint)msg_text);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief tells the client its file upload completed successfully, so it can send instructions on what to do with the file
  *
- * @param client_t* client -> the client whose file upload completed
+ * @param client_t* receiver -> the client whose file upload completed
  * @todo make image file upload use this function
  *
  * @attention this function is used within acquired readlock within client_message.c , multiple functions
  *
  * @return void
  */
-void server_msg__send_file_send_completed_status_to_single_client(client_t* client)
+void server_msg__send_file_send_completed_status_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_file_send_completed_status_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("file_send_success", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "file_send_success");
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
@@ -4693,52 +2945,29 @@ void server_msg__send_file_send_completed_status_to_single_client(client_t* clie
  *        "value" field exactly as given, together with the sender id and the server chat message id so
  *        the client can append the chunk to the right transfer.
  *
+ * @param client_t* receiver -> the client this chunk goes to
+ * @param client_t* sender -> the client that sends the file
  * @param char* chunk -> the already prepared chunk payload, sent as the "value" field
  * @param uint64 current_size -> size counter of the transfer so far, not written into the message
- * @param uint64 sender_id -> id of the client that sends the file
- * @param uint64 receiver_id -> index into g_clients_array of the client this chunk goes to
  * @param uint64 server_chat_message_id -> id of the chat message this file belongs to
  *
  * @return void
  */
-void server_msg__send_file_by_chunk_to_single_client(char* chunk, uint64 current_size, uint64 sender_id, uint64 receiver_id, uint64 server_chat_message_id)
+void server_msg__send_file_by_chunk_to_single_client(client_t* receiver, client_t* sender, char* chunk, uint64 current_size, uint64 server_chat_message_id)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_receiver = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_file_by_chunk_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("file_receive_chunk", &message);
 
-    client_receiver = &g_clients_array[receiver_id];
+    cJSON_AddStringToObject(message, "value", chunk);
+    cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
+    cJSON_AddNumberToObject(message, "server_chat_message_id", server_chat_message_id);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "file_receive_chunk");
-    cJSON_AddStringToObject(json_message_object1, "value", chunk);
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", sender_id);
-    cJSON_AddNumberToObject(json_message_object1, "server_chat_message_id", server_chat_message_id);
-
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_file_by_chunk_to_single_client", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_receiver->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text != NULL_POINTER)
-    {
-        ws_sendframe_txt(client_receiver->p_ws_connection, msg_text);
-        memorymanager__free((nuint)msg_text);
-    }
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
@@ -4749,53 +2978,27 @@ void server_msg__send_file_by_chunk_to_single_client(char* chunk, uint64 current
  *        receive type, the sender's client id and the server chat message id, so the client can close
  *        the right transfer and render it.
  *
- * @param data_for_file_send_thread_t* info -> the transfer descriptor, read for client_sender_id and
- *                                             server_chat_message_id
- * @param uint64 receiver_id -> index into g_clients_array of the client that gets the notification
+ * @param client_t* receiver -> the client that gets the notification
+ * @param data_for_file_send_thread_t* info -> the transfer descriptor, read for client_sender_id and server_chat_message_id
  * @param char* receive_type -> kind of transfer, sent as the "receive_type" field
  *
  * @return void
  */
-void server_msg__send_file_receive_completed_to_single_client(data_for_file_send_thread_t* info, uint64 receiver_id, char* receive_type)
+void server_msg__send_file_receive_completed_to_single_client(client_t* receiver, data_for_file_send_thread_t* info, char* receive_type)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client_receiver = 0;
-    client_t* client_sender = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_file_receive_completed_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("file_receive_completed", &message);
 
-    client_sender = &g_clients_array[info->client_sender_id];
-    client_receiver = &g_clients_array[receiver_id];
+    cJSON_AddStringToObject(message, "receive_type", receive_type);
+    cJSON_AddNumberToObject(message, "sender_id", (double)info->client_sender_id);
+    cJSON_AddNumberToObject(message, "server_chat_message_id", info->server_chat_message_id);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "file_receive_completed");
-    cJSON_AddStringToObject(json_message_object1, "receive_type", receive_type);
-    cJSON_AddNumberToObject(json_message_object1, "sender_id", client_sender->client_id);
-    cJSON_AddNumberToObject(json_message_object1, "server_chat_message_id", info->server_chat_message_id);
-
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    DBG_SERVER_MESSAGE log_info("%s %s %s", "server_msg__send_file_receive_completed_to_single_client", json_root_object1_string, "\n");
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client_receiver->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text != NULL_POINTER)
-    {
-        ws_sendframe_txt(client_receiver->p_ws_connection, msg_text);
-        memorymanager__free((nuint)msg_text);
-    }
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
@@ -4812,65 +3015,32 @@ void server_msg__send_file_receive_completed_to_single_client(data_for_file_send
  */
 void server_msg__send_video_stream_state_to_clients_in_same_channel(uint64 channel_id, boole is_active, uint64 streamer_client_id, cstring reason)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    uint64 i = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
-    client_t* client = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
     client_t* streamer = 0;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_state_to_clients_in_same_channel \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("video_stream_state", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_state");
-    cJSON_AddNumberToObject(json_message_object1, "channel_id", (double)channel_id);
-    cJSON_AddNumberToObject(json_message_object1, "streamer_client_id", (double)streamer_client_id);
-    cJSON_AddBoolToObject(json_message_object1, "is_active", is_active);
-    cJSON_AddStringToObject(json_message_object1, "reason", reason);
+    cJSON_AddNumberToObject(message, "channel_id", (double)channel_id);
+    cJSON_AddNumberToObject(message, "streamer_client_id", (double)streamer_client_id);
+    cJSON_AddBoolToObject(message, "is_active", is_active);
+    cJSON_AddStringToObject(message, "reason", reason);
 
     if (is_active == TRUE && streamer_client_id < g_server_settings.max_client_count)
     {
         streamer = &g_clients_array[streamer_client_id];
-        cJSON_AddStringToObject(json_message_object1, "source", streamer->video_stream_source);
-        cJSON_AddStringToObject(json_message_object1, "codec", streamer->video_stream_codec);
-        cJSON_AddNumberToObject(json_message_object1, "width", (double)streamer->video_stream_width);
-        cJSON_AddNumberToObject(json_message_object1, "height", (double)streamer->video_stream_height);
-        cJSON_AddNumberToObject(json_message_object1, "fps", (double)streamer->video_stream_fps);
+        cJSON_AddStringToObject(message, "source", streamer->video_stream_source);
+        cJSON_AddStringToObject(message, "codec", streamer->video_stream_codec);
+        cJSON_AddNumberToObject(message, "width", (double)streamer->video_stream_width);
+        cJSON_AddNumberToObject(message, "height", (double)streamer->video_stream_height);
+        cJSON_AddNumberToObject(message, "fps", (double)streamer->video_stream_fps);
     }
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_channel(root, channel_id, NULL_POINTER);
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
-        {
-            continue;
-        }
-
-        if (client->channel_id != channel_id)
-        {
-            continue;
-        }
-
-        size_of_allocated_message_buffer = 0;
-        msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-        if (msg_text != NULL_POINTER)
-        {
-            ws_sendframe_txt(client->p_ws_connection, msg_text);
-            memorymanager__free((nuint)msg_text);
-        }
-    }
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
+    cJSON_Delete(root);
 }
 
 /**
@@ -4883,213 +3053,131 @@ void server_msg__send_video_stream_state_to_clients_in_same_channel(uint64 chann
  */
 void server_msg__send_video_stream_offer_to_single_client(client_t* receiver, client_t* streamer)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_offer_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("video_stream_offer", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_offer");
-    cJSON_AddNumberToObject(json_message_object1, "streamer_client_id", (double)streamer->client_id);
-    cJSON_AddStringToObject(json_message_object1, "source", streamer->video_stream_source);
-    cJSON_AddStringToObject(json_message_object1, "codec", streamer->video_stream_codec);
-    cJSON_AddNumberToObject(json_message_object1, "width", (double)streamer->video_stream_width);
-    cJSON_AddNumberToObject(json_message_object1, "height", (double)streamer->video_stream_height);
-    cJSON_AddNumberToObject(json_message_object1, "fps", (double)streamer->video_stream_fps);
+    cJSON_AddNumberToObject(message, "streamer_client_id", (double)streamer->client_id);
+    cJSON_AddStringToObject(message, "source", streamer->video_stream_source);
+    cJSON_AddStringToObject(message, "codec", streamer->video_stream_codec);
+    cJSON_AddNumberToObject(message, "width", (double)streamer->video_stream_width);
+    cJSON_AddNumberToObject(message, "height", (double)streamer->video_stream_height);
+    cJSON_AddNumberToObject(message, "fps", (double)streamer->video_stream_fps);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, receiver->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(receiver->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief asks the streamer whether a member that joined the channel after the start may watch
  *
- * @param client_t* streamer -> the streamer
+ * @param client_t* receiver -> the streamer
  * @param client_t* newcomer -> the member that just arrived
  *
  * @return void
  */
-void server_msg__send_video_stream_viewer_request_to_single_client(client_t* streamer, client_t* newcomer)
+void server_msg__send_video_stream_viewer_request_to_single_client(client_t* receiver, client_t* newcomer)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_viewer_request_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("video_stream_viewer_request", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_viewer_request");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)newcomer->client_id);
-    cJSON_AddStringToObject(json_message_object1, "username", newcomer->username);
+    cJSON_AddNumberToObject(message, "client_id", (double)newcomer->client_id);
+    cJSON_AddStringToObject(message, "username", newcomer->username);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, streamer->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(streamer->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief tells the streamer that a viewer connected or disconnected, so it can count viewers and send a keyframe for a new one
  *
- * @param client_t* streamer -> the streamer
+ * @param client_t* receiver -> the streamer
  * @param uint64 viewer_client_id -> the viewer
  * @param boole is_watching -> TRUE when it connected, FALSE when it dropped out
  *
  * @return void
  */
-void server_msg__send_video_stream_viewer_state_to_single_client(client_t* streamer, uint64 viewer_client_id, boole is_watching)
+void server_msg__send_video_stream_viewer_state_to_single_client(client_t* receiver, uint64 viewer_client_id, boole is_watching)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_viewer_state_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("video_stream_viewer_state", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_viewer_state");
-    cJSON_AddNumberToObject(json_message_object1, "client_id", (double)viewer_client_id);
-    cJSON_AddBoolToObject(json_message_object1, "is_watching", is_watching);
+    cJSON_AddNumberToObject(message, "client_id", (double)viewer_client_id);
+    cJSON_AddBoolToObject(message, "is_watching", is_watching);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, streamer->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(streamer->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief asks the streamer for a keyframe on behalf of a viewer that lost frames
  *
- * @param client_t* streamer -> the streamer
+ * @param client_t* receiver -> the streamer
  *
  * @return void
  */
-void server_msg__send_video_stream_keyframe_request_to_single_client(client_t* streamer)
+void server_msg__send_video_stream_keyframe_request_to_single_client(client_t* receiver)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_keyframe_request_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("video_stream_keyframe_request", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_keyframe_request");
-
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
-
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, streamer->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
-    {
-        return;
-    }
-
-    ws_sendframe_txt(streamer->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
 }
 
 /**
  * @brief tells a client why its stream request was refused ("disabled", "channel_disabled", "busy", "not_allowed", "no_stream", "revoked")
  *
- * @param client_t* client -> the client that asked
+ * @param client_t* receiver -> the client that asked
  * @param cstring reason -> the short wire reason
  *
  * @return void
  */
-void server_msg__send_video_stream_refused_to_single_client(client_t* client, cstring reason)
+void server_msg__send_video_stream_refused_to_single_client(client_t* receiver, cstring reason)
 {
-    char* json_root_object1_string = 0;
-    int64 size_of_allocated_message_buffer = 0;
-    char* msg_text = 0;
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object1 = 0;
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
 
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", "server_msg__send_video_stream_refused_to_single_client \n");
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    json_root_object1 = cJSON_CreateObject();
-    json_message_object1 = cJSON_CreateObject();
+    root = _server_msg_internal__new_message("video_stream_refused", &message);
 
-    cJSON_AddStringToObject(json_message_object1, "type", "video_stream_refused");
-    cJSON_AddStringToObject(json_message_object1, "reason", reason);
+    cJSON_AddStringToObject(message, "reason", reason);
 
-    cJSON_AddItemToObject(json_root_object1, "message", json_message_object1);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
+}
 
-    json_root_object1_string = cJSON_PrintUnformatted(json_root_object1);
-
-    size_of_allocated_message_buffer = 0;
-    msg_text = base__encrypt_cstring_and_convert_to_base64(json_root_object1_string, &size_of_allocated_message_buffer, client->dh_shared_secret);
-
-    base__free_json_message(json_root_object1, json_root_object1_string);
-
-    if (msg_text == NULL_POINTER)
+// Send a URL lookup result only to the client that requested it. This uses the
+// normal metadata encryption shared by that client and this server.
+void server_msg__send_url_resolved_to_single_client(client_t* client, const char* request_id,
+    const char* url, const cJSON* result)
+{
+    cJSON* root = cJSON_CreateObject();
+    cJSON* message = result != NULL_POINTER ? cJSON_Duplicate(result, TRUE) : cJSON_CreateObject();
+    cJSON_AddItemToObject(root, "message", message);
+    cJSON_AddStringToObject(message, "type", "url_resolved");
+    cJSON_AddStringToObject(message, "request_id", request_id);
+    if (result == NULL_POINTER)
     {
-        return;
+        cJSON_AddStringToObject(message, "url", url);
+        cJSON_AddStringToObject(message, "status", g_server_settings.allow_link_previews ? "unavailable" : "disabled");
     }
-
-    ws_sendframe_txt(client->p_ws_connection, msg_text);
-
-    memorymanager__free((nuint)msg_text);
+    _server_msg_internal__send_json_to_client(client, root);
+    cJSON_Delete(root);
 }

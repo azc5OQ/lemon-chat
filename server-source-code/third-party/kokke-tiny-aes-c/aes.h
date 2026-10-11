@@ -3,6 +3,7 @@
 #define _AES_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 // #define the macros below to 1/0 to enable/disable the mode of operation.
 //
@@ -46,6 +47,14 @@ struct AES_ctx
 #if (defined(CBC) && (CBC == 1)) || (defined(CTR) && (CTR == 1))
 	uint8_t Iv[AES_BLOCKLEN];
 #endif
+#if defined(CTR) && (CTR == 1)
+    // AES makes 16 bytes of encryption data at a time. If a call uses only some
+    // of them, keep the rest here for the next call. CtrOffset says how many
+    // have been used; 16 means a new block is needed. Iv holds the starting
+    // value that will be used to make that next block.
+    uint8_t CtrBlock[AES_BLOCKLEN];
+    size_t CtrOffset;
+#endif
 };
 
 void AES_init_ctx(struct AES_ctx *ctx, const uint8_t *key);
@@ -58,8 +67,8 @@ void AES_ctx_set_iv(struct AES_ctx *ctx, const uint8_t *iv);
 // buffer size is exactly AES_BLOCKLEN bytes;
 // you need only AES_init_ctx as IV is not used in ECB
 // NB: ECB is considered insecure for most uses
-void AES_ECB_encrypt(struct AES_ctx *ctx, uint8_t *buf);
-void AES_ECB_decrypt(struct AES_ctx *ctx, uint8_t *buf);
+void AES_ECB_encrypt(const struct AES_ctx *ctx, uint8_t *buf);
+void AES_ECB_decrypt(const struct AES_ctx *ctx, uint8_t *buf);
 
 #endif // #if defined(ECB) && (ECB == !)
 
@@ -76,11 +85,13 @@ void AES_CBC_decrypt_buffer(struct AES_ctx *ctx, uint8_t *buf, uint32_t length);
 #if defined(CTR) && (CTR == 1)
 
 // Same function for encrypting as for decrypting.
-// IV is incremented for every block, and used after encryption as XOR-compliment for output
-// Suggesting https://en.wikipedia.org/wiki/Padding_(cryptography)#PKCS7 for padding scheme
+// Increase the IV after making each 16-byte block of encryption data, and keep
+// any unused bytes for the next call. Encrypting a message one byte at a time
+// therefore gives the same result as encrypting it all in one call. The message
+// does not need extra bytes added to make its length a multiple of 16.
 // NOTES: you need to set IV in ctx with AES_init_ctx_iv() or AES_ctx_set_iv()
 //        no IV should ever be reused with the same key
-void AES_CTR_xcrypt_buffer(struct AES_ctx *ctx, uint8_t *buf, uint32_t length);
+void AES_CTR_xcrypt_buffer(struct AES_ctx *ctx, uint8_t *buf, size_t length);
 
 #endif // #if defined(CTR) && (CTR == 1)
 

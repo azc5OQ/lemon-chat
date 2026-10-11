@@ -9,12 +9,14 @@ var SERVER_SETTINGS_FIELDS = [
     { key: "display_country_flags", id: "server-settings-general-display-flags-checkbox", kind: "bool", tab: "general" },
     { key: "hide_admin_country_flag", id: "server-settings-general-hide-admin-flag-checkbox", kind: "bool", tab: "general" },
     { key: "enable_audio", id: "server-settings-general-enable-audio", kind: "bool", tab: "general" },
+    { key: "audio_connections", id: "server-settings-general-audio-connections", kind: "select", fallback: "both", tab: "general" },
     { key: "enable_music_bot_audio", id: "server-settings-general-enable-music-bot-audio-checkbox", kind: "bool", tab: "general" },
     { key: "is_video_streaming_active", id: "server-settings-general-enable-video-streaming-checkbox", kind: "bool", tab: "general" },
     { key: "hide_clients_in_password_channels", id: "server-settings-general-hide-clients-in-password-protected-channels", kind: "bool", tab: "general" },
     { key: "allow_temp_channels", id: "server-settings-general-allow-temp-channels-checkbox", kind: "bool", tab: "general" },
     { key: "allow_typing_indicator", id: "server-settings-general-allow-typing-indicator-checkbox", kind: "bool", tab: "general" },
     { key: "allow_client_renames", id: "server-settings-general-allow-renames-checkbox", kind: "bool", tab: "general" },
+    { key: "allow_link_previews", id: "server-settings-general-link-previews-checkbox", kind: "bool", tab: "general" },
     { key: "is_sending_text_to_idle_clients_allowed", id: "server-settings-general-allow-text-to-idle-clients-checkbox", kind: "bool", tab: "general" },
     { key: "allow_private_messages", id: "server-settings-general-allow-private-messages-checkbox", kind: "bool", tab: "general" },
     { key: "allow_file_uploads", id: "server-settings-general-allow-file-uploads-checkbox", kind: "bool", tab: "general" },
@@ -68,6 +70,10 @@ function server_settings_tab__apply_server_settings_values_to_tab(values)
         {
             element.checked = (values[field.key] == true);
         }
+        else if (field.kind == "select")
+        {
+            element.value = (typeof values[field.key] === "string") ? values[field.key] : field.fallback;
+        }
         else
         {
             element.value = (typeof values[field.key] === "number") ? values[field.key] : field.fallback;
@@ -102,6 +108,10 @@ function server_settings_tab__collect_server_settings_from_tab(tab)
         {
             settings[field.key] = element.checked;
         }
+        else if (field.kind == "select")
+        {
+            settings[field.key] = element.value;
+        }
         else
         {
             let number = parseInt(element.value);
@@ -110,6 +120,24 @@ function server_settings_tab__collect_server_settings_from_tab(tab)
     }
 
     return settings;
+}
+
+/**
+ * @brief the audio switch shows or hides the "audio connections" select below it
+ *
+ * @return void
+ */
+function server_settings_tab__refresh_audio_connections_row_visibility()
+{
+    let audio_checkbox = document.getElementById("server-settings-general-enable-audio");
+    let row = document.getElementById("server-settings-general-audio-connections-row");
+
+    if (audio_checkbox == null || row == null)
+    {
+        return;
+    }
+
+    row.style.display = (audio_checkbox.checked == true) ? "" : "none";
 }
 
 /**
@@ -143,9 +171,11 @@ function server_settings_tab__apply_server_policy_fields(data)
     }
 
     server_settings_tab__apply_rename_policy_to_ui();
+    link_previews__apply_policy();
     chat_files__apply_file_upload_policy_to_ui();
     chat_files__apply_chat_picture_policy_to_ui();
     video__apply_policy_to_ui();
+    audio_transport__select_mode();
 }
 
 /**
