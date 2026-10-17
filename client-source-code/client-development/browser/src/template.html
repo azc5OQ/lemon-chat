@@ -31,15 +31,8 @@
     </style>
 
 
-    <!-- non-default themes start DISABLED (media query that never matches) so the browser never
-         applies them at first paint. without this all four sheets apply for the split second before
-         apply_theme() runs, and the last one (oldschool) wins -> a flash of the wrong theme on every
-         launch. apply_theme() toggles this media attribute to switch themes. -->
-    <!-- light theme style -->
-    <style id="style-theme-light" class="style-theme-html-element" media="(max-width: 1px)">
-/* @@INCLUDE: styles/theme-light.style @@ */
-        </style>
-
+    <!-- Other themes stay disabled until selected, so they do not flash on screen
+         while the page loads. apply_theme() changes the media attribute. -->
 
     <!-- default mobile theme style -->
     <style id="style-theme-default-mobile" class="style-theme-html-element" media="(max-width: 1px)">
@@ -47,15 +40,24 @@
     </style>
 
 
-    <!-- old school theme style -->
-    <style id="style-theme-oldschool" class="style-theme-html-element" media="(max-width: 1px)">
-/* @@INCLUDE: styles/theme-oldschool.style @@ */
+    <!-- Hybrid-v1 keeps its base panels, with updated menus and message controls. -->
+    <style id="style-theme-hybrid" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/themes/hybrid-base.css @@ */
+/* @@INCLUDE: styles/themes/hybrid.css @@ */
     </style>
 
+    <!-- These skins change how Lemon Chat looks while keeping its usual controls. -->
+    <style id="style-theme-hybrid-v2" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/themes/hybrid-v2.css @@ */
+    </style>
 
-    <!-- old school variant theme style (a clone of old school, to diverge from over time) -->
-    <style id="style-theme-oldschool-variant" class="style-theme-html-element" media="(max-width: 1px)">
-/* @@INCLUDE: styles/theme-oldschool-variant.style @@ */
+    <style id="style-theme-aero" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/themes/aero.css @@ */
+    </style>
+
+    <style id="style-theme-ozone" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-default.style @@ */
+/* @@INCLUDE: styles/themes/ozone.css @@ */
     </style>
 
 
@@ -82,6 +84,7 @@
     <style id="style-layout">
 /* @@INCLUDE: styles/layout.style @@ */
 /* @@INCLUDE: styles/link-previews.style @@ */
+/* @@INCLUDE: styles/server-info.style @@ */
     </style>
 
     <script type="text/javascript">
@@ -100,10 +103,12 @@
 /* @@INCLUDE: scripts/app/audio.js @@ */
 /* @@INCLUDE: scripts/app/sounds.js @@ */
 /* @@INCLUDE: scripts/app/messages.js @@ */
+/* @@INCLUDE: scripts/app/theme-effects.js @@ */
 /* @@INCLUDE: scripts/app/ui.js @@ */
 /* @@INCLUDE: scripts/app/chat-files.js @@ */
 /* @@INCLUDE: scripts/app/android-host.js @@ */
 /* @@INCLUDE: scripts/app/connection.js @@ */
+/* @@INCLUDE: scripts/app/head-menu.js @@ */
 /* @@INCLUDE: scripts/app/workers.js @@ */
 /* @@INCLUDE: scripts/app/console-log.js @@ */
 /* @@INCLUDE: scripts/app/keys.js @@ */
@@ -116,6 +121,7 @@
 /* @@INCLUDE: scripts/app/video-transport.js @@ */
 /* @@INCLUDE: scripts/app/video.js @@ */
 /* @@INCLUDE: scripts/app/server-settings-tab.js @@ */
+/* @@INCLUDE: scripts/app/server-info.js @@ */
 /* @@INCLUDE: scripts/app/dispatch.js @@ */
 /* @@INCLUDE: scripts/app/main.js @@ */
     </script>
@@ -125,7 +131,9 @@
     </script>
 
 </head>
-<body>
+<!-- the class says that no connected interface is shown yet: connection.js removes it on login and sets it again on a
+     disconnect; a theme sheet uses it for the page behind the connect window (hybrid) -->
+<body class="is-connected-ui-hidden">
 
     <textarea id="textarea-log" style="display: none;">
      </textarea>
@@ -175,6 +183,41 @@
                 <div id="server-settings-tab-general-settings">
                     <div id="server-settings-general-settings-container">
                         <p class="server-settings-general-header">general settings</p>
+
+                        <section id="server-settings-server-info" class="server-info-summary">
+                            <dl>
+                                <div><dt>Used slots</dt><dd data-admin-server-slots>Unavailable</dd></div>
+                                <div><dt>Uptime</dt><dd data-admin-server-uptime>Unavailable</dd></div>
+                            </dl>
+                            <p class="server-settings-general-subheader">server banner</p>
+                            <img data-admin-server-banner class="server-info-banner" alt="Server banner preview" hidden>
+                            <div class="server-banner-actions">
+                                <button type="button" id="server-banner-upload-button">Upload banner</button>
+                                <button type="button" id="server-banner-remove-button">Remove banner</button>
+                                <input type="file" id="server-banner-file-input" accept="image/png,image/jpeg,image/webp" hidden>
+                            </div>
+                            <p>PNG, JPEG or WebP. Large images are resized to fit.</p>
+                            <p id="server-banner-status" role="status"></p>
+                        </section>
+
+                        <p class="server-settings-general-subheader">information shared with users</p>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-publish-uptime">
+                            <span>share server uptime</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-publish-slots">
+                            <span>share occupied and total slots</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-publish-banner">
+                            <span>show the server banner</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-publish-features">
+                            <span>share the public server settings list</span>
+                        </label>
+                        <p>Hidden information is omitted from public replies. Clients still receive the connection and permission settings needed to work.</p>
 
                         <p class="server-settings-general-subheader">clients</p>
                         <label class="server-settings-general-row">
@@ -284,6 +327,10 @@
 
                         <p class="server-settings-general-subheader">connections and security</p>
                         <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>maximum simultaneous logins (1-64)</span>
+                            <input type="number" min="1" max="64" step="1" id="server-settings-general-concurrent-logins-input">
+                        </label>
+                        <label class="server-settings-general-row server-settings-general-row-number">
                             <span>minimum rsa key size in bits (2048-8192, clients with weaker keys are dropped)</span>
                             <input type="number" min="2048" max="8192" step="1" id="server-settings-general-minimum-rsa-bits-input">
                         </label>
@@ -300,8 +347,12 @@
                             <span>identity takeover: a new connect with an identity of user that is already online disconnects that user (default off: the same identity is refused)</span>
                         </label>
                         <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-general-connection-check-checkbox">
+                            <span>Disconnect clients when keep-alive messages time out</span>
+                        </label>
+                        <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-websocket-ping-checkbox">
-                            <span>additional ping check: the server pings every socket every 15 s and drops one that misses 4 pings (heartbeat check stays either way)</span>
+                            <span>additional WebSocket ping check: disconnect after 4 unanswered pings (independent of the keep-alive setting above)</span>
                         </label>
 
                         <input type="button" value="save server settings" id="save-server-settings-button">
@@ -403,6 +454,20 @@
 
     <div id="body-container">
         <div id="communication-system-head-menu">
+            <!-- the menus at the left end (head-menu.js): "connections" opens the connect window or ends the connection, "bookmarks" lists the saved servers -->
+            <div id="head-menu-left-group">
+                <div class="head-menu-dropdown" id="connections-menu">
+                    <input type="button" class="head-menu-dropdown-button" id="connections-menu-button" value="connections">
+                    <div class="head-menu-dropdown-list" id="connections-menu-list" style="display: none;">
+                        <p class="head-menu-dropdown-item" id="connections-menu-connect">connect</p>
+                        <p class="head-menu-dropdown-item" id="connections-menu-disconnect">disconnect</p>
+                    </div>
+                </div>
+                <div class="head-menu-dropdown" id="bookmarks-menu">
+                    <input type="button" class="head-menu-dropdown-button" id="bookmarks-menu-button" value="bookmarks">
+                    <div class="head-menu-dropdown-list" id="bookmarks-menu-list" style="display: none;"></div>
+                </div>
+            </div>
             <input type="button" id="clear-chat-button">
             <input type="button" id="hide-chat-button">
             <input type="button" id="show-admin-password-entry">
@@ -420,6 +485,12 @@
                             <span class="local-settings-hint">draws each person's picture beside their messages</span>
                         </span>
                         <input type="checkbox" id="local-settings-show-avatars">
+                    </label>
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">disable custom fonts in chat messages</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-theme-chat-formatting">
                     </label>
                     <label class="local-settings-row">
                         <span class="local-settings-text">
@@ -456,6 +527,13 @@
                         </span>
                         <input type="checkbox" id="local-settings-country-flags">
                     </label>
+                    <label class="local-settings-row">
+                        <span class="local-settings-text">
+                            <span class="local-settings-label">theme cursor</span>
+                            <span class="local-settings-hint">lets a theme replace the mouse cursor and draw a glow around it (ozone does); off keeps the system cursor</span>
+                        </span>
+                        <input type="checkbox" id="local-settings-custom-cursor">
+                    </label>
                     <div class="local-settings-row local-settings-row-select">
                         <span class="local-settings-text">
                             <span class="local-settings-label">microphone</span>
@@ -479,15 +557,16 @@
                         </span>
                         <input type="button" id="local-settings-ptt-key" value="Q">
                     </div>
-                    <div class="local-settings-row local-settings-row-select">
+                    <div class="local-settings-row local-settings-row-select" id="local-settings-audio-connection-row">
                         <span class="local-settings-text">
-                            <span class="local-settings-label">audio connection</span>
-                            <span class="local-settings-hint">how voice reaches the server; the server decides which connections it allows</span>
+                            <span class="local-settings-label">audio and video connection</span>
+                            <span class="local-settings-hint">the server decides which connections it allows</span>
                         </span>
-                        <select id="local-settings-audio-connection">
-                            <option value="webrtc">prefer datachannel (webrtc)</option>
-                            <option value="websocket">prefer websocket</option>
+                        <select id="local-settings-audio-connection" aria-describedby="local-settings-webrtc-note">
+                            <option value="webrtc">Prefer WebRTC DataChannel (not peer-to-peer)</option>
+                            <option value="websocket">Prefer WebSocket</option>
                         </select>
+                        <p id="local-settings-webrtc-note" class="local-settings-hint">Lemon Chat uses only the DataChannel part of the WebRTC stack. It works like a WebSocket over UDP. The server acts as the other WebRTC peer, so users do not connect directly to each other or share their IP addresses through WebRTC. With either connection, the server relays your encrypted audio without having the keys to decrypt it. Both WebRTC DataChannel and WebSocket are available as an experiment to see which works better for audio.</p>
                     </div>
                     <!-- the device list fills once the microphone permission has been granted -->
                     <div class="local-settings-row local-settings-row-select" id="local-settings-mic-device-row" style="display: none;">
@@ -531,21 +610,21 @@
                         </span>
                         <input type="checkbox" id="local-settings-file-logging">
                     </label>
-                    <label class="local-settings-row local-settings-row-strip">
+                    <label class="local-settings-row local-settings-row-member-list">
                         <span class="local-settings-text">
                             <span class="local-settings-label">people on the side</span>
                             <span class="local-settings-hint">moves the people strip from the top to the left edge</span>
                         </span>
-                        <input type="checkbox" id="local-settings-strip-vertical">
+                        <input type="checkbox" id="local-settings-member-list-vertical">
                     </label>
-                    <label class="local-settings-row local-settings-row-strip">
+                    <label class="local-settings-row local-settings-row-member-list">
                         <span class="local-settings-text">
                             <span class="local-settings-label">only my channel</span>
                             <span class="local-settings-hint">hides everyone who is not in the channel you are in</span>
                         </span>
-                        <input type="checkbox" id="local-settings-strip-neighbors">
+                        <input type="checkbox" id="local-settings-member-list-neighbors">
                     </label>
-                    <label class="local-settings-row local-settings-row-strip">
+                    <label class="local-settings-row local-settings-row-member-list">
                         <span class="local-settings-text">
                             <span class="local-settings-label">show who has audio off</span>
                             <span class="local-settings-hint">marks people who cannot receive audio at all, so you know before you speak</span>
@@ -564,14 +643,15 @@
             </div>
             <input type="button" id="choose-theme-button" value="theme">
             <div id="choose-theme-button-list">
-                <p class='choose-theme-item' data-name="default" data-mobile="false">default</p>
-                <p class='choose-theme-item' data-name="light-theme" data-mobile="false">light</p>
-                <p class='choose-theme-item' data-name="oldschool" data-mobile="false">old school</p>
-                <p class='choose-theme-item' data-name="oldschool-variant" data-mobile="false">old school variant</p>
-                <p class='choose-theme-item' data-name="termix" data-mobile="false">termix</p>
-                <p class='choose-theme-item' data-name="default-mobile" data-mobile="true">mobile</p>
-                <p class='choose-theme-item' data-name="simpledark" data-mobile="true">simpledark</p>
-                <p class='choose-theme-item' data-name="bluebell" data-mobile="true">bluebell</p>
+                <p class='choose-theme-item' data-name="default" data-mobile="false">Default</p>
+                <p class='choose-theme-item' data-name="hybrid" data-mobile="false">Hybrid-v1</p>
+                <p class='choose-theme-item' data-name="hybrid-v2" data-mobile="false">Hybrid V2</p>
+                <p class='choose-theme-item' data-name="aero" data-mobile="false">Aero</p>
+                <p class='choose-theme-item' data-name="ozone" data-mobile="false">Ozone</p>
+                <p class='choose-theme-item' data-name="termix" data-mobile="false">Termix</p>
+                <p class='choose-theme-item' data-name="default-mobile" data-mobile="true">Mobile</p>
+                <p class='choose-theme-item' data-name="simpledark" data-mobile="true">Simpledark</p>
+                <p class='choose-theme-item' data-name="bluebell" data-mobile="true">Bluebell</p>
             </div>
             <input type="button" id="layout-edit-button" value="layout" title="re-arrange the panels; click again to lock them in place">
             <input type="button" id="switch-identity-button" value="import identity" title="import identity: load an identity file or passphrase, then reconnect as that identity">
@@ -601,7 +681,10 @@
         </div>
         <div id="verification-system" style="visibility: hidden;">
             <div style="height: 25vmin;"></div>
-            <div id="container-2" style="min-width: 330px;">
+            <div id="container-2" style="min-width: 520px;">
+                <!-- the title bar that makes the form a window: dragging by it comes from main.js, the close button from head-menu.js;
+                     the stylesheets hide it where the form stays a page of its own (android, the member list themes) -->
+                <div id="menu-bar-container"><p class="dialog-title">connection details</p><div class="close-button" id="connect-window-close-button"></div></div>
                 <!-- saved servers: picking one fills the address and port below. android hides the
                      whole connect form, so this rides with it -->
                 <div id="server-bookmarks-container">
@@ -612,34 +695,37 @@
                     <input type="button" class="button-1" id="server-bookmark-save" value="save">
                     <input type="button" class="button-1" id="server-bookmark-delete" value="delete">
                 </div>
-                <div id="connect-form-sub-container-1">
-                    <div class="text-input-container">
-                        <input type="text" disabled class="text-input-pretty" value="address">
+                <!-- the form, in framed sections. the explanation of a section is its title attribute, which the browser shows
+                     on hover (as the server info does). the server section holds the address and port grid, which main.js shows
+                     on a page without written-in server details and hides on android and on a page with them (the window shows
+                     it filled there, with the page's keys as rows, all of which the user may change, connection.js). ui.js appends a row per key to
+                     the keys grid, keys.js reads those inputs. android hides every section through the stylesheet and keeps its
+                     own cards below -->
+                <fieldset class="connect-section" id="connect-identity-section" title="your identity is an RSA key pair; the server recognises you by it. a new one is made at random on first start. use the toolbar to load a saved identity or to save this one. the value shown is a fingerprint: the first twelve hex digits of the SHA-256 hash of its public key">
+                    <legend>identity</legend>
+                    <p class="connect-section-text" id="connect-identity-summary">making a key pair ...</p>
+                </fieldset>
+                <fieldset class="connect-section" id="connect-server-section">
+                    <legend>server</legend>
+                    <div id="connect-form-grid">
+                        <label class="connect-window-label" for="input-ip-address">address</label>
+                        <div class="connect-window-field"><input type="text" id="input-ip-address" class="text-input-pretty" value="127.0.0.1"></div>
+                        <label class="connect-window-label" for="input-port-number">port</label>
+                        <div class="connect-window-field"><input type="text" id="input-port-number" class="text-input-pretty" value="1111"></div>
                     </div>
-                    <div class="text-input-container">
-                        <input type="text" disabled class="text-input-pretty" value="port">
+                </fieldset>
+                <fieldset class="connect-section" id="connect-keys-section" title="a server can require one or more keys, which its admin hands out. each key has a type; without the right keys the login is refused. a key works as a password and also as one more encryption layer on top of the existing encryption. keys are optional, but they add security">
+                    <legend>login keys</legend>
+                    <div id="connect-keys-grid"></div>
+                    <div class="connect-section-actions">
+                        <input type="button" class="button-1" id="add-key-button" value="add key">
                     </div>
-                </div>
-                <div id="connect-form-sub-container-2">
-                    <div class="text-input-container">
-                        <input type="text" id="input-ip-address" class="text-input-pretty" value="127.0.0.1">
-                    </div>
-                    <div class="text-input-container">
-                        <input type="text" id="input-port-number" class="text-input-pretty" value="1111">
-                    </div>
-                </div>
-                <div></div>
+                </fieldset>
                 <div id="another-buttons-container">
                     <div id="another-buttons-sub-container" style="display: none;">
-                        <div style="display: inline-block;text-align: left;vertical-align: top;width: 63px;">
-                            <input type="button" class="button-1" id="add-key-button" value="add">
-                        </div>
-                        <div style="display: inline-block;text-align: left; width: 177px;">
-                            <input type="button" class="button-1" id="connect-button" value="connect">
-                        </div>
-                        <div style="display: inline-block;text-align: left;">
-                            <input type="button" class="button-1" id="import-identity-button" value="">
-                        </div>
+                        <!-- the old icon button stays for the scripts that toggle it; the identity section has the text buttons -->
+                        <input type="button" class="button-1" id="import-identity-button" value="" style="display: none;">
+                        <input type="button" class="button-1" id="connect-button" value="connect">
                     </div>
                     <!-- one section: what the connection is doing, and the detail behind it. the
                          wrapper is what lets the mobile themes draw them as a single panel -->
@@ -647,7 +733,7 @@
                         <div id="another-buttons-sub-loading-container">
                             <div id="another-buttons-loading-container" style="width: 64px; height: 40px; display: inline-block; background-repeat: no-repeat; display: inline-block;">
                             </div>
-                            <div style="height: 32px; top: 5px; color: white; font-family: sans-serif; display: inline-block; vertical-align: top;">
+                            <div style="height: 32px; top: 5px; color: inherit; font-family: sans-serif; display: inline-block; vertical-align: top;">
                                 <p id="another-buttons-loading-container-p">waiting for chat app .....</p>
                             </div>
                         </div>
@@ -792,6 +878,15 @@
                 <input type="button" id="video-stream-choice-cancel" value="cancel">
             </div>
         </div>
+        <!-- video streaming (video.js): the second question of a start, "stream the sound too?", asked before the browser's picker opens -->
+        <div id="video-stream-sound-choice-container" style="display: none;">
+            <div id="video-stream-sound-choice">
+                <p id="video-stream-sound-choice-title">stream the sound too?</p>
+                <input type="button" id="video-stream-sound-choice-with" value="with sound">
+                <input type="button" id="video-stream-sound-choice-without" value="without sound">
+                <input type="button" id="video-stream-sound-choice-cancel" value="cancel">
+            </div>
+        </div>
         <!-- video streaming (video.js): the movable, resizable window; the streamer's preview or a viewer's picture -->
         <div id="video-stream-popup" style="display: none;">
             <div id="video-stream-popup-header">
@@ -809,6 +904,8 @@
                 <input type="button" id="video-stream-disconnect-button" value="disconnect" style="display: none;">
                 <input type="button" id="video-stream-stop-button" value="stop streaming" style="display: none;">
                 <input type="button" id="video-stream-fullscreen-button" value="fullscreen">
+                <label id="video-stream-sound-volume-label" title="the volume of the stream's sound" style="display: none;">sound <input type="range" id="video-stream-sound-volume" min="0" max="100" value="100"></label>
+                <label id="video-stream-monitor-label" title="play the sound of the file here as well" style="display: none;"><input type="checkbox" id="video-stream-monitor-checkbox"> hear my stream</label>
                 <span id="video-stream-viewer-count"></span>
             </div>
         </div>
@@ -1020,6 +1117,22 @@
         </div>
     
 
+        <dialog id="server-info-dialog" aria-labelledby="server-info-title">
+            <header id="server-info-header">
+                <h2 id="server-info-title" class="dialog-title">Server info</h2>
+                <button type="button" id="server-info-close-button" class="close-button" aria-label="Close server info" title="Close server info"></button>
+            </header>
+            <div id="server-info-body">
+                <section class="server-info-summary">
+                    <dl>
+                        <div data-server-info-field="slots" class="server-info-help" title="How many client slots are occupied, out of the server's limit."><dt class="server-info-help-label" tabindex="0" title="How many client slots are occupied, out of the server's limit.">Used slots</dt><dd data-server-slots>Unavailable</dd></div>
+                        <div data-server-info-field="uptime" class="server-info-help" title="How long this server has been running since its last start."><dt class="server-info-help-label" tabindex="0" title="How long this server has been running since its last start.">Uptime</dt><dd data-server-uptime>Unavailable</dd></div>
+                    </dl>
+                </section>
+                <dl id="server-info-features" data-server-info-field="features"></dl>
+            </div>
+        </dialog>
+
         <div id="client-info-container">
             <div id="client-info-enter">
                 <div id="menu-bar-container">
@@ -1103,156 +1216,46 @@
         </div>
 
 
-        <div id="musicbot-management-background-container"
-            style="position: absolute;
-                    width: 100%;
-                    height: 100%;
-                    z-index: 1;
-                    top: 0px;
-                    display: none;
-                    z-index: 5;">
-
-            <!-- Music Player Popup Container -->
-            <div style="
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                width: 90%;
-                max-width: 600px;
-                background: #ffffff;
-                border-radius: 12px;
-                box-shadow: 0 15px 40px rgba(0,0,0,0.3);
-                font-family: Arial, sans-serif;
-                ">
-
-                <!-- Header -->
-                <div style="
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    position: relative;
-                    padding: 14px 16px;
-                    border-bottom: 1px solid #e5e5e5;
-                    ">
-                    <div style="font-size: 18px; font-weight: bold;">
-                    🎵 Music Player
-                    </div>
-
-                        <!-- Cancel Button -->
-                        <button id="musicbot-management-close-button" style="
-                            position: absolute;
-                            right: 14px;
-                            top: 14px;
-                            background: none;
-                            border: none;
-                            font-size: 20px;
-                            cursor: pointer;
-                        ">
-                        ✖
-                        </button>
-                    </div>
-
-                    <!-- Table Section -->
-                    <div style="padding: 16px;">
-
-                        <table style=" width: 100%;border-collapse: collapse;">
-                            <thead>
-                                <tr style="background: #f6f6f6;">
-                                <th style="text-align:left; padding:10px; font-size:14px;">Song Name</th>
-                                <th style="text-align:right; padding:10px; font-size:14px;">Duration (s)</th>
-                                <th style="text-align:right; padding:10px; font-size:14px;">X</th>
-                                </tr>
-                            </thead>
-
-                            <tbody id="musicbot-management-background-container-tbody">
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Footer / Upload -->
-                    <div style="
-                        display: flex;
-                        justify-content: flex-end;
-                        align-items: center;
-                        padding: 14px 16px;
-                        border-top: 1px solid #e5e5e5;
-                        gap: 10px;
-                    ">
-
-                        <input id="musicbot-management-background-container-file-input" onclick="this.value=null;" type="file" accept="audio/mpeg" style="
-                        font-size: 14px;
-                        ">
-
-                        <button id="musicbot-management-background-container-upload-button-confirm" style="
-                        padding: 8px 14px;
-                        background: #1e88e5;
-                        color: white;
-                        border: none;
-                        border-radius: 6px;
-                        font-size: 14px;
-                        cursor: pointer;
-                        ">
-                        Confirm
-                        </button>
-
-                    </div>
+        <!-- music bot dialog: the song list of the selected music bot and the upload of a new song. it has the
+             same structure as the other dialogs (overlay container, dialog box, menu bar with title and close
+             button), so the shared rules in layout.style and the theme files paint it like the other dialogs,
+             and main.js centers it on open and lets it be dragged by its title bar. the ids of the elements
+             that scripts use are unchanged -->
+        <div id="musicbot-management-background-container">
+            <div id="musicbot-management-dialog">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Music Player</p>
+                    <div class="close-button" id="musicbot-management-close-button"></div>
+                </div>
+                <div id="musicbot-management-song-list-container">
+                    <table id="musicbot-management-song-table">
+                        <thead>
+                            <tr>
+                                <th class="musicbot-song-name-cell">song name</th>
+                                <th class="musicbot-song-duration-cell">duration (s)</th>
+                                <th class="musicbot-song-remove-cell"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="musicbot-management-background-container-tbody">
+                        </tbody>
+                    </table>
+                </div>
+                <div id="musicbot-management-upload-container">
+                    <input id="musicbot-management-background-container-file-input" onclick="this.value=null;" type="file" accept="audio/mpeg">
+                    <input type="button" id="musicbot-management-background-container-upload-button-confirm" class="button-1" value="confirm">
                 </div>
             </div>
-
-                <!-- Upload Progress Overlay -->
-                <div id="upload-progress-overlay" style="
-                    top: 40%;
-                    position: absolute;
-                    width: 320px;
-                    left: calc(50% - 160px);
-                    /* background: #eef3f7; */
-                    border-radius: 10px;
-                    box-shadow: 0 12px 30px rgba(0,0,0,0.25);
-                    padding: 18px 20px;
-                    font-family: Arial, sans-serif;
-                    display: none;
-                    z-index: 5;
-                ">
-    
-                    <div style="
-                        font-size: 14px;
-                        color: #b8b8ff;
-                        margin-bottom: 10px;
-                    ">
-                        sending ...
-                    </div>
-    
-                    <!-- Progress Bar Background -->
-                    <div style="
-                        width: 100%;
-                        height: 10px;
-                        background: #d6dee6;
-                        border-radius: 6px;
-                        overflow: hidden;
-                    ">
-                        <!-- Progress Bar Fill -->
-                        <div id="upload-progress-bar" style="
-                            width: 0%;
-                            height: 100%;
-                            background: linear-gradient(90deg, #1e88e5, #4fc3f7);
-                            border-radius: 6px;
-                            transition: width 0.15s ease;
-                        "></div>
-                    </div>
-    
-                    <div id="upload-progress-text" style="
-                        font-size: 12px;
-                        color: #b8b8ff;
-                        margin-top: 8px;
-                        text-align: right;
-                    ">
-                        0%
-                    </div>
-                </div>
-
-
-
+        </div>
+        <!-- upload progress panel: chat.js shows it while a chat attachment is sent and the music bot dialog
+             while a song is sent. it stays outside the dialog, because the chat attachments are sent while the
+             dialog is hidden and an element inside a hidden container is never visible -->
+        <div id="upload-progress-overlay">
+            <p id="upload-progress-label">sending ...</p>
+            <div id="upload-progress-track">
+                <div id="upload-progress-bar"></div>
+            </div>
+            <p id="upload-progress-text">0%</p>
+        </div>
         </div>
 
 

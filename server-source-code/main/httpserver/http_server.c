@@ -34,7 +34,7 @@ typedef SOCKET http_socket_t;
 typedef int http_socket_t;
 #define HTTP_INVALID_SOCKET (-1)
 #define http_close_socket close
-/* MSG_NOSIGNAL keeps send() to a closed peer from raising SIGPIPE (which would kill the server).
+/* MSG_NOSIGNAL keeps send() to a closed peer from raising SIGPIPE (which would end the server process).
    Linux has the flag; macOS/BSD do not - there the SO_NOSIGPIPE socket option is set per connection
    in _http_server_internal__handle_connection instead, so the send flag is just 0 */
 #ifdef MSG_NOSIGNAL
@@ -111,9 +111,7 @@ static const http_mime_entry_t g_http_mime_table[] = {
     { ".txt", "text/plain; charset=utf-8" }
 };
 
-/* static functions are defined first */
-
-/* declarations */
+// declarations
 static void* _http_server_internal__server_thread(void* arg_unused);
 static void* _http_server_internal__connection_thread(void* arg_socket);
 static void _http_server_internal__handle_connection(http_socket_t client_socket);
@@ -122,9 +120,19 @@ static void _http_server_internal__send_simple_response(http_socket_t client_soc
 static boole _http_server_internal__send_all(http_socket_t client_socket, void* data, uint64 length);
 static boole _http_server_internal__is_request_path_safe(const char* request_path);
 static const char* _http_server_internal__content_type_for_path(const char* file_path);
+static uint64 _http_server_internal__monotonic_ms(void);
+static int _http_server_internal__read_request(http_socket_t client_socket, char* buffer, size_t capacity);
+static char* _http_server_internal__find_bytes(char* haystack, uint64 haystack_length, const char* needle, uint64 needle_length);
+static void _http_server_internal__inject_client_config(char* chunk, uint64 chunk_length);
+#ifndef DEBUG_ACTIVE
+static void _http_server_internal__cache_client_page(void);
+#endif
 
-// Measure elapsed time without depending on the computer's date and time.
-// Changing the system clock must not extend a connection's waiting period.
+/**
+ * @brief Reads an elapsed-time clock so changing the computer clock cannot extend an HTTP request timeout.
+ *
+ * @return uint64 -> the monotonic clock value in milliseconds, or zero if the POSIX clock cannot be read
+ */
 static uint64 _http_server_internal__monotonic_ms(void)
 {
 #ifdef WIN32
@@ -139,10 +147,17 @@ static uint64 _http_server_internal__monotonic_ms(void)
 #endif
 }
 
-// A browser's request can arrive in several pieces. Wait for the empty line
-// after its headers before reading the path or deciding whether to redirect
-// it to HTTPS. All pieces share one time limit; receiving another byte does
-// not give the connection another ten seconds to finish its request.
+/**
+ * @brief Waits for the complete HTTP request headers even when they arrive in several socket reads.
+ *
+ * All pieces share one timeout. Oversized headers receive HTTP 431; embedded zero bytes receive HTTP 400.
+ *
+ * @param http_socket_t client_socket -> the accepted connection to read
+ * @param char* buffer -> receives the request bytes and an ending zero byte
+ * @param size_t capacity -> the size of buffer in bytes, which must be greater than zero
+ *
+ * @return int -> the number of received bytes when all headers are present, or zero for a timeout, closed socket or invalid request
+ */
 static int _http_server_internal__read_request(http_socket_t client_socket, char* buffer, size_t capacity)
 {
     size_t received = 0;
@@ -201,13 +216,13 @@ static int _http_server_internal__read_request(http_socket_t client_socket, char
 }
 
 /**
- * @brief sends the whole buffer, looping until every byte is written or the socket errors
+ * @brief Sends the whole buffer, repeating socket writes until every byte is sent or writing fails.
  *
  * @param http_socket_t client_socket -> the connection to write to
- * @param void* data -> bytes to send
- * @param uint64 length -> number of bytes to send
+ * @param void* data -> the bytes to send; the caller keeps ownership
+ * @param uint64 length -> the number of bytes to send
  *
- * @return void
+ * @return boole -> TRUE when every byte was sent, otherwise FALSE
  */
 static boole _http_server_internal__send_all(http_socket_t client_socket, void* data, uint64 length)
 {
@@ -338,9 +353,14 @@ void http_server__set_client_config(char* config_script)
 }
 
 /**
- * @brief finds the first occurrence of needle inside the first haystack_length bytes of haystack
+ * @brief Finds the first occurrence of a byte sequence inside a buffer.
  *
- * @return char* -> pointer to the match within haystack, or NULL_POINTER when absent
+ * @param char* haystack -> the buffer to search; no ending zero byte is required
+ * @param uint64 haystack_length -> the number of bytes available in haystack
+ * @param const char* needle -> the byte sequence to find
+ * @param uint64 needle_length -> the number of bytes in needle
+ *
+ * @return char* -> a pointer to the match within haystack, or NULL_POINTER when absent or needle_length is zero
  */
 static char* _http_server_internal__find_bytes(char* haystack, uint64 haystack_length, const char* needle, uint64 needle_length)
 {
@@ -866,9 +886,13 @@ static void* _http_server_internal__server_thread(void* arg_unused)
     }
 }
 
-// This thread owns one connection from start to finish. Close the socket and
-// free a place for the next visitor even when the request is incomplete or the
-// visitor disconnects before receiving the whole page.
+/**
+ * @brief Serves one HTTP visitor and releases its connection slot when the request ends.
+ *
+ * @param void* arg_socket -> an allocated http_socket_t passed by the listener; this thread frees it and closes the socket
+ *
+ * @return void* -> NULL_POINTER after the connection is closed
+ */
 static void* _http_server_internal__connection_thread(void* arg_socket)
 {
     http_socket_t client_socket = *(http_socket_t*)arg_socket;
@@ -883,12 +907,12 @@ static void* _http_server_internal__connection_thread(void* arg_socket)
 }
 
 /**
- * @brief starts the client-page http server on its own background thread and returns immediately
+ * @brief Chooses whether HTTP visitors are redirected to the HTTPS front end.
  *
- * @param int64 port -> tcp port to listen on (80 is the standard http port)
- * @param char* webroot -> directory containing client.html; only "/" and "/client.html" are served
+ * Call this before starting the HTTP server so connections use the chosen redirect settings.
  *
- * @attention the server thread is detached and runs until the process exits; binding port 80 needs admin/root
+ * @param boole enabled -> TRUE to enable redirects or FALSE to serve the client page over HTTP
+ * @param int64 https_port -> the HTTPS port included in redirect URLs
  *
  * @return void
  */
@@ -898,6 +922,17 @@ void http_server__set_https_redirect(boole enabled, int64 https_port)
     g_http_https_redirect_port = https_port;
 }
 
+/**
+ * @brief Starts the client-page HTTP server on its own background thread and returns immediately.
+ *
+ * Call once after setting page configuration and redirects. The directory is copied,
+ * and the detached serving thread runs until process exit.
+ *
+ * @param int64 port -> the TCP port to listen on, such as 8090
+ * @param char* webroot -> the directory containing client.html; only / and /client.html are served
+ *
+ * @return void
+ */
 void http_server__start(int64 port, char* webroot)
 {
     pthread_t server_thread = 0;

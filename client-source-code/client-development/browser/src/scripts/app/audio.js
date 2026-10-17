@@ -2,11 +2,14 @@
 // it is the audio engine: it moves sound around (microphone in, speakers out, buffering and timing)
 // and never compresses anything; audio-opus-glue.js does the opus packets inside the workers
 // it holds the worklet processors and their ScriptProcessorNode fallbacks, the playback and capture
-// graphs, the push-to-talk gate and the after-idle rebuild; voice.js and dispatch.js call it
+// graphs, the push-to-talk gate and the after-idle rebuild; voice.js and dispatch.js call it, and video.js asks it for
+// the stereo capture node of a video stream's sound and plays that sound through a reserved playback buffer
 
-// the words used here: a lane is one speaker's own playback buffer, its target the amount it collects before
-// playing (an underrun, running dry, grows it; slipping drops a frame from an overfull lane); a frame is one
-// stereo moment (two floats), a quantum one 128-frame engine tick, interleaved is left, right, left, right in one list
+// the words used here: every sender has its own playback buffer; its
+// target is the amount of audio it collects before it starts playing (an underrun, the buffer running empty,
+// raises the target; dropping single frames from an overfull buffer lowers the delay again); a frame is one
+// stereo sample pair (two floats), a quantum is one 128-frame tick of the audio engine, interleaved means left,
+// right, left, right in one list
 
 // state private to this file
 var player = null;
@@ -19,7 +22,11 @@ var audio_worklet_module_promise = null; // set while/after the worklet module l
 
 var is_microphone_worklet_active = false;
 
-var PREMIXED_AUDIO_LANE_ID = 9999999; // worklet lane id for already-mixed audio (matches PREMIXED_LANE_ID in the processor)
+var PREMIXED_AUDIO_LANE_ID = 9999999; // worklet playback_buffer id for already-mixed audio (matches PREMIXED_LANE_ID in the processor)
+
+// the sender id under which the sound of a video stream is decoded and played (video.js hands the packets to the decoder
+// worker under it): no client can have it, client ids are small numbers. matches STREAM_SOUND_PLAYBACK_BUFFER_ID in the processor
+var VIDEO_STREAM_SOUND_SENDER_ID = 9999998;
 
 var audio_queue = {
     buffer: new Float32Array(0),
@@ -68,7 +75,7 @@ var audio_queue = {
      *
      * @param number nSamples -> how many floats to take
      *
-     * @return Float32Array the samples, fewer when the queue runs dry
+     * @return Float32Array the samples, fewer when the queue is empty
      */
     read: function (nSamples)
     {
@@ -124,7 +131,7 @@ function audio__rebuild_audio_graph_after_idle()
     }
 
     // a fresh context may come up at a different device rate; the decode resampler and
-    // both codec workers are pinned to it, so re-init them on a change
+    // both codec workers are bound to it, so re-init them on a change
     if (g_audio_context.sampleRate !== old_sample_rate)
     {
         g_opus_decoding_sampler = new SpeexResampler(1, 48000, g_audio_context.sampleRate);
@@ -136,7 +143,7 @@ function audio__rebuild_audio_graph_after_idle()
         }
     }
 
-    // the old context is dead weight; close() may reject on an already-dead one, both fine
+    // the old context is no longer used; close() may reject on an already closed one, both fine
     if (old_context != null)
     {
         try { old_context.close().catch(function() {}); } catch (e) {}
@@ -148,7 +155,7 @@ function audio__rebuild_audio_graph_after_idle()
 /**
  * @brief the AudioWorklet processors, the player and the recorder
  *        never called on the main thread: its source is stringified into a blob module and runs on
- *        the audio rendering thread, where main-thread jank cannot starve it (the ScriptProcessorNode
+ *        the audio rendering thread, where a busy main thread cannot stall it (the ScriptProcessorNode
  *        it replaces ran on the main thread and stuttered whenever the page was busy)
  *
  * @return void
@@ -163,16 +170,18 @@ function audio__lemon_audio_worklet_scope()
         {
             super();
 
-            // per-sender playback lanes: sender id -> its own jitter-buffered ring of interleaved stereo. a lane
-            // prebuffers to a target depth before it plays, grows the target when it underruns and shrinks it
-            // back (slipping excess) once the flow is stable; lanes are mixed here, on the audio clock
-            this.lanes = new Map();
-            this.pending_lane_gains = new Map(); // volume set before the lane's first pcm arrived
+            // per-sender playback buffers: sender id -> its own buffer of interleaved stereo that is written in a
+            // circle (when the end is reached, writing continues at the start), with jitter buffering. a buffer
+            // collects audio up to a target depth before it plays, raises the target
+            // when it runs empty and lowers it again (dropping the excess) once the flow is stable; the
+            // buffers are mixed here, on the audio clock
+            this.playback_buffers = new Map();
+            this.pending_playback_buffer_gains = new Map(); // volume set before the playback_buffer's first pcm arrived
 
             // AUDIO WORKLET TUNABLES: the per-sender jitter buffer, which sets felt latency vs. smoothness on
             // the worklet path. TARGET_START is the delay each voice adds before it starts playing: lower it for
             // less latency, raise it if choppy. values are interleaved-stereo floats (1 ms = 96, 60 ms = 5760)
-            this.RING_SIZE = 65536;          // interleaved floats per lane (~680 ms), power of two
+            this.RING_SIZE = 65536;          // interleaved floats per playback_buffer (~680 ms), power of two
             this.RING_MASK = 65535;          // "index & mask" wraps cheaply (replaces % RING_SIZE)
             this.RING_HARD_CAP = 57600;      // ~600 ms; beyond this the oldest samples are dropped
             this.TARGET_START = 5760;        // initial jitter target: 60 ms of interleaved stereo
@@ -182,13 +191,13 @@ function audio__lemon_audio_worklet_scope()
             this.TARGET_SHRINK_STEP = 960;   // -10 ms per stable period
             this.SHRINK_AFTER_QUANTA = 1875; // one stable period = ~5 s (375 quanta per second)
             this.SLIP_EXCESS = 1920;         // buffered > target + 20 ms -> slip samples out
-            this.FADE_FRAMES = 192;          // 4 ms fade at lane (re)start and near-empty edges
-            this.PREMIXED_LANE_ID = 9999999; // lane for already-mixed audio from the main thread
-            this.LANE_IDLE_QUANTA = 3750;    // ~10 s without new data -> lane deleted
+            this.FADE_FRAMES = 192;          // 4 ms fade at playback_buffer (re)start and near-empty edges
+            this.PREMIXED_LANE_ID = 9999999; // playback_buffer for already-mixed audio from the main thread
+            this.LANE_IDLE_QUANTA = 3750;    // ~10 s without new data -> playback_buffer deleted
             this.TALK_END_QUANTA = 188;      // ~500 ms without new data -> push-to-talk was released
 
-            // music bot lanes: the server streams a bot MUSIC_BOT_LEAD_MS (3 s) ahead of playback, so
-            // its lane holds that much on purpose - a deep, fixed cushion instead of the low-latency
+            // music bot buffers: the server streams a bot MUSIC_BOT_LEAD_MS (3 s) ahead of playback, so
+            // its buffer holds that much on purpose - a large, fixed amount instead of the low-latency
             // voice rules. BOT_TARGET must match the server's lead
             this.BOT_TARGET = 288000;        // 3 s held before and during playback
             this.BOT_TARGET_MAX = 336000;    // grows to 3.5 s at most after underruns
@@ -197,46 +206,56 @@ function audio__lemon_audio_worklet_scope()
             this.BOT_RING_SIZE = 524288;     // ~5.4 s, power of two
             this.BOT_RING_MASK = 524287;
             this.BOT_RING_HARD_CAP = 432000; // ~4.5 s; beyond this the oldest samples are dropped
+
+            // the sound of a video stream (video.js): one buffer under a reserved sender id, deeper than a voice so it survives
+            // the bursts of the video connection (a keyframe queues ahead of the sound there), and never time-squeezed like
+            // music. its depth is the picture hold of the viewer (VIDEO_SOUND_PICTURE_HOLD_MS in video.js): picture and
+            // sound then wait about equally long
+            this.STREAM_SOUND_PLAYBACK_BUFFER_ID = 9999998;
+            this.STREAM_SOUND_TARGET = 28800;        // 300 ms held before playback starts, and again after an underrun
+            this.STREAM_SOUND_TARGET_MAX = 57600;    // grows to 600 ms at most after underruns
+            this.STREAM_SOUND_SLIP_EXCESS = 28800;   // slip only above target + 300 ms
+            this.STREAM_SOUND_RING_HARD_CAP = 96000; // ~1 s; beyond this the oldest samples are dropped
             this.music_bot_senders = new Set(); // announced by the main thread from the client list
 
             this.quantum_counter = 0;
 
             this.port.onmessage = (event) =>
             {
-                // "clear" = channel switch: throw away everything buffered in every lane
+                // "clear" = channel switch: throw away everything buffered in every buffer
                 if (event.data === "clear")
                 {
-                    this.lanes.clear();
+                    this.playback_buffers.clear();
                     return;
                 }
 
-                // which senders are music bots, so their lanes get the deep-cushion rules on creation
+                // which senders are music bots, so their buffers get the large fixed depth on creation
                 if (event.data.type === "music_bot_senders")
                 {
                     this.music_bot_senders = new Set(event.data.ids);
                     return;
                 }
 
-                // a diagnostic snapshot of every lane, answered on the same port
-                if (event.data.type === "lane_stats")
+                // a diagnostic snapshot of every buffer, answered on the same port
+                if (event.data.type === "playback_buffer_stats")
                 {
                     let stats = [];
-                    for (const [sender_id, lane] of this.lanes)
+                    for (const [sender_id, playback_buffer] of this.playback_buffers)
                     {
-                        stats.push({ sender_id: sender_id, is_music_bot: lane.is_music_bot, state: lane.state,
-                                     available_ms: Math.round(lane.available / 96), target_ms: Math.round(lane.target / 96) });
+                        stats.push({ sender_id: sender_id, is_music_bot: playback_buffer.is_music_bot, state: playback_buffer.state,
+                                     available_ms: Math.round(playback_buffer.available / 96), target_ms: Math.round(playback_buffer.target / 96) });
                     }
-                    this.port.postMessage({ type: "lane_stats", lanes: stats });
+                    this.port.postMessage({ type: "playback_buffer_stats", playback_buffers: stats });
                     return;
                 }
 
-                // the decoder worker's end of the direct pipe: per-sender pcm arrives here
+                // the decoder worker's end of the direct message channel: per-sender pcm arrives here
                 // from the worker thread without ever touching the main thread
                 if (event.data.type === "pipe")
                 {
                     event.data.port.onmessage = (pipe_event) =>
                     {
-                        this.lane_write(pipe_event.data.id, pipe_event.data.pcm);
+                        this.playback_buffer_write(pipe_event.data.id, pipe_event.data.pcm);
                     };
                     return;
                 }
@@ -244,82 +263,83 @@ function audio__lemon_audio_worklet_scope()
                 // per-user playback volume, applied at the mix below
                 if (event.data.type === "gain")
                 {
-                    let lane = this.lanes.get(event.data.sender_id);
-                    if (lane != null)
+                    let playback_buffer = this.playback_buffers.get(event.data.sender_id);
+                    if (playback_buffer != null)
                     {
-                        lane.gain = event.data.value;
+                        playback_buffer.gain = event.data.value;
                     }
-                    // remember it for a lane that does not exist yet (user preset before talking)
-                    this.pending_lane_gains.set(event.data.sender_id, event.data.value);
+                    // remember it for a buffer that does not exist yet (user preset before talking)
+                    this.pending_playback_buffer_gains.set(event.data.sender_id, event.data.value);
                     return;
                 }
 
                 // pre-mixed pcm from the main thread (the flush of audio buffered while this
-                // module was still loading); plays through its own low-latency lane
+                // module was still loading); plays through its own low-latency buffer
                 if (event.data.type === "pcm")
                 {
-                    this.lane_write(event.data.sender_id, event.data.pcm);
+                    this.playback_buffer_write(event.data.sender_id, event.data.pcm);
                 }
             };
         }
 
-        // appends one pcm chunk to a sender's lane, creating the lane on first use
-        lane_write(sender_id, chunk)
+        // appends one pcm chunk to a sender's buffer, creating the buffer on first use
+        playback_buffer_write(sender_id, chunk)
         {
-            let lane = this.lanes.get(sender_id);
+            let playback_buffer = this.playback_buffers.get(sender_id);
 
-            if (lane == null)
+            if (playback_buffer == null)
             {
                 let is_music_bot = this.music_bot_senders.has(sender_id);
                 let is_premixed = (sender_id === this.PREMIXED_LANE_ID);
+                let is_stream_sound = (sender_id === this.STREAM_SOUND_PLAYBACK_BUFFER_ID);
 
-                // three kinds of lane: the pre-mixed flush (tiny), a voice (low latency, adaptive)
-                // and a music bot (deep fixed cushion fed by the server's lead)
-                lane = {
-                    ring: new Float32Array(is_music_bot ? this.BOT_RING_SIZE : this.RING_SIZE),
-                    ring_mask: is_music_bot ? this.BOT_RING_MASK : this.RING_MASK,
-                    hard_cap: is_music_bot ? this.BOT_RING_HARD_CAP : this.RING_HARD_CAP,
+                // four kinds of buffer: the pre-mixed flush (tiny), a voice (low latency, adaptive), a music bot (large
+                // fixed depth filled by the server's lead) and the sound of a video stream (medium fixed depth)
+                playback_buffer = {
+                    ring: new Float32Array((is_music_bot || is_stream_sound) ? this.BOT_RING_SIZE : this.RING_SIZE),
+                    ring_mask: (is_music_bot || is_stream_sound) ? this.BOT_RING_MASK : this.RING_MASK,
+                    hard_cap: is_music_bot ? this.BOT_RING_HARD_CAP : (is_stream_sound ? this.STREAM_SOUND_RING_HARD_CAP : this.RING_HARD_CAP),
                     read_index: 0,
                     write_index: 0,
                     available: 0,
                     state: 0, // 0 = prebuffering, 1 = playing
-                    target: is_premixed ? 960 : (is_music_bot ? this.BOT_TARGET : this.TARGET_START),
-                    target_min: is_premixed ? 960 : (is_music_bot ? this.BOT_TARGET : this.TARGET_MIN),
-                    target_max: is_music_bot ? this.BOT_TARGET_MAX : this.TARGET_MAX,
-                    slip_excess: is_music_bot ? this.BOT_SLIP_EXCESS : this.SLIP_EXCESS,
+                    target: is_premixed ? 960 : (is_music_bot ? this.BOT_TARGET : (is_stream_sound ? this.STREAM_SOUND_TARGET : this.TARGET_START)),
+                    target_min: is_premixed ? 960 : (is_music_bot ? this.BOT_TARGET : (is_stream_sound ? this.STREAM_SOUND_TARGET : this.TARGET_MIN)),
+                    target_max: is_music_bot ? this.BOT_TARGET_MAX : (is_stream_sound ? this.STREAM_SOUND_TARGET_MAX : this.TARGET_MAX),
+                    slip_excess: is_music_bot ? this.BOT_SLIP_EXCESS : (is_stream_sound ? this.STREAM_SOUND_SLIP_EXCESS : this.SLIP_EXCESS),
                     is_music_bot: is_music_bot,
                     fade_in_remaining: 0,
                     stable_quanta: 0,
                     last_data_quantum: this.quantum_counter,
-                    gain: this.pending_lane_gains.has(sender_id) ? this.pending_lane_gains.get(sender_id) : 1.0
+                    gain: this.pending_playback_buffer_gains.has(sender_id) ? this.pending_playback_buffer_gains.get(sender_id) : 1.0
                 };
-                this.lanes.set(sender_id, lane);
+                this.playback_buffers.set(sender_id, playback_buffer);
             }
 
-            lane.last_data_quantum = this.quantum_counter;
+            playback_buffer.last_data_quantum = this.quantum_counter;
 
             // hard cap: drop the oldest first - delay that piled up is never recovered by itself
-            if (lane.available + chunk.length > lane.hard_cap)
+            if (playback_buffer.available + chunk.length > playback_buffer.hard_cap)
             {
-                let drop = lane.available + chunk.length - lane.hard_cap;
-                if (drop > lane.available)
+                let drop = playback_buffer.available + chunk.length - playback_buffer.hard_cap;
+                if (drop > playback_buffer.available)
                 {
-                    drop = lane.available;
+                    drop = playback_buffer.available;
                 }
-                lane.read_index = (lane.read_index + drop) & lane.ring_mask;
-                lane.available = lane.available - drop;
+                playback_buffer.read_index = (playback_buffer.read_index + drop) & playback_buffer.ring_mask;
+                playback_buffer.available = playback_buffer.available - drop;
             }
 
             for (let i = 0; i < chunk.length; i++)
             {
-                lane.ring[lane.write_index] = chunk[i];
-                lane.write_index = (lane.write_index + 1) & lane.ring_mask;
+                playback_buffer.ring[playback_buffer.write_index] = chunk[i];
+                playback_buffer.write_index = (playback_buffer.write_index + 1) & playback_buffer.ring_mask;
             }
-            lane.available = lane.available + chunk.length;
+            playback_buffer.available = playback_buffer.available + chunk.length;
         }
 
         // called by the audio engine every render quantum (128 frames, ~2.7 ms at 48 kHz);
-        // output buffers arrive zeroed, lanes are summed into them, then soft-limited
+        // output buffers arrive zeroed, the playback buffers are summed into them, then soft-limited
         process(inputs, outputs)
         {
             let left_channel = outputs[0][0];
@@ -328,96 +348,96 @@ function audio__lemon_audio_worklet_scope()
 
             this.quantum_counter = this.quantum_counter + 1;
 
-            for (const [sender_id, lane] of this.lanes)
+            for (const [sender_id, playback_buffer] of this.playback_buffers)
             {
-                // sender went silent long ago: free the lane (next talk starts a fresh one)
-                if (this.quantum_counter - lane.last_data_quantum > this.LANE_IDLE_QUANTA)
+                // sender went silent long ago: free the buffer (the next talk starts a new one)
+                if (this.quantum_counter - playback_buffer.last_data_quantum > this.LANE_IDLE_QUANTA)
                 {
-                    this.lanes.delete(sender_id);
+                    this.playback_buffers.delete(sender_id);
                     continue;
                 }
 
-                // a lane still prebuffering with no new audio for a while: the key was released, so
-                // what sits in the ring is last transmission's tail and the grown cushion is stale
-                if (lane.state === 0 && this.quantum_counter - lane.last_data_quantum > this.TALK_END_QUANTA)
+                // a buffer still collecting with no new audio for a while: the key was released, so
+                // what remains in the buffer is the end of the last transmission and the raised target is outdated
+                if (playback_buffer.state === 0 && this.quantum_counter - playback_buffer.last_data_quantum > this.TALK_END_QUANTA)
                 {
-                    lane.available = 0;
-                    lane.read_index = lane.write_index;
-                    lane.target = lane.target_min;
-                    lane.stable_quanta = 0;
+                    playback_buffer.available = 0;
+                    playback_buffer.read_index = playback_buffer.write_index;
+                    playback_buffer.target = playback_buffer.target_min;
+                    playback_buffer.stable_quanta = 0;
                 }
 
                 // prebuffering: hold until the jitter target is reached, then start with a fade-in.
-                // a music bot lane starts (and restarts) once a second of audio is in; the server's
-                // lead fills the rest of its cushion while it already plays
-                if (lane.state === 0)
+                // a music bot buffer starts (and restarts) once a second of audio is in; the server's
+                // lead fills the rest of its depth while it already plays
+                if (playback_buffer.state === 0)
                 {
-                    if (lane.available < (lane.is_music_bot ? this.BOT_RESUME_DEPTH : lane.target))
+                    if (playback_buffer.available < (playback_buffer.is_music_bot ? this.BOT_RESUME_DEPTH : playback_buffer.target))
                     {
                         continue;
                     }
-                    lane.state = 1;
-                    lane.fade_in_remaining = this.FADE_FRAMES;
+                    playback_buffer.state = 1;
+                    playback_buffer.fade_in_remaining = this.FADE_FRAMES;
                 }
 
                 // stable long enough: shrink the target one step back toward the minimum (a music
-                // bot's cushion is fixed, it never shrinks)
-                lane.stable_quanta = lane.stable_quanta + 1;
-                if (lane.stable_quanta >= this.SHRINK_AFTER_QUANTA)
+                // bot's depth is fixed, it never shrinks)
+                playback_buffer.stable_quanta = playback_buffer.stable_quanta + 1;
+                if (playback_buffer.stable_quanta >= this.SHRINK_AFTER_QUANTA)
                 {
-                    lane.stable_quanta = 0;
-                    if (lane.is_music_bot == false && lane.target > lane.target_min)
+                    playback_buffer.stable_quanta = 0;
+                    if (playback_buffer.is_music_bot == false && playback_buffer.target > playback_buffer.target_min)
                     {
-                        lane.target = lane.target - this.TARGET_SHRINK_STEP;
+                        playback_buffer.target = playback_buffer.target - this.TARGET_SHRINK_STEP;
                     }
                 }
 
-                // sample slipping: while buffered depth exceeds target + the lane's slack, silently drop
+                // frame dropping: while the buffered depth exceeds target + the buffer's allowance, silently drop
                 // one frame per quantum (~0.8% time compression) - drains built-up delay with no click
-                if (lane.available > lane.target + lane.slip_excess)
+                if (playback_buffer.available > playback_buffer.target + playback_buffer.slip_excess)
                 {
-                    lane.read_index = (lane.read_index + 2) & lane.ring_mask;
-                    lane.available = lane.available - 2;
+                    playback_buffer.read_index = (playback_buffer.read_index + 2) & playback_buffer.ring_mask;
+                    playback_buffer.available = playback_buffer.available - 2;
                 }
 
                 for (let i = 0; i < frame_count; i++)
                 {
-                    if (lane.available < 2)
+                    if (playback_buffer.available < 2)
                     {
-                        // underrun: back to prebuffering with a bigger cushion; the fade-out
+                        // underrun: back to collecting with a larger target; the fade-out
                         // below already brought the level to ~zero, so no click
-                        lane.state = 0;
-                        lane.stable_quanta = 0;
-                        if (lane.target < lane.target_max)
+                        playback_buffer.state = 0;
+                        playback_buffer.stable_quanta = 0;
+                        if (playback_buffer.target < playback_buffer.target_max)
                         {
-                            lane.target = lane.target + this.TARGET_GROW_STEP;
+                            playback_buffer.target = playback_buffer.target + this.TARGET_GROW_STEP;
                         }
                         break;
                     }
 
-                    let gain = lane.gain;
+                    let gain = playback_buffer.gain;
 
                     // fade-in over the first few ms after a (re)start
-                    if (lane.fade_in_remaining > 0)
+                    if (playback_buffer.fade_in_remaining > 0)
                     {
-                        gain = gain * (1 - lane.fade_in_remaining / this.FADE_FRAMES);
-                        lane.fade_in_remaining = lane.fade_in_remaining - 1;
+                        gain = gain * (1 - playback_buffer.fade_in_remaining / this.FADE_FRAMES);
+                        playback_buffer.fade_in_remaining = playback_buffer.fade_in_remaining - 1;
                     }
 
-                    // fade-out toward an approaching empty buffer, so starvation never clicks
-                    let frames_left = lane.available >> 1;
+                    // fade-out toward an approaching empty buffer, so an empty buffer never clicks
+                    let frames_left = playback_buffer.available >> 1;
                     if (frames_left < this.FADE_FRAMES)
                     {
                         gain = gain * (frames_left / this.FADE_FRAMES);
                     }
 
-                    // one output frame consumes two ring samples: left then right (interleaved)
-                    left_channel[i] = left_channel[i] + lane.ring[lane.read_index] * gain;
-                    lane.read_index = (lane.read_index + 1) & lane.ring_mask;
+                    // one output frame consumes two samples from the buffer: left then right (interleaved)
+                    left_channel[i] = left_channel[i] + playback_buffer.ring[playback_buffer.read_index] * gain;
+                    playback_buffer.read_index = (playback_buffer.read_index + 1) & playback_buffer.ring_mask;
 
-                    let right_sample = lane.ring[lane.read_index];
-                    lane.read_index = (lane.read_index + 1) & lane.ring_mask;
-                    lane.available = lane.available - 2;
+                    let right_sample = playback_buffer.ring[playback_buffer.read_index];
+                    playback_buffer.read_index = (playback_buffer.read_index + 1) & playback_buffer.ring_mask;
+                    playback_buffer.available = playback_buffer.available - 2;
 
                     if (right_channel != null)
                     {
@@ -469,6 +489,9 @@ function audio__lemon_audio_worklet_scope()
             // chunk size comes from the main thread (g_audio_config.codec.bufferSize) so the opus
             // encoder worker sees identical input on both capture paths
             this.chunk_size = (options && options.processorOptions && options.processorOptions.chunk_size) ? options.processorOptions.chunk_size : 8192;
+            // 1 = the microphone's mono capture (the first channel only); 2 = the stereo capture of a video stream's sound,
+            // left and right interleaved in the chunk, so chunk_size must be even there
+            this.channel_count = (options && options.processorOptions && options.processorOptions.channel_count == 2) ? 2 : 1;
             this.chunk = new Float32Array(this.chunk_size);
             this.fill = 0;              // how many samples of the current chunk are filled
             this.is_capturing = false;  // push-to-talk state
@@ -506,11 +529,19 @@ function audio__lemon_audio_worklet_scope()
             }
 
             let samples = input_channels[0]; // mono capture: first channel only
+            // stereo capture: a source with one channel repeats it on the right
+            let right_samples = (this.channel_count == 2) ? ((input_channels.length > 1 && input_channels[1] != null) ? input_channels[1] : samples) : null;
 
             for (let i = 0; i < samples.length; i++)
             {
                 this.chunk[this.fill] = samples[i];
                 this.fill = this.fill + 1;
+
+                if (right_samples != null)
+                {
+                    this.chunk[this.fill] = right_samples[i];
+                    this.fill = this.fill + 1;
+                }
 
                 // chunk full: hand it to the main thread (transfer, no copy) and start a fresh one
                 if (this.fill >= this.chunk_size)
@@ -562,7 +593,7 @@ function audio__create_audio_player_output()
 
     // the promise is kept: the microphone capture node (built later, at mic permission time) chains on it to
     // use the same module. addModule can throw instead of rejecting (a blocked url fails at call time), and
-    // unguarded that exception would kill the rest of the audio_enabled handler, the datachannel check included
+    // unguarded that exception would end the rest of the audio_enabled handler, the datachannel check included
     try
     {
         audio_worklet_module_promise = g_audio_context.audioWorklet.addModule(worklet_code_url);
@@ -598,33 +629,33 @@ function audio__create_audio_player_output()
             audio_player_worklet_node.port.postMessage({ type: "pcm", sender_id: PREMIXED_AUDIO_LANE_ID, pcm: buffered_samples }, [buffered_samples.buffer]);
         }
 
-        // direct pipe: decoder worker -> worklet. one end goes into the worklet, the other into
-        // the decoder worker; per-sender pcm then flows between the two threads with no
-        // main-thread hop, and the worker stops its 20 ms mixing tick
+        // direct message channel: decoder worker -> worklet. one end goes into the worklet, the other into
+        // the decoder worker; per-sender pcm then flows between the two threads without passing
+        // through the main thread, and the worker stops its 20 ms mixing tick
         let direct_audio_pipe = new MessageChannel();
         audio_player_worklet_node.port.postMessage({ type: "pipe", port: direct_audio_pipe.port2 }, [direct_audio_pipe.port2]);
         g_opus_decoder_worker.postMessage({ type: "use_direct_worklet_pipe", port: direct_audio_pipe.port1 }, [direct_audio_pipe.port1]);
 
-        // the worklet only ever answers a lane_stats request; it lands in the console
+        // the worklet only ever answers a playback_buffer_stats request; the answer is written to the console
         audio_player_worklet_node.port.onmessage = function(event)
         {
-            if (event.data != null && event.data.type === "lane_stats")
+            if (event.data != null && event.data.type === "playback_buffer_stats")
             {
-                console.log("playback lanes: " + JSON.stringify(event.data.lanes));
+                console.log("playback playback_buffers: " + JSON.stringify(event.data.playback_buffers));
             }
         };
 
-        // a bot that was already listed before the node existed gets its deep-cushion lane too
+        // a bot that was already listed before the node existed gets its large fixed buffer too
         audio__audio_player_announce_music_bots();
 
-        // devtools: __LOG.lanes() prints every playback lane's depth and target
+        // devtools: __LOG.playback_buffers() prints every playback buffer's depth and target
         if (global.__LOG != null)
         {
-            global.__LOG.lanes = audio__audio_player_request_lane_stats;
+            global.__LOG.playback_buffers = audio__audio_player_request_playback_buffer_stats;
         }
     }).catch(function(worklet_setup_error)
     {
-        // any setup failure (csp, quirky browser) lands on the old path instead of silence
+        // any setup failure (csp, an unusual browser) falls back to the old path instead of silence
         console.log("AudioWorklet setup failed (" + worklet_setup_error + "); using ScriptProcessorNode playback");
         console.warn("audio playback degraded to main-thread ScriptProcessorNode (higher latency)");
         // null it so the microphone path below takes its "no worklet" branch outright instead
@@ -649,7 +680,7 @@ function audio__create_script_processor_player()
 }
 
 /**
- * @brief the single entry point for decoded pcm: the worklet's pre-mixed lane when active, audio_queue otherwise (the ScriptProcessor path, and the short window while the worklet module is still loading)
+ * @brief the single entry point for decoded pcm: the worklet's pre-mixed buffer when active, audio_queue otherwise (the ScriptProcessor path, and the short window while the worklet module is still loading)
  *
  * @param Float32Array pcm_chunk -> interleaved stereo samples, transferred to the audio thread when the worklet takes them
  *
@@ -659,7 +690,7 @@ function audio__audio_player_write_chunk(pcm_chunk)
 {
     if (is_audio_worklet_player_active == true)
     {
-        // pre-mixed audio goes into the worklet's dedicated low-latency lane; the buffer is
+        // pre-mixed audio goes into the worklet's dedicated low-latency buffer; the buffer is
         // transferred to the audio thread instead of copied
         audio_player_worklet_node.port.postMessage({ type: "pcm", sender_id: PREMIXED_AUDIO_LANE_ID, pcm: pcm_chunk }, [pcm_chunk.buffer]);
     }
@@ -689,7 +720,7 @@ function audio__set_client_playback_volume(client_id, volume)
 }
 
 /**
- * @brief tells the player worklet which senders are music bots, so their lanes get the deep cushion the server's lead fills
+ * @brief tells the player worklet which senders are music bots, so their buffers get the large depth the server's lead fills
  *        called whenever the client list changes; the worklet keeps the latest set
  *
  * @return void
@@ -714,15 +745,15 @@ function audio__audio_player_announce_music_bots()
 }
 
 /**
- * @brief asks the worklet for a snapshot of every lane (depth and target); the answer is logged
+ * @brief asks the worklet for a snapshot of every playback buffer (depth and target); the answer is logged
  *
  * @return void
  */
-function audio__audio_player_request_lane_stats()
+function audio__audio_player_request_playback_buffer_stats()
 {
     if (is_audio_worklet_player_active == true && audio_player_worklet_node != null)
     {
-        audio_player_worklet_node.port.postMessage({ type: "lane_stats" });
+        audio_player_worklet_node.port.postMessage({ type: "playback_buffer_stats" });
     }
 }
 
@@ -813,6 +844,79 @@ function audio__wire_microphone_capture_graph()
     g_audio_input.connect(g_audio_recorder_gain_node);
     g_audio_recorder_gain_node.connect(g_microphone_recorder);
     g_microphone_recorder.connect(g_audio_context.destination);
+}
+
+/**
+ * @brief makes a capture node for the sound of a video stream (video.js): stereo, chunks of 20 ms of interleaved samples at the
+ *        context's rate, each handed to on_chunk. an AudioWorkletNode of the recorder processor when the worklet module is
+ *        available, a ScriptProcessorNode otherwise. the caller connects a source into the node, connects the node to the
+ *        destination (the graph pulls samples only along a path that ends there; the node outputs silence) and, on the
+ *        worklet node, posts "start" to its port
+ *
+ * @param function on_chunk -> receives a Float32Array of interleaved left and right samples
+ *
+ * @return Promise resolves with the node
+ */
+function audio__create_stream_sound_capture_node(on_chunk)
+{
+    if (audio_worklet_module_promise == null)
+    {
+        return Promise.resolve(audio__create_script_processor_stream_sound_capture(on_chunk));
+    }
+
+    return audio_worklet_module_promise.then(function()
+    {
+        // 1920 floats = 960 frames of left and right = 20 ms at 48 kHz, one opus packet of the stream sound.
+        // channelCount 2 with "explicit" gives the processor two channels whatever the source has
+        let node = new AudioWorkletNode(g_audio_context, "lemon-recorder-processor", {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [1],
+            channelCount: 2,
+            channelCountMode: "explicit",
+            processorOptions: { chunk_size: 1920, channel_count: 2 }
+        });
+
+        node.port.onmessage = function(event)
+        {
+            on_chunk(event.data);
+        };
+
+        return node;
+    }).catch(function(worklet_error)
+    {
+        console.log("stream sound capture: the worklet node failed (" + worklet_error + "); using a ScriptProcessorNode");
+        return audio__create_script_processor_stream_sound_capture(on_chunk);
+    });
+}
+
+/**
+ * @brief the old capture path for the sound of a video stream: a ScriptProcessorNode of 2048 frames (about 43 ms) with two input channels, interleaved by hand
+ *
+ * @param function on_chunk -> receives a Float32Array of interleaved left and right samples
+ *
+ * @return ScriptProcessorNode the node
+ */
+function audio__create_script_processor_stream_sound_capture(on_chunk)
+{
+    let node = g_audio_context.createScriptProcessor(2048, 2, 1);
+
+    node.onaudioprocess = function(event)
+    {
+        let left = event.inputBuffer.getChannelData(0);
+        let right = (event.inputBuffer.numberOfChannels > 1) ? event.inputBuffer.getChannelData(1) : left;
+        let chunk = new Float32Array(left.length * 2);
+
+        for (let i = 0; i < left.length; i++)
+        {
+            chunk[2 * i] = left[i];
+            chunk[2 * i + 1] = right[i];
+        }
+
+        on_chunk(chunk);
+    };
+
+    return node;
 }
 
 /**

@@ -19,7 +19,10 @@ int metadata_crypto__key_from_password(crypto_key_t* key, crypto_key_type_t type
 // encrypt data and one to check that the encrypted data has not been changed.
 int metadata_crypto__derive_session_keys(const char* shared_secret, crypto_session_keys_t* keys);
 
-// Wipe both keys and mark them as unavailable, even in an optimized build.
+// Overwrite the memory containing an AES key and an HMAC key with zeroes. This
+// is used for temporary keys after they are no longer needed and when creating
+// connection keys fails, so old key bytes do not remain in memory until that
+// memory is reused. The clearing function cannot be removed by the compiler.
 void metadata_crypto__clear_session_keys(crypto_session_keys_t* keys);
 
 // Encrypt or decrypt the bytes in the supplied data buffer. The result replaces

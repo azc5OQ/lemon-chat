@@ -1,7 +1,7 @@
 #ifndef AUDIO_WEBRTC_H
 #define AUDIO_WEBRTC_H 1
 
-extern webrtc_peer_t* g_webrtc_muggles_array;
+extern webrtc_peer_t* g_webrtc_peers_array;
 
 boole audio_webrtc__initialize_datachannel_connection(client_t* client);
 void audio_webrtc__process_sdp_answer_from_remote_peer(client_t* client, cJSON* RTCSessionDescription);

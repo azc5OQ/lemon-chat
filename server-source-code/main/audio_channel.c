@@ -25,7 +25,14 @@
 #include "video_websocket.h"
 #include "media_auth.h"
 
-/** @brief the admin's choice of audio connections as the settings tab shows it: both, websocket, webrtc or none */
+// declarations
+static void _audio_channel_internal__relay(uint64 sender_id, uint64 channel_id, const unsigned char* body, uint64 body_size, boole is_music);
+
+/**
+ * @brief Returns the connection choice shown in the server settings.
+ *
+ * @return const char* -> static text: "both", "websocket", "webrtc", or "none"; do not free it.
+ */
 const char* audio_channel__policy_value(void)
 {
     if (g_server_settings.is_audio_over_websocket_allowed == TRUE && g_server_settings.is_audio_over_webrtc_allowed == TRUE)
@@ -63,7 +70,7 @@ void audio_channel__apply_policy_change(void)
     boole is_audio_on = (g_server_settings.is_voice_chat_active == TRUE || g_server_settings.is_music_bot_audio_active == TRUE);
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    clib__read_lock(&g_webrtc_muggles_rwlock_guard);
+    clib__read_lock(&g_webrtc_peers_rwlock_guard);
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client = &g_clients_array[i];
@@ -91,11 +98,23 @@ void audio_channel__apply_policy_change(void)
             server_msg__send_audio_state_of_client_to_all_clients(client, client->audio_state);
         }
     }
-    clib__unlock(&g_webrtc_muggles_rwlock_guard);
+    clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
-/** @brief encrypts one frame body for every receiver in the channel, with the receiver's keys, and sends it over the receiver's audio connection. the clients, peers and channels read locks are held by the caller. */
+/**
+ * @brief Encrypts an audio body separately for each listener and sends it through their audio connection.
+ *
+ * @param uint64 sender_id -> original sender, excluded from the receivers
+ * @param uint64 channel_id -> channel whose clients may receive the audio
+ * @param const unsigned char* body -> sender header and audio contents still protected by the channel keys
+ * @param uint64 body_size -> number of bytes in body
+ * @param boole is_music -> TRUE for music-bot audio, FALSE for voice
+ *
+ * @attention The caller holds the clients, WebRTC peers, and channels read locks.
+ *
+ * @return void
+ */
 static void _audio_channel_internal__relay(uint64 sender_id, uint64 channel_id, const unsigned char* body, uint64 body_size, boole is_music)
 {
     unsigned char frame[WS_AUDIO_FRAME_MAX];
@@ -158,7 +177,7 @@ void audio_channel__relay_voice(uint64 sender_id, ws_cli_conn_t* socket, int dat
         return;
     }
     clib__read_lock(&g_clients_global_rwlock_guard);
-    clib__read_lock(&g_webrtc_muggles_rwlock_guard);
+    clib__read_lock(&g_webrtc_peers_rwlock_guard);
     clib__read_lock(&g_channels_global_rwlock_guard);
     sender = &g_clients_array[sender_id];
     channel_id = sender->channel_id;
@@ -194,7 +213,7 @@ void audio_channel__relay_voice(uint64 sender_id, ws_cli_conn_t* socket, int dat
     _audio_channel_internal__relay(sender_id, channel_id, body, body_size, FALSE);
 done:
     clib__unlock(&g_channels_global_rwlock_guard);
-    clib__unlock(&g_webrtc_muggles_rwlock_guard);
+    clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -227,7 +246,7 @@ void audio_channel__process_client_disconnect(client_t* client)
 }
 
 /**
- * @brief relays one opus frame from a music bot to every client that sits in the given channel.
+ * @brief relays one opus frame from a music bot to every client that is in the given channel.
  *
  *        the frame body is [4B bot client id][8B packet counter][2B sequence, little endian][opus]. the last two
  *        parts are encrypted with the bot's four keys and then with the server keys; the counter block of
@@ -261,7 +280,7 @@ void audio_channel__send_music_bot_data(uint64 sender_music_bot_client_id, uint6
         return;
     }
     clib__read_lock(&g_clients_global_rwlock_guard);
-    clib__read_lock(&g_webrtc_muggles_rwlock_guard);
+    clib__read_lock(&g_webrtc_peers_rwlock_guard);
     clib__read_lock(&g_channels_global_rwlock_guard);
     if (g_server_settings.is_music_bot_audio_active == TRUE
         && g_channel_array[channel_id].is_existing == TRUE && g_channel_array[channel_id].is_audio_enabled == TRUE
@@ -302,6 +321,6 @@ void audio_channel__send_music_bot_data(uint64 sender_music_bot_client_id, uint6
     }
 done:
     clib__unlock(&g_channels_global_rwlock_guard);
-    clib__unlock(&g_webrtc_muggles_rwlock_guard);
+    clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }

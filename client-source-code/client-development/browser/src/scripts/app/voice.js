@@ -174,7 +174,7 @@ function voice__process_stop_sending_audio()
 }
 
 /**
- * @brief the actual stop: disables the mic track (the capture graph stays wired) and reports microphone_usage=2 to the server
+ * @brief the actual stop: disables the mic track (the capture graph stays connected) and reports microphone_usage=2 to the server
  *
  * @return void
  */
@@ -300,7 +300,7 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
         return;
     }
 
-    // voice lives in the webview only; node has no webrtc and must never enter this.
+    // voice runs in the webview only; node has no webrtc and must never enter this.
     // the caller set the running flag, so it must be dropped here too
     if (typeof RTCPeerConnection === "undefined")
     {
@@ -308,7 +308,7 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
         return;
     }
 
-    // an unordered, unreliable datachannel (maxRetransmits 0): a udp-like pipe between this client
+    // an unordered, unreliable datachannel (maxRetransmits 0): a udp-like connection between this client
     // and the server only, never between clients, so nothing here is peer to peer
 
     while (true)
@@ -322,7 +322,7 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
 
         if (g_is_voice_chat_allowed_by_server == true && g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
         {
-            // one throw here must not kill the loop: a dead loop leaves the running flag
+            // one exception here must not end the loop: a stopped loop leaves the running flag
             // stranded true, which blocks every future re-create until the app restarts
             try
             {
@@ -395,9 +395,9 @@ function voice__send_sdp_answer_to_server(value)
 }
 
 /**
- * @brief replaces g_peer_connection_with_server with a fresh RTCPeerConnection wired to the webrtc handlers
- *        the replaced one is closed, since an abandoned-but-open pc kept its ice agent alive and
- *        hijacked state with zombie events; g_iceconfig carries the TURN server exactly once
+ * @brief replaces g_peer_connection_with_server with a new RTCPeerConnection with the webrtc handlers attached
+ *        the replaced one is closed, since an abandoned but open pc kept its ice agent alive and
+ *        overwrote the state with events of the replaced connection; g_iceconfig carries the TURN server exactly once
  *
  * @param boolean is_this_reconnect -> true when a previous channel existed
  *
@@ -405,8 +405,8 @@ function voice__send_sdp_answer_to_server(value)
  */
 function voice__create_new_peer_connection_object_for_use(is_this_reconnect = false)
 {
-    // close the replaced pc: an abandoned-but-open pc kept its ice agent and its
-    // 'datachannel' listener alive, hijacking state with zombie events and slowly
+    // close the replaced pc: an abandoned but open pc kept its ice agent and its
+    // 'datachannel' listener alive, overwriting the state with events of the replaced connection and slowly
     // eating into the browser's peer connection cap
     if (g_peer_connection_with_server != null)
     {
@@ -467,7 +467,7 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
 }
 
 /**
- * @brief shows or hides the floating push-to-talk button: touch devices only, never over the connect page, and not when hidden in the local settings
+ * @brief shows or hides the floating push-to-talk button: touch devices only, never without a connection, and not when hidden in the local settings
  *
  * @return void
  */
@@ -486,10 +486,8 @@ function voice__update_microphone_button()
         return;
     }
 
-    // the connect screen has nobody to talk to, so the mic has no business floating over it
-    let connect_page = document.getElementById("verification-system");
-
-    if (connect_page != null && connect_page.style.display != "none")
+    // without a connection there is nobody to talk to, so the mic has no business floating over the connect form or the bare page
+    if (g_is_authenticated != true)
     {
         button.style.display = "none";
         return;
@@ -501,7 +499,7 @@ function voice__update_microphone_button()
 
 /**
  * @brief requests getUserMedia (with a plain-http explainer when unavailable), builds the mic capture chain once, and reports microphone_usage=2 (enabled, not sending) to the server
- *        a chosen input device rides along as "ideal", so an unplugged device falls back to the default instead of failing
+ *        a chosen input device is requested as "ideal", so an unplugged device falls back to the default instead of failing
  *
  * @return void
  */
@@ -517,7 +515,7 @@ function voice__activate_microphone()
 
     let microphone_constraints = { audio: true };
 
-    // a chosen input device rides along as "ideal", because "exact" would fail the whole mic
+    // a chosen input device is requested as "ideal", because "exact" would fail the whole mic
     // activation when that device is unplugged - the browser then falls back to its default
     if (g_selected_microphone_device_id != "")
     {
@@ -597,7 +595,7 @@ function voice__activate_microphone()
             // legacy always-on used to hide the button and open the mic right here;
             // continuous mode is a tap-toggle now, so the button stays and stays quiet
 
-            // desktop continuous armed the flag before getUserMedia resolved, so the
+            // desktop continuous mode set the flag before getUserMedia resolved, so the
             // start call found g_is_microphone_enabled false and returned silently
             if (g_is_continuous_transmission_active == true)
             {

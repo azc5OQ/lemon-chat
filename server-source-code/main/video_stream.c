@@ -26,10 +26,53 @@
 #include "media_auth.h"
 
 /**
- * @brief forgets a client's viewer consent and connection, the streamer is told when it was watching
+ * @brief tells the streamer and every member the streamer allowed that a viewer started or stopped watching
+ *
+ *        only these clients learn who watches: a member the streamer refused, or has not answered yet,
+ *        receives nothing, so it has nothing to show in its channel tree. the streamer counts its
+ *        viewers from these messages, the allowed members mark the watching rows
+ *
+ * @param channel_t* channel -> the channel of the stream
+ * @param uint64 viewer_client_id -> the viewer that changed
+ * @param boole is_watching -> TRUE when it started watching, FALSE when it stopped
+ *
+ * @attention clients read lock required (every caller holds the write lock)
+ *
+ * @return void
+ */
+static void _video_stream_internal__announce_viewer_state(channel_t* channel, uint64 viewer_client_id, boole is_watching)
+{
+    client_t* member = NULL_POINTER;
+    uint64 i = 0;
+
+    if (channel == NULL_POINTER || channel->is_video_stream_active == FALSE || util__is_client_valid((int)channel->video_streamer_client_id) == FALSE)
+    {
+        return;
+    }
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        member = &g_clients_array[i];
+
+        if (member->is_existing == FALSE || member->is_authenticated == FALSE || member->is_music_bot == TRUE || member->channel_id != channel->channel_id)
+        {
+            continue;
+        }
+
+        if (member->client_id != channel->video_streamer_client_id && member->is_video_viewer_allowed == FALSE)
+        {
+            continue;
+        }
+
+        server_msg__send_video_stream_viewer_state_to_single_client(member, viewer_client_id, is_watching);
+    }
+}
+
+/**
+ * @brief forgets a client's viewer consent and connection; when it was watching, the streamer and the allowed members are told
  *
  * @param client_t* client -> the viewer
- * @param client_t* streamer -> the streamer to notify, or NULL when it must not be told (it is gone or is the one stopping)
+ * @param client_t* streamer -> the streamer whose channel is told, or NULL when nobody must be told (it is gone or is the one stopping)
  *
  * @return void
  */
@@ -40,9 +83,9 @@ static void _video_stream_internal__clear_viewer(client_t* client, client_t* str
     client->is_video_viewer_allowed = FALSE;
     client->is_video_viewer_watching = FALSE;
 
-    if (was_watching == TRUE && streamer != NULL_POINTER)
+    if (was_watching == TRUE && streamer != NULL_POINTER && streamer->channel_id < g_server_settings.max_channel_count)
     {
-        server_msg__send_video_stream_viewer_state_to_single_client(streamer, client->client_id, FALSE);
+        _video_stream_internal__announce_viewer_state(&g_channel_array[streamer->channel_id], client->client_id, FALSE);
     }
 }
 
@@ -57,11 +100,12 @@ static void _video_stream_internal__clear_viewer(client_t* client, client_t* str
  * @param int64 width -> encoded frame width
  * @param int64 height -> encoded frame height
  * @param int64 fps -> target frame rate
- * @param cstring* out_refusal_reason -> set to a short wire reason when FALSE comes back
+ * @param boole is_sound_included -> TRUE when the streamer sends sound packets next to the picture packets; the viewers are told, so they can show a volume control
+ * @param cstring* out_refusal_reason -> set to a short reason code for the clients when FALSE comes back
  *
  * @return boole TRUE when the stream started
  */
-boole video_stream__start(client_t* streamer, cstring source, cstring codec, int64 width, int64 height, int64 fps, cstring* out_refusal_reason)
+boole video_stream__start(client_t* streamer, cstring source, cstring codec, int64 width, int64 height, int64 fps, boole is_sound_included, cstring* out_refusal_reason)
 {
     channel_t* channel = NULL_POINTER;
     client_t* member = NULL_POINTER;
@@ -124,6 +168,7 @@ boole video_stream__start(client_t* streamer, cstring source, cstring codec, int
     streamer->video_stream_width = width;
     streamer->video_stream_height = height;
     streamer->video_stream_fps = fps;
+    streamer->is_video_stream_sound_included = is_sound_included;
     streamer->timestamp_last_video_keyframe_request_forwarded_ms = 0;
     streamer->is_video_viewer_allowed = FALSE;
     streamer->is_video_viewer_watching = FALSE;
@@ -165,7 +210,7 @@ boole video_stream__start(client_t* streamer, cstring source, cstring codec, int
  *        safe to call on a channel with no stream, it then does nothing
  *
  * @param uint64 channel_id -> the channel
- * @param cstring reason -> a short wire reason for the viewers' popups ("stopped", "streamer_left", "disabled", ...)
+ * @param cstring reason -> a short reason code for the viewers' popups ("stopped", "streamer_left", "disabled", ...)
  *
  * @return void
  */
@@ -213,6 +258,7 @@ void video_stream__stop(uint64 channel_id, cstring reason)
             member->video_stream_width = 0;
             member->video_stream_height = 0;
             member->video_stream_fps = 0;
+            member->is_video_stream_sound_included = FALSE;
         }
     }
 
@@ -225,7 +271,7 @@ void video_stream__stop(uint64 channel_id, cstring reason)
 /**
  * @brief ends every running stream, used when the admin switches video streaming off server-wide
  *
- * @param cstring reason -> the wire reason handed to every channel
+ * @param cstring reason -> the reason code sent to every channel
  *
  * @return void
  */
@@ -337,11 +383,11 @@ void video_stream__process_client_joined_channel(client_t* client)
 }
 
 /**
- * @brief a viewer pressed connect or disconnect: with the streamer's consent the watching bit flips and the streamer hears about it (it sends a keyframe for a new viewer)
+ * @brief a viewer pressed connect or disconnect: with the streamer's consent the watching bit flips, and the streamer and the allowed members hear about it (the streamer sends a keyframe for a new viewer, the members mark the row)
  *
  * @param client_t* viewer -> the client asking
  * @param boole is_watching -> TRUE to start receiving frames, FALSE to stop
- * @param cstring* out_refusal_reason -> set to a short wire reason when FALSE comes back
+ * @param cstring* out_refusal_reason -> set to a short reason code for the clients when FALSE comes back
  *
  * @return boole TRUE when the request was applied
  */
@@ -384,7 +430,7 @@ boole video_stream__set_viewer_watching(client_t* viewer, boole is_watching, cst
 
     viewer->is_video_viewer_watching = is_watching;
 
-    server_msg__send_video_stream_viewer_state_to_single_client(&g_clients_array[channel->video_streamer_client_id], viewer->client_id, is_watching);
+    _video_stream_internal__announce_viewer_state(channel, viewer->client_id, is_watching);
 
     return TRUE;
 }
@@ -523,11 +569,7 @@ void video_stream__process_transport_lost(uint64 client_id)
     if (client->is_video_viewer_watching == TRUE)
     {
         client->is_video_viewer_watching = FALSE;
-
-        if (channel->is_video_stream_active == TRUE && util__is_client_valid((int)channel->video_streamer_client_id) == TRUE)
-        {
-            server_msg__send_video_stream_viewer_state_to_single_client(&g_clients_array[channel->video_streamer_client_id], client_id, FALSE);
-        }
+        _video_stream_internal__announce_viewer_state(channel, client_id, FALSE);
     }
 }
 
@@ -568,7 +610,7 @@ void video_stream__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int dat
         return;
     }
     clib__read_lock(&g_clients_global_rwlock_guard);
-    clib__read_lock(&g_webrtc_muggles_rwlock_guard);
+    clib__read_lock(&g_webrtc_peers_rwlock_guard);
     clib__read_lock(&g_channels_global_rwlock_guard);
     sender = &g_clients_array[sender_id];
     channel_id = sender->channel_id;
@@ -634,6 +676,6 @@ void video_stream__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int dat
     }
 done:
     clib__unlock(&g_channels_global_rwlock_guard);
-    clib__unlock(&g_webrtc_muggles_rwlock_guard);
+    clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }

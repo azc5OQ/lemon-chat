@@ -1,15 +1,16 @@
 // android-host.js is embedded in template.html along with the other client files, and in the node bundle
-// it is the client's two android hosts: the headless node runtime of the background service (the workers
-// stood in for in-process, the api the host calls), the webview bridge (the implementations behind the
-// JavascriptJavaBridge__* functions of android-bridge.js), and the deep idle mode both of them use
-// a desktop or website client wires none of it; dispatch.js calls the idle side
+// it holds the client's two android sides: the headless node runtime of the background service (the
+// workers are replaced by in-process functions, and the functions the java host calls), the webview
+// bridge (the implementations behind the JavascriptJavaBridge__* functions of android-bridge.js), and
+// the deep idle mode both of them use
+// a desktop or website client uses none of it; dispatch.js calls the idle side
 
 // state private to this file
-// pending AudioContext.suspend() from idle entry; exit chains its resume on it so a
-// late-settling suspend can never land after the resume and silence the graph
+// pending AudioContext.suspend() from idle entry; exit waits for it before resuming, so a
+// suspend that completes late can never run after the resume and silence the audio graph
 var audio_suspend_promise = null;
 
-// the "leaving idle" request in flight: it keeps a late idle request from putting the client back to sleep
+// the "leaving idle" request that is running: it keeps a late idle request from putting the client back to sleep
 var is_come_from_idle_in_flight = false;
 
 var come_from_idle_in_flight_timer = null;
@@ -108,6 +109,8 @@ function android_host__node_apply_idle_for_ui_state()
 
 g_show_message_avatars = (utils__storage_get("lemon_show_message_avatars") === "1");
 
+g_use_theme_chat_formatting = (utils__storage_get("lemon_use_theme_chat_formatting") === "1");
+
 let stored_audio_connection = utils__storage_get("lemon_audio_connection", "");
 if (["webrtc", "websocket"].indexOf(stored_audio_connection) >= 0) { g_audio_connection_preference = stored_audio_connection; }
 
@@ -177,8 +180,8 @@ function android_host__retag_rendered_messages_of_sender(sender_client_id, displ
 }
 
 /**
- * @brief the host's park flag: with false the socket closes and the driver idles instead of redialing, with true the driver may dial again right away
- *        re-dialing after a re-arm rides the settings push; this only owns the flag and the park
+ * @brief the host's flag for keeping the connection closed on purpose: with false the socket closes and the connect loop waits instead of connecting again, with true the connect loop may connect again right away
+ *        after the flag returns to true, the new attempt is started by the settings push, connection__request_connect("settings"); this function only sets the flag and closes the socket
  *
  * @param boolean is_wanted -> whether node should hold a connection
  *
@@ -193,12 +196,12 @@ function android_host__node_set_connection_wanted(is_wanted)
         g_websocket_worker.postMessage({ type: "close" });
     }
 
-    // re-dialing after a re-arm rides the settings push, connection__request_connect("settings")
-    // this function only owns the wanted flag and the park
+    // a new attempt after the flag returns to true is started by the settings push, connection__request_connect("settings")
+    // this function only sets the flag and closes the socket
 }
 
 /**
- * @brief runs a handler on one message and contains any throw, because the loopback workers run in-process and node can not be restarted once dead; one malformed message must not kill the runtime
+ * @brief runs a handler on one message and contains any exception, because the loopback workers run in-process and node cannot be restarted once it has stopped; one malformed message must not end the runtime
  *        the message listeners are told afterwards, with whether the handler failed
  *
  * @param function handler -> the worker entry point to call
@@ -223,7 +226,7 @@ function android_host__dispatch_safely(handler, message, source_name)
             + (dispatch_error != null && dispatch_error.stack ? dispatch_error.stack : dispatch_error));
     }
 
-    // this fires per internal hop, so several times per server message. it only means state
+    // this runs once per transfer between the in-process workers, so several times per server message. it only means state
     // may have changed; the host side debounces
     for (let i = 0; i < g_node_message_listeners.length; i++)
     {
@@ -260,7 +263,7 @@ function android_host__make_loopback_worker(handler, worker_name)
 
 /**
  * @brief wires the headless runtime the way main__window_onload does for the browser, minus everything that needs a dom
- *        it lives inside the factory because a bootstrap outside cannot assign the factory's locals
+ *        it is defined inside the factory function because code outside cannot assign the factory's local variables
  *
  * @param string|null identity_passphrase_string -> the passphrase the identity is derived from, null for a random one
  *
@@ -269,12 +272,12 @@ function android_host__make_loopback_worker(handler, worker_name)
 function android_host__init_node_runtime(identity_passphrase_string)
 {
     // every outgoing message goes through utils__custom_log, which falls back to global.postMessage
-    // when this is null. a dead element's .value is "", so the append and the 50kb truncation
+    // when this is null. the stand-in element's .value is "", so the append and the 50kb truncation
     // both work harmlessly and main.js needs no change
     g_textarea_log = document.getElementById("textarea-log");
 
-    // the entry points reply with global.postMessage; here global is the shim window, so the reply
-    // is routed to the same dispatcher a browser uses, contained so a throwing handler cannot kill node
+    // the entry points reply with global.postMessage; here global is the stand-in window object, so the reply
+    // is routed to the same dispatcher a browser uses, contained so a handler that throws cannot end node
     global.postMessage = function(message)
     {
         // raw frames go to the frame listener only, not into the dispatcher
@@ -313,8 +316,8 @@ function android_host__init_node_runtime(identity_passphrase_string)
     // every decrypted frame also reaches the frame listener, for the ui replay
     g_data_processing_worker.postMessage({ type: "mainthread__set_frame_forwarding", value: true });
 
-    // the last line of defence. the heartbeat loss loop is an async while and one escaped throw
-    // can kill it silently; a setInterval survives its own throws, so this watchdog always runs
+    // the last safety check. the heartbeat loss loop is an async while loop and one uncaught
+    // exception can end it silently; a setInterval survives its own exceptions, so this check always runs
     setInterval(function()
     {
         try
@@ -322,8 +325,7 @@ function android_host__init_node_runtime(identity_passphrase_string)
             let heartbeat_age = new Date().valueOf() - g_connection_check.last_response_timestamp;
 
             if (g_is_authenticated == true
-                && g_connection_check.last_response_timestamp > 0
-                && heartbeat_age > (g_connection_check.lost_threshold_ms + 15000))
+                && connection__has_keepalive_timed_out(new Date().valueOf(), 15000))
             {
                 console.error("watchdog: heartbeat response " + heartbeat_age + "ms old, forcing reset + reconnect");
                 g_is_authenticated = false;
@@ -336,7 +338,7 @@ function android_host__init_node_runtime(identity_passphrase_string)
         }
     }, 15000);
 
-    // logs one greppable line per minute, so a dead night can be reconstructed from logcat
+    // logs one searchable line per minute, so a night in which the connection stopped can be reconstructed from logcat
     setInterval(function()
     {
         try
@@ -356,13 +358,13 @@ function android_host__init_node_runtime(identity_passphrase_string)
     g_minimp3_worker = android_host__make_discarding_worker();
 
     // a persisted identity can start generating right away; otherwise the settings push
-    // supplies the seed. the driver waits on the identity slot either way
+    // supplies the seed. the connect loop waits on the identity slot either way
     if (typeof identity_passphrase_string === "string" && identity_passphrase_string.length >= 199)
     {
         connection__request_identity(identity_passphrase_string);
     }
 
-    connection__connection_driver();
+    connection__connect_loop();
 }
 
 // ---- webview bridge ----
@@ -370,7 +372,7 @@ function android_host__init_node_runtime(identity_passphrase_string)
 var android_js_bridge = {
     /**
      * @brief java's "go idle": enters deep idle, which sends the request to the server itself and shuts down audio, the opus tick and the datachannel
-     *        a gentle call (home button) keeps an in-channel session alive; a forced one (swipe-away) idles from any channel
+     *        a call without is_forced (home button) keeps a session that is in a channel alive; a forced one (the app swiped away) goes idle from any channel
      *
      * @param boolean is_forced -> true for a swipe-away
      *
@@ -379,8 +381,8 @@ var android_js_bridge = {
     send_go_to_idle_mode_request_android: function(is_forced)
     {
         // android_host__enter_deep_idle sends the go-to-idle request to the server itself and additionally
-        // shuts down audio, the opus tick and the webrtc datachannel. a gentle call (home
-        // button) keeps an in-channel session alive; a forced one (swipe-away) idles from any channel
+        // shuts down audio, the opus tick and the webrtc datachannel. a call without is_forced (home
+        // button) keeps a session that is in a channel alive; a forced one (the app swiped away) goes idle from any channel
         android_host__enter_deep_idle(is_forced === true);
     },
 
@@ -493,12 +495,12 @@ var android_js_bridge = {
 
     /**
      * @brief java says node is connected or the app came to front
-     *        the dial decision belongs to connection__request_connect; this only self-heals a lost
+     *        whether to connect is decided in connection__request_connect; this only recovers from a lost
      *        settings push first (no loopback details yet means one got lost, so it asks again)
      *
      * @return void
      */
-    nudge_loopback_reattach_android: function()
+    request_loopback_reattach_android: function()
     {
         if (g_is_authenticated == true)
         {
@@ -519,7 +521,7 @@ var android_js_bridge = {
     },
 
     /**
-     * @brief takes the settings json java pushes: app mode and theme first, then the loopback details, the identity, the microphone mode and the autoconnect, and finally hands the driver its target
+     * @brief takes the settings json java pushes: app mode and theme first, then the loopback details, the identity, the microphone mode and the autoconnect, and finally gives the connect loop its target
      *        the theme is applied before anything below can throw: the settings json grows
      *        incrementally on the java side, and a missing field must not skip the theme
      *
@@ -545,7 +547,7 @@ var android_js_bridge = {
         // there is difference between how web browser app and how android app handles auto connects
 
         // in a browser: predefined details show only the connect button, no details show the
-        // form as well, and autoconnect without user action shows neither and keeps dialing
+        // form as well, and autoconnect without user action shows neither and keeps trying to connect
 
         // in android
         // autoconnect is on -> connect button doesnt show, app goes in loop and tries to join the server until it succeeds
@@ -602,9 +604,8 @@ var android_js_bridge = {
         }
 
         // on android the details come from the java settings window, so the in-page form
-        // is hidden (display none, no dead gap); autoconnect off means the user needs a connect button
-        document.getElementById("connect-form-sub-container-1").style.display = "none";
-        document.getElementById("connect-form-sub-container-2").style.display = "none";
+        // is hidden (display none, no empty space); autoconnect off means the user needs a connect button
+        document.getElementById("connect-form-grid").style.display = "none";
         document.getElementById("add-key-button").style.display = "none";
 
         // bookmarks fill those hidden fields, so they have nothing to act on here
@@ -619,7 +620,7 @@ var android_js_bridge = {
             document.getElementById("connect-button").style.visibility = "visible";
             document.getElementById("import-identity-button").style.display = "none";
 
-            // nothing dials on its own here: no spinner, the connect page is the page
+            // nothing connects on its own here: no spinner, the connect page is the page
             connection__reveal_connect_page();
         }
 
@@ -665,7 +666,7 @@ var android_js_bridge = {
         g_loopback_token = (typeof settings_from_android.loopback_token === "string") ? settings_from_android.loopback_token : "";
 
         // no unconditional spinner hold here, because connection__request_connect raises the spinner
-        // only when it actually dials; a save with autoconnect off changes nothing on screen
+        // only when it actually starts an attempt; a save with autoconnect off changes nothing on screen
 
         // the data worker has its own copy of the flag and encrypts outgoing direct
         // messages itself, so it must skip that in loopback mode too
@@ -689,7 +690,7 @@ var android_js_bridge = {
         }
 
         // the android default username becomes the chosen username, because the settings
-        // arrive before the dial and the server then applies the name at login - the old
+        // arrive before the connection attempt and the server then applies the name at login - the old
         // way was a rename after connect, which an admin can switch off for users
         if (typeof settings_from_android.default_username === "string" && settings_from_android.default_username.length > 0)
         {
@@ -697,7 +698,7 @@ var android_js_bridge = {
         }
 
         // only node derives its identity from the settings, because the webview does not
-        // own the connection. whether to actually dial is decided inside connection__request_connect,
+        // own the connection. whether to actually connect is decided inside connection__request_connect,
         // and that holds for both runtimes
         if (android_host__is_ui_only_runtime() == false)
         {
@@ -839,7 +840,7 @@ function android_host__cancel_presence_grace_recheck()
 function android_host__enter_deep_idle(is_forced)
 {
     // every refusal below says so. a silent one is indistinguishable from the request
-    // never arriving, which is what made this so hard to pin down
+    // never arriving, which is what made this so hard to find
     if (g_is_deep_idle == true)
     {
         console.log("connect-path: idle requested, already idle");
@@ -866,7 +867,7 @@ function android_host__enter_deep_idle(is_forced)
     }
 
     // inside the call-accept presence grace: hold, then re-decide from the real state.
-    // a swipe-away (is_forced) stays deliberate and is honoured immediately
+    // the app being swiped away (is_forced) is a deliberate action and is handled at once
     if (is_forced != true && new Date().valueOf() < presence_grace_until_timestamp)
     {
         console.log("connect-path: idle deferred, inside the call-accept presence grace");
@@ -948,8 +949,8 @@ function android_host__enter_deep_idle(is_forced)
  */
 function android_host__exit_deep_idle()
 {
-    // the user is demonstrably here: a queued presence-grace re-check must not fire behind them.
-    // before the was-not-idle return, because the webview arms that timer without ever being idle
+    // the user is demonstrably here: a queued presence-grace re-check must not run after this.
+    // this comes before the was-not-idle return, because the webview starts that timer without ever being idle
     android_host__cancel_presence_grace_recheck();
 
     g_is_deep_idle_pending = false;
@@ -960,7 +961,7 @@ function android_host__exit_deep_idle()
         return;
     }
 
-    // we really were idle, so an answer from the server is coming. armed here rather
+    // we really were idle, so an answer from the server is coming. started here rather
     // than where the request is sent, because a request sent while not idle gets none
     android_host__mark_come_from_idle_in_flight();
 

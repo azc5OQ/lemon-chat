@@ -22,6 +22,7 @@
 #include "httpserver/http_server.h"
 #include "first_time_setup.h"
 #include "settings.h"
+#include "login_admission.h"
 
 #ifdef WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -64,6 +65,7 @@ static HANDLE g_stunnel_job = NULL_POINTER; // job object holding the stunnel ch
 char* g_first_run_admin_password = NULL_POINTER; // plaintext admin password, kept only through this run's startup summary, then wiped
 static pthread_mutex_t g_log_mutex = PTHREAD_MUTEX_INITIALIZER; // serializes console log output across threads
 
+// declarations
 static void _main_internal__renew_certificate_if_due(void);
 static void _main_internal__launch_stunnel(void);
 static int64 _main_internal__get_client_index_by_ws_client_pointer(ws_cli_conn_t* p_ws_connection);
@@ -75,6 +77,12 @@ static void _main_internal__executable_dir(char* out_directory, uint64 out_direc
 static void _main_internal__log_handler(juice_log_level_t level, const char* message);
 static void _main_internal__init_terminal(void);
 static void _main_internal__print_banner(void);
+static boole _main_internal__has_connection_timed_out(client_t* client, uint64 now);
+#ifdef WIN32
+static boole _main_internal__is_plain_domain(const char* domain);
+static boole _main_internal__run_and_wait(char* command_line, DWORD timeout_ms, DWORD* out_exit_code);
+static void _main_internal__terminate_stale_stunnel(const char* pid_path);
+#endif
 
 uint64 g_thread_id0 = 0;
 uint64 g_thread_id1 = 0;
@@ -166,7 +174,7 @@ void onopen(ws_cli_conn_t* client)
         goto label_onopen_end;
     }
 
-    // every socket, before any check judges it: this is the only trace a bot leaves
+    // every socket, before any check is applied: this is the only log entry a bot leaves
     server_logs__socket_opened(ip_address);
 
     // drop banned ips right away, before any client slot is set up
@@ -178,8 +186,8 @@ void onopen(ws_cli_conn_t* client)
         goto label_onopen_end;
     }
 
-    // with same-ip off, a second session from an ip is judged once its identity is proven (a returning
-    // client's own ghost must not block him), so only a second unfinished handshake is refused this early
+    // with same-ip off, a second session from an ip is checked once its identity is proven (a returning
+    // client's own earlier session must not block it), so only a second unfinished handshake is refused this early
     if (g_server_settings.is_same_ip_address_allowed == FALSE)
     {
         if (base__is_there_an_unfinished_handshake_from_same_ip_address(ip_address) == TRUE)
@@ -254,7 +262,7 @@ void onclose(ws_cli_conn_t* websocket)
 
     DBG_AUTHENTICATION log_info("%s %d %s", "onclose", client_index, "\n");
 
-    // the socket log needs the address and name before the slot is wiped; a socket that never got
+    // the socket log needs the address and name before the slot is cleared; a socket that never got
     // a slot (refused at open) still has its address in the library until this callback returns
     if (client_index != -1)
     {
@@ -414,20 +422,59 @@ void websocket_thread(void)
 }
 
 /**
- * @brief this is function used as entry point function of a thread that checks clients connectivity
- * *
- * @return void
+ * @brief Checks whether a connection has taken too long to finish signing in or
+ * has stopped sending keep-alive messages while that timeout check is enabled.
  *
+ * @param client_t* client -> the client slot whose connection is being checked
+ * @param uint64 now -> current time in milliseconds from base__get_timestamp_ms
+ *
+ * @attention The caller must hold the clients lock while reading the connection
+ * and settings. Repeat the check after taking the write lock before disconnecting
+ * a client, because a keep-alive message or a settings change may have arrived.
+ *
+ * @return boole -> TRUE when the connection has passed its time limit; FALSE otherwise
+ */
+static boole _main_internal__has_connection_timed_out(client_t* client, uint64 now)
+{
+    uint64 maintain_limit_ms = 0;
+
+    if (client->is_existing == FALSE && client->timestamp_connected == 0)
+    {
+        return FALSE;
+    }
+
+    if (client->is_authenticated == TRUE)
+    {
+        if (g_server_settings.enforce_connection_check == FALSE || client->is_music_bot == TRUE)
+        {
+            return FALSE;
+        }
+
+        // Idle clients send a message every 120 seconds; active clients send one every 10 seconds.
+        maintain_limit_ms = (g_server_settings.is_idle_mode_allowed == TRUE) ? 150000 : 80000;
+        return client->timestamp_last_maintain_connection_message_received + maintain_limit_ms < now;
+    }
+
+    // Waiting for a login slot has its own time limit. Once admitted, the
+    // connection gets 60 seconds to finish authentication, as before.
+    return client->is_waiting_for_login_slot == FALSE && client->timestamp_connected + 60000 < now;
+}
+
+/**
+ * @brief Runs the thread that disconnects clients whose login or keep-alive time
+ * limit has expired. It reads the current settings on each pass so an administrator
+ * can enable or disable keep-alive timeout checks while the server is running.
+ *
+ * @return void
  */
 void websocket_connection_check_thread(void)
 {
-    static uint64 timestamp_now = 0;
+    uint64 timestamp_now = 0;
     uint64 i = 0;
-    uint64 maintain_limit_ms = 0; // heartbeat silence allowed before a client is dropped
-    int64 size_of_allocated_message_buffer = 0;
     int64* marked_client_ids_for_disconnect = 0;
-    char* msg = 0;
     int64 number_of_marked_clients = 0;
+    boole send_websocket_ping = FALSE;
+    client_t* client = NULL_POINTER;
 
     marked_client_ids_for_disconnect = (int64*)memorymanager__allocate(sizeof(int64) * g_server_settings.max_client_count, MEMALLOC_MARKED_CLIENT_INDICES);
     if (marked_client_ids_for_disconnect == NULL_POINTER)
@@ -445,7 +492,11 @@ void websocket_connection_check_thread(void)
 
         // ws-level liveness, off by default and switched in the settings tab: a client 4 pings
         // behind gets its socket shut down (ws.c send_ping_close) and its reader thread runs onclose
-        if (g_server_settings.is_websocket_ping_active == TRUE)
+        clib__read_lock(&g_clients_global_rwlock_guard);
+        send_websocket_ping = g_server_settings.is_websocket_ping_active;
+        clib__unlock(&g_clients_global_rwlock_guard);
+
+        if (send_websocket_ping == TRUE)
         {
             ws_ping(0, 3);
         }
@@ -457,43 +508,10 @@ void websocket_connection_check_thread(void)
 
         for (i = 0; i < g_server_settings.max_client_count; i++)
         {
-            if (g_clients_array[i].is_existing == FALSE && g_clients_array[i].timestamp_connected == 0)
+            if (_main_internal__has_connection_timed_out(&g_clients_array[i], timestamp_now) == TRUE)
             {
-                continue;
-            }
-
-            if (g_clients_array[i].is_authenticated == TRUE)
-            {
-                if (g_clients_array[i].is_music_bot == TRUE)
-                {
-                    continue;
-                }
-
-                timestamp_now = base__get_timestamp_ms();
-
-                // 150 s when idle mode is allowed (an idle client heartbeats every 120 s), 80 s otherwise
-                // (a live client heartbeats every 10 s)
-                maintain_limit_ms = (g_server_settings.is_idle_mode_allowed == TRUE) ? 150000 : 80000;
-
-                if (g_clients_array[i].timestamp_last_maintain_connection_message_received + maintain_limit_ms < timestamp_now)
-                {
-                    DBG_CONNECTION_CHECK_THREAD log_info("%s %p %s", "trying to disconnect client. did not receive maintain connection message : ", g_clients_array[i].p_ws_connection, "\n");
-
-                    marked_client_ids_for_disconnect[number_of_marked_clients] = i;
-                    number_of_marked_clients++;
-                }
-            }
-
-            // remove client who does not authenticate within given time limit
-            else
-            {
-                if (g_clients_array[i].timestamp_connected + 60000 < timestamp_now)
-                {
-                    DBG_CONNECTION_CHECK_THREAD log_info("%s %p %s", "trying to disconnect client : ", g_clients_array[i].p_ws_connection, "\n");
-
-                    marked_client_ids_for_disconnect[number_of_marked_clients] = i;
-                    number_of_marked_clients++;
-                }
+                marked_client_ids_for_disconnect[number_of_marked_clients] = i;
+                number_of_marked_clients++;
             }
         }
 
@@ -506,9 +524,18 @@ void websocket_connection_check_thread(void)
 
             for (i = 0; i < number_of_marked_clients; i++)
             {
-                // the socket itself: without this only the entry went away and the dead connection
+                client = &g_clients_array[marked_client_ids_for_disconnect[i]];
+
+                // A message, new login, or settings change may have happened while
+                // the read lock was released. Only close a connection still overdue.
+                if (_main_internal__has_connection_timed_out(client, base__get_timestamp_ms()) == FALSE)
+                {
+                    continue;
+                }
+
+                // the socket itself: without this only the entry went away and the closed connection
                 // kept its reader thread and ws slot forever (the ws ping used to reap those)
-                server_logs__client_disconnect_reason(&g_clients_array[marked_client_ids_for_disconnect[i]], "heartbeat timeout");
+                server_logs__client_disconnect_reason(client, client->is_authenticated == TRUE ? "heartbeat timeout" : "authentication timeout");
                 base__close_websocket_connection(marked_client_ids_for_disconnect[i], FALSE);
                 base__process_client_disconnect(marked_client_ids_for_disconnect[i]);
             }
@@ -520,8 +547,7 @@ void websocket_connection_check_thread(void)
         // rate-limited inside to one purge per day
         server_logs__purge_tick();
 
-        // 15s, same in windows and linux: the tick at which the 180 s heartbeat limit and the
-        // 60 s authentication limit above are checked
+        // Check again after 15 seconds on every platform.
         sleep(15);
     }
 }
@@ -841,7 +867,7 @@ static void _main_internal__renew_certificate_if_due(void)
  * @brief if wss is enabled, writes stunnel.conf next to the executable and launches
  *        the bundled stunnel so the server is reachable over wss as well as ws
  *
- * @attention the launched child is set to die with this server (PR_SET_PDEATHSIG)
+ * @attention the launched child is set to end with this server (PR_SET_PDEATHSIG)
  *
  * @return void
  */
@@ -924,7 +950,7 @@ static void _main_internal__launch_stunnel(void)
     if (stunnel_pid == 0)
     {
 #ifdef __linux__
-        // die with the parent server; Linux-only. on macOS/BSD the stale-stunnel pkill above
+        // end with the parent server; Linux-only. on macOS/BSD the stale-stunnel pkill above
         // handles a leftover from a hard kill
         prctl(PR_SET_PDEATHSIG, SIGTERM);
 #endif
@@ -1422,6 +1448,8 @@ int main(void)
     char client_html_path[640];
     FILE* client_html_file = 0;
 
+    base__start_server_uptime();
+
     // flush logs line-by-line even when stdout/stderr are piped (tee / file);
     // without this, output is block-buffered and only appears in delayed chunks
     setvbuf(stdout, NULL_POINTER, _IOLBF, 0);
@@ -1443,7 +1471,7 @@ int main(void)
     srand(time(0));
 
     clib__rwlock_init(&g_clients_global_rwlock_guard);
-    clib__rwlock_init(&g_webrtc_muggles_rwlock_guard);
+    clib__rwlock_init(&g_webrtc_peers_rwlock_guard);
     clib__rwlock_init(&g_channels_global_rwlock_guard);
     clib__rwlock_init(&g_tags_global_rwlock_guard);
     clib__rwlock_init(&g_icons_global_rwlock_guard);
@@ -1460,6 +1488,7 @@ int main(void)
     g_first_run_admin_password = calloc(ADMIN_PASSWORD_MAX_LENGTH, 1);
     if (g_first_run_admin_password == NULL_POINTER) { exit(EXIT_FAILURE); }
     settings__load();
+    login_admission__set_limit((uint)g_server_settings.max_concurrent_logins);
 
 
     g_clients_array = (client_t*)memorymanager__allocate(sizeof(client_t) * g_server_settings.max_client_count, MEMALLOC_CLIENTS_ARRAY);
@@ -1477,10 +1506,10 @@ int main(void)
         g_offline_messages = (offline_chat_message_t*)memorymanager__allocate(sizeof(offline_chat_message_t) * MAX_OFFLINE_MESSAGES, MEMALLOC_OFFLINE_MESSAGES_ARRAY);
 
     }
-    g_webrtc_muggles_array = (webrtc_peer_t*)memorymanager__allocate(sizeof(webrtc_peer_t) * g_server_settings.max_client_count, MEMALLOC_WEBRTC_PEERS);
+    g_webrtc_peers_array = (webrtc_peer_t*)memorymanager__allocate(sizeof(webrtc_peer_t) * g_server_settings.max_client_count, MEMALLOC_WEBRTC_PEERS);
     if (g_clients_array == NULL_POINTER || g_channel_array == NULL_POINTER || g_client_stored_data == NULL_POINTER
         || g_icons_array == NULL_POINTER || g_tags_array == NULL_POINTER || g_ban_array == NULL_POINTER
-        || g_webrtc_muggles_array == NULL_POINTER
+        || g_webrtc_peers_array == NULL_POINTER
         || (g_server_settings.allow_offline_messages == TRUE && g_offline_messages == NULL_POINTER)
         // reserve chat, audio and video sockets even when media is enabled later at run time
         || ws_init_client_slots((uint32_t)g_server_settings.max_client_count * WEBSOCKET_CONNECTIONS_PER_CLIENT) != 0)

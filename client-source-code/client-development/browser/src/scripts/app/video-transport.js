@@ -203,7 +203,7 @@ function video_transport__start()
 }
 
 /**
- * @brief the once-a-second check: requests a session when the socket is wanted and missing, drops the socket when it is not wanted or dead
+ * @brief the once-a-second check: requests a session when the socket is wanted and missing, drops the socket when it is not wanted or no longer answers
  *
  * @return void
  */
@@ -223,7 +223,7 @@ function video_transport__tick()
     }
     if (state.ready)
     {
-        // the server's keepalive frames refresh last_received; a socket without any frame for this long is dead
+        // the server's keepalive frames refresh last_received; a socket without any frame for this long no longer works
         if (now - state.last_received > 15000)
         {
             video_transport__drop_socket();

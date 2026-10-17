@@ -11,8 +11,13 @@
 #include "util.h"
 #include "../third-party/rxi-log/log.h"
 
-/* On failure the caller still owns argument. On success no join is required,
- * even if the worker finishes before pthread_create returns. */
+/**
+ * @brief Starts a worker thread that releases its thread resources when it finishes.
+ * @param void* (*)(void*) entry -> function run by the worker
+ * @param void* argument -> value passed to entry; the caller retains it if starting fails
+ * @return boole -> TRUE when started; FALSE when thread setup or creation fails
+ * @note No join is needed, even if the worker finishes before this function returns.
+ */
 boole util__start_detached_thread(void* (*entry)(void*), void* argument)
 {
     pthread_attr_t attributes;
@@ -37,12 +42,10 @@ boole util__start_detached_thread(void* (*entry)(void*), void* argument)
 }
 
 /**
- * @brief ment to be used within acquired lock on clients
- *
- * @param int client_id ->
- *
- * client id and client_index are the same in the server's context
- * @return boole
+ * @brief Checks that a client slot exists, is authenticated and has a WebSocket connection.
+ * @param int client_id -> index into g_clients_array; client id and client index are the same
+ * @return boole -> TRUE when all checks pass; FALSE for an invalid or unused slot
+ * @attention The caller holds the clients lock.
  */
 boole util__is_client_valid(int client_id)
 {

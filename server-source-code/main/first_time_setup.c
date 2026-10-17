@@ -267,6 +267,8 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     cJSON_AddItemToObject(json_root, "is_fast_reconnect_allowed", cJSON_CreateBool(g_server_settings.is_fast_reconnect_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
+    cJSON_AddBoolToObject(json_root, "enforce_connection_check", g_server_settings.enforce_connection_check == TRUE);
+    cJSON_AddNumberToObject(json_root, "max_concurrent_logins", (double)g_server_settings.max_concurrent_logins);
     cJSON_AddNumberToObject(json_root, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
     cJSON_AddItemToObject(json_root, "show_music_bot_marquee_to_everyone", cJSON_CreateBool(g_server_settings.show_music_bot_marquee_to_everyone == TRUE));
     cJSON_AddItemToObject(json_root, "restart_on_crash", cJSON_CreateBool(g_server_settings.restart_on_crash == TRUE));
@@ -336,7 +338,7 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
 }
 
 /**
- * @brief scans the served client.html for the selectable theme names baked into it, so
+ * @brief scans the served client.html for the selectable theme names written into it, so
  *        first-time setup can offer them as a default
  *
  *        reads the whole file into memory, blanks out every <!-- --> region first so a commented-out
@@ -880,7 +882,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     _first_time_setup_internal__ask_admin_password(input, sizeof(input));
     base__hash_password_to_base64(input, &g_server_settings.admin_password[0], ADMIN_PASSWORD_MAX_LENGTH);
     g_server_settings.admin_password_is_initial = TRUE;
-    // keep the plaintext only for this run's startup summary (shown once, then wiped)
+    // keep the plaintext only for this run's startup summary (shown once, then cleared)
     clib__copy_memory(input, &g_first_run_admin_password[0], clib__utf8_string_length(input), ADMIN_PASSWORD_MAX_LENGTH - 1);
     clib__null_memory(input, sizeof(input));
 
@@ -990,7 +992,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     }
     clib__null_memory(input, sizeof(input));
 
-    // aliases ride on identities - without them there is nothing persistent to attach the name to
+    // aliases are attached to identities - without them there is nothing persistent to attach the name to
     if (g_server_settings.are_identities_enabled == TRUE)
     {
 
@@ -1028,7 +1030,7 @@ void first_time_setup__run(char plaintext_keys[][256])
                     printf("%s %s\n", g_mark_ok, "last seen: on");
                 }
 
-                // offline messages ride on that same list. this one is asked ONCE, here, and is not
+                // offline messages depend on that same list. this one is asked ONCE, here, and is not
                 // editable later: saying yes makes the server keep each identity's raw public key
                 // (a peer cannot encrypt to somebody who is not connected without it)
                 printf("%s %s\n", "   ", "the server holds them in ram and delivers them on reconnect (lost if the server restarts),");
@@ -1181,7 +1183,7 @@ void first_time_setup__run(char plaintext_keys[][256])
             printf("%s %s\n", g_mark_info, "autoconnect off: the served page omits the keys; users connect manually");
         }
 
-        // offer a default theme baked into the served client.html, scanned from the page itself
+        // offer a default theme written into the served client.html, scanned from the page itself
         clib__null_memory(theme_scan_path, sizeof(theme_scan_path));
         if (g_server_settings.http_webroot[0] != 0)
         {

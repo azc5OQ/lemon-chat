@@ -32,6 +32,23 @@ typedef struct https_connection_t
     httpclient_response_t* response;
 } https_connection_t;
 
+// declarations
+static httpclient_error_t _httpclient_internal__wait(https_connection_t* connection, boole writing);
+static httpclient_error_t _httpclient_internal__send(https_connection_t* connection, const void* data, uint size);
+static httpclient_error_t _httpclient_internal__receive(https_connection_t* connection, boole* eof);
+static httpclient_error_t _httpclient_internal__handshake(https_connection_t* connection, boole initial);
+static httpclient_error_t _httpclient_internal__encrypt(https_connection_t* connection, const void* data, uint size);
+static httpclient_error_t _httpclient_internal__read(https_connection_t* connection, http_parser_t* parser, boole* closed);
+static httpclient_error_t _httpclient_internal__connect(https_connection_t* connection, const char* host, const char* port, uint timeout);
+
+/**
+ * @brief Waits until a URL preview socket is ready for reading or writing, within its existing time limit.
+ *
+ * @param https_connection_t* connection -> the socket, deadline and response error field to use
+ * @param boole writing -> nonzero to wait for writing, or zero to wait for reading
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when ready, HTTPCLIENT_TIMEOUT when time runs out, or HTTPCLIENT_SOCKET on failure
+ */
 static httpclient_error_t _httpclient_internal__wait(https_connection_t* connection, boole writing)
 {
     fd_set ready;
@@ -73,6 +90,15 @@ static httpclient_error_t _httpclient_internal__wait(https_connection_t* connect
     return HTTPCLIENT_OK;
 }
 
+/**
+ * @brief Sends all supplied bytes through the Windows socket before the URL preview deadline.
+ *
+ * @param https_connection_t* connection -> the open socket and time limit to use
+ * @param const void* data -> the bytes to send; this function does not encrypt them
+ * @param uint size -> the number of bytes to send
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when every byte was sent, or a timeout or socket error
+ */
 static httpclient_error_t _httpclient_internal__send(https_connection_t* connection, const void* data, uint size)
 {
     uint position = 0;
@@ -103,6 +129,14 @@ static httpclient_error_t _httpclient_internal__send(https_connection_t* connect
     return HTTPCLIENT_OK;
 }
 
+/**
+ * @brief Reads more socket bytes into the connection buffer without discarding bytes already waiting there.
+ *
+ * @param https_connection_t* connection -> the socket, input buffer and time limit to use
+ * @param boole* eof -> set to 1 when the socket closes normally, or 0 while it remains open
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK for a successful read or closure, or a size, timeout or socket error
+ */
 static httpclient_error_t _httpclient_internal__receive(https_connection_t* connection, boole* eof)
 {
     int received = 0;
@@ -137,6 +171,16 @@ static httpclient_error_t _httpclient_internal__receive(https_connection_t* conn
     }
 }
 
+/**
+ * @brief Establishes or continues the encrypted HTTPS connection used to download a URL preview.
+ *
+ * Unread bytes stay in the connection buffer; the response records the TLS version.
+ *
+ * @param https_connection_t* connection -> the socket, Schannel state, website name and time limit
+ * @param boole initial -> nonzero for the first TLS handshake, or zero to continue an existing TLS connection
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when TLS is ready, or the TLS, socket, timeout or response error
+ */
 static httpclient_error_t _httpclient_internal__handshake(https_connection_t* connection, boole initial)
 {
     SecBuffer input[2];
@@ -267,6 +311,15 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
     }
 }
 
+/**
+ * @brief Encrypts request bytes with Schannel and sends all resulting HTTPS data.
+ *
+ * @param https_connection_t* connection -> the established TLS connection and its time limit
+ * @param const void* data -> the unencrypted request bytes to send
+ * @param uint size -> the number of request bytes
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when all bytes were sent, or an allocation, TLS, socket or timeout error
+ */
 static httpclient_error_t _httpclient_internal__encrypt(https_connection_t* connection, const void* data, uint size)
 {
     ubyte* record = NULL;
@@ -324,6 +377,17 @@ static httpclient_error_t _httpclient_internal__encrypt(https_connection_t* conn
     return error;
 }
 
+/**
+ * @brief Decrypts HTTPS response bytes and passes the resulting page data to the HTTP parser.
+ *
+ * TLS control messages can be handled without adding page bytes.
+ *
+ * @param https_connection_t* connection -> the established TLS connection and any received bytes still waiting
+ * @param http_parser_t* parser -> receives the decrypted headers and body bytes
+ * @param boole* closed -> set to 1 for a TLS close notification, or 0 otherwise
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK after processing available TLS data, or the connection, TLS or HTTP error
+ */
 static httpclient_error_t _httpclient_internal__read(https_connection_t* connection, http_parser_t* parser, boole* closed)
 {
     SecBuffer buffers[4];
@@ -414,6 +478,16 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t* connect
     }
 }
 
+/**
+ * @brief Resolves a website name and opens a Windows socket for its URL preview download.
+ *
+ * @param https_connection_t* connection -> receives the open socket and shared connection deadline
+ * @param const char* host -> the hostname or numeric IP address to resolve
+ * @param const char* port -> the destination port written as decimal text
+ * @param uint timeout -> the time allowed in milliseconds after DNS lookup, shared by later reads and writes
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when connected, or a DNS, socket or timeout error
+ */
 static httpclient_error_t _httpclient_internal__connect(https_connection_t* connection, const char* host, const char* port, uint timeout)
 {
     ADDRINFOA hints;
@@ -489,6 +563,13 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t* conn
     return error;
 }
 
+/**
+ * @brief Closes a Windows URL preview connection and frees its socket and TLS resources.
+ *
+ * @param https_connection_t* connection -> the connection to release, including one that only partly opened, or NULL
+ *
+ * @return void
+ */
 void httpclient_transport__close(https_connection_t* connection)
 {
     if (connection == NULL)
@@ -514,6 +595,18 @@ void httpclient_transport__close(https_connection_t* connection)
     free(connection);
 }
 
+/**
+ * @brief Opens a connection to a website and prepares TLS when a URL preview uses HTTPS.
+ *
+ * Always close *output, even on failure, to release any partly initialized resources.
+ *
+ * @param const httpclient_request_t* request -> the timeout, allowed-address policy and other connection options
+ * @param const httpclient_url_t* url -> the parsed hostname, port and HTTPS flag
+ * @param httpclient_response_t* response -> receives native connection errors and must stay alive until close
+ * @param httpclient_connection_t** output -> receives the allocated connection, or NULL when allocation fails
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when ready to send, or the allocation, DNS, socket, timeout or TLS error
+ */
 httpclient_error_t httpclient_transport__open(const httpclient_request_t* request, const httpclient_url_t* url,
     httpclient_response_t* response, httpclient_connection_t** output)
 {
@@ -575,6 +668,15 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
     return error;
 }
 
+/**
+ * @brief Sends all request bytes for a URL preview, encrypting them when the connection uses HTTPS.
+ *
+ * @param httpclient_connection_t* connection -> the open connection and the time limit shared by the request
+ * @param const void* data -> the request bytes, kept alive by the caller until this function returns
+ * @param uint size -> the number of bytes to send
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when all bytes were sent, or the allocation, TLS, socket or timeout error
+ */
 httpclient_error_t httpclient_transport__write(httpclient_connection_t* connection, const void* data, uint size)
 {
     if (connection->is_https)
@@ -584,6 +686,17 @@ httpclient_error_t httpclient_transport__write(httpclient_connection_t* connecti
     return _httpclient_internal__send(connection, data, size);
 }
 
+/**
+ * @brief Reads URL preview response data, decrypts HTTPS data if needed and continues parsing the response.
+ *
+ * HTTPS socket closure without a TLS close notification is reported as truncated.
+ *
+ * @param httpclient_connection_t* connection -> the open connection and its response object
+ * @param http_parser_t* parser -> the reading state and buffers for the HTTP response
+ * @param boole* closed -> set to 1 when the connection ends cleanly, or 0 otherwise
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK after processing data or a clean closure, or the connection, TLS or HTTP error
+ */
 httpclient_error_t httpclient_transport__read(httpclient_connection_t* connection, http_parser_t* parser, boole* closed)
 {
     if (connection->is_https)

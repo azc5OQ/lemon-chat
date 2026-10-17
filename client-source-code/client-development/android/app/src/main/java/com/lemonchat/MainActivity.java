@@ -736,7 +736,7 @@ public class MainActivity extends AppCompatActivity
 
 				//node may have (re)connected while the page's retry timers were throttled in the
 				//background; poke it so reattaching starts now instead of waiting out a countdown
-				this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__nudge_loopback_reattach === 'function') { JavascriptJavaBridge__nudge_loopback_reattach(); }", null);
+				this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__request_loopback_reattach === 'function') { JavascriptJavaBridge__request_loopback_reattach(); }", null);
 
 				//re-deliver node's current phase: a push lost while the page was busy or detached
 				//left the status frozen (the stuck "generating the identity key" episode)

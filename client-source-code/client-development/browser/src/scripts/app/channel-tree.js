@@ -126,11 +126,11 @@ function channel_tree__get_tag_by_tag_id(tag_id)
 
 /**
  * @brief the direct children of a parent channel
- *        pass g_ROOT_LEVEL_PARENT_SENTINEL to get the root channels (those are matched by their
+ *        pass g_ROOT_LEVEL_PARENT_MARKER (the marker value that stands for the root level) to get the root channels (those are matched by their
  *        is_root_channel flag, not by parent id)
  *
  * @param array channels -> the channel list to search
- * @param number parent_channel_id -> the parent, or the sentinel for the roots
+ * @param number parent_channel_id -> the parent, or the marker value for the roots
  *
  * @return array the child channel objects
  */
@@ -139,7 +139,7 @@ function channel_tree__get_channels_by_channel_parent_id(channels, parent_channe
     let result = [];
     for (var i = 0; i < channels.length; i++)
     {
-        if (parent_channel_id == g_ROOT_LEVEL_PARENT_SENTINEL)
+        if (parent_channel_id == g_ROOT_LEVEL_PARENT_MARKER)
         {
             // root channels no longer carry a usable parent id (uint64 has no -1),
             // so match them by the explicit is_root_channel flag sent by the server
@@ -447,7 +447,7 @@ function channel_tree__get_stored_client_by_alias(alias)
 // then its subchannels' subtrees), so new items are inserted relative to these anchors
 
 /**
- * @brief whether a channel is another channel itself or sits anywhere below it
+ * @brief whether a channel is another channel itself or is anywhere below it
  *
  * @param number child_channel_id -> the channel to test
  * @param number ancestor_channel_id -> the candidate ancestor
@@ -646,6 +646,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                         <p>]</p>\n\
                     </div>\n\
                     <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
+                    <span class=\"client-video-watching-icon\" data-client-id=\"" + client_id + "\" title=\"watching the stream\" style=\"display: none;\"></span>\n\
                     <div class='client-tags' id =\"client-tags-" + client_id + "\">\n\
                     </div>\n\
                 </div>";
@@ -676,6 +677,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                         <p>]</p>\n\
                     </div>\n\
                     <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
+                    <span class=\"client-video-watching-icon\" data-client-id=\"" + client_id + "\" title=\"watching the stream\" style=\"display: none;\"></span>\n\
                     <div class='client-tags' id=\"client-tags-" + client_id + "\">\n\
                     </div>\n\
                     <svg class=\"client-ignore-state\" style=\"margin-left: "+indentation_level * 20+"px; display: "+client_ignore_state_display+";\"  viewBox=\"0 0 100 20\">\n\
@@ -940,7 +942,7 @@ function channel_tree__enqueue_all_avatars_for_loading()
 /**
  * @brief queues every connected person whose avatar we do not have yet and drains the queue one request per tick
  *        safe to call repeatedly: already-queued and already-known ids are skipped, the timer is
- *        started once; the strip themes bulk-load through channel_tree__enqueue_all_avatars_for_loading instead
+ *        started once; the member list themes bulk-load through channel_tree__enqueue_all_avatars_for_loading instead
  *
  * @return void
  */
@@ -948,7 +950,7 @@ function channel_tree__start_avatar_prefetch()
 {
     if (PREFETCH_AVATARS_AUTOMATICALLY == false || g_server_policy.allow_avatars == false) { return; }
 
-    // the strip themes (simpledark/bluebell) show everybody at once and already bulk-load
+    // the member list themes (simpledark/bluebell) show everybody at once and already bulk-load
     // through channel_tree__enqueue_all_avatars_for_loading; prefetching on top would double the requests
     if (g_avatar.grid_visible == true) { return; }
 

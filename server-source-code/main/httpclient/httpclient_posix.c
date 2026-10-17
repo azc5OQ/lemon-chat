@@ -42,23 +42,46 @@ struct https_connection_t
     mbedtls_ctr_drbg_context random;
 };
 
-static uint64 _httpclient_posix__now(void)
+// declarations
+static uint64 _httpclient_posix_internal__now(void);
+static httpclient_error_t _httpclient_posix_internal__wait(httpclient_connection_t* connection, int writing);
+static int _httpclient_posix_internal__tls_send(void* context, const unsigned char* bytes, size_t size);
+static int _httpclient_posix_internal__tls_receive(void* context, unsigned char* bytes, size_t size);
+static int _httpclient_posix_internal__load_roots(httpclient_connection_t* connection, const char* ca_file);
+
+/**
+ * @brief Reads the clock used to measure how long a URL preview connection has been waiting.
+ *
+ * This clock moves forward independently of changes to the computer's date and time.
+ *
+ * @return uint64 -> the monotonic clock value in milliseconds
+ */
+static uint64 _httpclient_posix_internal__now(void)
 {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (uint64)now.tv_sec * 1000 + (uint64)now.tv_nsec / 1000000;
 }
 
-// The same deadline covers connecting, TLS negotiation and all body reads.
-// A website that keeps sending small pieces does not restart the time limit.
-static httpclient_error_t _httpclient_posix__wait(httpclient_connection_t* connection, int writing)
+/**
+ * @brief Waits for a URL preview socket to become ready or reach its existing time limit.
+ *
+ * The same deadline covers connecting, TLS negotiation and all body reads.
+ * A website that keeps sending small pieces does not restart the time limit.
+ *
+ * @param httpclient_connection_t* connection -> the connection whose socket and deadline are checked
+ * @param int writing -> nonzero to wait for writing, or zero to wait for reading
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when the socket reports an event, or a timeout or socket error
+ */
+static httpclient_error_t _httpclient_posix_internal__wait(httpclient_connection_t* connection, int writing)
 {
     struct pollfd descriptor;
     descriptor.fd = connection->socket;
     descriptor.events = writing ? POLLOUT : POLLIN;
     for (;;)
     {
-        uint64 now = _httpclient_posix__now();
+        uint64 now = _httpclient_posix_internal__now();
         if (now >= connection->deadline)
         {
             return HTTPCLIENT_TIMEOUT;
@@ -85,7 +108,16 @@ static httpclient_error_t _httpclient_posix__wait(httpclient_connection_t* conne
     }
 }
 
-static int _httpclient_posix__tls_send(void* context, const unsigned char* bytes, size_t size)
+/**
+ * @brief Sends bytes on a URL preview socket and reports the result in the form expected by mbedTLS.
+ *
+ * @param void* context -> the httpclient_connection_t that owns the socket
+ * @param const unsigned char* bytes -> the bytes to send
+ * @param size_t size -> the number of bytes available to send
+ *
+ * @return int -> the number of bytes sent, a retry code when writing must wait, or a send error
+ */
+static int _httpclient_posix_internal__tls_send(void* context, const unsigned char* bytes, size_t size)
 {
     httpclient_connection_t* connection = context;
     ssize_t sent = send(connection->socket, bytes, size, MSG_NOSIGNAL);
@@ -101,7 +133,16 @@ static int _httpclient_posix__tls_send(void* context, const unsigned char* bytes
     return (int)sent;
 }
 
-static int _httpclient_posix__tls_receive(void* context, unsigned char* bytes, size_t size)
+/**
+ * @brief Reads bytes from a URL preview socket and reports the result in the form expected by mbedTLS.
+ *
+ * @param void* context -> the httpclient_connection_t that owns the socket
+ * @param unsigned char* bytes -> the buffer that receives the bytes
+ * @param size_t size -> the size of that buffer in bytes
+ *
+ * @return int -> the number of bytes read, zero for a closed socket, a retry code, or a receive error
+ */
+static int _httpclient_posix_internal__tls_receive(void* context, unsigned char* bytes, size_t size)
 {
     httpclient_connection_t* connection = context;
     ssize_t received = recv(connection->socket, bytes, size, 0);
@@ -117,7 +158,18 @@ static int _httpclient_posix__tls_receive(void* context, unsigned char* bytes, s
     return (int)received;
 }
 
-static int _httpclient_posix__load_roots(httpclient_connection_t* connection, const char* ca_file)
+/**
+ * @brief Loads trusted certificates so an HTTPS preview can check the website's certificate.
+ *
+ * A supplied certificate file is used on its own. Otherwise the function reads
+ * the certificates trusted by macOS or looks in the usual Linux and Android locations.
+ *
+ * @param httpclient_connection_t* connection -> the connection whose trusted certificate list is filled
+ * @param const char* ca_file -> a certificate file path, or NULL to use the operating system's certificates
+ *
+ * @return int -> 1 when at least one certificate was loaded, otherwise 0
+ */
+static int _httpclient_posix_internal__load_roots(httpclient_connection_t* connection, const char* ca_file)
 {
     if (ca_file != NULL)
     {
@@ -167,6 +219,18 @@ static int _httpclient_posix__load_roots(httpclient_connection_t* connection, co
     return connection->roots.raw.p != NULL;
 }
 
+/**
+ * @brief Opens a connection to a website and prepares TLS when a URL preview uses HTTPS.
+ *
+ * Always close *output, even on failure, to release any partly initialized resources.
+ *
+ * @param const httpclient_request_t* request -> the timeout, allowed-address policy and other connection options
+ * @param const httpclient_url_t* url -> the parsed hostname, port and HTTPS flag
+ * @param httpclient_response_t* response -> receives native connection errors and must stay alive until close
+ * @param httpclient_connection_t** output -> receives the allocated connection, or NULL when allocation fails
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when ready to send, or the allocation, DNS, socket, timeout or TLS error
+ */
 httpclient_error_t httpclient_transport__open(const httpclient_request_t* request, const httpclient_url_t* url,
     httpclient_response_t* response, httpclient_connection_t** output)
 {
@@ -196,7 +260,7 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
         response->native_error = (uint)status;
         return HTTPCLIENT_DNS;
     }
-    connection->deadline = _httpclient_posix__now() + (request->timeout_ms == 0 ? 15000u : request->timeout_ms);
+    connection->deadline = _httpclient_posix_internal__now() + (request->timeout_ms == 0 ? 15000u : request->timeout_ms);
     for (struct addrinfo* address = addresses; address != NULL; address = address->ai_next)
     {
         if (request->public_addresses_only && !httpclient_internal__address_allowed(address->ai_addr))
@@ -220,7 +284,7 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
             error = status == 0 ? HTTPCLIENT_OK : HTTPCLIENT_SOCKET;
             if (status < 0 && errno == EINPROGRESS)
             {
-                error = _httpclient_posix__wait(connection, 1);
+                error = _httpclient_posix_internal__wait(connection, 1);
                 int socket_error = 0;
                 socklen_t length = sizeof(socket_error);
                 if (error == HTTPCLIENT_OK && (getsockopt(connection->socket, SOL_SOCKET, SO_ERROR,
@@ -248,7 +312,7 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
     {
         return error;
     }
-    if (!_httpclient_posix__load_roots(connection, request->ca_file))
+    if (!_httpclient_posix_internal__load_roots(connection, request->ca_file))
     {
         return HTTPCLIENT_TLS;
     }
@@ -281,7 +345,7 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
         response->native_error = (uint)status;
         return HTTPCLIENT_TLS;
     }
-    mbedtls_ssl_set_bio(&connection->ssl, connection, _httpclient_posix__tls_send, _httpclient_posix__tls_receive, NULL);
+    mbedtls_ssl_set_bio(&connection->ssl, connection, _httpclient_posix_internal__tls_send, _httpclient_posix_internal__tls_receive, NULL);
     for (;;)
     {
         status = mbedtls_ssl_handshake(&connection->ssl);
@@ -294,7 +358,7 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
             response->native_error = (uint)status;
             return HTTPCLIENT_TLS;
         }
-        error = _httpclient_posix__wait(connection, status == MBEDTLS_ERR_SSL_WANT_WRITE);
+        error = _httpclient_posix_internal__wait(connection, status == MBEDTLS_ERR_SSL_WANT_WRITE);
         if (error != HTTPCLIENT_OK)
         {
             return error;
@@ -302,18 +366,27 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
     }
 }
 
+/**
+ * @brief Sends all request bytes for a URL preview, encrypting them when the connection uses HTTPS.
+ *
+ * @param httpclient_connection_t* connection -> the open connection and the time limit shared by the request
+ * @param const void* data -> the request bytes, kept alive by the caller until this function returns
+ * @param uint size -> the number of bytes to send
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when all bytes were sent, or a TLS, socket or timeout error
+ */
 httpclient_error_t httpclient_transport__write(httpclient_connection_t* connection, const void* data, uint size)
 {
     uint sent = 0;
     while (sent < size)
     {
-        if (_httpclient_posix__now() >= connection->deadline)
+        if (_httpclient_posix_internal__now() >= connection->deadline)
         {
             return HTTPCLIENT_TIMEOUT;
         }
         int status = connection->is_https
             ? mbedtls_ssl_write(&connection->ssl, (const unsigned char*)data + sent, size - sent)
-            : _httpclient_posix__tls_send(connection, (const unsigned char*)data + sent, size - sent);
+            : _httpclient_posix_internal__tls_send(connection, (const unsigned char*)data + sent, size - sent);
         if (status > 0)
         {
             sent += (uint)status;
@@ -324,7 +397,7 @@ httpclient_error_t httpclient_transport__write(httpclient_connection_t* connecti
             connection->response->native_error = (uint)status;
             return connection->is_https ? HTTPCLIENT_TLS : HTTPCLIENT_SOCKET;
         }
-        httpclient_error_t error = _httpclient_posix__wait(connection, status == MBEDTLS_ERR_SSL_WANT_WRITE);
+        httpclient_error_t error = _httpclient_posix_internal__wait(connection, status == MBEDTLS_ERR_SSL_WANT_WRITE);
         if (error != HTTPCLIENT_OK)
         {
             return error;
@@ -333,18 +406,29 @@ httpclient_error_t httpclient_transport__write(httpclient_connection_t* connecti
     return HTTPCLIENT_OK;
 }
 
+/**
+ * @brief Reads URL preview response data, decrypts HTTPS data if needed and continues parsing the response.
+ *
+ * HTTPS socket closure without a TLS close notification is reported as truncated.
+ *
+ * @param httpclient_connection_t* connection -> the open connection and its response object
+ * @param http_parser_t* parser -> the reading state and buffers for the HTTP response
+ * @param boole* closed -> set to 1 when the connection ends cleanly, or 0 otherwise
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK after processing data or a clean closure, or the connection, TLS or HTTP error
+ */
 httpclient_error_t httpclient_transport__read(httpclient_connection_t* connection, http_parser_t* parser, boole* closed)
 {
     unsigned char bytes[16384];
     *closed = 0;
     for (;;)
     {
-        if (_httpclient_posix__now() >= connection->deadline)
+        if (_httpclient_posix_internal__now() >= connection->deadline)
         {
             return HTTPCLIENT_TIMEOUT;
         }
         int status = connection->is_https ? mbedtls_ssl_read(&connection->ssl, bytes, sizeof(bytes))
-            : _httpclient_posix__tls_receive(connection, bytes, sizeof(bytes));
+            : _httpclient_posix_internal__tls_receive(connection, bytes, sizeof(bytes));
         if (status > 0)
         {
             httpclient_error_t error = _httpclient_internal__append(&parser->pending, bytes, (uint)status,
@@ -365,7 +449,7 @@ httpclient_error_t httpclient_transport__read(httpclient_connection_t* connectio
             connection->response->native_error = (uint)status;
             return connection->is_https ? HTTPCLIENT_TLS : HTTPCLIENT_SOCKET;
         }
-        httpclient_error_t error = _httpclient_posix__wait(connection, status == MBEDTLS_ERR_SSL_WANT_WRITE);
+        httpclient_error_t error = _httpclient_posix_internal__wait(connection, status == MBEDTLS_ERR_SSL_WANT_WRITE);
         if (error != HTTPCLIENT_OK)
         {
             return error;
@@ -373,6 +457,13 @@ httpclient_error_t httpclient_transport__read(httpclient_connection_t* connectio
     }
 }
 
+/**
+ * @brief Closes a Linux or macOS URL preview connection and frees its socket and TLS resources.
+ *
+ * @param httpclient_connection_t* connection -> the connection to release, including one that only partly opened, or NULL
+ *
+ * @return void
+ */
 void httpclient_transport__close(httpclient_connection_t* connection)
 {
     if (connection == NULL)

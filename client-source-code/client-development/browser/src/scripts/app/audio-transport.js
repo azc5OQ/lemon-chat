@@ -13,7 +13,7 @@
 // because the server resets that state when a connection attaches.
 // the data channel is probed with a one-byte frame, which the server echoes, after a few seconds of
 // silence; when nothing comes back for AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS the channel is rebuilt, and
-// the websocket is tried at once, instead of waiting for the browser to notice the dead transport.
+// the websocket is tried at once, instead of waiting for the browser to notice the lost transport.
 // every frame on either connection is encrypted a second time with this client's two session keys and
 // carries an authentication code, so that a frame on a plain websocket can neither be read nor forged on
 // the network path; keys.js (the block "the encryption of audio and video frames") and media_auth.c on
@@ -255,7 +255,7 @@ function audio_transport__probe_datachannel(now)
         }
         catch (error)
         {
-            // a channel that refuses the probe is as good as silent; the dead check above takes it from here
+            // a channel that refuses the probe is as good as silent; the silence check above takes it from here
         }
     }
 }
@@ -263,8 +263,8 @@ function audio_transport__probe_datachannel(now)
 /**
  * @brief drops a data channel the server no longer answers on and starts the connection loop for a new one
  *
- *        the dead channel is detached first, so its late close event cannot touch the new state. in webrtc
- *        mode the websocket fallback is due at once: the dead time already passed.
+ *        the lost channel is detached first, so its late close event cannot touch the new state. in webrtc
+ *        mode the websocket fallback is due at once: the silence limit already passed.
  *
  * @param string reason -> for the log
  *
@@ -582,7 +582,7 @@ function audio_transport__tick()
             audio_transport__refresh_ui();
             return;
         }
-        // the server's keepalive frames refresh last_received; a socket without any frame for this long is dead
+        // the server's keepalive frames refresh last_received; a socket without any frame for this long no longer works
         if (now - state.last_received > 15000)
         {
             audio_transport__drop_socket();
@@ -826,7 +826,7 @@ function audio_transport__on_ready()
  *        channel keys (a member). what is left, [2 bytes sequence number][opus], goes to the decoder worker
  *        behind the sender id
  *
- * @param ArrayBuffer buffer -> the frame from the wire
+ * @param ArrayBuffer buffer -> the frame as received
  *
  * @return void
  */

@@ -3,9 +3,13 @@
 // settings, the policy the server announces, the icon upload queue and the country block list
 // dispatch.js feeds it the server's values, ui.js has the click handlers
 
-// the server settings tab, one row per input: "key" is the wire name, "kind" says checkbox or
+// the server settings tab, one row per input: "key" is the field name in the settings message, "kind" says checkbox or
 // number field, "tab" which save button sends it. the load and both saves walk this table
 var SERVER_SETTINGS_FIELDS = [
+    { key: "publish_server_uptime", id: "server-settings-publish-uptime", kind: "bool", fallback: true, tab: "general" },
+    { key: "publish_server_slots", id: "server-settings-publish-slots", kind: "bool", fallback: true, tab: "general" },
+    { key: "publish_server_banner", id: "server-settings-publish-banner", kind: "bool", fallback: true, tab: "general" },
+    { key: "publish_server_features", id: "server-settings-publish-features", kind: "bool", fallback: true, tab: "general" },
     { key: "display_country_flags", id: "server-settings-general-display-flags-checkbox", kind: "bool", tab: "general" },
     { key: "hide_admin_country_flag", id: "server-settings-general-hide-admin-flag-checkbox", kind: "bool", tab: "general" },
     { key: "enable_audio", id: "server-settings-general-enable-audio", kind: "bool", tab: "general" },
@@ -27,6 +31,8 @@ var SERVER_SETTINGS_FIELDS = [
     { key: "is_fast_reconnect_allowed", id: "server-settings-general-fast-reconnect-checkbox", kind: "bool", tab: "general" },
     { key: "is_identity_takeover_allowed", id: "server-settings-general-identity-takeover-checkbox", kind: "bool", tab: "general" },
     { key: "is_websocket_ping_active", id: "server-settings-general-websocket-ping-checkbox", kind: "bool", tab: "general" },
+    { key: "enforce_connection_check", id: "server-settings-general-connection-check-checkbox", kind: "bool", fallback: true, tab: "general" },
+    { key: "max_concurrent_logins", id: "server-settings-general-concurrent-logins-input", kind: "number", fallback: 4, tab: "general" },
     { key: "webrtc_datachannel_cooldown_seconds", id: "server-settings-general-datachannel-cooldown-input", kind: "number", fallback: 600, tab: "general" },
     { key: "icon_max_size_bytes", id: "server-settings-general-icon-max-size-input", kind: "number", fallback: 5000, tab: "general" },
     { key: "show_music_bot_marquee_to_everyone", id: "server-settings-general-marquee-everyone-checkbox", kind: "bool", tab: "general" },
@@ -61,6 +67,10 @@ var is_country_select_populated = false;
  */
 function server_settings_tab__apply_server_settings_values_to_tab(values)
 {
+    if (typeof server_info__apply_admin_settings === "function")
+    {
+        server_info__apply_admin_settings(values);
+    }
     for (let i = 0; i < SERVER_SETTINGS_FIELDS.length; i++)
     {
         let field = SERVER_SETTINGS_FIELDS[i];
@@ -68,7 +78,7 @@ function server_settings_tab__apply_server_settings_values_to_tab(values)
 
         if (field.kind == "bool")
         {
-            element.checked = (values[field.key] == true);
+            element.checked = (typeof values[field.key] === "boolean") ? values[field.key] : (field.fallback === true);
         }
         else if (field.kind == "select")
         {
@@ -150,6 +160,8 @@ function server_settings_tab__refresh_audio_connections_row_visibility()
  */
 function server_settings_tab__apply_server_policy_fields(data)
 {
+    let previous_enforce_connection_check = g_server_policy.enforce_connection_check;
+
     for (let policy_field in g_server_policy)
     {
         if (data[policy_field] === undefined)
@@ -168,6 +180,13 @@ function server_settings_tab__apply_server_policy_fields(data)
         {
             g_server_policy[policy_field] = (data[policy_field] == true);
         }
+    }
+
+    // The server also starts a fresh waiting period when checks are enabled again.
+    // A long pause while they were disabled must not cause an immediate reconnect.
+    if (previous_enforce_connection_check === false && g_server_policy.enforce_connection_check === true)
+    {
+        g_connection_check.last_response_timestamp = new Date().valueOf();
     }
 
     server_settings_tab__apply_rename_policy_to_ui();
@@ -199,7 +218,7 @@ function server_settings_tab__apply_rename_policy_to_ui()
 }
 
 /**
- * @brief the icon upload pump: sends the next queued icon unless one is in flight
+ * @brief the icon upload loop: sends the next queued icon unless one is still being sent
  *        the reply handler clears g_icon_upload_in_flight_base64 and calls this again for the rest of the queue
  *
  * @return void

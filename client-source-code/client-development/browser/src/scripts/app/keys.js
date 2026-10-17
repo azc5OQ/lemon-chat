@@ -2,10 +2,10 @@
 // it is the key handling: the rsa keypair size rules, the diffie-hellman session keys, the aes message
 // bodies and the metadata envelope of every frame, and the channel keys a maintainer hands out (with
 // the wait timer that votes a silent maintainer out)
-// workers.js does the same wire work inside the worker; messages.js calls the channel key side
+// workers.js does the same message encryption inside the worker; messages.js calls the channel key side
 
 // state private to this file
-// the maintainer reset: whenever this client waits for keys, a timer is armed; keys that do not arrive
+// the maintainer reset: whenever this client waits for keys, a timer is started; keys that do not arrive
 // in time send a reset_channel_maintainer vote (re-sent every timeout), and once more than half of the
 // channel has voted the server deposes the maintainer and announces a new one
 var MAINTAINER_KEYS_WAIT_TIMEOUT_MS = 5000;
@@ -14,7 +14,7 @@ var maintainer_keys_wait_timer = null;
 
 var maintainer_keys_wait_channel_id = -1;
 
-// ---- identity and wire crypto ----
+// ---- identity and message encryption ----
 
 /**
  * @brief the smallest key size we can create that satisfies the server
@@ -70,7 +70,7 @@ function keys__handle_rsa_key_too_weak_notice(announced_minimum_bits)
         return;
     }
 
-    // the driver redials on its own and the server rejects every attempt, so without this the
+    // the connect loop connects again on its own and the server rejects every attempt, so without this the
     // dialog would reopen in a loop
     if (g_rsa_key_too_weak_prompted_for_bits == minimum_bits)
     {
@@ -111,7 +111,18 @@ function keys__init_keys_object()
     g_media_keys_from_host = null;
     g_media_server_key_layers_from_host = null;
 
-    if (g_are_server_details_predefined == true)
+    // the key rows of the connect window come first: the user typed them, or connection.js built them from the keys the page
+    // wrote in, and the user may have changed or removed them since. a page with the server written into it falls back to
+    // those keys only where no rows were ever built (the mark on the grid): the node runtime has no rows, and the themes that
+    // keep the form as a page of its own build none
+    let key_input_elements = (typeof document !== "undefined" && typeof document.querySelectorAll === "function")
+        ? document.querySelectorAll('#connect-keys-grid input[id^="input-key-"]') : [];
+    let keys_grid = (typeof document !== "undefined" && typeof document.getElementById === "function")
+        ? document.getElementById("connect-keys-grid") : null;
+    let are_key_rows_built = (keys_grid != null && typeof keys_grid.getAttribute === "function"
+        && keys_grid.getAttribute("data-written-in-keys-built") === "true");
+
+    if (g_are_server_details_predefined == true && key_input_elements.length == 0 && are_key_rows_built == false)
     {
         for (let i = 0; i < g_autoconnect_details.keys.length; i++)
         {
@@ -125,6 +136,7 @@ function keys__init_keys_object()
 
             let single_key = {
                 info: "aes-ctr",
+                key_type: "aes256", // the type the connect window would show; written-in keys are this one type
                 key_string: key_string_value,
                 key_bytes: key_bytes
             };
@@ -134,14 +146,18 @@ function keys__init_keys_object()
     }
     else
     {
-        // iterate the key inputs that actually exist in the dom (in order), not a 0..count
-        // range - keys can be removed, which leaves gaps in the input-key-N ids. this also
-        // lets the user drop an accidental (even empty) key back to zero without a restart.
-        let key_input_elements = document.querySelectorAll('#connect-form-sub-container-2 input[id^="input-key-"]');
+        // the key inputs that actually exist in the dom (in order), not a 0..count range - keys can be removed, which
+        // leaves gaps in the input-key-N ids. this also lets the user drop an accidental (even empty) key back to zero
         for (let i = 0; i < key_input_elements.length; i++)
         {
             let key_string_value = key_input_elements[i].value;
             // removed: never log key material
+
+            // an empty row is a row nobody filled, not a key
+            if (key_string_value.length == 0)
+            {
+                continue;
+            }
 
             let hash = _sha256.create();
 
@@ -149,13 +165,17 @@ function keys__init_keys_object()
             hash.array();
             key_bytes = hash.array();
 
+            // the type chosen in the row's select (ui.js); one type exists so far, the field is there for the types to come
+            let key_type_select = document.getElementById("input-key-type-" + key_input_elements[i].getAttribute("data-id"));
+
             let single_key = {
                 info: "aes-ctr",
+                key_type: (key_type_select != null && typeof key_type_select.value === "string") ? key_type_select.value : "aes256",
                 key_string: key_string_value,
                 key_bytes: key_bytes
             };
 
-            g_metadata_keys[i] = single_key;
+            g_metadata_keys.push(single_key);
         }
     }
 
@@ -252,7 +272,7 @@ function keys__decrypt_data_with_aes_keys(keys, data)
  * @brief encrypts a text with a set of keys for a channel message or a channel picture
  *
  *        the text is written into a buffer of at least 1024 bytes that is otherwise zero, so a short message
- *        and a long one look alike on the wire. then every key of the set is applied as one AES-CTR layer.
+ *        and a long one look alike when sent. then every key of the set is applied as one AES-CTR layer.
  *        every message gets its own random 16 byte starting value, the message iv. without it, two messages
  *        encrypted with the same key would use the same keystream, and anybody holding both could combine
  *        them so that the encryption cancels out; the zero padding would even expose the keystream directly.
@@ -436,7 +456,7 @@ function keys__crypt_metadata_layer(key, message_iv, data, encrypt)
 }
 
 /**
- * @brief wraps an outgoing message for the wire
+ * @brief encrypts an outgoing message and builds the envelope that is sent
  *        pads, encrypts with every typed metadata key under a fresh random IV, base64s, and
  *        builds the { iv, data [, tag] } envelope; on the loopback (a ui-only runtime) the text
  *        stays plain, node wraps it toward the real server
@@ -510,13 +530,13 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
  * @brief the reverse of keys__encrypt_all_message_data_and_convert_to_base64
  *        verifies the HMAC tag when the DH layer is active, then peels the metadata key layers
  *
- * @param string envelope_json -> the { iv, data [, tag] } envelope from the wire
+ * @param string envelope_json -> the { iv, data [, tag] } envelope as received
  *
  * @return string the plaintext, "" on any failure
  */
 function keys__decrypt_message_metadata(envelope_json)
 {
-    // the wire payload is a JSON envelope { "iv": <base64>, "data": <base64 ciphertext> }.
+    // the received text is a JSON envelope { "iv": <base64>, "data": <base64 ciphertext> }.
     // the per-message IV is public and seeds every metadata layer's AES-CTR counter.
     let envelope = null;
     try
@@ -595,7 +615,7 @@ function keys__decrypt_message_metadata(envelope_json)
 // ---- channel keys ----
 
 /**
- * @brief arms (re-arms) the keys-wait timer for the current channel
+ * @brief starts (restarts) the keys-wait timer for the current channel
  *        no-op when there is nothing to wait for: no maintainer announced, or the local user IS
  *        the maintainer; node owns this decision, the webview must not vote
  *
@@ -648,7 +668,7 @@ function keys__cancel_maintainer_keys_wait_timer()
 }
 
 /**
- * @brief the maintainer stayed silent for the whole timeout: sends the reset vote and re-arms
+ * @brief the maintainer stayed silent for the whole timeout: sends the reset vote and restarts the timer
  *        every condition is re-checked, because a channel switch, arriving keys or a new
  *        maintainer may have happened meanwhile
  *
@@ -688,7 +708,7 @@ function keys__maintainer_keys_wait_timer_fired()
     console.log("%c no channel keys from maintainer (id " + g_channel_list[channel_index].maintainer_id + ") after " + MAINTAINER_KEYS_WAIT_TIMEOUT_MS + " ms, sending reset_channel_maintainer vote", "color: red");
 
     // payload-free: the client just asks for its channel's maintainer to be reset,
-    // the server does all vote bookkeeping (one vote per client, dies on maintainer change)
+    // the server does all vote bookkeeping (one vote per client, cleared on maintainer change)
     let message_object = {
         message: {
             type: "reset_channel_maintainer"
@@ -725,7 +745,7 @@ function keys__create_and_send_new_channel_keys()
         current_channel_id: g_current_channel_id
     });
 
-    // rsa stays in the data-processing worker (the private key lives only there), so each public key
+    // rsa stays in the data-processing worker (the private key is kept only there), so each public key
     // is posted to it and the encrypted keys come back for the main thread to route
 }
 
@@ -745,7 +765,7 @@ function keys__create_and_send_new_channel_keys()
 // client's encryption, and encrypts the frame again for every receiver with the receiver's keys. the
 // server side is media_auth.c, which also explains why every frame needs a counter.
 //
-// a frame on the wire:           [1 byte version 2][8 bytes frame counter][encrypted part][8 bytes authentication code]
+// a frame as sent:               [1 byte version 2][8 bytes frame counter][encrypted part][8 bytes authentication code]
 // the encrypted part, decrypted: [4 bytes sender id, least significant byte first][8 bytes sender counter][the inner ciphertext]
 // the inner ciphertext is the frame content under the channel keys (or a music bot's keys) and then under
 // the server keys. the counter block (the 16 byte starting value of AES-CTR) of every inner layer is
@@ -1028,7 +1048,7 @@ function keys__media_build_body(sender_id, counter_bytes, inner)
  * @param Uint8Array counter_bytes -> the frame counter, 8 bytes, increased before every frame
  * @param Uint8Array body -> from keys__media_build_body
  *
- * @return Uint8Array the frame for the wire, or null without keys
+ * @return Uint8Array the frame ready to send, or null without keys
  */
 function keys__media_encrypt_frame(session_layer, stream, counter_bytes, body)
 {
@@ -1053,7 +1073,7 @@ function keys__media_encrypt_frame(session_layer, stream, counter_bytes, body)
  *
  * @param object session_layer -> { key_bytes, mac_bytes } from keys__media_session_layer
  * @param number stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
- * @param Uint8Array frame -> the frame from the wire
+ * @param Uint8Array frame -> the frame as received
  *
  * @return object { sender_id, counter_bytes, inner } or null when the frame is not a valid frame of this client
  */

@@ -3,6 +3,9 @@
 // persisted in localStorage under lemon_layout; touch devices keep the legacy layout and skip it
 // main.js wires it at load, ui.js calls it when panels are toggled; the state is g_layout in globals.js
 
+var layout_edit_drag = null;
+var layout_edit_animations = [];
+
 /**
  * @brief restores g_layout.state from localStorage "lemon_layout" when the saved shape is valid
  *        snaps a collapsed info column (saved before the 90px minimum) back to its default width
@@ -18,7 +21,8 @@ function layout__layout_load_saved_state()
         let saved = JSON.parse(raw);
         if (saved != null && Array.isArray(saved.order) && saved.order.length == 3
             && saved.order.indexOf("channels") != -1 && saved.order.indexOf("chat") != -1
-            && saved.order.indexOf("info") != -1 && saved.input_col != null && saved.input_pos != null)
+            && saved.order.indexOf("info") != -1 && ["channels", "chat", "info"].indexOf(saved.input_col) != -1
+            && ["top", "bottom"].indexOf(saved.input_pos) != -1)
         {
             // a collapsed info column (saved before the 90px minimum existed) looks like
             // the panel was deleted - snap it back to the default width
@@ -40,18 +44,22 @@ function layout__layout_save_state()
 }
 
 /**
- * @brief (re)builds the grid templates from g_layout.state and g_is_chat_hidden and pins the panels to their areas
+ * @brief (re)builds the grid templates from g_layout.state and g_is_chat_hidden and assigns the panels to their areas
  *        does not touch the container's display; connect/disconnect owns that
  *
  * @return void
  */
 function layout__layout_apply()
 {
+    if (layout_edit_drag != null && layout_edit_drag.applying == false)
+    {
+        _internal__layout_edit_finish(false, false);
+    }
     if (g_layout.grid_active == false) { return; }
 
     let container = document.getElementById("communication-system-container");
 
-    // fill everything under the head menu: the themes' height:80% left a dead band at
+    // fill everything under the head menu: the themes' height:80% left an empty band at
     // the bottom (the legacy layout covered it only by overflowing past the container)
     let head_menu = document.getElementById("communication-system-head-menu");
     container.style.height = "calc(100vh - " + ((head_menu != null) ? head_menu.offsetHeight : 30) + "px)";
@@ -62,8 +70,7 @@ function layout__layout_apply()
         order = order.filter(function(col) { return col != "chat"; });
     }
 
-    // the input row lives inside the chat column, because the composer must align with the
-    // chat panel above it - same left edge, same right edge, in every theme
+    // The message box shares the width of whichever column it is attached to.
     let row_a = [], row_b = [];
     for (let i = 0; i < order.length; i++)
     {
@@ -103,7 +110,7 @@ function layout__layout_apply()
         panel.style.left = "0px";
     }
 
-    // no left inset here: the input sits in the chat column, so the corner mic button is
+    // no left inset here: the input is in the chat column, so the corner mic button is
     // outside it and the composer starts flush with the chat panel's edge
     g_layout.panels.input.style.paddingLeft = "";
 
@@ -218,132 +225,488 @@ function layout__layout_column_drag_stop()
     document.documentElement.removeEventListener("mouseup", layout__layout_column_drag_stop, false);
 }
 
-// ---- layout-edit mode: drag whole panels to re-arrange, then lock ----
+// ---- Drag panels to preview a layout, then release to keep it. ----
 
 /**
- * @brief toggles layout-edit mode (body attribute + button label); leaving it saves the layout and clears any in-progress panel drag
- *
- * @return void
+ * @brief Turns panel rearranging on or off. Leaving it cancels an unfinished move.
  */
 function layout__layout_edit_toggle()
 {
+    let button = document.getElementById("layout-edit-button");
+
+    _internal__layout_edit_finish(false, false);
     g_layout.edit_active = !g_layout.edit_active;
     document.body.setAttribute("data-layout-edit", g_layout.edit_active ? "1" : "0");
-    document.getElementById("layout-edit-button").value = g_layout.edit_active ? "lock layout" : "layout";
-    if (g_layout.edit_active == false)
-    {
-        layout__layout_save_state();
-        layout__layout_edit_clear_highlight();
-        g_layout.edit_dragged = null;
-    }
+    button.value = g_layout.edit_active ? "lock layout" : "layout";
+    button.setAttribute("aria-pressed", g_layout.edit_active ? "true" : "false");
+    button.title = g_layout.edit_active
+        ? "drag panels to rearrange them; release to save, Escape to cancel; click here to lock"
+        : "rearrange the panels";
 }
 
 /**
- * @brief which layout panel an event landed in
- *
- * @param object e -> the event
- *
- * @return string|null "channels", "chat", "info" or "input", null when outside all four
+ * @brief Finds the panel under the mouse.
+ * @param object e -> Mouse event.
+ * @return string|null Panel name, or null outside the panels.
  */
 function layout__layout_panel_name_from_event(e)
 {
     let names = ["channels", "chat", "info", "input"];
-    for (let i = 0; i < names.length; i++)
+    let i;
+
+    for (i = 0; i < names.length; i++)
     {
-        if (g_layout.panels[names[i]].contains(e.target)) { return names[i]; }
+        if (g_layout.panels[names[i]].contains(e.target))
+        {
+            return names[i];
+        }
     }
     return null;
 }
 
 /**
- * @brief removes the dragging and drop-target highlight classes from all four panels
- *
- * @return void
+ * @brief Removes the appearance used while moving a panel.
  */
 function layout__layout_edit_clear_highlight()
 {
     let names = ["channels", "chat", "info", "input"];
-    for (let i = 0; i < names.length; i++)
+    let i;
+
+    for (i = 0; i < names.length; i++)
     {
-        g_layout.panels[names[i]].classList.remove("layout-drop-target");
         g_layout.panels[names[i]].classList.remove("layout-dragging");
+    }
+    document.body.removeAttribute("data-layout-dragging");
+}
+
+/**
+ * @brief Copies the layout without sharing its column order array.
+ * @param object state -> Layout to copy.
+ * @return object Independent layout state.
+ */
+function _internal__layout_edit_copy_state(state)
+{
+    return Object.assign({}, state, { order: state.order.slice() });
+}
+
+/**
+ * @brief Reads all panel positions before any styles are changed.
+ * @return object Panel rectangles indexed by name.
+ */
+function _internal__layout_edit_boxes()
+{
+    let boxes = {};
+    let name;
+
+    for (name of ["channels", "chat", "info", "input"])
+    {
+        boxes[name] = g_layout.panels[name].getBoundingClientRect();
+    }
+    return boxes;
+}
+
+/**
+ * @brief Releases a completed panel animation.
+ * @param object e -> Animation completion event.
+ */
+function _internal__layout_edit_animation_finished(e)
+{
+    let index = layout_edit_animations.indexOf(e.target);
+
+    if (index != -1)
+    {
+        layout_edit_animations.splice(index, 1);
     }
 }
 
 /**
- * @brief edit mode: starts dragging the panel under the cursor and marks it visually
- *
- * @param object e -> the mouse event
- *
- * @return void
+ * @brief Stops earlier panel movement before measuring the new layout.
+ */
+function _internal__layout_edit_stop_animations()
+{
+    let animations = layout_edit_animations;
+    let animation;
+
+    layout_edit_animations = [];
+    for (animation of animations)
+    {
+        animation.cancel();
+    }
+}
+
+/**
+ * @brief Slides panels from their old screen positions into the new grid.
+ * @param object before -> Positions before changing the grid.
+ * @param object after -> New grid positions.
+ * @param string|null dragged -> Panel following the mouse, if any.
+ */
+function _internal__layout_edit_animate(before, after, dragged)
+{
+    let name;
+    let panel;
+    let dx;
+    let dy;
+    let animation;
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+    {
+        return;
+    }
+    for (name of ["channels", "chat", "info", "input"])
+    {
+        panel = g_layout.panels[name];
+        if (name == dragged || before[name].width == 0 || after[name].width == 0 || typeof panel.animate != "function")
+        {
+            continue;
+        }
+        dx = before[name].left - after[name].left;
+        dy = before[name].top - after[name].top;
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1)
+        {
+            continue;
+        }
+        animation = panel.animate(
+        [
+            { translate: dx + "px " + dy + "px" },
+            { translate: "0px 0px" }
+        ], { duration: 180, easing: "ease-out" });
+        animation.onfinish = _internal__layout_edit_animation_finished;
+        layout_edit_animations.push(animation);
+    }
+}
+
+/**
+ * @brief Removes the mouse offset so the panel's grid position can be measured.
+ * @param object drag -> Current panel move.
+ */
+function _internal__layout_edit_restore_translate(drag)
+{
+    let style = g_layout.panels[drag.source].style;
+
+    if (drag.translate == "")
+    {
+        style.removeProperty("translate");
+    }
+    else
+    {
+        style.setProperty("translate", drag.translate, drag.translate_priority);
+    }
+}
+
+/**
+ * @brief Keeps the grabbed point under the mouse and marks the intended position.
+ * @param object drag -> Current panel move and mouse position.
+ */
+function _internal__layout_edit_position(drag)
+{
+    let box = drag.boxes[drag.source];
+    let container = document.getElementById("communication-system-container");
+    let dx = drag.x - box.left - drag.grab_x * box.width;
+    let dy = drag.y - box.top - drag.grab_y * box.height;
+
+    g_layout.panels[drag.source].style.setProperty("translate", dx + "px " + dy + "px", "important");
+    drag.placeholder.hidden = !drag.valid;
+    drag.placeholder.style.left = (box.left - drag.container_rect.left - container.clientLeft + container.scrollLeft) + "px";
+    drag.placeholder.style.top = (box.top - drag.container_rect.top - container.clientTop + container.scrollTop) + "px";
+    drag.placeholder.style.width = box.width + "px";
+    drag.placeholder.style.height = box.height + "px";
+}
+
+/**
+ * @brief Chooses a column position, or a top or bottom position for the message box.
+ * @param object drag -> Current panel move with unanimated grid positions.
+ * @return object Layout preview for the current mouse position.
+ */
+function _internal__layout_edit_next_state(drag)
+{
+    let next = _internal__layout_edit_copy_state(g_layout.state);
+    let columns = [];
+    let remaining;
+    let name;
+    let box;
+    let center = drag.x + (0.5 - drag.grab_x) * drag.source_width;
+    let index = 0;
+    let distance;
+    let nearest = Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+
+    for (name of next.order)
+    {
+        box = drag.boxes[name];
+        if (box.width > 0 && box.height > 0)
+        {
+            columns.push(name);
+            top = Math.min(top, box.top);
+            bottom = Math.max(bottom, box.bottom);
+        }
+    }
+    if (drag.source == "input")
+    {
+        top = Math.min(top, drag.boxes.input.top);
+        bottom = Math.max(bottom, drag.boxes.input.bottom);
+        for (name of columns)
+        {
+            box = drag.boxes[name];
+            distance = Math.max(box.left - drag.x, 0, drag.x - box.right);
+            if (distance < nearest)
+            {
+                nearest = distance;
+                next.input_col = name;
+            }
+        }
+        next.input_pos = drag.y < (top + bottom) / 2 ? "top" : "bottom";
+    }
+    else
+    {
+        remaining = columns.filter(function(column)
+        {
+            return column != drag.source;
+        });
+        for (name of remaining)
+        {
+            box = drag.boxes[name];
+            if (center > box.left + box.width / 2)
+            {
+                index++;
+            }
+        }
+        remaining.splice(index, 0, drag.source);
+        // Keep a hidden chat column in its saved position.
+        index = 0;
+        next.order = next.order.map(function(column)
+        {
+            if (columns.indexOf(column) != -1)
+            {
+                return remaining[index++];
+            }
+            return column;
+        });
+    }
+    return next;
+}
+
+/**
+ * @brief Updates the live layout at most once per screen refresh.
+ */
+function _internal__layout_edit_frame()
+{
+    let drag = layout_edit_drag;
+    let container = document.getElementById("communication-system-container");
+    let rect;
+    let next;
+    let before;
+
+    if (drag == null)
+    {
+        return;
+    }
+    drag.frame = 0;
+    rect = container.getBoundingClientRect();
+    if (g_is_chat_hidden != drag.chat_hidden || getComputedStyle(container).display != "grid"
+        || Math.abs(rect.left - drag.container_rect.left) > 1 || Math.abs(rect.top - drag.container_rect.top) > 1
+        || Math.abs(rect.width - drag.container_rect.width) > 1 || Math.abs(rect.height - drag.container_rect.height) > 1)
+    {
+        _internal__layout_edit_finish(false, false);
+        return;
+    }
+    if (!drag.started)
+    {
+        if (Math.hypot(drag.x - drag.start_x, drag.y - drag.start_y) < 6)
+        {
+            return;
+        }
+        drag.started = true;
+        g_layout.panels[drag.source].classList.add("layout-dragging");
+        document.body.setAttribute("data-layout-dragging", "1");
+        drag.placeholder = document.createElement("div");
+        drag.placeholder.className = "layout-drop-placeholder";
+        drag.placeholder.setAttribute("data-label", "Drop here");
+        drag.placeholder.setAttribute("aria-hidden", "true");
+        container.appendChild(drag.placeholder);
+    }
+    drag.valid = drag.x >= rect.left && drag.x <= rect.right && drag.y >= rect.top && drag.y <= rect.bottom;
+    if (drag.valid)
+    {
+        next = _internal__layout_edit_next_state(drag);
+        if (next.order.join() != g_layout.state.order.join() || next.input_col != g_layout.state.input_col || next.input_pos != g_layout.state.input_pos)
+        {
+            before = _internal__layout_edit_boxes();
+            _internal__layout_edit_stop_animations();
+            _internal__layout_edit_restore_translate(drag);
+            g_layout.state = next;
+            drag.applying = true;
+            layout__layout_apply();
+            drag.applying = false;
+            drag.boxes = _internal__layout_edit_boxes();
+            _internal__layout_edit_animate(before, drag.boxes, drag.source);
+        }
+    }
+    _internal__layout_edit_position(drag);
+}
+
+/**
+ * @brief Saves a completed move or restores the layout from before the drag.
+ * @param boolean commit -> Keep the preview when released inside the layout.
+ * @param boolean animate -> Slide panels into their final positions.
+ */
+function _internal__layout_edit_finish(commit, animate)
+{
+    let drag = layout_edit_drag;
+    let before;
+
+    if (drag == null)
+    {
+        return;
+    }
+    before = _internal__layout_edit_boxes();
+    cancelAnimationFrame(drag.frame);
+    _internal__layout_edit_stop_animations();
+    _internal__layout_edit_restore_translate(drag);
+    if (drag.placeholder != null)
+    {
+        drag.placeholder.remove();
+    }
+    layout_edit_drag = null;
+    g_layout.edit_dragged = null;
+    layout__layout_edit_clear_highlight();
+    document.removeEventListener("keydown", _internal__layout_edit_cancel);
+    document.removeEventListener("visibilitychange", _internal__layout_edit_cancel);
+    window.removeEventListener("blur", _internal__layout_edit_cancel);
+    window.removeEventListener("resize", _internal__layout_edit_cancel);
+    if (!commit)
+    {
+        g_layout.state = drag.original;
+    }
+    layout__layout_apply();
+    if (drag.started && animate)
+    {
+        _internal__layout_edit_animate(before, _internal__layout_edit_boxes(), null);
+    }
+    if (drag.started && commit)
+    {
+        layout__layout_save_state();
+    }
+}
+
+/**
+ * @brief Cancels when Escape is pressed or the browser view changes.
+ * @param object e -> Keyboard, visibility, resize or focus event.
+ */
+function _internal__layout_edit_cancel(e)
+{
+    if (e.type == "keydown" && e.key != "Escape")
+    {
+        return;
+    }
+    if (e.type == "visibilitychange" && !document.hidden)
+    {
+        return;
+    }
+    _internal__layout_edit_finish(false, e.type == "keydown");
+}
+
+/**
+ * @brief Remembers the grabbed panel and its starting layout.
+ * @param object e -> Mouse press inside the layout.
  */
 function layout__layout_edit_mousedown(e)
 {
-    if (g_layout.edit_active == false || g_layout.grid_active == false) { return; }
-    let name = layout__layout_panel_name_from_event(e);
-    if (name == null) { return; }
+    let name;
+    let container = document.getElementById("communication-system-container");
+    let boxes;
+    let box;
+    let style;
+
+    if (e.button != 0 || !g_layout.edit_active || !g_layout.grid_active || getComputedStyle(container).display != "grid")
+    {
+        return;
+    }
+    name = layout__layout_panel_name_from_event(e);
+    if (name == null)
+    {
+        return;
+    }
+    _internal__layout_edit_finish(false, false);
+    _internal__layout_edit_stop_animations();
+    boxes = _internal__layout_edit_boxes();
+    box = boxes[name];
+    if (box.width == 0 || box.height == 0)
+    {
+        return;
+    }
+    style = g_layout.panels[name].style;
+    layout_edit_drag =
+    {
+        source: name,
+        original: _internal__layout_edit_copy_state(g_layout.state),
+        boxes: boxes,
+        container_rect: container.getBoundingClientRect(),
+        chat_hidden: g_is_chat_hidden,
+        x: e.clientX,
+        y: e.clientY,
+        start_x: e.clientX,
+        start_y: e.clientY,
+        grab_x: (e.clientX - box.left) / box.width,
+        grab_y: (e.clientY - box.top) / box.height,
+        source_width: box.width,
+        translate: style.getPropertyValue("translate"),
+        translate_priority: style.getPropertyPriority("translate"),
+        frame: 0,
+        started: false,
+        applying: false,
+        valid: false,
+        placeholder: null
+    };
     g_layout.edit_dragged = name;
-    g_layout.panels[name].classList.add("layout-dragging");
+    document.addEventListener("keydown", _internal__layout_edit_cancel);
+    document.addEventListener("visibilitychange", _internal__layout_edit_cancel);
+    window.addEventListener("blur", _internal__layout_edit_cancel);
+    window.addEventListener("resize", _internal__layout_edit_cancel);
     e.preventDefault();
     e.stopPropagation();
 }
 
 /**
- * @brief edit mode: highlights the panel currently hovered over as the drop target
- *
- * @param object e -> the mouse event
- *
- * @return void
+ * @brief Queues the next live preview while the left mouse button is held.
+ * @param object e -> Mouse movement.
  */
 function layout__layout_edit_mousemove(e)
 {
-    if (g_layout.edit_dragged == null) { return; }
-    let names = ["channels", "chat", "info", "input"];
-    for (let i = 0; i < names.length; i++) { g_layout.panels[names[i]].classList.remove("layout-drop-target"); }
-    let over = layout__layout_panel_name_from_event(e);
-    if (over != null && over != g_layout.edit_dragged)
+    if (layout_edit_drag == null)
     {
-        g_layout.panels[over].classList.add("layout-drop-target");
+        return;
     }
+    if ((e.buttons & 1) == 0)
+    {
+        _internal__layout_edit_finish(false, false);
+        return;
+    }
+    layout_edit_drag.x = e.clientX;
+    layout_edit_drag.y = e.clientY;
+    if (layout_edit_drag.frame == 0)
+    {
+        layout_edit_drag.frame = requestAnimationFrame(_internal__layout_edit_frame);
+    }
+    e.preventDefault();
 }
 
 /**
- * @brief edit mode drop: swaps two columns, or parks the input row in a column (dropping it on its own column flips top/bottom), then re-applies the grid
- *
- * @param object e -> the mouse event
- *
- * @return void
+ * @brief Finishes the preview at the release position and saves a valid drop.
+ * @param object e -> Mouse release.
  */
 function layout__layout_edit_mouseup(e)
 {
-    if (g_layout.edit_dragged == null) { return; }
-    let source = g_layout.edit_dragged;
-    let target = layout__layout_panel_name_from_event(e);
-    g_layout.edit_dragged = null;
-    layout__layout_edit_clear_highlight();
-    if (target == null || target == source) { return; }
-
-    if (source == "input" || target == "input")
+    if (layout_edit_drag == null || e.button != 0)
     {
-        // moving the input row: dropping it on a column parks it there; dropping it on
-        // the column it already lives in flips it between top and bottom
-        let col = (source == "input") ? target : source;
-        if (g_layout.state.input_col == col)
-        {
-            g_layout.state.input_pos = (g_layout.state.input_pos == "top") ? "bottom" : "top";
-        }
-        else
-        {
-            g_layout.state.input_col = col;
-        }
+        return;
     }
-    else
+    cancelAnimationFrame(layout_edit_drag.frame);
+    layout_edit_drag.x = e.clientX;
+    layout_edit_drag.y = e.clientY;
+    _internal__layout_edit_frame();
+    if (layout_edit_drag != null)
     {
-        // two columns: swap their places
-        let a = g_layout.state.order.indexOf(source);
-        let b = g_layout.state.order.indexOf(target);
-        g_layout.state.order[a] = target;
-        g_layout.state.order[b] = source;
+        _internal__layout_edit_finish(layout_edit_drag.valid, true);
     }
-    layout__layout_apply();
 }

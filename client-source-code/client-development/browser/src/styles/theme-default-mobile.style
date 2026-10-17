@@ -1,3 +1,28 @@
+/* Menu icons use this theme's own colors and are included with its styles. */
+:root
+{
+    --menu-icon-create-channel: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHJlY3QgeD0iMyIgeT0iNCIgd2lkdGg9IjE1IiBoZWlnaHQ9IjE0IiByeD0iMiIgc3Ryb2tlPSIjMjU0YjY0IiBmaWxsPSIjOWRkZmZmIi8+PHBhdGggZD0iTTcgOWg3bS03IDRoNCIgc3Ryb2tlPSIjMjU0YjY0IiBmaWxsPSJub25lIi8+PGNpcmNsZSBjeD0iMTgiIGN5PSIxOCIgcj0iNC41IiBzdHJva2U9IiMyOTRlMzAiIGZpbGw9IiNhZGU1YTQiLz48cGF0aCBkPSJNMTggMTUuNXY1bS0yLjUtMi41aDUiIHN0cm9rZT0iIzI5NGUzMCIgZmlsbD0ibm9uZSIvPjwvc3ZnPg==");
+    --menu-icon-delete: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTUgNmwxIDE1aDEybDEtMTVaIiBzdHJva2U9IiM3MTNiMzciIGZpbGw9IiNmZmI5YWYiLz48cGF0aCBkPSJNMyA2aDE4TTkgNlYzaDZ2M00xMCAxMHY3bTQtN3Y3IiBzdHJva2U9IiM3MTNiMzciIGZpbGw9Im5vbmUiLz48L3N2Zz4=");
+    --menu-icon-edit: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0ibTQgMTYtMSA1IDUtMUwyMCA4bC00LTRaIiBzdHJva2U9IiM2OTUwMjAiIGZpbGw9IiNmZmUxOTkiLz48cGF0aCBkPSJtMTMgNyA0IDRtLTEzIDUgNCA0IiBzdHJva2U9IiMyNTRiNjQiIGZpbGw9Im5vbmUiLz48L3N2Zz4=");
+    --menu-icon-join: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHJlY3QgeD0iMTMiIHk9IjQiIHdpZHRoPSI3IiBoZWlnaHQ9IjE2IiByeD0iMSIgc3Ryb2tlPSIjMjU0YjY0IiBmaWxsPSIjOWRkZmZmIi8+PHBhdGggZD0iTTMgMTJoMTJtLTUtNSA1IDUtNSA1IiBzdHJva2U9IiMyOTRlMzAiIGZpbGw9Im5vbmUiLz48L3N2Zz4=");
+    --menu-icon-ignore: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PGNpcmNsZSBjeD0iMTIiIGN5PSI3IiByPSI0IiBzdHJva2U9IiMyNTRiNjQiIGZpbGw9IiM5ZGRmZmYiLz48cGF0aCBkPSJNNCAyMXYtM2E2IDYgMCAwIDEgNi02bTUgMGE2IDYgMCAwIDEgNSA2djMiIHN0cm9rZT0iIzI1NGI2NCIgZmlsbD0ibm9uZSIvPjxwYXRoIGQ9Ik0zIDNsMTggMTgiIHN0cm9rZT0iIzcxM2IzNyIgZmlsbD0ibm9uZSIvPjwvc3ZnPg==");
+    --menu-icon-mute: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTExIDQgNiA4SDN2OGgzbDUgNFoiIHN0cm9rZT0iIzI1NGI2NCIgZmlsbD0iIzlkZGZmZiIvPjxwYXRoIGQ9Ik0xNiA5bDYgNm0wLTYtNiA2IiBzdHJva2U9IiM3MTNiMzciIGZpbGw9Im5vbmUiLz48L3N2Zz4=");
+    --menu-icon-tag: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTMgM2g4bDEwIDEwLTggOEwzIDExWiIgc3Ryb2tlPSIjNGYzZDcwIiBmaWxsPSIjZDdjMGZmIi8+PGNpcmNsZSBjeD0iNy41IiBjeT0iNy41IiByPSIxLjUiIHN0cm9rZT0iIzRmM2Q3MCIgZmlsbD0iI2ZmZTE5OSIvPjwvc3ZnPg==");
+    --menu-icon-info: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iOSIgc3Ryb2tlPSIjMjU0YjY0IiBmaWxsPSIjOWRkZmZmIi8+PHBhdGggZD0iTTEyIDExdjZtMC0xMHYxIiBzdHJva2U9IiMyNTRiNjQiIGZpbGw9Im5vbmUiLz48L3N2Zz4=");
+    --menu-icon-poke: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTggMTNWNGEyIDIgMCAwIDEgNCAwdjZsNiAyYTMgMyAwIDAgMSAyIDNsLTEgNkg4bC00LTZhMiAyIDAgMCAxIDMtM2wxIDFaIiBzdHJva2U9IiM2OTUwMjAiIGZpbGw9IiNmZmUxOTkiLz48cGF0aCBkPSJNMTYgNGgzbS0zIDMgMiAxIiBzdHJva2U9IiMyODU0NTMiIGZpbGw9Im5vbmUiLz48L3N2Zz4=");
+    --menu-icon-username: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PGNpcmNsZSBjeD0iOSIgY3k9IjYiIHI9IjMiIHN0cm9rZT0iIzI1NGI2NCIgZmlsbD0iIzlkZGZmZiIvPjxwYXRoIGQ9Ik0yIDIxdi0zYTYgNiAwIDAgMSA5LTUiIHN0cm9rZT0iIzI1NGI2NCIgZmlsbD0ibm9uZSIvPjxwYXRoIGQ9Im0xMyAxNyA2LTYgMyAzLTYgNi00IDFaIiBzdHJva2U9IiM2OTUwMjAiIGZpbGw9IiNmZmUxOTkiLz48L3N2Zz4=");
+    --menu-icon-avatar: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHJlY3QgeD0iMyIgeT0iMyIgd2lkdGg9IjE4IiBoZWlnaHQ9IjE4IiByeD0iMiIgc3Ryb2tlPSIjMjU0YjY0IiBmaWxsPSIjOWRkZmZmIi8+PGNpcmNsZSBjeD0iOCIgY3k9IjgiIHI9IjIiIHN0cm9rZT0iIzY5NTAyMCIgZmlsbD0iI2ZmZTE5OSIvPjxwYXRoIGQ9Im0zIDE3IDUtNSA0IDQgNC02IDUgN3YzSDNaIiBzdHJva2U9IiMyOTRlMzAiIGZpbGw9IiNhZGU1YTQiLz48L3N2Zz4=");
+    --menu-icon-call: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0ibTUgMyA0IDQtMiAzYTE2IDE2IDAgMCAwIDcgN2wzLTIgNCA0LTMgM0M5IDIwIDQgMTUgMiA2WiIgc3Ryb2tlPSIjMjk0ZTMwIiBmaWxsPSIjYWRlNWE0Ii8+PC9zdmc+");
+    --menu-icon-kick: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PGNpcmNsZSBjeD0iOCIgY3k9IjYiIHI9IjMiIHN0cm9rZT0iIzI1NGI2NCIgZmlsbD0iIzlkZGZmZiIvPjxwYXRoIGQ9Ik0yIDIxdi0zYTYgNiAwIDAgMSAxMC00IiBzdHJva2U9IiMyNTRiNjQiIGZpbGw9Im5vbmUiLz48cGF0aCBkPSJNMTMgMTBoOW0tNC00IDQgNC00IDQiIHN0cm9rZT0iIzY5NTAyMCIgZmlsbD0ibm9uZSIvPjwvc3ZnPg==");
+    --menu-icon-ban: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iOSIgc3Ryb2tlPSIjNzEzYjM3IiBmaWxsPSIjZmZiOWFmIi8+PHBhdGggZD0ibTYgNiAxMiAxMiIgc3Ryb2tlPSIjNzEzYjM3IiBmaWxsPSJub25lIi8+PC9zdmc+");
+    --menu-icon-music-create: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTggMTdWNWwxMS0ydjEyTTggOWwxMS0yIiBzdHJva2U9IiM0ZjNkNzAiIGZpbGw9Im5vbmUiLz48ZWxsaXBzZSBjeD0iNSIgY3k9IjE4IiByeD0iMyIgcnk9IjIiIHN0cm9rZT0iIzRmM2Q3MCIgZmlsbD0iI2Q3YzBmZiIvPjxlbGxpcHNlIGN4PSIxNiIgY3k9IjE2IiByeD0iMyIgcnk9IjIiIHN0cm9rZT0iIzI4NTQ1MyIgZmlsbD0iI2EzZTVkZSIvPjwvc3ZnPg==");
+    --menu-icon-music-settings: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgM3YxOE0xMiAzdjE4TTIwIDN2MTgiIHN0cm9rZT0iIzRmM2Q3MCIgZmlsbD0ibm9uZSIvPjxjaXJjbGUgY3g9IjQiIGN5PSI5IiByPSIyLjQiIHN0cm9rZT0iIzI4NTQ1MyIgZmlsbD0iI2EzZTVkZSIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTUiIHI9IjIuNCIgc3Ryb2tlPSIjNjk1MDIwIiBmaWxsPSIjZmZlMTk5Ii8+PGNpcmNsZSBjeD0iMjAiIGN5PSI5IiByPSIyLjQiIHN0cm9rZT0iIzI1NGI2NCIgZmlsbD0iIzlkZGZmZiIvPjwvc3ZnPg==");
+    --menu-icon-avatar-delete: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTEwIDNIM3YxOGgxOFYxMCIgc3Ryb2tlPSIjMjU0YjY0IiBmaWxsPSJub25lIi8+PHBhdGggZD0iTTMgMTdsNS01IDQgNCA0LTYgNSA3djNIM1oiIHN0cm9rZT0iIzI5NGUzMCIgZmlsbD0iI2FkZTVhNCIvPjxjaXJjbGUgY3g9IjgiIGN5PSI4IiByPSIyIiBzdHJva2U9IiM2OTUwMjAiIGZpbGw9IiNmZmUxOTkiLz48cGF0aCBkPSJNMTYgMmw2IDZtMC02LTYgNiIgc3Ryb2tlPSIjNzEzYjM3IiBmaWxsPSJub25lIi8+PC9zdmc+");
+    --menu-icon-volume: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTExIDQgNiA4SDN2OGgzbDUgNFoiIHN0cm9rZT0iIzI1NGI2NCIgZmlsbD0iIzlkZGZmZiIvPjxwYXRoIGQ9Ik0xNSA4YTYgNiAwIDAgMSAwIDhtMy0xMWExMCAxMCAwIDAgMSAwIDE0IiBzdHJva2U9IiMyODU0NTMiIGZpbGw9Im5vbmUiLz48L3N2Zz4=");
+    --menu-icon-register: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PGNpcmNsZSBjeD0iOSIgY3k9IjYiIHI9IjMiIHN0cm9rZT0iIzI1NGI2NCIgZmlsbD0iIzlkZGZmZiIvPjxwYXRoIGQ9Ik0yIDIxdi0zYTYgNiAwIDAgMSAxMC00IiBzdHJva2U9IiMyNTRiNjQiIGZpbGw9Im5vbmUiLz48cGF0aCBkPSJNMTMgMTdsMyAzIDYtNyIgc3Ryb2tlPSIjMjk0ZTMwIiBmaWxsPSJub25lIi8+PC9zdmc+");
+    --menu-icon-server-info: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHJlY3QgeD0iMyIgeT0iMyIgd2lkdGg9IjE4IiBoZWlnaHQ9IjciIHJ4PSIxIiBzdHJva2U9IiMyNTRiNjQiIGZpbGw9IiM5ZGRmZmYiLz48cmVjdCB4PSIzIiB5PSIxNCIgd2lkdGg9IjE4IiBoZWlnaHQ9IjciIHJ4PSIxIiBzdHJva2U9IiMyNTRiNjQiIGZpbGw9IiM5ZGRmZmYiLz48Y2lyY2xlIGN4PSI3IiBjeT0iNi41IiByPSIxIiBzdHJva2U9IiMyOTRlMzAiIGZpbGw9IiNhZGU1YTQiLz48Y2lyY2xlIGN4PSI3IiBjeT0iMTcuNSIgcj0iMSIgc3Ryb2tlPSIjMjk0ZTMwIiBmaWxsPSIjYWRlNWE0Ii8+PHBhdGggZD0iTTExIDYuNWg2bS02IDExaDYiIHN0cm9rZT0iIzI1NGI2NCIgZmlsbD0ibm9uZSIvPjwvc3ZnPg==");
+}
+
 * {
     margin: 0px;
     padding: 0px;
@@ -31,6 +56,24 @@ body {
     text-align: center;
 }
 
+/* the connect window (connection.js): the connect form as a dialog card with the title bar of the other dialogs (layout.style).
+   android keeps the form as a page of its own, so the card look is for the browser only. the :where() keeps the
+   specificity at one id, so a theme sheet that follows this one (ozone) overrides the card with its own rules */
+:where(body:not(.android-app)) #container-2 {
+    display: inline-block;
+    text-align: center;
+    background: var(--set-panel, #36393f);
+    color: var(--set-text, #e6e8ea);
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.10));
+    border-radius: 8px;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+    padding: 0 22px 18px 22px;
+}
+
+:where(body:not(.android-app)) #container-2 > #menu-bar-container {
+    margin: 0 -22px 14px -22px;
+}
+
 #connect-button {
     visibility: hidden;
 }
@@ -57,21 +100,25 @@ div {
     bottom: 1px;
 }
 
+/* the notice box (utils__custom_alert): the dark panel of this theme instead of the stock white box */
 a-toast {
     position: fixed;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 100;
+    z-index: 100002;
     top: 40%;
-    background-color: #FFF;
+    box-sizing: border-box;
     min-width: 200px;
+    max-width: 90vw;
     text-align: center;
-    border: solid;
-    border-width: 1px;
-    border-color: #7781b1;
-    vertical-align: top;
-    padding: 10px;
-    font-family: roboto,sans-serif;
+    padding: 10px 16px;
+    background-color: var(--set-panel, #36393f);
+    color: var(--set-text, #e6e8ea);
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.10));
+    border-radius: var(--set-radius, 5px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    font-family: var(--set-font, 'Raleway', sans-serif);
+    font-size: 13px;
     min-height: 20px;
     cursor: pointer;
 }
@@ -100,7 +147,7 @@ a-toast {
 }
 
 a-toast:hover {
-    background-color: grey;
+    filter: brightness(1.15);
 }
 
 .marquee-music-playing-container > p {
@@ -1864,7 +1911,7 @@ a-toast:hover {
     overflow: hidden;
 }
 
-#poke-client-enter-container, #set-new-username-enter-container, #channel-properties-edit-container, #channel-password-enter-container, #admin-password-enter-container, #secret-identity-string-container, #client-info-container {
+#poke-client-enter-container, #set-new-username-enter-container, #channel-properties-edit-container, #channel-password-enter-container, #musicbot-management-background-container, #admin-password-enter-container, #secret-identity-string-container, #client-info-container {
     position: absolute;
     width: 100%;
     height: 100%;
@@ -1928,7 +1975,7 @@ a-toast:hover {
     padding-bottom: 8px;
 }
 
-#poke-client-enter-container-enter, #channel-properties-edit, #channel-password-enter, #admin-password-enter, #secret-identity-string-container-enter {
+#poke-client-enter-container-enter, #channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #secret-identity-string-container-enter {
     top: 25%;
     width: 322px;
     height: 219px;
@@ -2124,6 +2171,7 @@ body.android-app #android-server-settings-button {
 
     #channel-properties-edit,
     #channel-password-enter,
+    #musicbot-management-dialog,
     #admin-password-enter,
     #poke-client-enter,
     #set-alias-enter,
@@ -2140,6 +2188,7 @@ body.android-app #android-server-settings-button {
 
     #channel-properties-edit input[type="text"],
     #channel-password-enter input,
+    #musicbot-management-dialog input,
     #admin-password-enter input,
     #poke-client-enter input,
     #set-alias-enter input,

@@ -31,7 +31,26 @@
 #define PREVIEW_IMAGE_LIMIT (256u * 1024u)
 #define PREVIEW_REDIRECT_LIMIT 3
 
-static int _url_preview__same(const char* left, const char* right)
+// declarations
+static int _url_preview_internal__same(const char* left, const char* right);
+static int _url_preview_internal__starts_with(const char* text, const char* prefix);
+static const char* _url_preview_internal__find(const char* text, const char* wanted);
+static void _url_preview_internal__copy(char* output, size_t capacity, const char* text, size_t length);
+static void _url_preview_internal__text(const char* source, size_t length, char* output, size_t capacity);
+static void _url_preview_internal__choose(char* output, size_t capacity, const char* value, int priority, int* previous);
+static void _url_preview_internal__remove_directory_steps(char* url);
+static int _url_preview_internal__header(const char* headers, const char* name, char* output, size_t capacity);
+static int _url_preview_internal__download(char* url, unsigned int limit, httpclient_response_t* response);
+
+/**
+ * @brief Checks whether two strings contain the same text, ignoring uppercase and lowercase letters.
+ *
+ * @param const char* left -> the first string, ending with a zero byte
+ * @param const char* right -> the second string, ending with a zero byte
+ *
+ * @return int -> 1 when both strings match, otherwise 0
+ */
+static int _url_preview_internal__same(const char* left, const char* right)
 {
     while (*left && *right)
     {
@@ -43,7 +62,15 @@ static int _url_preview__same(const char* left, const char* right)
     return *left == *right;
 }
 
-static int _url_preview__starts_with(const char* text, const char* prefix)
+/**
+ * @brief Checks whether a string starts with the requested text, ignoring uppercase and lowercase letters.
+ *
+ * @param const char* text -> the string to check, ending with a zero byte
+ * @param const char* prefix -> the text that must appear at the start
+ *
+ * @return int -> 1 when the prefix matches, otherwise 0
+ */
+static int _url_preview_internal__starts_with(const char* text, const char* prefix)
 {
     while (*prefix)
     {
@@ -55,7 +82,15 @@ static int _url_preview__starts_with(const char* text, const char* prefix)
     return 1;
 }
 
-static const char* _url_preview__find(const char* text, const char* wanted)
+/**
+ * @brief Finds the first occurrence of some text, ignoring uppercase and lowercase letters.
+ *
+ * @param const char* text -> the string to search, ending with a zero byte
+ * @param const char* wanted -> the text to find
+ *
+ * @return const char* -> a pointer into text at the match, or NULL when no match was found
+ */
+static const char* _url_preview_internal__find(const char* text, const char* wanted)
 {
     size_t size = strlen(wanted);
     for (; *text; text++)
@@ -74,7 +109,17 @@ static const char* _url_preview__find(const char* text, const char* wanted)
     return NULL;
 }
 
-static void _url_preview__copy(char* output, size_t capacity, const char* text, size_t length)
+/**
+ * @brief Copies text into a fixed-size buffer and leaves room for its ending zero byte.
+ *
+ * @param char* output -> the buffer that receives the copied text
+ * @param size_t capacity -> the size of output in bytes, which must be greater than zero
+ * @param const char* text -> the source bytes to copy
+ * @param size_t length -> the number of source bytes to copy, shortened when output is too small
+ *
+ * @return void
+ */
+static void _url_preview_internal__copy(char* output, size_t capacity, const char* text, size_t length)
 {
     if (length >= capacity)
     {
@@ -84,9 +129,20 @@ static void _url_preview__copy(char* output, size_t capacity, const char* text, 
     output[length] = 0;
 }
 
-// Read HTML character references such as &amp; and &#233;. Keep valid UTF-8
-// characters whole when shortening a title, and turn line breaks into spaces.
-static void _url_preview__text(const char* source, size_t length, char* output, size_t capacity)
+/**
+ * @brief Turns text read from HTML into the readable text shown in a URL preview.
+ *
+ * It reads HTML character references such as &amp; and &#233;, keeps valid UTF-8
+ * characters whole when shortening the text, and turns line breaks into spaces.
+ *
+ * @param const char* source -> the HTML text to read
+ * @param size_t length -> the maximum number of source bytes to read
+ * @param char* output -> the buffer that receives the cleaned text and an ending zero byte
+ * @param size_t capacity -> the size of output in bytes, which must be greater than zero
+ *
+ * @return void
+ */
+static void _url_preview_internal__text(const char* source, size_t length, char* output, size_t capacity)
 {
     size_t written = 0;
     for (size_t index = 0; index < length && source[index];)
@@ -103,7 +159,7 @@ static void _url_preview__text(const char* source, size_t length, char* output, 
             if (end < length && source[end] == ';')
             {
                 char entity[17];
-                _url_preview__copy(entity, sizeof(entity), source + index + 1, end - index - 1);
+                _url_preview_internal__copy(entity, sizeof(entity), source + index + 1, end - index - 1);
                 unsigned long decoded = 0;
                 if (entity[0] == '#')
                 {
@@ -213,11 +269,22 @@ static void _url_preview__text(const char* source, size_t length, char* output, 
     output[written] = 0;
 }
 
-static void _url_preview__choose(char* output, size_t capacity, const char* value, int priority, int* previous)
+/**
+ * @brief Replaces a preview field when a new nonempty value has a higher priority than the current one.
+ *
+ * @param char* output -> the preview field to update with cleaned HTML text
+ * @param size_t capacity -> the size of output in bytes, which must be greater than zero
+ * @param const char* value -> the new value found in the page
+ * @param int priority -> the priority of the new value, with larger numbers preferred
+ * @param int* previous -> the current priority, updated when a nonempty value is accepted
+ *
+ * @return void
+ */
+static void _url_preview_internal__choose(char* output, size_t capacity, const char* value, int priority, int* previous)
 {
     if (value[0] && priority > *previous)
     {
-        _url_preview__text(value, strlen(value), output, capacity);
+        _url_preview_internal__text(value, strlen(value), output, capacity);
         if (output[0])
         {
             *previous = priority;
@@ -225,6 +292,16 @@ static void _url_preview__choose(char* output, size_t capacity, const char* valu
     }
 }
 
+/**
+ * @brief Reads a downloaded page for the title, description, site name and picture used in a URL preview.
+ *
+ * Scripts are skipped. Open Graph values take priority over Twitter and ordinary tags.
+ *
+ * @param const char* html -> the HTML text, ending with a zero byte
+ * @param url_preview_t* preview -> the initialized preview whose text and image URL fields are filled
+ *
+ * @return void
+ */
 void url_preview__read_html(const char* html, url_preview_t* preview)
 {
     int title_priority = 0;
@@ -246,7 +323,7 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
         cursor++;
         if (*cursor == '/')
         {
-            if (_url_preview__starts_with(cursor, "/head"))
+            if (_url_preview_internal__starts_with(cursor, "/head"))
             {
                 break;
             }
@@ -258,7 +335,7 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
             cursor++;
         }
         char tag[32];
-        _url_preview__copy(tag, sizeof(tag), name_start, (size_t)(cursor - name_start));
+        _url_preview_internal__copy(tag, sizeof(tag), name_start, (size_t)(cursor - name_start));
         char name[128] = {0};
         char property[128] = {0};
         char content[4097] = {0};
@@ -280,7 +357,7 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
                 cursor++;
             }
             char attribute[64];
-            _url_preview__copy(attribute, sizeof(attribute), attribute_start, (size_t)(cursor - attribute_start));
+            _url_preview_internal__copy(attribute, sizeof(attribute), attribute_start, (size_t)(cursor - attribute_start));
             while (isspace((unsigned char)*cursor))
             {
                 cursor++;
@@ -301,17 +378,17 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
                 cursor++;
             }
             size_t length = (size_t)(cursor - value);
-            if (_url_preview__same(attribute, "name"))
+            if (_url_preview_internal__same(attribute, "name"))
             {
-                _url_preview__copy(name, sizeof(name), value, length);
+                _url_preview_internal__copy(name, sizeof(name), value, length);
             }
-            else if (_url_preview__same(attribute, "property"))
+            else if (_url_preview_internal__same(attribute, "property"))
             {
-                _url_preview__copy(property, sizeof(property), value, length);
+                _url_preview_internal__copy(property, sizeof(property), value, length);
             }
-            else if (_url_preview__same(attribute, "content"))
+            else if (_url_preview_internal__same(attribute, "content"))
             {
-                _url_preview__copy(content, sizeof(content), value, length);
+                _url_preview_internal__copy(content, sizeof(content), value, length);
             }
             if (quote && *cursor == quote)
             {
@@ -323,57 +400,65 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
             break;
         }
         cursor++;
-        if (_url_preview__same(tag, "script") || _url_preview__same(tag, "style"))
+        if (_url_preview_internal__same(tag, "script") || _url_preview_internal__same(tag, "style"))
         {
-            cursor = _url_preview__find(cursor, _url_preview__same(tag, "script") ? "</script" : "</style");
+            cursor = _url_preview_internal__find(cursor, _url_preview_internal__same(tag, "script") ? "</script" : "</style");
             if (cursor == NULL)
             {
                 break;
             }
             continue;
         }
-        if (_url_preview__same(tag, "title"))
+        if (_url_preview_internal__same(tag, "title"))
         {
-            const char* end = _url_preview__find(cursor, "</title");
+            const char* end = _url_preview_internal__find(cursor, "</title");
             if (end != NULL)
             {
                 if (title_priority == 0)
                 {
-                    _url_preview__text(cursor, (size_t)(end - cursor), preview->title, sizeof(preview->title));
+                    _url_preview_internal__text(cursor, (size_t)(end - cursor), preview->title, sizeof(preview->title));
                     title_priority = preview->title[0] ? 1 : 0;
                 }
                 cursor = end;
             }
         }
-        else if (_url_preview__same(tag, "meta"))
+        else if (_url_preview_internal__same(tag, "meta"))
         {
             const char* key = property[0] ? property : name;
-            if (_url_preview__same(key, "og:title") || _url_preview__same(key, "twitter:title"))
+            if (_url_preview_internal__same(key, "og:title") || _url_preview_internal__same(key, "twitter:title"))
             {
-                _url_preview__choose(preview->title, sizeof(preview->title), content, _url_preview__same(key, "og:title") ? 3 : 2, &title_priority);
+                _url_preview_internal__choose(preview->title, sizeof(preview->title), content, _url_preview_internal__same(key, "og:title") ? 3 : 2, &title_priority);
             }
-            else if (_url_preview__same(key, "og:description") || _url_preview__same(key, "twitter:description") || _url_preview__same(key, "description"))
+            else if (_url_preview_internal__same(key, "og:description") || _url_preview_internal__same(key, "twitter:description") || _url_preview_internal__same(key, "description"))
             {
-                int priority = _url_preview__same(key, "og:description") ? 3 : _url_preview__same(key, "twitter:description") ? 2 : 1;
-                _url_preview__choose(preview->description, sizeof(preview->description), content, priority, &description_priority);
+                int priority = _url_preview_internal__same(key, "og:description") ? 3 : _url_preview_internal__same(key, "twitter:description") ? 2 : 1;
+                _url_preview_internal__choose(preview->description, sizeof(preview->description), content, priority, &description_priority);
             }
-            else if (_url_preview__same(key, "og:image") || _url_preview__same(key, "og:image:secure_url") || _url_preview__same(key, "twitter:image"))
+            else if (_url_preview_internal__same(key, "og:image") || _url_preview_internal__same(key, "og:image:secure_url") || _url_preview_internal__same(key, "twitter:image"))
             {
-                int priority = _url_preview__same(key, "og:image:secure_url") ? 4 : _url_preview__same(key, "og:image") ? 3 : 2;
-                _url_preview__choose(preview->image_url, sizeof(preview->image_url), content, priority, &image_priority);
+                int priority = _url_preview_internal__same(key, "og:image:secure_url") ? 4 : _url_preview_internal__same(key, "og:image") ? 3 : 2;
+                _url_preview_internal__choose(preview->image_url, sizeof(preview->image_url), content, priority, &image_priority);
             }
-            else if (_url_preview__same(key, "og:site_name"))
+            else if (_url_preview_internal__same(key, "og:site_name"))
             {
-                _url_preview__text(content, strlen(content), preview->site_name, sizeof(preview->site_name));
+                _url_preview_internal__text(content, strlen(content), preview->site_name, sizeof(preview->site_name));
             }
         }
     }
 }
 
-// A picture such as ../images/cover.png names a file one directory above the
-// page. Remove these directory steps before sending the request, while leaving
-// everything after '?' unchanged because it belongs to the website's query.
-static void _url_preview__remove_directory_steps(char* url)
+/**
+ * @brief Removes current-directory and parent-directory steps from the path in an absolute URL.
+ *
+ * A picture such as ../images/cover.png names a file one directory above the page.
+ * These steps are removed before requesting it, while everything after '?' stays
+ * unchanged because it belongs to the website's query.
+ *
+ * @param char* url -> a writable absolute URL containing ://, updated in place
+ *
+ * @return void
+ */
+static void _url_preview_internal__remove_directory_steps(char* url)
 {
     char* authority = strstr(url, "://") + 3;
     char* path = strchr(authority, '/');
@@ -424,6 +509,18 @@ static void _url_preview__remove_directory_steps(char* url)
     memmove(write, end, strlen(end) + 1);
 }
 
+/**
+ * @brief Turns a page-relative picture or redirect link into a complete HTTP or HTTPS URL.
+ *
+ * Fragments and directory steps are removed from the completed URL.
+ *
+ * @param const char* base -> the absolute URL of the page containing the link
+ * @param const char* reference -> the absolute or relative link to resolve
+ * @param char* output -> receives the resolved URL and an ending zero byte
+ * @param unsigned int capacity -> the size of output in bytes
+ *
+ * @return int -> 1 when the complete URL fits and passes validation, otherwise 0
+ */
 int url_preview__absolute_url(const char* base, const char* reference, char* output, unsigned int capacity)
 {
     httpclient_url_t parsed;
@@ -437,9 +534,9 @@ int url_preview__absolute_url(const char* base, const char* reference, char* out
     {
         return 0;
     }
-    _url_preview__copy(clean, sizeof(clean), reference, length);
+    _url_preview_internal__copy(clean, sizeof(clean), reference, length);
     int written;
-    if (_url_preview__starts_with(clean, "http://") || _url_preview__starts_with(clean, "https://"))
+    if (_url_preview_internal__starts_with(clean, "http://") || _url_preview_internal__starts_with(clean, "https://"))
     {
         written = snprintf(output, capacity, "%s", clean);
     }
@@ -473,11 +570,21 @@ int url_preview__absolute_url(const char* base, const char* reference, char* out
     {
         return 0;
     }
-    _url_preview__remove_directory_steps(output);
+    _url_preview_internal__remove_directory_steps(output);
     return 1;
 }
 
-static int _url_preview__header(const char* headers, const char* name, char* output, size_t capacity)
+/**
+ * @brief Copies the value of a named HTTP response header without surrounding spaces.
+ *
+ * @param const char* headers -> the response status line and headers, separated by CRLF line endings
+ * @param const char* name -> the header name to find, ignoring uppercase and lowercase letters
+ * @param char* output -> the buffer that receives the value, or an empty string when no value fits
+ * @param size_t capacity -> the size of output in bytes, which must be greater than zero
+ *
+ * @return int -> 1 when the header was found and its complete value fits, otherwise 0
+ */
+static int _url_preview_internal__header(const char* headers, const char* name, char* output, size_t capacity)
 {
     output[0] = 0;
     const char* line = strstr(headers, "\r\n");
@@ -493,8 +600,8 @@ static int _url_preview__header(const char* headers, const char* name, char* out
         if (colon != NULL && colon < end)
         {
             char field[128];
-            _url_preview__copy(field, sizeof(field), line, (size_t)(colon - line));
-            if (_url_preview__same(field, name))
+            _url_preview_internal__copy(field, sizeof(field), line, (size_t)(colon - line));
+            if (_url_preview_internal__same(field, name))
             {
                 const char* value = colon + 1;
                 while (value < end && isspace((unsigned char)*value))
@@ -509,7 +616,7 @@ static int _url_preview__header(const char* headers, const char* name, char* out
                 {
                     return 0;
                 }
-                _url_preview__copy(output, capacity, value, (size_t)(end - value));
+                _url_preview_internal__copy(output, capacity, value, (size_t)(end - value));
                 return 1;
             }
         }
@@ -518,7 +625,19 @@ static int _url_preview__header(const char* headers, const char* name, char* out
     return 0;
 }
 
-static int _url_preview__download(char* url, unsigned int limit, httpclient_response_t* response)
+/**
+ * @brief Downloads a preview page or picture, following a limited number of redirects.
+ *
+ * Each request checks the destination address and limits the downloaded bytes.
+ * A successful result must have status 200 and must not use HTTP compression.
+ *
+ * @param char* url -> the URL to request, updated after redirects; its buffer must hold 2049 bytes
+ * @param unsigned int limit -> the maximum response size accepted by the HTTP client
+ * @param httpclient_response_t* response -> receives the response; the caller must free it even on failure
+ *
+ * @return int -> 1 when a usable response was received, otherwise 0
+ */
+static int _url_preview_internal__download(char* url, unsigned int limit, httpclient_response_t* response)
 {
     const httpclient_header_t headers[] =
     {
@@ -541,14 +660,14 @@ static int _url_preview__download(char* url, unsigned int limit, httpclient_resp
         if (response->status_code == 200)
         {
             char encoding[64];
-            return !_url_preview__header(response->headers, "Content-Encoding", encoding, sizeof(encoding))
-                || _url_preview__same(encoding, "identity");
+            return !_url_preview_internal__header(response->headers, "Content-Encoding", encoding, sizeof(encoding))
+                || _url_preview_internal__same(encoding, "identity");
         }
         char location[2049];
         char next[2049];
         int follows = (response->status_code == 301 || response->status_code == 302 || response->status_code == 303
             || response->status_code == 307 || response->status_code == 308)
-            && _url_preview__header(response->headers, "Location", location, sizeof(location))
+            && _url_preview_internal__header(response->headers, "Location", location, sizeof(location))
             && url_preview__absolute_url(url, location, next, sizeof(next));
         httpclient__response_free(response);
         if (!follows)
@@ -560,6 +679,16 @@ static int _url_preview__download(char* url, unsigned int limit, httpclient_resp
     return 0;
 }
 
+/**
+ * @brief Downloads a website page and an optional picture to build the preview shown below a chat link.
+ *
+ * Downloads use public addresses and limited redirects. Supported pictures become base64 data URLs.
+ *
+ * @param const char* url -> the absolute website URL, limited to 2048 characters
+ * @param url_preview_t* preview -> an empty preview that receives text and optional allocated image data; release it with url_preview__free()
+ *
+ * @return int -> 1 when a title or description was found, even if no picture was available, otherwise 0
+ */
 int url_preview__resolve(const char* url, url_preview_t* preview)
 {
     memset(preview, 0, sizeof(*preview));
@@ -569,16 +698,16 @@ int url_preview__resolve(const char* url, url_preview_t* preview)
     }
     strcpy(preview->url, url);
     httpclient_response_t response = {0};
-    int success = _url_preview__download(preview->url, PREVIEW_PAGE_LIMIT, &response);
+    int success = _url_preview_internal__download(preview->url, PREVIEW_PAGE_LIMIT, &response);
     char content_type[128];
-    if (success && _url_preview__header(response.headers, "Content-Type", content_type, sizeof(content_type)))
+    if (success && _url_preview_internal__header(response.headers, "Content-Type", content_type, sizeof(content_type)))
     {
         char* separator = strchr(content_type, ';');
         if (separator != NULL)
         {
             *separator = 0;
         }
-        success = _url_preview__same(content_type, "text/html") || _url_preview__same(content_type, "application/xhtml+xml");
+        success = _url_preview_internal__same(content_type, "text/html") || _url_preview_internal__same(content_type, "application/xhtml+xml");
     }
     else
     {
@@ -599,7 +728,7 @@ int url_preview__resolve(const char* url, url_preview_t* preview)
     {
         return 1;
     }
-    if (_url_preview__download(image_url, PREVIEW_IMAGE_LIMIT, &response))
+    if (_url_preview_internal__download(image_url, PREVIEW_IMAGE_LIMIT, &response))
     {
         const char* mime = NULL;
         const unsigned char* bytes = response.body;
@@ -640,6 +769,13 @@ int url_preview__resolve(const char* url, url_preview_t* preview)
     return 1;
 }
 
+/**
+ * @brief Frees a URL preview picture and clears the preview for reuse.
+ *
+ * @param url_preview_t* preview -> an initialized preview to clear; this pointer must not be NULL
+ *
+ * @return void
+ */
 void url_preview__free(url_preview_t* preview)
 {
     free(preview->image_data);

@@ -11,13 +11,14 @@
 #include "util.h"
 #include "first_time_setup.h"
 #include "settings.h"
+#include "memory_manager.h"
 #include "audio_websocket.h"
 #include <string.h>
 
 static void _settings_internal__build_and_push_client_config(int64 websocket_port, char plaintext_keys[][256], uint64 keys_count);
 
 /**
- * @brief seeds channel slot 0 as the root channel every client lands in: named "root", audio on,
+ * @brief seeds channel slot 0 as the root channel every client starts in: named "root", audio on,
  *        no parent and no maintainer yet.
  *
  * @return void
@@ -456,9 +457,9 @@ void settings__init_tags_and_icons(void)
  *        it into the client.html it serves so the served page can autoconnect.
  *
  *        the connection details (websocket port, the wss port when stunnel is on, and the plaintext connect
- *        keys) are only baked in when the admin set embed_client_config. the default theme is added when one
+ *        keys) are only written into the page when the admin set embed_client_config. the default theme is added when one
  *        is configured. the client policy flags - whether the identity passphrase may be persisted in
- *        localStorage, and whether avatars are allowed plus their accepted max raw size - are always baked
+ *        localStorage, and whether avatars are allowed plus their accepted max raw size - are always written
  *        in so the client knows the server's stance; both default off when this config is absent because the
  *        page was loaded directly.
  *
@@ -482,7 +483,7 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
         return;
     }
 
-    // only bake the connection details (port + keys) into the served page if the admin opted in
+    // only write the connection details (port + keys) into the served page if the admin opted in
     if (g_server_settings.embed_client_config == TRUE)
     {
         cJSON_AddNumberToObject(config_object, "port", (double)websocket_port);
@@ -508,7 +509,7 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
     }
 
     // policy flags the client honours: whether to persist the identity passphrase in localStorage, and
-    // whether avatars are allowed (with the accepted max raw image size). always baked so the client
+    // whether avatars are allowed (with the accepted max raw image size). always written so the client
     // knows the server's stance; both default off when this config is absent (page loaded directly)
     cJSON_AddBoolToObject(config_object, "persist_identity", g_server_settings.persist_identity_in_localstorage == TRUE);
     cJSON_AddBoolToObject(config_object, "allow_avatars", g_server_settings.allow_avatars == TRUE);
@@ -596,9 +597,14 @@ void settings__load(void)
     cJSON* json_field = NULL_POINTER;
     cJSON* json_key = NULL_POINTER;
     int64 key_index = 0;
+    uint64 banner_length = 0;
 
     clib__null_memory(&g_server_settings, sizeof(server_settings_t));
     clib__null_memory(plaintext_keys, sizeof(plaintext_keys));
+    g_server_settings.publish_server_uptime = TRUE;
+    g_server_settings.publish_server_slots = TRUE;
+    g_server_settings.publish_server_banner = TRUE;
+    g_server_settings.publish_server_features = TRUE;
     g_server_settings.websocket_message_max_length = 5000000;
     g_server_settings.websocket_chat_message_string_max_length = 8000;
     g_server_settings.chat_cooldown_milliseconds = 100;
@@ -620,6 +626,8 @@ void settings__load(void)
     g_server_settings.is_fast_reconnect_allowed = FALSE;
     g_server_settings.is_identity_takeover_allowed = FALSE;
     g_server_settings.is_websocket_ping_active = FALSE;
+    g_server_settings.enforce_connection_check = TRUE;
+    g_server_settings.max_concurrent_logins = 4;
     g_server_settings.webrtc_datachannel_cooldown_seconds = 600;
     g_server_settings.show_music_bot_marquee_to_everyone = FALSE;
     g_server_settings.is_sending_text_to_idle_clients_allowed = TRUE;
@@ -790,6 +798,24 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_identity_takeover_allowed = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_websocket_ping_active");
                 if (cJSON_IsBool(json_field)) { g_server_settings.is_websocket_ping_active = cJSON_IsTrue(json_field); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "enforce_connection_check");
+                if (cJSON_IsBool(json_field))
+                {
+                    g_server_settings.enforce_connection_check = cJSON_IsTrue(json_field);
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "max_concurrent_logins");
+                if (cJSON_IsNumber(json_field))
+                {
+                    g_server_settings.max_concurrent_logins = json_field->valueint;
+                    if (g_server_settings.max_concurrent_logins < 1)
+                    {
+                        g_server_settings.max_concurrent_logins = 1;
+                    }
+                    if (g_server_settings.max_concurrent_logins > 64)
+                    {
+                        g_server_settings.max_concurrent_logins = 64;
+                    }
+                }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "webrtc_datachannel_cooldown_seconds");
                 if (cJSON_IsNumber(json_field))
                 {
@@ -862,6 +888,39 @@ void settings__load(void)
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &g_server_settings.http_webroot[0], clib__utf8_string_length(json_field->valuestring), 511); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "default_theme");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER)) { clib__copy_memory(json_field->valuestring, &g_server_settings.default_theme[0], clib__utf8_string_length(json_field->valuestring), 31); }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "publish_server_uptime");
+                if (cJSON_IsBool(json_field))
+                {
+                    g_server_settings.publish_server_uptime = cJSON_IsTrue(json_field);
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "publish_server_slots");
+                if (cJSON_IsBool(json_field))
+                {
+                    g_server_settings.publish_server_slots = cJSON_IsTrue(json_field);
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "publish_server_banner");
+                if (cJSON_IsBool(json_field))
+                {
+                    g_server_settings.publish_server_banner = cJSON_IsTrue(json_field);
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "publish_server_features");
+                if (cJSON_IsBool(json_field))
+                {
+                    g_server_settings.publish_server_features = cJSON_IsTrue(json_field);
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "server_banner");
+                if (cJSON_IsString(json_field) && base__is_server_banner_valid(json_field->valuestring) == TRUE)
+                {
+                    banner_length = clib__utf8_string_length(json_field->valuestring);
+                    if (banner_length > 0)
+                    {
+                        g_server_settings.server_banner = (char*)memorymanager__allocate(banner_length + 1, MEMALLOC_SERVER_BANNER);
+                        if (g_server_settings.server_banner != NULL_POINTER)
+                        {
+                            clib__copy_memory(json_field->valuestring, g_server_settings.server_banner, banner_length + 1, banner_length + 1);
+                        }
+                    }
+                }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "embed_client_config");
                 if (cJSON_IsBool(json_field)) { g_server_settings.embed_client_config = cJSON_IsTrue(json_field); }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_sending_text_to_idle_clients_allowed");

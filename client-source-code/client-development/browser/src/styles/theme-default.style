@@ -30,6 +30,24 @@ body {
     text-align: center;
 }
 
+/* the connect window (connection.js): the connect form as a dialog card with the title bar of the other dialogs (layout.style).
+   android keeps the form as a page of its own, so the card look is for the browser only. the :where() keeps the
+   specificity at one id, so a theme sheet that follows this one (ozone) overrides the card with its own rules */
+:where(body:not(.android-app)) #container-2 {
+    display: inline-block;
+    text-align: center;
+    background: var(--set-panel, #36393f);
+    color: var(--set-text, #e6e8ea);
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.10));
+    border-radius: 8px;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+    padding: 0 22px 18px 22px;
+}
+
+:where(body:not(.android-app)) #container-2 > #menu-bar-container {
+    margin: 0 -22px 14px -22px;
+}
+
 div {
     position: relative;
 }
@@ -53,27 +71,31 @@ div {
     display: none;
 }
 
+/* the notice box (utils__custom_alert): the dark panel of this theme instead of the stock white box */
 a-toast {
     position: fixed;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 100;
+    z-index: 100002;
     top: 40%;
-    background-color: #FFF;
+    box-sizing: border-box;
     min-width: 200px;
+    max-width: 90vw;
     text-align: center;
-    border: solid;
-    border-width: 1px;
-    border-color: #7781b1;
-    vertical-align: top;
-    padding: 10px;
-    font-family: roboto,sans-serif;
+    padding: 10px 16px;
+    background-color: var(--set-panel, #36393f);
+    color: var(--set-text, #e6e8ea);
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.10));
+    border-radius: var(--set-radius, 5px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    font-family: var(--set-font, 'Raleway', sans-serif);
+    font-size: 13px;
     min-height: 20px;
     cursor: pointer;
 }
 
 a-toast:hover {
-    background-color: grey;
+    filter: brightness(1.15);
 }
 
 #microphone-always-broadcasting-audio-button {
@@ -1328,7 +1350,10 @@ a-toast:hover {
 }
 
 /* this theme's --set-* dialog palette, because layout.style lays out and paints every dialog from these variables */
-:root {
+:root
+{
+    --context-menu-icon-display: none;
+    --context-menu-text-padding: 5px;
 
     --set-font: 'Raleway', sans-serif;
     --set-panel: #36393f;
@@ -1881,7 +1906,7 @@ a-toast:hover {
     overflow: hidden;
 }
 
-#poke-client-enter-container, #set-new-username-enter-container, #channel-properties-edit-container, #channel-password-enter-container, #admin-password-enter-container, #secret-identity-string-container, #client-info-container {
+#poke-client-enter-container, #set-new-username-enter-container, #channel-properties-edit-container, #channel-password-enter-container, #musicbot-management-background-container, #admin-password-enter-container, #secret-identity-string-container, #client-info-container {
     position: absolute;
     width: 100%;
     height: 100%;
@@ -1943,7 +1968,7 @@ a-toast:hover {
     padding-bottom: 8px;
 }
 
-#poke-client-enter-container-enter, #channel-properties-edit, #channel-password-enter, #admin-password-enter, #secret-identity-string-container-enter {
+#poke-client-enter-container-enter, #channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #secret-identity-string-container-enter {
     top: 25%;
     width: 322px;
 
@@ -1992,6 +2017,7 @@ a-toast:hover {
 #server-settings-tab .close-button.close-button,
 #channel-properties-edit .close-button.close-button,
 #channel-password-enter .close-button.close-button,
+#musicbot-management-dialog .close-button.close-button,
 #admin-password-enter .close-button.close-button,
 #poke-client-enter .close-button.close-button,
 #set-alias-enter .close-button.close-button,
@@ -2013,6 +2039,7 @@ a-toast:hover {
 #server-settings-tab .close-button.close-button::before,
 #channel-properties-edit .close-button.close-button::before,
 #channel-password-enter .close-button.close-button::before,
+#musicbot-management-dialog .close-button.close-button::before,
 #admin-password-enter .close-button.close-button::before,
 #poke-client-enter .close-button.close-button::before,
 #set-alias-enter .close-button.close-button::before,
@@ -2027,6 +2054,7 @@ a-toast:hover {
 #server-settings-tab .close-button.close-button:hover,
 #channel-properties-edit .close-button.close-button:hover,
 #channel-password-enter .close-button.close-button:hover,
+#musicbot-management-dialog .close-button.close-button:hover,
 #admin-password-enter .close-button.close-button:hover,
 #poke-client-enter .close-button.close-button:hover,
 #set-alias-enter .close-button.close-button:hover,

@@ -1,7 +1,7 @@
 // rsa-crypto.js is embedded in template.html along with the other client files, and in the node bundle
 // it is the client's rsa layer (lemon_crypto): keypair from a passphrase, encrypt, decrypt and the pkcs#1
 // challenge, with the modular exponentiation in rsa_keygen.wasm and everything else native BigInt
-// every wire format is byte-identical to the old cryptico stack, so identities and messages stay compatible
+// every byte format of the keys and messages is identical to the old cryptico stack, so identities and messages stay compatible
 // identity-crypto.js, worker-data-processing.js and chat-files.js call it
 
 var rsa_keygen_wasm_exports = null;
@@ -9,7 +9,7 @@ var rsa_keygen_wasm_exports = null;
 /**
  * @brief the rsa keygen wasm, compiled on first use
  *        the module imports nothing and is ~23 KB. synchronous compilation is fine because every
- *        rsa caller lives in the data-processing worker; the main thread only ever uses the
+ *        rsa caller is in the data-processing worker; the main thread only ever uses the
  *        diffie-hellman helper, which needs no wasm
  *
  * @return object the wasm exports

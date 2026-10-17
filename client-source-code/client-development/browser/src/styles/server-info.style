@@ -1,0 +1,232 @@
+/* Server details use the current theme's colors and fit narrow description panels. */
+.server-info-summary
+{
+    padding: 8px;
+    box-sizing: border-box;
+    font-style: normal;
+    text-align: left;
+}
+
+.server-info-banner
+{
+    display: block;
+    max-width: 100%;
+    max-height: 256px;
+    height: auto;
+    margin: 0 auto 10px;
+    object-fit: contain;
+}
+
+.server-info-banner[hidden],
+#root-server-info[hidden],
+[data-server-info-field][hidden],
+.context-menu-item[data-action="server-info"][hidden]
+{
+    display: none !important;
+}
+
+.server-info-summary dl,
+#server-info-features
+{
+    margin: 0;
+}
+
+.server-info-summary dl > div,
+#server-info-features > div
+{
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 16px;
+    padding: 5px 0;
+}
+
+.server-info-summary dt,
+#server-info-features dt
+{
+    font-weight: bold;
+}
+
+.server-info-summary dd,
+#server-info-features dd
+{
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.channel-description-text
+{
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+#server-info-dialog
+{
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    width: min(400px, calc(100vw - 32px));
+    max-height: calc(100dvh - 40px);
+    box-sizing: border-box;
+    padding: 0;
+    overflow: hidden;
+    color: var(--set-text, #e8e8e8);
+    background: var(--set-panel, #36393f);
+    border: 1px solid var(--set-line, #777);
+    font-family: var(--set-font, inherit);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+#server-info-dialog[open]
+{
+    display: flex;
+    flex-direction: column;
+}
+
+#server-info-dialog::backdrop
+{
+    background: rgb(0 0 0 / 35%);
+}
+
+#server-info-header
+{
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    box-sizing: border-box;
+    gap: 8px;
+    min-height: 30px;
+    padding: 0 4px 0 10px;
+    border-bottom: 1px solid var(--set-line, #555);
+    background: var(--set-panel-2, var(--set-panel, #2f3136));
+    cursor: move;
+    user-select: none;
+}
+
+#server-info-header .dialog-title
+{
+    display: block;
+    position: static;
+    inset: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    color: var(--set-text, #e8e8e8);
+    font-family: var(--set-font, inherit);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 30px;
+    letter-spacing: normal;
+    text-align: left;
+}
+
+#server-info-header .close-button
+{
+    position: relative;
+    inset: auto;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    float: none;
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    padding: 0 !important;
+    margin-left: auto;
+    border: 0;
+    border-radius: var(--set-radius, 4px);
+    background: transparent;
+    box-shadow: none;
+    color: var(--set-muted, #bbb);
+    font: 13px/1 sans-serif;
+    cursor: pointer;
+}
+
+#server-info-header .close-button::before
+{
+    content: "\2715";
+    position: static;
+    display: block;
+    line-height: 1;
+    color: inherit;
+}
+
+#server-info-header .close-button:hover
+{
+    background: var(--set-danger-soft, #683535);
+    color: var(--set-danger-strong, #ffb6af);
+}
+
+#server-info-body
+{
+    min-height: 0;
+    padding: 8px 12px 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+#server-info-body .server-info-summary
+{
+    padding: 0 0 6px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--set-line-soft, #555);
+}
+
+#server-info-body dl > div
+{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 4px 12px;
+    padding: 3px 0;
+}
+
+#server-info-body dt
+{
+    font-weight: 400;
+}
+
+#server-info-body dd
+{
+    text-align: right;
+}
+
+#server-info-dialog .server-info-help,
+#server-info-dialog .server-info-help-label
+{
+    cursor: help;
+}
+
+#server-info-dialog .server-info-help-label
+{
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+}
+
+#server-info-dialog button:not(.close-button),
+.server-banner-actions button
+{
+    color: var(--set-button-text, inherit);
+    background: var(--set-button-bg, #555);
+    border: var(--set-button-border, 1px solid #888);
+    padding: 5px 10px;
+    cursor: pointer;
+}
+
+.server-banner-actions
+{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin: 8px 0;
+}
+
+#server-banner-status
+{
+    min-height: 1.2em;
+    font-size: 0.9em;
+}

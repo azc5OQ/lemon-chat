@@ -32,6 +32,20 @@
 #error "Application crypto requires tiny-AES configured for AES-256-CTR"
 #endif
 
+// declarations
+static int _metadata_crypto_internal__tag(const crypto_session_keys_t* session,
+    const char* iv, const char* data, unsigned char* out);
+
+/**
+ * @brief Copies key bytes into a key structure and records which encryption or checking method uses them.
+ *
+ * @param crypto_key_t* key -> structure to fill; it is cleared if the type or byte count is unsupported
+ * @param crypto_key_type_t type -> method the key will be used with
+ * @param const unsigned char* bytes -> key bytes to copy; the caller keeps this buffer
+ * @param size_t size -> number of bytes in the supplied key
+ *
+ * @return int -> 1 when the key is ready, or 0 when an argument, key type, or key size is invalid.
+ */
 int metadata_crypto__key_init(crypto_key_t* key, crypto_key_type_t type, const unsigned char* bytes, size_t size)
 {
     crypto_key_t initialized = {0};
@@ -73,6 +87,15 @@ int metadata_crypto__key_init(crypto_key_t* key, crypto_key_type_t type, const u
     return key->type != CRYPTO_KEY_NONE;
 }
 
+/**
+ * @brief Turns a server password into the AES key used to protect messages.
+ *
+ * @param crypto_key_t* key -> structure to fill; it is cleared if the key cannot be created
+ * @param crypto_key_type_t type -> requested key type; currently only CRYPTO_KEY_AES_256_CTR is supported
+ * @param const char* password -> zero-terminated password text to hash with SHA256
+ *
+ * @return int -> 1 when the key was created, or 0 when the input or key type is unsupported or hashing fails.
+ */
 int metadata_crypto__key_from_password(crypto_key_t* key, crypto_key_type_t type, const char* password)
 {
     unsigned char digest[32] = {0};
@@ -97,6 +120,17 @@ int metadata_crypto__key_from_password(crypto_key_t* key, crypto_key_type_t type
     return result;
 }
 
+/**
+ * @brief Overwrites the memory containing an AES key and an HMAC key with
+ * zeroes. This is used for temporary keys after they are no longer needed and
+ * when creating connection keys fails, so the old key bytes do not remain in
+ * memory until that memory is reused. mbedtls_platform_zeroize is used because
+ * the compiler is not allowed to remove this memory clearing as unnecessary.
+ *
+ * @param crypto_session_keys_t* keys -> structure containing the key bytes to clear; NULL is allowed
+ *
+ * @return void
+ */
 void metadata_crypto__clear_session_keys(crypto_session_keys_t* keys)
 {
     if (keys != NULL)
@@ -105,6 +139,16 @@ void metadata_crypto__clear_session_keys(crypto_session_keys_t* keys)
     }
 }
 
+/**
+ * @brief Creates the connection encryption key and message-checking key from its agreed shared secret.
+ *
+ * The client uses the same salt, labels, and text representation to produce the same two keys.
+ *
+ * @param const char* shared_secret -> nonempty, zero-terminated decimal text of the Diffie-Hellman shared secret
+ * @param crypto_session_keys_t* keys -> structure to fill; it is cleared on failure
+ *
+ * @return int -> 1 when both keys are ready, or 0 when the secret is missing or either key cannot be created.
+ */
 int metadata_crypto__derive_session_keys(const char* shared_secret, crypto_session_keys_t* keys)
 {
     static const unsigned char salt[] = "lemonchat-hkdf-salt-v1";
@@ -140,6 +184,18 @@ int metadata_crypto__derive_session_keys(const char* shared_secret, crypto_sessi
     return result;
 }
 
+/**
+ * @brief Encrypts or decrypts the supplied bytes using the method recorded in the key.
+ *
+ * @param const crypto_key_t* key -> key and encryption method to use
+ * @param const unsigned char* nonce -> starting value for this operation; AES-256-CTR requires 16 bytes
+ * @param size_t nonce_size -> number of bytes in the starting value
+ * @param unsigned char* data -> buffer whose contents are replaced with the result
+ * @param size_t size -> number of bytes to encrypt or decrypt
+ * @param crypto_direction_t direction -> CRYPTO_ENCRYPT to encrypt or CRYPTO_DECRYPT to decrypt
+ *
+ * @return int -> 1 when the bytes were processed, or 0 when the arguments, key type, or starting value are invalid.
+ */
 int metadata_crypto__crypt(const crypto_key_t* key, const unsigned char* nonce, size_t nonce_size,
     unsigned char* data, size_t size, crypto_direction_t direction)
 {
@@ -174,6 +230,21 @@ int metadata_crypto__crypt(const crypto_key_t* key, const unsigned char* nonce, 
     }
 }
 
+/**
+ * @brief Applies every key to the same buffer, reversing their order when decrypting.
+ *
+ * @param const crypto_key_t* keys -> array of keys in encryption order; may be NULL when count is zero
+ * @param size_t count -> number of keys to apply
+ * @param const unsigned char* nonce -> starting value supplied to each encryption method
+ * @param size_t nonce_size -> number of bytes in the starting value
+ * @param unsigned char* data -> buffer changed by each encryption or decryption step
+ * @param size_t size -> number of bytes to process in the buffer
+ * @param crypto_direction_t direction -> CRYPTO_ENCRYPT for stored order or CRYPTO_DECRYPT for reverse order
+ *
+ * @attention On failure, earlier steps may already have changed data; the caller must discard that result.
+ *
+ * @return int -> 1 when all keys were applied, including an empty key array; 0 when an argument or a step fails.
+ */
 int metadata_crypto__crypt_layers(const crypto_key_t* keys, size_t count, const unsigned char* nonce, size_t nonce_size,
     unsigned char* data, size_t size, crypto_direction_t direction)
 {
@@ -200,6 +271,18 @@ int metadata_crypto__crypt_layers(const crypto_key_t* keys, size_t count, const 
     return 1;
 }
 
+/**
+ * @brief Calculates the message-checking value for two consecutive pieces of data.
+ *
+ * @param const crypto_key_t* key -> HMAC-SHA256 key used to check the data
+ * @param const unsigned char* first -> first piece of data; may be NULL when first_size is zero
+ * @param size_t first_size -> number of bytes in the first piece
+ * @param const unsigned char* second -> second piece of data; may be NULL when second_size is zero
+ * @param size_t second_size -> number of bytes in the second piece
+ * @param unsigned char* out_tag -> caller-owned buffer with room for the 32-byte result
+ *
+ * @return int -> 1 when the check value was written, or 0 when the arguments are invalid or calculation fails.
+ */
 int metadata_crypto__hmac_sha256(const crypto_key_t* key, const unsigned char* first, size_t first_size,
     const unsigned char* second, size_t second_size, unsigned char* out_tag)
 {
@@ -234,6 +317,15 @@ int metadata_crypto__hmac_sha256(const crypto_key_t* key, const unsigned char* f
     return result == 0;
 }
 
+/**
+ * @brief Compares every byte of two buffers without stopping at the first difference.
+ *
+ * @param const unsigned char* left -> first buffer, readable for size bytes
+ * @param const unsigned char* right -> second buffer, readable for size bytes
+ * @param size_t size -> number of bytes to compare
+ *
+ * @return int -> 1 when all compared bytes match, including when size is zero; otherwise 0.
+ */
 int metadata_crypto__equal(const unsigned char* left, const unsigned char* right, size_t size)
 {
     unsigned char difference = 0;
@@ -246,6 +338,16 @@ int metadata_crypto__equal(const unsigned char* left, const unsigned char* right
     return difference == 0;
 }
 
+/**
+ * @brief Calculates the metadata message check over its encoded starting value followed by its encrypted text.
+ *
+ * @param const crypto_session_keys_t* session -> connection keys containing the message-checking key
+ * @param const char* iv -> zero-terminated base64 text of the message starting value
+ * @param const char* data -> zero-terminated base64 text of the encrypted message
+ * @param unsigned char* out -> caller-owned buffer with room for the 32-byte check value
+ *
+ * @return int -> 1 when the check value was written, or 0 when its calculation fails.
+ */
 static int _metadata_crypto_internal__tag(const crypto_session_keys_t* session,
     const char* iv, const char* data, unsigned char* out)
 {
@@ -253,6 +355,17 @@ static int _metadata_crypto_internal__tag(const crypto_session_keys_t* session,
         (const unsigned char*)iv, strlen(iv), (const unsigned char*)data, strlen(data), out);
 }
 
+/**
+ * @brief Encrypts metadata with the server keys and optional connection keys, then builds the JSON text to send.
+ *
+ * @param const char* plaintext -> zero-terminated message text; the caller keeps this buffer
+ * @param int64* out_size -> receives the JSON byte count including its final zero byte, or zero on failure
+ * @param const crypto_session_keys_t* session -> ready connection keys; NULL sends only the server-key layers before key agreement
+ *
+ * @attention The server key settings must remain valid throughout this call. The caller supplies connection keys that cannot change during encryption.
+ *
+ * @return char* -> allocated, zero-terminated JSON text to release with memorymanager__free, or NULL_POINTER on failure.
+ */
 char* metadata_crypto__encrypt(const char* plaintext, int64* out_size, const crypto_session_keys_t* session)
 {
     size_t text_size = 0;
@@ -369,6 +482,15 @@ done:
     return envelope;
 }
 
+/**
+ * @brief Derives temporary connection keys, encrypts metadata, and erases those temporary keys afterward.
+ *
+ * @param const char* plaintext -> zero-terminated metadata text to encrypt
+ * @param int64* out_size -> receives the JSON byte count including its final zero byte, or zero on failure
+ * @param const char* shared_secret -> zero-terminated agreed secret; NULL_POINTER uses only the server keys
+ *
+ * @return char* -> allocated, zero-terminated JSON text to release with memorymanager__free, or NULL_POINTER on failure.
+ */
 char* metadata_crypto__encrypt_with_secret(const char* plaintext, int64* out_size, const char* shared_secret)
 {
     crypto_session_keys_t session = {0};
@@ -390,6 +512,18 @@ char* metadata_crypto__encrypt_with_secret(const char* plaintext, int64* out_siz
     return result;
 }
 
+/**
+ * @brief Checks an incoming metadata message and decrypts it into text the server can read.
+ *
+ * @param const client_t* client -> existing client whose connection keys and login state apply to this message
+ * @param const char* envelope_text -> zero-terminated JSON text containing the encoded starting value, encrypted data, and required check value
+ * @param unsigned char* out -> caller-owned buffer that receives zero-terminated plaintext and is cleared on failure
+ * @param size_t capacity -> size of out in bytes, including space for the final zero byte
+ *
+ * @attention The caller must keep the client and its keys stable, normally by holding the clients lock. Messages after key agreement must include a valid check value.
+ *
+ * @return boole -> TRUE when the message was checked and decrypted, or FALSE when it is invalid or cannot fit.
+ */
 boole metadata_crypto__decrypt_from_client(const client_t* client, const char* envelope_text,
     unsigned char* out, size_t capacity)
 {

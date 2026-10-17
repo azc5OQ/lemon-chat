@@ -384,7 +384,7 @@ function workers__data_processing_worker_onmessage(e)
     else if (e.data.type == "mainthread__create_offline_chat_message")
     {
         // identical crypto to a direct message - the recipient is simply not connected,
-        // so it is addressed by their registered alias and the server parks the result
+        // so it is addressed by their registered alias and the server stores the result
         // until they come back. the server sees the same opaque blob either way.
         let current_message_keys = [];
 
@@ -835,7 +835,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         {
             g_is_authenticated = true;
 
-            // the whole message rides along as the policy: server_settings_tab__apply_server_policy_fields takes the
+            // the whole message is passed on as the policy: server_settings_tab__apply_server_policy_fields takes the
             // fields it knows, so a new server field never needs a second list here
             global.postMessage({
                 type: "data_processing_worker__authentication_status",
@@ -958,6 +958,10 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 type: "data_processing_worker__server_settings_values_from_server",
                 value: msg
             });
+        }
+        else if (msg.message.type == "server_info" || msg.message.type == "server_banner_result")
+        {
+            global.postMessage({ type: "data_processing_worker__" + msg.message.type, value: msg.message });
         }
         else if (msg.message.type == "admin_log")
         {
@@ -1117,7 +1121,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
-        // video streaming: the six control messages ride through untouched, video.js reads them on the main thread
+        // video streaming: the six control messages pass through untouched, video.js reads them on the main thread
         else if (msg.message.type == "video_stream_state")
         {
             global.postMessage({ type: "data_processing_worker__video_stream_state_from_server", value: msg });
@@ -1318,7 +1322,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "channel_chat_file_metadata")
         {
-            // the header is opened here (channel keys live in this worker); null leaves a nameless card
+            // the header is opened here (the channel keys are kept in this worker); null leaves a nameless card
             msg.message.file_header_decrypted = (typeof msg.message.file_header === "string")
                 ? chat_files__decrypt_channel_chat_file_header(msg.message.file_id, msg.message.file_header) : null;
             msg.message.file_header = null;

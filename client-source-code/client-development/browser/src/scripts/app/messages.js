@@ -1,6 +1,6 @@
 // messages.js is embedded in template.html along with the other client files, and in the node bundle
 // it is the protocol layer: server_msg holds a handler for every server->client message, client_msg the
-// builders for client->server requests; wire format details live here, not in the ui
+// builders for client->server requests; the message format details are here, not in the ui
 // dispatch.js calls the handlers, ui.js and the feature files call the builders
 
 // state private to this file
@@ -12,7 +12,7 @@ var is_long_press = null;
 
 var server_msg = {
     /**
-     * @brief the tag list: fills g_tags from the server snapshot, renders the settings tag table, and paints tag chips onto every visible client row (clients in hidden channels are skipped)
+     * @brief the tag list: fills g_tags from the server snapshot, renders the settings tag table, and paints tag labels onto every visible client row (clients in hidden channels are skipped)
      *        the complete list arrives at every login, so the previous session's rows go first
      *
      * @param object msg -> the server message, msg.message.tags holds the tags
@@ -101,7 +101,7 @@ var server_msg = {
     /**
      * @brief the admin identity-management list: one row per stored identity
      *        abbreviated hash (full hash in title and on the controls' data-hash), last-seen username,
-     *        online dot, its tags as chips each with a remove cross, an "add tag" dropdown, and a delete-identity cross
+     *        online dot, its tags as labels each with a remove cross, an "add tag" dropdown, and a delete-identity cross
      *
      * @param object msg -> the server message, msg.message.identities holds the identities
      *
@@ -131,11 +131,11 @@ var server_msg = {
             let username = (identity.username != null && identity.username.length > 0) ? identity.username : "—";
             let tag_ids = identity.tag_ids != null ? identity.tag_ids : [];
 
-            // tags as removable chips
+            // tags as removable labels
             let chips = "";
             for (let t = 0; t < tag_ids.length; t++)
             {
-                chips += "<span class=\"identity-tag-chip\">" + chat__sanitize_string(tag_display_name(tag_ids[t]))
+                chips += "<span class=\"identity-tag-label\">" + chat__sanitize_string(tag_display_name(tag_ids[t]))
                         + "<span class=\"identity-tag-remove\" data-identity-hash=\"" + hash_attr + "\" data-tag-id=\"" + tag_ids[t] + "\" title=\"remove this tag from the identity\">✕</span></span>";
             }
 
@@ -235,11 +235,11 @@ var server_msg = {
 
         g_is_channel_list_retrieved = true;
         document.getElementById("channel-list-container").innerHTML = "";
-        var root_channels = channel_tree__get_channels_by_channel_parent_id(msg.message.channels, g_ROOT_LEVEL_PARENT_SENTINEL);
+        var root_channels = channel_tree__get_channels_by_channel_parent_id(msg.message.channels, g_ROOT_LEVEL_PARENT_MARKER);
 
         let processed_channels = [];
-        let current_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_SENTINEL;
-        let previous_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_SENTINEL;
+        let current_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_MARKER;
+        let previous_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_MARKER;
         let channel_tree_build_stall_counter = 0;
 
         while (processed_channels.length != msg.message.channels.length)
@@ -248,7 +248,7 @@ var server_msg = {
 
             if (current_parent_channel_id_to_find == previous_parent_channel_id_to_find)
             {
-                current_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_SENTINEL;
+                current_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_MARKER;
             }
             previous_parent_channel_id_to_find = current_parent_channel_id_to_find;
 
@@ -314,7 +314,7 @@ var server_msg = {
                 {
                     if ((a + 1) == child_channels.length)
                     {
-                        if (current_parent_channel_id_to_find == g_ROOT_LEVEL_PARENT_SENTINEL)
+                        if (current_parent_channel_id_to_find == g_ROOT_LEVEL_PARENT_MARKER)
                         {
                             continue;
                         }
@@ -341,9 +341,9 @@ var server_msg = {
                 }
             }
 
-            // self-recovery guard: a healthy pass always processes at least one channel.
+            // safety check: a correct pass always processes at least one channel.
             // if an entire pass made no progress, the channel data is inconsistent
-            // (missing root, orphaned child, or a cycle) - stop instead of freezing the UI.
+            // (missing root, a child without a parent, or a cycle) - stop instead of freezing the UI.
             if (processed_channels.length == processed_count_before_iteration)
             {
                 channel_tree_build_stall_counter++;
@@ -966,7 +966,7 @@ var server_msg = {
      */
     process_sdp_offer_from_server: function(msg)
     {
-        // voice lives in the webview only. node sees this frame too (it owns the socket)
+        // voice runs in the webview only. node sees this frame too (it owns the socket)
         // but never built a peer connection, so it just forwards and ignores
         if (g_peer_connection_with_server == null)
         {
@@ -1703,7 +1703,7 @@ var server_msg = {
         g_chat_context_array[chat_context_index].last_known_message_sender_username = msg.message.sender_username;
     },
     /**
-     * @brief the announced maintainer of the current channel, recorded after checking he exists in our channel; we then either send fresh keys (we are him) or arm the keys-wait timer
+     * @brief the announced maintainer of the current channel, recorded after checking he exists in our channel; we then either send new keys (we are the maintainer) or start the keys-wait timer
      *
      * @param object msg -> the server message, msg.message holds maintainer_id, channel_id and has_maintainer
      *
@@ -1889,7 +1889,7 @@ var server_msg = {
             : "while you were away";
 
         // if that person is connected right now, their live private chat is the natural
-        // home for this; otherwise it lands in an alias-keyed context of its own
+        // home for this; otherwise it goes into an alias-keyed context of its own
         let sender_client = null;
         for (let i = 0; i < g_client_list.length; i++)
         {
@@ -1930,7 +1930,7 @@ var server_msg = {
                 last_known_message_sender_username: ""
             });
 
-            // a pill so the message is reachable (strip themes surface it through the people strip);
+            // a conversation tab so the message is reachable (the member list themes show it through the member list);
             // the raw alias goes into the id, matching the context id the promotion looks up
             let selector_id = (sender_client != null) ? ("user-" + sender_client.client_id) : ("offline-" + sender_alias);
             if (document.querySelector('[data-chat-context-selector-id="' + selector_id + '"]') == null)
@@ -1942,7 +1942,7 @@ var server_msg = {
                 document.getElementById("chat-context-selectors-container").insertAdjacentHTML("beforeend", selector_html);
 
                 // freshly inserted markup carries no handlers - rebind them all, the same
-                // way every other place that adds a pill does
+                // way every other place that adds a conversation tab does
                 for (let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
                 {
                     document.getElementsByClassName("chat-context-selector")[x].onclick = UI.chat_context_selector_onclick;
@@ -2388,7 +2388,7 @@ var server_msg = {
 
     },
     /**
-     * @brief a client was renamed: updates the username in g_client_list, on their row (or the local input for ourselves) and on their chat context pill if one exists
+     * @brief a client was renamed: updates the username in g_client_list, on their row (or the local input for ourselves) and on their conversation tab if one exists
      *
      * @param object msg -> the server message, msg.message holds client_id and new_username
      *
@@ -2424,7 +2424,7 @@ var server_msg = {
         let is_found = document.querySelector('[data-chat-context-selector-id="user-' + msg.message.client_id + '"]');
         if (is_found != null)
         {
-            // the pill is labelled with the alias when there is one, so a rename must not
+            // the conversation tab is labelled with the alias when there is one, so a rename must not
             // paint the username over it
             is_found.getElementsByClassName("p-container")[0].textContent = channel_tree__get_display_name_by_client_id(msg.message.client_id, msg.message.new_username);
         }
@@ -2616,8 +2616,6 @@ var server_msg = {
                     is_music_bot: null
                 };
 
-                // they killed the subcultures they cancelled the future and for what, for you to not be offended
-
                 single_client.audio_state = msg.message.clients[i].audio_state;
                 single_client.tag_ids = msg.message.clients[i].tag_ids;
                 single_client.is_clients_channel_hidden = false;
@@ -2751,8 +2749,8 @@ var server_msg = {
         // a video stream already running in our channel: its icon appears; the offer, if we may watch, comes separately
         video__apply_client_list(msg.message.clients);
 
-        // a saved strip theme is applied before the server policy allowed avatars, so the grid never
-        // armed; re-evaluate now that the flag and the clients exist (the refresh bulk-enqueues itself)
+        // a saved member list theme is applied before the server policy allowed avatars, so the grid never
+        // started; re-evaluate now that the flag and the clients exist (the refresh bulk-enqueues itself)
         UI.refresh_member_list_state();
     },
     /**
@@ -2784,7 +2782,7 @@ var server_msg = {
         textarea.scrollTop = textarea.scrollHeight;
     },
     /**
-     * @brief somebody switched channel: moves their row, replays their tag chips, plays the join, leave or switch sound; for the local client also swaps the chat context and nulls the channel keys
+     * @brief somebody switched channel: moves their row, replays their tag labels, plays the join, leave or switch sound; for the local client also swaps the chat context and nulls the channel keys
      *
      * @param object msg -> the server message, msg.message holds client_id and channel_id (-1 for a hidden channel)
      *
@@ -2930,7 +2928,7 @@ var server_msg = {
                                             </div>';
 
                     // the sibling insert is kept rather than switched to a container append, so
-                    // the node lands in the same place in the browser. only the blind [count - 1]
+                    // the node ends up in the same place in the browser. only the blind [count - 1]
                     // is guarded, which is what made this throw with no contexts painted
                     let count = document.getElementsByClassName("chat-context").length;
 
@@ -3185,7 +3183,7 @@ var server_msg = {
     process_poke_from_server: function(msg)
     {
         // the sender may be missing from the client list (hidden password channel, or a poke that
-        // lands before the list is built); a null entry must not kill the handler
+        // arrives before the list is built); a null entry must not end the handler
         let poke_sender = channel_tree__get_client_by_client_id(msg.message.client_id);
 
         if (poke_sender != null && poke_sender.is_ignored_by_local_client == true)
@@ -3260,7 +3258,7 @@ var server_msg = {
         }
     },
     /**
-     * @brief a tag was taken off a client: drops the id from their tag_ids and removes its chip from their row
+     * @brief a tag was taken off a client: drops the id from their tag_ids and removes its label from their row
      *
      * @param object msg -> the server message, msg.message holds client_id and tag_id
      *
@@ -3340,7 +3338,7 @@ var server_msg = {
     },
 
     /**
-     * @brief a client's alias changed: updated in g_client_list, on their rows (text and has-alias class), on old messages and an open chat pill, then the member list is synced
+     * @brief a client's alias changed: updated in g_client_list, on their rows (text and has-alias class), on old messages and an open conversation tab, then the member list is synced
      *
      * @param object msg -> the server message, msg.message holds client_id and alias
      *
@@ -3359,7 +3357,7 @@ var server_msg = {
         // an alias change changes the display name on old messages too
         android_host__retag_rendered_messages_of_sender(msg.message.client_id, channel_tree__get_display_name_by_client_id(msg.message.client_id, client_object.username));
 
-        // update the live rows in place; the member-list strip mirror re-clones them right after
+        // update the live rows in place; the member list mirror re-clones them right after
         let rows = document.querySelectorAll('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]');
         for (let i = 0; i < rows.length; i++)
         {
@@ -3383,10 +3381,10 @@ var server_msg = {
 
         // an open chat with this person is labelled by name too - relabel it now instead
         // of leaving the old username sitting there until the chat is reopened
-        let open_pill = document.querySelector('[data-chat-context-selector-id="user-' + msg.message.client_id + '"]');
-        if (open_pill != null)
+        let open_tab = document.querySelector('[data-chat-context-selector-id="user-' + msg.message.client_id + '"]');
+        if (open_tab != null)
         {
-            open_pill.getElementsByClassName("p-container")[0].textContent = channel_tree__get_display_name_by_client_id(msg.message.client_id, client_object.username);
+            open_tab.getElementsByClassName("p-container")[0].textContent = channel_tree__get_display_name_by_client_id(msg.message.client_id, client_object.username);
         }
 
         UI.schedule_member_list_sync();
@@ -3409,7 +3407,7 @@ var server_msg = {
 
         client_object.country_iso_code = (msg.message.country_iso_code != null) ? msg.message.country_iso_code : "";
 
-        // repaint the flag on the live rows in place; the member-list strip mirror re-clones them right after
+        // repaint the flag on the live rows in place; the member list mirror re-clones them right after
         let rows = document.querySelectorAll('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]');
         for (let i = 0; i < rows.length; i++)
         {
@@ -3424,7 +3422,7 @@ var server_msg = {
     },
 
     /**
-     * @brief a tag was given to a client: recorded on the client (no duplicates) and painted as a chip; also reveals the server-settings button when the local client just received the admin tag
+     * @brief a tag was given to a client: recorded on the client (no duplicates) and painted as a label; also reveals the server-settings button when the local client just received the admin tag
      *
      * @param object msg -> the server message, msg.message holds client_id and tag_id
      *
@@ -3520,7 +3518,7 @@ var server_msg = {
         document.getElementById("server-settings-tab-tags-container").insertAdjacentHTML("beforeend", html_to_append);
     },
     /**
-     * @brief a tag was deleted: removed from g_tags, its settings row, every displayed chip and every client's tag_ids
+     * @brief a tag was deleted: removed from g_tags, its settings row, every displayed label and every client's tag_ids
      *
      * @param object msg -> the server message, msg.message.tag_id names the tag
      *
@@ -3590,7 +3588,7 @@ var server_msg = {
         }
     },
     /**
-     * @brief a tag's icon changed: the icon fields are updated in g_tags, its settings row and every displayed chip repainted
+     * @brief a tag's icon changed: the icon fields are updated in g_tags, its settings row and every displayed label repainted
      *
      * @param object msg -> the server message, msg.message holds tag_id, has_icon and tag_linked_icon_id
      *
@@ -3667,10 +3665,10 @@ var server_msg = {
         for (single_song of msg.message.songs)
         {
             html_to_append += '\n\
-            <tr style="border-bottom: 1px solid #eee;">\n\
-                <td style="padding:10px;">'+ single_song.name +'</td>\n\
-                <td style="padding:10px; text-align:right;">'+ single_song.duration_seconds +'</td>\n\
-                <td style="padding:10px; text-align:right; cursor:pointer;"><input class="remove-song-from-musicbot-button" type="button" data-song-id="'+single_song.id+'" value="X"></td>\n\
+            <tr>\n\
+                <td class="musicbot-song-name-cell">'+ single_song.name +'</td>\n\
+                <td class="musicbot-song-duration-cell">'+ single_song.duration_seconds +'</td>\n\
+                <td class="musicbot-song-remove-cell"><input class="remove-song-from-musicbot-button button-1" type="button" data-song-id="'+single_song.id+'" value="remove"></td>\n\
             </tr>';
         }
 
@@ -3794,7 +3792,7 @@ var server_msg = {
             return;
         }
 
-        // evict before the handoff: this is the only removal from received_files, and a stranded entry
+        // remove before passing it on: this is the only removal from received_files, and a leftover entry
         // would have the next picture with this message id appended on top of the leftovers
         received_files.splice(index_to_delete, 1);
 

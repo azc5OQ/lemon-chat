@@ -219,7 +219,7 @@ extern "C" {
 
 	#ifndef AFL_FUZZ
 	#define SEND(client,buf,len) send_all((client), (buf), (len), MSG_NOSIGNAL)
-	#define RECV(fd,buf,len) recv((fd)->client_sock, (buf), (len), 0)
+	#define RECV(fd,buf,len) _ws_internal__receive_bytes((fd), (buf), (len))
 	#else
 	#define SEND(client,buf,len) write(fileno(stdout), (buf), (len))
 	#define RECV(fd,buf,len) read((fd)->client_sock, (buf), (len))
@@ -262,6 +262,9 @@ extern "C" {
 	extern char *ws_getaddress(ws_cli_conn_t *client);
 	extern int ws_sendframe(ws_cli_conn_t *cli, const char *msg, uint64_t size, int type);
 	extern int ws_sendframe_txt(ws_cli_conn_t *cli, const char *msg);
+    extern int ws_queue_text(ws_cli_conn_t* client, void* context, size_t charged_bytes,
+        char* (*encode)(void* context, size_t* encoded_size),
+        void (*release_context)(void* context), void (*release_encoded)(char* encoded));
 	extern int ws_sendframe_bin(ws_cli_conn_t *cli, const char *msg, uint64_t size);
 	extern int ws_get_state(ws_cli_conn_t *cli);
 	extern int ws_close_client(ws_cli_conn_t *cli);

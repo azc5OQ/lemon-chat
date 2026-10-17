@@ -1556,7 +1556,7 @@ function utils__detect_touch_device()
 
 // globals.js is embedded in template.html (and the node bundle) along with the other client files
 // it holds every piece of state that more than one file uses, one group per topic
-// every top-level var and function between aes-js.js and the end of main.js lives in one closure, so
+// every top-level var and function between aes-js.js and the end of main.js is in one closure, so
 // all of them are visible everywhere; the prefix is the convention: g_ = app-wide state, G_ = app-wide
 // constant, no prefix = private to the file that declares it
 
@@ -1600,7 +1600,7 @@ var g_is_authenticated = false;
 var g_should_connection_check_be_running = false;
 
 // the heartbeat: one every interval_ms, the link counts as lost after lost_threshold_ms without
-// a reply (three missed 10 s heartbeats plus slack, so a dead network shows within a minute)
+// a reply (three missed 10 s heartbeats plus some allowance, so a lost network shows within a minute)
 var g_connection_check = {
     interval_ms: 10 * 1000,
     lost_threshold_ms: 35 * 1000,
@@ -1608,9 +1608,9 @@ var g_connection_check = {
     last_response_timestamp: 0  // set on every heartbeat reply, first when the client connects
 };
 
-// session statistics for the strip themes' session-info card. bytes are counted at
-// the two choke points every message passes through (encrypted base64 lengths, so
-// "wire-ish" numbers); ping is the heartbeat round trip.
+// session statistics for the session-info card of the member list themes. bytes are counted at
+// the two points every message passes through (encrypted base64 lengths, so close to the
+// numbers sent over the connection); ping is the heartbeat round trip.
 var g_session = {
     bytes_sent: 0,
     bytes_received: 0,
@@ -1619,9 +1619,9 @@ var g_session = {
     last_ping_ms: -1
 };
 
-// fast reconnect (server setting): a lost socket keeps the page exactly as it is and re-dials with
+// fast reconnect (server setting): a lost socket keeps the page exactly as it is and connects again with
 // the same identity; the server adopts the still-open session. only a failed attempt shows
-// "connection lost" and wipes the page
+// "connection lost" and resets the page
 var g_fast_reconnect = {
     in_progress: false,   // an attempt is running: no wipe, no toast, one attempt only
     resumed: false,       // the server said fast_reconnect_ok: the lists that follow are a refresh
@@ -1629,11 +1629,11 @@ var g_fast_reconnect = {
     pending_lists: null   // the refreshed lists, applied together so the page repaints once
 };
 
-// the local keypair as { public_key_string, identity_string }, awaited by the driver and filled by
+// the local keypair as { public_key_string, identity_string }, awaited by the connect loop of connection.js and filled by
 // dispatch.js when the worker made it; connection.js builds the slot at load. the private key stays in the worker
 var g_identity_slot = null;
 
-// the live status for the login page. the local driver writes it; in the webview,
+// the live status for the login page. the local connect loop writes it; in the webview,
 // node's reports arriving over the loopback overwrite it, because node owns the real connection
 var g_connection_status = {
     state: "idle",          // idle | connecting | waiting_retry | connected
@@ -1646,7 +1646,7 @@ var g_connection_status = {
 // two exist, the loopback ui and the java bridge
 var g_connection_status_listeners = [];
 
-// filled by the close and error handlers, consumed by the driver for the retry status
+// filled by the close and error handlers, read by the connect loop for the retry status
 var g_last_disconnect_reason = "";
 
 // android reports the device's real network state over the bridge; null means never told
@@ -1689,29 +1689,40 @@ var g_keys_init_status = false;
 
 var g_is_identity_switch_in_progress = false; // deliberate disconnect->new-keypair->reconnect cycle (top bar "identity" button)
 
-// the size this server last asked for, so the offer is not repeated on every redial. the
-// connection driver retries forever, and the rejection repeats on every attempt
+// the size this server last asked for, so the offer is not repeated on every new attempt. the
+// connect loop retries forever, and the rejection repeats on every attempt
 var g_rsa_key_too_weak_prompted_for_bits = 0;
 
 // ---- server policy ----
 
 // server-side policy this client only obeys, announced at login (authentication_status) and on every
 // admin save (server_policy); absent fields on an older server keep these defaults. the keys are the
-// wire names, so server_settings_tab__apply_server_policy_fields copies them generically (a number only when positive)
+// field names of the message, so server_settings_tab__apply_server_policy_fields copies them generically (a number only when positive)
 var g_server_policy = {
+    enforce_connection_check: true,
     is_fast_reconnect_allowed: false,          // a lost socket may resume its session instead of starting over
     show_music_bot_marquee_to_everyone: false, // a streaming bot's marquee also for people outside its channel
     is_alias_registration_allowed: false,      // admins may register aliases (display names) on identities
     allow_typing_indicator: false,             // "x is typing ..." is sent and shown
     allow_client_renames: true,                // users may rename themselves (admins always may); on unless the server says otherwise
+    allow_link_previews: false, // URL lookup is available only when the server enables it.
     allow_avatars: false,                      // image avatars on identities
     avatar_max_size: 51200,                    // largest raw avatar image in bytes
     allow_file_uploads: false,                 // any file may be sent in chat; off until the server says so
     file_upload_max_size: 10 * 1024 * 1024,    // largest raw chat file in bytes
     allow_chat_pictures: true,                 // inline pictures in chat; on unless the server says otherwise
     chat_picture_max_size: 4 * 1024 * 1024,    // largest raw inline picture in bytes; bigger images still travel as files
-    icon_max_size: 5000                        // largest raw tag/channel icon in bytes (the server settings tab upload)
+    icon_max_size: 5000,                       // largest raw tag/channel icon in bytes (the server settings tab upload)
+    is_video_streaming_allowed: false,         // members may stream their screen or a video file to their channel; off = no stream ui at all
+    is_audio_over_websocket_allowed: false,    // voice may use the /audio websocket; a server from before this setting sends nothing and keeps it off
+    is_audio_over_webrtc_allowed: true,        // voice may use the webrtc datachannel
+    is_voice_chat_active: true,                // the server relays client voice; with both audio switches off no audio connection is attempted
+    is_music_bot_audio_active: true            // the server relays music bot audio
 };
+
+// the user's audio connection preference from the local settings: "webrtc" (the datachannel),
+// "websocket", or "none" for no audio connection at all. the server policy decides what is possible
+var g_audio_connection_preference = "webrtc";
 
 // ---- who is here ----
 
@@ -1744,10 +1755,10 @@ var g_selected_client_id;
 
 var g_current_channel_id = 0;
 
-// internal sentinel meaning "the root level" while walking the channel tree.
+// internal marker value meaning "the root level" while walking the channel tree: it is passed where a parent channel id is expected and matches no real channel.
 // root channels are identified by their is_root_channel flag, never by this value
 // (server ids are uint64 and can no longer carry -1).
-const g_ROOT_LEVEL_PARENT_SENTINEL = -1;
+const g_ROOT_LEVEL_PARENT_MARKER = -1;
 
 var g_chat_message_author_public_keys = {}; // server chat message id -> author's public key; used to decide whether to honour an incoming delete/edit
 
@@ -1844,6 +1855,10 @@ var g_alert_push_to_talk_key_shown_once = false;
 var g_alert_streaming_music_shown_once = false;
 
 var g_are_sound_effects_enabled = true;
+
+// whether a theme may replace the mouse cursor and draw a glow around it (ozone does); false keeps the
+// system cursor in every theme. a local setting, saved on this device as lemon_custom_cursor
+var g_is_custom_cursor_enabled = true;
 
 var g_stop_song_stream_message_received = false;
 
@@ -1955,6 +1970,9 @@ var g_rsa_key_bits = 2048;
 // local-only preference for the avatar circles next to chat messages
 var g_show_message_avatars = false;
 
+// Display message text in this theme's font, size and color without changing what was sent.
+var g_use_theme_chat_formatting = false;
+
 // read receipts have two halves that are set separately: whether we draw the eye others send
 // us, and whether we send one back. both are on unless turned off
 var g_show_seen_indicator = true;
@@ -1981,7 +1999,7 @@ var g_push_to_talk_key_code = 81;
 
 var g_push_to_talk_key_label = "Q";
 
-// just a copy so the checkbox can show the right state, because the real flag lives in java
+// just a copy so the checkbox can show the right state, because the real flag is kept in java
 var g_is_file_logging_enabled = false;
 
 // ---- node runtime (the headless android service) ----
@@ -1995,7 +2013,7 @@ var g_loopback_token = "";
 // the server's auth frame, kept from the moment it arrives, because the ui replay leads with it
 var g_node_cached_auth_frame = null;
 
-// false parks the connection: the socket is closed and the reconnect ticker idles. it is
+// false keeps the connection closed on purpose: the socket is closed and the reconnect loop waits. it is
 // always true in the browser; only the node host flips it, for the webview handover
 var g_node_connection_wanted = true;
 
@@ -2007,7 +2025,7 @@ var g_node_frame_listener = null;
 // channel and never count those messages as unread
 var g_node_has_attached_ui = false;
 
-// the bridge host's hook for incoming calls. it stays null everywhere but android
+// the bridge host's callback for incoming calls. it stays null everywhere but android
 var g_node_incoming_call_listener = null;
 
 // set through the export seam. every listener is called after every dispatched message
@@ -2039,6 +2057,41 @@ var g_iceconfig = null;
 var g_datachannel = null;
 
 var g_is_webrtc_datachannel_connected = false;
+
+// ---- video streaming (video.js, video-worker.js) ----
+
+var g_video_datachannel = null;                 // the second, reliable datachannel from the server (label "video")
+
+var g_is_video_datachannel_connected = false;
+
+var g_video_worker = null;                      // packetizes + encrypts on the streamer side, decrypts + decodes + draws on the viewer side
+
+// the one stream of the current channel as this client sees it
+var g_video_stream = {
+    is_active: false,               // somebody (maybe us) streams in the current channel
+    streamer_client_id: -1,
+    source: "",                     // "screen" or "file"
+    codec: "",
+    width: 0,
+    height: 0,
+    fps: 0,
+    role: "none",                   // "streamer", "viewer" or "none"
+    is_start_pending: false,        // we asked the server to start and wait for its video_stream_state
+    is_offered: false,              // the server sent us the offer, we may press connect
+    is_watching: false,             // we pressed connect and the server relays to us
+    is_decoder_supported: false,    // the announced codec decodes here
+    is_popup_open: false,
+    viewer_count: 0,                // streamer side
+    pending_viewer_requests: [],    // streamer side: [{ client_id, username }] waiting for yes / no
+    is_sound_included: false,       // the stream carries sound packets next to the picture packets (video.js)
+    watching_client_ids: [],        // the members watching right now; known to the streamer and the allowed members only, the server tells nobody else
+    epoch: 0                        // bumped per stream we start, so viewers never mix two streams
+};
+
+// local settings of the stream window (video.js): the volume of a stream's sound (saved as lemon_video_stream_sound_volume)
+// and whether a streamer hears the file it streams (saved as lemon_video_stream_monitor)
+var g_video_stream_sound_volume = 1;
+var g_is_video_stream_monitor_enabled = true;
 
 var g_is_webrtc_datachannel_check_running = false;
 
@@ -2894,7 +2947,7 @@ var g_voice_send_sequence_number = 0;
 // rsa-crypto.js is embedded in template.html along with the other client files, and in the node bundle
 // it is the client's rsa layer (lemon_crypto): keypair from a passphrase, encrypt, decrypt and the pkcs#1
 // challenge, with the modular exponentiation in rsa_keygen.wasm and everything else native BigInt
-// every wire format is byte-identical to the old cryptico stack, so identities and messages stay compatible
+// every byte format of the keys and messages is identical to the old cryptico stack, so identities and messages stay compatible
 // identity-crypto.js, worker-data-processing.js and chat-files.js call it
 
 var rsa_keygen_wasm_exports = null;
@@ -2902,7 +2955,7 @@ var rsa_keygen_wasm_exports = null;
 /**
  * @brief the rsa keygen wasm, compiled on first use
  *        the module imports nothing and is ~23 KB. synchronous compilation is fine because every
- *        rsa caller lives in the data-processing worker; the main thread only ever uses the
+ *        rsa caller is in the data-processing worker; the main thread only ever uses the
  *        diffie-hellman helper, which needs no wasm
  *
  * @return object the wasm exports
@@ -3771,18 +3824,20 @@ var lemon_crypto = (function ()
 // a chat message's font size. it is a general helper that happens to live in the audio file. the
 // opus classes around it are only constructed from the worker entry points, which never run here
 // audio-opus-glue.js is embedded in template.html along with the other client files
-// it is the opus codec side of audio: it turns microphone sound into network packets and packets back
-// into sound, and runs inside the opus encoder and decoder workers (worker-entry.js picks the handler)
+// it is the opus codec side of audio: it turns microphone sound (and the sound of a video stream, with a second
+// encoder) into network packets and packets back into sound, and runs inside the opus encoder and decoder workers
+// (worker-entry.js picks the handler)
 // audio.js and dispatch.js post to these workers, voice.js sends what they encode
 // in this file a "frame" is one opus packet; in audio.js it is one moment of sound
 
 // state private to this file
-var encoder = null;
+var encoder = null;        // the microphone's encoder
+var stream_encoder = null; // the encoder of a video stream's sound (OPUS_STREAM_SOUND_* below); null while no stream with sound runs
 
 
-// OPUS AUDIO TUNABLES: each value below is safe to change on its own; numbers elsewhere in this file are load-bearing
+// OPUS AUDIO TUNABLES: each value below is safe to change on its own; numbers elsewhere in this file depend on each other
 // (decoder channel count 2 with stereo interleaving assumed downstream, sample rate 48000, OPUS_CTL_RESET_STATE 4028).
-// the jitter buffer knobs under "AUDIO WORKLET TUNABLES" in audio.js matter more for felt delay than anything here
+// the jitter buffer settings under "AUDIO WORKLET TUNABLES" in audio.js matter more for the delay a listener notices than anything here
 
 // how many people can be heard talking at once: one opus decoder per concurrent speaker (opus is stateful,
 // streams cannot share one). all are allocated at worker start and never freed; a released decoder goes back
@@ -3837,12 +3892,19 @@ var OPUS_DECODER_IDLE_RELEASE_SECONDS = 5;
 // restarted its sequence counter (a reconnect) and resync to it
 var OPUS_STALE_FRAMES_BEFORE_RESYNC = 25;
 
-// ---- derived from the knobs above; do not edit these directly ----
+// ---- derived from the settings above; do not edit these directly ----
 var OPUS_DECODER_IDLE_TICKS_BEFORE_RELEASE = Math.round(OPUS_DECODER_IDLE_RELEASE_SECONDS * 1000 / OPUS_TICK_INTERVAL_MS);
 var OPUS_HOUSEKEEPING_TICKS_PER_SECOND = Math.round(1000 / OPUS_TICK_INTERVAL_MS);
 
-// ---- fixed opus ABI constant, NOT a tunable ----
+// the second encoder, for the sound of a video stream (video.js): stereo, the music setting, short packets, a fixed bitrate.
+// it exists next to the microphone's encoder because opus keeps state per stream, and the two sounds must stay apart
+var OPUS_STREAM_SOUND_APPLICATION = 2049;     // OPUS_APPLICATION_AUDIO
+var OPUS_STREAM_SOUND_FRAME_DURATION_MS = 20; // one packet per 20 ms, the length of a capture chunk
+var OPUS_STREAM_SOUND_BITRATE = 96000;        // bits per second for both channels together
+
+// ---- fixed opus ABI constants, NOT tunables ----
 var OPUS_CTL_RESET_STATE = 4028; // OPUS_RESET_STATE from opus_defines.h
+var OPUS_CTL_SET_BITRATE = 4002; // OPUS_SET_BITRATE_REQUEST from opus_defines.h
 
 
 var custom_typeof = (function (global)
@@ -4104,6 +4166,33 @@ OpusEncoder.prototype.encode_mp3_chunk = function (samples, input_pcm_sample_rat
 }
 
 /**
+ * @brief sets the encoder's bitrate in bits per second
+ *        the control function of opus takes its value through a variable argument list; from javascript that list is a
+ *        pointer to a 4-byte integer on the wasm heap, so the value is written there first
+ *
+ * @param number bitrate -> bits per second
+ *
+ * @return void
+ */
+OpusEncoder.prototype.set_bitrate = function (bitrate)
+{
+    var pointer = Module._malloc(4);
+
+    Module.HEAP32[pointer >> 2] = bitrate;
+
+    try
+    {
+        _opus_encoder_ctl(this.handle, OPUS_CTL_SET_BITRATE, pointer);
+    }
+    catch (ctl_error)
+    {
+        console.log("opus encoder set bitrate failed: " + ctl_error);
+    }
+
+    Module._free(pointer);
+}
+
+/**
  * @brief frees the wasm encoder state and the resamplers
  *
  * @return void
@@ -4126,7 +4215,7 @@ OpusEncoder.prototype.destroy = function ()
 }
 
 /**
- * @brief an opus decoder on the wasm: the decoder state and the heap views one packet and one decoded frame live in
+ * @brief an opus decoder on the wasm: the decoder state and the heap views one packet and one decoded frame are in
  *
  * @param number sampleRate -> the opus rate, 48000
  * @param number channels -> output channels, 2 for the interleaved stereo everything downstream expects
@@ -4290,7 +4379,7 @@ function audio_opus_glue__create_new_webworker_in_same_file(worker_name)
 }
 
 
-// dispatch__mainthread_onmessage (the main-thread worker-message dispatcher) lives in main.js
+// dispatch__mainthread_onmessage (the main-thread worker-message dispatcher) is in main.js
 
 
 /**
@@ -4368,6 +4457,44 @@ function audio_opus_glue__opus_encoder_worker_onmessage(e)
     {
         encoder.destroy();
     }
+    else if (e.data.type == "init_stream_encoder")
+    {
+        // a stream with sound starts: a fresh encoder each time, so nothing of the last stream is heard at the start of this one
+        if (stream_encoder != null)
+        {
+            stream_encoder.destroy();
+        }
+        stream_encoder = new OpusEncoder(OPUS_STREAM_SOUND_APPLICATION, OPUS_STREAM_SOUND_FRAME_DURATION_MS, 48000, e.data.sampleRate, 2, 0);
+        stream_encoder.set_bitrate(OPUS_STREAM_SOUND_BITRATE);
+    }
+    else if (e.data.type == "encode_stream")
+    {
+        if (stream_encoder == null)
+        {
+            return;
+        }
+
+        let stream_opus_packets = stream_encoder.encode(e.data.value);
+
+        // no whole packet completed by this chunk: nothing to send
+        if (stream_opus_packets == null)
+        {
+            return;
+        }
+
+        global.postMessage({
+            type: "opus_encoder_worker__stream_encode_result",
+            value: stream_opus_packets
+        });
+    }
+    else if (e.data.type == "destruct_stream_encoder")
+    {
+        if (stream_encoder != null)
+        {
+            stream_encoder.destroy();
+            stream_encoder = null;
+        }
+    }
 }
 
 
@@ -4393,11 +4520,11 @@ var opus_decoder_worker_late_frame_count = 0;
 var opus_decoder_worker_last_logged_lost_frame_count = 0;
 var opus_decoder_worker_concealed_frame_count = 0;
 
-// PLC knobs (OPUS_PLC_MAX_CONCEAL_FRAMES / OPUS_PLC_MAX_GAP_TO_CONCEAL) live in the TUNABLES block up top
+// PLC settings (OPUS_PLC_MAX_CONCEAL_FRAMES / OPUS_PLC_MAX_GAP_TO_CONCEAL) are in the TUNABLES block at the top
 
-// direct mode: one end of a MessageChannel whose other end sits inside the player worklet.
+// direct mode: one end of a MessageChannel whose other end is inside the player worklet.
 // while set, chunks are decoded on arrival and their pcm goes straight to the worklet
-// (per sender, no mixing here) - no 20 ms tick, no main-thread hop. null = tick/fallback mode
+// (per sender, no mixing here) - no 20 ms tick, nothing passes through the main thread. null = tick/fallback mode
 var opus_decoder_direct_worklet_port = null;
 
 /**
@@ -4450,7 +4577,7 @@ function audio_opus_glue__opus_decoder_worker_get_decoder_for_sender(sender_clie
     }
 
     // scrub the previous occupant's predictor state in place - no malloc/free involved.
-    // the frame-size hint dies with the state: concealment from a stranger's predictor
+    // the frame-size hint is reset with the state: concealment from a stranger's predictor
     // would synthesize the previous occupant's voice into the new sender's stream
     _opus_decoder_ctl(opus_decoder_pool[pool_index].handle, OPUS_CTL_RESET_STATE);
     opus_decoder_pool[pool_index].last_decoded_frame_size = 0;
@@ -4485,7 +4612,7 @@ function audio_opus_glue__opus_decoder_worker_release_idle_decoders()
 
 /**
  * @brief decodes one chunk with that sender's pooled decoder under the per-sender sequence rules: duplicate and late drop, loss concealment, resync after a counter restart
- *        both the direct pipe and the 20 ms tick mixer use it
+ *        both the direct message channel and the 20 ms tick mixer use it
  *
  * @param number sender_client_id -> the sender
  * @param object chunk_entry -> the opus bytes and their sequence number
@@ -4529,7 +4656,7 @@ function audio_opus_glue__opus_decoder_worker_decode_sender_chunk(sender_client_
             }
 
             // a restarted counter means the sender's codec restarted too: scrub, or its
-            // fresh stream decodes through the dead session's predictor state
+            // a new stream decodes through the old session's predictor state
             _opus_decoder_ctl(sender_decoder.handle, OPUS_CTL_RESET_STATE);
             sender_decoder.last_decoded_frame_size = 0;
         }
@@ -4608,7 +4735,7 @@ function audio_opus_glue__opus_decoder_worker_decode_sender_chunk(sender_client_
 
 /**
  * @brief direct mode: decodes one sender's chunk immediately (no 20 ms tick latency) and transfers the pcm straight to the player worklet, which jitter-buffers per sender and mixes on the audio clock
- *        concealed frames ride the same pipe ahead of the real frame; to the worklet they are
+ *        concealed frames are sent over the same message channel ahead of the real frame; to the worklet they are
  *        received audio filling the time the loss covered
  *
  * @param number sender_client_id -> the sender
@@ -4663,7 +4790,7 @@ function audio_opus_glue__opus_decoder_worker_queue_chunk_for_tick(sender_client
 }
 
 /**
- * @brief direct-pipe mode housekeeping: the mixing tick is gone, but idle decoder slots still need returning to the pool
+ * @brief direct mode housekeeping: the mixing tick no longer runs, but idle decoder slots still need returning to the pool
  *        the tick counter advances by one tick-interval's worth per second so the "1 tick =
  *        OPUS_TICK_INTERVAL_MS" units of last_used_tick / IDLE_TICKS_BEFORE_RELEASE stay valid
  *
@@ -4676,7 +4803,7 @@ function audio_opus_glue__opus_decoder_worker_housekeeping_function()
 }
 
 /**
- * @brief the fallback mixer's 20 ms tick: orders each sender's queued chunks by sequence number (wrap-aware), decodes them with that sender's decoder, sums and clamps the frames and posts one mixed block per time step
+ * @brief the fallback mixer's 20 ms tick: orders each sender's queued chunks by sequence number (allowing for the number starting again at 0 after 65535), decodes them with that sender's decoder, sums and clamps the frames and posts one mixed block per time step
  *
  * @return void
  */
@@ -4695,7 +4822,7 @@ function audio_opus_glue__opus_decoder_worker_interval_function()
         return;
     }
 
-    // order each sender's chunks by sequence number (wrap-aware around 65536) so frames the
+    // order each sender's chunks by sequence number (allowing for the number starting again at 0 after 65535) so frames the
     // unordered datachannel delivered scrambled are decoded in capture order. legacy chunks
     // without a sequence number keep arrival order
     for (let sender_index = 0; sender_index < opus_decoder_worker_current_channel_opus_client_ids.length; sender_index++)
@@ -4749,7 +4876,7 @@ function audio_opus_glue__opus_decoder_worker_interval_function()
             let sender_client_id = opus_decoder_worker_current_channel_opus_client_ids[client_index];
             let chunk_entry = opus_decoder_worker_clients_opus_data[client_index][ArrayBuffer_index];
 
-            // sequence rules and per-sender decode live in the shared helper (the direct pipe's too); null means
+            // sequence rules and per-sender decode are in the shared helper (the direct mode's too); null means
             // the chunk was dropped. plc is off here: the tick mixer aligns frames by queue position, so extra
             // concealed frames would shift this sender against the others mid-round
             let decoded_frames = audio_opus_glue__opus_decoder_worker_decode_sender_chunk(sender_client_id, chunk_entry, false);
@@ -4778,7 +4905,7 @@ function audio_opus_glue__opus_decoder_worker_interval_function()
         }
 
         // clamp-copy: summed streams can overshoot [-1,1]; the copy is freshly allocated so its
-        // buffer is transferred instead of structure-cloned on the worker -> main hop
+        // buffer is transferred instead of structure-cloned on the way from the worker to the main thread
         let pulse_code_modulation_bytes_for_webaudio = new Float32Array(mixed_sample_count);
 
         for (let k = 0; k < mixed_sample_count; k++)
@@ -4802,8 +4929,8 @@ function audio_opus_glue__opus_decoder_worker_interval_function()
 /**
  * @brief the opus decoder worker's message handler
  *        a voice frame ([4B sender id][encrypted 2B sequence + opus]) is decrypted with the channel
- *        keys and decoded, through the direct pipe or the tick queue; the other types manage the
- *        pool, the pipe port and the keys
+ *        keys and decoded, through the direct message channel or the tick queue; the other types manage the
+ *        pool, the channel port and the keys
  *
  * @param object event -> the worker message event; event.data.type picks the branch
  *
@@ -4812,64 +4939,23 @@ function audio_opus_glue__opus_decoder_worker_interval_function()
 function audio_opus_glue__opus_decoder_worker_onmessage(event)
 {
     // voice frame: [4B sender client id][encrypted(2B sequence + opus)]
-    if (event.data.type == "mainthread__add_data_to_opus_decoder")
+    if (event.data.type == "mainthread__add_decrypted_data_to_opus_decoder")
     {
-        let dataView = new DataView(event.data.value);
-
-        // clientid is always first 4 bytes of received chunk of bytes and is in every chunk of bytes
-        let extracted_client_id = dataView.getInt32(0, true);
-
-        let opus_ArrayBuffer_encrypted = event.data.value.slice(4);
-        let decrypted_bytes = keys__decrypt_data_with_aes_keys(g_current_channel_keys, opus_ArrayBuffer_encrypted);
-
-        // after decryption: [2B sequence little endian][opus]. too-short frames are dropped
-        if (decrypted_bytes == null || decrypted_bytes.length < 3)
+        // the main thread removed every encryption layer already (audio_transport__receive), for a member
+        // and for a music bot alike: [4B sender client id, little endian][2B sequence number, little endian][opus]
+        if (event.data.value.byteLength < 7)
         {
             return;
         }
 
+        let dataView = new DataView(event.data.value);
+        let extracted_client_id = dataView.getInt32(0, true);
         let chunk_entry = {
-            sequence_number: decrypted_bytes[0] | (decrypted_bytes[1] << 8),
-            opus_chunk: decrypted_bytes.subarray(2)
+            sequence_number: dataView.getUint16(4, true),
+            opus_chunk: event.data.value.slice(6)
         };
 
         // direct mode decodes right now and pipes to the worklet; tick mode queues for the mixer
-        if (opus_decoder_direct_worklet_port != null)
-        {
-            audio_opus_glue__opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
-            return;
-        }
-
-        audio_opus_glue__opus_decoder_worker_queue_chunk_for_tick(extracted_client_id, chunk_entry);
-    }
-    else if (event.data.type == "mainthread__add_data_to_opus_decoder_musicbot")
-    {
-        let dataView = new DataView(event.data.value);
-        let extracted_client_id = dataView.getInt32(0, true);
-        let chunk_entry = null;
-
-        if (extracted_client_id == -2)
-        {
-            // legacy format from an old server binary: [4B -2][opus], no sequence number
-            chunk_entry = {
-                sequence_number: null,
-                opus_chunk: event.data.value.slice(4)
-            };
-        }
-        else
-        {
-            // new format: [4B bot client id][2B sequence little endian][opus]
-            if (event.data.value.byteLength < 7)
-            {
-                return;
-            }
-
-            chunk_entry = {
-                sequence_number: dataView.getUint16(4, true),
-                opus_chunk: event.data.value.slice(6)
-            };
-        }
-
         if (opus_decoder_direct_worklet_port != null)
         {
             audio_opus_glue__opus_decoder_worker_decode_and_pipe(extracted_client_id, chunk_entry);
@@ -4885,15 +4971,15 @@ function audio_opus_glue__opus_decoder_worker_onmessage(event)
     }
     else if (event.data.type == "use_direct_worklet_pipe")
     {
-        // the main thread transferred one end of a MessageChannel whose other end sits inside the
-        // player worklet: from here on, decode on arrival and pipe per-sender pcm directly - the
-        // mixing tick and the main-thread hop are gone. the interval becomes slow housekeeping
+        // the main thread transferred one end of a MessageChannel whose other end is inside the
+        // player worklet: from here on, decode on arrival and send per-sender pcm directly - the
+        // mixing tick and the transfer through the main thread no longer run. the interval becomes slow housekeeping
         opus_decoder_direct_worklet_port = event.data.port;
 
         clearInterval(opus_decoder_worker_interval);
         opus_decoder_worker_interval = setInterval(audio_opus_glue__opus_decoder_worker_housekeeping_function, 1000);
 
-        // drop anything the tick queue still holds; the pipe owns playback from here
+        // drop anything the tick queue still holds; the message channel carries playback from here
         opus_decoder_worker_clients_opus_data.length = 0;
         opus_decoder_worker_clients_opus_data_count = 0;
         opus_decoder_worker_current_channel_opus_client_ids.length = 0;
@@ -4910,7 +4996,7 @@ function audio_opus_glue__opus_decoder_worker_onmessage(event)
     else if (event.data.type == "deep_idle_resume")
     {
         // restore whichever cadence matches the active pipeline
-        // (worklet pipe -> slow housekeeping, fallback mixer -> fast tick)
+        // (worklet message channel -> slow housekeeping, fallback mixer -> fast tick)
         if (opus_decoder_worker_interval == null)
         {
             if (opus_decoder_direct_worklet_port != null)
@@ -4925,7 +5011,7 @@ function audio_opus_glue__opus_decoder_worker_onmessage(event)
     }
     else if (event.data.type == "init")
     {
-        // fallback mixer tick (replaced by housekeeping once the worklet pipe activates)
+        // fallback mixer tick (replaced by housekeeping once the worklet message channel is active)
         opus_decoder_worker_interval = setInterval(audio_opus_glue__opus_decoder_worker_interval_function, OPUS_TICK_INTERVAL_MS);
 
         // the whole per-sender decoder pool is allocated up front: every wasm malloc happens here, before any
@@ -4951,7 +5037,7 @@ function audio_opus_glue__opus_decoder_worker_onmessage(event)
 
 // messages.js is embedded in template.html along with the other client files, and in the node bundle
 // it is the protocol layer: server_msg holds a handler for every server->client message, client_msg the
-// builders for client->server requests; wire format details live here, not in the ui
+// builders for client->server requests; the message format details are here, not in the ui
 // dispatch.js calls the handlers, ui.js and the feature files call the builders
 
 // state private to this file
@@ -4963,7 +5049,7 @@ var is_long_press = null;
 
 var server_msg = {
     /**
-     * @brief the tag list: fills g_tags from the server snapshot, renders the settings tag table, and paints tag chips onto every visible client row (clients in hidden channels are skipped)
+     * @brief the tag list: fills g_tags from the server snapshot, renders the settings tag table, and paints tag labels onto every visible client row (clients in hidden channels are skipped)
      *        the complete list arrives at every login, so the previous session's rows go first
      *
      * @param object msg -> the server message, msg.message.tags holds the tags
@@ -5052,7 +5138,7 @@ var server_msg = {
     /**
      * @brief the admin identity-management list: one row per stored identity
      *        abbreviated hash (full hash in title and on the controls' data-hash), last-seen username,
-     *        online dot, its tags as chips each with a remove cross, an "add tag" dropdown, and a delete-identity cross
+     *        online dot, its tags as labels each with a remove cross, an "add tag" dropdown, and a delete-identity cross
      *
      * @param object msg -> the server message, msg.message.identities holds the identities
      *
@@ -5082,11 +5168,11 @@ var server_msg = {
             let username = (identity.username != null && identity.username.length > 0) ? identity.username : "—";
             let tag_ids = identity.tag_ids != null ? identity.tag_ids : [];
 
-            // tags as removable chips
+            // tags as removable labels
             let chips = "";
             for (let t = 0; t < tag_ids.length; t++)
             {
-                chips += "<span class=\"identity-tag-chip\">" + chat__sanitize_string(tag_display_name(tag_ids[t]))
+                chips += "<span class=\"identity-tag-label\">" + chat__sanitize_string(tag_display_name(tag_ids[t]))
                         + "<span class=\"identity-tag-remove\" data-identity-hash=\"" + hash_attr + "\" data-tag-id=\"" + tag_ids[t] + "\" title=\"remove this tag from the identity\">✕</span></span>";
             }
 
@@ -5186,11 +5272,11 @@ var server_msg = {
 
         g_is_channel_list_retrieved = true;
         document.getElementById("channel-list-container").innerHTML = "";
-        var root_channels = channel_tree__get_channels_by_channel_parent_id(msg.message.channels, g_ROOT_LEVEL_PARENT_SENTINEL);
+        var root_channels = channel_tree__get_channels_by_channel_parent_id(msg.message.channels, g_ROOT_LEVEL_PARENT_MARKER);
 
         let processed_channels = [];
-        let current_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_SENTINEL;
-        let previous_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_SENTINEL;
+        let current_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_MARKER;
+        let previous_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_MARKER;
         let channel_tree_build_stall_counter = 0;
 
         while (processed_channels.length != msg.message.channels.length)
@@ -5199,7 +5285,7 @@ var server_msg = {
 
             if (current_parent_channel_id_to_find == previous_parent_channel_id_to_find)
             {
-                current_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_SENTINEL;
+                current_parent_channel_id_to_find = g_ROOT_LEVEL_PARENT_MARKER;
             }
             previous_parent_channel_id_to_find = current_parent_channel_id_to_find;
 
@@ -5265,7 +5351,7 @@ var server_msg = {
                 {
                     if ((a + 1) == child_channels.length)
                     {
-                        if (current_parent_channel_id_to_find == g_ROOT_LEVEL_PARENT_SENTINEL)
+                        if (current_parent_channel_id_to_find == g_ROOT_LEVEL_PARENT_MARKER)
                         {
                             continue;
                         }
@@ -5292,9 +5378,9 @@ var server_msg = {
                 }
             }
 
-            // self-recovery guard: a healthy pass always processes at least one channel.
+            // safety check: a correct pass always processes at least one channel.
             // if an entire pass made no progress, the channel data is inconsistent
-            // (missing root, orphaned child, or a cycle) - stop instead of freezing the UI.
+            // (missing root, a child without a parent, or a cycle) - stop instead of freezing the UI.
             if (processed_channels.length == processed_count_before_iteration)
             {
                 channel_tree_build_stall_counter++;
@@ -5415,6 +5501,72 @@ var server_msg = {
         }
     },
     /**
+     * @brief video_stream_state: a stream started or ended in a channel (see video.js)
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_state_from_server: function(msg)
+    {
+        video__on_state(msg);
+    },
+    /**
+     * @brief video_stream_offer: the channel's stream is offered to this client, it may press connect
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_offer_from_server: function(msg)
+    {
+        video__on_offer(msg);
+    },
+    /**
+     * @brief video_stream_viewer_request: a member joined our streaming channel, may they watch?
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_viewer_request_from_server: function(msg)
+    {
+        video__on_viewer_request(msg);
+    },
+    /**
+     * @brief video_stream_viewer_state: a viewer of our stream connected or dropped
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_viewer_state_from_server: function(msg)
+    {
+        video__on_viewer_state(msg);
+    },
+    /**
+     * @brief video_stream_keyframe_request: a viewer of our stream lost frames
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_keyframe_request_from_server: function(msg)
+    {
+        video__on_keyframe_request();
+    },
+    /**
+     * @brief video_stream_refused: the server said no to a stream start or a connect
+     *
+     * @param object msg -> the server message
+     *
+     * @return void
+     */
+    process_video_stream_refused_from_server: function(msg)
+    {
+        video__on_refused(msg);
+    },
+    /**
      * @brief somebody connected: adds them to g_client_list (and the id map), renders their row with handlers, promotes their offline chat, re-keys the root channel if we maintain it, and requests their avatar
      *
      * @param object msg -> the server message, msg.message holds the client's fields
@@ -5464,7 +5616,10 @@ var server_msg = {
         single_client.is_muted_by_local_client = false;
         single_client.unread_count = 0;
         single_client.is_music_bot = msg.message.is_music_bot;
+        single_client.music_bot_encryption = msg.message.music_bot_encryption || 0;
+        single_client.music_bot_keys = msg.message.music_bot_keys || null;
 
+        channel_tree__forget_client(single_client.client_id);
         g_client_list.push(single_client);
         g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
 
@@ -5613,10 +5768,13 @@ var server_msg = {
      */
     process_client_disconnect_from_server: function(msg)
     {
-        chat__clear_typing_from_client(msg.message.client_id);  // gone, so nothing is being typed
-
         let disconnecting_client = channel_tree__get_client_by_client_id(msg.message.client_id);
         let local_client = channel_tree__get_client_by_client_id(g_local_client_id);
+
+        // Remove the user before updating chat panels or playing a sound.
+        // A missing panel must not leave a disconnected user in the channel list.
+        channel_tree__forget_client(msg.message.client_id);
+        chat__clear_typing_from_client(msg.message.client_id);
 
         // a disconnect can arrive for a client we never fully registered locally (e.g. one still
         // mid key-exchange). the map guard further down returns cleanly in that case, but this
@@ -5683,26 +5841,6 @@ var server_msg = {
             UI.schedule_member_list_sync(); // active ring moves back to the channel circle
         }
 
-        let index = g_map_client_id_to_array_index.get(parseInt(msg.message.client_id));
-        if (index === undefined || index == -1)
-        {
-            // disconnect for a client that was never in our local list (e.g. one that dropped
-            // mid key-exchange). we skip the array removal, but say so instead of silently returning
-            console.warn("process_client_disconnect_from_server: no local entry for client_id " + msg.message.client_id + " (index " + index + "); skipping client_list removal");
-            return;
-        }
-
-        let lastIndex = g_client_list.length - 1;
-        let lastClient = g_client_list[lastIndex];
-
-        // move last client into removed spot
-        g_client_list[index] = lastClient;
-        g_map_client_id_to_array_index.set(lastClient.client_id, index);
-
-        // remove last
-        g_client_list.pop();
-        g_map_client_id_to_array_index.delete(parseInt(msg.message.client_id));
-
         UI.refresh_all_channel_fullness();
     },
     /**
@@ -5755,6 +5893,7 @@ var server_msg = {
         if (msg.message.client_id == g_local_client_id)
         {
             g_current_channel_id = msg.message.channel_id;
+            video__on_local_channel_changed();
             g_current_channel_keys = null;
 
             // the server answered, so we are allowed to go idle again
@@ -5864,7 +6003,7 @@ var server_msg = {
      */
     process_sdp_offer_from_server: function(msg)
     {
-        // voice lives in the webview only. node sees this frame too (it owns the socket)
+        // voice runs in the webview only. node sees this frame too (it owns the socket)
         // but never built a peer connection, so it just forwards and ignores
         if (g_peer_connection_with_server == null)
         {
@@ -5907,7 +6046,7 @@ var server_msg = {
     process_channel_delete_from_server: function(msg)
     {
         console.log("channel deleted: channel_id=" + msg.message.channel_id);
-        if (msg.message.channel_deletor_id == g_local_client_id)
+        if (Number.isInteger(msg.message.channel_deletor_id) && msg.message.channel_deletor_id === g_local_client_id)
         {
             if (g_are_sound_effects_enabled)
             {
@@ -6030,6 +6169,9 @@ var server_msg = {
         g_channel_list[index].is_using_password = msg.message.is_using_password;
         g_channel_list[index].name = msg.message.channel_name;
         g_channel_list[index].is_audio_enabled = msg.message.is_audio_enabled;
+        // an older server sends no toggle: the channel then streams (the server side defaults the same way)
+        g_channel_list[index].is_video_stream_enabled = (msg.message.is_video_stream_enabled != false);
+        video__refresh_controls();
         g_channel_list[index].is_client_limit_active = msg.message.is_client_limit_active;
         g_channel_list[index].max_client_count = msg.message.max_client_count;
         UI.refresh_all_channel_fullness();
@@ -6138,6 +6280,7 @@ var server_msg = {
             has_maintainer: msg.message.has_maintainer,
             is_using_password: msg.message.is_using_password,
             is_audio_enabled: msg.message.is_audio_enabled,
+            is_video_stream_enabled: (msg.message.is_video_stream_enabled != false),
             is_temp_channel: msg.message.is_temp_channel,
             is_client_limit_active: msg.message.is_client_limit_active,
             max_client_count: msg.message.max_client_count,
@@ -6597,7 +6740,7 @@ var server_msg = {
         g_chat_context_array[chat_context_index].last_known_message_sender_username = msg.message.sender_username;
     },
     /**
-     * @brief the announced maintainer of the current channel, recorded after checking he exists in our channel; we then either send fresh keys (we are him) or arm the keys-wait timer
+     * @brief the announced maintainer of the current channel, recorded after checking he exists in our channel; we then either send new keys (we are the maintainer) or start the keys-wait timer
      *
      * @param object msg -> the server message, msg.message holds maintainer_id, channel_id and has_maintainer
      *
@@ -6783,7 +6926,7 @@ var server_msg = {
             : "while you were away";
 
         // if that person is connected right now, their live private chat is the natural
-        // home for this; otherwise it lands in an alias-keyed context of its own
+        // home for this; otherwise it goes into an alias-keyed context of its own
         let sender_client = null;
         for (let i = 0; i < g_client_list.length; i++)
         {
@@ -6824,7 +6967,7 @@ var server_msg = {
                 last_known_message_sender_username: ""
             });
 
-            // a pill so the message is reachable (strip themes surface it through the people strip);
+            // a conversation tab so the message is reachable (the member list themes show it through the member list);
             // the raw alias goes into the id, matching the context id the promotion looks up
             let selector_id = (sender_client != null) ? ("user-" + sender_client.client_id) : ("offline-" + sender_alias);
             if (document.querySelector('[data-chat-context-selector-id="' + selector_id + '"]') == null)
@@ -6836,7 +6979,7 @@ var server_msg = {
                 document.getElementById("chat-context-selectors-container").insertAdjacentHTML("beforeend", selector_html);
 
                 // freshly inserted markup carries no handlers - rebind them all, the same
-                // way every other place that adds a pill does
+                // way every other place that adds a conversation tab does
                 for (let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
                 {
                     document.getElementsByClassName("chat-context-selector")[x].onclick = UI.chat_context_selector_onclick;
@@ -7070,6 +7213,9 @@ var server_msg = {
                     value: g_current_channel_keys
                 });
 
+                // the video worker encrypts and decrypts stream packets with the same keys
+                video__post_channel_keys_to_worker();
+
                 // valid keys arrived from the announced maintainer - stop the reset countdown
                 keys__cancel_maintainer_keys_wait_timer();
 
@@ -7279,7 +7425,7 @@ var server_msg = {
 
     },
     /**
-     * @brief a client was renamed: updates the username in g_client_list, on their row (or the local input for ourselves) and on their chat context pill if one exists
+     * @brief a client was renamed: updates the username in g_client_list, on their row (or the local input for ourselves) and on their conversation tab if one exists
      *
      * @param object msg -> the server message, msg.message holds client_id and new_username
      *
@@ -7315,7 +7461,7 @@ var server_msg = {
         let is_found = document.querySelector('[data-chat-context-selector-id="user-' + msg.message.client_id + '"]');
         if (is_found != null)
         {
-            // the pill is labelled with the alias when there is one, so a rename must not
+            // the conversation tab is labelled with the alias when there is one, so a rename must not
             // paint the username over it
             is_found.getElementsByClassName("p-container")[0].textContent = channel_tree__get_display_name_by_client_id(msg.message.client_id, msg.message.new_username);
         }
@@ -7411,6 +7557,8 @@ var server_msg = {
                 single_client.is_muted_by_local_client = false;
                 single_client.unread_count = 0;
                 single_client.is_music_bot = msg.message.clients[i].is_music_bot;
+                single_client.music_bot_encryption = msg.message.clients[i].music_bot_encryption || 0;
+                single_client.music_bot_keys = msg.message.clients[i].music_bot_keys || null;
 
                 g_client_list.push(single_client);
                 g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
@@ -7449,6 +7597,8 @@ var server_msg = {
                 single_client.is_muted_by_local_client = false;
                 single_client.unread_count = 0;
                 single_client.is_music_bot = msg.message.clients[i].is_music_bot;
+                single_client.music_bot_encryption = msg.message.clients[i].music_bot_encryption || 0;
+                single_client.music_bot_keys = msg.message.clients[i].music_bot_keys || null;
 
                 g_client_list.push(single_client);
                 g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
@@ -7503,8 +7653,6 @@ var server_msg = {
                     is_music_bot: null
                 };
 
-                // they killed the subcultures they cancelled the future and for what, for you to not be offended
-
                 single_client.audio_state = msg.message.clients[i].audio_state;
                 single_client.tag_ids = msg.message.clients[i].tag_ids;
                 single_client.is_clients_channel_hidden = false;
@@ -7519,6 +7667,8 @@ var server_msg = {
                 single_client.is_muted_by_local_client = false;
                 single_client.unread_count = 0;
                 single_client.is_music_bot = msg.message.clients[i].is_music_bot;
+                single_client.music_bot_encryption = msg.message.clients[i].music_bot_encryption || 0;
+                single_client.music_bot_keys = msg.message.clients[i].music_bot_keys || null;
 
                 g_client_list.push(single_client);
                 g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
@@ -7633,8 +7783,11 @@ var server_msg = {
             server_msg.process_start_song_stream_from_server({ message: { client_id: listed.client_id, song_name: listed.song_name } });
         }
 
-        // a saved strip theme is applied before the server policy allowed avatars, so the grid never
-        // armed; re-evaluate now that the flag and the clients exist (the refresh bulk-enqueues itself)
+        // a video stream already running in our channel: its icon appears; the offer, if we may watch, comes separately
+        video__apply_client_list(msg.message.clients);
+
+        // a saved member list theme is applied before the server policy allowed avatars, so the grid never
+        // started; re-evaluate now that the flag and the clients exist (the refresh bulk-enqueues itself)
         UI.refresh_member_list_state();
     },
     /**
@@ -7666,7 +7819,7 @@ var server_msg = {
         textarea.scrollTop = textarea.scrollHeight;
     },
     /**
-     * @brief somebody switched channel: moves their row, replays their tag chips, plays the join, leave or switch sound; for the local client also swaps the chat context and nulls the channel keys
+     * @brief somebody switched channel: moves their row, replays their tag labels, plays the join, leave or switch sound; for the local client also swaps the chat context and nulls the channel keys
      *
      * @param object msg -> the server message, msg.message holds client_id and channel_id (-1 for a hidden channel)
      *
@@ -7737,6 +7890,7 @@ var server_msg = {
                 { let rename_input = document.getElementById('connected-local-client-input'); if (rename_input != null) { rename_input.addEventListener("focusout", UI.connected_local_user_input_on_focusout); } }
 
                 g_current_channel_id = msg.message.channel_id;
+            video__on_local_channel_changed();
                 g_current_channel_keys = null;
 
                 console.log("local_user joined new channel, nulling out current_channel_keys");
@@ -7811,7 +7965,7 @@ var server_msg = {
                                             </div>';
 
                     // the sibling insert is kept rather than switched to a container append, so
-                    // the node lands in the same place in the browser. only the blind [count - 1]
+                    // the node ends up in the same place in the browser. only the blind [count - 1]
                     // is guarded, which is what made this throw with no contexts painted
                     let count = document.getElementsByClassName("chat-context").length;
 
@@ -8066,7 +8220,7 @@ var server_msg = {
     process_poke_from_server: function(msg)
     {
         // the sender may be missing from the client list (hidden password channel, or a poke that
-        // lands before the list is built); a null entry must not kill the handler
+        // arrives before the list is built); a null entry must not end the handler
         let poke_sender = channel_tree__get_client_by_client_id(msg.message.client_id);
 
         if (poke_sender != null && poke_sender.is_ignored_by_local_client == true)
@@ -8141,7 +8295,7 @@ var server_msg = {
         }
     },
     /**
-     * @brief a tag was taken off a client: drops the id from their tag_ids and removes its chip from their row
+     * @brief a tag was taken off a client: drops the id from their tag_ids and removes its label from their row
      *
      * @param object msg -> the server message, msg.message holds client_id and tag_id
      *
@@ -8221,7 +8375,7 @@ var server_msg = {
     },
 
     /**
-     * @brief a client's alias changed: updated in g_client_list, on their rows (text and has-alias class), on old messages and an open chat pill, then the member list is synced
+     * @brief a client's alias changed: updated in g_client_list, on their rows (text and has-alias class), on old messages and an open conversation tab, then the member list is synced
      *
      * @param object msg -> the server message, msg.message holds client_id and alias
      *
@@ -8240,7 +8394,7 @@ var server_msg = {
         // an alias change changes the display name on old messages too
         android_host__retag_rendered_messages_of_sender(msg.message.client_id, channel_tree__get_display_name_by_client_id(msg.message.client_id, client_object.username));
 
-        // update the live rows in place; the member-list strip mirror re-clones them right after
+        // update the live rows in place; the member list mirror re-clones them right after
         let rows = document.querySelectorAll('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]');
         for (let i = 0; i < rows.length; i++)
         {
@@ -8264,10 +8418,10 @@ var server_msg = {
 
         // an open chat with this person is labelled by name too - relabel it now instead
         // of leaving the old username sitting there until the chat is reopened
-        let open_pill = document.querySelector('[data-chat-context-selector-id="user-' + msg.message.client_id + '"]');
-        if (open_pill != null)
+        let open_tab = document.querySelector('[data-chat-context-selector-id="user-' + msg.message.client_id + '"]');
+        if (open_tab != null)
         {
-            open_pill.getElementsByClassName("p-container")[0].textContent = channel_tree__get_display_name_by_client_id(msg.message.client_id, client_object.username);
+            open_tab.getElementsByClassName("p-container")[0].textContent = channel_tree__get_display_name_by_client_id(msg.message.client_id, client_object.username);
         }
 
         UI.schedule_member_list_sync();
@@ -8290,7 +8444,7 @@ var server_msg = {
 
         client_object.country_iso_code = (msg.message.country_iso_code != null) ? msg.message.country_iso_code : "";
 
-        // repaint the flag on the live rows in place; the member-list strip mirror re-clones them right after
+        // repaint the flag on the live rows in place; the member list mirror re-clones them right after
         let rows = document.querySelectorAll('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]');
         for (let i = 0; i < rows.length; i++)
         {
@@ -8305,7 +8459,7 @@ var server_msg = {
     },
 
     /**
-     * @brief a tag was given to a client: recorded on the client (no duplicates) and painted as a chip; also reveals the server-settings button when the local client just received the admin tag
+     * @brief a tag was given to a client: recorded on the client (no duplicates) and painted as a label; also reveals the server-settings button when the local client just received the admin tag
      *
      * @param object msg -> the server message, msg.message holds client_id and tag_id
      *
@@ -8401,7 +8555,7 @@ var server_msg = {
         document.getElementById("server-settings-tab-tags-container").insertAdjacentHTML("beforeend", html_to_append);
     },
     /**
-     * @brief a tag was deleted: removed from g_tags, its settings row, every displayed chip and every client's tag_ids
+     * @brief a tag was deleted: removed from g_tags, its settings row, every displayed label and every client's tag_ids
      *
      * @param object msg -> the server message, msg.message.tag_id names the tag
      *
@@ -8471,7 +8625,7 @@ var server_msg = {
         }
     },
     /**
-     * @brief a tag's icon changed: the icon fields are updated in g_tags, its settings row and every displayed chip repainted
+     * @brief a tag's icon changed: the icon fields are updated in g_tags, its settings row and every displayed label repainted
      *
      * @param object msg -> the server message, msg.message holds tag_id, has_icon and tag_linked_icon_id
      *
@@ -8548,10 +8702,10 @@ var server_msg = {
         for (single_song of msg.message.songs)
         {
             html_to_append += '\n\
-            <tr style="border-bottom: 1px solid #eee;">\n\
-                <td style="padding:10px;">'+ single_song.name +'</td>\n\
-                <td style="padding:10px; text-align:right;">'+ single_song.duration_seconds +'</td>\n\
-                <td style="padding:10px; text-align:right; cursor:pointer;"><input class="remove-song-from-musicbot-button" type="button" data-song-id="'+single_song.id+'" value="X"></td>\n\
+            <tr>\n\
+                <td class="musicbot-song-name-cell">'+ single_song.name +'</td>\n\
+                <td class="musicbot-song-duration-cell">'+ single_song.duration_seconds +'</td>\n\
+                <td class="musicbot-song-remove-cell"><input class="remove-song-from-musicbot-button button-1" type="button" data-song-id="'+single_song.id+'" value="remove"></td>\n\
             </tr>';
         }
 
@@ -8675,7 +8829,7 @@ var server_msg = {
             return;
         }
 
-        // evict before the handoff: this is the only removal from received_files, and a stranded entry
+        // remove before passing it on: this is the only removal from received_files, and a leftover entry
         // would have the next picture with this message id appended on top of the leftovers
         received_files.splice(index_to_delete, 1);
 
@@ -9234,7 +9388,7 @@ function chat_files__decrypt_channel_chat_file_body(file_id, body_base64)
 }
 
 // ---------------------------------------------------------------------------
-// the shapes that travel over the wire
+// the shapes of the messages sent to and received from the server
 // ---------------------------------------------------------------------------
 
 /**
@@ -9685,7 +9839,7 @@ function chat_files__wire_chat_file_download_button(card, key)
 
 /**
  * @brief finishes a file card once the body arrived and decrypted: the file is kept for the download button and the progress ring goes away
- *        when there is no live card, no copy is kept; this catches node's dead elements (the phone
+ *        when there is no live card, no copy is kept; this catches node's stand-in elements (the phone
  *        would otherwise hold every received file in ram forever), a cleared chat and a deleted message
  *
  * @param string|number key -> the transfer key
@@ -9699,7 +9853,7 @@ function chat_files__finish_chat_file_card(key, file)
 
     let card = chat_files__get_chat_file_card_by_key(key);
 
-    // when there is no live card, no copy is kept. this catches node's dead elements (the phone
+    // when there is no live card, no copy is kept. this catches node's stand-in elements (the phone
     // would otherwise hold every received file in ram forever), a cleared chat and a deleted message
     if (card == null || card.isConnected !== true || card.classList.contains("chat-file-deleted"))
     {
@@ -9953,7 +10107,7 @@ function chat_files__download_chat_file(key)
 }
 
 // ---------------------------------------------------------------------------
-// attaching: paperclip, drag & drop, the pending chip
+// attaching: paperclip, drag & drop, the label of the pending file
 // ---------------------------------------------------------------------------
 
 /**
@@ -10014,7 +10168,7 @@ function chat_files__attach_chat_file_or_picture(file)
 }
 
 /**
- * @brief attaches a picture for the next send, the same preview path the picture button uses; drag and drop lands here too
+ * @brief attaches a picture for the next send, the same preview path the picture button uses; drag and drop comes here too
  *
  * @param File file -> the picture
  *
@@ -10077,7 +10231,7 @@ function chat_files__attach_chat_picture(file)
 }
 
 /**
- * @brief attaches a file for the next send after the policy checks (uploads allowed, within the size limit, not empty); it replaces a pending picture and shows the chip
+ * @brief attaches a file for the next send after the policy checks (uploads allowed, within the size limit, not empty); it replaces a pending picture and shows the file label
  *
  * @param File file -> the file
  *
@@ -10117,10 +10271,10 @@ function chat_files__attach_chat_file(file)
         // one attachment per message, so a pending picture gives way
         chat_files__clear_pending_chat_picture();
 
-        // the chip overlays the text box, so the typed text is cleared out of its way
+        // the file label overlays the text box, so the typed text is cleared out of its way
         document.getElementById("chat-input-container-text-input").value = "";
 
-        chat_files__render_pending_chat_file_chip();
+        chat_files__render_pending_chat_file_label();
     };
 
     reader.onerror = function()
@@ -10132,19 +10286,19 @@ function chat_files__attach_chat_file(file)
 }
 
 /**
- * @brief drops the pending file and hides its chip
+ * @brief drops the pending file and hides its label
  *
  * @return void
  */
 function chat_files__clear_pending_chat_file()
 {
     g_pending_chat_file = null;
-    chat_files__render_pending_chat_file_chip();
+    chat_files__render_pending_chat_file_label();
 }
 
 /**
  * @brief removes a pending picture: the thumbnail hides and nothing is left to send
- *        wired to the thumbnail's cancel cross, and used by the file path because one attachment replaces the other
+ *        attached to the thumbnail's cancel cross, and used by the file path because one attachment replaces the other
  *
  * @return void
  */
@@ -10157,11 +10311,11 @@ function chat_files__clear_pending_chat_picture()
 }
 
 /**
- * @brief renders the pending file chip over the text box's corner, or nothing when no file is pending
+ * @brief renders the pending file label over the text box's corner, or nothing when no file is pending
  *
  * @return void
  */
-function chat_files__render_pending_chat_file_chip()
+function chat_files__render_pending_chat_file_label()
 {
     let chip = document.getElementById("file-upload-preview");
 
@@ -10241,7 +10395,7 @@ function chat_files__setup_chat_file_drag_and_drop()
             continue;
         }
 
-        // dragenter and dragleave fire for every child element; the depth counter turns them into one highlight
+        // dragenter and dragleave are sent for every child element; the depth counter turns them into one highlight
         let depth = 0;
 
         zone.addEventListener("dragenter", function(event)
@@ -10459,17 +10613,18 @@ function chat_files__refresh_file_upload_size_visibility()
 }
 
 // android-host.js is embedded in template.html along with the other client files, and in the node bundle
-// it is the client's two android hosts: the headless node runtime of the background service (the workers
-// stood in for in-process, the api the host calls), the webview bridge (the implementations behind the
-// JavascriptJavaBridge__* functions of android-bridge.js), and the deep idle mode both of them use
-// a desktop or website client wires none of it; dispatch.js calls the idle side
+// it holds the client's two android sides: the headless node runtime of the background service (the
+// workers are replaced by in-process functions, and the functions the java host calls), the webview
+// bridge (the implementations behind the JavascriptJavaBridge__* functions of android-bridge.js), and
+// the deep idle mode both of them use
+// a desktop or website client uses none of it; dispatch.js calls the idle side
 
 // state private to this file
-// pending AudioContext.suspend() from idle entry; exit chains its resume on it so a
-// late-settling suspend can never land after the resume and silence the graph
+// pending AudioContext.suspend() from idle entry; exit waits for it before resuming, so a
+// suspend that completes late can never run after the resume and silence the audio graph
 var audio_suspend_promise = null;
 
-// the "leaving idle" request in flight: it keeps a late idle request from putting the client back to sleep
+// the "leaving idle" request that is running: it keeps a late idle request from putting the client back to sleep
 var is_come_from_idle_in_flight = false;
 
 var come_from_idle_in_flight_timer = null;
@@ -10568,6 +10723,11 @@ function android_host__node_apply_idle_for_ui_state()
 
 g_show_message_avatars = (utils__storage_get("lemon_show_message_avatars") === "1");
 
+g_use_theme_chat_formatting = (utils__storage_get("lemon_use_theme_chat_formatting") === "1");
+
+let stored_audio_connection = utils__storage_get("lemon_audio_connection", "");
+if (["webrtc", "websocket"].indexOf(stored_audio_connection) >= 0) { g_audio_connection_preference = stored_audio_connection; }
+
 let stored_rsa_key_bits = parseInt(utils__storage_get("lemon_rsa_key_bits", ""));
 if (G_ALLOWED_RSA_KEY_BITS.indexOf(stored_rsa_key_bits) >= 0) { g_rsa_key_bits = stored_rsa_key_bits; }
 
@@ -10634,8 +10794,8 @@ function android_host__retag_rendered_messages_of_sender(sender_client_id, displ
 }
 
 /**
- * @brief the host's park flag: with false the socket closes and the driver idles instead of redialing, with true the driver may dial again right away
- *        re-dialing after a re-arm rides the settings push; this only owns the flag and the park
+ * @brief the host's flag for keeping the connection closed on purpose: with false the socket closes and the connect loop waits instead of connecting again, with true the connect loop may connect again right away
+ *        after the flag returns to true, the new attempt is started by the settings push, connection__request_connect("settings"); this function only sets the flag and closes the socket
  *
  * @param boolean is_wanted -> whether node should hold a connection
  *
@@ -10650,12 +10810,12 @@ function android_host__node_set_connection_wanted(is_wanted)
         g_websocket_worker.postMessage({ type: "close" });
     }
 
-    // re-dialing after a re-arm rides the settings push, connection__request_connect("settings")
-    // this function only owns the wanted flag and the park
+    // a new attempt after the flag returns to true is started by the settings push, connection__request_connect("settings")
+    // this function only sets the flag and closes the socket
 }
 
 /**
- * @brief runs a handler on one message and contains any throw, because the loopback workers run in-process and node can not be restarted once dead; one malformed message must not kill the runtime
+ * @brief runs a handler on one message and contains any exception, because the loopback workers run in-process and node cannot be restarted once it has stopped; one malformed message must not end the runtime
  *        the message listeners are told afterwards, with whether the handler failed
  *
  * @param function handler -> the worker entry point to call
@@ -10680,7 +10840,7 @@ function android_host__dispatch_safely(handler, message, source_name)
             + (dispatch_error != null && dispatch_error.stack ? dispatch_error.stack : dispatch_error));
     }
 
-    // this fires per internal hop, so several times per server message. it only means state
+    // this runs once per transfer between the in-process workers, so several times per server message. it only means state
     // may have changed; the host side debounces
     for (let i = 0; i < g_node_message_listeners.length; i++)
     {
@@ -10717,7 +10877,7 @@ function android_host__make_loopback_worker(handler, worker_name)
 
 /**
  * @brief wires the headless runtime the way main__window_onload does for the browser, minus everything that needs a dom
- *        it lives inside the factory because a bootstrap outside cannot assign the factory's locals
+ *        it is defined inside the factory function because code outside cannot assign the factory's local variables
  *
  * @param string|null identity_passphrase_string -> the passphrase the identity is derived from, null for a random one
  *
@@ -10726,12 +10886,12 @@ function android_host__make_loopback_worker(handler, worker_name)
 function android_host__init_node_runtime(identity_passphrase_string)
 {
     // every outgoing message goes through utils__custom_log, which falls back to global.postMessage
-    // when this is null. a dead element's .value is "", so the append and the 50kb truncation
+    // when this is null. the stand-in element's .value is "", so the append and the 50kb truncation
     // both work harmlessly and main.js needs no change
     g_textarea_log = document.getElementById("textarea-log");
 
-    // the entry points reply with global.postMessage; here global is the shim window, so the reply
-    // is routed to the same dispatcher a browser uses, contained so a throwing handler cannot kill node
+    // the entry points reply with global.postMessage; here global is the stand-in window object, so the reply
+    // is routed to the same dispatcher a browser uses, contained so a handler that throws cannot end node
     global.postMessage = function(message)
     {
         // raw frames go to the frame listener only, not into the dispatcher
@@ -10770,8 +10930,8 @@ function android_host__init_node_runtime(identity_passphrase_string)
     // every decrypted frame also reaches the frame listener, for the ui replay
     g_data_processing_worker.postMessage({ type: "mainthread__set_frame_forwarding", value: true });
 
-    // the last line of defence. the heartbeat loss loop is an async while and one escaped throw
-    // can kill it silently; a setInterval survives its own throws, so this watchdog always runs
+    // the last safety check. the heartbeat loss loop is an async while loop and one uncaught
+    // exception can end it silently; a setInterval survives its own exceptions, so this check always runs
     setInterval(function()
     {
         try
@@ -10779,8 +10939,7 @@ function android_host__init_node_runtime(identity_passphrase_string)
             let heartbeat_age = new Date().valueOf() - g_connection_check.last_response_timestamp;
 
             if (g_is_authenticated == true
-                && g_connection_check.last_response_timestamp > 0
-                && heartbeat_age > (g_connection_check.lost_threshold_ms + 15000))
+                && connection__has_keepalive_timed_out(new Date().valueOf(), 15000))
             {
                 console.error("watchdog: heartbeat response " + heartbeat_age + "ms old, forcing reset + reconnect");
                 g_is_authenticated = false;
@@ -10793,7 +10952,7 @@ function android_host__init_node_runtime(identity_passphrase_string)
         }
     }, 15000);
 
-    // logs one greppable line per minute, so a dead night can be reconstructed from logcat
+    // logs one searchable line per minute, so a night in which the connection stopped can be reconstructed from logcat
     setInterval(function()
     {
         try
@@ -10813,13 +10972,13 @@ function android_host__init_node_runtime(identity_passphrase_string)
     g_minimp3_worker = android_host__make_discarding_worker();
 
     // a persisted identity can start generating right away; otherwise the settings push
-    // supplies the seed. the driver waits on the identity slot either way
+    // supplies the seed. the connect loop waits on the identity slot either way
     if (typeof identity_passphrase_string === "string" && identity_passphrase_string.length >= 199)
     {
         connection__request_identity(identity_passphrase_string);
     }
 
-    connection__connection_driver();
+    connection__connect_loop();
 }
 
 // ---- webview bridge ----
@@ -10827,7 +10986,7 @@ function android_host__init_node_runtime(identity_passphrase_string)
 var android_js_bridge = {
     /**
      * @brief java's "go idle": enters deep idle, which sends the request to the server itself and shuts down audio, the opus tick and the datachannel
-     *        a gentle call (home button) keeps an in-channel session alive; a forced one (swipe-away) idles from any channel
+     *        a call without is_forced (home button) keeps a session that is in a channel alive; a forced one (the app swiped away) goes idle from any channel
      *
      * @param boolean is_forced -> true for a swipe-away
      *
@@ -10836,8 +10995,8 @@ var android_js_bridge = {
     send_go_to_idle_mode_request_android: function(is_forced)
     {
         // android_host__enter_deep_idle sends the go-to-idle request to the server itself and additionally
-        // shuts down audio, the opus tick and the webrtc datachannel. a gentle call (home
-        // button) keeps an in-channel session alive; a forced one (swipe-away) idles from any channel
+        // shuts down audio, the opus tick and the webrtc datachannel. a call without is_forced (home
+        // button) keeps a session that is in a channel alive; a forced one (the app swiped away) goes idle from any channel
         android_host__enter_deep_idle(is_forced === true);
     },
 
@@ -10950,12 +11109,12 @@ var android_js_bridge = {
 
     /**
      * @brief java says node is connected or the app came to front
-     *        the dial decision belongs to connection__request_connect; this only self-heals a lost
+     *        whether to connect is decided in connection__request_connect; this only recovers from a lost
      *        settings push first (no loopback details yet means one got lost, so it asks again)
      *
      * @return void
      */
-    nudge_loopback_reattach_android: function()
+    request_loopback_reattach_android: function()
     {
         if (g_is_authenticated == true)
         {
@@ -10976,7 +11135,7 @@ var android_js_bridge = {
     },
 
     /**
-     * @brief takes the settings json java pushes: app mode and theme first, then the loopback details, the identity, the microphone mode and the autoconnect, and finally hands the driver its target
+     * @brief takes the settings json java pushes: app mode and theme first, then the loopback details, the identity, the microphone mode and the autoconnect, and finally gives the connect loop its target
      *        the theme is applied before anything below can throw: the settings json grows
      *        incrementally on the java side, and a missing field must not skip the theme
      *
@@ -11002,7 +11161,7 @@ var android_js_bridge = {
         // there is difference between how web browser app and how android app handles auto connects
 
         // in a browser: predefined details show only the connect button, no details show the
-        // form as well, and autoconnect without user action shows neither and keeps dialing
+        // form as well, and autoconnect without user action shows neither and keeps trying to connect
 
         // in android
         // autoconnect is on -> connect button doesnt show, app goes in loop and tries to join the server until it succeeds
@@ -11059,9 +11218,8 @@ var android_js_bridge = {
         }
 
         // on android the details come from the java settings window, so the in-page form
-        // is hidden (display none, no dead gap); autoconnect off means the user needs a connect button
-        document.getElementById("connect-form-sub-container-1").style.display = "none";
-        document.getElementById("connect-form-sub-container-2").style.display = "none";
+        // is hidden (display none, no empty space); autoconnect off means the user needs a connect button
+        document.getElementById("connect-form-grid").style.display = "none";
         document.getElementById("add-key-button").style.display = "none";
 
         // bookmarks fill those hidden fields, so they have nothing to act on here
@@ -11076,7 +11234,7 @@ var android_js_bridge = {
             document.getElementById("connect-button").style.visibility = "visible";
             document.getElementById("import-identity-button").style.display = "none";
 
-            // nothing dials on its own here: no spinner, the connect page is the page
+            // nothing connects on its own here: no spinner, the connect page is the page
             connection__reveal_connect_page();
         }
 
@@ -11122,7 +11280,7 @@ var android_js_bridge = {
         g_loopback_token = (typeof settings_from_android.loopback_token === "string") ? settings_from_android.loopback_token : "";
 
         // no unconditional spinner hold here, because connection__request_connect raises the spinner
-        // only when it actually dials; a save with autoconnect off changes nothing on screen
+        // only when it actually starts an attempt; a save with autoconnect off changes nothing on screen
 
         // the data worker has its own copy of the flag and encrypts outgoing direct
         // messages itself, so it must skip that in loopback mode too
@@ -11146,7 +11304,7 @@ var android_js_bridge = {
         }
 
         // the android default username becomes the chosen username, because the settings
-        // arrive before the dial and the server then applies the name at login - the old
+        // arrive before the connection attempt and the server then applies the name at login - the old
         // way was a rename after connect, which an admin can switch off for users
         if (typeof settings_from_android.default_username === "string" && settings_from_android.default_username.length > 0)
         {
@@ -11154,7 +11312,7 @@ var android_js_bridge = {
         }
 
         // only node derives its identity from the settings, because the webview does not
-        // own the connection. whether to actually dial is decided inside connection__request_connect,
+        // own the connection. whether to actually connect is decided inside connection__request_connect,
         // and that holds for both runtimes
         if (android_host__is_ui_only_runtime() == false)
         {
@@ -11296,7 +11454,7 @@ function android_host__cancel_presence_grace_recheck()
 function android_host__enter_deep_idle(is_forced)
 {
     // every refusal below says so. a silent one is indistinguishable from the request
-    // never arriving, which is what made this so hard to pin down
+    // never arriving, which is what made this so hard to find
     if (g_is_deep_idle == true)
     {
         console.log("connect-path: idle requested, already idle");
@@ -11323,7 +11481,7 @@ function android_host__enter_deep_idle(is_forced)
     }
 
     // inside the call-accept presence grace: hold, then re-decide from the real state.
-    // a swipe-away (is_forced) stays deliberate and is honoured immediately
+    // the app being swiped away (is_forced) is a deliberate action and is handled at once
     if (is_forced != true && new Date().valueOf() < presence_grace_until_timestamp)
     {
         console.log("connect-path: idle deferred, inside the call-accept presence grace");
@@ -11347,6 +11505,7 @@ function android_host__enter_deep_idle(is_forced)
     console.log("connect-path: going idle" + (is_forced == true ? " (forced)" : ""));
 
     g_is_deep_idle = true;
+    audio_transport__reset();
 
     client_msg.send_go_to_idle_mode_request();
 
@@ -11391,6 +11550,8 @@ function android_host__enter_deep_idle(is_forced)
         }
         g_peer_connection_with_server = null;
         g_datachannel = null;
+        g_video_datachannel = null;
+        g_is_video_datachannel_connected = false;
         g_is_webrtc_datachannel_connected = false;
     }
 }
@@ -11402,8 +11563,8 @@ function android_host__enter_deep_idle(is_forced)
  */
 function android_host__exit_deep_idle()
 {
-    // the user is demonstrably here: a queued presence-grace re-check must not fire behind them.
-    // before the was-not-idle return, because the webview arms that timer without ever being idle
+    // the user is demonstrably here: a queued presence-grace re-check must not run after this.
+    // this comes before the was-not-idle return, because the webview starts that timer without ever being idle
     android_host__cancel_presence_grace_recheck();
 
     g_is_deep_idle_pending = false;
@@ -11414,7 +11575,7 @@ function android_host__exit_deep_idle()
         return;
     }
 
-    // we really were idle, so an answer from the server is coming. armed here rather
+    // we really were idle, so an answer from the server is coming. started here rather
     // than where the request is sent, because a request sent while not idle gets none
     android_host__mark_come_from_idle_in_flight();
 
@@ -11475,13 +11636,23 @@ function android_host__exit_deep_idle()
     }
 }
 
-// connection.js is embedded in template.html along with the other client files, and in the node bundle
-// it is the connecting side: the driver that decides when to dial (who am i, which identity, where to,
-// one attempt in flight), the dial itself, the heartbeat loop, fast reconnect, the connect-page hold
-// and the saved server bookmarks
-// ui.js and android-host.js nudge the driver through connection__request_connect; dispatch.js reports what the socket did
+// connection.js is included in template.html with the other client files, and in the node bundle
+// that the android app runs.
+// this file opens and keeps the connection to the server. it decides when a connection attempt
+// starts: the connect button, a page with built-in server settings, settings sent by the android
+// app, the return from idle, a retry, or attaching to a session the node client already holds.
+// only one attempt runs at a time. the file knows which identity (key pair) and which server
+// address the attempt uses.
+// it also runs the heartbeat loop (the regular message that tells the server the client is still
+// there), the fast reconnect (a second attempt right after a short connection loss, keeping the
+// identity), the hold on the connect page (the page stays hidden for a moment while an automatic
+// attempt runs, so it does not appear for a moment), and the saved server bookmarks (the server list on the
+// connect page).
+// other files do not connect on their own: ui.js (connect button) and android-host.js (settings
+// and resume from the android app) ask for a connection with connection__request_connect and a
+// trigger name, and dispatch.js passes on what the websocket worker reports (opened, closed,
+// error, server messages) by calling the connection__* functions in this file.
 
-// state private to this file
 var port = 0;
 
 var FAST_RECONNECT_DEADLINE_MS = 12000;
@@ -11500,22 +11671,39 @@ g_identity_slot = connection__make_slot();
 var identity_requested_for = null;
 var identity_requested_bits = 0;
 
-// resolved by the websocket close and error handlers. the driver awaits this while a
-// socket exists, whether it is mid-handshake or long connected
+// set by "disconnect" in the connections menu (connection__disconnect_by_user): the connect loop then waits for the next
+// connect request instead of connecting again on its own, and a fast reconnect is refused while it is set
+var is_connection_ended_by_user = false;
+
+// the server the user chose instead of the one written into the page, { host, port }, or null: the last bookmark chosen in
+// the bookmarks menu, or an address and port changed in the connect window and connected to with its button. a page with
+// the server written into it connects to that server instead of its own from then on, until the page is loaded again or
+// the window's values are changed back to the page's own
+var connection_chosen_target = null;
+
+// true once the connect window of a page with the server written into it shows the address and the port in its fields
+// (connection__show_predefined_details_in_connect_window); the connect button then reads the fields
+var is_written_in_target_shown_in_window = false;
+
+// resolved by the websocket close and error handlers. the connect loop (connection__connect_loop,
+// below) waits for this while a socket exists, whether the handshake is still running or the
+// connection has been open for a long time
 var connection_closed_resolvers = [];
 
-// skips the retry countdown, used when the connect button is pressed or new details arrive.
-// a nudge that lands while the driver is still watching the old socket is kept, not lost:
-// an identity switch closes the socket and nudges in the same breath, before the close is seen
-var driver_nudge_resolver = null;
-var is_driver_nudge_pending = false;
+// a request to connect at once, which skips the retry countdown; it comes from the connect button
+// or from new connection details. a request that
+// arrives while the connect loop still waits for the old socket to close is kept, not lost: an
+// identity switch closes the socket and sends the request at the same time, before the close has
+// been seen
+var connect_loop_wake_resolver = null;
+var is_connect_loop_wake_pending = false;
 
-var is_connection_driver_running = false;
+var is_connect_loop_running = false;
 
 // webview only: true when connect was pressed before node announced its loopback port
 var ui_connect_requested = false;
 
-// ---- connection driver ----
+// ---- the connect loop ----
 
 /**
  * @brief a slot holds one async value: set() stores it and wakes everyone who called wait()
@@ -11618,7 +11806,7 @@ function connection__signal_connection_closed()
 }
 
 /**
- * @brief a promise for the next connection close; the driver awaits it between attempts
+ * @brief a promise for the next connection close; the connect loop waits for it between attempts
  *
  * @return promise resolves when the connection closes
  */
@@ -11628,40 +11816,40 @@ function connection__connection_closed()
 }
 
 /**
- * @brief wakes the driver out of its retry wait, or remembers the nudge for the wait that has not started yet
+ * @brief wakes the connect loop out of its retry wait, or remembers the connect request for a wait that has not started yet
  *
  * @return void
  */
-function connection__nudge_connection_driver()
+function connection__wake_connect_loop()
 {
-    if (driver_nudge_resolver != null)
+    if (connect_loop_wake_resolver != null)
     {
-        let resolver = driver_nudge_resolver;
-        driver_nudge_resolver = null;
+        let resolver = connect_loop_wake_resolver;
+        connect_loop_wake_resolver = null;
         resolver();
         return;
     }
 
-    is_driver_nudge_pending = true;
+    is_connect_loop_wake_pending = true;
 }
 
 /**
- * @brief the countdown between retries: shows the failure text every second and leaves early on a nudge
+ * @brief the countdown between retries: shows the failure text every second and ends early when a connect request arrives
  *
  * @param number seconds -> how long to wait
  *
- * @return promise resolves when the countdown ended or a nudge cut it short
+ * @return promise resolves when the countdown ended or a connect request ended it early
  */
-async function connection__driver_retry_wait(seconds)
+async function connection__connect_loop_retry_wait(seconds)
 {
-    if (is_driver_nudge_pending == true)
+    if (is_connect_loop_wake_pending == true)
     {
-        is_driver_nudge_pending = false;
-        console.log("connect-path: retry wait skipped by a pending nudge");
+        is_connect_loop_wake_pending = false;
+        console.log("connect-path: retry wait skipped by a pending connect request");
         return;
     }
 
-    let nudged = new Promise(function(resolve) { driver_nudge_resolver = resolve; });
+    let nudged = new Promise(function(resolve) { connect_loop_wake_resolver = resolve; });
 
     for (let remaining = seconds; remaining > 0; remaining--)
     {
@@ -11684,31 +11872,60 @@ async function connection__driver_retry_wait(seconds)
         }
     }
 
-    driver_nudge_resolver = null;
+    connect_loop_wake_resolver = null;
 }
 
 /**
- * @brief the connection driver, the one loop that dials
- *        waits for a target and an identity, attempts once, awaits the close, then waits out a
+ * @brief the wait after "disconnect" in the connections menu: the loop stays here until a connect request arrives
+ *        a request that arrived already (the connect button pressed while connected ends the old connection first)
+ *        ends the wait at once
+ *
+ * @return promise resolves when the loop may connect again
+ */
+async function connection__wait_after_user_disconnect()
+{
+    if (is_connect_loop_wake_pending == true)
+    {
+        is_connect_loop_wake_pending = false;
+        is_connection_ended_by_user = false;
+        return;
+    }
+
+    connection__set_connect_button_pending(false);
+    connection__report_connection_status("idle", "disconnected");
+    await new Promise(function(resolve) { connect_loop_wake_resolver = resolve; });
+    is_connection_ended_by_user = false;
+}
+
+/**
+ * @brief the connect loop, the one loop that starts connection attempts
+ *        waits for a target and an identity, attempts once, waits for the close, then waits out a
  *        countdown and tries again; runs once per page and never returns
  *
  * @return promise never resolves
  */
-async function connection__connection_driver()
+async function connection__connect_loop()
 {
-    if (is_connection_driver_running == true)
+    if (is_connect_loop_running == true)
     {
         return;
     }
 
-    is_connection_driver_running = true;
-    console.log("connect-path: driver started");
+    is_connect_loop_running = true;
+    console.log("connect-path: connect loop started");
 
     while (true)
     {
         let target = await target_slot.wait();
 
-        // the node host parks the connection during the idle handover
+        // "disconnect" was chosen: nothing connects until the next connect request
+        if (is_connection_ended_by_user == true)
+        {
+            await connection__wait_after_user_disconnect();
+            continue;
+        }
+
+        // the node host keeps the connection closed on purpose while the app goes idle (g_node_connection_wanted)
         if (g_node_connection_wanted == false)
         {
             await utils__sleep(1000);
@@ -11732,12 +11949,12 @@ async function connection__connection_driver()
         g_last_disconnect_reason = "";
         connection__report_connection_status("connecting");
 
-        // a dial consumes any nudge; one kept from before must not skip a later countdown
-        is_driver_nudge_pending = false;
+        // an attempt uses up any pending connect request; one kept from before must not skip a later countdown
+        is_connect_loop_wake_pending = false;
         await connection__attempt_connection(target, identity);
 
-        // wait for the socket to die. a dial that could not even create a socket never
-        // fires close, so an unauthenticated wait also has a deadline
+        // wait for the socket to close. an attempt that could not even create a socket never
+        // reports a close, so a wait without a login also has a deadline
         while (true)
         {
             let outcome = await Promise.race([
@@ -11753,7 +11970,7 @@ async function connection__connection_driver()
             if (g_is_authenticated == false)
             {
                 // the loopback socket is fine, node just has not logged in yet
-                // redialing now would kill a healthy attach, so keep waiting
+                // a new attempt now would end a working reattach, so keep waiting
                 if (target.kind === "loopback")
                 {
                     console.log("connect-path: loopback attached, still waiting for node's login");
@@ -11765,7 +11982,14 @@ async function connection__connection_driver()
             }
         }
 
-        // a fast reconnect re-dials at once with the same identity: no countdown, no button
+        // the user ended the connection: no countdown and no fast reconnect, the loop waits for the next connect request
+        if (is_connection_ended_by_user == true)
+        {
+            await connection__wait_after_user_disconnect();
+            continue;
+        }
+
+        // a fast reconnect connects again at once with the same identity: no countdown, no button
         if (g_is_authenticated == false && g_fast_reconnect.in_progress == true)
         {
             continue;
@@ -11774,23 +11998,23 @@ async function connection__connection_driver()
         if (g_is_authenticated == false && g_is_autoconnect_without_user_action_active == false)
         {
             // manual mode means one attempt per button press: state the failure and
-            // hold until the connect button nudges, with no countdown
-            if (is_driver_nudge_pending == true)
+            // wait until the connect button sends a connect request, with no countdown
+            if (is_connect_loop_wake_pending == true)
             {
-                is_driver_nudge_pending = false;
-                console.log("connect-path: dialing on the pending nudge");
+                is_connect_loop_wake_pending = false;
+                console.log("connect-path: connecting on the pending connect request");
                 continue;
             }
 
             connection__set_connect_button_pending(false);
             connection__report_connection_status("idle",
                 (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
-            await new Promise(function(resolve) { driver_nudge_resolver = resolve; });
+            await new Promise(function(resolve) { connect_loop_wake_resolver = resolve; });
             continue;
         }
 
-        // dialing node on this device is free, so the loopback redials fast; the 30s
-        // pace is for a remote server that may be down
+        // connecting to node on this device costs nothing, so the loopback retries after 2 s; the
+        // 30 s wait is for a remote server that may be down
         let retry_seconds = (target.kind === "loopback") ? 2 : 30;
 
         if (g_is_authenticated == false)
@@ -11800,23 +12024,25 @@ async function connection__connection_driver()
                 (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
         }
 
-        await connection__driver_retry_wait(retry_seconds);
+        await connection__connect_loop_retry_wait(retry_seconds);
     }
 }
 
 /**
- * @brief the one place that may start a connection, and the whole dial policy
- *        "button" and "attach" always dial, "settings", "resume" and "retry" only under
+ * @brief the one place that may start a connection, and the whole policy of when to connect
+ *        "button", "bookmark" and "attach" always connect, "settings", "resume" and "retry" only under
  *        autoconnect, and "resume" also reattaches when node already holds a session
  *
- * @param string trigger -> "button", "attach", "settings", "resume" or "retry"
+ * @param string trigger -> "button", "bookmark", "attach", "settings", "resume" or "retry"
+ * @param object bookmark_target -> with "bookmark": the server of the bookmark as { host, port }; ignored otherwise
  *
  * @return void
  */
-function connection__request_connect(trigger)
+function connection__request_connect(trigger, bookmark_target)
 {
     let is_wanted =
         (trigger === "button")
+        || (trigger === "bookmark")
         || (trigger === "attach")
         || (g_is_autoconnect_without_user_action_active == true)
         || (ui_connect_requested == true)
@@ -11827,6 +12053,24 @@ function connection__request_connect(trigger)
     if (is_wanted == false)
     {
         return;
+    }
+
+    // the window of a page with the server written into it shows the address and the port after a chosen disconnect, and the
+    // user may change them: a press of the connect button then takes the window's values as the target from now on, like a
+    // bookmark's. values changed back to the page's own make the page's details (with their wss port) the target again
+    if (trigger === "button" && g_are_server_details_predefined == true && is_written_in_target_shown_in_window == true)
+    {
+        let address_in_window = document.getElementById("input-ip-address").value.trim();
+        let port_in_window = document.getElementById("input-port-number").value.trim();
+
+        if (address_in_window === String(g_autoconnect_details.host) && port_in_window === String(g_autoconnect_details.port))
+        {
+            connection_chosen_target = null;
+        }
+        else
+        {
+            connection_chosen_target = { host: address_in_window, port: port_in_window };
+        }
     }
 
     // derive the target from where we run and what the page knows
@@ -11853,7 +12097,14 @@ function connection__request_connect(trigger)
             connection__hold_back_connect_page();
         }
     }
-    else if (g_are_server_details_predefined == true)
+    else if (trigger === "bookmark" && bookmark_target != null && typeof bookmark_target.host === "string" && bookmark_target.host.length > 0)
+    {
+        // a bookmark names its own server; the fields show it (head-menu.js), and a page with the server written into it
+        // keeps connecting to the bookmark from now on (the retry countdown and the connect button use the same target)
+        connection_chosen_target = { host: bookmark_target.host, port: bookmark_target.port };
+        target_slot.set({ kind: "server", host: bookmark_target.host, port: bookmark_target.port });
+    }
+    else if (g_are_server_details_predefined == true && connection_chosen_target == null)
     {
         // a partial first-run json has no host yet, and that must never become a target
         if (typeof g_autoconnect_details.host !== "string" || g_autoconnect_details.host.length == 0
@@ -11879,7 +12130,7 @@ function connection__request_connect(trigger)
         });
     }
 
-    connection__nudge_connection_driver();
+    connection__wake_connect_loop();
 }
 
 /**
@@ -11889,6 +12140,12 @@ function connection__request_connect(trigger)
  */
 function connection__submit_connection_target_from_ui()
 {
+    // the button is disabled while connected (connection__refresh_connect_button_state); a stray press changes nothing
+    if (g_is_authenticated == true)
+    {
+        return;
+    }
+
     connection__request_connect("button");
 }
 
@@ -11956,7 +12213,7 @@ function connection__report_connection_status(state, reason)
 /**
  * @brief paints the login page extras from g_connection_status
  *        the ticker recalls it every second so the countdown and the "ago" times stay live; safe
- *        headless, because the shim absorbs the dom
+ *        headless, because the stand-in window object takes the dom calls
  *
  * @return void
  */
@@ -12015,7 +12272,7 @@ function connection__start_connection_status_ticker()
     window.setInterval(connection__render_connection_status, 1000);
 }
 
-// ---- dial and heartbeat ----
+// ---- connection attempt and heartbeat ----
 
 /**
  * @brief the heartbeat loop's sleep; android_host__exit_deep_idle resolves it early so the first check after idle goes out at once
@@ -12034,8 +12291,8 @@ function connection__connection_check_sleep(ms)
             resolve();
         }, ms);
 
-        // early-wake hook used by android_host__exit_deep_idle: cancel this sleep's timer so a stale
-        // (long) timeout can never fire later and clobber a newer sleep's resolver
+        // early wake used by android_host__exit_deep_idle: cancel this sleep's timer so an old
+        // (long) timeout can never run later and overwrite a newer sleep's resolver
         g_connection_check.sleep_resolve = function()
         {
             clearTimeout(timer_id);
@@ -12045,18 +12302,23 @@ function connection__connection_check_sleep(ms)
     });
 }
 
-/**
- * @brief the heartbeat loop: sends client_connection_check on an interval, and when no reply arrives within the lost threshold, alerts the user and resets the app (identity kept)
- *        one throw in here must not kill the loop, since it carries both the heartbeat and the loss detector
- *
- * @return promise resolves when the loop is told to stop
- */
+// The regular heartbeat loop and Android's backup timer must both respect the
+// server's setting. Android waits another 15 seconds before its backup takes over.
+function connection__has_keepalive_timed_out(timestamp_now, extra_wait_ms = 0)
+{
+    return g_server_policy.enforce_connection_check !== false
+        && g_connection_check.last_response_timestamp > 0
+        && g_connection_check.last_response_timestamp + g_connection_check.lost_threshold_ms + extra_wait_ms < timestamp_now;
+}
+
+// Keep sending checks even when timeout enforcement is disabled. Their replies
+// still measure latency, and a real socket closure still follows the usual cleanup.
 async function connection__websocket_connection_check()
 {
     while (g_should_connection_check_be_running == true)
     {
-        // one throw in here must not kill the loop: it carries BOTH the heartbeat and
-        // the loss detector, and a dead loop is an unnoticed dead connection
+        // one exception in here must not end the loop: it runs BOTH the heartbeat and
+        // the loss detection, and a stopped loop means a lost connection that nobody notices
         try
         {
             let timestamp_now = new Date().valueOf();
@@ -12066,7 +12328,7 @@ async function connection__websocket_connection_check()
                 g_connection_check.last_response_timestamp = timestamp_now;
             }
 
-            if ((g_connection_check.last_response_timestamp + g_connection_check.lost_threshold_ms) < timestamp_now)
+            if (connection__has_keepalive_timed_out(timestamp_now))
             {
                 let silence_ms = timestamp_now - g_connection_check.last_response_timestamp;
                 console.error("loss detector: no heartbeat response for " + silence_ms + "ms");
@@ -12102,32 +12364,39 @@ async function connection__websocket_connection_check()
 }
 
 /**
- * @brief fast reconnect: the socket is gone but the page keeps everything (lists, chat, channel, keys) and the driver re-dials at once with the same identity, asking the server to adopt the session
+ * @brief fast reconnect: the socket is gone but the page keeps everything (lists, chat, channel, keys) and the connect loop connects again at once with the same identity, asking the server to adopt the session
  *
  * @param string reason -> why the socket went, for the log
  *
- * @return boolean false when a resume is not possible, so the caller runs the classic wipe instead
+ * @return boolean false when a resume is not possible, so the caller runs the full reset instead
  */
 function connection__try_start_fast_reconnect(reason)
 {
     // node owns the real connection in the webview, and only a logged-in session can be resumed
-    if (g_server_policy.is_fast_reconnect_allowed == false || g_is_authenticated == false
+    if (g_server_policy.is_fast_reconnect_allowed == false || g_is_authenticated == false || is_connection_ended_by_user == true
         || g_is_identity_switch_in_progress == true || android_host__is_ui_only_runtime() == true)
     {
         return false;
     }
 
-    // one attempt per loss: when the resume socket itself dies the caller takes the classic path
+    // one attempt per loss: when the resume socket itself closes, the caller runs the full reset
     if (g_fast_reconnect.in_progress == true)
     {
         return false;
     }
 
     g_fast_reconnect.in_progress = true;
+    if (typeof server_info__reset === "function")
+    {
+        server_info__reset();
+    }
+    // Pending website replies belong to the old connection. Ask again after
+    // login so an interrupted lookup does not leave its message without a card.
+    link_previews__reset();
     g_fast_reconnect.resumed = false;
     g_fast_reconnect.pending_lists = null;
 
-    // the driver keys off this flag; the page itself is left exactly as it is
+    // the connect loop reads this flag; the page itself is left exactly as it is
     g_is_authenticated = false;
     g_should_connection_check_be_running = false;
     g_connection_check.last_response_timestamp = 0;
@@ -12136,7 +12405,7 @@ function connection__try_start_fast_reconnect(reason)
     // the worker goes back to handshake mode; it keeps the identity and the channel keys
     g_data_processing_worker.postMessage({ type: "mainthread_reset_data" });
 
-    console.log("%cfast reconnect: " + reason + " - re-dialing with the same identity", "color: #ffa500; font-weight: bold; font-size: 14px;");
+    console.log("%cfast reconnect: " + reason + " - connecting again with the same identity", "color: #ffa500; font-weight: bold; font-size: 14px;");
     utils__custom_log("fast reconnect attempt (" + reason + ")");
 
     g_fast_reconnect.deadline_timer = setTimeout(function()
@@ -12144,13 +12413,13 @@ function connection__try_start_fast_reconnect(reason)
         connection__fast_reconnect_failed("no adopted session within " + (FAST_RECONNECT_DEADLINE_MS / 1000) + " s");
     }, FAST_RECONNECT_DEADLINE_MS);
 
-    // wakes the driver out of its wait on the old socket; it re-dials instead of parking
+    // wakes the connect loop out of its wait on the old socket; it connects again instead of staying idle
     connection__signal_connection_closed();
     return true;
 }
 
 /**
- * @brief the one failure of a fast reconnect: the classic "connection lost" toast and the full wipe
+ * @brief the one failure of a fast reconnect: the usual "connection lost" notice and the full reset
  *
  * @param string reason -> why it failed, for the log
  *
@@ -12273,6 +12542,13 @@ function connection__fast_reconnect_apply_lists()
  */
 function connection__reset_chat_app_keep_identity()
 {
+    if (typeof server_info__reset === "function")
+    {
+        server_info__reset();
+    }
+    link_previews__reset();
+    g_server_policy.allow_link_previews = false;
+    g_server_policy.enforce_connection_check = true;
     // no connection, nobody is typing - drop the notices and the ticker with them
     g_typing.state = {};
     chat__render_typing_indicator();
@@ -12301,11 +12577,24 @@ function connection__reset_chat_app_keep_identity()
     connection__set_connect_button_pending(false);
     g_is_microphone_available = false;
 
-    document.getElementById('verification-system').style.display = "block";
+    // the connect form comes back on its own only where it is a page of its own (android, the member list themes); as a
+    // window it stays closed until "connect" in the connections menu, so a lost connection leaves the background and the head menu
+    if (connection__is_connect_window_mode() == false)
+    {
+        document.getElementById('verification-system').style.display = "block";
+    }
     document.getElementById('communication-system-container').style.display = "none";
+    connection__mark_connected_ui_hidden(true);
 
     // after the page switch, otherwise the mic is repainted while the old screen is still up
     voice__update_microphone_button();
+
+    // the "disconnect" entry of the head menu follows (head-menu.js, which the node bundle does not have)
+    if (typeof head_menu__refresh_connections_items === "function")
+    {
+        head_menu__refresh_connections_items();
+    }
+    connection__refresh_connect_button_state();
 
     // back on the connect screen: the in-flow "server settings" button owns this
     // state, a second gear in the bar would only confuse - it returns on connect
@@ -12336,7 +12625,7 @@ function connection__reset_chat_app_keep_identity()
     g_should_connection_check_be_running = false;
 
     // the avatar prefetch timer must not outlive the session - its client ids are meaningless
-    // after a reconnect (they are slot indices), and it would keep asking a dead socket
+    // after a reconnect (they are slot indices), and it would keep sending requests on a closed socket
     channel_tree__stop_avatar_prefetch();
 
     // if the connection died while backgrounded-idle, re-enter idle automatically after reconnect
@@ -12350,6 +12639,10 @@ function connection__reset_chat_app_keep_identity()
     g_chat_message_receiver_id = "main";
     g_is_client_list_retrieved = false;
     g_is_channel_list_retrieved = false;
+    audio_transport__reset();
+    g_media_keys_from_host = null;
+    g_media_server_key_layers_from_host = null;
+    g_audio_transport.mode = "webrtc";
     g_is_webrtc_datachannel_connected = false;
 
     // emptied in place, not reassigned: a fresh array would leave anything still
@@ -12390,6 +12683,12 @@ function connection__reset_chat_app_keep_identity()
     g_is_voice_chat_allowed_by_server = false;
     g_is_client_microphone_allowed_by_server = false;
     g_is_microphone_enabled = false;
+
+    // a stream we sent or watched is gone with the connection
+    if (typeof video__reset_on_disconnect === "function")
+    {
+        video__reset_on_disconnect();
+    }
     g_is_microphone_active = false;
     g_last_sent_value_microphone_usage = false;
 
@@ -12525,12 +12824,32 @@ function connection__reveal_connect_page()
     g_is_holding_back_connect_page = false;
     document.getElementById("verification-system").style.visibility = "";
     connection__set_connect_holdback_loader_visible(false);
+    connection__apply_connect_window_mode();
+}
+
+/**
+ * @brief the connect button is disabled while a connection exists: the window may be open then ("connections" -> "connect"
+ *        shows where the connection went), and a press would be meaningless. enabled again by the reset after a disconnect
+ *
+ * @return void
+ */
+function connection__refresh_connect_button_state()
+{
+    let button = document.getElementById("connect-button");
+
+    if (button == null)
+    {
+        return;
+    }
+
+    button.disabled = (g_is_authenticated == true);
+    button.title = (g_is_authenticated == true) ? "already connected" : "";
 }
 
 /**
  * @brief fades the connect button while an attempt runs; hiding rows caused a layout flicker
  *
- * @param boolean is_pending -> true while an attempt is in flight
+ * @param boolean is_pending -> true while an attempt is running
  *
  * @return void
  */
@@ -12545,9 +12864,9 @@ function connection__set_connect_button_pending(is_pending)
 }
 
 /**
- * @brief one dial, driven only by connection__connection_driver(): builds the ws/wss connection string and has the websocket worker open the socket with the right opening frame
+ * @brief one connection attempt, started only by connection__connect_loop(): builds the ws/wss connection string and has the websocket worker open the socket with the right opening frame
  *
- * @param object target -> the host, port and keys to dial
+ * @param object target -> the host, port and keys to connect to
  * @param object identity -> the identity to present
  *
  * @return promise resolves when the attempt has ended, either way
@@ -12566,7 +12885,7 @@ async function connection__attempt_connection(target, identity)
         document.getElementById("another-buttons-loading-container-p").innerHTML = "connecting to server...";
     }
 
-    // a new attempt is in flight - the failure text only shows after this one resolves
+    // a new attempt is running - the failure text only shows after this one resolves
     g_last_connect_attempt_failed = false;
 
     // loopback: connect to node on this device, token as the opening frame, no dh.
@@ -12575,12 +12894,13 @@ async function connection__attempt_connection(target, identity)
     {
         g_host = g_autoconnect_details.host;
         port = g_autoconnect_details.port;
+        g_audio_transport.url = "ws://" + (g_host.indexOf(":") >= 0 && g_host[0] !== "[" ? "[" + g_host + "]" : g_host) + ":" + port + "/";
 
         let loopback_connection_string = "ws://127.0.0.1:" + target.port + "/";
         console.log("connection_string -> " + loopback_connection_string + " (loopback)");
 
-        // name the SERVER being joined, not the local hop to node - and never print an
-        // unknown one ("connecting to :0" when the settings have not landed yet)
+        // name the SERVER being joined, not the local connection to node - and never print an
+        // unknown one ("connecting to :0" when the settings have not arrived yet)
         document.getElementById("another-buttons-loading-container-p").innerHTML =
             (typeof g_host === "string" && g_host.length > 0)
                 ? "connecting to " + chat__sanitize_string(g_host) + ":" + chat__sanitize_string("" + port)
@@ -12621,6 +12941,7 @@ async function connection__attempt_connection(target, identity)
     }
 
     let connection_string = protocol_part_of_connection_string + '' + g_host + ':' + connection_port + '/';
+    g_audio_transport.url = connection_string;
     console.log("connection_string -> " + connection_string);
 
     // say WHERE we are connecting: only now are the real host/port known
@@ -12701,6 +13022,285 @@ function connection__process_message_before_sending(message_object)
     return JSON.stringify(message_object);
 }
 
+// ---- the connect window ----
+// the connect form (#verification-system holds it, #container-2 is the box) is a window in the desktop themes and in the
+// mobile theme: a dialog with a title bar, movable by it (main.js), closeable. on android and in the two member list
+// themes (simpledark, bluebell) it stays a page of its own, the way it has always been: there the stylesheets hide the
+// title bar and the head menu entries, and the page shows itself again after every disconnect
+
+/**
+ * @brief whether the connect form is a closeable window (desktop themes, the mobile theme) rather than a page of its own (android, the member list themes simpledark and bluebell)
+ *        false as well in the node runtime, which has no page
+ *
+ * @return boolean
+ */
+function connection__is_connect_window_mode()
+{
+    if (g_is_running_in_android_webview == true || typeof document === "undefined" || typeof document.getElementsByClassName !== "function")
+    {
+        return false;
+    }
+
+    let theme = connection__current_theme_name();
+
+    return (theme !== "simpledark" && theme !== "bluebell");
+}
+
+/**
+ * @brief the name of the theme in use: the one theme sheet without a media attribute (UI.apply_theme in ui.js switches the sheets that way)
+ *
+ * @return string the theme name, "default" when none is found
+ */
+function connection__current_theme_name()
+{
+    let sheets = document.getElementsByClassName("style-theme-html-element");
+
+    for (let i = 0; i < sheets.length; i++)
+    {
+        if (sheets[i].hasAttribute("media") == false && typeof sheets[i].id === "string" && sheets[i].id.indexOf("style-theme-") == 0)
+        {
+            return sheets[i].id.substring("style-theme-".length);
+        }
+    }
+
+    return "default";
+}
+
+/**
+ * @brief shows the connect window: "connect" in the connections menu, a bookmark, and the first show at start-up (connection__reveal_connect_page)
+ *
+ * @return void
+ */
+function connection__show_connect_window()
+{
+    let page = document.getElementById("verification-system");
+
+    if (page == null)
+    {
+        return;
+    }
+
+    page.style.display = "block";
+    connection__apply_connect_window_mode();
+}
+
+/**
+ * @brief hides the connect window (its close button); whatever the connection is doing goes on behind it
+ *
+ * @return void
+ */
+function connection__hide_connect_window()
+{
+    let page = document.getElementById("verification-system");
+
+    if (page != null)
+    {
+        page.style.display = "none";
+    }
+}
+
+/**
+ * @brief marks on the body whether the connected interface is hidden, for the theme sheets: the hybrid theme paints a page
+ *        background of its own while only the connect window, or nothing, is shown. the page starts with the mark set
+ *        (template.html); the login path clears it (dispatch.js), a disconnect sets it again
+ *
+ * @param is_hidden true while no connected interface is shown
+ *
+ * @return void
+ */
+function connection__mark_connected_ui_hidden(is_hidden)
+{
+    if (typeof document === "undefined" || document.body == null || document.body.classList == null)
+    {
+        return;
+    }
+
+    document.body.classList.toggle("is-connected-ui-hidden", is_hidden == true);
+}
+
+/**
+ * @brief gives the connect form the shape of the mode in use: a window pinned to the middle of the screen, or a page in its own flow
+ *        called on every show and on every theme switch, because the mode depends on the theme. the generic centering of
+ *        main.js is switched off for this box, because that one centers on every show and knows nothing about the modes
+ *
+ * @return void
+ */
+function connection__apply_connect_window_mode()
+{
+    let box = (typeof document !== "undefined") ? document.getElementById("container-2") : null;
+    let page = (typeof document !== "undefined") ? document.getElementById("verification-system") : null;
+
+    if (box == null || page == null || typeof box.setAttribute !== "function")
+    {
+        return;
+    }
+
+    box.setAttribute("data-recenter-on-open", "false");
+
+    // the saved servers: as a window, the bookmarks menu holds them, so the row inside the form is hidden; as a page the
+    // row stays, there is no menu. a page with the server written into it has no use for the row either way (main.js hides it)
+    let bookmarks_row = document.getElementById("server-bookmarks-container");
+
+    if (bookmarks_row != null && g_are_server_details_predefined == false)
+    {
+        bookmarks_row.style.display = (connection__is_connect_window_mode() == true) ? "none" : "";
+    }
+
+    if (connection__is_connect_window_mode() == false)
+    {
+        box.style.position = "";
+        box.style.margin = "";
+        box.style.left = "";
+        box.style.top = "";
+        box.style.zIndex = "";
+        return;
+    }
+
+    // the window must paint above the spacer that follows it in the page: the default theme positions every div, so a
+    // later sibling without this would cover the title bar and swallow the clicks on it and on the close mark
+    box.style.zIndex = "5";
+
+    if (page.style.display == "none")
+    {
+        return;
+    }
+
+    connection__show_predefined_details_in_connect_window();
+    connection__refresh_connect_button_state();
+    connection__refresh_connect_window_sections();
+
+    // a page without a size yet (a tab that is still hidden while it loads) is centered once it has one
+    if (window.innerWidth == 0 || window.innerHeight == 0 || box.offsetWidth == 0)
+    {
+        window.setTimeout(connection__apply_connect_window_mode, 250);
+        return;
+    }
+
+    // measured as laid out, then pinned to the middle of the screen; a drag by the title bar moves it from there (main.js)
+    box.style.position = "fixed";
+    box.style.margin = "0";
+    box.style.left = Math.max(0, Math.round((window.innerWidth - box.offsetWidth) / 2)) + "px";
+    box.style.top = Math.max(0, Math.round((window.innerHeight - box.offsetHeight) / 2)) + "px";
+}
+
+/**
+ * @brief a page with the server written into it (window.__SERVER_CONFIG__, main.js) hides the address and port fields, because
+ *        they are never read; in the window they are shown anyway, filled with that server and not editable, so the user sees
+ *        where the connection goes and, after a disconnect, where it went
+ *
+ * @return void
+ */
+function connection__show_predefined_details_in_connect_window()
+{
+    if (g_are_server_details_predefined != true || typeof g_autoconnect_details !== "object" || g_autoconnect_details == null)
+    {
+        return;
+    }
+
+    let address_field = document.getElementById("input-ip-address");
+    let port_field = document.getElementById("input-port-number");
+    let grid = document.getElementById("connect-form-grid");
+    let keys_grid = document.getElementById("connect-keys-grid");
+
+    if (address_field == null || port_field == null || grid == null || keys_grid == null)
+    {
+        return;
+    }
+
+    // the fields are filled once, with the server the page names, and left alone from then on: after a chosen disconnect
+    // they show where the connection went (a bookmark writes them itself, head-menu.js), and the user may change them; the
+    // connect button takes changed values as the target (connection__request_connect)
+    if (is_written_in_target_shown_in_window == false && typeof g_autoconnect_details.host === "string" && g_autoconnect_details.host.length > 0)
+    {
+        address_field.value = g_autoconnect_details.host;
+        port_field.value = (g_autoconnect_details.port != null) ? String(g_autoconnect_details.port) : "";
+        address_field.disabled = false;
+        port_field.disabled = false;
+        is_written_in_target_shown_in_window = true;
+    }
+
+    grid.style.display = "";
+    grid.style.visibility = "visible";
+
+    // the keys the page wrote in, one row each (ui.js), built once: the window shows, after a chosen disconnect too, which
+    // keys the page logs in with and of what type, and the user may change or remove them. keys.js reads the rows from then
+    // on, also when none is left; the mark on the grid tells it so
+    if (keys_grid.getAttribute("data-written-in-keys-built") !== "true" && typeof UI !== "undefined" && typeof UI.add_key_row === "function")
+    {
+        if (Array.isArray(g_autoconnect_details.keys))
+        {
+            for (let i = 0; i < g_autoconnect_details.keys.length; i++)
+            {
+                UI.add_key_row(String(g_autoconnect_details.keys[i]));
+            }
+        }
+
+        keys_grid.setAttribute("data-written-in-keys-built", "true");
+    }
+
+    // such a page connects by itself and keeps its connect button and its key button invisible (main.js); after a chosen
+    // disconnect the connect button is the way back
+    document.getElementById("connect-button").style.visibility = "visible";
+    document.getElementById("add-key-button").style.visibility = "visible";
+}
+
+/**
+ * @brief fills the identity section of the connect window: a short fingerprint of this client's public key (the first twelve hex
+ *        digits of its sha-256). called on every show and when a key pair arrives
+ *
+ * @return void
+ */
+function connection__refresh_connect_window_sections()
+{
+    let summary = (typeof document !== "undefined") ? document.getElementById("connect-identity-summary") : null;
+
+    if (summary != null)
+    {
+        if (g_is_rsa_key_generated == true && typeof g_rsa_public_key_string === "string" && g_rsa_public_key_string.length > 0 && typeof _sha256 !== "undefined")
+        {
+            let digest = _sha256.create();
+            digest.update(g_rsa_public_key_string);
+            let hex = digest.hex().substring(0, 12);
+            summary.textContent = hex.substring(0, 4) + " " + hex.substring(4, 8) + " " + hex.substring(8, 12);
+        }
+        else
+        {
+            summary.textContent = "making a key pair ...";
+        }
+    }
+}
+
+/**
+ * @brief "disconnect" in the connections menu, and the connect button while connected: ends the connection and keeps the
+ *        connect loop from connecting again on its own. nothing connects until a connect request arrives (the connect
+ *        button, a bookmark); under autoconnect the retry countdown does not run either
+ *
+ * @return void
+ */
+function connection__disconnect_by_user()
+{
+    is_connection_ended_by_user = true;
+    is_connect_loop_wake_pending = false;
+    g_last_disconnect_reason = "disconnected";
+
+    // the window comes back, so the user sees where the connection went; the reset that follows the close leaves it open
+    if (connection__is_connect_window_mode() == true)
+    {
+        connection__show_connect_window();
+    }
+
+    if (g_is_authenticated == true || g_connection_status.state === "connecting")
+    {
+        // the socket closes; the close handler in dispatch.js runs the usual reset, and the connect loop, which waits for
+        // that close, then waits for the next connect request (a fast reconnect is refused while the flag is set)
+        g_websocket_worker.postMessage({ type: "close" });
+        return;
+    }
+
+    // no socket: the loop sits in its retry countdown or waits for the button; woken, it reaches the same wait
+    connection__wake_connect_loop();
+}
+
 /**
  * @brief the saved server configurations, kept on this device only
  *
@@ -12754,6 +13354,46 @@ function connection__render_server_bookmarks()
         option.textContent = bookmarks[x].name + " (" + bookmarks[x].host + ":" + bookmarks[x].port + ")";
         select_element.appendChild(option);
     }
+
+    // the bookmarks menu in the head menu shows the same list (head-menu.js, which the node bundle does not have)
+    if (typeof head_menu__render_bookmarks === "function")
+    {
+        head_menu__render_bookmarks();
+    }
+}
+
+/**
+ * @brief saves a server under a name, or replaces the bookmark of that name; the window's row and the bookmarks menu both call it
+ *
+ * @param string name -> the name typed for the server
+ * @param string host -> the address
+ * @param string port -> the port, as typed
+ *
+ * @return boolean true when the bookmark was written
+ */
+function connection__save_server_bookmark(name, host, port)
+{
+    let bookmarks = connection__read_server_bookmarks();
+    let existing = -1;
+
+    name = (name || "").trim();
+    host = (host || "").trim();
+    port = (port || "").trim();
+
+    if (name.length === 0) { utils__custom_alert("give this server a name first"); return false; }
+    if (host.length === 0 || port.length === 0) { utils__custom_alert("fill in the address and port first"); return false; }
+
+    for (let x = 0; x < bookmarks.length; x++)
+    {
+        if (bookmarks[x].name.toLowerCase() === name.toLowerCase()) { existing = x; }
+    }
+
+    if (existing === -1) { bookmarks.push({ name: name, host: host, port: port }); }
+    else { bookmarks[existing] = { name: name, host: host, port: port }; }
+
+    connection__write_server_bookmarks(bookmarks);
+    connection__render_server_bookmarks();
+    return true;
 }
 
 /**
@@ -12786,27 +13426,8 @@ function connection__wire_server_bookmarks()
     // saving under a name that already exists overwrites it, so this doubles as "update"
     document.getElementById("server-bookmark-save").onclick = function()
     {
-        let name_element = document.getElementById("server-bookmark-name");
-        let name = name_element.value.trim();
-        let typed_host = document.getElementById("input-ip-address").value.trim();
-        let typed_port = document.getElementById("input-port-number").value.trim();
-
-        if (name.length === 0) { utils__custom_alert("give this server a name first"); return; }
-        if (typed_host.length === 0 || typed_port.length === 0) { utils__custom_alert("fill in the address and port first"); return; }
-
-        let bookmarks = connection__read_server_bookmarks();
-        let existing = -1;
-
-        for (let x = 0; x < bookmarks.length; x++)
-        {
-            if (bookmarks[x].name.toLowerCase() === name.toLowerCase()) { existing = x; }
-        }
-
-        if (existing === -1) { bookmarks.push({ name: name, host: typed_host, port: typed_port }); }
-        else { bookmarks[existing] = { name: name, host: typed_host, port: typed_port }; }
-
-        connection__write_server_bookmarks(bookmarks);
-        connection__render_server_bookmarks();
+        connection__save_server_bookmark(document.getElementById("server-bookmark-name").value,
+            document.getElementById("input-ip-address").value, document.getElementById("input-port-number").value);
     };
 
     document.getElementById("server-bookmark-delete").onclick = function()
@@ -13210,7 +13831,7 @@ function workers__data_processing_worker_onmessage(e)
     else if (e.data.type == "mainthread__create_offline_chat_message")
     {
         // identical crypto to a direct message - the recipient is simply not connected,
-        // so it is addressed by their registered alias and the server parks the result
+        // so it is addressed by their registered alias and the server stores the result
         // until they come back. the server sees the same opaque blob either way.
         let current_message_keys = [];
 
@@ -13661,7 +14282,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         {
             g_is_authenticated = true;
 
-            // the whole message rides along as the policy: server_settings_tab__apply_server_policy_fields takes the
+            // the whole message is passed on as the policy: server_settings_tab__apply_server_policy_fields takes the
             // fields it knows, so a new server field never needs a second list here
             global.postMessage({
                 type: "data_processing_worker__authentication_status",
@@ -13785,12 +14406,20 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
+        else if (msg.message.type == "server_info" || msg.message.type == "server_banner_result")
+        {
+            global.postMessage({ type: "data_processing_worker__" + msg.message.type, value: msg.message });
+        }
         else if (msg.message.type == "admin_log")
         {
             global.postMessage({
                 type: "data_processing_worker__admin_log_from_server",
                 value: msg
             });
+        }
+        else if (msg.message.type == "url_resolved")
+        {
+            global.postMessage({ type: "data_processing_worker__url_resolved", value: msg.message });
         }
         else if (msg.message.type == "server_policy")
         {
@@ -13939,6 +14568,31 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
+        // video streaming: the six control messages pass through untouched, video.js reads them on the main thread
+        else if (msg.message.type == "video_stream_state")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_state_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_offer")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_offer_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_viewer_request")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_viewer_request_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_viewer_state")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_viewer_state_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_keyframe_request")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_keyframe_request_from_server", value: msg });
+        }
+        else if (msg.message.type == "video_stream_refused")
+        {
+            global.postMessage({ type: "data_processing_worker__video_stream_refused_from_server", value: msg });
+        }
         else if (msg.message.type == "chat_message_delete")
         {
             global.postMessage({
@@ -14007,6 +14661,40 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             global.postMessage({
                 type: "data_processing_worker__current_channel_active_microphone_usage_from_server",
                 value: msg
+            });
+        }
+        else if (msg.message.type == "music_bot_key")
+        {
+            global.postMessage(
+            {
+                type: "data_processing_worker__music_bot_key",
+                value: msg.message
+            });
+        }
+        else if (msg.message.type == "audio_websocket_session")
+        {
+            global.postMessage(
+            {
+                type: "data_processing_worker__audio_websocket_session",
+                value: msg.message
+            });
+        }
+        else if (msg.message.type == "video_websocket_session")
+        {
+            global.postMessage(
+            {
+                type: "data_processing_worker__video_websocket_session",
+                value: msg.message
+            });
+        }
+        else if (msg.message.type == "local_media_keys" && g_loopback_port > 0)
+        {
+            // only over the loopback: the node runtime on the same device hands the webview the two keys
+            // for its media frames. a real server never gets to send this
+            global.postMessage(
+            {
+                type: "data_processing_worker__local_media_keys",
+                value: msg.message
             });
         }
         else if (msg.message.type == "sdp_offer")
@@ -14081,7 +14769,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "channel_chat_file_metadata")
         {
-            // the header is opened here (channel keys live in this worker); null leaves a nameless card
+            // the header is opened here (the channel keys are kept in this worker); null leaves a nameless card
             msg.message.file_header_decrypted = (typeof msg.message.file_header === "string")
                 ? chat_files__decrypt_channel_chat_file_header(msg.message.file_id, msg.message.file_header) : null;
             msg.message.file_header = null;
@@ -14534,10 +15222,10 @@ function workers__websocket_worker_onmessage(e)
 // it is the key handling: the rsa keypair size rules, the diffie-hellman session keys, the aes message
 // bodies and the metadata envelope of every frame, and the channel keys a maintainer hands out (with
 // the wait timer that votes a silent maintainer out)
-// workers.js does the same wire work inside the worker; messages.js calls the channel key side
+// workers.js does the same message encryption inside the worker; messages.js calls the channel key side
 
 // state private to this file
-// the maintainer reset: whenever this client waits for keys, a timer is armed; keys that do not arrive
+// the maintainer reset: whenever this client waits for keys, a timer is started; keys that do not arrive
 // in time send a reset_channel_maintainer vote (re-sent every timeout), and once more than half of the
 // channel has voted the server deposes the maintainer and announces a new one
 var MAINTAINER_KEYS_WAIT_TIMEOUT_MS = 5000;
@@ -14546,7 +15234,7 @@ var maintainer_keys_wait_timer = null;
 
 var maintainer_keys_wait_channel_id = -1;
 
-// ---- identity and wire crypto ----
+// ---- identity and message encryption ----
 
 /**
  * @brief the smallest key size we can create that satisfies the server
@@ -14602,7 +15290,7 @@ function keys__handle_rsa_key_too_weak_notice(announced_minimum_bits)
         return;
     }
 
-    // the driver redials on its own and the server rejects every attempt, so without this the
+    // the connect loop connects again on its own and the server rejects every attempt, so without this the
     // dialog would reopen in a loop
     if (g_rsa_key_too_weak_prompted_for_bits == minimum_bits)
     {
@@ -14640,8 +15328,21 @@ function keys__hide_rsa_key_too_weak_dialog()
 function keys__init_keys_object()
 {
     g_metadata_keys.length = 0; // clear it in case client is reconnecting
+    g_media_keys_from_host = null;
+    g_media_server_key_layers_from_host = null;
 
-    if (g_are_server_details_predefined == true)
+    // the key rows of the connect window come first: the user typed them, or connection.js built them from the keys the page
+    // wrote in, and the user may have changed or removed them since. a page with the server written into it falls back to
+    // those keys only where no rows were ever built (the mark on the grid): the node runtime has no rows, and the themes that
+    // keep the form as a page of its own build none
+    let key_input_elements = (typeof document !== "undefined" && typeof document.querySelectorAll === "function")
+        ? document.querySelectorAll('#connect-keys-grid input[id^="input-key-"]') : [];
+    let keys_grid = (typeof document !== "undefined" && typeof document.getElementById === "function")
+        ? document.getElementById("connect-keys-grid") : null;
+    let are_key_rows_built = (keys_grid != null && typeof keys_grid.getAttribute === "function"
+        && keys_grid.getAttribute("data-written-in-keys-built") === "true");
+
+    if (g_are_server_details_predefined == true && key_input_elements.length == 0 && are_key_rows_built == false)
     {
         for (let i = 0; i < g_autoconnect_details.keys.length; i++)
         {
@@ -14655,6 +15356,7 @@ function keys__init_keys_object()
 
             let single_key = {
                 info: "aes-ctr",
+                key_type: "aes256", // the type the connect window would show; written-in keys are this one type
                 key_string: key_string_value,
                 key_bytes: key_bytes
             };
@@ -14664,14 +15366,18 @@ function keys__init_keys_object()
     }
     else
     {
-        // iterate the key inputs that actually exist in the dom (in order), not a 0..count
-        // range - keys can be removed, which leaves gaps in the input-key-N ids. this also
-        // lets the user drop an accidental (even empty) key back to zero without a restart.
-        let key_input_elements = document.querySelectorAll('#connect-form-sub-container-2 input[id^="input-key-"]');
+        // the key inputs that actually exist in the dom (in order), not a 0..count range - keys can be removed, which
+        // leaves gaps in the input-key-N ids. this also lets the user drop an accidental (even empty) key back to zero
         for (let i = 0; i < key_input_elements.length; i++)
         {
             let key_string_value = key_input_elements[i].value;
             // removed: never log key material
+
+            // an empty row is a row nobody filled, not a key
+            if (key_string_value.length == 0)
+            {
+                continue;
+            }
 
             let hash = _sha256.create();
 
@@ -14679,13 +15385,17 @@ function keys__init_keys_object()
             hash.array();
             key_bytes = hash.array();
 
+            // the type chosen in the row's select (ui.js); one type exists so far, the field is there for the types to come
+            let key_type_select = document.getElementById("input-key-type-" + key_input_elements[i].getAttribute("data-id"));
+
             let single_key = {
                 info: "aes-ctr",
+                key_type: (key_type_select != null && typeof key_type_select.value === "string") ? key_type_select.value : "aes256",
                 key_string: key_string_value,
                 key_bytes: key_bytes
             };
 
-            g_metadata_keys[i] = single_key;
+            g_metadata_keys.push(single_key);
         }
     }
 
@@ -14779,69 +15489,83 @@ function keys__decrypt_data_with_aes_keys(keys, data)
 }
 
 /**
- * @brief utf8 string -> zero-padded buffer (1024 bytes minimum) -> AES-CTR key layers -> base64
+ * @brief encrypts a text with a set of keys for a channel message or a channel picture
+ *
+ *        the text is written into a buffer of at least 1024 bytes that is otherwise zero, so a short message
+ *        and a long one look alike when sent. then every key of the set is applied as one AES-CTR layer.
+ *        every message gets its own random 16 byte starting value, the message iv. without it, two messages
+ *        encrypted with the same key would use the same keystream, and anybody holding both could combine
+ *        them so that the encryption cancels out; the zero padding would even expose the keystream directly.
+ *        the message iv is not secret: it travels next to the ciphertext, and a receiver combines it with the
+ *        key's own iv to get the starting value for that key (keys__media_xor_blocks).
  *
  * @param array keys -> the key layers, each with key_bytes and iv_bytes
  * @param string string_to_encrypt -> the plaintext
  *
- * @return string the base64 ciphertext
+ * @return string a JSON text { "iv": <base64 of the message iv>, "data": <base64 of the ciphertext> }
  */
 function keys__encrypt_with_aes_keys_and_convert_to_base64(keys, string_to_encrypt)
 {
-    let byteArrayToSend = new Uint8Array(1024);
-    if (string_to_encrypt.length > 1024)
-    {
-        byteArrayToSend = new Uint8Array(string_to_encrypt.length);
-    }
-
     let textBytes = aesjs.utils.utf8.toBytes(string_to_encrypt);
+    let byteArrayToSend = new Uint8Array(textBytes.length > 1024 ? textBytes.length : 1024);
+    let message_iv = new Uint8Array(16);
 
-    for (i = 0; i < textBytes.length; i++)
-    {
-        byteArrayToSend[i] = textBytes[i];
-    }
+    byteArrayToSend.set(textBytes, 0);
+    crypto.getRandomValues(message_iv);
 
-    let base64EncryptedData = "";
     let encrypted_data_in_current_iteration = byteArrayToSend;
 
     for (let i = 0; i < keys.length; i++)
     {
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(keys[i].key_bytes, new aesjs.Counter(keys[i].iv_bytes));
-        encrypted_data_in_current_iteration = aesCtrCustom.encrypt(encrypted_data_in_current_iteration);
-
-        if (i + 1 == keys.length) // if end has been reached, convert encrypted bytes to base64string
-        {
-            base64EncryptedData = utils__bytesToBase64String(encrypted_data_in_current_iteration);
-        }
+        encrypted_data_in_current_iteration = keys__aes_ctr(keys[i].key_bytes, keys__media_xor_blocks(keys[i].iv_bytes, message_iv), encrypted_data_in_current_iteration);
     }
-    return base64EncryptedData;
+    return JSON.stringify({ iv: utils__bytesToBase64String(message_iv), data: utils__bytesToBase64String(encrypted_data_in_current_iteration) });
 }
 
 /**
- * @brief base64 -> AES-CTR key layers in reverse -> utf8 string cut at the first null terminator
- *        the encrypt side pads short messages up to 1024 bytes
+ * @brief the reverse of keys__encrypt_with_aes_keys_and_convert_to_base64: the key layers come off in reverse order, the text is cut at the first zero byte
+ *
+ *        a message from before the message iv existed is a bare base64 text, not a JSON text starting with
+ *        "{"; such a message was encrypted with each key's own iv as the starting value, and is decrypted
+ *        that way, so stored old messages still open
  *
  * @param array keys -> the key layers, each with key_bytes and iv_bytes
- * @param string string_to_decrypt -> the base64 ciphertext
+ * @param string string_to_decrypt -> the JSON text from the encrypt function, or an old bare base64 text
  *
  * @return string the plaintext
  */
 function keys__decrypt_base64_contents_with_aes_keys(keys, string_to_decrypt)
 {
-    let encrypted_data_in_current_iteration = utils__base64StringToBytes(string_to_decrypt);
+    let message_iv = null;
+    let payload = string_to_decrypt;
+
+    if (typeof string_to_decrypt === "string" && string_to_decrypt.charAt(0) === "{")
+    {
+        try
+        {
+            let envelope = JSON.parse(string_to_decrypt);
+            if (envelope != null && typeof envelope.iv === "string" && typeof envelope.data === "string")
+            {
+                message_iv = new Uint8Array(utils__base64StringToBytes(envelope.iv));
+                payload = envelope.data;
+            }
+        }
+        catch (parse_error)
+        {
+            // not an envelope after all: decrypted as an old message below
+        }
+    }
+
+    let encrypted_data_in_current_iteration = new Uint8Array(utils__base64StringToBytes(payload));
 
     // decrypt by applying keys in reverse order
     for (let i = (keys.length - 1); i >= 0; i--)
     {
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(keys[i].key_bytes, new aesjs.Counter(keys[i].iv_bytes));
-        encrypted_data_in_current_iteration = aesCtrCustom.decrypt(encrypted_data_in_current_iteration);
+        let block = message_iv != null ? keys__media_xor_blocks(keys[i].iv_bytes, message_iv) : new Uint8Array(keys[i].iv_bytes);
+        encrypted_data_in_current_iteration = keys__aes_ctr(keys[i].key_bytes, block, encrypted_data_in_current_iteration);
     }
 
-    decryptedBytes = encrypted_data_in_current_iteration;
-
-    // coerce to Uint8Array: when no cipher layer is applied (zero metadata keys) the value is still the
-    // plain array from utils__base64StringToBytes, and TextDecoder.decode rejects a plain array
-    let str1 = new TextDecoder().decode(new Uint8Array(decryptedBytes));
+    let str1 = new TextDecoder().decode(encrypted_data_in_current_iteration);
     let decrypted_metadata = utils__substringByNullTerminator(str1);
     return decrypted_metadata;
 }
@@ -14927,9 +15651,33 @@ function keys__dh_derive_keys(shared_secret_string)
     return { enc_key: okm.slice(0, 32), mac_key: okm.slice(32, 64) };
 }
 
+// Read the type stored in a metadata key and use the encryption method that
+// belongs to it. If another method is added, the server must support it too,
+// and both ends must build its encryption starting value in the same way.
+// Refuse an unknown type instead of silently treating its bytes as an AES key.
+function keys__crypt_metadata_layer(key, message_iv, data, encrypt)
+{
+    switch (key.info)
+    {
+        case "aes-ctr":
+        {
+            if (key.key_bytes.length !== 32 || message_iv.length !== 16)
+            {
+                throw new Error("Invalid AES-256-CTR metadata key or IV");
+            }
+            let cipher = new aesjs.ModeOfOperation.ctr(key.key_bytes, new aesjs.Counter(Array.from(message_iv)));
+            return encrypt ? cipher.encrypt(data) : cipher.decrypt(data);
+        }
+        default:
+        {
+            throw new Error("Unsupported metadata cipher: " + key.info);
+        }
+    }
+}
+
 /**
- * @brief wraps an outgoing message for the wire
- *        pads, AES-CTR encrypts with every metadata key under a fresh random IV, base64s, and
+ * @brief encrypts an outgoing message and builds the envelope that is sent
+ *        pads, encrypts with every typed metadata key under a fresh random IV, base64s, and
  *        builds the { iv, data [, tag] } envelope; on the loopback (a ui-only runtime) the text
  *        stays plain, node wraps it toward the real server
  *
@@ -14953,18 +15701,9 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
         return string_to_encrypt;
     }
 
-    let byteArrayToSend = new Uint8Array(1024);
-    if (string_to_encrypt.length > 1024)
-    {
-        byteArrayToSend = new Uint8Array(string_to_encrypt.length);
-    }
-
     let textBytes = aesjs.utils.utf8.toBytes(string_to_encrypt);
-
-    for (i = 0; i < textBytes.length; i++)
-    {
-        byteArrayToSend[i] = textBytes[i];
-    }
+    let byteArrayToSend = new Uint8Array(Math.max(1024, textBytes.length));
+    byteArrayToSend.set(textBytes);
 
     // fresh random IV per message (CSPRNG). the same IV seeds every metadata layer's AES-CTR counter;
     // it is not secret, so it travels as a separate "iv" field in the JSON envelope next to the ciphertext.
@@ -14975,10 +15714,10 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
 
     for (let i = 0; i < g_metadata_keys.length; i++)
     {
-        let key_bytes = g_metadata_keys[i].key_bytes;
-
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(key_bytes, new aesjs.Counter(Array.from(message_iv)));
-        encrypted_data_in_current_iteration = aesCtrCustom.encrypt(encrypted_data_in_current_iteration);
+        // The key made from this connection's shared secret is first in the
+        // list. Encrypt with it first, then with the keys from the server settings.
+        encrypted_data_in_current_iteration = keys__crypt_metadata_layer(
+            g_metadata_keys[i], message_iv, encrypted_data_in_current_iteration, true);
     }
 
     // base64 the result after all layers. with 0 metadata keys this is just the plaintext bytes,
@@ -14992,7 +15731,11 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
     let dh_mac_key = null;
     for (let i = 0; i < g_metadata_keys.length; i++)
     {
-        if (g_metadata_keys[i].mac_bytes) { dh_mac_key = g_metadata_keys[i].mac_bytes; break; }
+        if (g_metadata_keys[i].mac_bytes)
+        {
+            dh_mac_key = g_metadata_keys[i].mac_bytes;
+            break;
+        }
     }
     if (dh_mac_key)
     {
@@ -15007,13 +15750,13 @@ function keys__encrypt_all_message_data_and_convert_to_base64(string_to_encrypt)
  * @brief the reverse of keys__encrypt_all_message_data_and_convert_to_base64
  *        verifies the HMAC tag when the DH layer is active, then peels the metadata key layers
  *
- * @param string envelope_json -> the { iv, data [, tag] } envelope from the wire
+ * @param string envelope_json -> the { iv, data [, tag] } envelope as received
  *
  * @return string the plaintext, "" on any failure
  */
 function keys__decrypt_message_metadata(envelope_json)
 {
-    // the wire payload is a JSON envelope { "iv": <base64>, "data": <base64 ciphertext> }.
+    // the received text is a JSON envelope { "iv": <base64>, "data": <base64 ciphertext> }.
     // the per-message IV is public and seeds every metadata layer's AES-CTR counter.
     let envelope = null;
     try
@@ -15035,39 +15778,64 @@ function keys__decrypt_message_metadata(envelope_json)
     let dh_mac_key = null;
     for (let i = 0; i < g_metadata_keys.length; i++)
     {
-        if (g_metadata_keys[i].mac_bytes) { dh_mac_key = g_metadata_keys[i].mac_bytes; break; }
+        if (g_metadata_keys[i].mac_bytes)
+        {
+            dh_mac_key = g_metadata_keys[i].mac_bytes;
+            break;
+        }
     }
     if (dh_mac_key)
     {
-        if (typeof envelope.tag != "string") { return ""; }
+        if (typeof envelope.tag != "string")
+        {
+            return "";
+        }
         let expected_tag = utils__bytesToBase64String(keys___hmac_sha256(dh_mac_key, aesjs.utils.utf8.toBytes(envelope.iv + envelope.data)));
-        if (expected_tag !== envelope.tag) { return ""; }
+        if (expected_tag !== envelope.tag)
+        {
+            return "";
+        }
     }
 
-    let message_iv = utils__base64StringToBytes(envelope.iv);
-    let encrypted_data_in_current_iteration = utils__base64StringToBytes(envelope.data);
-
-    for (let i = (g_metadata_keys.length - 1); i >= 0; i--)
+    try
     {
-        let key_bytes = g_metadata_keys[i].key_bytes;
+        let message_iv = utils__base64StringToBytes(envelope.iv);
+        let current = new Uint8Array(utils__base64StringToBytes(envelope.data));
+        if (message_iv.length !== 16)
+        {
+            return "";
+        }
+        // The server encrypts with its configured keys first and this client's
+        // connection key last. Undo the connection's encryption first, then
+        // use the configured keys from last to first. Keep that order so this
+        // also works with methods where changing the key order changes the result.
+        for (let i = g_metadata_keys.length - 1; i >= 0; i--)
+        {
+            if (g_metadata_keys[i].mac_bytes)
+            {
+                current = keys__crypt_metadata_layer(g_metadata_keys[i], message_iv, current, false);
+            }
+        }
+        for (let i = g_metadata_keys.length - 1; i >= 0; i--)
+        {
+            if (!g_metadata_keys[i].mac_bytes)
+            {
+                current = keys__crypt_metadata_layer(g_metadata_keys[i], message_iv, current, false);
+            }
+        }
 
-        let aesCtrCustom = new aesjs.ModeOfOperation.ctr(key_bytes, new aesjs.Counter(Array.from(message_iv)));
-        encrypted_data_in_current_iteration = aesCtrCustom.decrypt(encrypted_data_in_current_iteration);
+        return utils__substringByNullTerminator(new TextDecoder().decode(current));
     }
-
-    decryptedBytes = encrypted_data_in_current_iteration;
-
-    // coerce to Uint8Array: when no cipher layer is applied (zero metadata keys) the value is still the
-    // plain array from utils__base64StringToBytes, and TextDecoder.decode rejects a plain array
-    let str1 = new TextDecoder().decode(new Uint8Array(decryptedBytes));
-    let decrypted_metadata = utils__substringByNullTerminator(str1);
-    return decrypted_metadata;
+    catch (exception)
+    {
+        return "";
+    }
 }
 
 // ---- channel keys ----
 
 /**
- * @brief arms (re-arms) the keys-wait timer for the current channel
+ * @brief starts (restarts) the keys-wait timer for the current channel
  *        no-op when there is nothing to wait for: no maintainer announced, or the local user IS
  *        the maintainer; node owns this decision, the webview must not vote
  *
@@ -15120,7 +15888,7 @@ function keys__cancel_maintainer_keys_wait_timer()
 }
 
 /**
- * @brief the maintainer stayed silent for the whole timeout: sends the reset vote and re-arms
+ * @brief the maintainer stayed silent for the whole timeout: sends the reset vote and restarts the timer
  *        every condition is re-checked, because a channel switch, arriving keys or a new
  *        maintainer may have happened meanwhile
  *
@@ -15160,7 +15928,7 @@ function keys__maintainer_keys_wait_timer_fired()
     console.log("%c no channel keys from maintainer (id " + g_channel_list[channel_index].maintainer_id + ") after " + MAINTAINER_KEYS_WAIT_TIMEOUT_MS + " ms, sending reset_channel_maintainer vote", "color: red");
 
     // payload-free: the client just asks for its channel's maintainer to be reset,
-    // the server does all vote bookkeeping (one vote per client, dies on maintainer change)
+    // the server does all vote bookkeeping (one vote per client, cleared on maintainer change)
     let message_object = {
         message: {
             type: "reset_channel_maintainer"
@@ -15197,14 +15965,443 @@ function keys__create_and_send_new_channel_keys()
         current_channel_id: g_current_channel_id
     });
 
-    // rsa stays in the data-processing worker (the private key lives only there), so each public key
+    // rsa stays in the data-processing worker (the private key is kept only there), so each public key
     // is posted to it and the encrypted keys come back for the main thread to route
+}
+
+// ================================================================================================
+// the encryption of audio and video frames on the way between this client and the server
+// ================================================================================================
+//
+// why this exists: a voice frame or a video packet is encrypted with the channel keys, which only the
+// members of the channel have, so the server cannot listen in. two things are still open on the way to
+// the server. first, a few bytes next to the channel key encryption, for example who sent the frame, can
+// be read by anybody on the network path when the connection has no TLS. second, nothing proves that a
+// frame really comes from the client it claims to come from: somebody on the path could change a frame or
+// insert one. so every frame is encrypted a second time, with the two keys this client and the server
+// derived from the Diffie-Hellman shared secret at login (the encryption key and the checksum key, the
+// same ones that encrypt the JSON messages), and an authentication code is appended: a checksum that only
+// somebody with the checksum key can compute, HMAC-SHA256. the server checks the code, removes this
+// client's encryption, and encrypts the frame again for every receiver with the receiver's keys. the
+// server side is media_auth.c, which also explains why every frame needs a counter.
+//
+// a frame as sent:               [1 byte version 2][8 bytes frame counter][encrypted part][8 bytes authentication code]
+// the encrypted part, decrypted: [4 bytes sender id, least significant byte first][8 bytes sender counter][the inner ciphertext]
+// the inner ciphertext is the frame content under the channel keys (or a music bot's keys) and then under
+// the server keys. the counter block (the 16 byte starting value of AES-CTR) of every inner layer is
+// [4 bytes sender id][8 bytes sender counter][4 bytes zero], combined by XOR with the key's iv when the key
+// has one. the counter block of the second encryption is [8 bytes frame counter][1 byte direction: 0 to
+// the server, 1 from the server][1 byte stream: 0 audio, 1 video][6 bytes zero].
+var MEDIA_FRAME_VERSION = 2;
+var MEDIA_FRAME_HEADER = 9;
+var MEDIA_BODY_HEADER = 12;
+var MEDIA_FRAME_CODE = 8;
+var MEDIA_FRAME_OVERHEAD = MEDIA_FRAME_HEADER + MEDIA_BODY_HEADER + MEDIA_FRAME_CODE;
+var MEDIA_STREAM_AUDIO = 0;
+var MEDIA_STREAM_VIDEO = 1;
+var MEDIA_DIRECTION_TO_SERVER = 0;
+var MEDIA_DIRECTION_FROM_SERVER = 1;
+
+// on android the node runtime hands the session and configured server keys to the webview over loopback
+var g_media_keys_from_host = null;
+var g_media_server_key_layers_from_host = null;
+
+/**
+ * @brief turns a hex text into bytes
+ *
+ * @param string hex -> two hex digits per byte
+ *
+ * @return Uint8Array the bytes
+ */
+function keys__hex_to_bytes(hex)
+{
+    let bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++)
+    {
+        bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+    return bytes;
+}
+
+/**
+ * @brief turns bytes into a hex text
+ *
+ * @param array bytes -> plain or typed
+ *
+ * @return string two hex digits per byte
+ */
+function keys__bytes_to_hex(bytes)
+{
+    let hex = "";
+    for (let i = 0; i < bytes.length; i++)
+    {
+        hex += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
+    }
+    return hex;
+}
+
+/**
+ * @brief keeps the complete media key set the host runtime handed over (android: node to webview)
+ *
+ * @param string encryption_key_hex -> the 32 byte encryption key as hex
+ * @param string checksum_key_hex -> the 32 byte checksum key as hex
+ * @param array server_key_hexes -> the ordered 32 byte server keys as hex
+ *
+ * @return void
+ */
+function keys__set_media_keys_from_host(encryption_key_hex, checksum_key_hex, server_key_hexes = [])
+{
+    let key_pattern = /^[0-9a-f]{64}$/i;
+    if (typeof encryption_key_hex !== "string" || typeof checksum_key_hex !== "string"
+        || !key_pattern.test(encryption_key_hex) || !key_pattern.test(checksum_key_hex) || !Array.isArray(server_key_hexes))
+    {
+        return;
+    }
+    let server_layers = [];
+    for (let i = 0; i < server_key_hexes.length; i++)
+    {
+        if (typeof server_key_hexes[i] !== "string" || !key_pattern.test(server_key_hexes[i]))
+        {
+            return;
+        }
+        server_layers.push(
+        {
+            key_bytes: keys__hex_to_bytes(server_key_hexes[i]),
+            iv_bytes: null
+        });
+    }
+    g_media_keys_from_host =
+    {
+        key_bytes: keys__hex_to_bytes(encryption_key_hex),
+        mac_bytes: keys__hex_to_bytes(checksum_key_hex)
+    };
+    g_media_server_key_layers_from_host = server_layers;
+}
+
+/**
+ * @brief the two keys of this client for the media frames
+ *
+ *        the Diffie-Hellman entry of g_metadata_keys is the one that carries a checksum key (mac_bytes);
+ *        on android the webview has none and uses the keys the node runtime handed over
+ *
+ * @return object { key_bytes, mac_bytes } or null before the key exchange
+ */
+function keys__media_session_layer()
+{
+    for (let i = 0; i < g_metadata_keys.length; i++)
+    {
+        if (g_metadata_keys[i].mac_bytes)
+        {
+            return { key_bytes: g_metadata_keys[i].key_bytes, mac_bytes: g_metadata_keys[i].mac_bytes };
+        }
+    }
+    return g_media_keys_from_host;
+}
+
+/**
+ * @brief the server keys as layers for the inner encryption of media frames: every entry of g_metadata_keys without a checksum key
+ *
+ * @return array [{ key_bytes, iv_bytes: null }]
+ */
+function keys__media_server_key_layers()
+{
+    if (g_media_server_key_layers_from_host != null)
+    {
+        return g_media_server_key_layers_from_host;
+    }
+    let layers = [];
+    for (let i = 0; i < g_metadata_keys.length; i++)
+    {
+        if (!g_metadata_keys[i].mac_bytes)
+        {
+            layers.push({ key_bytes: g_metadata_keys[i].key_bytes, iv_bytes: null });
+        }
+    }
+    return layers;
+}
+
+/**
+ * @brief a fresh frame counter: 8 random bytes, so the counters of this session differ from those of any earlier session
+ *
+ * @return Uint8Array 8 bytes
+ */
+function keys__counter_create()
+{
+    let counter = new Uint8Array(8);
+    crypto.getRandomValues(counter);
+    return counter;
+}
+
+/**
+ * @brief adds one to a frame counter, in place; the last byte is the least significant one
+ *
+ * @param Uint8Array counter -> 8 bytes
+ *
+ * @return void
+ */
+function keys__counter_increment(counter)
+{
+    for (let i = 7; i >= 0; i--)
+    {
+        counter[i] = (counter[i] + 1) & 0xff;
+        if (counter[i] !== 0)
+        {
+            return;
+        }
+    }
+}
+
+/**
+ * @brief combines two 16 byte blocks with XOR; a missing block counts as zero
+ *
+ * @param array left -> 16 bytes or null
+ * @param array right -> 16 bytes or null
+ *
+ * @return Uint8Array the combined block
+ */
+function keys__media_xor_blocks(left, right)
+{
+    let block = new Uint8Array(16);
+    for (let i = 0; i < 16; i++)
+    {
+        block[i] = ((left != null ? left[i] : 0) ^ (right != null ? right[i] : 0)) & 0xff;
+    }
+    return block;
+}
+
+/**
+ * @brief the counter block of an inner layer: the sender id, the sender counter, and the key's own iv when it has one
+ *
+ * @param number sender_id -> the sending client's id
+ * @param Uint8Array counter_bytes -> the sender counter, 8 bytes
+ * @param array layer_iv -> the key's iv, 16 bytes, or null
+ *
+ * @return Uint8Array 16 bytes
+ */
+function keys__media_inner_block(sender_id, counter_bytes, layer_iv)
+{
+    let block = new Uint8Array(16);
+    block[0] = sender_id & 0xff;
+    block[1] = (sender_id >> 8) & 0xff;
+    block[2] = (sender_id >> 16) & 0xff;
+    block[3] = (sender_id >> 24) & 0xff;
+    block.set(counter_bytes, 4);
+    return keys__media_xor_blocks(block, layer_iv);
+}
+
+/**
+ * @brief the counter block of the second encryption, the one between this client and the server
+ *
+ * @param Uint8Array counter_bytes -> the frame counter, 8 bytes
+ * @param number direction -> MEDIA_DIRECTION_TO_SERVER or MEDIA_DIRECTION_FROM_SERVER
+ * @param number stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ *
+ * @return Uint8Array 16 bytes
+ */
+function keys__media_session_block(counter_bytes, direction, stream)
+{
+    let block = new Uint8Array(16);
+    block.set(counter_bytes, 0);
+    block[8] = direction;
+    block[9] = stream;
+    return block;
+}
+
+/**
+ * @brief one AES-CTR pass over bytes; the same call encrypts and decrypts
+ *
+ * @param array key_bytes -> the 32 byte key
+ * @param Uint8Array block -> the 16 byte counter block to start from
+ * @param Uint8Array data -> the bytes
+ *
+ * @return Uint8Array the result, a new array
+ */
+function keys__aes_ctr(key_bytes, block, data)
+{
+    return new aesjs.ModeOfOperation.ctr(key_bytes, new aesjs.Counter(Array.from(block))).encrypt(data);
+}
+
+/**
+ * @brief applies the inner layers (channel keys, a music bot's keys, or the server keys) to the content of a frame
+ *
+ * @param array layers -> [{ key_bytes, iv_bytes }], iv_bytes may be null
+ * @param number sender_id -> the sending client's id, part of every counter block
+ * @param Uint8Array counter_bytes -> the sender counter, part of every counter block
+ * @param Uint8Array data -> the bytes
+ * @param boolean is_encrypt -> true applies the layers first to last, false last to first
+ *
+ * @return Uint8Array the result
+ */
+function keys__media_apply_inner_layers(layers, sender_id, counter_bytes, data, is_encrypt)
+{
+    let current = new Uint8Array(data);
+    for (let step = 0; step < layers.length; step++)
+    {
+        let i = is_encrypt ? step : (layers.length - 1 - step);
+        current = keys__aes_ctr(layers[i].key_bytes, keys__media_inner_block(sender_id, counter_bytes, layers[i].iv_bytes), current);
+    }
+    return current;
+}
+
+/**
+ * @brief puts the sender id and the sender counter in front of the inner ciphertext: that is the part the second encryption covers
+ *
+ * @return Uint8Array [4 bytes sender id][8 bytes counter][inner]
+ */
+function keys__media_build_body(sender_id, counter_bytes, inner)
+{
+    let body = new Uint8Array(MEDIA_BODY_HEADER + inner.length);
+    body[0] = sender_id & 0xff;
+    body[1] = (sender_id >> 8) & 0xff;
+    body[2] = (sender_id >> 16) & 0xff;
+    body[3] = (sender_id >> 24) & 0xff;
+    body.set(counter_bytes, 4);
+    body.set(inner, MEDIA_BODY_HEADER);
+    return body;
+}
+
+/**
+ * @brief the second encryption of a frame this client sends: the body is encrypted with the encryption key and the authentication code is appended
+ *
+ * @param object session_layer -> { key_bytes, mac_bytes } from keys__media_session_layer
+ * @param number stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ * @param Uint8Array counter_bytes -> the frame counter, 8 bytes, increased before every frame
+ * @param Uint8Array body -> from keys__media_build_body
+ *
+ * @return Uint8Array the frame ready to send, or null without keys
+ */
+function keys__media_encrypt_frame(session_layer, stream, counter_bytes, body)
+{
+    if (session_layer == null || body.length < MEDIA_BODY_HEADER)
+    {
+        return null;
+    }
+    let frame = new Uint8Array(MEDIA_FRAME_HEADER + body.length + MEDIA_FRAME_CODE);
+    frame[0] = MEDIA_FRAME_VERSION;
+    frame.set(counter_bytes, 1);
+    frame.set(keys__aes_ctr(session_layer.key_bytes, keys__media_session_block(counter_bytes, MEDIA_DIRECTION_TO_SERVER, stream), body), MEDIA_FRAME_HEADER);
+    let code = keys___hmac_sha256(session_layer.mac_bytes, frame.subarray(0, MEDIA_FRAME_HEADER + body.length));
+    frame.set(code.slice(0, MEDIA_FRAME_CODE), MEDIA_FRAME_HEADER + body.length);
+    return frame;
+}
+
+/**
+ * @brief a frame that came from the server: the authentication code is checked and the second encryption removed
+ *
+ *        the code is compared byte by byte without stopping early, so the time the comparison takes tells
+ *        nothing about where the first difference is
+ *
+ * @param object session_layer -> { key_bytes, mac_bytes } from keys__media_session_layer
+ * @param number stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ * @param Uint8Array frame -> the frame as received
+ *
+ * @return object { sender_id, counter_bytes, inner } or null when the frame is not a valid frame of this client
+ */
+function keys__media_decrypt_frame(session_layer, stream, frame)
+{
+    if (session_layer == null || !(frame instanceof Uint8Array) || frame.length <= MEDIA_FRAME_OVERHEAD || frame[0] !== MEDIA_FRAME_VERSION)
+    {
+        return null;
+    }
+    let code_offset = frame.length - MEDIA_FRAME_CODE;
+    let expected = keys___hmac_sha256(session_layer.mac_bytes, frame.subarray(0, code_offset));
+    let difference = 0;
+    for (let i = 0; i < MEDIA_FRAME_CODE; i++)
+    {
+        difference |= expected[i] ^ frame[code_offset + i];
+    }
+    if (difference !== 0)
+    {
+        return null;
+    }
+    let body = keys__aes_ctr(session_layer.key_bytes, keys__media_session_block(frame.subarray(1, MEDIA_FRAME_HEADER), MEDIA_DIRECTION_FROM_SERVER, stream), frame.subarray(MEDIA_FRAME_HEADER, code_offset));
+    return {
+        sender_id: (body[0] | (body[1] << 8) | (body[2] << 16) | (body[3] << 24)) >>> 0,
+        counter_bytes: body.slice(4, MEDIA_BODY_HEADER),
+        inner: body.subarray(MEDIA_BODY_HEADER)
+    };
 }
 
 // channel-tree.js is embedded in template.html along with the other client files, and in the node bundle
 // it holds the lookups over g_channel_list, g_client_list, g_icons and g_tags, the html of a client row,
 // and the avatars on those rows (the cache, the lazy loading queue and the prefetch after joining)
 // messages.js and ui.js call it while rendering the tree
+
+// Keep the row the user is looking at in the same place when server updates add
+// or remove rows above it. If the current channel is outside the visible area,
+// keep the first visible row instead, so reading another channel still works.
+function channel_tree__apply_server_update(handler, message)
+{
+    let container = typeof document === "undefined" ? null : document.getElementById("channel-list-container");
+    let anchors = [];
+    if (container != null && container.clientHeight > 0)
+    {
+        let viewport = container.getBoundingClientRect();
+        let rows = container.querySelectorAll(".single-channel, .connected-client");
+        for (let row of rows)
+        {
+            let bounds = row.getBoundingClientRect();
+            if (bounds.height <= 0 || bounds.bottom <= viewport.top || bounds.top >= viewport.bottom)
+            {
+                continue;
+            }
+            let attribute = row.classList.contains("single-channel") ? "data-channel-id" : "data-connected-client-id";
+            let id = row.getAttribute(attribute);
+            let anchor = { attribute: attribute, id: id, top: bounds.top };
+            if (attribute === "data-channel-id" && Number(id) === g_current_channel_id)
+            {
+                anchors.unshift(anchor);
+            }
+            else
+            {
+                anchors.push(anchor);
+            }
+        }
+    }
+    try
+    {
+        return handler.call(server_msg, message);
+    }
+    finally
+    {
+        for (let anchor of anchors)
+        {
+            let row = container.querySelector('[' + anchor.attribute + '="' + anchor.id + '"]');
+            if (row == null || row.getBoundingClientRect().height <= 0)
+            {
+                continue;
+            }
+            container.scrollTop += row.getBoundingClientRect().top - anchor.top;
+            break;
+        }
+    }
+}
+
+// Remove every copy of a client row and its list entry. Repeated connection
+// notices must not leave an older copy behind when that client disconnects.
+function channel_tree__forget_client(client_id)
+{
+    client_id = Number(client_id);
+    if (typeof document !== "undefined")
+    {
+        for (let row of document.querySelectorAll('.connected-client[data-connected-client-id="' + client_id + '"]'))
+        {
+            row.remove();
+        }
+    }
+    g_map_client_id_to_array_index.clear();
+    let kept = 0;
+    for (let client of g_client_list)
+    {
+        if (client.client_id !== client_id)
+        {
+            g_client_list[kept] = client;
+            g_map_client_id_to_array_index.set(client.client_id, kept);
+            kept++;
+        }
+    }
+    g_client_list.length = kept;
+}
 
 // state private to this file
 var PREFETCH_AVATARS_AUTOMATICALLY = true;
@@ -15253,11 +16450,11 @@ function channel_tree__get_tag_by_tag_id(tag_id)
 
 /**
  * @brief the direct children of a parent channel
- *        pass g_ROOT_LEVEL_PARENT_SENTINEL to get the root channels (those are matched by their
+ *        pass g_ROOT_LEVEL_PARENT_MARKER (the marker value that stands for the root level) to get the root channels (those are matched by their
  *        is_root_channel flag, not by parent id)
  *
  * @param array channels -> the channel list to search
- * @param number parent_channel_id -> the parent, or the sentinel for the roots
+ * @param number parent_channel_id -> the parent, or the marker value for the roots
  *
  * @return array the child channel objects
  */
@@ -15266,7 +16463,7 @@ function channel_tree__get_channels_by_channel_parent_id(channels, parent_channe
     let result = [];
     for (var i = 0; i < channels.length; i++)
     {
-        if (parent_channel_id == g_ROOT_LEVEL_PARENT_SENTINEL)
+        if (parent_channel_id == g_ROOT_LEVEL_PARENT_MARKER)
         {
             // root channels no longer carry a usable parent id (uint64 has no -1),
             // so match them by the explicit is_root_channel flag sent by the server
@@ -15574,7 +16771,7 @@ function channel_tree__get_stored_client_by_alias(alias)
 // then its subchannels' subtrees), so new items are inserted relative to these anchors
 
 /**
- * @brief whether a channel is another channel itself or sits anywhere below it
+ * @brief whether a channel is another channel itself or is anywhere below it
  *
  * @param number child_channel_id -> the channel to test
  * @param number ancestor_channel_id -> the candidate ancestor
@@ -15772,6 +16969,8 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                         </div>\n\
                         <p>]</p>\n\
                     </div>\n\
+                    <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
+                    <span class=\"client-video-watching-icon\" data-client-id=\"" + client_id + "\" title=\"watching the stream\" style=\"display: none;\"></span>\n\
                     <div class='client-tags' id =\"client-tags-" + client_id + "\">\n\
                     </div>\n\
                 </div>";
@@ -15801,6 +17000,8 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                         </div>\n\
                         <p>]</p>\n\
                     </div>\n\
+                    <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
+                    <span class=\"client-video-watching-icon\" data-client-id=\"" + client_id + "\" title=\"watching the stream\" style=\"display: none;\"></span>\n\
                     <div class='client-tags' id=\"client-tags-" + client_id + "\">\n\
                     </div>\n\
                     <svg class=\"client-ignore-state\" style=\"margin-left: "+indentation_level * 20+"px; display: "+client_ignore_state_display+";\"  viewBox=\"0 0 100 20\">\n\
@@ -16065,7 +17266,7 @@ function channel_tree__enqueue_all_avatars_for_loading()
 /**
  * @brief queues every connected person whose avatar we do not have yet and drains the queue one request per tick
  *        safe to call repeatedly: already-queued and already-known ids are skipped, the timer is
- *        started once; the strip themes bulk-load through channel_tree__enqueue_all_avatars_for_loading instead
+ *        started once; the member list themes bulk-load through channel_tree__enqueue_all_avatars_for_loading instead
  *
  * @return void
  */
@@ -16073,7 +17274,7 @@ function channel_tree__start_avatar_prefetch()
 {
     if (PREFETCH_AVATARS_AUTOMATICALLY == false || g_server_policy.allow_avatars == false) { return; }
 
-    // the strip themes (simpledark/bluebell) show everybody at once and already bulk-load
+    // the member list themes (simpledark/bluebell) show everybody at once and already bulk-load
     // through channel_tree__enqueue_all_avatars_for_loading; prefetching on top would double the requests
     if (g_avatar.grid_visible == true) { return; }
 
@@ -16189,6 +17390,46 @@ var seen_state_by_context = {};
 // for each, and is sent when the user actually opens it
 var unreceipted_messages_by_sender = {};
 
+/**
+ * @brief Uses the current theme's text style for displayed messages when the local setting is on.
+ * @return void
+ */
+function chat__apply_theme_formatting()
+{
+    let container = document.getElementById("chat-context-container");
+    let sample = null;
+    let paragraph = null;
+    let appearance = null;
+
+    if (container == null || document.body == null)
+    {
+        return;
+    }
+
+    document.body.classList.remove("chat-use-theme-formatting");
+    if (g_use_theme_chat_formatting == false)
+    {
+        return;
+    }
+
+    // Themes set message styles in different places. Read a plain message once,
+    // when this setting or the theme changes, without touching the saved messages.
+    sample = document.createElement("div");
+    sample.className = "single-chat-message";
+    sample.style.cssText = "position: absolute; visibility: hidden; pointer-events: none;";
+    sample.setAttribute("aria-hidden", "true");
+    sample.innerHTML = '<div class="single-chat-message-content"><p class="single-chat-message-content-p">Aa</p></div>';
+    container.appendChild(sample);
+    paragraph = sample.querySelector(".single-chat-message-content-p");
+    appearance = getComputedStyle(paragraph);
+    container.style.setProperty("--chat-theme-font-family", appearance.fontFamily);
+    container.style.setProperty("--chat-theme-font-size", appearance.fontSize);
+    container.style.setProperty("--chat-theme-line-height", appearance.lineHeight);
+    container.style.setProperty("--chat-theme-text-color", appearance.color);
+    sample.remove();
+    document.body.classList.add("chat-use-theme-formatting");
+}
+
 // ---- composing and sending ----
 
 /**
@@ -16291,7 +17532,7 @@ function chat__promote_offline_chat_context_state(client)
 /**
  * @brief clears the upload lock and the progress overlay
  *        the parts loop must not do this itself: it only queues, so releasing there let a second
- *        upload start and wipe the server buffer of the first
+ *        upload start and overwrite the server buffer of the first
  *
  * @return void
  */
@@ -16363,10 +17604,10 @@ function chat__hide_picture_delivery_status()
 /**
  * @brief whether an upload may start now, one at a time
  *        the intent globals are written before chat__send_file_by_parts runs its guard, so a
- *        refused upload relabelled the one already in flight; call sites ask here first and touch
+ *        refused upload relabelled the one already running; call sites ask here first and touch
  *        nothing on refusal
  *
- * @return boolean true when no upload is in flight
+ * @return boolean true when no upload is running
  */
 function chat__can_start_file_upload()
 {
@@ -16574,7 +17815,7 @@ function chat__send_pending_chat_file(receiver_type)
 }
 
 /**
- * @brief the one send path for what sits in the input, for both targets
+ * @brief the one send path for the text in the input, for both targets
  *        "channel" is the current channel (keys already known), "user" the selected person
  *        (encrypted to their public key); a pending file goes first, on its own.
  *        chat__send_chat_message decides the target and the offline cases
@@ -16835,7 +18076,7 @@ function chat__send_direct_chat_message()
 
 /**
  * @brief text to somebody who is not connected: the same encryption as a direct message (their public key came with the offline roster), addressed by alias
- *        the server parks it and hands it over when they return
+ *        the server stores it and delivers it when they connect again
  *
  * @param object offline_contact -> the entry of g_offline_client_list
  *
@@ -17598,8 +18839,8 @@ function chat__render_channel_unread_badge(channel_id)
         badge.classList.add("unread-empty");
     }
 
-    // the strip themes hide the channel tree and show a circle instead; the count
-    // lives on that circle, which is rebuilt by the member-list mirror
+    // the member list themes (simpledark, bluebell) hide the channel tree and show a circle instead; the count
+    // is shown on that circle, which is rebuilt by the member list mirror
     if (typeof UI !== "undefined" && typeof UI.schedule_member_list_sync === "function")
     {
         UI.schedule_member_list_sync();
@@ -17730,10 +18971,356 @@ function chat__render_unread_badge(client_id, is_visible)
     badge.innerHTML = chat__get_unread_count(client_id);
 }
 
+// This file adds a small card below a chat message that contains a website link.
+// The client sends the URL to its chat server, which looks up the page title,
+// description and picture. These requests and replies use the same metadata
+// encryption as channel names and other messages between client and server.
+var g_link_previews =
+{
+    observer: null,
+    timer: null,
+    sequence: 0,
+    messages: new Map(),
+    urls: new Map()
+};
+
+function link_previews__url(value)
+{
+    try
+    {
+        let url = new URL(value);
+        if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password)
+        {
+            return null;
+        }
+        url.hash = "";
+        return url.href.length <= 2048 ? url.href : null;
+    }
+    catch (error)
+    {
+        return null;
+    }
+}
+
+function link_previews__extract(text)
+{
+    let urls = [];
+    let matches = text.match(/https?:\/\/[^\s<>"']+/gi) || [];
+    for (let match of matches)
+    {
+        match = match.replace(/[.,;!?]+$/, "");
+        for (let pair of ["()", "[]", "{}"])
+        {
+            while (match.endsWith(pair[1]) && match.split(pair[1]).length > match.split(pair[0]).length)
+            {
+                match = match.slice(0, -1);
+            }
+        }
+        let url = link_previews__url(match);
+        if (url !== null && !urls.includes(url))
+        {
+            urls.push(url);
+        }
+        if (urls.length === 2)
+        {
+            break;
+        }
+    }
+    return urls;
+}
+
+// Page text is displayed as text, never as HTML supplied by the website. The
+// picture must be image bytes returned by the server; it cannot be a remote
+// address that would make every reader contact the website separately.
+function link_previews__render(paragraph, state)
+{
+    if (state.cards !== null)
+    {
+        state.cards.remove();
+        state.cards = null;
+    }
+    if (!paragraph.isConnected || !g_server_policy.allow_link_previews)
+    {
+        return;
+    }
+    let cards = document.createElement("div");
+    cards.className = "chat-link-previews";
+    for (let url of state.urls)
+    {
+        let entry = g_link_previews.urls.get(url);
+        let result = entry && entry.result;
+        if (!result || result.status !== "ok")
+        {
+            continue;
+        }
+        let card = document.createElement("a");
+        card.className = "chat-link-preview";
+        card.href = url;
+        card.target = "_blank";
+        card.rel = "noopener noreferrer";
+        for (let field of ["site_name", "title", "description"])
+        {
+            let value = typeof result[field] === "string" ? result[field].slice(0, 1024) : "";
+            if (field === "site_name" && !value)
+            {
+                value = new URL(url).hostname;
+            }
+            if (value)
+            {
+                let line = document.createElement("span");
+                line.className = "chat-link-preview-" + field;
+                line.textContent = value;
+                card.appendChild(line);
+            }
+        }
+        if (typeof result.image === "string" && result.image.length <= 350000
+            && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(result.image))
+        {
+            let image = document.createElement("img");
+            image.src = result.image;
+            image.alt = "";
+            image.loading = "lazy";
+            image.addEventListener("load", function()
+            {
+                chat__scroll_chat_to_end(false);
+            });
+            image.addEventListener("error", function()
+            {
+                image.remove();
+            });
+            card.appendChild(image);
+        }
+        cards.appendChild(card);
+    }
+    if (cards.childElementCount > 0)
+    {
+        paragraph.insertAdjacentElement("afterend", cards);
+        state.cards = cards;
+        chat__scroll_chat_to_end(false);
+    }
+}
+
+function link_previews__forget(paragraph)
+{
+    let state = g_link_previews.messages.get(paragraph);
+    if (state)
+    {
+        if (state.cards)
+        {
+            state.cards.remove();
+        }
+        g_link_previews.messages.delete(paragraph);
+    }
+}
+
+function link_previews__scan(paragraph)
+{
+    let text = paragraph.textContent;
+    let previous = g_link_previews.messages.get(paragraph);
+    if (previous && previous.text === text)
+    {
+        return;
+    }
+    link_previews__forget(paragraph);
+    let urls = link_previews__extract(text);
+    if (urls.length === 0)
+    {
+        return;
+    }
+    let state = { text: text, urls: urls, cards: null };
+    g_link_previews.messages.set(paragraph, state);
+    for (let url of urls)
+    {
+        if (!g_link_previews.urls.has(url))
+        {
+            // Bound the stored images and requests even in a very long chat.
+            if (g_link_previews.urls.size >= 64)
+            {
+                let removed = false;
+                for (let [old_url, entry] of g_link_previews.urls)
+                {
+                    if (entry.finished)
+                    {
+                        g_link_previews.urls.delete(old_url);
+                        removed = true;
+                        break;
+                    }
+                }
+                if (!removed)
+                {
+                    continue;
+                }
+            }
+            g_link_previews.urls.set(url, { request_id: null, sent: 0, finished: false, result: null });
+        }
+    }
+    link_previews__render(paragraph, state);
+}
+
+// Send a few requests at a time. A missing reply must not keep the queue stuck
+// forever, for example when the connection drops during a website lookup.
+function link_previews__pump()
+{
+    if (!g_is_authenticated || !g_server_policy.allow_link_previews)
+    {
+        return;
+    }
+    let in_flight = 0;
+    for (let entry of g_link_previews.urls.values())
+    {
+        if (entry.sent && !entry.finished)
+        {
+            if (Date.now() - entry.sent > 90000)
+            {
+                entry.finished = true;
+            }
+            else
+            {
+                in_flight++;
+            }
+        }
+    }
+    if (in_flight >= 4)
+    {
+        return;
+    }
+    for (let [url, entry] of g_link_previews.urls)
+    {
+        if (!entry.sent && !entry.finished)
+        {
+            let needed = false;
+            for (let [paragraph, state] of g_link_previews.messages)
+            {
+                if (paragraph.isConnected && state.urls.includes(url))
+                {
+                    needed = true;
+                    break;
+                }
+            }
+            if (!needed)
+            {
+                g_link_previews.urls.delete(url);
+                continue;
+            }
+            entry.request_id = "preview-" + (++g_link_previews.sequence);
+            entry.sent = Date.now();
+            connection__send_message_object({ message: { type: "resolve_url", request_id: entry.request_id, url: url } });
+            break;
+        }
+    }
+}
+
+function link_previews__resolved(message)
+{
+    if (!message || !g_server_policy.allow_link_previews)
+    {
+        return;
+    }
+    let entry = g_link_previews.urls.get(message.url);
+    if (!entry || entry.finished || !entry.request_id || entry.request_id !== message.request_id)
+    {
+        return;
+    }
+    entry.finished = true;
+    entry.result = message;
+    for (let [paragraph, state] of g_link_previews.messages)
+    {
+        if (state.urls.includes(message.url))
+        {
+            link_previews__render(paragraph, state);
+        }
+    }
+}
+
+function link_previews__reset()
+{
+    if (g_link_previews.observer)
+    {
+        g_link_previews.observer.disconnect();
+        g_link_previews.observer = null;
+    }
+    clearInterval(g_link_previews.timer);
+    g_link_previews.timer = null;
+    for (let paragraph of g_link_previews.messages.keys())
+    {
+        link_previews__forget(paragraph);
+    }
+    g_link_previews.urls.clear();
+}
+
+function link_previews__apply_policy()
+{
+    if (!g_server_policy.allow_link_previews)
+    {
+        link_previews__reset();
+        return;
+    }
+    if (typeof MutationObserver === "undefined" || g_link_previews.observer)
+    {
+        return;
+    }
+    let container = document.getElementById("chat-context-container");
+    if (!container)
+    {
+        return;
+    }
+    let selector = ".single-chat-message-content-p";
+    g_link_previews.observer = new MutationObserver(function(changes)
+    {
+        for (let paragraph of g_link_previews.messages.keys())
+        {
+            if (!container.contains(paragraph))
+            {
+                link_previews__forget(paragraph);
+            }
+        }
+        let paragraphs = new Set();
+        for (let change of changes)
+        {
+            let target = change.target.nodeType === 1 ? change.target : change.target.parentElement;
+            let paragraph = target && target.closest(selector);
+            if (paragraph)
+            {
+                paragraphs.add(paragraph);
+            }
+            for (let node of change.addedNodes)
+            {
+                if (node.nodeType === 1 && !node.closest(".chat-link-previews"))
+                {
+                    if (node.matches(selector))
+                    {
+                        paragraphs.add(node);
+                    }
+                    for (let added of node.querySelectorAll(selector))
+                    {
+                        paragraphs.add(added);
+                    }
+                }
+            }
+        }
+        for (let paragraph of paragraphs)
+        {
+            if (container.contains(paragraph))
+            {
+                link_previews__scan(paragraph);
+            }
+        }
+    });
+    g_link_previews.observer.observe(container, { childList: true, subtree: true, characterData: true });
+    for (let paragraph of container.querySelectorAll(selector))
+    {
+        link_previews__scan(paragraph);
+    }
+    g_link_previews.timer = setInterval(link_previews__pump, 750);
+}
+
 // layout.js is embedded in template.html along with the other client files
 // it is the desktop grid layout engine: column order and widths, the chat-input row and the edit mode,
 // persisted in localStorage under lemon_layout; touch devices keep the legacy layout and skip it
 // main.js wires it at load, ui.js calls it when panels are toggled; the state is g_layout in globals.js
+
+var layout_edit_drag = null;
+var layout_edit_animations = [];
 
 /**
  * @brief restores g_layout.state from localStorage "lemon_layout" when the saved shape is valid
@@ -17750,7 +19337,8 @@ function layout__layout_load_saved_state()
         let saved = JSON.parse(raw);
         if (saved != null && Array.isArray(saved.order) && saved.order.length == 3
             && saved.order.indexOf("channels") != -1 && saved.order.indexOf("chat") != -1
-            && saved.order.indexOf("info") != -1 && saved.input_col != null && saved.input_pos != null)
+            && saved.order.indexOf("info") != -1 && ["channels", "chat", "info"].indexOf(saved.input_col) != -1
+            && ["top", "bottom"].indexOf(saved.input_pos) != -1)
         {
             // a collapsed info column (saved before the 90px minimum existed) looks like
             // the panel was deleted - snap it back to the default width
@@ -17772,18 +19360,22 @@ function layout__layout_save_state()
 }
 
 /**
- * @brief (re)builds the grid templates from g_layout.state and g_is_chat_hidden and pins the panels to their areas
+ * @brief (re)builds the grid templates from g_layout.state and g_is_chat_hidden and assigns the panels to their areas
  *        does not touch the container's display; connect/disconnect owns that
  *
  * @return void
  */
 function layout__layout_apply()
 {
+    if (layout_edit_drag != null && layout_edit_drag.applying == false)
+    {
+        _internal__layout_edit_finish(false, false);
+    }
     if (g_layout.grid_active == false) { return; }
 
     let container = document.getElementById("communication-system-container");
 
-    // fill everything under the head menu: the themes' height:80% left a dead band at
+    // fill everything under the head menu: the themes' height:80% left an empty band at
     // the bottom (the legacy layout covered it only by overflowing past the container)
     let head_menu = document.getElementById("communication-system-head-menu");
     container.style.height = "calc(100vh - " + ((head_menu != null) ? head_menu.offsetHeight : 30) + "px)";
@@ -17794,8 +19386,7 @@ function layout__layout_apply()
         order = order.filter(function(col) { return col != "chat"; });
     }
 
-    // the input row lives inside the chat column, because the composer must align with the
-    // chat panel above it - same left edge, same right edge, in every theme
+    // The message box shares the width of whichever column it is attached to.
     let row_a = [], row_b = [];
     for (let i = 0; i < order.length; i++)
     {
@@ -17835,7 +19426,7 @@ function layout__layout_apply()
         panel.style.left = "0px";
     }
 
-    // no left inset here: the input sits in the chat column, so the corner mic button is
+    // no left inset here: the input is in the chat column, so the corner mic button is
     // outside it and the composer starts flush with the chat panel's edge
     g_layout.panels.input.style.paddingLeft = "";
 
@@ -17950,134 +19541,490 @@ function layout__layout_column_drag_stop()
     document.documentElement.removeEventListener("mouseup", layout__layout_column_drag_stop, false);
 }
 
-// ---- layout-edit mode: drag whole panels to re-arrange, then lock ----
+// ---- Drag panels to preview a layout, then release to keep it. ----
 
 /**
- * @brief toggles layout-edit mode (body attribute + button label); leaving it saves the layout and clears any in-progress panel drag
- *
- * @return void
+ * @brief Turns panel rearranging on or off. Leaving it cancels an unfinished move.
  */
 function layout__layout_edit_toggle()
 {
+    let button = document.getElementById("layout-edit-button");
+
+    _internal__layout_edit_finish(false, false);
     g_layout.edit_active = !g_layout.edit_active;
     document.body.setAttribute("data-layout-edit", g_layout.edit_active ? "1" : "0");
-    document.getElementById("layout-edit-button").value = g_layout.edit_active ? "lock layout" : "layout";
-    if (g_layout.edit_active == false)
-    {
-        layout__layout_save_state();
-        layout__layout_edit_clear_highlight();
-        g_layout.edit_dragged = null;
-    }
+    button.value = g_layout.edit_active ? "lock layout" : "layout";
+    button.setAttribute("aria-pressed", g_layout.edit_active ? "true" : "false");
+    button.title = g_layout.edit_active
+        ? "drag panels to rearrange them; release to save, Escape to cancel; click here to lock"
+        : "rearrange the panels";
 }
 
 /**
- * @brief which layout panel an event landed in
- *
- * @param object e -> the event
- *
- * @return string|null "channels", "chat", "info" or "input", null when outside all four
+ * @brief Finds the panel under the mouse.
+ * @param object e -> Mouse event.
+ * @return string|null Panel name, or null outside the panels.
  */
 function layout__layout_panel_name_from_event(e)
 {
     let names = ["channels", "chat", "info", "input"];
-    for (let i = 0; i < names.length; i++)
+    let i;
+
+    for (i = 0; i < names.length; i++)
     {
-        if (g_layout.panels[names[i]].contains(e.target)) { return names[i]; }
+        if (g_layout.panels[names[i]].contains(e.target))
+        {
+            return names[i];
+        }
     }
     return null;
 }
 
 /**
- * @brief removes the dragging and drop-target highlight classes from all four panels
- *
- * @return void
+ * @brief Removes the appearance used while moving a panel.
  */
 function layout__layout_edit_clear_highlight()
 {
     let names = ["channels", "chat", "info", "input"];
-    for (let i = 0; i < names.length; i++)
+    let i;
+
+    for (i = 0; i < names.length; i++)
     {
-        g_layout.panels[names[i]].classList.remove("layout-drop-target");
         g_layout.panels[names[i]].classList.remove("layout-dragging");
+    }
+    document.body.removeAttribute("data-layout-dragging");
+}
+
+/**
+ * @brief Copies the layout without sharing its column order array.
+ * @param object state -> Layout to copy.
+ * @return object Independent layout state.
+ */
+function _internal__layout_edit_copy_state(state)
+{
+    return Object.assign({}, state, { order: state.order.slice() });
+}
+
+/**
+ * @brief Reads all panel positions before any styles are changed.
+ * @return object Panel rectangles indexed by name.
+ */
+function _internal__layout_edit_boxes()
+{
+    let boxes = {};
+    let name;
+
+    for (name of ["channels", "chat", "info", "input"])
+    {
+        boxes[name] = g_layout.panels[name].getBoundingClientRect();
+    }
+    return boxes;
+}
+
+/**
+ * @brief Releases a completed panel animation.
+ * @param object e -> Animation completion event.
+ */
+function _internal__layout_edit_animation_finished(e)
+{
+    let index = layout_edit_animations.indexOf(e.target);
+
+    if (index != -1)
+    {
+        layout_edit_animations.splice(index, 1);
     }
 }
 
 /**
- * @brief edit mode: starts dragging the panel under the cursor and marks it visually
- *
- * @param object e -> the mouse event
- *
- * @return void
+ * @brief Stops earlier panel movement before measuring the new layout.
+ */
+function _internal__layout_edit_stop_animations()
+{
+    let animations = layout_edit_animations;
+    let animation;
+
+    layout_edit_animations = [];
+    for (animation of animations)
+    {
+        animation.cancel();
+    }
+}
+
+/**
+ * @brief Slides panels from their old screen positions into the new grid.
+ * @param object before -> Positions before changing the grid.
+ * @param object after -> New grid positions.
+ * @param string|null dragged -> Panel following the mouse, if any.
+ */
+function _internal__layout_edit_animate(before, after, dragged)
+{
+    let name;
+    let panel;
+    let dx;
+    let dy;
+    let animation;
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+    {
+        return;
+    }
+    for (name of ["channels", "chat", "info", "input"])
+    {
+        panel = g_layout.panels[name];
+        if (name == dragged || before[name].width == 0 || after[name].width == 0 || typeof panel.animate != "function")
+        {
+            continue;
+        }
+        dx = before[name].left - after[name].left;
+        dy = before[name].top - after[name].top;
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1)
+        {
+            continue;
+        }
+        animation = panel.animate(
+        [
+            { translate: dx + "px " + dy + "px" },
+            { translate: "0px 0px" }
+        ], { duration: 180, easing: "ease-out" });
+        animation.onfinish = _internal__layout_edit_animation_finished;
+        layout_edit_animations.push(animation);
+    }
+}
+
+/**
+ * @brief Removes the mouse offset so the panel's grid position can be measured.
+ * @param object drag -> Current panel move.
+ */
+function _internal__layout_edit_restore_translate(drag)
+{
+    let style = g_layout.panels[drag.source].style;
+
+    if (drag.translate == "")
+    {
+        style.removeProperty("translate");
+    }
+    else
+    {
+        style.setProperty("translate", drag.translate, drag.translate_priority);
+    }
+}
+
+/**
+ * @brief Keeps the grabbed point under the mouse and marks the intended position.
+ * @param object drag -> Current panel move and mouse position.
+ */
+function _internal__layout_edit_position(drag)
+{
+    let box = drag.boxes[drag.source];
+    let container = document.getElementById("communication-system-container");
+    let dx = drag.x - box.left - drag.grab_x * box.width;
+    let dy = drag.y - box.top - drag.grab_y * box.height;
+
+    g_layout.panels[drag.source].style.setProperty("translate", dx + "px " + dy + "px", "important");
+    drag.placeholder.hidden = !drag.valid;
+    drag.placeholder.style.left = (box.left - drag.container_rect.left - container.clientLeft + container.scrollLeft) + "px";
+    drag.placeholder.style.top = (box.top - drag.container_rect.top - container.clientTop + container.scrollTop) + "px";
+    drag.placeholder.style.width = box.width + "px";
+    drag.placeholder.style.height = box.height + "px";
+}
+
+/**
+ * @brief Chooses a column position, or a top or bottom position for the message box.
+ * @param object drag -> Current panel move with unanimated grid positions.
+ * @return object Layout preview for the current mouse position.
+ */
+function _internal__layout_edit_next_state(drag)
+{
+    let next = _internal__layout_edit_copy_state(g_layout.state);
+    let columns = [];
+    let remaining;
+    let name;
+    let box;
+    let center = drag.x + (0.5 - drag.grab_x) * drag.source_width;
+    let index = 0;
+    let distance;
+    let nearest = Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+
+    for (name of next.order)
+    {
+        box = drag.boxes[name];
+        if (box.width > 0 && box.height > 0)
+        {
+            columns.push(name);
+            top = Math.min(top, box.top);
+            bottom = Math.max(bottom, box.bottom);
+        }
+    }
+    if (drag.source == "input")
+    {
+        top = Math.min(top, drag.boxes.input.top);
+        bottom = Math.max(bottom, drag.boxes.input.bottom);
+        for (name of columns)
+        {
+            box = drag.boxes[name];
+            distance = Math.max(box.left - drag.x, 0, drag.x - box.right);
+            if (distance < nearest)
+            {
+                nearest = distance;
+                next.input_col = name;
+            }
+        }
+        next.input_pos = drag.y < (top + bottom) / 2 ? "top" : "bottom";
+    }
+    else
+    {
+        remaining = columns.filter(function(column)
+        {
+            return column != drag.source;
+        });
+        for (name of remaining)
+        {
+            box = drag.boxes[name];
+            if (center > box.left + box.width / 2)
+            {
+                index++;
+            }
+        }
+        remaining.splice(index, 0, drag.source);
+        // Keep a hidden chat column in its saved position.
+        index = 0;
+        next.order = next.order.map(function(column)
+        {
+            if (columns.indexOf(column) != -1)
+            {
+                return remaining[index++];
+            }
+            return column;
+        });
+    }
+    return next;
+}
+
+/**
+ * @brief Updates the live layout at most once per screen refresh.
+ */
+function _internal__layout_edit_frame()
+{
+    let drag = layout_edit_drag;
+    let container = document.getElementById("communication-system-container");
+    let rect;
+    let next;
+    let before;
+
+    if (drag == null)
+    {
+        return;
+    }
+    drag.frame = 0;
+    rect = container.getBoundingClientRect();
+    if (g_is_chat_hidden != drag.chat_hidden || getComputedStyle(container).display != "grid"
+        || Math.abs(rect.left - drag.container_rect.left) > 1 || Math.abs(rect.top - drag.container_rect.top) > 1
+        || Math.abs(rect.width - drag.container_rect.width) > 1 || Math.abs(rect.height - drag.container_rect.height) > 1)
+    {
+        _internal__layout_edit_finish(false, false);
+        return;
+    }
+    if (!drag.started)
+    {
+        if (Math.hypot(drag.x - drag.start_x, drag.y - drag.start_y) < 6)
+        {
+            return;
+        }
+        drag.started = true;
+        g_layout.panels[drag.source].classList.add("layout-dragging");
+        document.body.setAttribute("data-layout-dragging", "1");
+        drag.placeholder = document.createElement("div");
+        drag.placeholder.className = "layout-drop-placeholder";
+        drag.placeholder.setAttribute("data-label", "Drop here");
+        drag.placeholder.setAttribute("aria-hidden", "true");
+        container.appendChild(drag.placeholder);
+    }
+    drag.valid = drag.x >= rect.left && drag.x <= rect.right && drag.y >= rect.top && drag.y <= rect.bottom;
+    if (drag.valid)
+    {
+        next = _internal__layout_edit_next_state(drag);
+        if (next.order.join() != g_layout.state.order.join() || next.input_col != g_layout.state.input_col || next.input_pos != g_layout.state.input_pos)
+        {
+            before = _internal__layout_edit_boxes();
+            _internal__layout_edit_stop_animations();
+            _internal__layout_edit_restore_translate(drag);
+            g_layout.state = next;
+            drag.applying = true;
+            layout__layout_apply();
+            drag.applying = false;
+            drag.boxes = _internal__layout_edit_boxes();
+            _internal__layout_edit_animate(before, drag.boxes, drag.source);
+        }
+    }
+    _internal__layout_edit_position(drag);
+}
+
+/**
+ * @brief Saves a completed move or restores the layout from before the drag.
+ * @param boolean commit -> Keep the preview when released inside the layout.
+ * @param boolean animate -> Slide panels into their final positions.
+ */
+function _internal__layout_edit_finish(commit, animate)
+{
+    let drag = layout_edit_drag;
+    let before;
+
+    if (drag == null)
+    {
+        return;
+    }
+    before = _internal__layout_edit_boxes();
+    cancelAnimationFrame(drag.frame);
+    _internal__layout_edit_stop_animations();
+    _internal__layout_edit_restore_translate(drag);
+    if (drag.placeholder != null)
+    {
+        drag.placeholder.remove();
+    }
+    layout_edit_drag = null;
+    g_layout.edit_dragged = null;
+    layout__layout_edit_clear_highlight();
+    document.removeEventListener("keydown", _internal__layout_edit_cancel);
+    document.removeEventListener("visibilitychange", _internal__layout_edit_cancel);
+    window.removeEventListener("blur", _internal__layout_edit_cancel);
+    window.removeEventListener("resize", _internal__layout_edit_cancel);
+    if (!commit)
+    {
+        g_layout.state = drag.original;
+    }
+    layout__layout_apply();
+    if (drag.started && animate)
+    {
+        _internal__layout_edit_animate(before, _internal__layout_edit_boxes(), null);
+    }
+    if (drag.started && commit)
+    {
+        layout__layout_save_state();
+    }
+}
+
+/**
+ * @brief Cancels when Escape is pressed or the browser view changes.
+ * @param object e -> Keyboard, visibility, resize or focus event.
+ */
+function _internal__layout_edit_cancel(e)
+{
+    if (e.type == "keydown" && e.key != "Escape")
+    {
+        return;
+    }
+    if (e.type == "visibilitychange" && !document.hidden)
+    {
+        return;
+    }
+    _internal__layout_edit_finish(false, e.type == "keydown");
+}
+
+/**
+ * @brief Remembers the grabbed panel and its starting layout.
+ * @param object e -> Mouse press inside the layout.
  */
 function layout__layout_edit_mousedown(e)
 {
-    if (g_layout.edit_active == false || g_layout.grid_active == false) { return; }
-    let name = layout__layout_panel_name_from_event(e);
-    if (name == null) { return; }
+    let name;
+    let container = document.getElementById("communication-system-container");
+    let boxes;
+    let box;
+    let style;
+
+    if (e.button != 0 || !g_layout.edit_active || !g_layout.grid_active || getComputedStyle(container).display != "grid")
+    {
+        return;
+    }
+    name = layout__layout_panel_name_from_event(e);
+    if (name == null)
+    {
+        return;
+    }
+    _internal__layout_edit_finish(false, false);
+    _internal__layout_edit_stop_animations();
+    boxes = _internal__layout_edit_boxes();
+    box = boxes[name];
+    if (box.width == 0 || box.height == 0)
+    {
+        return;
+    }
+    style = g_layout.panels[name].style;
+    layout_edit_drag =
+    {
+        source: name,
+        original: _internal__layout_edit_copy_state(g_layout.state),
+        boxes: boxes,
+        container_rect: container.getBoundingClientRect(),
+        chat_hidden: g_is_chat_hidden,
+        x: e.clientX,
+        y: e.clientY,
+        start_x: e.clientX,
+        start_y: e.clientY,
+        grab_x: (e.clientX - box.left) / box.width,
+        grab_y: (e.clientY - box.top) / box.height,
+        source_width: box.width,
+        translate: style.getPropertyValue("translate"),
+        translate_priority: style.getPropertyPriority("translate"),
+        frame: 0,
+        started: false,
+        applying: false,
+        valid: false,
+        placeholder: null
+    };
     g_layout.edit_dragged = name;
-    g_layout.panels[name].classList.add("layout-dragging");
+    document.addEventListener("keydown", _internal__layout_edit_cancel);
+    document.addEventListener("visibilitychange", _internal__layout_edit_cancel);
+    window.addEventListener("blur", _internal__layout_edit_cancel);
+    window.addEventListener("resize", _internal__layout_edit_cancel);
     e.preventDefault();
     e.stopPropagation();
 }
 
 /**
- * @brief edit mode: highlights the panel currently hovered over as the drop target
- *
- * @param object e -> the mouse event
- *
- * @return void
+ * @brief Queues the next live preview while the left mouse button is held.
+ * @param object e -> Mouse movement.
  */
 function layout__layout_edit_mousemove(e)
 {
-    if (g_layout.edit_dragged == null) { return; }
-    let names = ["channels", "chat", "info", "input"];
-    for (let i = 0; i < names.length; i++) { g_layout.panels[names[i]].classList.remove("layout-drop-target"); }
-    let over = layout__layout_panel_name_from_event(e);
-    if (over != null && over != g_layout.edit_dragged)
+    if (layout_edit_drag == null)
     {
-        g_layout.panels[over].classList.add("layout-drop-target");
+        return;
     }
+    if ((e.buttons & 1) == 0)
+    {
+        _internal__layout_edit_finish(false, false);
+        return;
+    }
+    layout_edit_drag.x = e.clientX;
+    layout_edit_drag.y = e.clientY;
+    if (layout_edit_drag.frame == 0)
+    {
+        layout_edit_drag.frame = requestAnimationFrame(_internal__layout_edit_frame);
+    }
+    e.preventDefault();
 }
 
 /**
- * @brief edit mode drop: swaps two columns, or parks the input row in a column (dropping it on its own column flips top/bottom), then re-applies the grid
- *
- * @param object e -> the mouse event
- *
- * @return void
+ * @brief Finishes the preview at the release position and saves a valid drop.
+ * @param object e -> Mouse release.
  */
 function layout__layout_edit_mouseup(e)
 {
-    if (g_layout.edit_dragged == null) { return; }
-    let source = g_layout.edit_dragged;
-    let target = layout__layout_panel_name_from_event(e);
-    g_layout.edit_dragged = null;
-    layout__layout_edit_clear_highlight();
-    if (target == null || target == source) { return; }
-
-    if (source == "input" || target == "input")
+    if (layout_edit_drag == null || e.button != 0)
     {
-        // moving the input row: dropping it on a column parks it there; dropping it on
-        // the column it already lives in flips it between top and bottom
-        let col = (source == "input") ? target : source;
-        if (g_layout.state.input_col == col)
-        {
-            g_layout.state.input_pos = (g_layout.state.input_pos == "top") ? "bottom" : "top";
-        }
-        else
-        {
-            g_layout.state.input_col = col;
-        }
+        return;
     }
-    else
+    cancelAnimationFrame(layout_edit_drag.frame);
+    layout_edit_drag.x = e.clientX;
+    layout_edit_drag.y = e.clientY;
+    _internal__layout_edit_frame();
+    if (layout_edit_drag != null)
     {
-        // two columns: swap their places
-        let a = g_layout.state.order.indexOf(source);
-        let b = g_layout.state.order.indexOf(target);
-        g_layout.state.order[a] = target;
-        g_layout.state.order[b] = source;
+        _internal__layout_edit_finish(layout_edit_drag.valid, true);
     }
-    layout__layout_apply();
 }
 
 // voice.js is embedded in template.html along with the other client files
@@ -18256,7 +20203,7 @@ function voice__process_stop_sending_audio()
 }
 
 /**
- * @brief the actual stop: disables the mic track (the capture graph stays wired) and reports microphone_usage=2 to the server
+ * @brief the actual stop: disables the mic track (the capture graph stays connected) and reports microphone_usage=2 to the server
  *
  * @return void
  */
@@ -18374,7 +20321,15 @@ function voice__probe_webrtc_udp_and_warn()
  */
 async function voice__webrtc_datachannel_connection_check(is_this_reconnect = false)
 {
-    // voice lives in the webview only; node has no webrtc and must never enter this.
+    audio_transport__start();
+    // the datachannel is needed for voice over webrtc, as the fallback of a websocket that does not come up, or for video
+    if (audio_transport__wants_webrtc() === false)
+    {
+        g_is_webrtc_datachannel_check_running = false;
+        return;
+    }
+
+    // voice runs in the webview only; node has no webrtc and must never enter this.
     // the caller set the running flag, so it must be dropped here too
     if (typeof RTCPeerConnection === "undefined")
     {
@@ -18382,16 +20337,21 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
         return;
     }
 
-    // an unordered, unreliable datachannel (maxRetransmits 0): a udp-like pipe between this client
+    // an unordered, unreliable datachannel (maxRetransmits 0): a udp-like connection between this client
     // and the server only, never between clients, so nothing here is peer to peer
 
     while (true)
     {
         console.log("voice__webrtc_datachannel_connection_check ran");
+        if (audio_transport__wants_webrtc() === false)
+        {
+            g_is_webrtc_datachannel_check_running = false;
+            break;
+        }
 
         if (g_is_voice_chat_allowed_by_server == true && g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
         {
-            // one throw here must not kill the loop: a dead loop leaves the running flag
+            // one exception here must not end the loop: a stopped loop leaves the running flag
             // stranded true, which blocks every future re-create until the app restarts
             try
             {
@@ -18417,7 +20377,11 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
             // whether the browser is even capable of direct udp before retrying forever
             if (g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
             {
-                voice__probe_webrtc_udp_and_warn();
+                // with a websocket as the fallback the warning about blocked udp is not needed
+                if (g_audio_transport.mode === "webrtc" && g_server_policy.is_audio_over_websocket_allowed !== true)
+                {
+                    voice__probe_webrtc_udp_and_warn();
+                }
             }
 
             // the server refused for a while (10 attempts never connected): wait it out here instead
@@ -18460,9 +20424,9 @@ function voice__send_sdp_answer_to_server(value)
 }
 
 /**
- * @brief replaces g_peer_connection_with_server with a fresh RTCPeerConnection wired to the webrtc handlers
- *        the replaced one is closed, since an abandoned-but-open pc kept its ice agent alive and
- *        hijacked state with zombie events; g_iceconfig carries the TURN server exactly once
+ * @brief replaces g_peer_connection_with_server with a new RTCPeerConnection with the webrtc handlers attached
+ *        the replaced one is closed, since an abandoned but open pc kept its ice agent alive and
+ *        overwrote the state with events of the replaced connection; g_iceconfig carries the TURN server exactly once
  *
  * @param boolean is_this_reconnect -> true when a previous channel existed
  *
@@ -18470,8 +20434,8 @@ function voice__send_sdp_answer_to_server(value)
  */
 function voice__create_new_peer_connection_object_for_use(is_this_reconnect = false)
 {
-    // close the replaced pc: an abandoned-but-open pc kept its ice agent and its
-    // 'datachannel' listener alive, hijacking state with zombie events and slowly
+    // close the replaced pc: an abandoned but open pc kept its ice agent and its
+    // 'datachannel' listener alive, overwriting the state with events of the replaced connection and slowly
     // eating into the browser's peer connection cap
     if (g_peer_connection_with_server != null)
     {
@@ -18487,6 +20451,8 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
     }
 
     g_datachannel = null;
+    g_video_datachannel = null;
+    g_is_video_datachannel_connected = false;
     g_peer_connection_with_server = null;
 
     // added when missing rather than keyed on is_this_reconnect: the audio_enabled handler
@@ -18505,7 +20471,7 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
         }
     }
 
-    if (is_turn_server_present == false)
+    if (is_turn_server_present == false && g_iceconfig.iceServers.length > 0)
     {
         let turn_server = {
             urls: [
@@ -18530,7 +20496,7 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
 }
 
 /**
- * @brief shows or hides the floating push-to-talk button: touch devices only, never over the connect page, and not when hidden in the local settings
+ * @brief shows or hides the floating push-to-talk button: touch devices only, never without a connection, and not when hidden in the local settings
  *
  * @return void
  */
@@ -18549,10 +20515,8 @@ function voice__update_microphone_button()
         return;
     }
 
-    // the connect screen has nobody to talk to, so the mic has no business floating over it
-    let connect_page = document.getElementById("verification-system");
-
-    if (connect_page != null && connect_page.style.display != "none")
+    // without a connection there is nobody to talk to, so the mic has no business floating over the connect form or the bare page
+    if (g_is_authenticated != true)
     {
         button.style.display = "none";
         return;
@@ -18564,7 +20528,7 @@ function voice__update_microphone_button()
 
 /**
  * @brief requests getUserMedia (with a plain-http explainer when unavailable), builds the mic capture chain once, and reports microphone_usage=2 (enabled, not sending) to the server
- *        a chosen input device rides along as "ideal", so an unplugged device falls back to the default instead of failing
+ *        a chosen input device is requested as "ideal", so an unplugged device falls back to the default instead of failing
  *
  * @return void
  */
@@ -18580,7 +20544,7 @@ function voice__activate_microphone()
 
     let microphone_constraints = { audio: true };
 
-    // a chosen input device rides along as "ideal", because "exact" would fail the whole mic
+    // a chosen input device is requested as "ideal", because "exact" would fail the whole mic
     // activation when that device is unplugged - the browser then falls back to its default
     if (g_selected_microphone_device_id != "")
     {
@@ -18660,7 +20624,7 @@ function voice__activate_microphone()
             // legacy always-on used to hide the button and open the mic right here;
             // continuous mode is a tap-toggle now, so the button stays and stays quiet
 
-            // desktop continuous armed the flag before getUserMedia resolved, so the
+            // desktop continuous mode set the flag before getUserMedia resolved, so the
             // start call found g_is_microphone_enabled false and returned silently
             if (g_is_continuous_transmission_active == true)
             {
@@ -18811,7 +20775,7 @@ function voice__process_audio_state_of_single_client(client)
 
         document.getElementById("client-audio-state-" + client.client_id).classList.add("client-audio-state-completely-disabled");
 
-        if (client.client_id == g_local_client_id)
+        if (client.client_id == g_local_client_id && audio_transport__active() == null)
         {
             g_is_microphone_available = false;
             voice__update_microphone_button();
@@ -18973,22 +20937,1400 @@ function voice__chunk_buffers(arrayBuffer, chunkLength)
     return chunkedBuffers;
 }
 
+// voice travels either over the webrtc datachannel or over a second websocket on the chat port.
+// mode is the connection this client prefers, "webrtc" or "websocket", from the user's preference
+// (g_audio_connection_preference) within what the server allows (g_server_policy); "none" only when
+// the server serves no audio connection at all, which is the server's decision, never the client's.
+// when the preferred connection has not come up for AUDIO_TRANSPORT_FALLBACK_AFTER_MS, the other
+// allowed one is tried as well, and whichever is up carries the audio (audio_transport__active).
+// once the preferred one comes up again it takes over. the chat connection negotiates a websocket
+// session; audio packets then use the /audio socket.
+// the server sends an empty frame to an idle audio socket every few seconds and this client answers it,
+// so no timer is needed to keep the socket. a session request that leads to no attached socket is
+// repeated with a growing delay, from AUDIO_TRANSPORT_REQUEST_INTERVAL_MS up to the maximum below.
+// after every attach the client reports its audio state (talking, microphone ready or listening),
+// because the server resets that state when a connection attaches.
+// the data channel is probed with a one-byte frame, which the server echoes, after a few seconds of
+// silence; when nothing comes back for AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS the channel is rebuilt, and
+// the websocket is tried at once, instead of waiting for the browser to notice the lost transport.
+// every frame on either connection is encrypted a second time with this client's two session keys and
+// carries an authentication code, so that a frame on a plain websocket can neither be read nor forged on
+// the network path; keys.js (the block "the encryption of audio and video frames") and media_auth.c on
+// the server explain it. the voice itself stays under the channel keys, which the server does not have.
+var AUDIO_TRANSPORT_FALLBACK_AFTER_MS = 10000;
+var AUDIO_TRANSPORT_REQUEST_INTERVAL_MS = 10000;
+var AUDIO_TRANSPORT_REQUEST_INTERVAL_MAX_MS = 60000;
+var AUDIO_TRANSPORT_DATACHANNEL_PROBE_MS = 5000;
+var AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS = 15000;
+// the largest frame content; with the 29 bytes the encryption adds, a frame stays under the server's limit of 4132 bytes
+var AUDIO_TRANSPORT_MAX_CONTENT_BYTES = 4080;
+
+var g_audio_transport =
+{
+    mode: "webrtc",
+    url: "",
+    socket: null,
+    ready: false,              // the websocket is attached and authenticated
+    pending_until: 0,          // no new session request before this time
+    request_attempts: 0,       // session requests since the last attached socket; sets the delay to the next one
+    preferred_down_since: 0,   // when the preferred connection was last up, or when the attempt began
+    last_received: 0,
+    datachannel_last_received: 0, // the last frame of any kind from the data channel
+    datachannel_last_probe: 0,
+    frame_counter: null,       // counts the frames this client sent; part of every counter block of a frame's encryption (keys.js)
+    timer: null
+};
+
+/**
+ * @brief whether the server has audio on at all: voice or music bot audio
+ *
+ * @return boolean
+ */
+function audio_transport__is_audio_on()
+{
+    return g_server_policy.is_voice_chat_active === true || g_server_policy.is_music_bot_audio_active === true;
+}
+
+function audio_transport__is_datachannel_open()
+{
+    return g_datachannel != null && g_datachannel.readyState === "open";
+}
+
+/**
+ * @brief whether the preferred connection has been down long enough for the other one to be tried
+ *
+ * @return boolean
+ */
+function audio_transport__is_fallback_due()
+{
+    return Date.now() - g_audio_transport.preferred_down_since >= AUDIO_TRANSPORT_FALLBACK_AFTER_MS;
+}
+
+/**
+ * @brief the connection that carries the audio right now
+ *
+ *        the preferred one whenever it is up, otherwise the other one when it is up and the server
+ *        allows voice over it (the fallback time only decides when the other one is established).
+ *        the server relays to a client over its websocket whenever one is attached, so a fallback
+ *        websocket is dropped as soon as the preferred datachannel is back (see audio_transport__tick).
+ *
+ * @return string "webrtc", "websocket" or null
+ */
+function audio_transport__active()
+{
+    let state = g_audio_transport;
+
+    if (state.mode === "none")
+    {
+        return null;
+    }
+
+    if (state.mode === "webrtc")
+    {
+        if (audio_transport__is_datachannel_open())
+        {
+            return "webrtc";
+        }
+        return state.ready ? "websocket" : null;
+    }
+
+    if (state.ready)
+    {
+        return "websocket";
+    }
+
+    if (g_server_policy.is_audio_over_webrtc_allowed === true && audio_transport__is_datachannel_open())
+    {
+        return "webrtc";
+    }
+
+    return null;
+}
+
+/**
+ * @brief whether the datachannel should be kept up: voice over webrtc, the fallback of a websocket that does not come up, or video streaming
+ *
+ * @return boolean
+ */
+function audio_transport__wants_webrtc()
+{
+    let state = g_audio_transport;
+
+    // video keeps the peer connection only while it does not prefer the video websocket (video-transport.js)
+    if (g_server_policy.is_video_streaming_allowed === true
+        && (typeof video_transport__prefers_websocket !== "function" || video_transport__prefers_websocket() === false))
+    {
+        return true;
+    }
+
+    if (state.mode === "webrtc")
+    {
+        return true;
+    }
+
+    return state.mode === "websocket" && g_server_policy.is_audio_over_webrtc_allowed === true
+        && state.ready === false && audio_transport__is_fallback_due();
+}
+
+/**
+ * @brief whether a websocket session should be requested: voice over websocket, or the fallback of a datachannel that does not come up
+ *
+ * @return boolean
+ */
+function audio_transport__wants_websocket()
+{
+    let state = g_audio_transport;
+
+    if (g_server_policy.is_audio_over_websocket_allowed !== true)
+    {
+        return false;
+    }
+
+    if (state.mode === "websocket")
+    {
+        return true;
+    }
+
+    return state.mode === "webrtc" && audio_transport__is_datachannel_open() === false && audio_transport__is_fallback_due();
+}
+
+/**
+ * @brief starts the datachannel connection loop when the datachannel is wanted and no loop runs
+ *
+ * @return void
+ */
+function audio_transport__start_webrtc_if_wanted()
+{
+    // nothing to start while the data channel is up or being set up: the loop would only log and leave
+    if (g_is_webrtc_datachannel_connected === true || audio_transport__is_datachannel_open())
+    {
+        return;
+    }
+    if (audio_transport__wants_webrtc() === false || g_is_webrtc_datachannel_check_running == true
+        || g_is_deep_idle == true || g_is_authenticated == false || g_is_voice_chat_allowed_by_server != true
+        || typeof RTCPeerConnection === "undefined")
+    {
+        return;
+    }
+
+    g_is_webrtc_datachannel_check_running = true;
+    voice__webrtc_datachannel_connection_check(true);
+}
+
+/**
+ * @brief the datachannel opened: a fallback websocket gives way to it, and the microphone controls follow
+ *
+ * @return void
+ */
+function audio_transport__on_datachannel_open()
+{
+    let state = g_audio_transport;
+
+    state.datachannel_last_received = Date.now();
+    state.datachannel_last_probe = 0;
+
+    if (state.mode === "webrtc" && state.ready === true)
+    {
+        utils__custom_log("Audio back on the datachannel");
+        audio_transport__drop_socket();
+    }
+
+    if (audio_transport__active() === "webrtc")
+    {
+        audio_transport__on_ready();
+    }
+}
+
+/**
+ * @brief a frame from the data channel: an answer to a probe (one byte) or audio, which is played
+ *
+ *        the server relays to this client over one connection at a time, its choice, so whatever
+ *        arrives here is played
+ *
+ * @param ArrayBuffer data -> the frame
+ *
+ * @return void
+ */
+function audio_transport__on_datachannel_message(data)
+{
+    g_audio_transport.datachannel_last_received = Date.now();
+
+    if (data instanceof ArrayBuffer && data.byteLength > 1 && g_audio_transport.mode !== "none")
+    {
+        audio_transport__receive(data);
+    }
+}
+
+/**
+ * @brief keeps watch over an open data channel: a probe after a quiet spell, a rebuild when nothing comes back
+ *
+ *        a transport whose udp path died stays "open" in the browser until its consent checks time out,
+ *        which takes about half a minute; the probe shortens that to AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS
+ *
+ * @param number now -> Date.now()
+ *
+ * @return void
+ */
+function audio_transport__probe_datachannel(now)
+{
+    let state = g_audio_transport;
+
+    // a channel seen open before any frame or open callback: the clock starts now
+    if (state.datachannel_last_received === 0)
+    {
+        state.datachannel_last_received = now;
+    }
+    if (now - state.datachannel_last_received > AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS)
+    {
+        audio_transport__restart_datachannel("gave no answer for " + Math.round(AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS / 1000) + " s");
+        return;
+    }
+    if (now - state.datachannel_last_received >= AUDIO_TRANSPORT_DATACHANNEL_PROBE_MS && now - state.datachannel_last_probe >= AUDIO_TRANSPORT_DATACHANNEL_PROBE_MS)
+    {
+        state.datachannel_last_probe = now;
+        try
+        {
+            g_datachannel.send(new Uint8Array(1));
+        }
+        catch (error)
+        {
+            // a channel that refuses the probe is as good as silent; the silence check above takes it from here
+        }
+    }
+}
+
+/**
+ * @brief drops a data channel the server no longer answers on and starts the connection loop for a new one
+ *
+ *        the lost channel is detached first, so its late close event cannot touch the new state. in webrtc
+ *        mode the websocket fallback is due at once: the silence limit already passed.
+ *
+ * @param string reason -> for the log
+ *
+ * @return void
+ */
+function audio_transport__restart_datachannel(reason)
+{
+    let state = g_audio_transport;
+
+    utils__custom_log("Audio datachannel " + reason + "; rebuilding it");
+
+    g_datachannel = null;
+    g_video_datachannel = null;
+    g_is_video_datachannel_connected = false;
+    g_is_webrtc_datachannel_connected = false;
+
+    if (g_peer_connection_with_server != null)
+    {
+        try
+        {
+            g_peer_connection_with_server.close();
+        }
+        catch (error)
+        {
+            console.log("closing the dead peer connection failed: " + error.message);
+        }
+        g_peer_connection_with_server = null;
+    }
+
+    if (state.mode === "webrtc")
+    {
+        state.preferred_down_since = Math.min(state.preferred_down_since, Date.now() - AUDIO_TRANSPORT_FALLBACK_AFTER_MS);
+    }
+
+    audio_transport__start_webrtc_if_wanted();
+    audio_transport__refresh_ui();
+}
+
+/**
+ * @brief picks the audio connection from the user's preference and the server's policy, and applies a change
+ *
+ *        the preference names the first choice; the other allowed connection is the second. a
+ *        websocket that the new choice no longer wants is dropped; the tick and the datachannel
+ *        callbacks then establish the chosen one.
+ *
+ * @return void
+ */
+function audio_transport__select_mode()
+{
+    let previous = g_audio_transport.mode;
+    let is_websocket_allowed = (g_server_policy.is_audio_over_websocket_allowed === true);
+    let is_webrtc_allowed = (g_server_policy.is_audio_over_webrtc_allowed === true);
+    let mode = "none";
+
+    // the preference only orders the two connections; whether audio is served at all is the server's call
+    if (g_audio_connection_preference === "websocket")
+    {
+        mode = is_websocket_allowed ? "websocket" : (is_webrtc_allowed ? "webrtc" : "none");
+    }
+    else
+    {
+        mode = is_webrtc_allowed ? "webrtc" : (is_websocket_allowed ? "websocket" : "none");
+    }
+
+    // audio off on the server: no connection is attempted, so nothing asks the server for one
+    if (audio_transport__is_audio_on() === false)
+    {
+        mode = "none";
+    }
+
+    g_audio_transport.mode = mode;
+
+    if (mode === previous)
+    {
+        return;
+    }
+
+    // no audio at all, or back to the datachannel by choice: the websocket goes. a fallback socket
+    // that is now the chosen connection stays
+    if (g_audio_transport.socket != null && (mode === "none" || (mode === "webrtc" && previous === "websocket")))
+    {
+        audio_transport__drop_socket();
+    }
+
+    g_audio_transport.preferred_down_since = Date.now();
+    g_audio_transport.pending_until = 0;
+    g_audio_transport.request_attempts = 0;
+    audio_transport__start_webrtc_if_wanted();
+    audio_transport__refresh_ui();
+}
+
+/**
+ * @brief stores the user's audio connection preference and applies it
+ *
+ * @param string preference -> "webrtc" or "websocket"
+ *
+ * @return void
+ */
+function audio_transport__set_preference(preference)
+{
+    if (["webrtc", "websocket"].indexOf(preference) < 0)
+    {
+        return;
+    }
+    g_audio_connection_preference = preference;
+    utils__storage_set("lemon_audio_connection", preference);
+    audio_transport__select_mode();
+}
+
+/**
+ * @brief shows or hides the microphone controls according to whether an audio connection is usable now
+ *
+ * @return void
+ */
+function audio_transport__refresh_ui()
+{
+    // the headless node runtime has no webaudio and no microphone controls
+    if (typeof window === "undefined" || (typeof window.AudioContext !== "function" && typeof window.webkitAudioContext !== "function")
+        || document.getElementById("toggle-microphone-label") == null)
+    {
+        return;
+    }
+
+    if (audio_transport__ready())
+    {
+        audio_transport__on_ready();
+        return;
+    }
+
+    g_is_microphone_available = false;
+    voice__update_microphone_button();
+    document.getElementById("toggle-microphone-label").style.display = "none";
+}
+
+/**
+ * @brief reports this client's audio state to the server: talking, microphone ready, or listening only
+ *
+ *        the server sets a client to "listening" when an audio connection attaches and to "audio disabled"
+ *        when its last one drops, so the current state is reported after every attach: a push-to-talk key
+ *        that is still held keeps talking across a handover
+ *
+ * @return void
+ */
+function audio_transport__report_audio_state()
+{
+    let value = 3;  // the microphone_usage values: 1 talking, 2 microphone ready, 3 listening only
+
+    if (g_is_authenticated !== true || g_local_client_id < 0 || g_audio_transport.mode === "none")
+    {
+        return;
+    }
+    if (g_is_microphone_active === true)
+    {
+        value = 1;
+    }
+    else if (g_is_microphone_enabled === true)
+    {
+        value = 2;
+    }
+    connection__send_message_object(
+    {
+        message:
+        {
+            type: "microphone_usage",
+            value: value
+        }
+    });
+}
+
+function audio_transport__hex_bytes(text, length)
+{
+    if (typeof text !== "string" || text.length !== length * 2 || !/^[0-9a-f]+$/i.test(text))
+    {
+        throw new Error("invalid audio session keys");
+    }
+    let bytes = new Uint8Array(length);
+    for (let i = 0; i < length; i++)
+    {
+        bytes[i] = parseInt(text.substring(i * 2, i * 2 + 2), 16);
+    }
+    return bytes;
+}
+
+function audio_transport__ready()
+{
+    return audio_transport__active() != null;
+}
+
+function audio_transport__drop_socket()
+{
+    let socket = g_audio_transport.socket;
+    g_audio_transport.socket = null;
+    g_audio_transport.ready = false;
+    if (socket != null)
+    {
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.close();
+    }
+}
+
+function audio_transport__reset()
+{
+    if (g_audio_transport.timer != null)
+    {
+        clearInterval(g_audio_transport.timer);
+    }
+    g_audio_transport.timer = null;
+    g_audio_transport.pending_until = 0;
+    g_audio_transport.request_attempts = 0;
+    g_audio_transport.preferred_down_since = 0;
+    audio_transport__drop_socket();
+    if (typeof video_transport__reset === "function")
+    {
+        video_transport__reset();
+    }
+}
+
+function audio_transport__send_packet(data)
+{
+    let state = g_audio_transport;
+    if (!state.ready || state.socket == null || state.socket.readyState !== WebSocket.OPEN)
+    {
+        return false;
+    }
+    // The browser owns the TCP queue. Do not add old voice behind a stalled send.
+    if (state.socket.bufferedAmount > 8192)
+    {
+        return false;
+    }
+    state.socket.send(data);
+    return true;
+}
+
+/**
+ * @brief sends one voice frame of this client over the connection that carries the audio right now
+ *
+ *        the frame content ([2 bytes sequence number][opus]) is encrypted with the channel keys, then with
+ *        the server keys, and then a second time with this client's session keys plus an authentication code
+ *        (keys.js explains the layers). every frame gets the next value of the frame counter, so no two
+ *        frames are ever encrypted with the same counter block
+ *
+ * @param Uint8Array sequenced_chunk -> [2 bytes sequence number, least significant first][opus packet]
+ *
+ * @return void
+ */
+function audio_transport__send_voice(sequenced_chunk)
+{
+    let state = g_audio_transport;
+    let session_layer = keys__media_session_layer();
+    let active = audio_transport__active();
+
+    if (sequenced_chunk == null || sequenced_chunk.byteLength < 2 || sequenced_chunk.byteLength > AUDIO_TRANSPORT_MAX_CONTENT_BYTES
+        || g_is_deep_idle || active == null || session_layer == null || g_current_channel_keys == null || g_local_client_id < 0)
+    {
+        return;
+    }
+    if (state.frame_counter == null)
+    {
+        state.frame_counter = keys__counter_create();
+    }
+    keys__counter_increment(state.frame_counter);
+    let inner = keys__media_apply_inner_layers(g_current_channel_keys, g_local_client_id, state.frame_counter, sequenced_chunk, true);
+    inner = keys__media_apply_inner_layers(keys__media_server_key_layers(), g_local_client_id, state.frame_counter, inner, true);
+    let frame = keys__media_encrypt_frame(session_layer, MEDIA_STREAM_AUDIO, state.frame_counter, keys__media_build_body(g_local_client_id, state.frame_counter, inner));
+    if (frame == null)
+    {
+        return;
+    }
+    g_session.bytes_sent += frame.byteLength;
+    if (active === "websocket")
+    {
+        audio_transport__send_packet(frame);
+    }
+    else
+    {
+        g_datachannel.send(frame);
+    }
+}
+
+function audio_transport__tick()
+{
+    let state = g_audio_transport;
+    let now = Date.now();
+
+    if (!g_is_authenticated || g_is_deep_idle || state.mode === "none")
+    {
+        if (state.socket != null)
+        {
+            audio_transport__drop_socket();
+        }
+        return;
+    }
+
+    if (audio_transport__is_datachannel_open())
+    {
+        audio_transport__probe_datachannel(now);
+    }
+
+    // while the preferred connection is up, the fallback clock stays at now
+    if ((state.mode === "webrtc" && audio_transport__is_datachannel_open()) || (state.mode === "websocket" && state.ready))
+    {
+        state.preferred_down_since = now;
+    }
+
+    if (state.ready)
+    {
+        // a fallback websocket gives way to the preferred datachannel: the server relays over one connection only
+        if (state.mode === "webrtc" && audio_transport__is_datachannel_open())
+        {
+            utils__custom_log("Audio back on the datachannel");
+            audio_transport__drop_socket();
+            audio_transport__refresh_ui();
+            return;
+        }
+        // the server's keepalive frames refresh last_received; a socket without any frame for this long no longer works
+        if (now - state.last_received > 15000)
+        {
+            audio_transport__drop_socket();
+        }
+        return;
+    }
+
+    // a websocket that does not come up: the datachannel is tried after the fallback time
+    audio_transport__start_webrtc_if_wanted();
+
+    if (audio_transport__wants_websocket() === false)
+    {
+        if (state.socket != null)
+        {
+            audio_transport__drop_socket();
+        }
+        return;
+    }
+    if (now < state.pending_until)
+    {
+        return;
+    }
+    if (state.socket != null)
+    {
+        // an attempt that did not attach within the request window
+        audio_transport__drop_socket();
+    }
+    if (g_local_client_id < 0 || !g_is_client_list_retrieved)
+    {
+        return;
+    }
+    // a request that leads nowhere is repeated with a growing delay, so a blocked /audio path costs the
+    // server one session per minute at most; an attached socket resets the delay
+    state.pending_until = now + Math.min(AUDIO_TRANSPORT_REQUEST_INTERVAL_MS * Math.pow(2, state.request_attempts), AUDIO_TRANSPORT_REQUEST_INTERVAL_MAX_MS);
+    state.request_attempts++;
+    connection__send_message_object(
+    {
+        message:
+        {
+            type: "request_audio_websocket"
+        }
+    });
+}
+
+function audio_transport__start()
+{
+    if (typeof window.AudioContext !== "function" && typeof window.webkitAudioContext !== "function")
+    {
+        return;
+    }
+    if (g_audio_transport.timer == null)
+    {
+        g_audio_transport.preferred_down_since = Date.now();
+        g_audio_transport.timer = setInterval(audio_transport__tick, 1000);
+        audio_transport__tick();
+    }
+    // the video connection follows the audio one, so it starts and stops with it (video-transport.js)
+    if (typeof video_transport__start === "function")
+    {
+        video_transport__start();
+    }
+}
+
+function audio_transport__session(message)
+{
+    let state = g_audio_transport;
+    if (state.timer == null || g_is_deep_idle || !g_is_authenticated || state.socket != null
+        || state.mode === "none" || g_server_policy.is_audio_over_websocket_allowed !== true
+        || Date.now() > state.pending_until || message.client_id !== g_local_client_id)
+    {
+        return;
+    }
+    try
+    {
+        let auth_key = audio_transport__hex_bytes(message.auth_key, 32);
+        let ticket = audio_transport__hex_bytes(message.ticket, 16);
+        let url = new URL(state.url);
+        url.pathname = "/audio";
+        url.search = "";
+        url.hash = "";
+        let socket = new WebSocket(url.href);
+        state.socket = socket;
+        socket.binaryType = "arraybuffer";
+        socket.onopen = function()
+        {
+            if (state.socket !== socket)
+            {
+                return;
+            }
+            let hello = new Uint8Array(53);
+            hello[0] = 1;
+            new DataView(hello.buffer).setUint32(1, message.client_id, false);
+            hello.set(ticket, 5);
+            hello.set(keys___hmac_sha256(auth_key, hello.subarray(0, 21)), 21);
+            socket.send(hello);
+        };
+        socket.onmessage = function(event)
+        {
+            if (state.socket !== socket)
+            {
+                return;
+            }
+            try
+            {
+                if (!(event.data instanceof ArrayBuffer))
+                {
+                    throw new Error("expected binary audio");
+                }
+                state.last_received = Date.now();
+                if (!state.ready)
+                {
+                    let acknowledgement = new Uint8Array(event.data);
+                    if (acknowledgement.length !== 49 || acknowledgement[0] !== 2)
+                    {
+                        throw new Error("invalid audio attachment acknowledgement");
+                    }
+                    let tag = keys___hmac_sha256(auth_key, acknowledgement.subarray(0, 17));
+                    let difference = 0;
+                    for (let i = 0; i < 16; i++)
+                    {
+                        difference |= ticket[i] ^ acknowledgement[i + 1];
+                    }
+                    for (let i = 0; i < 32; i++)
+                    {
+                        difference |= tag[i] ^ acknowledgement[i + 17];
+                    }
+                    if (difference !== 0)
+                    {
+                        throw new Error("audio attachment authentication failed");
+                    }
+                    auth_key.fill(0);
+                    state.ready = true;
+                    state.pending_until = 0;
+                    state.request_attempts = 0;
+
+                    // the preferred datachannel came up while this attached: it carries the audio, the socket goes
+                    if (audio_transport__active() !== "websocket")
+                    {
+                        audio_transport__drop_socket();
+                        return;
+                    }
+
+                    utils__custom_log("Audio connected through WebSocket");
+                    audio_transport__on_ready();
+                    if (g_is_microphone_always_on)
+                    {
+                        voice__activate_microphone();
+                    }
+                }
+                else if (event.data.byteLength > 0)
+                {
+                    audio_transport__receive(event.data);
+                }
+                else
+                {
+                    // the server's keepalive on an idle socket: answered at once, no timer involved
+                    audio_transport__send_packet(new Uint8Array(0));
+                }
+            }
+            catch (error)
+            {
+                utils__custom_log("Audio connection rejected a packet: " + error.message);
+                audio_transport__drop_socket();
+            }
+        };
+        socket.onclose = function()
+        {
+            if (state.socket === socket)
+            {
+                // a socket that was attached is requested again soon; one that never attached keeps the delay its request set
+                let was_ready = state.ready;
+                audio_transport__drop_socket();
+                if (was_ready)
+                {
+                    state.pending_until = Date.now() + 3000;
+                }
+                utils__custom_log("Audio WebSocket disconnected; reconnecting");
+            }
+        };
+        socket.onerror = function()
+        {
+            // onclose handles reconnection.
+        };
+    }
+    catch (error)
+    {
+        audio_transport__drop_socket();
+        utils__custom_log("Audio connection failed: " + error.message);
+    }
+}
+
+function audio_transport__on_ready()
+{
+    console.log("datachannelonopen");
+
+    let is_client_existing = channel_tree__get_client_index_in_array_by_client_id(g_local_client_id) != -1;
+
+    // not found
+    if (is_client_existing == false)
+    {
+        return;
+    }
+
+    let target_element = document.getElementById("client-audio-state-" + g_local_client_id);
+
+    if (g_is_client_running_under_touch_device)
+    {
+        g_is_microphone_available = true;
+        voice__update_microphone_button();
+    }
+    else
+    {
+        document.getElementById("toggle-microphone-label").style.display = "block";
+    }
+
+    let local_index = channel_tree__get_client_index_in_array_by_client_id(g_local_client_id);
+
+    if (local_index != -1)
+    {
+        g_client_list[local_index].audio_state = g_is_microphone_active
+            ? G_AUDIO_STATE.PUSH_TO_TALK_ACTIVE : G_AUDIO_STATE.PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS;
+    }
+
+    if (target_element.classList.contains("client-audio-state-completely-disabled"))
+    {
+        document.getElementById("client-audio-state-" + g_local_client_id).classList.remove("client-audio-state-completely-disabled");
+    }
+
+    document.getElementById("client-audio-state-" + g_local_client_id).classList.add("client-audio-state-microphone-disabled");
+
+    // the server reset this client to listening when the connection attached: tell it the real state
+    audio_transport__report_audio_state();
+}
+
+/**
+ * @brief a frame that arrived over the websocket or the data channel: checked, decrypted and handed to the decoder worker
+ *
+ *        first the authentication code is checked and the server's encryption removed (keys.js); that gives the
+ *        sender id and the sender counter. a sender that is muted, ignored, in another channel, or this client
+ *        itself is dropped. then the server keys come off, and either the music bot's keys (a bot) or the
+ *        channel keys (a member). what is left, [2 bytes sequence number][opus], goes to the decoder worker
+ *        behind the sender id
+ *
+ * @param ArrayBuffer buffer -> the frame as received
+ *
+ * @return void
+ */
+function audio_transport__receive(buffer)
+{
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength <= MEDIA_FRAME_OVERHEAD)
+    {
+        return;
+    }
+    let opened = keys__media_decrypt_frame(keys__media_session_layer(), MEDIA_STREAM_AUDIO, new Uint8Array(buffer));
+    if (opened == null)
+    {
+        return;
+    }
+    g_session.bytes_received += buffer.byteLength;
+
+    let client_index = channel_tree__get_client_index_in_array_by_client_id(opened.sender_id);
+    if (client_index == -1 || opened.sender_id == g_local_client_id)
+    {
+        return; // not found
+    }
+    if (g_client_list[client_index].is_muted_by_local_client == true || g_client_list[client_index].is_ignored_by_local_client == true)
+    {
+        return;
+    }
+    // audio from a channel we are not in is a stale straggler (e.g. after a switch): discard
+    if (g_client_list[client_index].channel_id != g_current_channel_id)
+    {
+        return;
+    }
+    let inner = keys__media_apply_inner_layers(keys__media_server_key_layers(), opened.sender_id, opened.counter_bytes, opened.inner, false);
+    let content = null;
+    if (g_client_list[client_index].is_music_bot == true)
+    {
+        content = audio_transport__decrypt_music_bot(g_client_list[client_index], opened.sender_id, opened.counter_bytes, inner);
+    }
+    else if (g_current_channel_keys != null)
+    {
+        content = keys__media_apply_inner_layers(g_current_channel_keys, opened.sender_id, opened.counter_bytes, inner, false);
+    }
+    if (content == null || content.length < 3)
+    {
+        return;
+    }
+    let decoded = new Uint8Array(4 + content.length);
+    new DataView(decoded.buffer).setInt32(0, opened.sender_id, true);
+    decoded.set(content, 4);
+    g_opus_decoder_worker.postMessage({
+        type: "mainthread__add_decrypted_data_to_opus_decoder",
+        value: decoded.buffer
+    }, [decoded.buffer]);
+}
+
+function audio_transport__set_music_bot_key(message)
+{
+    let index = channel_tree__get_client_index_in_array_by_client_id(message.client_id);
+    if (index < 0 || !g_client_list[index].is_music_bot
+        || message.channel_id !== g_current_channel_id || g_client_list[index].channel_id !== message.channel_id)
+    {
+        return;
+    }
+    g_client_list[index].music_bot_keys = message.music_bot_keys;
+    g_client_list[index].music_bot_encryption = message.music_bot_encryption;
+    g_client_list[index].music_bot_key_bytes = null;
+}
+
+/**
+ * @brief removes a music bot's own encryption from a frame content
+ *
+ *        the server encrypts every bot frame with the bot's four keys under the counter block of the bot id
+ *        and the bot's counter (media_auth.c). the four keys reach the client over the encrypted chat
+ *        connection; a client that does not have them yet asks for them, once per second at most
+ *
+ * @param object bot -> the bot's entry in g_client_list
+ * @param number sender_id -> the bot's client id, from the frame
+ * @param Uint8Array counter_bytes -> the bot's counter, from the frame
+ * @param Uint8Array inner -> the frame content after the server keys came off
+ *
+ * @return Uint8Array [2 bytes sequence number][opus], or null without the keys
+ */
+function audio_transport__decrypt_music_bot(bot, sender_id, counter_bytes, inner)
+{
+    if (!Array.isArray(bot.music_bot_keys) || bot.music_bot_keys.length !== 4)
+    {
+        if (!bot.music_bot_key_requested_at || Date.now() - bot.music_bot_key_requested_at > 1000)
+        {
+            bot.music_bot_key_requested_at = Date.now();
+            connection__send_message_object(
+            {
+                message:
+                {
+                    type: "request_music_bot_key",
+                    client_id: bot.client_id
+                }
+            });
+        }
+        return null;
+    }
+    if (bot.music_bot_key_bytes == null)
+    {
+        try
+        {
+            bot.music_bot_key_bytes = bot.music_bot_keys.map(function(key)
+            {
+                return audio_transport__hex_bytes(key, 32);
+            });
+        }
+        catch (error)
+        {
+            bot.music_bot_keys = null;
+            return null;
+        }
+    }
+    let layers = bot.music_bot_key_bytes.map(function(key)
+    {
+        return { key_bytes: key, iv_bytes: null };
+    });
+    return keys__media_apply_inner_layers(layers, sender_id, counter_bytes, inner, false);
+}
+
+// why this file exists
+// --------------------
+// a video stream normally travels over the webrtc data channel. a client that cannot or does not want to
+// use webrtc already gets its voice over a second websocket (audio-transport.js); this file gives video the
+// same second way: a websocket at /video on the chat port. the server passes a streamer's packets on to
+// every viewer over whichever of the two connections that viewer has, so a client on the websocket and a
+// client on webrtc see each other's streams.
+//
+// how the choice is made
+// ----------------------
+// video follows audio. when this client's audio travels over the websocket right now, or when the server
+// does not allow webrtc at all, video uses the video socket too; otherwise it uses the video data channel
+// of the webrtc peer connection. the choice is looked at once a second (video_transport__tick). while
+// video is in use, that is while this client streams or watches a stream, and the socket is wanted but not
+// attached, a session is requested from the server; when the socket is attached but no longer wanted, it
+// is closed, and the server then relays over the data channel again. a session request that leads to no
+// attached socket is repeated with a growing delay. the socket is attached with the same ticket and proof
+// frame as the audio socket (the server handles video connections in video_websocket.c).
+//
+// what travels over the socket
+// ----------------------------
+// video packets, each encrypted the same way as a voice frame: with the channel keys, the server keys, and
+// a second time with this client's session keys plus an authentication code (keys.js, the block "the
+// encryption of audio and video frames"). the video worker (video-worker.js) does that encryption and
+// decryption; this file only moves the finished frames. the server sends an empty frame to an idle socket
+// every few seconds and this client answers it with an empty frame, like on the audio socket.
+var VIDEO_TRANSPORT_REQUEST_INTERVAL_MS = 5000;
+var VIDEO_TRANSPORT_REQUEST_INTERVAL_MAX_MS = 60000;
+// bytes waiting in the browser's send buffer of the socket above which a packet is dropped instead of queued
+var VIDEO_TRANSPORT_SEND_BUFFER_LIMIT = 1024 * 1024;
+
+var g_video_transport =
+{
+    socket: null,
+    ready: false,              // the websocket is attached and acknowledged
+    pending_until: 0,          // no new session request before this time
+    request_attempts: 0,       // session requests since the last attached socket; sets the delay to the next one
+    last_received: 0,          // the server's keepalive frames refresh it; a socket without any frame for 15 s is dead
+    timer: null
+};
+
+/**
+ * @brief whether video should travel over the websocket rather than the webrtc data channel right now
+ *
+ *        the websocket must be allowed by the server. then: when the server allows no webrtc, the socket is
+ *        the only way; when the audio travels over the websocket at the moment, video goes the same way;
+ *        when no audio connection is up, the client's preference decides, which is also what audio does
+ *
+ * @return boolean
+ */
+function video_transport__prefers_websocket()
+{
+    if (g_server_policy.is_audio_over_websocket_allowed !== true)
+    {
+        return false;
+    }
+    if (g_server_policy.is_audio_over_webrtc_allowed !== true)
+    {
+        return true;
+    }
+    let active = audio_transport__active();
+    if (active != null)
+    {
+        return active === "websocket";
+    }
+    if (g_audio_transport.mode === "none")
+    {
+        return g_audio_connection_preference === "websocket";
+    }
+    return g_audio_transport.mode === "websocket";
+}
+
+/**
+ * @brief whether the webrtc peer connection has to be kept up for video: video is allowed and does not prefer the websocket
+ *
+ * @return boolean
+ */
+function video_transport__wants_webrtc()
+{
+    return g_server_policy.is_video_streaming_allowed === true && video_transport__prefers_websocket() === false;
+}
+
+/**
+ * @brief whether this client sends or receives video right now: it streams, or it watches a stream
+ *
+ * @return boolean
+ */
+function video_transport__is_in_use()
+{
+    return g_video_stream.role === "streamer" || (g_video_stream.role === "viewer" && g_video_stream.is_watching === true);
+}
+
+/**
+ * @brief the connection that would carry a video packet right now
+ *
+ * @return string "websocket", "webrtc" or null
+ */
+function video_transport__active()
+{
+    if (g_video_transport.ready && g_video_transport.socket != null && g_video_transport.socket.readyState === WebSocket.OPEN)
+    {
+        return "websocket";
+    }
+    if (g_video_datachannel != null && g_video_datachannel.readyState === "open")
+    {
+        return "webrtc";
+    }
+    return null;
+}
+
+/**
+ * @brief how many bytes wait in the send buffer of the active connection; the streamer skips frames when it grows too large
+ *
+ * @return number bytes, 0 without a connection
+ */
+function video_transport__buffered_amount()
+{
+    let active = video_transport__active();
+    if (active === "websocket")
+    {
+        return g_video_transport.socket.bufferedAmount;
+    }
+    if (active === "webrtc")
+    {
+        return g_video_datachannel.bufferedAmount;
+    }
+    return 0;
+}
+
+/**
+ * @brief sends one finished video frame over the active connection
+ *
+ * @param ArrayBuffer frame -> the frame, encrypted by the video worker
+ *
+ * @return boolean true when it was handed to a connection
+ */
+function video_transport__send(frame)
+{
+    let active = video_transport__active();
+    if (active === "websocket")
+    {
+        if (g_video_transport.socket.bufferedAmount > VIDEO_TRANSPORT_SEND_BUFFER_LIMIT)
+        {
+            return false;
+        }
+        g_video_transport.socket.send(frame);
+        return true;
+    }
+    if (active === "webrtc")
+    {
+        try
+        {
+            g_video_datachannel.send(frame);
+            return true;
+        }
+        catch (send_error)
+        {
+            console.log("video packet not sent: " + send_error.message);
+            return false;
+        }
+    }
+    return false;
+}
+
+function video_transport__drop_socket()
+{
+    let socket = g_video_transport.socket;
+    g_video_transport.socket = null;
+    g_video_transport.ready = false;
+    if (socket != null)
+    {
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.close();
+    }
+}
+
+function video_transport__reset()
+{
+    if (g_video_transport.timer != null)
+    {
+        clearInterval(g_video_transport.timer);
+    }
+    g_video_transport.timer = null;
+    g_video_transport.pending_until = 0;
+    g_video_transport.request_attempts = 0;
+    video_transport__drop_socket();
+}
+
+/**
+ * @brief starts the once-a-second check; called when the audio transport starts (audio_transport__start)
+ *
+ * @return void
+ */
+function video_transport__start()
+{
+    if (g_video_transport.timer == null)
+    {
+        g_video_transport.timer = setInterval(video_transport__tick, 1000);
+    }
+}
+
+/**
+ * @brief the once-a-second check: requests a session when the socket is wanted and missing, drops the socket when it is not wanted or no longer answers
+ *
+ * @return void
+ */
+function video_transport__tick()
+{
+    let state = g_video_transport;
+    let now = Date.now();
+
+    if (!g_is_authenticated || g_is_deep_idle || g_server_policy.is_video_streaming_allowed !== true
+        || video_transport__is_in_use() === false || video_transport__prefers_websocket() === false)
+    {
+        if (state.socket != null)
+        {
+            video_transport__drop_socket();
+        }
+        return;
+    }
+    if (state.ready)
+    {
+        // the server's keepalive frames refresh last_received; a socket without any frame for this long no longer works
+        if (now - state.last_received > 15000)
+        {
+            video_transport__drop_socket();
+        }
+        return;
+    }
+    if (now < state.pending_until)
+    {
+        return;
+    }
+    if (state.socket != null)
+    {
+        // an attempt that did not attach within the request window
+        video_transport__drop_socket();
+    }
+    if (g_local_client_id < 0 || !g_is_client_list_retrieved)
+    {
+        return;
+    }
+    // a request that leads nowhere is repeated with a growing delay; an attached socket resets the delay
+    state.pending_until = now + Math.min(VIDEO_TRANSPORT_REQUEST_INTERVAL_MS * Math.pow(2, state.request_attempts), VIDEO_TRANSPORT_REQUEST_INTERVAL_MAX_MS);
+    state.request_attempts++;
+    connection__send_message_object(
+    {
+        message:
+        {
+            type: "request_video_websocket"
+        }
+    });
+}
+
+/**
+ * @brief the server issued a video session (the message video_websocket_session): the socket is opened and attached with the proof frame
+ *
+ *        the proof frame is [1][4 bytes client id][16 bytes ticket][32 bytes HMAC-SHA256 with the session key
+ *        over the first 21 bytes]; the server answers with [2][16 bytes ticket][32 bytes HMAC-SHA256 over the
+ *        first 17 bytes], which is checked here, so the socket talks to the server that issued the session.
+ *        after that every frame from the socket is a video packet for video__on_media_frame, and an empty
+ *        frame is the server's keepalive, answered at once
+ *
+ * @param object message -> client_id, auth_key (hex), ticket (hex)
+ *
+ * @return void
+ */
+function video_transport__session(message)
+{
+    let state = g_video_transport;
+    if (state.timer == null || g_is_deep_idle || !g_is_authenticated || state.socket != null
+        || g_server_policy.is_audio_over_websocket_allowed !== true
+        || Date.now() > state.pending_until || message.client_id !== g_local_client_id)
+    {
+        return;
+    }
+    try
+    {
+        let auth_key = audio_transport__hex_bytes(message.auth_key, 32);
+        let ticket = audio_transport__hex_bytes(message.ticket, 16);
+        let url = new URL(g_audio_transport.url);
+        url.pathname = "/video";
+        url.search = "";
+        url.hash = "";
+        let socket = new WebSocket(url.href);
+        state.socket = socket;
+        socket.binaryType = "arraybuffer";
+        socket.onopen = function()
+        {
+            if (state.socket !== socket)
+            {
+                return;
+            }
+            let hello = new Uint8Array(53);
+            hello[0] = 1;
+            new DataView(hello.buffer).setUint32(1, message.client_id, false);
+            hello.set(ticket, 5);
+            hello.set(keys___hmac_sha256(auth_key, hello.subarray(0, 21)), 21);
+            socket.send(hello);
+        };
+        socket.onmessage = function(event)
+        {
+            if (state.socket !== socket)
+            {
+                return;
+            }
+            try
+            {
+                if (!(event.data instanceof ArrayBuffer))
+                {
+                    throw new Error("expected binary video");
+                }
+                state.last_received = Date.now();
+                if (!state.ready)
+                {
+                    let acknowledgement = new Uint8Array(event.data);
+                    if (acknowledgement.length !== 49 || acknowledgement[0] !== 2)
+                    {
+                        throw new Error("invalid video attachment acknowledgement");
+                    }
+                    let code = keys___hmac_sha256(auth_key, acknowledgement.subarray(0, 17));
+                    let difference = 0;
+                    for (let i = 0; i < 16; i++)
+                    {
+                        difference |= ticket[i] ^ acknowledgement[i + 1];
+                    }
+                    for (let i = 0; i < 32; i++)
+                    {
+                        difference |= code[i] ^ acknowledgement[i + 17];
+                    }
+                    if (difference !== 0)
+                    {
+                        throw new Error("video attachment authentication failed");
+                    }
+                    auth_key.fill(0);
+                    state.ready = true;
+                    state.pending_until = 0;
+                    state.request_attempts = 0;
+                    // Losing the previous socket clears the server's watch flag. Restore current
+                    // viewing intent only after this attachment has been authenticated.
+                    if (g_video_stream.role === "viewer" && g_video_stream.is_watching === true)
+                    {
+                        connection__send_message_object(
+                        {
+                            message:
+                            {
+                                type: "video_stream_watch",
+                                is_watching: true
+                            }
+                        });
+                        video__request_keyframe();
+                    }
+                    utils__custom_log("Video connected through WebSocket");
+                }
+                else if (event.data.byteLength > 0)
+                {
+                    video__on_media_frame(event.data);
+                }
+                else
+                {
+                    // the server's keepalive on an idle socket: answered at once
+                    socket.send(new Uint8Array(0));
+                }
+            }
+            catch (error)
+            {
+                utils__custom_log("Video connection rejected a packet: " + error.message);
+                video_transport__drop_socket();
+            }
+        };
+        socket.onclose = function()
+        {
+            if (state.socket === socket)
+            {
+                // a socket that was attached is requested again soon; one that never attached keeps the delay its request set
+                let was_ready = state.ready;
+                video_transport__drop_socket();
+                if (was_ready)
+                {
+                    state.pending_until = Date.now() + 3000;
+                }
+                utils__custom_log("Video WebSocket disconnected");
+            }
+        };
+        socket.onerror = function()
+        {
+            // onclose handles the retry
+        };
+    }
+    catch (error)
+    {
+        video_transport__drop_socket();
+        utils__custom_log("Video connection failed: " + error.message);
+    }
+}
+
+// video-stubs.js - the video streaming functions that the shared client code calls, as no-ops
+// for the headless node runtime. video.js itself needs WebCodecs and the DOM, so the node bundle
+// leaves it out; without these stubs the authentication, client list and channel key handlers
+// in dispatch.js, messages.js and server-settings-tab.js throw a ReferenceError in node.
+
+function video__apply_client_list(clients) { }
+function video__apply_policy_to_ui() { }
+function video__init_ui() { }
+function video__on_datachannel_received(channel) { }
+function video__on_keyframe_request() { }
+function video__on_local_channel_changed() { }
+function video__on_offer(message) { }
+function video__on_refused(message) { }
+function video__on_state(message) { }
+function video__on_viewer_request(message) { }
+function video__on_viewer_state(message) { }
+function video__on_worker_message(data) { }
+function video__post_channel_keys_to_worker() { }
+function video__refresh_controls() { }
+function video__reset_on_disconnect() { }
+function video__on_media_frame(frame) { }
+function video__post_transport_keys_to_worker() { }
+
 // server-settings-tab.js is embedded in template.html along with the other client files
 // it is the admin's server settings tab: the field table that loads and saves the general and log
 // settings, the policy the server announces, the icon upload queue and the country block list
 // dispatch.js feeds it the server's values, ui.js has the click handlers
 
-// the server settings tab, one row per input: "key" is the wire name, "kind" says checkbox or
+// the server settings tab, one row per input: "key" is the field name in the settings message, "kind" says checkbox or
 // number field, "tab" which save button sends it. the load and both saves walk this table
 var SERVER_SETTINGS_FIELDS = [
+    { key: "publish_server_uptime", id: "server-settings-publish-uptime", kind: "bool", fallback: true, tab: "general" },
+    { key: "publish_server_slots", id: "server-settings-publish-slots", kind: "bool", fallback: true, tab: "general" },
+    { key: "publish_server_banner", id: "server-settings-publish-banner", kind: "bool", fallback: true, tab: "general" },
+    { key: "publish_server_features", id: "server-settings-publish-features", kind: "bool", fallback: true, tab: "general" },
     { key: "display_country_flags", id: "server-settings-general-display-flags-checkbox", kind: "bool", tab: "general" },
     { key: "hide_admin_country_flag", id: "server-settings-general-hide-admin-flag-checkbox", kind: "bool", tab: "general" },
     { key: "enable_audio", id: "server-settings-general-enable-audio", kind: "bool", tab: "general" },
+    { key: "audio_connections", id: "server-settings-general-audio-connections", kind: "select", fallback: "both", tab: "general" },
     { key: "enable_music_bot_audio", id: "server-settings-general-enable-music-bot-audio-checkbox", kind: "bool", tab: "general" },
+    { key: "is_video_streaming_active", id: "server-settings-general-enable-video-streaming-checkbox", kind: "bool", tab: "general" },
     { key: "hide_clients_in_password_channels", id: "server-settings-general-hide-clients-in-password-protected-channels", kind: "bool", tab: "general" },
     { key: "allow_temp_channels", id: "server-settings-general-allow-temp-channels-checkbox", kind: "bool", tab: "general" },
     { key: "allow_typing_indicator", id: "server-settings-general-allow-typing-indicator-checkbox", kind: "bool", tab: "general" },
     { key: "allow_client_renames", id: "server-settings-general-allow-renames-checkbox", kind: "bool", tab: "general" },
+    { key: "allow_link_previews", id: "server-settings-general-link-previews-checkbox", kind: "bool", tab: "general" },
     { key: "is_sending_text_to_idle_clients_allowed", id: "server-settings-general-allow-text-to-idle-clients-checkbox", kind: "bool", tab: "general" },
     { key: "allow_private_messages", id: "server-settings-general-allow-private-messages-checkbox", kind: "bool", tab: "general" },
     { key: "allow_file_uploads", id: "server-settings-general-allow-file-uploads-checkbox", kind: "bool", tab: "general" },
@@ -18999,6 +22341,8 @@ var SERVER_SETTINGS_FIELDS = [
     { key: "is_fast_reconnect_allowed", id: "server-settings-general-fast-reconnect-checkbox", kind: "bool", tab: "general" },
     { key: "is_identity_takeover_allowed", id: "server-settings-general-identity-takeover-checkbox", kind: "bool", tab: "general" },
     { key: "is_websocket_ping_active", id: "server-settings-general-websocket-ping-checkbox", kind: "bool", tab: "general" },
+    { key: "enforce_connection_check", id: "server-settings-general-connection-check-checkbox", kind: "bool", fallback: true, tab: "general" },
+    { key: "max_concurrent_logins", id: "server-settings-general-concurrent-logins-input", kind: "number", fallback: 4, tab: "general" },
     { key: "webrtc_datachannel_cooldown_seconds", id: "server-settings-general-datachannel-cooldown-input", kind: "number", fallback: 600, tab: "general" },
     { key: "icon_max_size_bytes", id: "server-settings-general-icon-max-size-input", kind: "number", fallback: 5000, tab: "general" },
     { key: "show_music_bot_marquee_to_everyone", id: "server-settings-general-marquee-everyone-checkbox", kind: "bool", tab: "general" },
@@ -19033,6 +22377,10 @@ var is_country_select_populated = false;
  */
 function server_settings_tab__apply_server_settings_values_to_tab(values)
 {
+    if (typeof server_info__apply_admin_settings === "function")
+    {
+        server_info__apply_admin_settings(values);
+    }
     for (let i = 0; i < SERVER_SETTINGS_FIELDS.length; i++)
     {
         let field = SERVER_SETTINGS_FIELDS[i];
@@ -19040,7 +22388,11 @@ function server_settings_tab__apply_server_settings_values_to_tab(values)
 
         if (field.kind == "bool")
         {
-            element.checked = (values[field.key] == true);
+            element.checked = (typeof values[field.key] === "boolean") ? values[field.key] : (field.fallback === true);
+        }
+        else if (field.kind == "select")
+        {
+            element.value = (typeof values[field.key] === "string") ? values[field.key] : field.fallback;
         }
         else
         {
@@ -19076,6 +22428,10 @@ function server_settings_tab__collect_server_settings_from_tab(tab)
         {
             settings[field.key] = element.checked;
         }
+        else if (field.kind == "select")
+        {
+            settings[field.key] = element.value;
+        }
         else
         {
             let number = parseInt(element.value);
@@ -19084,6 +22440,24 @@ function server_settings_tab__collect_server_settings_from_tab(tab)
     }
 
     return settings;
+}
+
+/**
+ * @brief the audio switch shows or hides the "audio connections" select below it
+ *
+ * @return void
+ */
+function server_settings_tab__refresh_audio_connections_row_visibility()
+{
+    let audio_checkbox = document.getElementById("server-settings-general-enable-audio");
+    let row = document.getElementById("server-settings-general-audio-connections-row");
+
+    if (audio_checkbox == null || row == null)
+    {
+        return;
+    }
+
+    row.style.display = (audio_checkbox.checked == true) ? "" : "none";
 }
 
 /**
@@ -19096,6 +22470,8 @@ function server_settings_tab__collect_server_settings_from_tab(tab)
  */
 function server_settings_tab__apply_server_policy_fields(data)
 {
+    let previous_enforce_connection_check = g_server_policy.enforce_connection_check;
+
     for (let policy_field in g_server_policy)
     {
         if (data[policy_field] === undefined)
@@ -19116,9 +22492,19 @@ function server_settings_tab__apply_server_policy_fields(data)
         }
     }
 
+    // The server also starts a fresh waiting period when checks are enabled again.
+    // A long pause while they were disabled must not cause an immediate reconnect.
+    if (previous_enforce_connection_check === false && g_server_policy.enforce_connection_check === true)
+    {
+        g_connection_check.last_response_timestamp = new Date().valueOf();
+    }
+
     server_settings_tab__apply_rename_policy_to_ui();
+    link_previews__apply_policy();
     chat_files__apply_file_upload_policy_to_ui();
     chat_files__apply_chat_picture_policy_to_ui();
+    video__apply_policy_to_ui();
+    audio_transport__select_mode();
 }
 
 /**
@@ -19142,7 +22528,7 @@ function server_settings_tab__apply_rename_policy_to_ui()
 }
 
 /**
- * @brief the icon upload pump: sends the next queued icon unless one is in flight
+ * @brief the icon upload loop: sends the next queued icon unless one is still being sent
  *        the reply handler clears g_icon_upload_in_flight_base64 and calls this again for the rest of the queue
  *
  * @return void
@@ -19502,10 +22888,15 @@ function dispatch__mainthread_onmessage(e)
     {
         utils__custom_log(e.data.value);
     }
+    else if (typeof e.data.type === "string" && e.data.type.indexOf("video_worker__") == 0)
+    {
+        // everything the video worker posts back: packets to send, keyframe requests, decoder state
+        video__on_worker_message(e.data);
+    }
     else if (e.data.type == "opus_encoder_worker__encode_result")
     {
         // chunks already inside the encoder when push-to-talk ended arrive here after
-        // mic-off; dropping them keeps the stale tail out of receivers' jitter lanes
+        // mic-off; dropping them keeps the old end of the recording out of the receivers' playback buffers
         if (g_is_microphone_active == false && (typeof is_playing_music == "undefined" || is_playing_music != true))
         {
             return;
@@ -19519,7 +22910,7 @@ function dispatch__mainthread_onmessage(e)
             {
                 // prepend a 2-byte little-endian sequence number INSIDE the encrypted payload;
                 // receivers use it to reorder frames the unordered datachannel scrambled and to
-                // detect losses. the server relay never sees it (it sits under the encryption)
+                // detect losses. the server relay never sees it (it is inside the encrypted part)
                 let opus_chunk_bytes = new Uint8Array(opus_data_chunks[i]);
                 let sequenced_chunk = new Uint8Array(2 + opus_chunk_bytes.length);
 
@@ -19528,14 +22919,21 @@ function dispatch__mainthread_onmessage(e)
                 sequenced_chunk.set(opus_chunk_bytes, 2);
                 g_voice_send_sequence_number = (g_voice_send_sequence_number + 1) & 0xffff;
 
-                let data = keys__encrypt_data_with_aes_keys(g_current_channel_keys, sequenced_chunk);
-                if (data != null && data.byteLength > 0) { g_session.bytes_sent += data.byteLength; }
-                g_datachannel.send(data);
+                // the encryption layers and the sending are in audio-transport.js
+                audio_transport__send_voice(sequenced_chunk);
             }
         }
         else
         {
             utils__custom_log("dont have channel keys, cant encrypt audio for sending");
+        }
+    }
+    else if (e.data.type == "opus_encoder_worker__stream_encode_result")
+    {
+        // the sound of this client's video stream: packed and sent next to the pictures by video.js, never as voice
+        if (typeof video__on_sound_encoded === "function")
+        {
+            video__on_sound_encoded(e.data.value);
         }
     }
     else if (e.data.type == "opus_decoder_worker__decode_result")
@@ -19582,7 +22980,8 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "websocket_worker_onclose")
     {
-        // the driver awaits this signal; it decides whether and when to redial
+        audio_transport__reset();
+        // the connect loop of connection.js waits for this signal; it decides whether and when to connect again
         g_last_connect_attempt_failed = true;
 
         // the server never says why - these are inferences from WHERE the socket died.
@@ -19617,8 +23016,8 @@ function dispatch__mainthread_onmessage(e)
         }
         else if (connection__try_start_fast_reconnect("socket closed") == false)
         {
-            // a deliberate close (identity switch) is not a lost connection - no scary alert
-            if (g_is_authenticated && g_is_identity_switch_in_progress == false)
+            // a deliberate close (an identity switch, "disconnect" in the connections menu) is not a lost connection - no scary alert
+            if (g_is_authenticated && g_is_identity_switch_in_progress == false && is_connection_ended_by_user == false)
             {
                 if (g_is_running_in_android_webview == false)
                 {
@@ -19632,6 +23031,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "websocket_worker_onerror")
     {
+        audio_transport__reset();
         g_last_connect_attempt_failed = true;
 
         if (g_last_disconnect_reason === "")
@@ -19666,8 +23066,8 @@ function dispatch__mainthread_onmessage(e)
         console.log("public key string -> " + g_rsa_public_key_string);
         g_is_rsa_key_generated = true;
 
-        // the keygen phase is over: stop claiming it. when nothing will dial on its own the
-        // status goes idle (empty), otherwise the driver's "connecting" replaces it right away
+        // the keygen phase is over: stop claiming it. when nothing will connect on its own the
+        // status goes idle (empty), otherwise the connect loop's "connecting" replaces it right away
         if (g_is_authenticated == false && g_is_autoconnect_without_user_action_active == false)
         {
             connection__report_connection_status("idle", "");
@@ -19676,8 +23076,14 @@ function dispatch__mainthread_onmessage(e)
         document.getElementById("another-buttons-sub-container").style.display = "";
         g_identity_string = e.data.identity_string;
 
-        // wakes the driver if it is waiting to dial with this identity
+        // wakes the connect loop if it is waiting to connect with this identity
         g_identity_slot.set({ public_key_string: e.data.value, identity_string: e.data.identity_string });
+
+        // the identity section of the connect window shows the new key pair's fingerprint
+        if (typeof connection__refresh_connect_window_sections === "function")
+        {
+            connection__refresh_connect_window_sections();
+        }
         g_is_identity_switch_in_progress = false;
 
         // persist the identity (the passphrase) so the next launch reconstructs this same keypair
@@ -19750,7 +23156,7 @@ function dispatch__mainthread_onmessage(e)
             // registered on it. a refusal is simply silence, so nothing here needs to know.
             client_msg.send_request_stored_clients();
 
-            // the idle panel is wired once; a resume still has it (a second listener would cancel the first)
+            // the idle panel gets its handler once; a resume still has it (a second listener would cancel the first)
             if (e.data.is_idle_mode_allowed && g_fast_reconnect.resumed == false)
             {
                 document.getElementById('channel-list-container').style.height = "calc(70% - 30px)";
@@ -19759,6 +23165,8 @@ function dispatch__mainthread_onmessage(e)
             }
 
             g_is_authenticated = true;
+            // the audio connection mode was picked above, with the policy; the socket of a previous session is dropped here
+            audio_transport__reset();
             console.log("client authenticated");
 
             // the attempt is over once the adopted session accepted the login; the refreshed
@@ -19787,6 +23195,21 @@ function dispatch__mainthread_onmessage(e)
 
             document.getElementById('verification-system').style.display = "none";
             document.getElementById('communication-system-container').style.display = (g_layout.grid_active == true) ? "grid" : "block";
+            connection__mark_connected_ui_hidden(false);
+
+            // an open list of the head menu closes with the page switch, and the "disconnect" entry becomes available
+            // (head-menu.js, which the node bundle does not have)
+            if (typeof head_menu__close_all === "function")
+            {
+                head_menu__close_all();
+                head_menu__refresh_connections_items();
+            }
+            connection__refresh_connect_button_state();
+
+            // the window may be opened while connected ("connections" -> "connect"): it then shows the fields and the
+            // disabled connect button, not the spinner and the "connecting" line of the attempt that just ended
+            document.getElementById("another-buttons-sub-loading-container").style.display = "none";
+            document.getElementById("another-buttons-sub-container").style.display = "";
 
             // the connect screen is gone, so the mic may come back out
             voice__update_microphone_button();
@@ -19838,9 +23261,9 @@ function dispatch__mainthread_onmessage(e)
         // default stun port is 3478 for this chat. Stun port is given to client with websocket connection, stun port can be changed if needed, there are two places that need to be edited in code of server to set different stun port
 
         g_iceconfig = {
-            iceServers: [{
+            iceServers: Number(e.data.stun_port) > 0 ? [{
                 urls: "stun:" + g_host + ":" + e.data.stun_port,
-            }],
+            }] : [],
         };
 
         // the datachannel/playback below is set up whenever audio is on for clients or music bots,
@@ -19930,6 +23353,24 @@ function dispatch__mainthread_onmessage(e)
             android_host__enter_deep_idle();
         }
     }
+    else if (e.data.type == "data_processing_worker__music_bot_key")
+    {
+        audio_transport__set_music_bot_key(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__audio_websocket_session")
+    {
+        audio_transport__session(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_websocket_session")
+    {
+        video_transport__session(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__local_media_keys")
+    {
+        // android webview only: the node runtime handed over the complete media key set
+        keys__set_media_keys_from_host(e.data.value.encryption_key, e.data.value.checksum_key, e.data.value.server_keys);
+        video__post_transport_keys_to_worker();
+    }
     else if (e.data.type == "data_processing_worker__metadata_keys_accepted")
     {
         g_keys_init_status = true;
@@ -19938,7 +23379,7 @@ function dispatch__mainthread_onmessage(e)
     {
         if (connection__fast_reconnect_buffer_list("client", e.data.value) == false)
         {
-            server_msg.process_client_list_from_server(e.data.value);
+            channel_tree__apply_server_update(server_msg.process_client_list_from_server, e.data.value);
         }
     }
     else if (e.data.type == "data_processing_worker__client_avatar_from_server")
@@ -19976,7 +23417,7 @@ function dispatch__mainthread_onmessage(e)
     {
         if (connection__fast_reconnect_buffer_list("channel", e.data.value) == false)
         {
-            server_msg.process_channel_list_from_server(e.data.value);
+            channel_tree__apply_server_update(server_msg.process_channel_list_from_server, e.data.value);
         }
     }
     else if (e.data.type == "data_processing_worker__tag_list_from_server")
@@ -20053,6 +23494,30 @@ function dispatch__mainthread_onmessage(e)
     {
         server_msg.process_stop_song_stream_from_server(e.data.value);
     }
+    else if (e.data.type == "data_processing_worker__video_stream_state_from_server")
+    {
+        server_msg.process_video_stream_state_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_offer_from_server")
+    {
+        server_msg.process_video_stream_offer_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_viewer_request_from_server")
+    {
+        server_msg.process_video_stream_viewer_request_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_viewer_state_from_server")
+    {
+        server_msg.process_video_stream_viewer_state_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_keyframe_request_from_server")
+    {
+        server_msg.process_video_stream_keyframe_request_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__video_stream_refused_from_server")
+    {
+        server_msg.process_video_stream_refused_from_server(e.data.value);
+    }
     else if (e.data.type == "data_processing_worker__chat_message_delete_from_server")
     {
         server_msg.process_chat_message_delete_from_server(e.data.value);
@@ -20095,6 +23560,34 @@ function dispatch__mainthread_onmessage(e)
 
         g_metadata_keys.unshift(single_key);
 
+        // on android the node runtime does this key exchange for a webview that has no shared secret of
+        // its own. the webview needs the session and server keys to encrypt and check its audio and video frames
+        // (keys.js, keys__media_session_layer), so the node runtime hands them over through the loopback
+        // connection as a local message; it never leaves the device. a browser page has no listener here
+        if (android_host__is_ui_only_runtime() == false && typeof g_node_frame_listener !== "undefined" && g_node_frame_listener != null)
+        {
+            try
+            {
+                g_node_frame_listener(JSON.stringify(
+                {
+                    message:
+                    {
+                        type: "local_media_keys",
+                        encryption_key: keys__bytes_to_hex(dh_keys.enc_key),
+                        checksum_key: keys__bytes_to_hex(dh_keys.mac_key),
+                        server_keys: keys__media_server_key_layers().map(function(layer)
+                        {
+                            return keys__bytes_to_hex(layer.key_bytes);
+                        })
+                    }
+                }));
+            }
+            catch (listener_error)
+            {
+                console.log("the media keys could not be handed to the ui: " + listener_error.message);
+            }
+        }
+
         // removed: never log key material (g_metadata_keys holds the session key)
 
         // here the g_metadata_keys object within data_processing web worker is updated aswell
@@ -20115,7 +23608,7 @@ function dispatch__mainthread_onmessage(e)
             }
         };
 
-        // the chosen username rides along on the last login message, because the server
+        // the chosen username is sent with the last login message, because the server
         // assigns the final name right after accepting this response
         if (typeof g_chosen_username === "string" && g_chosen_username.length > 0)
         {
@@ -20156,11 +23649,26 @@ function dispatch__mainthread_onmessage(e)
         let full_channel_name = (full_channel != null && full_channel.name != null) ? full_channel.name : "channel";
         utils__custom_alert("'" + full_channel_name + "' is full");
     }
+    else if (e.data.type == "data_processing_worker__server_info")
+    {
+        if (typeof server_info__apply === "function")
+        {
+            server_info__apply(e.data.value);
+        }
+    }
+    else if (e.data.type == "data_processing_worker__server_banner_result")
+    {
+        if (typeof server_info__banner_result === "function")
+        {
+            server_info__banner_result(e.data.value);
+        }
+    }
     else if (e.data.type == "data_processing_worker__server_settings_values_from_server")
     {
         let msg = e.data.value;
         server_settings_tab__apply_server_settings_values_to_tab(msg.message);
         server_settings_tab__refresh_hide_admin_flag_row_visibility();
+        server_settings_tab__refresh_audio_connections_row_visibility();
         chat_files__refresh_file_upload_size_visibility();
         chat_files__refresh_picture_size_visibility();
         server_settings_tab__set_blocked_countries_from_server(msg.message.blocked_countries);
@@ -20171,13 +23679,17 @@ function dispatch__mainthread_onmessage(e)
     {
         server_msg.process_admin_log_from_server(e.data.value);
     }
+    else if (e.data.type == "data_processing_worker__url_resolved")
+    {
+        link_previews__resolved(e.data.value);
+    }
     else if (e.data.type == "data_processing_worker__server_policy_from_server")
     {
         server_settings_tab__apply_server_policy_fields(e.data.value.message);
     }
     else if (e.data.type == "data_processing_worker__channel_join_from_server")
     {
-        server_msg.process_channel_join_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_join_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__server_chat_message_id_for_local_message_id_from_server")
     {
@@ -20185,15 +23697,15 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__client_connect_from_server")
     {
-        server_msg.process_client_connect_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_connect_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_rename_from_server")
     {
-        server_msg.process_client_rename_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_rename_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_disconnect_from_server")
     {
-        server_msg.process_client_disconnect_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_disconnect_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__audio_state_of_single_client_from_server")
     {
@@ -20228,23 +23740,23 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__channel_edit_from_server")
     {
-        server_msg.process_channel_edit_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_edit_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_going_to_idle_mode")
     {
-        server_msg.process_client_client_going_to_idle_mode_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_client_going_to_idle_mode_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_coming_back_from_idle_mode")
     {
-        server_msg.process_client_coming_back_from_idle_mode_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_client_coming_back_from_idle_mode_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_delete_from_server")
     {
-        server_msg.process_channel_delete_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_delete_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_create_from_server")
     {
-        server_msg.process_channel_create_from_server(e.data.value);
+        channel_tree__apply_server_update(server_msg.process_channel_create_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_chat_picture_metadata")
     {
@@ -20338,6 +23850,9 @@ function dispatch__mainthread_onmessage(e)
             type: "mainthread__channel_keys_for_opus_decoder",
             value: g_current_channel_keys
         });
+
+        // the video worker encrypts and decrypts stream packets with the same keys
+        video__post_channel_keys_to_worker();
     }
     else if (e.data.type == "data_processing_worker__tell_websocket_worker_to_send_data")
     {
@@ -20419,7 +23934,7 @@ var node_ui_visibility_from_host = false;
 
 /**
  * @brief global mousedown: closes the chat-message context menu, and every other context menu
- *        unless the click landed on a menu item (so the item's own click handler still runs)
+ *        unless the click was on a menu item (so the item's own click handler still runs)
  *
  * @param object event -> the mouse event
  *
@@ -20473,7 +23988,7 @@ function main__document_onkeyup(event)
     if (event.which == g_push_to_talk_key_code)
     {
         // the encoder clear moved into voice__process_stop_sending_audio_now: clearing here
-        // would wipe the release-hangover tail that is still being captured
+        // would discard the end of the recording that is still being captured after the key release
         voice__process_stop_sending_audio();
     }
 }
@@ -20513,7 +24028,7 @@ function main__apply_theme_for_app_mode()
 }
 
 /**
- * @brief stops event bubbling; wired where a click must not reach parent handlers
+ * @brief stops event bubbling (the browser passing an event on to the parent elements); attached where a click must not reach parent handlers
  *
  * @param object event -> the event to stop
  *
@@ -20542,11 +24057,28 @@ function main__sync_toolbar_state_classes()
 }
 
 /**
+ * @brief applies the local "theme cursor" setting: with the setting off, the root element carries the
+ *        class custom-cursor-off, and a theme's cursor rules (ozone replaces the mouse cursor and draws
+ *        a glow around it) are written so that this class switches them off
+ *
+ * @return void
+ */
+function main__apply_custom_cursor_setting()
+{
+    let root = document.documentElement;
+
+    if (root != null && root.classList != null)
+    {
+        root.classList.toggle("custom-cursor-off", g_is_custom_cursor_enabled == false);
+    }
+}
+
+/**
  * @brief the page entry point
  *        detects the android webview and touch devices, applies the predefined server
  *        autoconnect config, sets up ui visibility, gestures and every element's event handlers
  *
- * @return promise ignored by window.onload; resolves once the page is wired
+ * @return promise ignored by window.onload; resolves once the page's handlers are attached
  */
 async function main__window_onload()
 {
@@ -20558,7 +24090,7 @@ async function main__window_onload()
         g_are_server_details_predefined = false;
     }
 
-    // touch detection lives in platform-detection.js; the android webview force above stays
+    // touch detection is in platform-detection.js; the android webview force above stays
     if (utils__detect_touch_device() == true)
     {
         g_is_client_running_under_touch_device = true;
@@ -20569,11 +24101,10 @@ async function main__window_onload()
         // in android, connection settings are stored in its own container..
         // these ui elements are not needed
         document.getElementById("add-key-button").style.visibility = "hidden";
-        document.getElementById("connect-form-sub-container-1").style.visibility = "hidden";
-        document.getElementById("connect-form-sub-container-2").style.visibility = "hidden";
+        document.getElementById("connect-form-grid").style.visibility = "hidden";
     }
 
-    // web: if the server baked connection details into the page, enable autoconnect before the form-visibility logic below runs; hide only the connect form (ip/port), leaving the loading/connecting status visible so the page isn't blank while it connects
+    // web: if the server wrote connection details into the page, enable autoconnect before the form-visibility logic below runs; hide only the connect form (ip/port), leaving the loading/connecting status visible so the page isn't blank while it connects
     if (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.port && g_is_running_in_android_webview == false)
     {
         g_are_server_details_predefined = true;
@@ -20584,13 +24115,12 @@ async function main__window_onload()
             keys: window.__SERVER_CONFIG__.keys,
             wss_port: window.__SERVER_CONFIG__.wss_port
         };
-        document.getElementById("connect-form-sub-container-1").style.display = "none";
-        document.getElementById("connect-form-sub-container-2").style.display = "none";
+        document.getElementById("connect-form-grid").style.display = "none";
     }
 
     if (g_is_running_in_android_webview == false)
     {
-        // the address is baked in (injected config, or set by hand in the source), so the fields the
+        // the address is written into the page (injected config, or set by hand in the source), so the fields the
         // bookmarks fill are never consulted: hidden in every theme, and it stays hidden on the
         // connect screen after a disconnect
         if (g_are_server_details_predefined == true)
@@ -20600,8 +24130,7 @@ async function main__window_onload()
 
         if (g_are_server_details_predefined == false)
         {
-            document.getElementById("connect-form-sub-container-1").style.visibility = "visible";
-            document.getElementById("connect-form-sub-container-2").style.visibility = "visible";
+            document.getElementById("connect-form-grid").style.visibility = "visible";
             document.getElementById("add-key-button").style.visibility = "visible";
             document.getElementById("connect-button").style.visibility = "visible";
         }
@@ -20621,11 +24150,12 @@ async function main__window_onload()
 
     g_textarea_log = document.getElementById("textarea-log");
 
-    // member-strip gestures: strip themes tap the clones in the right-pane member list, which are
+    // member list gestures: in the themes that show the member list instead of the channel tree
+    // (simpledark, bluebell), a tap is on the clones in the right-pane member list, which are
     // rebuilt on every sync, so delegated listeners forward tap (open chat / show channel chat) and
     // hold (row menu / channel switch list) to the real tree rows; touch and mouse both register
 
-    function member_strip_show_channel_switch_menu(click_x, click_y)
+    function member_list_show_channel_switch_menu(click_x, click_y)
     {
         UI.delete_contextmenus();
 
@@ -20669,31 +24199,31 @@ async function main__window_onload()
         }
     }
 
-    // true when the gesture landed on a circle and was handled, so the caller stops the event and
+    // true when the gesture was on a circle and was handled, so the caller stops the event and
     // main__document_onmousedown does not close the menu the gesture just opened
-    function member_strip_forward(target_element, click_x, click_y, is_short_click)
+    function member_list_forward(target_element, click_x, click_y, is_short_click)
     {
         let channel_circle = target_element.closest(".member-list-channel");
         if (channel_circle != null)
         {
             if (is_short_click == true)
             {
-                // bring the channel chat back on screen - same as tapping its pill. a pill
-                // fresh from the html has no handler yet - give it the standard one
-                let channel_pill = document.querySelector('.chat-context-selector[data-chat-context-selector-id="channel-' + channel_circle.getAttribute("data-member-list-channel-id") + '"]');
-                if (channel_pill != null)
+                // bring the channel chat back on screen - same as tapping its conversation tab.
+                // a tab fresh from the html has no handler yet - give it the standard one
+                let channel_tab = document.querySelector('.chat-context-selector[data-chat-context-selector-id="channel-' + channel_circle.getAttribute("data-member-list-channel-id") + '"]');
+                if (channel_tab != null)
                 {
-                    if (channel_pill.onclick == null)
+                    if (channel_tab.onclick == null)
                     {
-                        channel_pill.onclick = UI.chat_context_selector_onclick;
+                        channel_tab.onclick = UI.chat_context_selector_onclick;
                     }
 
-                    channel_pill.click();
+                    channel_tab.click();
                 }
             }
             else
             {
-                member_strip_show_channel_switch_menu(click_x, click_y);
+                member_list_show_channel_switch_menu(click_x, click_y);
             }
             return true;
         }
@@ -20729,60 +24259,60 @@ async function main__window_onload()
         let tree_row = document.querySelector('#channel-list-container .connected-client[data-connected-client-id="' + strip_client_id + '"], #idle-clients-container .connected-client[data-connected-client-id="' + strip_client_id + '"]');
         if (tree_row == null) { return false; }
 
-        // the row handler accepts an explicit target + coordinates, so the strip can
-        // hand it the REAL tree row no matter which clone was tapped
+        // the row handler accepts an explicit target + coordinates, so the member list can
+        // pass it the REAL tree row no matter which clone was tapped
         let forwarded_event = { stopPropagation: function() {}, currentTarget: null, which: null };
         UI.connected_user_onmousedown(forwarded_event, true, click_x, click_y, tree_row, is_short_click);
         return true;
     }
 
-    let member_strip_body = document.getElementById("member-list-body");
-    if (member_strip_body != null)
+    let member_list_body = document.getElementById("member-list-body");
+    if (member_list_body != null)
     {
-        let member_strip_press_timer = null;
-        let member_strip_long_press = false;
-        let member_strip_moved = false;
+        let member_list_press_timer = null;
+        let member_list_long_press = false;
+        let member_list_moved = false;
 
-        member_strip_body.addEventListener("touchstart", function(event) {
+        member_list_body.addEventListener("touchstart", function(event) {
             if (g_is_client_running_under_touch_device == false) { return; }
 
-            member_strip_long_press = false;
-            member_strip_moved = false;
+            member_list_long_press = false;
+            member_list_moved = false;
 
             const target_element = event.target;
             const click_x = event.touches[0].clientX;
             const click_y = event.touches[0].clientY;
 
-            member_strip_press_timer = window.setTimeout(function() {
-                member_strip_long_press = true;
-                member_strip_forward(target_element, click_x, click_y, false);
+            member_list_press_timer = window.setTimeout(function() {
+                member_list_long_press = true;
+                member_list_forward(target_element, click_x, click_y, false);
             }, 600);
         }, { passive: true });
 
-        member_strip_body.addEventListener("touchmove", function() {
-            // finger is scrolling the strip, not pressing a circle
-            member_strip_moved = true;
-            clearTimeout(member_strip_press_timer);
+        member_list_body.addEventListener("touchmove", function() {
+            // finger is scrolling the member list, not pressing a circle
+            member_list_moved = true;
+            clearTimeout(member_list_press_timer);
         }, { passive: true });
 
-        member_strip_body.addEventListener("touchend", function(event) {
+        member_list_body.addEventListener("touchend", function(event) {
             if (g_is_client_running_under_touch_device == false) { return; }
 
-            clearTimeout(member_strip_press_timer);
+            clearTimeout(member_list_press_timer);
 
-            if (member_strip_long_press == false && member_strip_moved == false)
+            if (member_list_long_press == false && member_list_moved == false)
             {
-                member_strip_forward(event.target, event.changedTouches[0].clientX, event.changedTouches[0].clientY, true);
+                member_list_forward(event.target, event.changedTouches[0].clientX, event.changedTouches[0].clientY, true);
             }
         });
 
-        member_strip_body.addEventListener("mousedown", function(event) {
+        member_list_body.addEventListener("mousedown", function(event) {
             if (g_is_client_running_under_touch_device == true) { return; }
 
             // left opens, right = actions / channel list - same split the tree rows use
             if (event.which == 1 || event.which == 3)
             {
-                if (member_strip_forward(event.target, event.clientX, event.clientY, event.which == 1) == true)
+                if (member_list_forward(event.target, event.clientX, event.clientY, event.which == 1) == true)
                 {
                     event.stopPropagation();
                 }
@@ -20790,10 +24320,10 @@ async function main__window_onload()
         });
     }
 
-    // holding a channel pill offers the channel switch list too, but only while a
-    // theme hides the channel tree (the strip themes) - elsewhere the tree does that job
-    let context_pill_container = document.getElementById("chat-context-selectors-container");
-    if (context_pill_container != null)
+    // holding a channel tab offers the channel switch list too, but only while a
+    // theme hides the channel tree (the member list themes) - elsewhere the tree does that job
+    let conversation_tab_container = document.getElementById("chat-context-selectors-container");
+    if (conversation_tab_container != null)
     {
         function is_channel_tree_hidden()
         {
@@ -20801,52 +24331,52 @@ async function main__window_onload()
             return (tree_pane != null && getComputedStyle(tree_pane).display == "none");
         }
 
-        function pill_press_target(event_target)
+        function tab_press_target(event_target)
         {
             let pill = event_target.closest('.chat-context-selector[data-chat-context-selector-type="channel"]');
             return pill;
         }
 
-        let pill_press_timer = null;
-        let pill_long_press = false;
+        let tab_press_timer = null;
+        let tab_long_press = false;
 
-        context_pill_container.addEventListener("touchstart", function(event) {
+        conversation_tab_container.addEventListener("touchstart", function(event) {
             if (g_is_client_running_under_touch_device == false) { return; }
-            if (pill_press_target(event.target) == null || is_channel_tree_hidden() == false) { return; }
+            if (tab_press_target(event.target) == null || is_channel_tree_hidden() == false) { return; }
 
-            pill_long_press = false;
+            tab_long_press = false;
             const click_x = event.touches[0].clientX;
             const click_y = event.touches[0].clientY;
 
-            pill_press_timer = window.setTimeout(function() {
-                pill_long_press = true;
-                member_strip_show_channel_switch_menu(click_x, click_y);
+            tab_press_timer = window.setTimeout(function() {
+                tab_long_press = true;
+                member_list_show_channel_switch_menu(click_x, click_y);
             }, 600);
         }, { passive: true });
 
-        context_pill_container.addEventListener("touchmove", function() {
-            clearTimeout(pill_press_timer);
+        conversation_tab_container.addEventListener("touchmove", function() {
+            clearTimeout(tab_press_timer);
         }, { passive: true });
 
-        context_pill_container.addEventListener("touchend", function(event) {
+        conversation_tab_container.addEventListener("touchend", function(event) {
             if (g_is_client_running_under_touch_device == false) { return; }
 
-            clearTimeout(pill_press_timer);
+            clearTimeout(tab_press_timer);
 
-            // a long press must not ALSO fire the pill's own click
-            if (pill_long_press == true)
+            // a long press must not ALSO run the tab's own click
+            if (tab_long_press == true)
             {
                 event.preventDefault();
             }
         });
 
-        context_pill_container.addEventListener("mousedown", function(event) {
+        conversation_tab_container.addEventListener("mousedown", function(event) {
             if (g_is_client_running_under_touch_device == true) { return; }
 
-            if (event.which == 3 && pill_press_target(event.target) != null && is_channel_tree_hidden() == true)
+            if (event.which == 3 && tab_press_target(event.target) != null && is_channel_tree_hidden() == true)
             {
                 event.stopPropagation(); // or main__document_onmousedown closes it in the same event
-                member_strip_show_channel_switch_menu(event.clientX, event.clientY);
+                member_list_show_channel_switch_menu(event.clientX, event.clientY);
             }
         });
     }
@@ -20871,7 +24401,7 @@ async function main__window_onload()
 
             message_press_timer = window.setTimeout(function() {
                 if (message_press_moved == true) { return; }
-                // bubbles:false is load-bearing: a bubbling mousedown would reach main__document_onmousedown,
+                // bubbles:false is required: a bubbling mousedown would reach main__document_onmousedown,
                 // whose menu cleanup would delete the menu created by this very dispatch
                 message_p.dispatchEvent(new MouseEvent("mousedown", {
                     bubbles: false,
@@ -20894,17 +24424,17 @@ async function main__window_onload()
         });
     }
 
-    // member-strip preferences, persisted like the theme, as body classes and css variables:
+    // member list preferences, persisted like the theme, as body classes and css variables:
     // orientation (top row or side rail), neighbors only, the own-actions menu, the circle size
-    let saved_strip_vertical = null;
-    let saved_strip_scale = null;
-    let saved_strip_neighbors = null;
-    saved_strip_vertical = utils__storage_get("lemon_strip_vertical");
-    saved_strip_scale = utils__storage_get("lemon_strip_scale");
-    saved_strip_neighbors = utils__storage_get("lemon_strip_neighbors");
+    let saved_member_list_vertical = null;
+    let saved_member_list_scale = null;
+    let saved_member_list_neighbors = null;
+    saved_member_list_vertical = utils__storage_get("lemon_strip_vertical");
+    saved_member_list_scale = utils__storage_get("lemon_strip_scale");
+    saved_member_list_neighbors = utils__storage_get("lemon_strip_neighbors");
 
-    if (saved_strip_vertical == "1") { document.body.classList.add("msgr-vertical"); }
-    if (saved_strip_neighbors == "1") { document.body.classList.add("msgr-neighbors-only"); }
+    if (saved_member_list_vertical == "1") { document.body.classList.add("msgr-vertical"); }
+    if (saved_member_list_neighbors == "1") { document.body.classList.add("msgr-neighbors-only"); }
 
     // on unless it was turned off. the badge only appears for people with audio
     // off, so leaving it on costs nothing until there is something worth saying
@@ -20913,23 +24443,23 @@ async function main__window_onload()
 
     if (saved_audio_availability != "0") { document.body.classList.add("msgr-audio-availability"); }
 
-    function apply_strip_scale(circle_px)
+    function apply_member_list_scale(circle_px)
     {
         document.body.style.setProperty("--msgr-circle", circle_px + "px");
         document.body.style.setProperty("--msgr-item", (circle_px + 16) + "px");
-        document.body.style.setProperty("--msgr-strip", (circle_px + 52) + "px");
+        document.body.style.setProperty("--msgr-member-list", (circle_px + 52) + "px");
         document.body.style.setProperty("--msgr-name", (circle_px <= 46 ? 10 : (circle_px <= 56 ? 11 : 12)) + "px");
     }
 
     // legacy values were the steps "1"/"2"/"3"; anything bigger is pixels
     let restored_circle_px = 46;
-    if (saved_strip_scale != null)
+    if (saved_member_list_scale != null)
     {
-        if (saved_strip_scale == "2") { restored_circle_px = 54; }
-        else if (saved_strip_scale == "3") { restored_circle_px = 62; }
-        else if (parseInt(saved_strip_scale) >= 38) { restored_circle_px = parseInt(saved_strip_scale); }
+        if (saved_member_list_scale == "2") { restored_circle_px = 54; }
+        else if (saved_member_list_scale == "3") { restored_circle_px = 62; }
+        else if (parseInt(saved_member_list_scale) >= 38) { restored_circle_px = parseInt(saved_member_list_scale); }
     }
-    apply_strip_scale(restored_circle_px);
+    apply_member_list_scale(restored_circle_px);
 
     document.getElementById("communication-system-head-menu").insertAdjacentHTML("afterbegin",
         "<input type='button' id='msgr-orientation-button' title='people strip: switch between top row and side rail'>" +
@@ -20950,7 +24480,7 @@ async function main__window_onload()
     };
 
     // own actions (set avatar / delete avatar): the same menu a long press on
-    // the own row would open - the row itself is hidden in the strip theme
+    // the own row would open - the row itself is hidden in the member list themes
     document.getElementById("msgr-me-button").onclick = function()
     {
         let local_row = document.querySelector("#channel-list-container .connected-local-client");
@@ -20963,7 +24493,7 @@ async function main__window_onload()
     document.getElementById("msgr-scale-slider").oninput = function()
     {
         let circle_px = parseInt(this.value);
-        apply_strip_scale(circle_px);
+        apply_member_list_scale(circle_px);
         utils__storage_set("lemon_strip_scale", "" + circle_px);
     };
 
@@ -21078,9 +24608,9 @@ async function main__window_onload()
 
     document.getElementById("chat-input-container-send-chat-input").onclick = UI.send_chat_input_on_click;
 
-    // the pills shipped in the html (the root channel's) have no handlers until a rebind loop
-    // happens to run; bind them now so they work on a fresh session too - opening an offline
-    // chat used to leave the channel pill (and the strip's channel circle) dead
+    // the conversation tabs shipped in the html (the root channel's) have no handlers until a rebind loop
+    // happens to run; bind them now so they work on a new session too - opening an offline
+    // chat used to leave the channel tab (and the member list's channel circle) without a handler
     for (let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
     {
         document.getElementsByClassName("chat-context-selector")[x].onclick = UI.chat_context_selector_onclick;
@@ -21091,6 +24621,11 @@ async function main__window_onload()
     }
     document.getElementById("connect-button").onclick = UI.connect_button_onclick;
     connection__wire_server_bookmarks();
+    // the connections and bookmarks menus at the left end of the head menu, and the close button of the connect window (head-menu.js)
+    if (typeof head_menu__init === "function")
+    {
+        head_menu__init();
+    }
     document.getElementById("chat-input-container-text-input").onkeyup = UI.chat_input_on_keyup;
     document.getElementById("choose_image_input").onchange = UI.choose_image_input;
     document.getElementById("choose-file-input").onchange = chat_files__choose_chat_file_input_onchange;
@@ -21100,6 +24635,7 @@ async function main__window_onload()
     document.getElementById("server-settings-general-allow-pictures-checkbox").onchange = chat_files__refresh_picture_size_visibility;
     document.getElementById("server-settings-general-country-blocking-checkbox").onchange = server_settings_tab__refresh_country_blocking_visibility;
     document.getElementById("server-settings-general-display-flags-checkbox").onchange = server_settings_tab__refresh_hide_admin_flag_row_visibility;
+    document.getElementById("server-settings-general-enable-audio").onchange = server_settings_tab__refresh_audio_connections_row_visibility;
     document.getElementById("server-settings-country-block-select").onchange = server_settings_tab__country_block_select_onchange;
     chat_files__setup_chat_file_drag_and_drop();
     chat_files__setup_chat_file_card_glow();
@@ -21166,6 +24702,16 @@ async function main__window_onload()
     document.getElementById("identity-string-use-confirm-button").onclick = UI.identity_string_use_confirm_button;
     document.getElementById("close-button-poke-client").onclick = UI.close_button_poke_client_onclick;
     document.getElementById("close-button-client-info").onclick = UI.close_button_client_info_onclick;
+    document.getElementById("server-info-close-button").onclick = function()
+    {
+        document.getElementById("server-info-dialog").close();
+    };
+    document.getElementById("server-banner-upload-button").onclick = function()
+    {
+        document.getElementById("server-banner-file-input").click();
+    };
+    document.getElementById("server-banner-file-input").onchange = server_info__upload_banner;
+    document.getElementById("server-banner-remove-button").onclick = server_info__remove_banner;
     document.getElementById("close-button-set-new-username").onclick = UI.close_button_set_new_username_onclick;
     document.getElementById("close-button-server-settings").onclick = UI.close_button_server_settings_onclick;
     document.getElementById("poke-client-send-button").onclick = UI.poke_client_send_button_onclick;
@@ -21192,7 +24738,7 @@ async function main__window_onload()
         }
     };
 
-    // adjust-volume dialog: close button + live slider (updates the worklet lane gain as it moves)
+    // adjust-volume dialog: close button + live slider (updates the gain of that sender's playback buffer in the worklet as it moves)
     document.getElementById("close-button-adjust-volume").onclick = function()
     {
         document.getElementById("adjust-volume-container").style.display = "none";
@@ -21218,12 +24764,12 @@ async function main__window_onload()
     document.getElementById("microphone-always-broadcasting-audio-button").onclick = UI.activate_continous_audio_broadcast_onclick;
     document.getElementById("sound-effects-button").onclick = UI.sound_effects_button_onclick;
 
-    // local settings: device-only preferences, no admin involved. new messages only -
-    // already-rendered ones keep whatever they had
+    // These settings apply only on this device.
     document.getElementById("local-settings-button").onclick = function()
     {
         let panel = document.getElementById("local-settings-container");
         document.getElementById("local-settings-show-avatars").checked = g_show_message_avatars;
+        document.getElementById("local-settings-theme-chat-formatting").checked = g_use_theme_chat_formatting;
         document.getElementById("local-settings-rsa-key-bits").value = String(g_rsa_key_bits);
         document.getElementById("local-settings-seen-indicator").checked = g_show_seen_indicator;
         document.getElementById("local-settings-send-seen").checked = g_send_seen_receipts;
@@ -21231,22 +24777,38 @@ async function main__window_onload()
         document.getElementById("local-settings-hide-mic").checked = g_hide_microphone_button;
         document.getElementById("local-settings-sound-effects").checked = g_are_sound_effects_enabled;
         document.getElementById("local-settings-country-flags").checked = (g_show_hide_toggle == false);
+        document.getElementById("local-settings-custom-cursor").checked = g_is_custom_cursor_enabled;
         render_mic_mode_controls();
         document.getElementById("local-settings-file-logging").checked = g_is_file_logging_enabled;
         document.getElementById("local-settings-show-log").checked = (document.getElementById("show-hide-log-button").style.display !== "none");
-        document.getElementById("local-settings-strip-vertical").checked = document.body.classList.contains("msgr-vertical");
-        document.getElementById("local-settings-strip-neighbors").checked = document.body.classList.contains("msgr-neighbors-only");
+        document.getElementById("local-settings-member-list-vertical").checked = document.body.classList.contains("msgr-vertical");
+        document.getElementById("local-settings-member-list-neighbors").checked = document.body.classList.contains("msgr-neighbors-only");
         document.getElementById("local-settings-audio-availability").checked = document.body.classList.contains("msgr-audio-availability");
         populate_microphone_device_list();
 
         if (panel.style.display === "none")
         {
             panel.classList.remove("closing");
+            panel.style.position = "";
+            panel.style.margin = "";
+            panel.style.left = "";
+            panel.style.top = "";
 
             // clear it rather than force "block": an inline display beats the stylesheet,
             // and the phone themes need the panel to stay the flex column that lets the
             // row list scroll under a fixed title bar and save button
             panel.style.display = "";
+
+            // Phone themes fill the screen. Center the smaller desktop window after it opens.
+            if (window.getComputedStyle(panel).position !== "fixed")
+            {
+                panel.style.position = "fixed";
+                panel.style.margin = "0";
+                panel.style.left = "0";
+                panel.style.top = "0";
+                panel.style.left = Math.max(0, Math.round((window.innerWidth - panel.offsetWidth) / 2)) + "px";
+                panel.style.top = Math.max(0, Math.round((window.innerHeight - panel.offsetHeight) / 2)) + "px";
+            }
         }
         else
         {
@@ -21392,15 +24954,15 @@ async function main__window_onload()
     document.getElementById("local-settings-close-button").onclick = close_local_settings;
     document.getElementById("local-settings-x-button").onclick = close_local_settings;
 
-    // the people-strip preferences moved here from the toolbar; the toolbar buttons
-    // still exist for the strip themes, so both drive the same body classes
-    document.getElementById("local-settings-strip-vertical").onchange = function()
+    // the member list preferences moved here from the toolbar; the toolbar buttons
+    // still exist for the member list themes, so both set the same body classes
+    document.getElementById("local-settings-member-list-vertical").onchange = function()
     {
         document.body.classList.toggle("msgr-vertical", this.checked);
         utils__storage_set("lemon_strip_vertical", this.checked ? "1" : "0");
     };
 
-    document.getElementById("local-settings-strip-neighbors").onchange = function()
+    document.getElementById("local-settings-member-list-neighbors").onchange = function()
     {
         document.body.classList.toggle("msgr-neighbors-only", this.checked);
         utils__storage_set("lemon_strip_neighbors", this.checked ? "1" : "0");
@@ -21446,6 +25008,13 @@ async function main__window_onload()
     {
         g_show_message_avatars = this.checked;
         utils__storage_set("lemon_show_message_avatars", this.checked ? "1" : "0");
+    };
+
+    document.getElementById("local-settings-theme-chat-formatting").onchange = function()
+    {
+        g_use_theme_chat_formatting = this.checked;
+        utils__storage_set("lemon_use_theme_chat_formatting", this.checked ? "1" : "0");
+        chat__apply_theme_formatting();
     };
 
     // changing the key size changes the identity itself, so it only takes effect on the next
@@ -21496,6 +25065,13 @@ async function main__window_onload()
     {
         g_auto_scroll_chat_to_end = this.checked;
         utils__storage_set("lemon_auto_scroll", this.checked ? "1" : "0");
+    };
+
+    document.getElementById("local-settings-custom-cursor").onchange = function()
+    {
+        g_is_custom_cursor_enabled = this.checked;
+        utils__storage_set("lemon_custom_cursor", this.checked ? "1" : "0");
+        main__apply_custom_cursor_setting();
     };
 
     document.getElementById("local-settings-send-seen").onchange = function()
@@ -21561,6 +25137,13 @@ async function main__window_onload()
         }
     }
 
+    // the audio connection preference: stored locally, applied at once within the server's policy
+    document.getElementById("local-settings-audio-connection").value = g_audio_connection_preference;
+    document.getElementById("local-settings-audio-connection").onchange = function()
+    {
+        audio_transport__set_preference(this.value);
+    };
+
     // press the button, then press the key you want. escape cancels
     document.getElementById("local-settings-ptt-key").onclick = function()
     {
@@ -21592,7 +25175,7 @@ async function main__window_onload()
         window.addEventListener("keydown", capture_key, true);
     };
 
-    // these toggles live in local settings now; hiding the toolbar copies frees icon space
+    // these toggles are in local settings now; hiding the toolbar copies frees icon space
     document.getElementById("sound-effects-button").style.display = "none";
     document.getElementById("hide-show-flags-button").style.display = "none";
     document.getElementById("microphone-always-broadcasting-audio-button").style.display = "none";
@@ -21604,6 +25187,13 @@ async function main__window_onload()
         g_are_sound_effects_enabled = (stored_sound === "1");
         sounds__apply_sound_effects_muted();
     }
+    // restore the cursor preference; off keeps the system cursor in every theme
+    let stored_custom_cursor = utils__storage_get("lemon_custom_cursor");
+    if (stored_custom_cursor != null)
+    {
+        g_is_custom_cursor_enabled = (stored_custom_cursor === "1");
+    }
+    main__apply_custom_cursor_setting();
     main__sync_toolbar_state_classes(); // seed the state classes from the initial bools so oldschool shows the right icons on load
     document.getElementById("musicbot-management-close-button").onclick = UI.musicbot_management_close_button_onclick;
     document.getElementById("musicbot-management-background-container-upload-button-confirm").onclick = UI.musicbot_management_confirm_upload_button_onclick;
@@ -21661,7 +25251,7 @@ async function main__window_onload()
 
     document.getElementById("server-settings-identities-list").addEventListener("click", function(event)
     {
-        // remove a single tag from an identity (the chip's ✕)
+        // remove a single tag from an identity (the ✕ on the tag label)
         let tag_remove = event.target.closest(".identity-tag-remove");
         if (tag_remove != null)
         {
@@ -21751,13 +25341,19 @@ async function main__window_onload()
         }
     })();
 
-    // every popup drags by its title bar; the drag pins it with an inline fixed position, and the pin
-    // is cleared on every re-open so popups start centered (a pin taken while hidden was 0,0 forever)
-    (function() {
-        let dragging = null, ox = 0, oy = 0;
-        let bars = document.querySelectorAll('[id="menu-bar-container"]');
+    // every popup drags by its title bar; the drag keeps it at an inline fixed position, and that position
+    // is cleared on every re-open so popups start centered (a position taken while hidden was 0,0 forever)
+    (function()
+    {
+        let dragging = null;
+        let ox = 0;
+        let oy = 0;
+        let bars = document.querySelectorAll('[id="menu-bar-container"], #server-info-header');
+        let i = 0;
+        let dialog = null;
 
-        let clear_drag_pin = function(dialog) {
+        let clear_drag_pin = function(dialog)
+        {
             dialog.style.position = "";
             dialog.style.margin = "";
             dialog.style.left = "";
@@ -21765,59 +25361,109 @@ async function main__window_onload()
         };
 
         // recenter on every open: watch each dialog's container for its display flipping on
-        let recenter_observer = new MutationObserver(function(mutations) {
-            for (let i = 0; i < mutations.length; i++) {
-                let container = mutations[i].target;
-                if (container.style.display == "none" || container.style.display == "") { continue; }
-                let dialog = container.querySelector('[data-recenter-on-open="true"]');
+        let recenter_observer = new MutationObserver(function(mutations)
+        {
+            let i = 0;
+            let container = null;
+            let dialog = null;
+            let dw = 0;
+            let dh = 0;
+
+            for (i = 0; i < mutations.length; i++)
+            {
+                container = mutations[i].target;
+                if (container.style.display == "none" || container.style.display == "")
+                {
+                    continue;
+                }
+                dialog = container.querySelector('[data-recenter-on-open="true"]');
                 if (dialog != null)
                 {
                     // center by js instead of trusting theme css: some themes (oldschool)
-                    // give the overlay container zero size, which parked dialogs top-left
+                    // give the overlay container zero size, which left dialogs at the top-left
                     clear_drag_pin(dialog);
                     dialog.style.position = "fixed";
                     dialog.style.margin = "0";
                     // measure with offsetWidth/Height (layout size) not getBoundingClientRect:
                     // a theme's pop-in scale animation (e.g. termix) makes the client rect
                     // smaller than the real box and pushed the centering off. center on both axes.
-                    let dw = dialog.offsetWidth;
-                    let dh = dialog.offsetHeight;
+                    dw = dialog.offsetWidth;
+                    dh = dialog.offsetHeight;
                     dialog.style.left = Math.max(0, Math.round((window.innerWidth - dw) / 2)) + "px";
                     dialog.style.top = Math.max(0, Math.round((window.innerHeight - dh) / 2)) + "px";
                 }
             }
         });
 
-        for (let i = 0; i < bars.length; i++)
+        for (i = 0; i < bars.length; i++)
         {
-            let dialog = bars[i].parentElement;
-            dialog.setAttribute("data-recenter-on-open", "true");
-            if (dialog.parentElement != null)
+            dialog = bars[i].parentElement;
+            if (dialog.tagName !== "DIALOG")
             {
-                recenter_observer.observe(dialog.parentElement, { attributes: true, attributeFilter: ["style"] });
+                dialog.setAttribute("data-recenter-on-open", "true");
+                if (dialog.parentElement != null)
+                {
+                    recenter_observer.observe(dialog.parentElement, { attributes: true, attributeFilter: ["style"] });
+                }
             }
 
-            bars[i].addEventListener("mousedown", function(e) {
-                if (e.target.closest(".close-button") != null) { return; }
+            bars[i].addEventListener("mousedown", function(e)
+            {
                 let dialog = this.parentElement;
-                let rect = dialog.getBoundingClientRect();
-                if (rect.width == 0 && rect.height == 0) { return; } // no layout (hidden): a pin here would stick the dialog to 0,0
+                let rect = null;
+
+                if (e.button !== 0 || e.target.closest(".close-button") != null)
+                {
+                    return;
+                }
+                rect = dialog.getBoundingClientRect();
+                if (rect.width == 0 && rect.height == 0)
+                {
+                    return;
+                }
                 dragging = dialog;
                 ox = e.clientX - rect.left;
                 oy = e.clientY - rect.top;
                 dialog.style.position = "fixed";
                 dialog.style.margin = "0";
+                if (dialog.tagName === "DIALOG")
+                {
+                    dialog.style.right = "auto";
+                    dialog.style.bottom = "auto";
+                }
                 dialog.style.left = rect.left + "px";
                 dialog.style.top = rect.top + "px";
                 e.preventDefault();
             });
         }
-        document.addEventListener("mousemove", function(e) {
-            if (dragging == null) { return; }
-            dragging.style.left = (e.clientX - ox) + "px";
-            dragging.style.top = (e.clientY - oy) + "px";
+        document.addEventListener("mousemove", function(e)
+        {
+            let left = 0;
+            let top = 0;
+
+            if (dragging == null)
+            {
+                return;
+            }
+            left = e.clientX - ox;
+            top = e.clientY - oy;
+            if (dragging.tagName === "DIALOG")
+            {
+                if (!dragging.open)
+                {
+                    dragging = null;
+                    return;
+                }
+                left = Math.max(0, Math.min(left, window.innerWidth - dragging.offsetWidth));
+                top = Math.max(0, Math.min(top, window.innerHeight - dragging.offsetHeight));
+            }
+            dragging.style.left = left + "px";
+            dragging.style.top = top + "px";
         });
-        document.addEventListener("mouseup", function() { dragging = null; });
+        document.addEventListener("mouseup", function()
+        {
+            dragging = null;
+        });
     })();
 
     for (let i = 0; i < document.getElementsByClassName("choose-theme-item").length; i++)
@@ -21841,7 +25487,7 @@ async function main__window_onload()
 
     // browsers create an AudioContext suspended unless it is made during a user gesture; resume it on the first click/tap so audio works after an autoconnect, with no dedicated connect click.
     // the context that matters is audio_context (created at authentication time, all voice/music playback runs through it).
-    // the listeners must stay attached until audio_context exists and is running: a gesture can fire before authentication creates it
+    // the listeners must stay attached until audio_context exists and is running: a gesture can happen before authentication creates it
     let unlock_audio_on_first_user_gesture = function()
     {
         if (typeof g_audio_context !== "undefined" && g_audio_context != null && g_audio_context.state === "suspended")
@@ -21865,6 +25511,10 @@ async function main__window_onload()
     g_opus_encoder_worker = audio_opus_glue__create_new_webworker_in_same_file("opus_encoder_worker");
     g_opus_decoder_worker = audio_opus_glue__create_new_webworker_in_same_file("opus_decoder_worker");
     g_minimp3_worker = audio_opus_glue__create_new_webworker_in_same_file("minimp3_worker");
+    g_video_worker = audio_opus_glue__create_new_webworker_in_same_file("video_worker");
+
+    // the video streaming buttons and popup; needs the video worker above (the viewer's canvas is handed to it)
+    video__init_ui();
 
     // restore a persisted identity: the 200-char passphrase deterministically recreates the keypair,
     // so the same identity survives relaunches. it is private-key-equivalent in localStorage, hence
@@ -21915,7 +25565,7 @@ async function main__window_onload()
         document.getElementById("style-theme-default").removeAttribute("media"); // set default theme
     }
 
-    // server-baked default theme (from the injected config); applied unless the user has their own saved choice. persist=false so it never sticks.
+    // default theme set by the server (from the injected config); applied unless the user has their own saved choice. persist=false so it is never saved.
     // on a phone a desktop theme is ignored here so the mobile default set above stays in effect
     let startup_theme_applied = false;
 
@@ -21934,7 +25584,7 @@ async function main__window_onload()
         startup_theme_applied = true;
     }
 
-    // no server-baked theme and nothing saved: activate the default sheet explicitly.
+    // no default theme from the server and nothing saved: activate the default sheet explicitly.
     // without this ALL four theme <style> elements stay active at once and the cascade
     // mixes them (the last sheet mostly wins), which is never an intended look
     if (startup_theme_applied == false)
@@ -21959,10 +25609,10 @@ async function main__window_onload()
         g_mark_call_accept_presence = android_js_bridge.mark_call_accept_presence_android;
         g_set_username_on_connect = android_js_bridge.set_username_on_connect_android;
         g_accept_current_settings_from_android = android_js_bridge.accept_current_settings_from_android;
-        g_nudge_loopback_reattach = android_js_bridge.nudge_loopback_reattach_android;
+        g_request_loopback_reattach = android_js_bridge.request_loopback_reattach_android;
         g_show_connection_phase = android_js_bridge.show_connection_phase_android;
 
-        // a push that raced ahead of this wiring was held by the page shim - use it now
+        // a settings push that arrived before these handlers were attached was held by the stand-in window object - use it now
         if (typeof g_pending_android_settings === "string" && g_pending_android_settings != null)
         {
             console.log("connect-path: applying settings that arrived before onload");
@@ -21970,8 +25620,8 @@ async function main__window_onload()
             g_pending_android_settings = null;
         }
 
-        // lets a theme style itself for the wrapper app (the strip themes give the settings gear a
-        // real slot in its top bar; css alone cannot tell app from browser)
+        // lets a theme style itself for the wrapper app (the member list themes give the settings gear a
+        // real place in their top bar; css alone cannot tell app from browser)
         document.body.classList.add("android-app");
 
         // the app loads client.html from its assets, so the served config (and allow_avatars) never
@@ -22012,15 +25662,15 @@ async function main__window_onload()
 
         Android.JavaExportRequestCurrentSettingsFromAndroid();
 
-        // the settings callback sets the connection target; the driver takes it from there
+        // the settings callback sets the connection target; the connect loop takes it from there
     }
     else if (g_are_server_details_predefined == true)
     {
-        // website with baked-in config: connection__request_connect dials it under autoconnect
+        // website with the config written into the page: connection__request_connect connects under autoconnect
         connection__request_connect("settings");
     }
 
-    // the page loads with the spinner up (see the template); arm its reveal deadline so a
+    // the page loads with the spinner up (see the template); start its reveal deadline so a
     // client that connects to nothing still shows the connect page after a moment.
     // the setter call paints the theme's background onto it (opaque page one)
     connection__set_connect_holdback_loader_visible(true);
@@ -22028,14 +25678,14 @@ async function main__window_onload()
     g_connect_holdback_deadline = g_connect_holdback_started + 2500;
     setTimeout(connection__connect_holdback_check, 250);
 
-    // a browser client in manual mode knows at load that nothing will dial: no spinner
+    // a browser client in manual mode knows at load that nothing will connect: no spinner
     if (g_is_running_in_android_webview == false && g_is_autoconnect_without_user_action_active == false)
     {
         connection__reveal_connect_page();
     }
 
     connection__start_connection_status_ticker();
-    connection__connection_driver();
+    connection__connect_loop();
 }
 
 // needs to be checked so webworkers that this code is shared with do not try to use window object
@@ -22058,7 +25708,7 @@ return {
     // call once before connecting: stands up the transport and the log sink
     init_node_runtime: android_host__init_node_runtime,
 
-    // the webview handover: false closes the socket and parks reconnect, true re-arms
+    // the webview handover: false closes the socket and stops reconnecting, true allows it again
     node_set_connection_wanted: android_host__node_set_connection_wanted,
 
     /**
@@ -22139,7 +25789,7 @@ return {
      *        clears what it accumulated; the ui owns the badge then
      *
      * @param boolean is_attached -> true when a ui is attached
-     * @param boolean is_from_host -> true when java said so; the webview redialling in the background is not the user coming back
+     * @param boolean is_from_host -> true when java said so; the webview reconnecting in the background is not the user coming back
      *
      * @return void
      */
@@ -22151,7 +25801,7 @@ return {
         }
         else if (node_ui_visibility_from_host == true)
         {
-            // the webview redialling the loopback in the background is not the user
+            // the webview reconnecting to the loopback in the background is not the user
             // coming back, and java has already said so
             return;
         }
@@ -22210,7 +25860,7 @@ return {
     },
 
     /**
-     * @brief a ui attached to the loopback wants to be online; an attach is always the downstream of an authorized decision, so the driver dials for it
+     * @brief a ui attached to the loopback wants to be online; an attach always follows an authorized decision, so the connect loop connects for it
      *
      * @return void
      */
@@ -22263,13 +25913,16 @@ return {
             g_icons: g_icons,
             current_channel_id: g_current_channel_id,
             current_channel_keys: g_current_channel_keys,
+            // the keys of this client's media frames, for the test harness (keys.js)
+            media_session_layer: keys__media_session_layer(),
+            media_server_key_layers: keys__media_server_key_layers(),
             local_client_id: g_local_client_id,
             g_local_username: g_local_username,
             g_current_chat_context_id: g_current_chat_context_id,
             g_chat_message_receiver_type: g_chat_message_receiver_type,
             g_is_client_list_retrieved: g_is_client_list_retrieved,
             g_is_channel_list_retrieved: g_is_channel_list_retrieved,
-            // the live connection signal (g_is_websocket_connected is a dead flag, see ui.js)
+            // the live connection signal (g_is_websocket_connected is no longer updated, see ui.js)
             g_is_authenticated: g_is_authenticated,
             g_is_microphone_always_on: g_is_microphone_always_on,
             g_have_received_android_settings: g_have_received_android_settings

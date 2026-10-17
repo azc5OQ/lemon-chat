@@ -1,6 +1,6 @@
 // globals.js is embedded in template.html (and the node bundle) along with the other client files
 // it holds every piece of state that more than one file uses, one group per topic
-// every top-level var and function between aes-js.js and the end of main.js lives in one closure, so
+// every top-level var and function between aes-js.js and the end of main.js is in one closure, so
 // all of them are visible everywhere; the prefix is the convention: g_ = app-wide state, G_ = app-wide
 // constant, no prefix = private to the file that declares it
 
@@ -44,7 +44,7 @@ var g_is_authenticated = false;
 var g_should_connection_check_be_running = false;
 
 // the heartbeat: one every interval_ms, the link counts as lost after lost_threshold_ms without
-// a reply (three missed 10 s heartbeats plus slack, so a dead network shows within a minute)
+// a reply (three missed 10 s heartbeats plus some allowance, so a lost network shows within a minute)
 var g_connection_check = {
     interval_ms: 10 * 1000,
     lost_threshold_ms: 35 * 1000,
@@ -52,9 +52,9 @@ var g_connection_check = {
     last_response_timestamp: 0  // set on every heartbeat reply, first when the client connects
 };
 
-// session statistics for the strip themes' session-info card. bytes are counted at
-// the two choke points every message passes through (encrypted base64 lengths, so
-// "wire-ish" numbers); ping is the heartbeat round trip.
+// session statistics for the session-info card of the member list themes. bytes are counted at
+// the two points every message passes through (encrypted base64 lengths, so close to the
+// numbers sent over the connection); ping is the heartbeat round trip.
 var g_session = {
     bytes_sent: 0,
     bytes_received: 0,
@@ -63,9 +63,9 @@ var g_session = {
     last_ping_ms: -1
 };
 
-// fast reconnect (server setting): a lost socket keeps the page exactly as it is and re-dials with
+// fast reconnect (server setting): a lost socket keeps the page exactly as it is and connects again with
 // the same identity; the server adopts the still-open session. only a failed attempt shows
-// "connection lost" and wipes the page
+// "connection lost" and resets the page
 var g_fast_reconnect = {
     in_progress: false,   // an attempt is running: no wipe, no toast, one attempt only
     resumed: false,       // the server said fast_reconnect_ok: the lists that follow are a refresh
@@ -73,11 +73,11 @@ var g_fast_reconnect = {
     pending_lists: null   // the refreshed lists, applied together so the page repaints once
 };
 
-// the local keypair as { public_key_string, identity_string }, awaited by the driver and filled by
+// the local keypair as { public_key_string, identity_string }, awaited by the connect loop of connection.js and filled by
 // dispatch.js when the worker made it; connection.js builds the slot at load. the private key stays in the worker
 var g_identity_slot = null;
 
-// the live status for the login page. the local driver writes it; in the webview,
+// the live status for the login page. the local connect loop writes it; in the webview,
 // node's reports arriving over the loopback overwrite it, because node owns the real connection
 var g_connection_status = {
     state: "idle",          // idle | connecting | waiting_retry | connected
@@ -90,7 +90,7 @@ var g_connection_status = {
 // two exist, the loopback ui and the java bridge
 var g_connection_status_listeners = [];
 
-// filled by the close and error handlers, consumed by the driver for the retry status
+// filled by the close and error handlers, read by the connect loop for the retry status
 var g_last_disconnect_reason = "";
 
 // android reports the device's real network state over the bridge; null means never told
@@ -133,16 +133,17 @@ var g_keys_init_status = false;
 
 var g_is_identity_switch_in_progress = false; // deliberate disconnect->new-keypair->reconnect cycle (top bar "identity" button)
 
-// the size this server last asked for, so the offer is not repeated on every redial. the
-// connection driver retries forever, and the rejection repeats on every attempt
+// the size this server last asked for, so the offer is not repeated on every new attempt. the
+// connect loop retries forever, and the rejection repeats on every attempt
 var g_rsa_key_too_weak_prompted_for_bits = 0;
 
 // ---- server policy ----
 
 // server-side policy this client only obeys, announced at login (authentication_status) and on every
 // admin save (server_policy); absent fields on an older server keep these defaults. the keys are the
-// wire names, so server_settings_tab__apply_server_policy_fields copies them generically (a number only when positive)
+// field names of the message, so server_settings_tab__apply_server_policy_fields copies them generically (a number only when positive)
 var g_server_policy = {
+    enforce_connection_check: true,
     is_fast_reconnect_allowed: false,          // a lost socket may resume its session instead of starting over
     show_music_bot_marquee_to_everyone: false, // a streaming bot's marquee also for people outside its channel
     is_alias_registration_allowed: false,      // admins may register aliases (display names) on identities
@@ -198,10 +199,10 @@ var g_selected_client_id;
 
 var g_current_channel_id = 0;
 
-// internal sentinel meaning "the root level" while walking the channel tree.
+// internal marker value meaning "the root level" while walking the channel tree: it is passed where a parent channel id is expected and matches no real channel.
 // root channels are identified by their is_root_channel flag, never by this value
 // (server ids are uint64 and can no longer carry -1).
-const g_ROOT_LEVEL_PARENT_SENTINEL = -1;
+const g_ROOT_LEVEL_PARENT_MARKER = -1;
 
 var g_chat_message_author_public_keys = {}; // server chat message id -> author's public key; used to decide whether to honour an incoming delete/edit
 
@@ -298,6 +299,10 @@ var g_alert_push_to_talk_key_shown_once = false;
 var g_alert_streaming_music_shown_once = false;
 
 var g_are_sound_effects_enabled = true;
+
+// whether a theme may replace the mouse cursor and draw a glow around it (ozone does); false keeps the
+// system cursor in every theme. a local setting, saved on this device as lemon_custom_cursor
+var g_is_custom_cursor_enabled = true;
 
 var g_stop_song_stream_message_received = false;
 
@@ -409,6 +414,9 @@ var g_rsa_key_bits = 2048;
 // local-only preference for the avatar circles next to chat messages
 var g_show_message_avatars = false;
 
+// Display message text in this theme's font, size and color without changing what was sent.
+var g_use_theme_chat_formatting = false;
+
 // read receipts have two halves that are set separately: whether we draw the eye others send
 // us, and whether we send one back. both are on unless turned off
 var g_show_seen_indicator = true;
@@ -435,7 +443,7 @@ var g_push_to_talk_key_code = 81;
 
 var g_push_to_talk_key_label = "Q";
 
-// just a copy so the checkbox can show the right state, because the real flag lives in java
+// just a copy so the checkbox can show the right state, because the real flag is kept in java
 var g_is_file_logging_enabled = false;
 
 // ---- node runtime (the headless android service) ----
@@ -449,7 +457,7 @@ var g_loopback_token = "";
 // the server's auth frame, kept from the moment it arrives, because the ui replay leads with it
 var g_node_cached_auth_frame = null;
 
-// false parks the connection: the socket is closed and the reconnect ticker idles. it is
+// false keeps the connection closed on purpose: the socket is closed and the reconnect loop waits. it is
 // always true in the browser; only the node host flips it, for the webview handover
 var g_node_connection_wanted = true;
 
@@ -461,7 +469,7 @@ var g_node_frame_listener = null;
 // channel and never count those messages as unread
 var g_node_has_attached_ui = false;
 
-// the bridge host's hook for incoming calls. it stays null everywhere but android
+// the bridge host's callback for incoming calls. it stays null everywhere but android
 var g_node_incoming_call_listener = null;
 
 // set through the export seam. every listener is called after every dispatched message
@@ -519,8 +527,15 @@ var g_video_stream = {
     is_popup_open: false,
     viewer_count: 0,                // streamer side
     pending_viewer_requests: [],    // streamer side: [{ client_id, username }] waiting for yes / no
+    is_sound_included: false,       // the stream carries sound packets next to the picture packets (video.js)
+    watching_client_ids: [],        // the members watching right now; known to the streamer and the allowed members only, the server tells nobody else
     epoch: 0                        // bumped per stream we start, so viewers never mix two streams
 };
+
+// local settings of the stream window (video.js): the volume of a stream's sound (saved as lemon_video_stream_sound_volume)
+// and whether a streamer hears the file it streams (saved as lemon_video_stream_monitor)
+var g_video_stream_sound_volume = 1;
+var g_is_video_stream_monitor_enabled = true;
 
 var g_is_webrtc_datachannel_check_running = false;
 

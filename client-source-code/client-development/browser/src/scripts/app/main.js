@@ -10,7 +10,7 @@ var node_ui_visibility_from_host = false;
 
 /**
  * @brief global mousedown: closes the chat-message context menu, and every other context menu
- *        unless the click landed on a menu item (so the item's own click handler still runs)
+ *        unless the click was on a menu item (so the item's own click handler still runs)
  *
  * @param object event -> the mouse event
  *
@@ -64,7 +64,7 @@ function main__document_onkeyup(event)
     if (event.which == g_push_to_talk_key_code)
     {
         // the encoder clear moved into voice__process_stop_sending_audio_now: clearing here
-        // would wipe the release-hangover tail that is still being captured
+        // would discard the end of the recording that is still being captured after the key release
         voice__process_stop_sending_audio();
     }
 }
@@ -104,7 +104,7 @@ function main__apply_theme_for_app_mode()
 }
 
 /**
- * @brief stops event bubbling; wired where a click must not reach parent handlers
+ * @brief stops event bubbling (the browser passing an event on to the parent elements); attached where a click must not reach parent handlers
  *
  * @param object event -> the event to stop
  *
@@ -133,11 +133,28 @@ function main__sync_toolbar_state_classes()
 }
 
 /**
+ * @brief applies the local "theme cursor" setting: with the setting off, the root element carries the
+ *        class custom-cursor-off, and a theme's cursor rules (ozone replaces the mouse cursor and draws
+ *        a glow around it) are written so that this class switches them off
+ *
+ * @return void
+ */
+function main__apply_custom_cursor_setting()
+{
+    let root = document.documentElement;
+
+    if (root != null && root.classList != null)
+    {
+        root.classList.toggle("custom-cursor-off", g_is_custom_cursor_enabled == false);
+    }
+}
+
+/**
  * @brief the page entry point
  *        detects the android webview and touch devices, applies the predefined server
  *        autoconnect config, sets up ui visibility, gestures and every element's event handlers
  *
- * @return promise ignored by window.onload; resolves once the page is wired
+ * @return promise ignored by window.onload; resolves once the page's handlers are attached
  */
 async function main__window_onload()
 {
@@ -149,7 +166,7 @@ async function main__window_onload()
         g_are_server_details_predefined = false;
     }
 
-    // touch detection lives in platform-detection.js; the android webview force above stays
+    // touch detection is in platform-detection.js; the android webview force above stays
     if (utils__detect_touch_device() == true)
     {
         g_is_client_running_under_touch_device = true;
@@ -160,11 +177,10 @@ async function main__window_onload()
         // in android, connection settings are stored in its own container..
         // these ui elements are not needed
         document.getElementById("add-key-button").style.visibility = "hidden";
-        document.getElementById("connect-form-sub-container-1").style.visibility = "hidden";
-        document.getElementById("connect-form-sub-container-2").style.visibility = "hidden";
+        document.getElementById("connect-form-grid").style.visibility = "hidden";
     }
 
-    // web: if the server baked connection details into the page, enable autoconnect before the form-visibility logic below runs; hide only the connect form (ip/port), leaving the loading/connecting status visible so the page isn't blank while it connects
+    // web: if the server wrote connection details into the page, enable autoconnect before the form-visibility logic below runs; hide only the connect form (ip/port), leaving the loading/connecting status visible so the page isn't blank while it connects
     if (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.port && g_is_running_in_android_webview == false)
     {
         g_are_server_details_predefined = true;
@@ -175,13 +191,12 @@ async function main__window_onload()
             keys: window.__SERVER_CONFIG__.keys,
             wss_port: window.__SERVER_CONFIG__.wss_port
         };
-        document.getElementById("connect-form-sub-container-1").style.display = "none";
-        document.getElementById("connect-form-sub-container-2").style.display = "none";
+        document.getElementById("connect-form-grid").style.display = "none";
     }
 
     if (g_is_running_in_android_webview == false)
     {
-        // the address is baked in (injected config, or set by hand in the source), so the fields the
+        // the address is written into the page (injected config, or set by hand in the source), so the fields the
         // bookmarks fill are never consulted: hidden in every theme, and it stays hidden on the
         // connect screen after a disconnect
         if (g_are_server_details_predefined == true)
@@ -191,8 +206,7 @@ async function main__window_onload()
 
         if (g_are_server_details_predefined == false)
         {
-            document.getElementById("connect-form-sub-container-1").style.visibility = "visible";
-            document.getElementById("connect-form-sub-container-2").style.visibility = "visible";
+            document.getElementById("connect-form-grid").style.visibility = "visible";
             document.getElementById("add-key-button").style.visibility = "visible";
             document.getElementById("connect-button").style.visibility = "visible";
         }
@@ -212,11 +226,12 @@ async function main__window_onload()
 
     g_textarea_log = document.getElementById("textarea-log");
 
-    // member-strip gestures: strip themes tap the clones in the right-pane member list, which are
+    // member list gestures: in the themes that show the member list instead of the channel tree
+    // (simpledark, bluebell), a tap is on the clones in the right-pane member list, which are
     // rebuilt on every sync, so delegated listeners forward tap (open chat / show channel chat) and
     // hold (row menu / channel switch list) to the real tree rows; touch and mouse both register
 
-    function member_strip_show_channel_switch_menu(click_x, click_y)
+    function member_list_show_channel_switch_menu(click_x, click_y)
     {
         UI.delete_contextmenus();
 
@@ -260,31 +275,31 @@ async function main__window_onload()
         }
     }
 
-    // true when the gesture landed on a circle and was handled, so the caller stops the event and
+    // true when the gesture was on a circle and was handled, so the caller stops the event and
     // main__document_onmousedown does not close the menu the gesture just opened
-    function member_strip_forward(target_element, click_x, click_y, is_short_click)
+    function member_list_forward(target_element, click_x, click_y, is_short_click)
     {
         let channel_circle = target_element.closest(".member-list-channel");
         if (channel_circle != null)
         {
             if (is_short_click == true)
             {
-                // bring the channel chat back on screen - same as tapping its pill. a pill
-                // fresh from the html has no handler yet - give it the standard one
-                let channel_pill = document.querySelector('.chat-context-selector[data-chat-context-selector-id="channel-' + channel_circle.getAttribute("data-member-list-channel-id") + '"]');
-                if (channel_pill != null)
+                // bring the channel chat back on screen - same as tapping its conversation tab.
+                // a tab fresh from the html has no handler yet - give it the standard one
+                let channel_tab = document.querySelector('.chat-context-selector[data-chat-context-selector-id="channel-' + channel_circle.getAttribute("data-member-list-channel-id") + '"]');
+                if (channel_tab != null)
                 {
-                    if (channel_pill.onclick == null)
+                    if (channel_tab.onclick == null)
                     {
-                        channel_pill.onclick = UI.chat_context_selector_onclick;
+                        channel_tab.onclick = UI.chat_context_selector_onclick;
                     }
 
-                    channel_pill.click();
+                    channel_tab.click();
                 }
             }
             else
             {
-                member_strip_show_channel_switch_menu(click_x, click_y);
+                member_list_show_channel_switch_menu(click_x, click_y);
             }
             return true;
         }
@@ -320,60 +335,60 @@ async function main__window_onload()
         let tree_row = document.querySelector('#channel-list-container .connected-client[data-connected-client-id="' + strip_client_id + '"], #idle-clients-container .connected-client[data-connected-client-id="' + strip_client_id + '"]');
         if (tree_row == null) { return false; }
 
-        // the row handler accepts an explicit target + coordinates, so the strip can
-        // hand it the REAL tree row no matter which clone was tapped
+        // the row handler accepts an explicit target + coordinates, so the member list can
+        // pass it the REAL tree row no matter which clone was tapped
         let forwarded_event = { stopPropagation: function() {}, currentTarget: null, which: null };
         UI.connected_user_onmousedown(forwarded_event, true, click_x, click_y, tree_row, is_short_click);
         return true;
     }
 
-    let member_strip_body = document.getElementById("member-list-body");
-    if (member_strip_body != null)
+    let member_list_body = document.getElementById("member-list-body");
+    if (member_list_body != null)
     {
-        let member_strip_press_timer = null;
-        let member_strip_long_press = false;
-        let member_strip_moved = false;
+        let member_list_press_timer = null;
+        let member_list_long_press = false;
+        let member_list_moved = false;
 
-        member_strip_body.addEventListener("touchstart", function(event) {
+        member_list_body.addEventListener("touchstart", function(event) {
             if (g_is_client_running_under_touch_device == false) { return; }
 
-            member_strip_long_press = false;
-            member_strip_moved = false;
+            member_list_long_press = false;
+            member_list_moved = false;
 
             const target_element = event.target;
             const click_x = event.touches[0].clientX;
             const click_y = event.touches[0].clientY;
 
-            member_strip_press_timer = window.setTimeout(function() {
-                member_strip_long_press = true;
-                member_strip_forward(target_element, click_x, click_y, false);
+            member_list_press_timer = window.setTimeout(function() {
+                member_list_long_press = true;
+                member_list_forward(target_element, click_x, click_y, false);
             }, 600);
         }, { passive: true });
 
-        member_strip_body.addEventListener("touchmove", function() {
-            // finger is scrolling the strip, not pressing a circle
-            member_strip_moved = true;
-            clearTimeout(member_strip_press_timer);
+        member_list_body.addEventListener("touchmove", function() {
+            // finger is scrolling the member list, not pressing a circle
+            member_list_moved = true;
+            clearTimeout(member_list_press_timer);
         }, { passive: true });
 
-        member_strip_body.addEventListener("touchend", function(event) {
+        member_list_body.addEventListener("touchend", function(event) {
             if (g_is_client_running_under_touch_device == false) { return; }
 
-            clearTimeout(member_strip_press_timer);
+            clearTimeout(member_list_press_timer);
 
-            if (member_strip_long_press == false && member_strip_moved == false)
+            if (member_list_long_press == false && member_list_moved == false)
             {
-                member_strip_forward(event.target, event.changedTouches[0].clientX, event.changedTouches[0].clientY, true);
+                member_list_forward(event.target, event.changedTouches[0].clientX, event.changedTouches[0].clientY, true);
             }
         });
 
-        member_strip_body.addEventListener("mousedown", function(event) {
+        member_list_body.addEventListener("mousedown", function(event) {
             if (g_is_client_running_under_touch_device == true) { return; }
 
             // left opens, right = actions / channel list - same split the tree rows use
             if (event.which == 1 || event.which == 3)
             {
-                if (member_strip_forward(event.target, event.clientX, event.clientY, event.which == 1) == true)
+                if (member_list_forward(event.target, event.clientX, event.clientY, event.which == 1) == true)
                 {
                     event.stopPropagation();
                 }
@@ -381,10 +396,10 @@ async function main__window_onload()
         });
     }
 
-    // holding a channel pill offers the channel switch list too, but only while a
-    // theme hides the channel tree (the strip themes) - elsewhere the tree does that job
-    let context_pill_container = document.getElementById("chat-context-selectors-container");
-    if (context_pill_container != null)
+    // holding a channel tab offers the channel switch list too, but only while a
+    // theme hides the channel tree (the member list themes) - elsewhere the tree does that job
+    let conversation_tab_container = document.getElementById("chat-context-selectors-container");
+    if (conversation_tab_container != null)
     {
         function is_channel_tree_hidden()
         {
@@ -392,52 +407,52 @@ async function main__window_onload()
             return (tree_pane != null && getComputedStyle(tree_pane).display == "none");
         }
 
-        function pill_press_target(event_target)
+        function tab_press_target(event_target)
         {
             let pill = event_target.closest('.chat-context-selector[data-chat-context-selector-type="channel"]');
             return pill;
         }
 
-        let pill_press_timer = null;
-        let pill_long_press = false;
+        let tab_press_timer = null;
+        let tab_long_press = false;
 
-        context_pill_container.addEventListener("touchstart", function(event) {
+        conversation_tab_container.addEventListener("touchstart", function(event) {
             if (g_is_client_running_under_touch_device == false) { return; }
-            if (pill_press_target(event.target) == null || is_channel_tree_hidden() == false) { return; }
+            if (tab_press_target(event.target) == null || is_channel_tree_hidden() == false) { return; }
 
-            pill_long_press = false;
+            tab_long_press = false;
             const click_x = event.touches[0].clientX;
             const click_y = event.touches[0].clientY;
 
-            pill_press_timer = window.setTimeout(function() {
-                pill_long_press = true;
-                member_strip_show_channel_switch_menu(click_x, click_y);
+            tab_press_timer = window.setTimeout(function() {
+                tab_long_press = true;
+                member_list_show_channel_switch_menu(click_x, click_y);
             }, 600);
         }, { passive: true });
 
-        context_pill_container.addEventListener("touchmove", function() {
-            clearTimeout(pill_press_timer);
+        conversation_tab_container.addEventListener("touchmove", function() {
+            clearTimeout(tab_press_timer);
         }, { passive: true });
 
-        context_pill_container.addEventListener("touchend", function(event) {
+        conversation_tab_container.addEventListener("touchend", function(event) {
             if (g_is_client_running_under_touch_device == false) { return; }
 
-            clearTimeout(pill_press_timer);
+            clearTimeout(tab_press_timer);
 
-            // a long press must not ALSO fire the pill's own click
-            if (pill_long_press == true)
+            // a long press must not ALSO run the tab's own click
+            if (tab_long_press == true)
             {
                 event.preventDefault();
             }
         });
 
-        context_pill_container.addEventListener("mousedown", function(event) {
+        conversation_tab_container.addEventListener("mousedown", function(event) {
             if (g_is_client_running_under_touch_device == true) { return; }
 
-            if (event.which == 3 && pill_press_target(event.target) != null && is_channel_tree_hidden() == true)
+            if (event.which == 3 && tab_press_target(event.target) != null && is_channel_tree_hidden() == true)
             {
                 event.stopPropagation(); // or main__document_onmousedown closes it in the same event
-                member_strip_show_channel_switch_menu(event.clientX, event.clientY);
+                member_list_show_channel_switch_menu(event.clientX, event.clientY);
             }
         });
     }
@@ -462,7 +477,7 @@ async function main__window_onload()
 
             message_press_timer = window.setTimeout(function() {
                 if (message_press_moved == true) { return; }
-                // bubbles:false is load-bearing: a bubbling mousedown would reach main__document_onmousedown,
+                // bubbles:false is required: a bubbling mousedown would reach main__document_onmousedown,
                 // whose menu cleanup would delete the menu created by this very dispatch
                 message_p.dispatchEvent(new MouseEvent("mousedown", {
                     bubbles: false,
@@ -485,17 +500,17 @@ async function main__window_onload()
         });
     }
 
-    // member-strip preferences, persisted like the theme, as body classes and css variables:
+    // member list preferences, persisted like the theme, as body classes and css variables:
     // orientation (top row or side rail), neighbors only, the own-actions menu, the circle size
-    let saved_strip_vertical = null;
-    let saved_strip_scale = null;
-    let saved_strip_neighbors = null;
-    saved_strip_vertical = utils__storage_get("lemon_strip_vertical");
-    saved_strip_scale = utils__storage_get("lemon_strip_scale");
-    saved_strip_neighbors = utils__storage_get("lemon_strip_neighbors");
+    let saved_member_list_vertical = null;
+    let saved_member_list_scale = null;
+    let saved_member_list_neighbors = null;
+    saved_member_list_vertical = utils__storage_get("lemon_strip_vertical");
+    saved_member_list_scale = utils__storage_get("lemon_strip_scale");
+    saved_member_list_neighbors = utils__storage_get("lemon_strip_neighbors");
 
-    if (saved_strip_vertical == "1") { document.body.classList.add("msgr-vertical"); }
-    if (saved_strip_neighbors == "1") { document.body.classList.add("msgr-neighbors-only"); }
+    if (saved_member_list_vertical == "1") { document.body.classList.add("msgr-vertical"); }
+    if (saved_member_list_neighbors == "1") { document.body.classList.add("msgr-neighbors-only"); }
 
     // on unless it was turned off. the badge only appears for people with audio
     // off, so leaving it on costs nothing until there is something worth saying
@@ -504,23 +519,23 @@ async function main__window_onload()
 
     if (saved_audio_availability != "0") { document.body.classList.add("msgr-audio-availability"); }
 
-    function apply_strip_scale(circle_px)
+    function apply_member_list_scale(circle_px)
     {
         document.body.style.setProperty("--msgr-circle", circle_px + "px");
         document.body.style.setProperty("--msgr-item", (circle_px + 16) + "px");
-        document.body.style.setProperty("--msgr-strip", (circle_px + 52) + "px");
+        document.body.style.setProperty("--msgr-member-list", (circle_px + 52) + "px");
         document.body.style.setProperty("--msgr-name", (circle_px <= 46 ? 10 : (circle_px <= 56 ? 11 : 12)) + "px");
     }
 
     // legacy values were the steps "1"/"2"/"3"; anything bigger is pixels
     let restored_circle_px = 46;
-    if (saved_strip_scale != null)
+    if (saved_member_list_scale != null)
     {
-        if (saved_strip_scale == "2") { restored_circle_px = 54; }
-        else if (saved_strip_scale == "3") { restored_circle_px = 62; }
-        else if (parseInt(saved_strip_scale) >= 38) { restored_circle_px = parseInt(saved_strip_scale); }
+        if (saved_member_list_scale == "2") { restored_circle_px = 54; }
+        else if (saved_member_list_scale == "3") { restored_circle_px = 62; }
+        else if (parseInt(saved_member_list_scale) >= 38) { restored_circle_px = parseInt(saved_member_list_scale); }
     }
-    apply_strip_scale(restored_circle_px);
+    apply_member_list_scale(restored_circle_px);
 
     document.getElementById("communication-system-head-menu").insertAdjacentHTML("afterbegin",
         "<input type='button' id='msgr-orientation-button' title='people strip: switch between top row and side rail'>" +
@@ -541,7 +556,7 @@ async function main__window_onload()
     };
 
     // own actions (set avatar / delete avatar): the same menu a long press on
-    // the own row would open - the row itself is hidden in the strip theme
+    // the own row would open - the row itself is hidden in the member list themes
     document.getElementById("msgr-me-button").onclick = function()
     {
         let local_row = document.querySelector("#channel-list-container .connected-local-client");
@@ -554,7 +569,7 @@ async function main__window_onload()
     document.getElementById("msgr-scale-slider").oninput = function()
     {
         let circle_px = parseInt(this.value);
-        apply_strip_scale(circle_px);
+        apply_member_list_scale(circle_px);
         utils__storage_set("lemon_strip_scale", "" + circle_px);
     };
 
@@ -669,9 +684,9 @@ async function main__window_onload()
 
     document.getElementById("chat-input-container-send-chat-input").onclick = UI.send_chat_input_on_click;
 
-    // the pills shipped in the html (the root channel's) have no handlers until a rebind loop
-    // happens to run; bind them now so they work on a fresh session too - opening an offline
-    // chat used to leave the channel pill (and the strip's channel circle) dead
+    // the conversation tabs shipped in the html (the root channel's) have no handlers until a rebind loop
+    // happens to run; bind them now so they work on a new session too - opening an offline
+    // chat used to leave the channel tab (and the member list's channel circle) without a handler
     for (let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
     {
         document.getElementsByClassName("chat-context-selector")[x].onclick = UI.chat_context_selector_onclick;
@@ -682,6 +697,11 @@ async function main__window_onload()
     }
     document.getElementById("connect-button").onclick = UI.connect_button_onclick;
     connection__wire_server_bookmarks();
+    // the connections and bookmarks menus at the left end of the head menu, and the close button of the connect window (head-menu.js)
+    if (typeof head_menu__init === "function")
+    {
+        head_menu__init();
+    }
     document.getElementById("chat-input-container-text-input").onkeyup = UI.chat_input_on_keyup;
     document.getElementById("choose_image_input").onchange = UI.choose_image_input;
     document.getElementById("choose-file-input").onchange = chat_files__choose_chat_file_input_onchange;
@@ -758,6 +778,16 @@ async function main__window_onload()
     document.getElementById("identity-string-use-confirm-button").onclick = UI.identity_string_use_confirm_button;
     document.getElementById("close-button-poke-client").onclick = UI.close_button_poke_client_onclick;
     document.getElementById("close-button-client-info").onclick = UI.close_button_client_info_onclick;
+    document.getElementById("server-info-close-button").onclick = function()
+    {
+        document.getElementById("server-info-dialog").close();
+    };
+    document.getElementById("server-banner-upload-button").onclick = function()
+    {
+        document.getElementById("server-banner-file-input").click();
+    };
+    document.getElementById("server-banner-file-input").onchange = server_info__upload_banner;
+    document.getElementById("server-banner-remove-button").onclick = server_info__remove_banner;
     document.getElementById("close-button-set-new-username").onclick = UI.close_button_set_new_username_onclick;
     document.getElementById("close-button-server-settings").onclick = UI.close_button_server_settings_onclick;
     document.getElementById("poke-client-send-button").onclick = UI.poke_client_send_button_onclick;
@@ -784,7 +814,7 @@ async function main__window_onload()
         }
     };
 
-    // adjust-volume dialog: close button + live slider (updates the worklet lane gain as it moves)
+    // adjust-volume dialog: close button + live slider (updates the gain of that sender's playback buffer in the worklet as it moves)
     document.getElementById("close-button-adjust-volume").onclick = function()
     {
         document.getElementById("adjust-volume-container").style.display = "none";
@@ -810,12 +840,12 @@ async function main__window_onload()
     document.getElementById("microphone-always-broadcasting-audio-button").onclick = UI.activate_continous_audio_broadcast_onclick;
     document.getElementById("sound-effects-button").onclick = UI.sound_effects_button_onclick;
 
-    // local settings: device-only preferences, no admin involved. new messages only -
-    // already-rendered ones keep whatever they had
+    // These settings apply only on this device.
     document.getElementById("local-settings-button").onclick = function()
     {
         let panel = document.getElementById("local-settings-container");
         document.getElementById("local-settings-show-avatars").checked = g_show_message_avatars;
+        document.getElementById("local-settings-theme-chat-formatting").checked = g_use_theme_chat_formatting;
         document.getElementById("local-settings-rsa-key-bits").value = String(g_rsa_key_bits);
         document.getElementById("local-settings-seen-indicator").checked = g_show_seen_indicator;
         document.getElementById("local-settings-send-seen").checked = g_send_seen_receipts;
@@ -823,22 +853,38 @@ async function main__window_onload()
         document.getElementById("local-settings-hide-mic").checked = g_hide_microphone_button;
         document.getElementById("local-settings-sound-effects").checked = g_are_sound_effects_enabled;
         document.getElementById("local-settings-country-flags").checked = (g_show_hide_toggle == false);
+        document.getElementById("local-settings-custom-cursor").checked = g_is_custom_cursor_enabled;
         render_mic_mode_controls();
         document.getElementById("local-settings-file-logging").checked = g_is_file_logging_enabled;
         document.getElementById("local-settings-show-log").checked = (document.getElementById("show-hide-log-button").style.display !== "none");
-        document.getElementById("local-settings-strip-vertical").checked = document.body.classList.contains("msgr-vertical");
-        document.getElementById("local-settings-strip-neighbors").checked = document.body.classList.contains("msgr-neighbors-only");
+        document.getElementById("local-settings-member-list-vertical").checked = document.body.classList.contains("msgr-vertical");
+        document.getElementById("local-settings-member-list-neighbors").checked = document.body.classList.contains("msgr-neighbors-only");
         document.getElementById("local-settings-audio-availability").checked = document.body.classList.contains("msgr-audio-availability");
         populate_microphone_device_list();
 
         if (panel.style.display === "none")
         {
             panel.classList.remove("closing");
+            panel.style.position = "";
+            panel.style.margin = "";
+            panel.style.left = "";
+            panel.style.top = "";
 
             // clear it rather than force "block": an inline display beats the stylesheet,
             // and the phone themes need the panel to stay the flex column that lets the
             // row list scroll under a fixed title bar and save button
             panel.style.display = "";
+
+            // Phone themes fill the screen. Center the smaller desktop window after it opens.
+            if (window.getComputedStyle(panel).position !== "fixed")
+            {
+                panel.style.position = "fixed";
+                panel.style.margin = "0";
+                panel.style.left = "0";
+                panel.style.top = "0";
+                panel.style.left = Math.max(0, Math.round((window.innerWidth - panel.offsetWidth) / 2)) + "px";
+                panel.style.top = Math.max(0, Math.round((window.innerHeight - panel.offsetHeight) / 2)) + "px";
+            }
         }
         else
         {
@@ -984,15 +1030,15 @@ async function main__window_onload()
     document.getElementById("local-settings-close-button").onclick = close_local_settings;
     document.getElementById("local-settings-x-button").onclick = close_local_settings;
 
-    // the people-strip preferences moved here from the toolbar; the toolbar buttons
-    // still exist for the strip themes, so both drive the same body classes
-    document.getElementById("local-settings-strip-vertical").onchange = function()
+    // the member list preferences moved here from the toolbar; the toolbar buttons
+    // still exist for the member list themes, so both set the same body classes
+    document.getElementById("local-settings-member-list-vertical").onchange = function()
     {
         document.body.classList.toggle("msgr-vertical", this.checked);
         utils__storage_set("lemon_strip_vertical", this.checked ? "1" : "0");
     };
 
-    document.getElementById("local-settings-strip-neighbors").onchange = function()
+    document.getElementById("local-settings-member-list-neighbors").onchange = function()
     {
         document.body.classList.toggle("msgr-neighbors-only", this.checked);
         utils__storage_set("lemon_strip_neighbors", this.checked ? "1" : "0");
@@ -1038,6 +1084,13 @@ async function main__window_onload()
     {
         g_show_message_avatars = this.checked;
         utils__storage_set("lemon_show_message_avatars", this.checked ? "1" : "0");
+    };
+
+    document.getElementById("local-settings-theme-chat-formatting").onchange = function()
+    {
+        g_use_theme_chat_formatting = this.checked;
+        utils__storage_set("lemon_use_theme_chat_formatting", this.checked ? "1" : "0");
+        chat__apply_theme_formatting();
     };
 
     // changing the key size changes the identity itself, so it only takes effect on the next
@@ -1088,6 +1141,13 @@ async function main__window_onload()
     {
         g_auto_scroll_chat_to_end = this.checked;
         utils__storage_set("lemon_auto_scroll", this.checked ? "1" : "0");
+    };
+
+    document.getElementById("local-settings-custom-cursor").onchange = function()
+    {
+        g_is_custom_cursor_enabled = this.checked;
+        utils__storage_set("lemon_custom_cursor", this.checked ? "1" : "0");
+        main__apply_custom_cursor_setting();
     };
 
     document.getElementById("local-settings-send-seen").onchange = function()
@@ -1191,7 +1251,7 @@ async function main__window_onload()
         window.addEventListener("keydown", capture_key, true);
     };
 
-    // these toggles live in local settings now; hiding the toolbar copies frees icon space
+    // these toggles are in local settings now; hiding the toolbar copies frees icon space
     document.getElementById("sound-effects-button").style.display = "none";
     document.getElementById("hide-show-flags-button").style.display = "none";
     document.getElementById("microphone-always-broadcasting-audio-button").style.display = "none";
@@ -1203,6 +1263,13 @@ async function main__window_onload()
         g_are_sound_effects_enabled = (stored_sound === "1");
         sounds__apply_sound_effects_muted();
     }
+    // restore the cursor preference; off keeps the system cursor in every theme
+    let stored_custom_cursor = utils__storage_get("lemon_custom_cursor");
+    if (stored_custom_cursor != null)
+    {
+        g_is_custom_cursor_enabled = (stored_custom_cursor === "1");
+    }
+    main__apply_custom_cursor_setting();
     main__sync_toolbar_state_classes(); // seed the state classes from the initial bools so oldschool shows the right icons on load
     document.getElementById("musicbot-management-close-button").onclick = UI.musicbot_management_close_button_onclick;
     document.getElementById("musicbot-management-background-container-upload-button-confirm").onclick = UI.musicbot_management_confirm_upload_button_onclick;
@@ -1260,7 +1327,7 @@ async function main__window_onload()
 
     document.getElementById("server-settings-identities-list").addEventListener("click", function(event)
     {
-        // remove a single tag from an identity (the chip's ✕)
+        // remove a single tag from an identity (the ✕ on the tag label)
         let tag_remove = event.target.closest(".identity-tag-remove");
         if (tag_remove != null)
         {
@@ -1350,13 +1417,19 @@ async function main__window_onload()
         }
     })();
 
-    // every popup drags by its title bar; the drag pins it with an inline fixed position, and the pin
-    // is cleared on every re-open so popups start centered (a pin taken while hidden was 0,0 forever)
-    (function() {
-        let dragging = null, ox = 0, oy = 0;
-        let bars = document.querySelectorAll('[id="menu-bar-container"]');
+    // every popup drags by its title bar; the drag keeps it at an inline fixed position, and that position
+    // is cleared on every re-open so popups start centered (a position taken while hidden was 0,0 forever)
+    (function()
+    {
+        let dragging = null;
+        let ox = 0;
+        let oy = 0;
+        let bars = document.querySelectorAll('[id="menu-bar-container"], #server-info-header');
+        let i = 0;
+        let dialog = null;
 
-        let clear_drag_pin = function(dialog) {
+        let clear_drag_pin = function(dialog)
+        {
             dialog.style.position = "";
             dialog.style.margin = "";
             dialog.style.left = "";
@@ -1364,59 +1437,109 @@ async function main__window_onload()
         };
 
         // recenter on every open: watch each dialog's container for its display flipping on
-        let recenter_observer = new MutationObserver(function(mutations) {
-            for (let i = 0; i < mutations.length; i++) {
-                let container = mutations[i].target;
-                if (container.style.display == "none" || container.style.display == "") { continue; }
-                let dialog = container.querySelector('[data-recenter-on-open="true"]');
+        let recenter_observer = new MutationObserver(function(mutations)
+        {
+            let i = 0;
+            let container = null;
+            let dialog = null;
+            let dw = 0;
+            let dh = 0;
+
+            for (i = 0; i < mutations.length; i++)
+            {
+                container = mutations[i].target;
+                if (container.style.display == "none" || container.style.display == "")
+                {
+                    continue;
+                }
+                dialog = container.querySelector('[data-recenter-on-open="true"]');
                 if (dialog != null)
                 {
                     // center by js instead of trusting theme css: some themes (oldschool)
-                    // give the overlay container zero size, which parked dialogs top-left
+                    // give the overlay container zero size, which left dialogs at the top-left
                     clear_drag_pin(dialog);
                     dialog.style.position = "fixed";
                     dialog.style.margin = "0";
                     // measure with offsetWidth/Height (layout size) not getBoundingClientRect:
                     // a theme's pop-in scale animation (e.g. termix) makes the client rect
                     // smaller than the real box and pushed the centering off. center on both axes.
-                    let dw = dialog.offsetWidth;
-                    let dh = dialog.offsetHeight;
+                    dw = dialog.offsetWidth;
+                    dh = dialog.offsetHeight;
                     dialog.style.left = Math.max(0, Math.round((window.innerWidth - dw) / 2)) + "px";
                     dialog.style.top = Math.max(0, Math.round((window.innerHeight - dh) / 2)) + "px";
                 }
             }
         });
 
-        for (let i = 0; i < bars.length; i++)
+        for (i = 0; i < bars.length; i++)
         {
-            let dialog = bars[i].parentElement;
-            dialog.setAttribute("data-recenter-on-open", "true");
-            if (dialog.parentElement != null)
+            dialog = bars[i].parentElement;
+            if (dialog.tagName !== "DIALOG")
             {
-                recenter_observer.observe(dialog.parentElement, { attributes: true, attributeFilter: ["style"] });
+                dialog.setAttribute("data-recenter-on-open", "true");
+                if (dialog.parentElement != null)
+                {
+                    recenter_observer.observe(dialog.parentElement, { attributes: true, attributeFilter: ["style"] });
+                }
             }
 
-            bars[i].addEventListener("mousedown", function(e) {
-                if (e.target.closest(".close-button") != null) { return; }
+            bars[i].addEventListener("mousedown", function(e)
+            {
                 let dialog = this.parentElement;
-                let rect = dialog.getBoundingClientRect();
-                if (rect.width == 0 && rect.height == 0) { return; } // no layout (hidden): a pin here would stick the dialog to 0,0
+                let rect = null;
+
+                if (e.button !== 0 || e.target.closest(".close-button") != null)
+                {
+                    return;
+                }
+                rect = dialog.getBoundingClientRect();
+                if (rect.width == 0 && rect.height == 0)
+                {
+                    return;
+                }
                 dragging = dialog;
                 ox = e.clientX - rect.left;
                 oy = e.clientY - rect.top;
                 dialog.style.position = "fixed";
                 dialog.style.margin = "0";
+                if (dialog.tagName === "DIALOG")
+                {
+                    dialog.style.right = "auto";
+                    dialog.style.bottom = "auto";
+                }
                 dialog.style.left = rect.left + "px";
                 dialog.style.top = rect.top + "px";
                 e.preventDefault();
             });
         }
-        document.addEventListener("mousemove", function(e) {
-            if (dragging == null) { return; }
-            dragging.style.left = (e.clientX - ox) + "px";
-            dragging.style.top = (e.clientY - oy) + "px";
+        document.addEventListener("mousemove", function(e)
+        {
+            let left = 0;
+            let top = 0;
+
+            if (dragging == null)
+            {
+                return;
+            }
+            left = e.clientX - ox;
+            top = e.clientY - oy;
+            if (dragging.tagName === "DIALOG")
+            {
+                if (!dragging.open)
+                {
+                    dragging = null;
+                    return;
+                }
+                left = Math.max(0, Math.min(left, window.innerWidth - dragging.offsetWidth));
+                top = Math.max(0, Math.min(top, window.innerHeight - dragging.offsetHeight));
+            }
+            dragging.style.left = left + "px";
+            dragging.style.top = top + "px";
         });
-        document.addEventListener("mouseup", function() { dragging = null; });
+        document.addEventListener("mouseup", function()
+        {
+            dragging = null;
+        });
     })();
 
     for (let i = 0; i < document.getElementsByClassName("choose-theme-item").length; i++)
@@ -1440,7 +1563,7 @@ async function main__window_onload()
 
     // browsers create an AudioContext suspended unless it is made during a user gesture; resume it on the first click/tap so audio works after an autoconnect, with no dedicated connect click.
     // the context that matters is audio_context (created at authentication time, all voice/music playback runs through it).
-    // the listeners must stay attached until audio_context exists and is running: a gesture can fire before authentication creates it
+    // the listeners must stay attached until audio_context exists and is running: a gesture can happen before authentication creates it
     let unlock_audio_on_first_user_gesture = function()
     {
         if (typeof g_audio_context !== "undefined" && g_audio_context != null && g_audio_context.state === "suspended")
@@ -1518,7 +1641,7 @@ async function main__window_onload()
         document.getElementById("style-theme-default").removeAttribute("media"); // set default theme
     }
 
-    // server-baked default theme (from the injected config); applied unless the user has their own saved choice. persist=false so it never sticks.
+    // default theme set by the server (from the injected config); applied unless the user has their own saved choice. persist=false so it is never saved.
     // on a phone a desktop theme is ignored here so the mobile default set above stays in effect
     let startup_theme_applied = false;
 
@@ -1537,7 +1660,7 @@ async function main__window_onload()
         startup_theme_applied = true;
     }
 
-    // no server-baked theme and nothing saved: activate the default sheet explicitly.
+    // no default theme from the server and nothing saved: activate the default sheet explicitly.
     // without this ALL four theme <style> elements stay active at once and the cascade
     // mixes them (the last sheet mostly wins), which is never an intended look
     if (startup_theme_applied == false)
@@ -1562,10 +1685,10 @@ async function main__window_onload()
         g_mark_call_accept_presence = android_js_bridge.mark_call_accept_presence_android;
         g_set_username_on_connect = android_js_bridge.set_username_on_connect_android;
         g_accept_current_settings_from_android = android_js_bridge.accept_current_settings_from_android;
-        g_nudge_loopback_reattach = android_js_bridge.nudge_loopback_reattach_android;
+        g_request_loopback_reattach = android_js_bridge.request_loopback_reattach_android;
         g_show_connection_phase = android_js_bridge.show_connection_phase_android;
 
-        // a push that raced ahead of this wiring was held by the page shim - use it now
+        // a settings push that arrived before these handlers were attached was held by the stand-in window object - use it now
         if (typeof g_pending_android_settings === "string" && g_pending_android_settings != null)
         {
             console.log("connect-path: applying settings that arrived before onload");
@@ -1573,8 +1696,8 @@ async function main__window_onload()
             g_pending_android_settings = null;
         }
 
-        // lets a theme style itself for the wrapper app (the strip themes give the settings gear a
-        // real slot in its top bar; css alone cannot tell app from browser)
+        // lets a theme style itself for the wrapper app (the member list themes give the settings gear a
+        // real place in their top bar; css alone cannot tell app from browser)
         document.body.classList.add("android-app");
 
         // the app loads client.html from its assets, so the served config (and allow_avatars) never
@@ -1615,15 +1738,15 @@ async function main__window_onload()
 
         Android.JavaExportRequestCurrentSettingsFromAndroid();
 
-        // the settings callback sets the connection target; the driver takes it from there
+        // the settings callback sets the connection target; the connect loop takes it from there
     }
     else if (g_are_server_details_predefined == true)
     {
-        // website with baked-in config: connection__request_connect dials it under autoconnect
+        // website with the config written into the page: connection__request_connect connects under autoconnect
         connection__request_connect("settings");
     }
 
-    // the page loads with the spinner up (see the template); arm its reveal deadline so a
+    // the page loads with the spinner up (see the template); start its reveal deadline so a
     // client that connects to nothing still shows the connect page after a moment.
     // the setter call paints the theme's background onto it (opaque page one)
     connection__set_connect_holdback_loader_visible(true);
@@ -1631,14 +1754,14 @@ async function main__window_onload()
     g_connect_holdback_deadline = g_connect_holdback_started + 2500;
     setTimeout(connection__connect_holdback_check, 250);
 
-    // a browser client in manual mode knows at load that nothing will dial: no spinner
+    // a browser client in manual mode knows at load that nothing will connect: no spinner
     if (g_is_running_in_android_webview == false && g_is_autoconnect_without_user_action_active == false)
     {
         connection__reveal_connect_page();
     }
 
     connection__start_connection_status_ticker();
-    connection__connection_driver();
+    connection__connect_loop();
 }
 
 // needs to be checked so webworkers that this code is shared with do not try to use window object
@@ -1661,7 +1784,7 @@ return {
     // call once before connecting: stands up the transport and the log sink
     init_node_runtime: android_host__init_node_runtime,
 
-    // the webview handover: false closes the socket and parks reconnect, true re-arms
+    // the webview handover: false closes the socket and stops reconnecting, true allows it again
     node_set_connection_wanted: android_host__node_set_connection_wanted,
 
     /**
@@ -1742,7 +1865,7 @@ return {
      *        clears what it accumulated; the ui owns the badge then
      *
      * @param boolean is_attached -> true when a ui is attached
-     * @param boolean is_from_host -> true when java said so; the webview redialling in the background is not the user coming back
+     * @param boolean is_from_host -> true when java said so; the webview reconnecting in the background is not the user coming back
      *
      * @return void
      */
@@ -1754,7 +1877,7 @@ return {
         }
         else if (node_ui_visibility_from_host == true)
         {
-            // the webview redialling the loopback in the background is not the user
+            // the webview reconnecting to the loopback in the background is not the user
             // coming back, and java has already said so
             return;
         }
@@ -1813,7 +1936,7 @@ return {
     },
 
     /**
-     * @brief a ui attached to the loopback wants to be online; an attach is always the downstream of an authorized decision, so the driver dials for it
+     * @brief a ui attached to the loopback wants to be online; an attach always follows an authorized decision, so the connect loop connects for it
      *
      * @return void
      */
@@ -1875,7 +1998,7 @@ return {
             g_chat_message_receiver_type: g_chat_message_receiver_type,
             g_is_client_list_retrieved: g_is_client_list_retrieved,
             g_is_channel_list_retrieved: g_is_channel_list_retrieved,
-            // the live connection signal (g_is_websocket_connected is a dead flag, see ui.js)
+            // the live connection signal (g_is_websocket_connected is no longer updated, see ui.js)
             g_is_authenticated: g_is_authenticated,
             g_is_microphone_always_on: g_is_microphone_always_on,
             g_have_received_android_settings: g_have_received_android_settings

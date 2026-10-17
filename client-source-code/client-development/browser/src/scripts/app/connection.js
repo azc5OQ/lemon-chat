@@ -1,10 +1,20 @@
-// connection.js is embedded in template.html along with the other client files, and in the node bundle
-// it is the connecting side: the driver that decides when to dial (who am i, which identity, where to,
-// one attempt in flight), the dial itself, the heartbeat loop, fast reconnect, the connect-page hold
-// and the saved server bookmarks
-// ui.js and android-host.js nudge the driver through connection__request_connect; dispatch.js reports what the socket did
+// connection.js is included in template.html with the other client files, and in the node bundle
+// that the android app runs.
+// this file opens and keeps the connection to the server. it decides when a connection attempt
+// starts: the connect button, a page with built-in server settings, settings sent by the android
+// app, the return from idle, a retry, or attaching to a session the node client already holds.
+// only one attempt runs at a time. the file knows which identity (key pair) and which server
+// address the attempt uses.
+// it also runs the heartbeat loop (the regular message that tells the server the client is still
+// there), the fast reconnect (a second attempt right after a short connection loss, keeping the
+// identity), the hold on the connect page (the page stays hidden for a moment while an automatic
+// attempt runs, so it does not appear for a moment), and the saved server bookmarks (the server list on the
+// connect page).
+// other files do not connect on their own: ui.js (connect button) and android-host.js (settings
+// and resume from the android app) ask for a connection with connection__request_connect and a
+// trigger name, and dispatch.js passes on what the websocket worker reports (opened, closed,
+// error, server messages) by calling the connection__* functions in this file.
 
-// state private to this file
 var port = 0;
 
 var FAST_RECONNECT_DEADLINE_MS = 12000;
@@ -23,22 +33,39 @@ g_identity_slot = connection__make_slot();
 var identity_requested_for = null;
 var identity_requested_bits = 0;
 
-// resolved by the websocket close and error handlers. the driver awaits this while a
-// socket exists, whether it is mid-handshake or long connected
+// set by "disconnect" in the connections menu (connection__disconnect_by_user): the connect loop then waits for the next
+// connect request instead of connecting again on its own, and a fast reconnect is refused while it is set
+var is_connection_ended_by_user = false;
+
+// the server the user chose instead of the one written into the page, { host, port }, or null: the last bookmark chosen in
+// the bookmarks menu, or an address and port changed in the connect window and connected to with its button. a page with
+// the server written into it connects to that server instead of its own from then on, until the page is loaded again or
+// the window's values are changed back to the page's own
+var connection_chosen_target = null;
+
+// true once the connect window of a page with the server written into it shows the address and the port in its fields
+// (connection__show_predefined_details_in_connect_window); the connect button then reads the fields
+var is_written_in_target_shown_in_window = false;
+
+// resolved by the websocket close and error handlers. the connect loop (connection__connect_loop,
+// below) waits for this while a socket exists, whether the handshake is still running or the
+// connection has been open for a long time
 var connection_closed_resolvers = [];
 
-// skips the retry countdown, used when the connect button is pressed or new details arrive.
-// a nudge that lands while the driver is still watching the old socket is kept, not lost:
-// an identity switch closes the socket and nudges in the same breath, before the close is seen
-var driver_nudge_resolver = null;
-var is_driver_nudge_pending = false;
+// a request to connect at once, which skips the retry countdown; it comes from the connect button
+// or from new connection details. a request that
+// arrives while the connect loop still waits for the old socket to close is kept, not lost: an
+// identity switch closes the socket and sends the request at the same time, before the close has
+// been seen
+var connect_loop_wake_resolver = null;
+var is_connect_loop_wake_pending = false;
 
-var is_connection_driver_running = false;
+var is_connect_loop_running = false;
 
 // webview only: true when connect was pressed before node announced its loopback port
 var ui_connect_requested = false;
 
-// ---- connection driver ----
+// ---- the connect loop ----
 
 /**
  * @brief a slot holds one async value: set() stores it and wakes everyone who called wait()
@@ -141,7 +168,7 @@ function connection__signal_connection_closed()
 }
 
 /**
- * @brief a promise for the next connection close; the driver awaits it between attempts
+ * @brief a promise for the next connection close; the connect loop waits for it between attempts
  *
  * @return promise resolves when the connection closes
  */
@@ -151,40 +178,40 @@ function connection__connection_closed()
 }
 
 /**
- * @brief wakes the driver out of its retry wait, or remembers the nudge for the wait that has not started yet
+ * @brief wakes the connect loop out of its retry wait, or remembers the connect request for a wait that has not started yet
  *
  * @return void
  */
-function connection__nudge_connection_driver()
+function connection__wake_connect_loop()
 {
-    if (driver_nudge_resolver != null)
+    if (connect_loop_wake_resolver != null)
     {
-        let resolver = driver_nudge_resolver;
-        driver_nudge_resolver = null;
+        let resolver = connect_loop_wake_resolver;
+        connect_loop_wake_resolver = null;
         resolver();
         return;
     }
 
-    is_driver_nudge_pending = true;
+    is_connect_loop_wake_pending = true;
 }
 
 /**
- * @brief the countdown between retries: shows the failure text every second and leaves early on a nudge
+ * @brief the countdown between retries: shows the failure text every second and ends early when a connect request arrives
  *
  * @param number seconds -> how long to wait
  *
- * @return promise resolves when the countdown ended or a nudge cut it short
+ * @return promise resolves when the countdown ended or a connect request ended it early
  */
-async function connection__driver_retry_wait(seconds)
+async function connection__connect_loop_retry_wait(seconds)
 {
-    if (is_driver_nudge_pending == true)
+    if (is_connect_loop_wake_pending == true)
     {
-        is_driver_nudge_pending = false;
-        console.log("connect-path: retry wait skipped by a pending nudge");
+        is_connect_loop_wake_pending = false;
+        console.log("connect-path: retry wait skipped by a pending connect request");
         return;
     }
 
-    let nudged = new Promise(function(resolve) { driver_nudge_resolver = resolve; });
+    let nudged = new Promise(function(resolve) { connect_loop_wake_resolver = resolve; });
 
     for (let remaining = seconds; remaining > 0; remaining--)
     {
@@ -207,31 +234,60 @@ async function connection__driver_retry_wait(seconds)
         }
     }
 
-    driver_nudge_resolver = null;
+    connect_loop_wake_resolver = null;
 }
 
 /**
- * @brief the connection driver, the one loop that dials
- *        waits for a target and an identity, attempts once, awaits the close, then waits out a
+ * @brief the wait after "disconnect" in the connections menu: the loop stays here until a connect request arrives
+ *        a request that arrived already (the connect button pressed while connected ends the old connection first)
+ *        ends the wait at once
+ *
+ * @return promise resolves when the loop may connect again
+ */
+async function connection__wait_after_user_disconnect()
+{
+    if (is_connect_loop_wake_pending == true)
+    {
+        is_connect_loop_wake_pending = false;
+        is_connection_ended_by_user = false;
+        return;
+    }
+
+    connection__set_connect_button_pending(false);
+    connection__report_connection_status("idle", "disconnected");
+    await new Promise(function(resolve) { connect_loop_wake_resolver = resolve; });
+    is_connection_ended_by_user = false;
+}
+
+/**
+ * @brief the connect loop, the one loop that starts connection attempts
+ *        waits for a target and an identity, attempts once, waits for the close, then waits out a
  *        countdown and tries again; runs once per page and never returns
  *
  * @return promise never resolves
  */
-async function connection__connection_driver()
+async function connection__connect_loop()
 {
-    if (is_connection_driver_running == true)
+    if (is_connect_loop_running == true)
     {
         return;
     }
 
-    is_connection_driver_running = true;
-    console.log("connect-path: driver started");
+    is_connect_loop_running = true;
+    console.log("connect-path: connect loop started");
 
     while (true)
     {
         let target = await target_slot.wait();
 
-        // the node host parks the connection during the idle handover
+        // "disconnect" was chosen: nothing connects until the next connect request
+        if (is_connection_ended_by_user == true)
+        {
+            await connection__wait_after_user_disconnect();
+            continue;
+        }
+
+        // the node host keeps the connection closed on purpose while the app goes idle (g_node_connection_wanted)
         if (g_node_connection_wanted == false)
         {
             await utils__sleep(1000);
@@ -255,12 +311,12 @@ async function connection__connection_driver()
         g_last_disconnect_reason = "";
         connection__report_connection_status("connecting");
 
-        // a dial consumes any nudge; one kept from before must not skip a later countdown
-        is_driver_nudge_pending = false;
+        // an attempt uses up any pending connect request; one kept from before must not skip a later countdown
+        is_connect_loop_wake_pending = false;
         await connection__attempt_connection(target, identity);
 
-        // wait for the socket to die. a dial that could not even create a socket never
-        // fires close, so an unauthenticated wait also has a deadline
+        // wait for the socket to close. an attempt that could not even create a socket never
+        // reports a close, so a wait without a login also has a deadline
         while (true)
         {
             let outcome = await Promise.race([
@@ -276,7 +332,7 @@ async function connection__connection_driver()
             if (g_is_authenticated == false)
             {
                 // the loopback socket is fine, node just has not logged in yet
-                // redialing now would kill a healthy attach, so keep waiting
+                // a new attempt now would end a working reattach, so keep waiting
                 if (target.kind === "loopback")
                 {
                     console.log("connect-path: loopback attached, still waiting for node's login");
@@ -288,7 +344,14 @@ async function connection__connection_driver()
             }
         }
 
-        // a fast reconnect re-dials at once with the same identity: no countdown, no button
+        // the user ended the connection: no countdown and no fast reconnect, the loop waits for the next connect request
+        if (is_connection_ended_by_user == true)
+        {
+            await connection__wait_after_user_disconnect();
+            continue;
+        }
+
+        // a fast reconnect connects again at once with the same identity: no countdown, no button
         if (g_is_authenticated == false && g_fast_reconnect.in_progress == true)
         {
             continue;
@@ -297,23 +360,23 @@ async function connection__connection_driver()
         if (g_is_authenticated == false && g_is_autoconnect_without_user_action_active == false)
         {
             // manual mode means one attempt per button press: state the failure and
-            // hold until the connect button nudges, with no countdown
-            if (is_driver_nudge_pending == true)
+            // wait until the connect button sends a connect request, with no countdown
+            if (is_connect_loop_wake_pending == true)
             {
-                is_driver_nudge_pending = false;
-                console.log("connect-path: dialing on the pending nudge");
+                is_connect_loop_wake_pending = false;
+                console.log("connect-path: connecting on the pending connect request");
                 continue;
             }
 
             connection__set_connect_button_pending(false);
             connection__report_connection_status("idle",
                 (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
-            await new Promise(function(resolve) { driver_nudge_resolver = resolve; });
+            await new Promise(function(resolve) { connect_loop_wake_resolver = resolve; });
             continue;
         }
 
-        // dialing node on this device is free, so the loopback redials fast; the 30s
-        // pace is for a remote server that may be down
+        // connecting to node on this device costs nothing, so the loopback retries after 2 s; the
+        // 30 s wait is for a remote server that may be down
         let retry_seconds = (target.kind === "loopback") ? 2 : 30;
 
         if (g_is_authenticated == false)
@@ -323,23 +386,25 @@ async function connection__connection_driver()
                 (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
         }
 
-        await connection__driver_retry_wait(retry_seconds);
+        await connection__connect_loop_retry_wait(retry_seconds);
     }
 }
 
 /**
- * @brief the one place that may start a connection, and the whole dial policy
- *        "button" and "attach" always dial, "settings", "resume" and "retry" only under
+ * @brief the one place that may start a connection, and the whole policy of when to connect
+ *        "button", "bookmark" and "attach" always connect, "settings", "resume" and "retry" only under
  *        autoconnect, and "resume" also reattaches when node already holds a session
  *
- * @param string trigger -> "button", "attach", "settings", "resume" or "retry"
+ * @param string trigger -> "button", "bookmark", "attach", "settings", "resume" or "retry"
+ * @param object bookmark_target -> with "bookmark": the server of the bookmark as { host, port }; ignored otherwise
  *
  * @return void
  */
-function connection__request_connect(trigger)
+function connection__request_connect(trigger, bookmark_target)
 {
     let is_wanted =
         (trigger === "button")
+        || (trigger === "bookmark")
         || (trigger === "attach")
         || (g_is_autoconnect_without_user_action_active == true)
         || (ui_connect_requested == true)
@@ -350,6 +415,24 @@ function connection__request_connect(trigger)
     if (is_wanted == false)
     {
         return;
+    }
+
+    // the window of a page with the server written into it shows the address and the port after a chosen disconnect, and the
+    // user may change them: a press of the connect button then takes the window's values as the target from now on, like a
+    // bookmark's. values changed back to the page's own make the page's details (with their wss port) the target again
+    if (trigger === "button" && g_are_server_details_predefined == true && is_written_in_target_shown_in_window == true)
+    {
+        let address_in_window = document.getElementById("input-ip-address").value.trim();
+        let port_in_window = document.getElementById("input-port-number").value.trim();
+
+        if (address_in_window === String(g_autoconnect_details.host) && port_in_window === String(g_autoconnect_details.port))
+        {
+            connection_chosen_target = null;
+        }
+        else
+        {
+            connection_chosen_target = { host: address_in_window, port: port_in_window };
+        }
     }
 
     // derive the target from where we run and what the page knows
@@ -376,7 +459,14 @@ function connection__request_connect(trigger)
             connection__hold_back_connect_page();
         }
     }
-    else if (g_are_server_details_predefined == true)
+    else if (trigger === "bookmark" && bookmark_target != null && typeof bookmark_target.host === "string" && bookmark_target.host.length > 0)
+    {
+        // a bookmark names its own server; the fields show it (head-menu.js), and a page with the server written into it
+        // keeps connecting to the bookmark from now on (the retry countdown and the connect button use the same target)
+        connection_chosen_target = { host: bookmark_target.host, port: bookmark_target.port };
+        target_slot.set({ kind: "server", host: bookmark_target.host, port: bookmark_target.port });
+    }
+    else if (g_are_server_details_predefined == true && connection_chosen_target == null)
     {
         // a partial first-run json has no host yet, and that must never become a target
         if (typeof g_autoconnect_details.host !== "string" || g_autoconnect_details.host.length == 0
@@ -402,7 +492,7 @@ function connection__request_connect(trigger)
         });
     }
 
-    connection__nudge_connection_driver();
+    connection__wake_connect_loop();
 }
 
 /**
@@ -412,6 +502,12 @@ function connection__request_connect(trigger)
  */
 function connection__submit_connection_target_from_ui()
 {
+    // the button is disabled while connected (connection__refresh_connect_button_state); a stray press changes nothing
+    if (g_is_authenticated == true)
+    {
+        return;
+    }
+
     connection__request_connect("button");
 }
 
@@ -479,7 +575,7 @@ function connection__report_connection_status(state, reason)
 /**
  * @brief paints the login page extras from g_connection_status
  *        the ticker recalls it every second so the countdown and the "ago" times stay live; safe
- *        headless, because the shim absorbs the dom
+ *        headless, because the stand-in window object takes the dom calls
  *
  * @return void
  */
@@ -538,7 +634,7 @@ function connection__start_connection_status_ticker()
     window.setInterval(connection__render_connection_status, 1000);
 }
 
-// ---- dial and heartbeat ----
+// ---- connection attempt and heartbeat ----
 
 /**
  * @brief the heartbeat loop's sleep; android_host__exit_deep_idle resolves it early so the first check after idle goes out at once
@@ -557,8 +653,8 @@ function connection__connection_check_sleep(ms)
             resolve();
         }, ms);
 
-        // early-wake hook used by android_host__exit_deep_idle: cancel this sleep's timer so a stale
-        // (long) timeout can never fire later and clobber a newer sleep's resolver
+        // early wake used by android_host__exit_deep_idle: cancel this sleep's timer so an old
+        // (long) timeout can never run later and overwrite a newer sleep's resolver
         g_connection_check.sleep_resolve = function()
         {
             clearTimeout(timer_id);
@@ -568,18 +664,23 @@ function connection__connection_check_sleep(ms)
     });
 }
 
-/**
- * @brief the heartbeat loop: sends client_connection_check on an interval, and when no reply arrives within the lost threshold, alerts the user and resets the app (identity kept)
- *        one throw in here must not kill the loop, since it carries both the heartbeat and the loss detector
- *
- * @return promise resolves when the loop is told to stop
- */
+// The regular heartbeat loop and Android's backup timer must both respect the
+// server's setting. Android waits another 15 seconds before its backup takes over.
+function connection__has_keepalive_timed_out(timestamp_now, extra_wait_ms = 0)
+{
+    return g_server_policy.enforce_connection_check !== false
+        && g_connection_check.last_response_timestamp > 0
+        && g_connection_check.last_response_timestamp + g_connection_check.lost_threshold_ms + extra_wait_ms < timestamp_now;
+}
+
+// Keep sending checks even when timeout enforcement is disabled. Their replies
+// still measure latency, and a real socket closure still follows the usual cleanup.
 async function connection__websocket_connection_check()
 {
     while (g_should_connection_check_be_running == true)
     {
-        // one throw in here must not kill the loop: it carries BOTH the heartbeat and
-        // the loss detector, and a dead loop is an unnoticed dead connection
+        // one exception in here must not end the loop: it runs BOTH the heartbeat and
+        // the loss detection, and a stopped loop means a lost connection that nobody notices
         try
         {
             let timestamp_now = new Date().valueOf();
@@ -589,7 +690,7 @@ async function connection__websocket_connection_check()
                 g_connection_check.last_response_timestamp = timestamp_now;
             }
 
-            if ((g_connection_check.last_response_timestamp + g_connection_check.lost_threshold_ms) < timestamp_now)
+            if (connection__has_keepalive_timed_out(timestamp_now))
             {
                 let silence_ms = timestamp_now - g_connection_check.last_response_timestamp;
                 console.error("loss detector: no heartbeat response for " + silence_ms + "ms");
@@ -625,35 +726,39 @@ async function connection__websocket_connection_check()
 }
 
 /**
- * @brief fast reconnect: the socket is gone but the page keeps everything (lists, chat, channel, keys) and the driver re-dials at once with the same identity, asking the server to adopt the session
+ * @brief fast reconnect: the socket is gone but the page keeps everything (lists, chat, channel, keys) and the connect loop connects again at once with the same identity, asking the server to adopt the session
  *
  * @param string reason -> why the socket went, for the log
  *
- * @return boolean false when a resume is not possible, so the caller runs the classic wipe instead
+ * @return boolean false when a resume is not possible, so the caller runs the full reset instead
  */
 function connection__try_start_fast_reconnect(reason)
 {
     // node owns the real connection in the webview, and only a logged-in session can be resumed
-    if (g_server_policy.is_fast_reconnect_allowed == false || g_is_authenticated == false
+    if (g_server_policy.is_fast_reconnect_allowed == false || g_is_authenticated == false || is_connection_ended_by_user == true
         || g_is_identity_switch_in_progress == true || android_host__is_ui_only_runtime() == true)
     {
         return false;
     }
 
-    // one attempt per loss: when the resume socket itself dies the caller takes the classic path
+    // one attempt per loss: when the resume socket itself closes, the caller runs the full reset
     if (g_fast_reconnect.in_progress == true)
     {
         return false;
     }
 
     g_fast_reconnect.in_progress = true;
+    if (typeof server_info__reset === "function")
+    {
+        server_info__reset();
+    }
     // Pending website replies belong to the old connection. Ask again after
     // login so an interrupted lookup does not leave its message without a card.
     link_previews__reset();
     g_fast_reconnect.resumed = false;
     g_fast_reconnect.pending_lists = null;
 
-    // the driver keys off this flag; the page itself is left exactly as it is
+    // the connect loop reads this flag; the page itself is left exactly as it is
     g_is_authenticated = false;
     g_should_connection_check_be_running = false;
     g_connection_check.last_response_timestamp = 0;
@@ -662,7 +767,7 @@ function connection__try_start_fast_reconnect(reason)
     // the worker goes back to handshake mode; it keeps the identity and the channel keys
     g_data_processing_worker.postMessage({ type: "mainthread_reset_data" });
 
-    console.log("%cfast reconnect: " + reason + " - re-dialing with the same identity", "color: #ffa500; font-weight: bold; font-size: 14px;");
+    console.log("%cfast reconnect: " + reason + " - connecting again with the same identity", "color: #ffa500; font-weight: bold; font-size: 14px;");
     utils__custom_log("fast reconnect attempt (" + reason + ")");
 
     g_fast_reconnect.deadline_timer = setTimeout(function()
@@ -670,13 +775,13 @@ function connection__try_start_fast_reconnect(reason)
         connection__fast_reconnect_failed("no adopted session within " + (FAST_RECONNECT_DEADLINE_MS / 1000) + " s");
     }, FAST_RECONNECT_DEADLINE_MS);
 
-    // wakes the driver out of its wait on the old socket; it re-dials instead of parking
+    // wakes the connect loop out of its wait on the old socket; it connects again instead of staying idle
     connection__signal_connection_closed();
     return true;
 }
 
 /**
- * @brief the one failure of a fast reconnect: the classic "connection lost" toast and the full wipe
+ * @brief the one failure of a fast reconnect: the usual "connection lost" notice and the full reset
  *
  * @param string reason -> why it failed, for the log
  *
@@ -799,8 +904,13 @@ function connection__fast_reconnect_apply_lists()
  */
 function connection__reset_chat_app_keep_identity()
 {
+    if (typeof server_info__reset === "function")
+    {
+        server_info__reset();
+    }
     link_previews__reset();
     g_server_policy.allow_link_previews = false;
+    g_server_policy.enforce_connection_check = true;
     // no connection, nobody is typing - drop the notices and the ticker with them
     g_typing.state = {};
     chat__render_typing_indicator();
@@ -829,11 +939,24 @@ function connection__reset_chat_app_keep_identity()
     connection__set_connect_button_pending(false);
     g_is_microphone_available = false;
 
-    document.getElementById('verification-system').style.display = "block";
+    // the connect form comes back on its own only where it is a page of its own (android, the member list themes); as a
+    // window it stays closed until "connect" in the connections menu, so a lost connection leaves the background and the head menu
+    if (connection__is_connect_window_mode() == false)
+    {
+        document.getElementById('verification-system').style.display = "block";
+    }
     document.getElementById('communication-system-container').style.display = "none";
+    connection__mark_connected_ui_hidden(true);
 
     // after the page switch, otherwise the mic is repainted while the old screen is still up
     voice__update_microphone_button();
+
+    // the "disconnect" entry of the head menu follows (head-menu.js, which the node bundle does not have)
+    if (typeof head_menu__refresh_connections_items === "function")
+    {
+        head_menu__refresh_connections_items();
+    }
+    connection__refresh_connect_button_state();
 
     // back on the connect screen: the in-flow "server settings" button owns this
     // state, a second gear in the bar would only confuse - it returns on connect
@@ -864,7 +987,7 @@ function connection__reset_chat_app_keep_identity()
     g_should_connection_check_be_running = false;
 
     // the avatar prefetch timer must not outlive the session - its client ids are meaningless
-    // after a reconnect (they are slot indices), and it would keep asking a dead socket
+    // after a reconnect (they are slot indices), and it would keep sending requests on a closed socket
     channel_tree__stop_avatar_prefetch();
 
     // if the connection died while backgrounded-idle, re-enter idle automatically after reconnect
@@ -1063,12 +1186,32 @@ function connection__reveal_connect_page()
     g_is_holding_back_connect_page = false;
     document.getElementById("verification-system").style.visibility = "";
     connection__set_connect_holdback_loader_visible(false);
+    connection__apply_connect_window_mode();
+}
+
+/**
+ * @brief the connect button is disabled while a connection exists: the window may be open then ("connections" -> "connect"
+ *        shows where the connection went), and a press would be meaningless. enabled again by the reset after a disconnect
+ *
+ * @return void
+ */
+function connection__refresh_connect_button_state()
+{
+    let button = document.getElementById("connect-button");
+
+    if (button == null)
+    {
+        return;
+    }
+
+    button.disabled = (g_is_authenticated == true);
+    button.title = (g_is_authenticated == true) ? "already connected" : "";
 }
 
 /**
  * @brief fades the connect button while an attempt runs; hiding rows caused a layout flicker
  *
- * @param boolean is_pending -> true while an attempt is in flight
+ * @param boolean is_pending -> true while an attempt is running
  *
  * @return void
  */
@@ -1083,9 +1226,9 @@ function connection__set_connect_button_pending(is_pending)
 }
 
 /**
- * @brief one dial, driven only by connection__connection_driver(): builds the ws/wss connection string and has the websocket worker open the socket with the right opening frame
+ * @brief one connection attempt, started only by connection__connect_loop(): builds the ws/wss connection string and has the websocket worker open the socket with the right opening frame
  *
- * @param object target -> the host, port and keys to dial
+ * @param object target -> the host, port and keys to connect to
  * @param object identity -> the identity to present
  *
  * @return promise resolves when the attempt has ended, either way
@@ -1104,7 +1247,7 @@ async function connection__attempt_connection(target, identity)
         document.getElementById("another-buttons-loading-container-p").innerHTML = "connecting to server...";
     }
 
-    // a new attempt is in flight - the failure text only shows after this one resolves
+    // a new attempt is running - the failure text only shows after this one resolves
     g_last_connect_attempt_failed = false;
 
     // loopback: connect to node on this device, token as the opening frame, no dh.
@@ -1118,8 +1261,8 @@ async function connection__attempt_connection(target, identity)
         let loopback_connection_string = "ws://127.0.0.1:" + target.port + "/";
         console.log("connection_string -> " + loopback_connection_string + " (loopback)");
 
-        // name the SERVER being joined, not the local hop to node - and never print an
-        // unknown one ("connecting to :0" when the settings have not landed yet)
+        // name the SERVER being joined, not the local connection to node - and never print an
+        // unknown one ("connecting to :0" when the settings have not arrived yet)
         document.getElementById("another-buttons-loading-container-p").innerHTML =
             (typeof g_host === "string" && g_host.length > 0)
                 ? "connecting to " + chat__sanitize_string(g_host) + ":" + chat__sanitize_string("" + port)
@@ -1241,6 +1384,285 @@ function connection__process_message_before_sending(message_object)
     return JSON.stringify(message_object);
 }
 
+// ---- the connect window ----
+// the connect form (#verification-system holds it, #container-2 is the box) is a window in the desktop themes and in the
+// mobile theme: a dialog with a title bar, movable by it (main.js), closeable. on android and in the two member list
+// themes (simpledark, bluebell) it stays a page of its own, the way it has always been: there the stylesheets hide the
+// title bar and the head menu entries, and the page shows itself again after every disconnect
+
+/**
+ * @brief whether the connect form is a closeable window (desktop themes, the mobile theme) rather than a page of its own (android, the member list themes simpledark and bluebell)
+ *        false as well in the node runtime, which has no page
+ *
+ * @return boolean
+ */
+function connection__is_connect_window_mode()
+{
+    if (g_is_running_in_android_webview == true || typeof document === "undefined" || typeof document.getElementsByClassName !== "function")
+    {
+        return false;
+    }
+
+    let theme = connection__current_theme_name();
+
+    return (theme !== "simpledark" && theme !== "bluebell");
+}
+
+/**
+ * @brief the name of the theme in use: the one theme sheet without a media attribute (UI.apply_theme in ui.js switches the sheets that way)
+ *
+ * @return string the theme name, "default" when none is found
+ */
+function connection__current_theme_name()
+{
+    let sheets = document.getElementsByClassName("style-theme-html-element");
+
+    for (let i = 0; i < sheets.length; i++)
+    {
+        if (sheets[i].hasAttribute("media") == false && typeof sheets[i].id === "string" && sheets[i].id.indexOf("style-theme-") == 0)
+        {
+            return sheets[i].id.substring("style-theme-".length);
+        }
+    }
+
+    return "default";
+}
+
+/**
+ * @brief shows the connect window: "connect" in the connections menu, a bookmark, and the first show at start-up (connection__reveal_connect_page)
+ *
+ * @return void
+ */
+function connection__show_connect_window()
+{
+    let page = document.getElementById("verification-system");
+
+    if (page == null)
+    {
+        return;
+    }
+
+    page.style.display = "block";
+    connection__apply_connect_window_mode();
+}
+
+/**
+ * @brief hides the connect window (its close button); whatever the connection is doing goes on behind it
+ *
+ * @return void
+ */
+function connection__hide_connect_window()
+{
+    let page = document.getElementById("verification-system");
+
+    if (page != null)
+    {
+        page.style.display = "none";
+    }
+}
+
+/**
+ * @brief marks on the body whether the connected interface is hidden, for the theme sheets: the hybrid theme paints a page
+ *        background of its own while only the connect window, or nothing, is shown. the page starts with the mark set
+ *        (template.html); the login path clears it (dispatch.js), a disconnect sets it again
+ *
+ * @param is_hidden true while no connected interface is shown
+ *
+ * @return void
+ */
+function connection__mark_connected_ui_hidden(is_hidden)
+{
+    if (typeof document === "undefined" || document.body == null || document.body.classList == null)
+    {
+        return;
+    }
+
+    document.body.classList.toggle("is-connected-ui-hidden", is_hidden == true);
+}
+
+/**
+ * @brief gives the connect form the shape of the mode in use: a window pinned to the middle of the screen, or a page in its own flow
+ *        called on every show and on every theme switch, because the mode depends on the theme. the generic centering of
+ *        main.js is switched off for this box, because that one centers on every show and knows nothing about the modes
+ *
+ * @return void
+ */
+function connection__apply_connect_window_mode()
+{
+    let box = (typeof document !== "undefined") ? document.getElementById("container-2") : null;
+    let page = (typeof document !== "undefined") ? document.getElementById("verification-system") : null;
+
+    if (box == null || page == null || typeof box.setAttribute !== "function")
+    {
+        return;
+    }
+
+    box.setAttribute("data-recenter-on-open", "false");
+
+    // the saved servers: as a window, the bookmarks menu holds them, so the row inside the form is hidden; as a page the
+    // row stays, there is no menu. a page with the server written into it has no use for the row either way (main.js hides it)
+    let bookmarks_row = document.getElementById("server-bookmarks-container");
+
+    if (bookmarks_row != null && g_are_server_details_predefined == false)
+    {
+        bookmarks_row.style.display = (connection__is_connect_window_mode() == true) ? "none" : "";
+    }
+
+    if (connection__is_connect_window_mode() == false)
+    {
+        box.style.position = "";
+        box.style.margin = "";
+        box.style.left = "";
+        box.style.top = "";
+        box.style.zIndex = "";
+        return;
+    }
+
+    // the window must paint above the spacer that follows it in the page: the default theme positions every div, so a
+    // later sibling without this would cover the title bar and swallow the clicks on it and on the close mark
+    box.style.zIndex = "5";
+
+    if (page.style.display == "none")
+    {
+        return;
+    }
+
+    connection__show_predefined_details_in_connect_window();
+    connection__refresh_connect_button_state();
+    connection__refresh_connect_window_sections();
+
+    // a page without a size yet (a tab that is still hidden while it loads) is centered once it has one
+    if (window.innerWidth == 0 || window.innerHeight == 0 || box.offsetWidth == 0)
+    {
+        window.setTimeout(connection__apply_connect_window_mode, 250);
+        return;
+    }
+
+    // measured as laid out, then pinned to the middle of the screen; a drag by the title bar moves it from there (main.js)
+    box.style.position = "fixed";
+    box.style.margin = "0";
+    box.style.left = Math.max(0, Math.round((window.innerWidth - box.offsetWidth) / 2)) + "px";
+    box.style.top = Math.max(0, Math.round((window.innerHeight - box.offsetHeight) / 2)) + "px";
+}
+
+/**
+ * @brief a page with the server written into it (window.__SERVER_CONFIG__, main.js) hides the address and port fields, because
+ *        they are never read; in the window they are shown anyway, filled with that server and not editable, so the user sees
+ *        where the connection goes and, after a disconnect, where it went
+ *
+ * @return void
+ */
+function connection__show_predefined_details_in_connect_window()
+{
+    if (g_are_server_details_predefined != true || typeof g_autoconnect_details !== "object" || g_autoconnect_details == null)
+    {
+        return;
+    }
+
+    let address_field = document.getElementById("input-ip-address");
+    let port_field = document.getElementById("input-port-number");
+    let grid = document.getElementById("connect-form-grid");
+    let keys_grid = document.getElementById("connect-keys-grid");
+
+    if (address_field == null || port_field == null || grid == null || keys_grid == null)
+    {
+        return;
+    }
+
+    // the fields are filled once, with the server the page names, and left alone from then on: after a chosen disconnect
+    // they show where the connection went (a bookmark writes them itself, head-menu.js), and the user may change them; the
+    // connect button takes changed values as the target (connection__request_connect)
+    if (is_written_in_target_shown_in_window == false && typeof g_autoconnect_details.host === "string" && g_autoconnect_details.host.length > 0)
+    {
+        address_field.value = g_autoconnect_details.host;
+        port_field.value = (g_autoconnect_details.port != null) ? String(g_autoconnect_details.port) : "";
+        address_field.disabled = false;
+        port_field.disabled = false;
+        is_written_in_target_shown_in_window = true;
+    }
+
+    grid.style.display = "";
+    grid.style.visibility = "visible";
+
+    // the keys the page wrote in, one row each (ui.js), built once: the window shows, after a chosen disconnect too, which
+    // keys the page logs in with and of what type, and the user may change or remove them. keys.js reads the rows from then
+    // on, also when none is left; the mark on the grid tells it so
+    if (keys_grid.getAttribute("data-written-in-keys-built") !== "true" && typeof UI !== "undefined" && typeof UI.add_key_row === "function")
+    {
+        if (Array.isArray(g_autoconnect_details.keys))
+        {
+            for (let i = 0; i < g_autoconnect_details.keys.length; i++)
+            {
+                UI.add_key_row(String(g_autoconnect_details.keys[i]));
+            }
+        }
+
+        keys_grid.setAttribute("data-written-in-keys-built", "true");
+    }
+
+    // such a page connects by itself and keeps its connect button and its key button invisible (main.js); after a chosen
+    // disconnect the connect button is the way back
+    document.getElementById("connect-button").style.visibility = "visible";
+    document.getElementById("add-key-button").style.visibility = "visible";
+}
+
+/**
+ * @brief fills the identity section of the connect window: a short fingerprint of this client's public key (the first twelve hex
+ *        digits of its sha-256). called on every show and when a key pair arrives
+ *
+ * @return void
+ */
+function connection__refresh_connect_window_sections()
+{
+    let summary = (typeof document !== "undefined") ? document.getElementById("connect-identity-summary") : null;
+
+    if (summary != null)
+    {
+        if (g_is_rsa_key_generated == true && typeof g_rsa_public_key_string === "string" && g_rsa_public_key_string.length > 0 && typeof _sha256 !== "undefined")
+        {
+            let digest = _sha256.create();
+            digest.update(g_rsa_public_key_string);
+            let hex = digest.hex().substring(0, 12);
+            summary.textContent = hex.substring(0, 4) + " " + hex.substring(4, 8) + " " + hex.substring(8, 12);
+        }
+        else
+        {
+            summary.textContent = "making a key pair ...";
+        }
+    }
+}
+
+/**
+ * @brief "disconnect" in the connections menu, and the connect button while connected: ends the connection and keeps the
+ *        connect loop from connecting again on its own. nothing connects until a connect request arrives (the connect
+ *        button, a bookmark); under autoconnect the retry countdown does not run either
+ *
+ * @return void
+ */
+function connection__disconnect_by_user()
+{
+    is_connection_ended_by_user = true;
+    is_connect_loop_wake_pending = false;
+    g_last_disconnect_reason = "disconnected";
+
+    // the window comes back, so the user sees where the connection went; the reset that follows the close leaves it open
+    if (connection__is_connect_window_mode() == true)
+    {
+        connection__show_connect_window();
+    }
+
+    if (g_is_authenticated == true || g_connection_status.state === "connecting")
+    {
+        // the socket closes; the close handler in dispatch.js runs the usual reset, and the connect loop, which waits for
+        // that close, then waits for the next connect request (a fast reconnect is refused while the flag is set)
+        g_websocket_worker.postMessage({ type: "close" });
+        return;
+    }
+
+    // no socket: the loop sits in its retry countdown or waits for the button; woken, it reaches the same wait
+    connection__wake_connect_loop();
+}
+
 /**
  * @brief the saved server configurations, kept on this device only
  *
@@ -1294,6 +1716,46 @@ function connection__render_server_bookmarks()
         option.textContent = bookmarks[x].name + " (" + bookmarks[x].host + ":" + bookmarks[x].port + ")";
         select_element.appendChild(option);
     }
+
+    // the bookmarks menu in the head menu shows the same list (head-menu.js, which the node bundle does not have)
+    if (typeof head_menu__render_bookmarks === "function")
+    {
+        head_menu__render_bookmarks();
+    }
+}
+
+/**
+ * @brief saves a server under a name, or replaces the bookmark of that name; the window's row and the bookmarks menu both call it
+ *
+ * @param string name -> the name typed for the server
+ * @param string host -> the address
+ * @param string port -> the port, as typed
+ *
+ * @return boolean true when the bookmark was written
+ */
+function connection__save_server_bookmark(name, host, port)
+{
+    let bookmarks = connection__read_server_bookmarks();
+    let existing = -1;
+
+    name = (name || "").trim();
+    host = (host || "").trim();
+    port = (port || "").trim();
+
+    if (name.length === 0) { utils__custom_alert("give this server a name first"); return false; }
+    if (host.length === 0 || port.length === 0) { utils__custom_alert("fill in the address and port first"); return false; }
+
+    for (let x = 0; x < bookmarks.length; x++)
+    {
+        if (bookmarks[x].name.toLowerCase() === name.toLowerCase()) { existing = x; }
+    }
+
+    if (existing === -1) { bookmarks.push({ name: name, host: host, port: port }); }
+    else { bookmarks[existing] = { name: name, host: host, port: port }; }
+
+    connection__write_server_bookmarks(bookmarks);
+    connection__render_server_bookmarks();
+    return true;
 }
 
 /**
@@ -1326,27 +1788,8 @@ function connection__wire_server_bookmarks()
     // saving under a name that already exists overwrites it, so this doubles as "update"
     document.getElementById("server-bookmark-save").onclick = function()
     {
-        let name_element = document.getElementById("server-bookmark-name");
-        let name = name_element.value.trim();
-        let typed_host = document.getElementById("input-ip-address").value.trim();
-        let typed_port = document.getElementById("input-port-number").value.trim();
-
-        if (name.length === 0) { utils__custom_alert("give this server a name first"); return; }
-        if (typed_host.length === 0 || typed_port.length === 0) { utils__custom_alert("fill in the address and port first"); return; }
-
-        let bookmarks = connection__read_server_bookmarks();
-        let existing = -1;
-
-        for (let x = 0; x < bookmarks.length; x++)
-        {
-            if (bookmarks[x].name.toLowerCase() === name.toLowerCase()) { existing = x; }
-        }
-
-        if (existing === -1) { bookmarks.push({ name: name, host: typed_host, port: typed_port }); }
-        else { bookmarks[existing] = { name: name, host: typed_host, port: typed_port }; }
-
-        connection__write_server_bookmarks(bookmarks);
-        connection__render_server_bookmarks();
+        connection__save_server_bookmark(document.getElementById("server-bookmark-name").value,
+            document.getElementById("input-ip-address").value, document.getElementById("input-port-number").value);
     };
 
     document.getElementById("server-bookmark-delete").onclick = function()

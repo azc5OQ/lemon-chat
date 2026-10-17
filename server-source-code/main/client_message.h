@@ -6,7 +6,7 @@
 boole client_msg__is_message_correct_at_first_sight_and_get_message_type(cJSON* json_root, uint64 sender_client_id, char** out_message_type);
 void client_msg__get_public_key_and_verification_string_and_dh_public_mix(cJSON* json_root, char** out_public_key, char** out_verification_string, char** out_dh_mix);
 void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 sender_client_id);
-void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket);
 void client_msg__process_client_connection_check(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_change_client_username(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_client_id);
@@ -57,6 +57,8 @@ void client_msg__process_set_server_settings_set_tag_icon(cJSON* json_root, uint
 void client_msg__process_set_channel_icon(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_save_server_settings_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_load_server_settings_request(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_load_server_info_request(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket);
+void client_msg__process_set_server_banner_request(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket);
 void client_msg__process_admin_log_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_admin_log_clear(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_call_idle_client_message(cJSON* json_root, uint64 sender_client_id);

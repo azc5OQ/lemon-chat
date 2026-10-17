@@ -28,7 +28,7 @@ function dispatch__mainthread_onmessage(e)
     else if (e.data.type == "opus_encoder_worker__encode_result")
     {
         // chunks already inside the encoder when push-to-talk ended arrive here after
-        // mic-off; dropping them keeps the stale tail out of receivers' jitter lanes
+        // mic-off; dropping them keeps the old end of the recording out of the receivers' playback buffers
         if (g_is_microphone_active == false && (typeof is_playing_music == "undefined" || is_playing_music != true))
         {
             return;
@@ -42,7 +42,7 @@ function dispatch__mainthread_onmessage(e)
             {
                 // prepend a 2-byte little-endian sequence number INSIDE the encrypted payload;
                 // receivers use it to reorder frames the unordered datachannel scrambled and to
-                // detect losses. the server relay never sees it (it sits under the encryption)
+                // detect losses. the server relay never sees it (it is inside the encrypted part)
                 let opus_chunk_bytes = new Uint8Array(opus_data_chunks[i]);
                 let sequenced_chunk = new Uint8Array(2 + opus_chunk_bytes.length);
 
@@ -58,6 +58,14 @@ function dispatch__mainthread_onmessage(e)
         else
         {
             utils__custom_log("dont have channel keys, cant encrypt audio for sending");
+        }
+    }
+    else if (e.data.type == "opus_encoder_worker__stream_encode_result")
+    {
+        // the sound of this client's video stream: packed and sent next to the pictures by video.js, never as voice
+        if (typeof video__on_sound_encoded === "function")
+        {
+            video__on_sound_encoded(e.data.value);
         }
     }
     else if (e.data.type == "opus_decoder_worker__decode_result")
@@ -105,7 +113,7 @@ function dispatch__mainthread_onmessage(e)
     else if (e.data.type == "websocket_worker_onclose")
     {
         audio_transport__reset();
-        // the driver awaits this signal; it decides whether and when to redial
+        // the connect loop of connection.js waits for this signal; it decides whether and when to connect again
         g_last_connect_attempt_failed = true;
 
         // the server never says why - these are inferences from WHERE the socket died.
@@ -140,8 +148,8 @@ function dispatch__mainthread_onmessage(e)
         }
         else if (connection__try_start_fast_reconnect("socket closed") == false)
         {
-            // a deliberate close (identity switch) is not a lost connection - no scary alert
-            if (g_is_authenticated && g_is_identity_switch_in_progress == false)
+            // a deliberate close (an identity switch, "disconnect" in the connections menu) is not a lost connection - no scary alert
+            if (g_is_authenticated && g_is_identity_switch_in_progress == false && is_connection_ended_by_user == false)
             {
                 if (g_is_running_in_android_webview == false)
                 {
@@ -190,8 +198,8 @@ function dispatch__mainthread_onmessage(e)
         console.log("public key string -> " + g_rsa_public_key_string);
         g_is_rsa_key_generated = true;
 
-        // the keygen phase is over: stop claiming it. when nothing will dial on its own the
-        // status goes idle (empty), otherwise the driver's "connecting" replaces it right away
+        // the keygen phase is over: stop claiming it. when nothing will connect on its own the
+        // status goes idle (empty), otherwise the connect loop's "connecting" replaces it right away
         if (g_is_authenticated == false && g_is_autoconnect_without_user_action_active == false)
         {
             connection__report_connection_status("idle", "");
@@ -200,8 +208,14 @@ function dispatch__mainthread_onmessage(e)
         document.getElementById("another-buttons-sub-container").style.display = "";
         g_identity_string = e.data.identity_string;
 
-        // wakes the driver if it is waiting to dial with this identity
+        // wakes the connect loop if it is waiting to connect with this identity
         g_identity_slot.set({ public_key_string: e.data.value, identity_string: e.data.identity_string });
+
+        // the identity section of the connect window shows the new key pair's fingerprint
+        if (typeof connection__refresh_connect_window_sections === "function")
+        {
+            connection__refresh_connect_window_sections();
+        }
         g_is_identity_switch_in_progress = false;
 
         // persist the identity (the passphrase) so the next launch reconstructs this same keypair
@@ -274,7 +288,7 @@ function dispatch__mainthread_onmessage(e)
             // registered on it. a refusal is simply silence, so nothing here needs to know.
             client_msg.send_request_stored_clients();
 
-            // the idle panel is wired once; a resume still has it (a second listener would cancel the first)
+            // the idle panel gets its handler once; a resume still has it (a second listener would cancel the first)
             if (e.data.is_idle_mode_allowed && g_fast_reconnect.resumed == false)
             {
                 document.getElementById('channel-list-container').style.height = "calc(70% - 30px)";
@@ -313,6 +327,21 @@ function dispatch__mainthread_onmessage(e)
 
             document.getElementById('verification-system').style.display = "none";
             document.getElementById('communication-system-container').style.display = (g_layout.grid_active == true) ? "grid" : "block";
+            connection__mark_connected_ui_hidden(false);
+
+            // an open list of the head menu closes with the page switch, and the "disconnect" entry becomes available
+            // (head-menu.js, which the node bundle does not have)
+            if (typeof head_menu__close_all === "function")
+            {
+                head_menu__close_all();
+                head_menu__refresh_connections_items();
+            }
+            connection__refresh_connect_button_state();
+
+            // the window may be opened while connected ("connections" -> "connect"): it then shows the fields and the
+            // disabled connect button, not the spinner and the "connecting" line of the attempt that just ended
+            document.getElementById("another-buttons-sub-loading-container").style.display = "none";
+            document.getElementById("another-buttons-sub-container").style.display = "";
 
             // the connect screen is gone, so the mic may come back out
             voice__update_microphone_button();
@@ -711,7 +740,7 @@ function dispatch__mainthread_onmessage(e)
             }
         };
 
-        // the chosen username rides along on the last login message, because the server
+        // the chosen username is sent with the last login message, because the server
         // assigns the final name right after accepting this response
         if (typeof g_chosen_username === "string" && g_chosen_username.length > 0)
         {
@@ -751,6 +780,20 @@ function dispatch__mainthread_onmessage(e)
         let full_channel = channel_tree__get_channel_by_id(g_channel_list, e.data.value.message.channel_id);
         let full_channel_name = (full_channel != null && full_channel.name != null) ? full_channel.name : "channel";
         utils__custom_alert("'" + full_channel_name + "' is full");
+    }
+    else if (e.data.type == "data_processing_worker__server_info")
+    {
+        if (typeof server_info__apply === "function")
+        {
+            server_info__apply(e.data.value);
+        }
+    }
+    else if (e.data.type == "data_processing_worker__server_banner_result")
+    {
+        if (typeof server_info__banner_result === "function")
+        {
+            server_info__banner_result(e.data.value);
+        }
     }
     else if (e.data.type == "data_processing_worker__server_settings_values_from_server")
     {

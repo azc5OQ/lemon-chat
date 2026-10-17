@@ -28,6 +28,46 @@ var seen_state_by_context = {};
 // for each, and is sent when the user actually opens it
 var unreceipted_messages_by_sender = {};
 
+/**
+ * @brief Uses the current theme's text style for displayed messages when the local setting is on.
+ * @return void
+ */
+function chat__apply_theme_formatting()
+{
+    let container = document.getElementById("chat-context-container");
+    let sample = null;
+    let paragraph = null;
+    let appearance = null;
+
+    if (container == null || document.body == null)
+    {
+        return;
+    }
+
+    document.body.classList.remove("chat-use-theme-formatting");
+    if (g_use_theme_chat_formatting == false)
+    {
+        return;
+    }
+
+    // Themes set message styles in different places. Read a plain message once,
+    // when this setting or the theme changes, without touching the saved messages.
+    sample = document.createElement("div");
+    sample.className = "single-chat-message";
+    sample.style.cssText = "position: absolute; visibility: hidden; pointer-events: none;";
+    sample.setAttribute("aria-hidden", "true");
+    sample.innerHTML = '<div class="single-chat-message-content"><p class="single-chat-message-content-p">Aa</p></div>';
+    container.appendChild(sample);
+    paragraph = sample.querySelector(".single-chat-message-content-p");
+    appearance = getComputedStyle(paragraph);
+    container.style.setProperty("--chat-theme-font-family", appearance.fontFamily);
+    container.style.setProperty("--chat-theme-font-size", appearance.fontSize);
+    container.style.setProperty("--chat-theme-line-height", appearance.lineHeight);
+    container.style.setProperty("--chat-theme-text-color", appearance.color);
+    sample.remove();
+    document.body.classList.add("chat-use-theme-formatting");
+}
+
 // ---- composing and sending ----
 
 /**
@@ -130,7 +170,7 @@ function chat__promote_offline_chat_context_state(client)
 /**
  * @brief clears the upload lock and the progress overlay
  *        the parts loop must not do this itself: it only queues, so releasing there let a second
- *        upload start and wipe the server buffer of the first
+ *        upload start and overwrite the server buffer of the first
  *
  * @return void
  */
@@ -202,10 +242,10 @@ function chat__hide_picture_delivery_status()
 /**
  * @brief whether an upload may start now, one at a time
  *        the intent globals are written before chat__send_file_by_parts runs its guard, so a
- *        refused upload relabelled the one already in flight; call sites ask here first and touch
+ *        refused upload relabelled the one already running; call sites ask here first and touch
  *        nothing on refusal
  *
- * @return boolean true when no upload is in flight
+ * @return boolean true when no upload is running
  */
 function chat__can_start_file_upload()
 {
@@ -413,7 +453,7 @@ function chat__send_pending_chat_file(receiver_type)
 }
 
 /**
- * @brief the one send path for what sits in the input, for both targets
+ * @brief the one send path for the text in the input, for both targets
  *        "channel" is the current channel (keys already known), "user" the selected person
  *        (encrypted to their public key); a pending file goes first, on its own.
  *        chat__send_chat_message decides the target and the offline cases
@@ -674,7 +714,7 @@ function chat__send_direct_chat_message()
 
 /**
  * @brief text to somebody who is not connected: the same encryption as a direct message (their public key came with the offline roster), addressed by alias
- *        the server parks it and hands it over when they return
+ *        the server stores it and delivers it when they connect again
  *
  * @param object offline_contact -> the entry of g_offline_client_list
  *
@@ -1437,8 +1477,8 @@ function chat__render_channel_unread_badge(channel_id)
         badge.classList.add("unread-empty");
     }
 
-    // the strip themes hide the channel tree and show a circle instead; the count
-    // lives on that circle, which is rebuilt by the member-list mirror
+    // the member list themes (simpledark, bluebell) hide the channel tree and show a circle instead; the count
+    // is shown on that circle, which is rebuilt by the member list mirror
     if (typeof UI !== "undefined" && typeof UI.schedule_member_list_sync === "function")
     {
         UI.schedule_member_list_sync();

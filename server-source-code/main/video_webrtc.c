@@ -15,6 +15,12 @@
 #include "video_webrtc.h"
 #include "video_stream.h"
 
+// declarations
+static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id, void* ptr);
+static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int id, void* ptr);
+static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int id, const char* message, int size, void* ptr);
+static void RTC_API _video_webrtc_internal__datachannel_on_error_callback(int id, const char* error, void* ptr);
+
 /**
  * @brief the client's video data channel opened, so the server can send video to it
  *
@@ -29,7 +35,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id,
 
     DBG_VIDEO_WEBRTC log_info("%s", "_video_webrtc_internal__datachannel_on_open_callback");
 
-    clib__write_lock(&g_webrtc_muggles_rwlock_guard);
+    clib__write_lock(&g_webrtc_peers_rwlock_guard);
 
     // A callback from a channel replaced during reconnect must not change the new channel's state.
     if (peer != NULL_POINTER && peer->video_data_channel_handle == id)
@@ -37,7 +43,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id,
         peer->is_video_channel_connected = TRUE;
     }
 
-    clib__unlock(&g_webrtc_muggles_rwlock_guard);
+    clib__unlock(&g_webrtc_peers_rwlock_guard);
 }
 
 /**
@@ -65,7 +71,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int i
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    clib__write_lock(&g_webrtc_muggles_rwlock_guard);
+    clib__write_lock(&g_webrtc_peers_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
     if (peer->is_existing == TRUE && peer->video_data_channel_handle == id)
@@ -81,7 +87,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int i
     }
 
     clib__unlock(&g_channels_global_rwlock_guard);
-    clib__unlock(&g_webrtc_muggles_rwlock_guard);
+    clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -104,7 +110,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int 
         return;
     }
     // peer slots never move: the index comes from the pointer, not from fields another callback can reset
-    video_stream__relay_packet((uint64)(peer_sender - g_webrtc_muggles_array), NULL_POINTER, id, (const unsigned char*)message, (uint64)size);
+    video_stream__relay_packet((uint64)(peer_sender - g_webrtc_peers_array), NULL_POINTER, id, (const unsigned char*)message, (uint64)size);
 }
 
 /**
@@ -121,9 +127,15 @@ static void RTC_API _video_webrtc_internal__datachannel_on_error_callback(int id
     DBG_VIDEO_WEBRTC log_info("%s %s", "_video_webrtc_internal__datachannel_on_error_callback", error);
 }
 
-// Create a reliable, ordered channel so a missing part of a video frame is sent again.
-// The audio connection setup calls this while holding the WebRTC peers write lock.
-// A failure leaves the video handle empty; the already-created audio channel keeps working.
+/**
+ * @brief Creates the reliable, ordered video channel on the client's WebRTC connection.
+ *
+ * @param webrtc_peer_t* peer -> peer that receives the new video handle and callbacks
+ *
+ * @attention The caller holds the WebRTC peers write lock. Failure leaves the video handle empty; the audio channel remains usable.
+ *
+ * @return void
+ */
 void video_webrtc__create_data_channel(webrtc_peer_t* peer)
 {
     rtcDataChannelInit video_init;
@@ -149,28 +161,51 @@ void video_webrtc__create_data_channel(webrtc_peer_t* peer)
     }
 }
 
-// The caller holds the WebRTC peers read lock when checking a client's connection.
+/**
+ * @brief Checks whether the client has an open video data channel.
+ *
+ * @param uint64 client_id -> valid index of the client's WebRTC peer
+ *
+ * @attention The caller holds the WebRTC peers read lock.
+ *
+ * @return boole -> TRUE when the peer exists and its video channel is open; otherwise FALSE.
+ */
 boole video_webrtc__is_connected(uint64 client_id)
 {
-    webrtc_peer_t* peer = &g_webrtc_muggles_array[client_id];
+    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
 
     return peer->is_existing == TRUE && peer->is_video_channel_connected == TRUE;
 }
 
-// Ignore packets from a channel that a reconnect has already replaced.
-// The caller holds the WebRTC peers read lock.
+/**
+ * @brief Checks whether a packet came from the client's current open video channel.
+ *
+ * @param uint64 client_id -> valid index of the client's WebRTC peer
+ * @param int data_channel -> channel handle the packet arrived on
+ *
+ * @attention The caller holds the WebRTC peers read lock. Channels replaced during reconnect must not send packets.
+ *
+ * @return boole -> TRUE when the handle matches the open channel; otherwise FALSE.
+ */
 boole video_webrtc__is_data_channel_current(uint64 client_id, int data_channel)
 {
-    webrtc_peer_t* peer = &g_webrtc_muggles_array[client_id];
+    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
 
     return video_webrtc__is_connected(client_id) == TRUE && peer->video_data_channel_handle == data_channel;
 }
 
-// Skip a viewer when its connection has too much unsent video or the library reports an error.
-// The caller holds the WebRTC peers read lock while checking and sending the packet.
+/**
+ * @brief Checks whether the viewer's open video channel has room for another packet.
+ *
+ * @param uint64 client_id -> valid index of the receiving client's WebRTC peer
+ *
+ * @attention The caller holds the WebRTC peers read lock.
+ *
+ * @return boole -> TRUE when the channel is open and its queued data is within the limit; otherwise FALSE.
+ */
 boole video_webrtc__can_send(uint64 client_id)
 {
-    webrtc_peer_t* peer = &g_webrtc_muggles_array[client_id];
+    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
     int buffered = 0;
 
     if (video_webrtc__is_connected(client_id) == FALSE || peer->video_data_channel_handle == 0)
@@ -181,11 +216,20 @@ boole video_webrtc__can_send(uint64 client_id)
     return buffered >= 0 && buffered <= VIDEO_RELAY_MAX_BUFFERED_BYTES;
 }
 
-// Hand one viewer's encrypted video packet to its data channel.
-// The caller holds the WebRTC peers read lock and checks can_send before preparing the packet.
+/**
+ * @brief Sends one encrypted video packet through the viewer's data channel.
+ *
+ * @param uint64 client_id -> valid index of the receiving client's WebRTC peer
+ * @param const unsigned char* packet -> encrypted packet; the caller keeps this buffer
+ * @param uint64 size -> packet length in bytes
+ *
+ * @attention The caller holds the WebRTC peers read lock and checks video_webrtc__can_send before preparing the packet.
+ *
+ * @return boole -> TRUE when libdatachannel accepted the packet; FALSE if disconnected or sending fails.
+ */
 boole video_webrtc__send(uint64 client_id, const unsigned char* packet, uint64 size)
 {
-    webrtc_peer_t* peer = &g_webrtc_muggles_array[client_id];
+    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
 
     if (video_webrtc__is_connected(client_id) == FALSE || peer->video_data_channel_handle == 0)
     {

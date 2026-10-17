@@ -33,6 +33,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #else
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -64,7 +65,8 @@ typedef int socklen_t;
  */
 static struct ws_events cli_events;
 
-// the frames waiting for a media socket's writer thread sit in a ring of bytes, each as a record of
+// the frames waiting for a media socket's writer thread are kept in a byte buffer that is written in a circle
+// (when the end is reached, writing continues at the start; the names below call it the ring), each as a record of
 // [8 B queued_at][2 B size][1 B kind][data]. a burst fits whole: a music bot's lead at song start is a few
 // hundred frames of about 150 bytes, a video keyframe is up to 256 packets. a frame that waited past its
 // kind's stale limit is dropped when its turn comes; a control frame (the attachment acknowledgement)
@@ -111,6 +113,9 @@ struct ws_media_buffer
  */
 struct ws_connection
 {
+
+    struct ws_chat_queue* chat;
+    bool chat_mode;
 
     int media_purpose;      // WS_MEDIA_PURPOSE_NONE for the chat socket, else the /audio or /video socket
     uint64_t media_client_id;
@@ -171,6 +176,11 @@ int ws_init_client_slots(uint32_t capacity)
  */
 static uint32_t timeout;
 
+static void _ws_internal__chat_abort(ws_cli_conn_t* client);
+static int _ws_internal__chat_start(ws_cli_conn_t* client);
+static void _ws_internal__chat_stop(ws_cli_conn_t* client);
+static int _ws_internal__chat_queue_frame(ws_cli_conn_t* client, const char* data, size_t size, int type);
+
 static uint64_t audio_clock_ms(void)
 {
     struct timespec now;
@@ -205,13 +215,18 @@ void ws_media_bind(ws_cli_conn_t* client, uint64_t id)
 // Shutdown wakes the reader. Only that reader may release and reuse the slot.
 void ws_abort_client(ws_cli_conn_t* client)
 {
+    if (client != NULL && client->chat_mode)
+    {
+        _ws_internal__chat_abort(client);
+        return;
+    }
     if (client != NULL && client->client_sock != -1)
     {
         shutdown(client->client_sock, 2);
     }
 }
 
-/** @brief copies bytes into the ring at an offset, wrapping at its end */
+/** @brief copies bytes into the ring buffer at an offset, continuing at its start when its end is reached */
 static void media_ring_write(struct ws_media_buffer* media, size_t offset, const unsigned char* source, size_t size)
 {
     size_t first = 0;
@@ -229,7 +244,7 @@ static void media_ring_write(struct ws_media_buffer* media, size_t offset, const
     }
 }
 
-/** @brief copies bytes out of the ring from an offset, wrapping at its end */
+/** @brief copies bytes out of the ring buffer from an offset, continuing at its start when its end is reached */
 static void media_ring_read(struct ws_media_buffer* media, size_t offset, unsigned char* destination, size_t size)
 {
     size_t first = 0;
@@ -489,6 +504,1062 @@ static void shutdown_socket(int fd)
 #endif
 }
 
+// Chat messages wait here until a worker encrypts them and the socket can accept
+// them. A slow receiver never makes an encryption worker wait inside send().
+// Each connection owns its queue until its reader has stopped and every queued
+// message has been released. The socket slot cannot be reused before that point.
+#define WS_CHAT_WORKERS 4
+#define WS_CHAT_CLIENT_BYTES (32U * 1024U * 1024U)
+#define WS_CHAT_TOTAL_BYTES (128U * 1024U * 1024U)
+#define WS_CHAT_CLIENT_MESSAGES 1024U
+#define WS_CHAT_TOTAL_MESSAGES 65536U
+#define WS_CHAT_WRITE_CHUNK 16384U
+#define WS_CHAT_STALL_TIMEOUT_MS 10000U
+#define WS_CHAT_CLOSE_DRAIN_MS 2000U
+
+struct ws_chat_job
+{
+    struct ws_chat_job* next;
+    struct ws_chat_queue* queue;
+    void* context;
+    char* (*encode)(void* context, size_t* size);
+    void (*release_context)(void* context);
+    void (*release_encoded)(char* encoded);
+    char* encoded;
+    size_t size;
+    size_t charge;
+    size_t written;
+    unsigned char header[10];
+    size_t header_size;
+    int type;
+    bool encoding;
+    bool ready;
+    uint64_t last_progress;
+};
+
+struct ws_chat_queue
+{
+    struct ws_chat_queue* next;
+    ws_cli_conn_t* client;
+    struct ws_chat_job* first;
+    struct ws_chat_job* last;
+    size_t bytes;
+    size_t messages;
+    bool stopped;
+    bool writer_active;
+    bool close_requested;
+    uint64_t close_deadline;
+};
+
+#ifdef _WIN32
+typedef WSAPOLLFD ws_pollfd_t;
+#else
+typedef struct pollfd ws_pollfd_t;
+#endif
+
+static pthread_mutex_t chat_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t chat_encode_ready = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t chat_write_ready = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t chat_cleanup_changed = PTHREAD_COND_INITIALIZER;
+static pthread_once_t chat_once = PTHREAD_ONCE_INIT;
+static struct ws_chat_queue* chat_first = NULL;
+static struct ws_chat_queue* chat_last = NULL;
+static size_t chat_bytes = 0;
+static size_t chat_messages = 0;
+static bool chat_workers_running = false;
+static bool chat_workers_stopping = false;
+static pthread_t chat_workers[WS_CHAT_WORKERS];
+static pthread_t chat_writer;
+static ws_pollfd_t* chat_pollfds = NULL;
+static struct ws_chat_queue** chat_polled_queues = NULL;
+
+/**
+ * @brief Waits until one of the supplied sockets is ready for reading or writing.
+ *
+ * @param ws_pollfd_t* descriptors -> Socket entries with the events to wait for. The operating
+ * system writes the events that occurred into these same entries.
+ * @param size_t count -> Number of socket entries in descriptors.
+ * @param int milliseconds -> Maximum time to wait, or -1 to wait without a time limit.
+ *
+ * @return int -> Number of sockets with events, 0 when the wait expires, or -1 on error.
+ */
+static int _ws_internal__chat_poll(ws_pollfd_t* descriptors, size_t count, int milliseconds)
+{
+#ifdef _WIN32
+    return WSAPoll(descriptors, (ULONG)count, milliseconds);
+#else
+    return poll(descriptors, (nfds_t)count, milliseconds);
+#endif
+}
+
+/**
+ * @brief Checks whether the last socket operation can be tried again.
+ *
+ * @return bool -> true when the socket could not accept the operation yet or the
+ * operation was interrupted; false for other errors.
+ *
+ * @attention Call this immediately after a failed socket operation on the same
+ * thread, before another operation can replace the operating system error.
+ */
+static bool _ws_internal__socket_would_block(void)
+{
+#ifdef _WIN32
+    int error = WSAGetLastError();
+    return error == WSAEWOULDBLOCK || error == WSAEINTR;
+#else
+    return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
+#endif
+}
+
+// Only chat sockets become nonblocking. Their existing reader still waits for
+// incoming bytes, but the shared writer can leave a full socket alone and send
+// to another client. Audio and video keep their existing receive timeouts.
+/**
+ * @brief Reads bytes from a socket and waits for more data when a chat socket
+ * cannot provide any bytes yet.
+ *
+ * @param ws_cli_conn_t* client -> Connection whose socket supplies the incoming bytes.
+ * @param void* buffer -> Destination buffer for the bytes that were received.
+ * @param size_t length -> Maximum number of bytes that fit in buffer.
+ *
+ * @return ssize_t -> Number of bytes received, 0 when the peer closes its connection, or
+ * -1 on error. Audio and video sockets keep their existing receive behavior.
+ *
+ * @attention The connection's reader owns this call. Do not hold application
+ * locks while waiting for incoming bytes.
+ */
+static ssize_t _ws_internal__receive_bytes(ws_cli_conn_t* client, void* buffer, size_t length)
+{
+    ssize_t received;
+    ws_pollfd_t descriptor;
+
+    for (;;)
+    {
+        received = recv(client->client_sock, buffer, length, 0);
+        if (received >= 0 || !client->chat_mode || !_ws_internal__socket_would_block())
+        {
+            return received;
+        }
+        memset(&descriptor, 0, sizeof(descriptor));
+        descriptor.fd = client->client_sock;
+        descriptor.events = POLLIN;
+        if (_ws_internal__chat_poll(&descriptor, 1, -1) < 0 && !_ws_internal__socket_would_block())
+        {
+            return -1;
+        }
+    }
+}
+
+/**
+ * @brief Waits up to ten milliseconds for a change in the outgoing chat queues.
+ *
+ * @param pthread_cond_t* condition -> Condition to wait on while temporarily releasing chat_mutex.
+ *
+ * @return void
+ *
+ * @attention The caller must hold chat_mutex. The mutex is held again when this
+ * function returns, including when the wait ends without a notification.
+ */
+static void _ws_internal__chat_wait_briefly(pthread_cond_t* condition)
+{
+    struct timespec until;
+
+    clock_gettime(CLOCK_REALTIME, &until);
+    until.tv_nsec += 10000000;
+    if (until.tv_nsec >= 1000000000)
+    {
+        until.tv_nsec -= 1000000000;
+        until.tv_sec++;
+    }
+    pthread_cond_timedwait(condition, &chat_mutex, &until);
+}
+
+/**
+ * @brief Builds the WebSocket frame header for an outgoing message.
+ *
+ * @param struct ws_chat_job* job -> Message containing the frame type, encoded bytes and byte count.
+ * The generated header and its length are stored in this same message.
+ *
+ * @return bool -> true when the message can be sent as a frame; false when its size or
+ * contents do not meet the frame requirements.
+ *
+ * @attention The caller must own this message while changing its header.
+ */
+static bool _ws_internal__chat_make_header(struct ws_chat_job* job)
+{
+    size_t i;
+
+    if (job->size > MAX_FRAME_LENGTH || (job->size > 0 && job->encoded == NULL)
+        || (job->type >= WS_FR_OP_CLSE && job->size > 125))
+    {
+        return false;
+    }
+    job->header[0] = WS_FIN | job->type;
+    if (job->size <= 125)
+    {
+        job->header[1] = (unsigned char)job->size;
+        job->header_size = 2;
+    }
+    else if (job->size <= 65535)
+    {
+        job->header[1] = 126;
+        job->header[2] = (unsigned char)(job->size >> 8);
+        job->header[3] = (unsigned char)job->size;
+        job->header_size = 4;
+    }
+    else
+    {
+        job->header[1] = 127;
+        for (i = 0; i < 8; i++)
+        {
+            job->header[2 + i] = (unsigned char)((uint64_t)job->size >> (56 - 8 * i));
+        }
+        job->header_size = 10;
+    }
+    return true;
+}
+
+// Removing a job from the list does not release the connection yet. Its count
+// stays charged until its buffers and callback context have also been freed.
+// This lets the reader safely wait without holding any application lock.
+/**
+ * @brief Frees one outgoing message and removes its reserved memory from the
+ * queue's totals after all of its buffers have been released.
+ *
+ * @param struct ws_chat_job* job -> Detached message to release, including its callback data and any
+ * encoded bytes. The message must no longer be in use by an encoder or writer.
+ *
+ * @return void
+ *
+ * @attention Do not hold chat_mutex when calling this function. Release callbacks
+ * run before that mutex is acquired to update the queue's totals.
+ */
+static void _ws_internal__chat_release_job(struct ws_chat_job* job)
+{
+    struct ws_chat_queue* queue = job->queue;
+    size_t charge = job->charge;
+
+    if (job->release_context != NULL)
+    {
+        job->release_context(job->context);
+    }
+    if (job->encoded != NULL && job->release_encoded != NULL)
+    {
+        job->release_encoded(job->encoded);
+    }
+    free(job);
+    if (queue != NULL)
+    {
+        pthread_mutex_lock(&chat_mutex);
+        queue->bytes -= charge;
+        queue->messages--;
+        chat_bytes -= charge;
+        chat_messages--;
+        if (queue->stopped && queue->messages == 0)
+        {
+            pthread_cond_broadcast(&chat_cleanup_changed);
+        }
+        pthread_mutex_unlock(&chat_mutex);
+    }
+}
+
+/**
+ * @brief Frees a detached list of outgoing messages and their buffers.
+ *
+ * @param struct ws_chat_job* jobs -> First message to release, or NULL when there are no messages.
+ *
+ * @return void
+ *
+ * @attention Do not hold chat_mutex. No encoder or writer may still be using
+ * any message in this list.
+ */
+static void _ws_internal__chat_release_list(struct ws_chat_job* jobs)
+{
+    struct ws_chat_job* next;
+
+    while (jobs != NULL)
+    {
+        next = jobs->next;
+        _ws_internal__chat_release_job(jobs);
+        jobs = next;
+    }
+}
+
+/**
+ * @brief Adds a detached list of messages to another list awaiting cleanup.
+ *
+ * @param struct ws_chat_job** collected -> Address of the list that will receive the messages.
+ * @param struct ws_chat_job* jobs -> First message to add, or NULL when there are no messages to add.
+ *
+ * @return void
+ *
+ * @attention The caller must own both lists. This function only links the lists
+ * together; their messages and buffers are freed separately.
+ */
+static void _ws_internal__chat_collect(struct ws_chat_job** collected, struct ws_chat_job* jobs)
+{
+    struct ws_chat_job* last;
+
+    if (jobs == NULL)
+    {
+        return;
+    }
+    last = jobs;
+    while (last->next != NULL)
+    {
+        last = last->next;
+    }
+    last->next = *collected;
+    *collected = jobs;
+}
+
+/**
+ * @brief Removes the first message from a connection's outgoing queue.
+ *
+ * @param struct ws_chat_queue* queue -> Connection queue whose first message will be removed.
+ *
+ * @return struct ws_chat_job* -> Removed message, or NULL when the queue was empty. The caller must
+ * release the returned message when it is no longer needed.
+ *
+ * @attention The caller must hold chat_mutex. The removed message remains counted
+ * in the queue's reserved memory until its buffers have been released.
+ */
+static struct ws_chat_job* _ws_internal__chat_remove_first(struct ws_chat_queue* queue)
+{
+    struct ws_chat_job* job = queue->first;
+
+    if (job != NULL)
+    {
+        queue->first = job->next;
+        if (queue->first == NULL)
+        {
+            queue->last = NULL;
+        }
+        job->next = NULL;
+    }
+    return job;
+}
+
+// Called with chat_mutex held. The active encoder or writer keeps its first
+// job; it will notice stopping and release that job itself. Everything after
+// it can be cancelled immediately without waiting for either worker.
+/**
+ * @brief Stops a connection and detaches the queued messages that can be freed
+ * immediately.
+ *
+ * @param struct ws_chat_queue* queue -> Connection queue to stop and cancel.
+ *
+ * @return struct ws_chat_job* -> Detached messages for the caller to release after unlocking chat_mutex,
+ * or NULL when no messages can be released immediately.
+ *
+ * @attention The caller must hold chat_mutex. A message still being encoded or
+ * written stays in the queue until its worker has finished using it.
+ */
+static struct ws_chat_job* _ws_internal__chat_abort_locked(struct ws_chat_queue* queue)
+{
+    struct ws_chat_job* cancelled;
+
+    if (!queue->stopped)
+    {
+        queue->stopped = true;
+        shutdown_socket(queue->client->client_sock);
+    }
+    cancelled = queue->first;
+    if (cancelled != NULL && (cancelled->encoding || queue->writer_active))
+    {
+        cancelled = queue->first->next;
+        queue->first->next = NULL;
+        queue->last = queue->first;
+    }
+    else
+    {
+        queue->first = NULL;
+        queue->last = NULL;
+    }
+    pthread_cond_broadcast(&chat_cleanup_changed);
+    return cancelled;
+}
+
+/**
+ * @brief Stops a chat connection and releases messages that are no longer in use.
+ *
+ * @param ws_cli_conn_t* client -> Connection whose outgoing queue and socket should be stopped.
+ *
+ * @return void
+ *
+ * @attention The caller must keep client alive and must not hold chat_mutex.
+ * This function leaves final connection cleanup to the connection's reader.
+ */
+static void _ws_internal__chat_abort(ws_cli_conn_t* client)
+{
+    struct ws_chat_job* cancelled = NULL;
+
+    pthread_mutex_lock(&chat_mutex);
+    if (client->chat != NULL)
+    {
+        cancelled = _ws_internal__chat_abort_locked(client->chat);
+    }
+    pthread_mutex_unlock(&chat_mutex);
+    _ws_internal__chat_release_list(cancelled);
+}
+
+/**
+ * @brief Adds a message to a connection's outgoing queue while checking the
+ * per-connection and server-wide memory and message limits.
+ *
+ * @param ws_cli_conn_t* client -> Connection that should receive the message.
+ * @param struct ws_chat_job* job -> Message whose ownership transfers to this function on every return.
+ *
+ * @return int -> 0 when the message was queued or a duplicate close was handled;
+ * -1 when the message could not be queued.
+ *
+ * @attention The caller must keep client alive and must not hold chat_mutex.
+ * Exceeding a queue limit stops that connection and cancels its waiting messages.
+ */
+static int _ws_internal__chat_add_job(ws_cli_conn_t* client, struct ws_chat_job* job)
+{
+    struct ws_chat_queue* queue;
+    struct ws_chat_job* cancelled = NULL;
+    int result = -1;
+
+    pthread_mutex_lock(&chat_mutex);
+    queue = client != NULL ? client->chat : NULL;
+    if (queue != NULL && !queue->stopped && !queue->close_requested)
+    {
+        if (job->charge > WS_CHAT_CLIENT_BYTES || queue->bytes > WS_CHAT_CLIENT_BYTES - job->charge
+            || chat_bytes > WS_CHAT_TOTAL_BYTES - job->charge
+            || queue->messages >= WS_CHAT_CLIENT_MESSAGES || chat_messages >= WS_CHAT_TOTAL_MESSAGES)
+        {
+            cancelled = _ws_internal__chat_abort_locked(queue);
+        }
+        else
+        {
+            job->queue = queue;
+            if (queue->last != NULL)
+            {
+                queue->last->next = job;
+            }
+            else
+            {
+                queue->first = job;
+            }
+            queue->last = job;
+            queue->bytes += job->charge;
+            queue->messages++;
+            chat_bytes += job->charge;
+            chat_messages++;
+            if (job->type == WS_FR_OP_CLSE)
+            {
+                queue->close_requested = true;
+                queue->close_deadline = audio_clock_ms() + WS_CHAT_CLOSE_DRAIN_MS;
+            }
+            if (queue->first == job)
+            {
+                if (job->ready)
+                {
+                    pthread_cond_signal(&chat_write_ready);
+                }
+                else
+                {
+                    pthread_cond_signal(&chat_encode_ready);
+                }
+            }
+            result = 0;
+        }
+    }
+    else if (queue != NULL && !queue->stopped && queue->close_requested && job->type == WS_FR_OP_CLSE)
+    {
+        result = 1;
+    }
+    pthread_mutex_unlock(&chat_mutex);
+    _ws_internal__chat_release_list(cancelled);
+    if (result != 0)
+    {
+        _ws_internal__chat_release_job(job);
+    }
+    return result < 0 ? -1 : 0;
+}
+
+// The context belongs to this function on every return, including failure.
+// Its encoder runs on a worker and returns the message bytes without a trailing
+// NUL in encoded_size. The supplied release functions match the caller's own
+// allocators. charged_bytes must include its context and peak encoding buffers.
+/**
+ * @brief Queues a text message for a worker to encode and then send in order
+ * with the connection's other outgoing messages.
+ *
+ * @param ws_cli_conn_t* client -> Chat connection that should receive the message.
+ * @param void* context -> Caller-created data passed to encode and release_context.
+ * Its ownership transfers to this function even when queuing fails.
+ * @param size_t charged_bytes -> Memory to reserve for the context and the largest total
+ * of its encoding buffers. This function also reserves the queue entry's size.
+ * @param char*(*)(void*, size_t*) encode -> Callback that returns the encoded buffer and writes its byte
+ * count, excluding any trailing NUL, to encoded_size. NULL means encoding failed.
+ * @param void(*)(void*) release_context -> Callback that releases context using its original
+ * allocator. It runs after encoding or when the message is cancelled or rejected.
+ * @param void(*)(char*) release_encoded -> Callback that releases a non-NULL encoded buffer using
+ * its original allocator once sending or cancellation has finished.
+ *
+ * @return int -> 0 when the message was queued, or -1 when it could not be queued.
+ *
+ * @attention All callbacks are required. Keep client alive during this call and
+ * do not hold chat_mutex. The encoder runs on a shared worker outside application
+ * and transport locks, so context must own everything it will read. A successful
+ * return means the message was queued, not that its peer has received it.
+ */
+int ws_queue_text(ws_cli_conn_t* client, void* context, size_t charged_bytes,
+    char* (*encode)(void* context, size_t* encoded_size),
+    void (*release_context)(void* context), void (*release_encoded)(char* encoded))
+{
+    struct ws_chat_job* job = NULL;
+
+    if (encode != NULL && release_context != NULL && release_encoded != NULL
+        && charged_bytes <= WS_CHAT_CLIENT_BYTES - sizeof(*job))
+    {
+        job = calloc(1, sizeof(*job));
+    }
+    if (job == NULL)
+    {
+        if (release_context != NULL)
+        {
+            release_context(context);
+        }
+        ws_abort_client(client);
+        return -1;
+    }
+    job->context = context;
+    job->encode = encode;
+    job->release_context = release_context;
+    job->release_encoded = release_encoded;
+    job->charge = charged_bytes + sizeof(*job);
+    job->type = WS_FR_OP_TXT;
+    return _ws_internal__chat_add_job(client, job);
+}
+
+/**
+ * @brief Frees encoded frame bytes that were allocated with malloc.
+ *
+ * @param char* bytes -> Buffer to release, or NULL when there is no buffer.
+ *
+ * @return void
+ */
+static void _ws_internal__chat_free_encoded(char* bytes)
+{
+    free(bytes);
+}
+
+/**
+ * @brief Copies a complete frame's contents into the outgoing chat queue.
+ *
+ * @param ws_cli_conn_t* client -> Connection that should receive the frame.
+ * @param const char* data -> Frame contents to copy. May be NULL for an empty frame.
+ * @param size_t size -> Number of bytes to copy from data.
+ * @param int type -> WebSocket frame type, such as text, ping, pong or close.
+ *
+ * @return int -> 0 when the frame was accepted, or -1 when it could not be queued.
+ *
+ * @attention The caller keeps ownership of data and must keep client alive.
+ * Do not hold chat_mutex. Allocation or frame validation failure aborts the
+ * connection instead of leaving its outgoing message sequence incomplete.
+ */
+static int _ws_internal__chat_queue_frame(ws_cli_conn_t* client, const char* data, size_t size, int type)
+{
+    struct ws_chat_job* job;
+
+    if (size > WS_CHAT_CLIENT_BYTES - sizeof(*job) || (size != 0 && data == NULL))
+    {
+        ws_abort_client(client);
+        return -1;
+    }
+    job = calloc(1, sizeof(*job));
+    if (job == NULL)
+    {
+        ws_abort_client(client);
+        return -1;
+    }
+    if (size != 0)
+    {
+        job->encoded = malloc(size);
+        if (job->encoded == NULL)
+        {
+            free(job);
+            ws_abort_client(client);
+            return -1;
+        }
+        memcpy(job->encoded, data, size);
+    }
+    job->release_encoded = _ws_internal__chat_free_encoded;
+    job->size = size;
+    job->charge = size + sizeof(*job);
+    job->type = type;
+    job->ready = true;
+    if (!_ws_internal__chat_make_header(job))
+    {
+        _ws_internal__chat_release_job(job);
+        ws_abort_client(client);
+        return -1;
+    }
+    return _ws_internal__chat_add_job(client, job);
+}
+
+/**
+ * @brief Converts queued messages into outgoing bytes without holding the chat
+ * queue mutex or waiting for sockets to accept data.
+ *
+ * @param void* unused -> Unused thread argument, passed as NULL when the worker starts.
+ *
+ * @return void* -> NULL when the shared workers are asked to stop.
+ *
+ * @attention Each connection has at most one message being encoded at a time.
+ * The message count keeps its queue alive until encoding and cleanup finish.
+ */
+static void* _ws_internal__chat_encode_worker(void* unused)
+{
+    struct ws_chat_queue* queue;
+    struct ws_chat_queue* previous;
+    struct ws_chat_job* job;
+    struct ws_chat_job* cancelled;
+    char* encoded;
+    size_t encoded_size;
+    bool valid;
+
+    (void)unused;
+    for (;;)
+    {
+        pthread_mutex_lock(&chat_mutex);
+        for (;;)
+        {
+            if (chat_workers_stopping)
+            {
+                pthread_mutex_unlock(&chat_mutex);
+                return NULL;
+            }
+            previous = NULL;
+            queue = chat_first;
+            while (queue != NULL)
+            {
+                job = queue->first;
+                if (!queue->stopped && job != NULL && !job->ready && !job->encoding)
+                {
+                    break;
+                }
+                previous = queue;
+                queue = queue->next;
+            }
+            if (queue != NULL)
+            {
+                break;
+            }
+            pthread_cond_wait(&chat_encode_ready, &chat_mutex);
+        }
+        job = queue->first;
+        job->encoding = true;
+        // Move the chosen connection to the end so one busy sender cannot
+        // keep taking every worker while other clients have messages waiting.
+        if (queue != chat_last)
+        {
+            if (previous != NULL)
+            {
+                previous->next = queue->next;
+            }
+            else
+            {
+                chat_first = queue->next;
+            }
+            chat_last->next = queue;
+            chat_last = queue;
+            queue->next = NULL;
+        }
+        pthread_mutex_unlock(&chat_mutex);
+
+        encoded_size = 0;
+        encoded = job->encode(job->context, &encoded_size);
+        job->release_context(job->context);
+        job->context = NULL;
+        job->release_context = NULL;
+        job->encoded = encoded;
+        job->size = encoded_size;
+        valid = encoded != NULL && encoded_size <= job->charge - sizeof(*job) && _ws_internal__chat_make_header(job);
+
+        pthread_mutex_lock(&chat_mutex);
+        job->encoding = false;
+        cancelled = NULL;
+        if (!valid || queue->stopped)
+        {
+            cancelled = _ws_internal__chat_abort_locked(queue);
+        }
+        else
+        {
+            job->ready = true;
+            pthread_cond_signal(&chat_write_ready);
+        }
+        pthread_mutex_unlock(&chat_mutex);
+        _ws_internal__chat_release_list(cancelled);
+    }
+}
+
+/**
+ * @brief Sends one small part of the first queued frame without waiting for
+ * the socket to accept more bytes.
+ *
+ * @param struct ws_chat_queue* queue -> Connection queue whose first frame is ready to be written.
+ *
+ * @return bool -> true when sending can continue, including when the socket must wait
+ * until a later attempt; false when the connection can no longer be written.
+ *
+ * @attention The writer must mark the queue as writer_active before releasing
+ * chat_mutex and calling this function. That mark keeps the socket and first
+ * message alive until the writer finishes using them.
+ */
+static bool _ws_internal__chat_write_piece(struct ws_chat_queue* queue)
+{
+    struct ws_chat_job* job = queue->first;
+    unsigned char first_piece[WS_CHAT_WRITE_CHUNK];
+    const char* bytes;
+    size_t remaining;
+    size_t header_bytes;
+    ssize_t written;
+
+    remaining = job->header_size + job->size - job->written;
+    if (remaining > WS_CHAT_WRITE_CHUNK)
+    {
+        remaining = WS_CHAT_WRITE_CHUNK;
+    }
+    if (job->written < job->header_size)
+    {
+        // Keep the WebSocket header and first data bytes in one send, so small
+        // messages do not need a separate socket call just for the header.
+        header_bytes = job->header_size - job->written;
+        memcpy(first_piece, job->header + job->written, header_bytes);
+        if (remaining > header_bytes)
+        {
+            memcpy(first_piece + header_bytes, job->encoded, remaining - header_bytes);
+        }
+        bytes = (const char*)first_piece;
+    }
+    else
+    {
+        bytes = job->encoded + job->written - job->header_size;
+    }
+    written = send(queue->client->client_sock, bytes, remaining, MSG_NOSIGNAL);
+    if (written < 0 && _ws_internal__socket_would_block())
+    {
+        return true;
+    }
+    if (written <= 0)
+    {
+        return false;
+    }
+    job->written += (size_t)written;
+    job->last_progress = audio_clock_ms();
+    return true;
+}
+
+/**
+ * @brief Sends queued frames to sockets that are ready and checks for connections
+ * that have stopped accepting data or have exceeded their closing deadline.
+ *
+ * @param void* unused -> Unused thread argument, passed as NULL when the writer starts.
+ *
+ * @return void* -> NULL when the shared workers are asked to stop.
+ *
+ * @attention This is the only writer for queued chat frames. Each selected queue
+ * is kept alive while its socket is checked and written outside chat_mutex.
+ */
+static void* _ws_internal__chat_socket_writer(void* unused)
+{
+    struct ws_chat_queue* queue;
+    struct ws_chat_job* retired;
+    struct ws_chat_job* job;
+    uint64_t now;
+    size_t count;
+    size_t i;
+    int poll_result;
+    bool write_ok;
+
+    (void)unused;
+    for (;;)
+    {
+        pthread_mutex_lock(&chat_mutex);
+        if (chat_workers_stopping)
+        {
+            pthread_mutex_unlock(&chat_mutex);
+            return NULL;
+        }
+        count = 0;
+        retired = NULL;
+        now = audio_clock_ms();
+        for (queue = chat_first; queue != NULL; queue = queue->next)
+        {
+            if (!queue->stopped && queue->close_requested && now >= queue->close_deadline)
+            {
+                _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
+            }
+            job = queue->first;
+            if (queue->stopped || job == NULL || !job->ready || job->encoding)
+            {
+                continue;
+            }
+            if (job->last_progress == 0)
+            {
+                job->last_progress = now;
+            }
+            if (now - job->last_progress >= WS_CHAT_STALL_TIMEOUT_MS)
+            {
+                _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
+                continue;
+            }
+            queue->writer_active = true;
+            memset(&chat_pollfds[count], 0, sizeof(chat_pollfds[count]));
+            chat_pollfds[count].fd = queue->client->client_sock;
+            chat_pollfds[count].events = POLLOUT;
+            chat_polled_queues[count] = queue;
+            count++;
+        }
+        if (count == 0 && retired == NULL)
+        {
+            _ws_internal__chat_wait_briefly(&chat_write_ready);
+        }
+        pthread_mutex_unlock(&chat_mutex);
+        _ws_internal__chat_release_list(retired);
+        if (count == 0)
+        {
+            continue;
+        }
+
+        // Each listed queue is pinned by writer_active until this poll result
+        // is consumed. Its reader cannot close or reuse its socket meanwhile.
+        poll_result = _ws_internal__chat_poll(chat_pollfds, count, 10);
+        retired = NULL;
+        pthread_mutex_lock(&chat_mutex);
+        for (i = 0; i < count; i++)
+        {
+            queue = chat_polled_queues[i];
+            job = queue->first;
+            if (!queue->stopped && poll_result > 0
+                && (chat_pollfds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+            {
+                _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
+            }
+            else if (!queue->stopped && poll_result > 0 && (chat_pollfds[i].revents & POLLOUT) != 0)
+            {
+                // The pin keeps this first job and its socket alive while the
+                // mutex is released. Even a batch of hundreds of ready sockets
+                // must not make application threads wait behind their sends.
+                pthread_mutex_unlock(&chat_mutex);
+                write_ok = _ws_internal__chat_write_piece(queue);
+                pthread_mutex_lock(&chat_mutex);
+                if (!write_ok)
+                {
+                    _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
+                }
+            }
+            queue->writer_active = false;
+            if (queue->stopped)
+            {
+                _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
+                continue;
+            }
+            if (job->written == job->header_size + job->size)
+            {
+                if (job->type == WS_FR_OP_CLSE)
+                {
+                    queue->close_deadline = audio_clock_ms() + TIMEOUT_MS;
+                    pthread_cond_broadcast(&chat_cleanup_changed);
+                }
+                _ws_internal__chat_collect(&retired, _ws_internal__chat_remove_first(queue));
+                if (queue->first != NULL && !queue->first->ready && !queue->first->encoding)
+                {
+                    pthread_cond_signal(&chat_encode_ready);
+                }
+            }
+        }
+        if (poll_result < 0)
+        {
+            _ws_internal__chat_wait_briefly(&chat_write_ready);
+        }
+        pthread_mutex_unlock(&chat_mutex);
+        _ws_internal__chat_release_list(retired);
+    }
+}
+
+/**
+ * @brief Allocates shared socket lists and starts the chat encoding and writing
+ * threads, releasing those resources if startup fails. chat_workers_running
+ * becomes true only after every thread starts successfully.
+ *
+ * @return void
+ *
+ * @attention Call only through chat_once so concurrent connections cannot start
+ * duplicate workers or observe partially initialized shared resources.
+ */
+static void _ws_internal__chat_initialize_workers(void)
+{
+    size_t created = 0;
+
+    chat_pollfds = calloc(client_capacity, sizeof(*chat_pollfds));
+    chat_polled_queues = calloc(client_capacity, sizeof(*chat_polled_queues));
+    if (chat_pollfds == NULL || chat_polled_queues == NULL)
+    {
+        goto failed;
+    }
+    for (created = 0; created < WS_CHAT_WORKERS; created++)
+    {
+        if (pthread_create(&chat_workers[created], NULL, _ws_internal__chat_encode_worker, NULL) != 0)
+        {
+            goto failed;
+        }
+    }
+    if (pthread_create(&chat_writer, NULL, _ws_internal__chat_socket_writer, NULL) != 0)
+    {
+        goto failed;
+    }
+    chat_workers_running = true;
+    return;
+
+failed:
+    pthread_mutex_lock(&chat_mutex);
+    chat_workers_stopping = true;
+    pthread_cond_broadcast(&chat_encode_ready);
+    pthread_cond_broadcast(&chat_write_ready);
+    pthread_cond_broadcast(&chat_cleanup_changed);
+    pthread_mutex_unlock(&chat_mutex);
+    while (created > 0)
+    {
+        created--;
+        pthread_join(chat_workers[created], NULL);
+    }
+    free(chat_pollfds);
+    free(chat_polled_queues);
+    chat_pollfds = NULL;
+    chat_polled_queues = NULL;
+}
+
+/**
+ * @brief Creates an outgoing queue for a chat connection and configures its
+ * socket so writes never wait for the receiver.
+ *
+ * @param ws_cli_conn_t* client -> Connection whose WebSocket handshake has completed.
+ *
+ * @return int -> 0 when the queue and socket are ready, or -1 on startup failure.
+ *
+ * @attention The connection's reader calls this before publishing the open
+ * connection to the application. Audio and video connections use their own path.
+ */
+static int _ws_internal__chat_start(ws_cli_conn_t* client)
+{
+    struct ws_chat_queue* queue;
+    int enabled = 1;
+#ifdef _WIN32
+    u_long nonblocking = 1;
+#else
+    int flags;
+#endif
+
+    pthread_once(&chat_once, _ws_internal__chat_initialize_workers);
+    if (!chat_workers_running)
+    {
+        return -1;
+    }
+    queue = calloc(1, sizeof(*queue));
+    if (queue == NULL)
+    {
+        return -1;
+    }
+#ifdef _WIN32
+    if (ioctlsocket(client->client_sock, FIONBIO, &nonblocking) != 0)
+#else
+    flags = fcntl(client->client_sock, F_GETFL, 0);
+    if (flags < 0 || fcntl(client->client_sock, F_SETFL, flags | O_NONBLOCK) != 0)
+#endif
+    {
+        free(queue);
+        return -1;
+    }
+    setsockopt(client->client_sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&enabled, sizeof(enabled));
+    queue->client = client;
+    pthread_mutex_lock(&chat_mutex);
+    client->chat_mode = true;
+    client->chat = queue;
+    if (chat_last != NULL)
+    {
+        chat_last->next = queue;
+    }
+    else
+    {
+        chat_first = queue;
+    }
+    chat_last = queue;
+    pthread_mutex_unlock(&chat_mutex);
+    return 0;
+}
+
+/**
+ * @brief Stops a connection's outgoing queue and waits until no worker can still
+ * use its messages or socket before freeing the queue.
+ *
+ * @param ws_cli_conn_t* client -> Connection whose reader has finished processing incoming data.
+ *
+ * @return void
+ *
+ * @attention Only the connection's reader performs this cleanup, outside all
+ * application locks. A queued close is allowed a bounded time to be sent before
+ * the remaining work is cancelled and the socket slot can be reused safely.
+ */
+static void _ws_internal__chat_stop(ws_cli_conn_t* client)
+{
+    struct ws_chat_queue* queue;
+    struct ws_chat_queue* previous;
+    struct ws_chat_queue* current;
+    struct ws_chat_job* cancelled;
+
+    pthread_mutex_lock(&chat_mutex);
+    queue = client->chat;
+    if (queue == NULL)
+    {
+        pthread_mutex_unlock(&chat_mutex);
+        return;
+    }
+    // A received close gets its reply, and a queued rejection gets its close,
+    // before teardown. This wait is outside the application's onclose callback.
+    while (!queue->stopped && queue->close_requested && queue->first != NULL
+        && audio_clock_ms() < queue->close_deadline)
+    {
+        _ws_internal__chat_wait_briefly(&chat_cleanup_changed);
+    }
+    cancelled = _ws_internal__chat_abort_locked(queue);
+    pthread_mutex_unlock(&chat_mutex);
+    _ws_internal__chat_release_list(cancelled);
+
+    pthread_mutex_lock(&chat_mutex);
+    while (queue->messages != 0 || queue->writer_active)
+    {
+        pthread_cond_wait(&chat_cleanup_changed, &chat_mutex);
+    }
+    previous = NULL;
+    current = chat_first;
+    while (current != queue)
+    {
+        previous = current;
+        current = current->next;
+    }
+    if (previous != NULL)
+    {
+        previous->next = queue->next;
+    }
+    else
+    {
+        chat_first = queue->next;
+    }
+    if (chat_last == queue)
+    {
+        chat_last = previous;
+    }
+    client->chat = NULL;
+    pthread_mutex_unlock(&chat_mutex);
+    free(queue);
+}
+
 /**
  * @brief Returns the current client state for a given
  * client @p client.
@@ -512,6 +1583,17 @@ static int get_client_state(ws_cli_conn_t *client)
 	pthread_mutex_lock(&client->mtx_state);
 	state = client->state;
 	pthread_mutex_unlock(&client->mtx_state);
+    if (state == WS_STATE_OPEN && client->chat_mode)
+    {
+        // A reader can be waiting for a login turn when another thread aborts
+        // its socket. Report that abort immediately, before recv() runs again.
+        pthread_mutex_lock(&chat_mutex);
+        if (client->chat == NULL || client->chat->stopped)
+        {
+            state = WS_STATE_CLOSING;
+        }
+        pthread_mutex_unlock(&chat_mutex);
+    }
 	return (state);
 }
 
@@ -975,6 +2057,16 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 	uint64_t i; /* Loop index.        */
 	ws_cli_conn_t *cli; /* Client.            */
 
+    if (client != NULL && client->chat_mode)
+    {
+        if (size > SIZE_MAX)
+        {
+            ws_abort_client(client);
+            return -1;
+        }
+        return _ws_internal__chat_queue_frame(client, msg, (size_t)size, type);
+    }
+
 	frame[0] = (WS_FIN | type);
 	length = (uint64_t)size;
 
@@ -1049,7 +2141,9 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 			cli = &client_socks[i];
 			if ((cli->client_sock > -1) && get_client_state(cli) == WS_STATE_OPEN)
 			{
-				if ((send_ret = SEND(cli, response, idx_response)) != -1)
+				if ((send_ret = cli->chat_mode
+                    ? _ws_internal__chat_queue_frame(cli, msg, (size_t)size, type)
+                    : SEND(cli, response, idx_response)) != -1)
 				{
 					output += send_ret;
 				}
@@ -1147,7 +2241,9 @@ static void send_ping_close(ws_cli_conn_t *cli, int threshold, int lock)
 		 * like a protocol-level close. Repeat shutdowns from later ping
 		 * rounds (until that thread has cleaned the slot) are harmless no-ops. */
 		if ((cli->current_ping_id - cli->last_pong_id) > threshold)
-			shutdown_socket(cli->client_sock);
+        {
+            ws_abort_client(cli);
+        }
 
 	pthread_mutex_unlock(&cli->mtx_ping);
 	/* clang-format on */
@@ -1294,6 +2390,14 @@ int ws_close_client(ws_cli_conn_t *client)
 		return (-1);
 	}
 
+    if (client->chat_mode)
+    {
+        // The writer starts the peer's close-reply timeout after the preceding
+        // messages and the close frame have actually left this queue.
+        set_client_state(client, WS_STATE_CLOSING);
+        return 0;
+    }
+
 	/*
 	 * Starts the timeout thread: if the client did not send
 	 * a close frame in TIMEOUT_MS milliseconds, the server
@@ -1411,9 +2515,6 @@ static int do_handshake(struct ws_frame_data *wfd)
 		return (-1);
 	}
 
-	/* Change state. */
-	set_client_state(wfd->client, WS_STATE_OPEN);
-
 	/* Trigger events and clean up buffers. */
     if ((wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
     {
@@ -1427,6 +2528,17 @@ static int do_handshake(struct ws_frame_data *wfd)
             return -1;
         }
     }
+    else
+    {
+#ifndef AFL_FUZZ
+        if (_ws_internal__chat_start(wfd->client) != 0)
+        {
+            free(response);
+            return -1;
+        }
+#endif
+    }
+    set_client_state(wfd->client, WS_STATE_OPEN);
 	cli_events.onopen(wfd->client);
 	free(response);
 	return (0);
@@ -2105,6 +3217,7 @@ static void *ws_establishconnection(void *vclient)
 	cli_events.onclose(client);
 
 closed:
+    _ws_internal__chat_stop(client);
     media_stop(client);
 	clse_thrd = client->close_thrd;
 
@@ -2144,6 +3257,9 @@ static void *ws_accept(void *data)
 	int sock; /* Server sock.           */
 	int len; /* Length of sockaddr.    */
 	int i; /* Loop index.            */
+#ifdef SO_NOSIGPIPE
+    int no_sigpipe;
+#endif
 
 	sock = *(int *)data;
 	len = sizeof(struct sockaddr_in);
@@ -2157,6 +3273,18 @@ static void *ws_accept(void *data)
 		{
 			panic("[theldus-websocket] Error on accepting connections..");
 		}
+
+#ifdef SO_NOSIGPIPE
+        // macOS uses this socket option instead of MSG_NOSIGNAL. A peer that
+        // disconnects while a frame is being sent must not stop the server.
+        no_sigpipe = 1;
+        if (setsockopt(new_sock, SOL_SOCKET, SO_NOSIGPIPE,
+            (const char*)&no_sigpipe, sizeof(no_sigpipe)) != 0)
+        {
+            close_socket(new_sock);
+            continue;
+        }
+#endif
 
 		if (timeout)
 		{
@@ -2175,6 +3303,7 @@ static void *ws_accept(void *data)
 			{
 				client_socks[i].client_sock = new_sock;
 				client_socks[i].state = WS_STATE_CONNECTING;
+                client_socks[i].chat_mode = false;
                 client_socks[i].media_purpose = WS_MEDIA_PURPOSE_NONE;
                 client_socks[i].media = NULL;
                 client_socks[i].media_client_id = UINT64_MAX;

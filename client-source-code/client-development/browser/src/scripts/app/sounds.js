@@ -1,6 +1,6 @@
 // sounds.js is embedded in template.html along with the other client files
 // it is the asset data for the ui sound effects: 14 short ogg clips as data urls, filled into
-// g_sound_effects at load; the play() calls live in main.js, ui.js and dispatch.js
+// g_sound_effects at load; the play() calls are in main.js, ui.js and dispatch.js
 
 if (typeof window != 'undefined')
 {

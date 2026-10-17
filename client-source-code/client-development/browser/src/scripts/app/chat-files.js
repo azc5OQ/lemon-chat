@@ -327,7 +327,7 @@ function chat_files__decrypt_channel_chat_file_body(file_id, body_base64)
 }
 
 // ---------------------------------------------------------------------------
-// the shapes that travel over the wire
+// the shapes of the messages sent to and received from the server
 // ---------------------------------------------------------------------------
 
 /**
@@ -778,7 +778,7 @@ function chat_files__wire_chat_file_download_button(card, key)
 
 /**
  * @brief finishes a file card once the body arrived and decrypted: the file is kept for the download button and the progress ring goes away
- *        when there is no live card, no copy is kept; this catches node's dead elements (the phone
+ *        when there is no live card, no copy is kept; this catches node's stand-in elements (the phone
  *        would otherwise hold every received file in ram forever), a cleared chat and a deleted message
  *
  * @param string|number key -> the transfer key
@@ -792,7 +792,7 @@ function chat_files__finish_chat_file_card(key, file)
 
     let card = chat_files__get_chat_file_card_by_key(key);
 
-    // when there is no live card, no copy is kept. this catches node's dead elements (the phone
+    // when there is no live card, no copy is kept. this catches node's stand-in elements (the phone
     // would otherwise hold every received file in ram forever), a cleared chat and a deleted message
     if (card == null || card.isConnected !== true || card.classList.contains("chat-file-deleted"))
     {
@@ -1046,7 +1046,7 @@ function chat_files__download_chat_file(key)
 }
 
 // ---------------------------------------------------------------------------
-// attaching: paperclip, drag & drop, the pending chip
+// attaching: paperclip, drag & drop, the label of the pending file
 // ---------------------------------------------------------------------------
 
 /**
@@ -1107,7 +1107,7 @@ function chat_files__attach_chat_file_or_picture(file)
 }
 
 /**
- * @brief attaches a picture for the next send, the same preview path the picture button uses; drag and drop lands here too
+ * @brief attaches a picture for the next send, the same preview path the picture button uses; drag and drop comes here too
  *
  * @param File file -> the picture
  *
@@ -1170,7 +1170,7 @@ function chat_files__attach_chat_picture(file)
 }
 
 /**
- * @brief attaches a file for the next send after the policy checks (uploads allowed, within the size limit, not empty); it replaces a pending picture and shows the chip
+ * @brief attaches a file for the next send after the policy checks (uploads allowed, within the size limit, not empty); it replaces a pending picture and shows the file label
  *
  * @param File file -> the file
  *
@@ -1210,10 +1210,10 @@ function chat_files__attach_chat_file(file)
         // one attachment per message, so a pending picture gives way
         chat_files__clear_pending_chat_picture();
 
-        // the chip overlays the text box, so the typed text is cleared out of its way
+        // the file label overlays the text box, so the typed text is cleared out of its way
         document.getElementById("chat-input-container-text-input").value = "";
 
-        chat_files__render_pending_chat_file_chip();
+        chat_files__render_pending_chat_file_label();
     };
 
     reader.onerror = function()
@@ -1225,19 +1225,19 @@ function chat_files__attach_chat_file(file)
 }
 
 /**
- * @brief drops the pending file and hides its chip
+ * @brief drops the pending file and hides its label
  *
  * @return void
  */
 function chat_files__clear_pending_chat_file()
 {
     g_pending_chat_file = null;
-    chat_files__render_pending_chat_file_chip();
+    chat_files__render_pending_chat_file_label();
 }
 
 /**
  * @brief removes a pending picture: the thumbnail hides and nothing is left to send
- *        wired to the thumbnail's cancel cross, and used by the file path because one attachment replaces the other
+ *        attached to the thumbnail's cancel cross, and used by the file path because one attachment replaces the other
  *
  * @return void
  */
@@ -1250,11 +1250,11 @@ function chat_files__clear_pending_chat_picture()
 }
 
 /**
- * @brief renders the pending file chip over the text box's corner, or nothing when no file is pending
+ * @brief renders the pending file label over the text box's corner, or nothing when no file is pending
  *
  * @return void
  */
-function chat_files__render_pending_chat_file_chip()
+function chat_files__render_pending_chat_file_label()
 {
     let chip = document.getElementById("file-upload-preview");
 
@@ -1334,7 +1334,7 @@ function chat_files__setup_chat_file_drag_and_drop()
             continue;
         }
 
-        // dragenter and dragleave fire for every child element; the depth counter turns them into one highlight
+        // dragenter and dragleave are sent for every child element; the depth counter turns them into one highlight
         let depth = 0;
 
         zone.addEventListener("dragenter", function(event)

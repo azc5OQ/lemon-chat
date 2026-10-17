@@ -164,6 +164,7 @@ int mytypedef__check_data_types_for_consistency(void);
 // store is a static array of MAX_CLIENT_STORED_DATA entries carrying this buffer inline, so this
 // costs ~42 MB of static memory at 100 slots - deliberate, avatars persist with identities
 #define MAX_CLIENT_AVATAR_LENGTH 420000
+#define SERVER_BANNER_MAX_BYTES 32768
 #define MUSIC_BOT_MAX_FILE_COUNT 200
 
 // debug aid: allow creating several music bots in one channel
@@ -275,6 +276,8 @@ typedef struct server_settings
     boole is_fast_reconnect_allowed;   // a returning identity may adopt its still-open session instead of replacing it
     boole is_identity_takeover_allowed; // a new login with an identity already online replaces that session (off: refused)
     boole is_websocket_ping_active;    // ws-level ping every check tick; 4 unanswered pings shut the socket
+    boole enforce_connection_check;
+    int64 max_concurrent_logins;
     int64 webrtc_datachannel_cooldown_seconds; // no new peers for a client after 10 attempts that never connected
     boole show_music_bot_marquee_to_everyone; // the "now playing" marquee also for people outside the bot's channel
     boole is_voice_chat_active;
@@ -335,6 +338,11 @@ typedef struct server_settings
     boole serve_https;
     int64 https_port;
     char default_theme[32];
+    char* server_banner;
+    boole publish_server_uptime;
+    boole publish_server_slots;
+    boole publish_server_banner;
+    boole publish_server_features;
     boole embed_client_config;
     boole is_sending_text_to_idle_clients_allowed;  // deliver direct text chat to idle clients; their websocket stays open in idle, so delivery works; default on
     boole allow_private_messages;  // clients may send direct text chat to each other at all; off makes this a channels-only server; default on
@@ -429,6 +437,7 @@ typedef struct client_t
     boole is_dh_shared_secret_agreed_upon;
     boole is_streaming_song;
     boole is_public_key_challenge_sent;
+    boole is_waiting_for_login_slot;
     boole is_idle;
     boole is_music_bot;
     boole is_temp_admin_channel; // TRUE if this client owns a temp channel
@@ -468,11 +477,12 @@ typedef struct client_t
     int64 video_stream_width;
     int64 video_stream_height;
     int64 video_stream_fps;
+    boole is_video_stream_sound_included; // the streamer sends sound packets next to the picture packets (the relay does not tell them apart; the viewers show a volume control)
     uint64 timestamp_last_video_keyframe_request_forwarded_ms;
     // video streaming, viewer side: the streamer of this client's channel let it watch (implicit for
     // members present at the start, explicit for later joiners), and it pressed connect. both live
     // here rather than on the webrtc peer slot, because that slot is rebuilt on every datachannel
-    // retry and wiped when the transport closes, and neither should forget the consent
+    // retry and cleared when the transport closes, and neither should forget the consent
     boole is_video_viewer_allowed;
     boole is_video_viewer_watching;
     int* tag_ids; // must be int because a function of another library depends on this being int
@@ -614,7 +624,8 @@ typedef enum memory_manager_allocation_type_e
     MEMALLOC_OFFLINE_MESSAGE,
     MEMALLOC_OFFLINE_MESSAGES_ARRAY,
     MEMALLOC_ADMIN_LOG,
-    MEMALLOC_ICON
+    MEMALLOC_ICON,
+    MEMALLOC_SERVER_BANNER
 } memory_manager_allocation_type_e;
 
 typedef struct webrtc_peer_t

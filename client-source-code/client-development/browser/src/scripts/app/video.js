@@ -1,10 +1,17 @@
 // video.js is embedded in template.html along with the other client files
 // it is the video streaming side of the page: a member streams its screen or a video file to the
-// channel it sits in, one stream per channel, and every other member opts in. frames are encoded with
+// channel it is in, one stream per channel, and every other member opts in. frames are encoded with
 // webcodecs, packetized and encrypted with the channel keys in the video worker (video-worker.js),
 // and travel on the second, reliable datachannel the server opens next to the audio one. the server
-// relays them blindly. the full design is in VIDEO_STREAMING_DESIGN.md at the repo root
+// relays them blindly. the headers of video-worker.js, video-transport.js and the server's video_stream.c explain the parts
 // messages.js hands the six server messages in here, dispatch.js the worker's answers, ui.js the datachannel
+//
+// the sound of a stream (the sound of the shared screen, or the sound of the file) travels next to the pictures when the
+// streamer chose so: it is captured with web audio, encoded with a second opus encoder (stereo, the music setting;
+// audio-opus-glue.js) and packed by the video worker into packets of the picture packet format with a sound flag, so it
+// reaches exactly the viewers the streamer allowed, over the same connection. a viewer decodes it with the opus decoder
+// worker under a reserved sender id (VIDEO_STREAM_SOUND_SENDER_ID in audio.js), so it has its own playback buffer and its
+// own volume next to the streamer's voice, whose own path stays untouched
 
 // ---- constants private to this file ----
 
@@ -25,6 +32,14 @@ var VIDEO_SKIPS_BEFORE_BITRATE_STEP = 8;
 
 // a viewer asks for a keyframe at most this often, the server rate limits per streamer on top
 var VIDEO_KEYFRAME_REQUEST_MIN_INTERVAL_MS = 1000;
+
+// the sound next to the pictures: one opus packet of this length per sound packet (audio-opus-glue.js builds that encoder)
+var VIDEO_SOUND_FRAME_MS = 20;
+
+// while a stream has sound, a viewer holds every decoded picture this long before drawing it, because the sound waits in a
+// playback buffer of the same depth before it plays (STREAM_SOUND_TARGET in the player worklet, audio.js); so the picture
+// does not run ahead of the sound. a fixed value; alignment on the timestamps of the packets is a later step
+var VIDEO_SOUND_PICTURE_HOLD_MS = 300;
 
 // one conservative preset per source, no selector yet (see the design notes)
 var VIDEO_PRESETS = {
@@ -73,6 +88,10 @@ var video_is_pumping = false;
 var video_last_keyframe_request_sent_ms = 0;
 var video_is_worker_canvas_transferred = false;
 var video_popup_drag = null;               // { start_x, start_y, left, top } while the header is dragged
+var video_pending_source = "";             // "screen" or "file" while the "stream the sound too?" question is open
+var video_sound_capture = null;            // while the stream has sound: { source_node, capture_node, monitor_gain_node } of the capture graph
+var video_preview_media_element_source = null; // the preview element's sound as a web audio source; made once, because the browser allows one per element and keeps it for the page's life
+var video_sound_sequence_number = 0;       // counts the sound packets this streamer sent, 16 bits
 
 /**
  * @brief whether this browser can take part: webcodecs on both ends, plus an offscreen canvas for the viewer's worker
@@ -86,7 +105,7 @@ function video__is_supported()
 }
 
 /**
- * @brief the channel object of the channel this client sits in, or null
+ * @brief the channel object of the channel this client is in, or null
  *
  * @return object|null the channel
  */
@@ -196,20 +215,33 @@ function video__refresh_controls()
 }
 
 /**
- * @brief the stream icon on the streamer's row in the channel tree: shown on the one row that streams in this channel, hidden everywhere else
+ * @brief the icons on the rows of the channel tree: the stream icon on the one row that streams in this channel, the watching icon on every row
+ *        that watches it. the watching icons are shown only while this client is the streamer or holds the offer, because only those
+ *        clients receive the watching set from the server; everybody else sees no mark at all
  *
  * @return void
  */
 function video__refresh_tree_icons()
 {
     let icons = document.getElementsByClassName("client-video-stream-icon");
+    let watching_icons = document.getElementsByClassName("client-video-watching-icon");
+    let is_allowed = (g_server_policy.is_video_streaming_allowed == true && g_video_stream.is_active == true);
+    let is_watching_set_known = (g_video_stream.role == "streamer" || g_video_stream.is_offered == true);
 
     for (let i = 0; i < icons.length; i++)
     {
         let icon_client_id = parseInt(icons[i].getAttribute("data-client-id"));
-        let show = (g_server_policy.is_video_streaming_allowed == true && g_video_stream.is_active == true && icon_client_id == g_video_stream.streamer_client_id);
+        let show = (is_allowed == true && icon_client_id == g_video_stream.streamer_client_id);
 
         icons[i].style.display = show ? "inline-block" : "none";
+    }
+
+    for (let i = 0; i < watching_icons.length; i++)
+    {
+        let icon_client_id = parseInt(watching_icons[i].getAttribute("data-client-id"));
+        let show = (is_allowed == true && is_watching_set_known == true && g_video_stream.watching_client_ids.indexOf(icon_client_id) != -1);
+
+        watching_icons[i].style.display = show ? "inline-block" : "none";
     }
 }
 
@@ -232,13 +264,24 @@ function video__init_ui()
     let choice_cancel = document.getElementById("video-stream-choice-cancel");
     let popup_header = document.getElementById("video-stream-popup-header");
     let popup_close = document.getElementById("video-stream-popup-close");
+    let sound_with = document.getElementById("video-stream-sound-choice-with");
+    let sound_without = document.getElementById("video-stream-sound-choice-without");
+    let sound_cancel = document.getElementById("video-stream-sound-choice-cancel");
+    let sound_volume = document.getElementById("video-stream-sound-volume");
+    let monitor_checkbox = document.getElementById("video-stream-monitor-checkbox");
 
     if (button != null) { button.onclick = video__stream_button_onclick; }
     if (file_input != null) { file_input.onchange = video__file_input_onchange; }
-    if (choice_screen != null) { choice_screen.onclick = function() { video__hide_choice_dialog(); video__start_screen_share(); }; }
-    if (choice_file != null) { choice_file.onclick = function() { video__hide_choice_dialog(); if (file_input != null) { file_input.click(); } }; }
+    if (choice_screen != null) { choice_screen.onclick = function() { video__hide_choice_dialog(); video__show_sound_choice_dialog("screen"); }; }
+    if (choice_file != null) { choice_file.onclick = function() { video__hide_choice_dialog(); video__show_sound_choice_dialog("file"); }; }
     if (choice_cancel != null) { choice_cancel.onclick = video__hide_choice_dialog; }
+    if (sound_with != null) { sound_with.onclick = function() { video__answer_sound_choice(true); }; }
+    if (sound_without != null) { sound_without.onclick = function() { video__answer_sound_choice(false); }; }
+    if (sound_cancel != null) { sound_cancel.onclick = video__hide_sound_choice_dialog; }
     if (popup_close != null) { popup_close.onclick = function() { video__close_popup(true); }; }
+    if (sound_volume != null) { sound_volume.oninput = video__sound_volume_oninput; }
+    if (monitor_checkbox != null) { monitor_checkbox.onchange = video__monitor_checkbox_onchange; }
+    video__load_sound_settings();
 
     document.getElementById("video-stream-connect-button").onclick = video__connect;
     document.getElementById("video-stream-disconnect-button").onclick = function() { video__disconnect(true); };
@@ -337,12 +380,87 @@ function video__hide_choice_dialog()
 }
 
 /**
- * @brief asks the browser for the screen (its own picker), then starts the stream with that media stream
- *        the browser's own "stop sharing" button ends the track, which ends the stream
+ * @brief the second question of a start: "stream the sound too?", asked after the source and before the browser's own picker opens
+ *        it comes before the picker because the request for the screen's sound is part of the call that opens that picker
+ *
+ * @param string source -> "screen" or "file", the answer of the first question
  *
  * @return void
  */
-function video__start_screen_share()
+function video__show_sound_choice_dialog(source)
+{
+    video_pending_source = source;
+    document.getElementById("video-stream-sound-choice-container").style.display = "block";
+}
+
+/**
+ * @brief hides the sound question; nothing starts
+ *
+ * @return void
+ */
+function video__hide_sound_choice_dialog()
+{
+    video_pending_source = "";
+    document.getElementById("video-stream-sound-choice-container").style.display = "none";
+}
+
+/**
+ * @brief the answer to the sound question: the stream starts from its source, with or without sound
+ *        sound needs the audio engine of the page (the context, the opus workers), which exists only when the server serves
+ *        audio; without it the stream starts silent and the streamer is told
+ *
+ * @param boolean is_sound_included -> true for "with sound"
+ *
+ * @return void
+ */
+function video__answer_sound_choice(is_sound_included)
+{
+    let source = video_pending_source;
+    let file_input = document.getElementById("choose-video-stream-file-input");
+
+    video__hide_sound_choice_dialog();
+
+    if (is_sound_included == true && video__is_sound_available() == false)
+    {
+        utils__custom_alert("the sound of a stream needs the audio of this server, which is off: streaming without sound");
+        is_sound_included = false;
+    }
+
+    g_video_stream.is_sound_included = (is_sound_included == true);
+
+    if (source == "screen")
+    {
+        video__start_screen_share(is_sound_included == true);
+    }
+    else if (source == "file" && file_input != null)
+    {
+        file_input.click();
+    }
+}
+
+/**
+ * @brief whether the page can capture, encode and play the sound of a stream: the audio engine exists (dispatch.js creates it when the server serves audio)
+ *
+ * @return boolean
+ */
+function video__is_sound_available()
+{
+    return typeof g_audio_context !== "undefined" && g_audio_context != null
+        && typeof g_opus_encoder_worker !== "undefined" && g_opus_encoder_worker != null
+        && typeof g_opus_decoder_worker !== "undefined" && g_opus_decoder_worker != null;
+}
+
+/**
+ * @brief asks the browser for the screen (its own picker), then starts the stream with that media stream
+ *        the browser's own "stop sharing" button ends the track, which ends the stream. with sound wanted, the picker is asked for
+ *        the sound as well; whether it offers any depends on the browser and on what is picked (chromium: a tab, or the whole
+ *        screen on windows; a single window never; firefox and safari: none), so the stream may still start without sound
+ *
+ * @param boolean is_sound_included -> true to ask the picker for the sound too
+ *
+ * @return void
+ */
+function video__start_screen_share(is_sound_included)
 {
     if (navigator.mediaDevices == null || typeof navigator.mediaDevices.getDisplayMedia != "function")
     {
@@ -353,7 +471,7 @@ function video__start_screen_share()
     let preset = VIDEO_PRESETS.screen;
     let constraints = {
         video: { width: { max: preset.max_edge }, height: { max: preset.max_edge }, frameRate: { max: preset.fps } },
-        audio: false
+        audio: (is_sound_included == true)
     };
 
     navigator.mediaDevices.getDisplayMedia(constraints).then(function(stream)
@@ -367,6 +485,12 @@ function video__start_screen_share()
         }
 
         try { tracks[0].contentHint = preset.content_hint; } catch (hint_error) { }
+
+        if (is_sound_included == true && stream.getAudioTracks().length == 0)
+        {
+            g_video_stream.is_sound_included = false;
+            utils__custom_alert("the browser gave no sound for this choice: streaming without sound (a tab, or the whole screen on windows, can carry sound)");
+        }
 
         tracks[0].onended = function()
         {
@@ -497,7 +621,8 @@ function video__begin_stream(source, media_stream, object_url)
                     codec: config.codec,
                     width: width,
                     height: height,
-                    fps: preset.fps
+                    fps: preset.fps,
+                    is_sound_included: (g_video_stream.is_sound_included == true)
                 }
             });
 
@@ -624,7 +749,12 @@ function video__on_stream_confirmed()
     preview.style.display = "block";
     document.getElementById("video-stream-canvas").style.display = "none";
     video__set_popup_status("");
-    video__set_popup_title("you are streaming your " + (g_video_stream.source == "screen" ? "screen" : "video"));
+    video__set_popup_title("you are streaming your " + (g_video_stream.source == "screen" ? "screen" : "video") + (g_video_stream.is_sound_included == true ? " with sound" : ""));
+
+    if (g_video_stream.is_sound_included == true)
+    {
+        video__start_sound_capture();
+    }
 
     video_is_pumping = true;
     video__schedule_next_frame();
@@ -632,7 +762,7 @@ function video__on_stream_confirmed()
 }
 
 /**
- * @brief arms the next frame pull: the video element's own frame callback where it exists, a timer at the target rate otherwise
+ * @brief schedules the next frame pull: the video element's own frame callback where it exists, a timer at the target rate otherwise
  *
  * @return void
  */
@@ -676,7 +806,7 @@ function video__pump_frame(now, metadata)
         return;
     }
 
-    // the element's callback fires per composited frame (60 a second on a screen): keep to the preset rate
+    // the element's callback runs once per composited frame (60 a second on a screen): keep to the preset rate
     if (video_pump_is_rvfc == true && now - video_last_encoded_ms < min_interval_ms - 2)
     {
         video__schedule_next_frame();
@@ -871,6 +1001,7 @@ function video__stop_stream(tell_server, reason)
         video_encoder = null;
     }
 
+    video__stop_sound_capture();
     video__release_source();
 
     if (tell_server == true && was_streaming == true && g_is_authenticated == true)
@@ -886,6 +1017,7 @@ function video__stop_stream(tell_server, reason)
         g_video_stream.is_active = false;
         g_video_stream.streamer_client_id = -1;
         g_video_stream.viewer_count = 0;
+        g_video_stream.watching_client_ids = [];
         g_video_stream.pending_viewer_requests = [];
         video__render_pending_requests();
         video__set_popup_status("stream ended (" + reason + ")");
@@ -934,6 +1066,181 @@ function video__release_source()
     }
 }
 
+/**
+ * @brief starts the capture of the stream's sound, once the server confirmed the stream (video__on_stream_confirmed)
+ *
+ *        screen: the sound track the picker gave is the source; the preview element stays muted, so the shared sound is not
+ *        played here a second time (the streamer hears it from the shared program already). file: the preview element's
+ *        sound is the source, taken over by web audio from the first stream on; one copy goes to the speakers through the
+ *        monitor gain, which the "hear my stream" checkbox sets, so the streamer hears the file. either source feeds a
+ *        capture node (audio.js) whose stereo chunks go to the stream encoder in the opus encoder worker; the encoded
+ *        packets come back through dispatch.js to video__on_sound_encoded
+ *
+ * @return void
+ */
+function video__start_sound_capture()
+{
+    let preview = document.getElementById("video-stream-preview");
+    let sound_tracks = (video_source_media_stream != null) ? video_source_media_stream.getAudioTracks() : [];
+    let source_node = null;
+    let monitor_gain_node = null;
+
+    if (video__is_sound_available() == false || video_sound_capture != null)
+    {
+        return;
+    }
+
+    try
+    {
+        if (g_video_stream.source == "screen")
+        {
+            if (sound_tracks.length == 0)
+            {
+                return;
+            }
+            source_node = g_audio_context.createMediaStreamSource(new MediaStream([sound_tracks[0]]));
+        }
+        else
+        {
+            if (video_preview_media_element_source == null)
+            {
+                video_preview_media_element_source = g_audio_context.createMediaElementSource(preview);
+            }
+            source_node = video_preview_media_element_source;
+            monitor_gain_node = g_audio_context.createGain();
+            monitor_gain_node.gain.value = (g_is_video_stream_monitor_enabled == true) ? 1 : 0;
+            source_node.connect(monitor_gain_node);
+            monitor_gain_node.connect(g_audio_context.destination);
+            // a muted element hands silence to the graph; what the streamer hears is set by the monitor gain instead
+            preview.muted = false;
+        }
+    }
+    catch (graph_error)
+    {
+        console.log("stream sound: the capture graph could not be built: " + graph_error.message);
+        return;
+    }
+
+    video_sound_sequence_number = 0;
+    video_sound_capture = { source_node: source_node, capture_node: null, monitor_gain_node: monitor_gain_node };
+    g_opus_encoder_worker.postMessage({ type: "init_stream_encoder", sampleRate: g_audio_context.sampleRate });
+
+    audio__create_stream_sound_capture_node(function(pcm_chunk)
+    {
+        if (video_sound_capture != null && g_video_stream.role == "streamer")
+        {
+            g_opus_encoder_worker.postMessage({ type: "encode_stream", value: pcm_chunk }, [pcm_chunk.buffer]);
+        }
+    }).then(function(capture_node)
+    {
+        if (video_sound_capture == null || video_sound_capture.source_node != source_node)
+        {
+            // stopped while the node was being made
+            try { capture_node.disconnect(); } catch (disconnect_error) { }
+            return;
+        }
+
+        video_sound_capture.capture_node = capture_node;
+        source_node.connect(capture_node);
+        // the graph pulls samples only along a path that ends at the destination; the capture node outputs silence
+        capture_node.connect(g_audio_context.destination);
+
+        if (capture_node.port != null)
+        {
+            capture_node.port.postMessage("start");
+        }
+    });
+
+    if (g_audio_context.state == "suspended")
+    {
+        g_audio_context.resume().catch(function() { });
+    }
+}
+
+/**
+ * @brief ends the capture of the stream's sound: the graph is taken apart, the stream encoder is freed, the preview is muted again
+ *        safe to call without a running capture
+ *
+ * @return void
+ */
+function video__stop_sound_capture()
+{
+    let preview = document.getElementById("video-stream-preview");
+    let capture = video_sound_capture;
+
+    video_sound_capture = null;
+
+    if (capture != null)
+    {
+        try
+        {
+            if (capture.capture_node != null)
+            {
+                if (capture.capture_node.port != null)
+                {
+                    capture.capture_node.port.postMessage("stop");
+                }
+                capture.capture_node.onaudioprocess = null;
+                capture.capture_node.disconnect();
+            }
+        }
+        catch (capture_error) { }
+        try { if (capture.monitor_gain_node != null) { capture.monitor_gain_node.disconnect(); } } catch (monitor_error) { }
+        try { if (capture.source_node != null) { capture.source_node.disconnect(); } } catch (source_error) { }
+
+        if (typeof g_opus_encoder_worker !== "undefined" && g_opus_encoder_worker != null)
+        {
+            g_opus_encoder_worker.postMessage({ type: "destruct_stream_encoder" });
+        }
+    }
+
+    if (preview != null)
+    {
+        preview.muted = true;
+    }
+}
+
+/**
+ * @brief the stream encoder's packets (dispatch.js): each becomes one sound packet of the stream, made and encrypted by the video worker like a picture packet
+ *        the packets of one capture chunk were recorded one after the other, VIDEO_SOUND_FRAME_MS apart, the last one ending about now;
+ *        the timestamp is on the same clock as the pictures' (performance.now in microseconds)
+ *
+ * @param array opus_packets -> ArrayBuffers, one opus packet each
+ *
+ * @return void
+ */
+function video__on_sound_encoded(opus_packets)
+{
+    if (g_video_stream.role != "streamer" || g_video_stream.is_sound_included != true || g_video_worker == null || video_sound_capture == null || opus_packets == null)
+    {
+        return;
+    }
+
+    let now_us = Math.round(performance.now() * 1000);
+
+    for (let i = 0; i < opus_packets.length; i++)
+    {
+        let data = opus_packets[i];
+
+        if (!(data instanceof ArrayBuffer))
+        {
+            continue;
+        }
+
+        video_sound_sequence_number = (video_sound_sequence_number + 1) & 0xffff;
+
+        g_video_worker.postMessage({
+            type: "mainthread__video_worker_packetize",
+            epoch: g_video_stream.epoch,
+            frame_number: video_sound_sequence_number,
+            is_keyframe: false,
+            is_sound: true,
+            timestamp: now_us - (opus_packets.length - 1 - i) * VIDEO_SOUND_FRAME_MS * 1000,
+            data: data
+        }, [data]);
+    }
+}
+
 // ---- viewer side ----
 
 /**
@@ -964,12 +1271,15 @@ function video__on_offer(msg)
     g_video_stream.width = msg.message.width;
     g_video_stream.height = msg.message.height;
     g_video_stream.fps = msg.message.fps;
+    g_video_stream.is_sound_included = (msg.message.is_sound_included == true);
+    // who watches already; from now on the server tells us about every change (video__on_viewer_state)
+    g_video_stream.watching_client_ids = Array.isArray(msg.message.watching_client_ids) ? msg.message.watching_client_ids.slice() : [];
     g_video_stream.role = "viewer";
     g_video_stream.is_offered = true;
     g_video_stream.is_watching = false;
 
     video__open_popup();
-    video__set_popup_title(video__get_username(msg.message.streamer_client_id) + " is streaming " + (msg.message.source == "screen" ? "their screen" : "a video"));
+    video__set_popup_title(video__get_username(msg.message.streamer_client_id) + " is streaming " + (msg.message.source == "screen" ? "their screen" : "a video") + (g_video_stream.is_sound_included == true ? " with sound" : ""));
 
     if (video__is_supported() == false)
     {
@@ -1020,10 +1330,17 @@ function video__connect()
         codec: g_video_stream.codec,
         width: g_video_stream.width,
         height: g_video_stream.height,
-        streamer_client_id: g_video_stream.streamer_client_id
+        streamer_client_id: g_video_stream.streamer_client_id,
+        // with sound, every picture is held as long as the sound waits in its playback buffer
+        picture_hold_ms: (g_video_stream.is_sound_included == true) ? VIDEO_SOUND_PICTURE_HOLD_MS : 0
     });
 
     video__post_channel_keys_to_worker();
+
+    if (g_video_stream.is_sound_included == true && typeof audio__set_client_playback_volume === "function")
+    {
+        audio__set_client_playback_volume(VIDEO_STREAM_SOUND_SENDER_ID, g_video_stream_sound_volume);
+    }
 
     connection__send_message_object({ message: { type: "video_stream_watch", is_watching: true } });
 
@@ -1066,7 +1383,7 @@ function video__disconnect(tell_server)
 }
 
 /**
- * @brief the video datachannel arrived from the server (label "video"): stored and wired; ui.js calls this from the datachannel event
+ * @brief the video datachannel arrived from the server (label "video"): stored and its handlers attached; ui.js calls this from the datachannel event
  *
  * @param RTCDataChannel channel -> the channel
  *
@@ -1122,7 +1439,7 @@ function video__on_datachannel_message(event)
  *        authentication code, removes the encryption layers and checks that the channel's streamer sent it
  *        (video-worker.js, keys.js)
  *
- * @param ArrayBuffer frame -> the frame from the wire
+ * @param ArrayBuffer frame -> the frame as received
  *
  * @return void
  */
@@ -1167,7 +1484,7 @@ function video__request_keyframe()
 }
 
 /**
- * @brief every worker answer lands here from dispatch.js
+ * @brief every worker answer arrives here from dispatch.js
  *
  * @param object data -> the posted message
  *
@@ -1181,6 +1498,10 @@ function video__on_worker_message(data)
         {
             video__send_packets(data.packets);
         }
+    }
+    else if (data.type == "video_worker__sound_packet")
+    {
+        video__on_sound_packet(data);
     }
     else if (data.type == "video_worker__keyframe_needed")
     {
@@ -1202,6 +1523,33 @@ function video__on_worker_message(data)
     {
         console.log("video worker: " + data.value);
     }
+}
+
+/**
+ * @brief a sound packet of the stream, decrypted by the video worker: handed to the opus decoder worker under the reserved sender id of the stream sound
+ *        the decoder worker expects what a voice frame leaves after decryption: [4 bytes sender id][2 bytes sequence number][opus], least significant
+ *        byte first. the reserved id gives the sound its own decoder and its own playback buffer, apart from the streamer's voice (audio.js)
+ *
+ * @param object data -> the worker message (sequence_number, timestamp, value: an ArrayBuffer with the opus packet)
+ *
+ * @return void
+ */
+function video__on_sound_packet(data)
+{
+    if (g_video_stream.role != "viewer" || g_video_stream.is_watching != true || video__is_sound_available() == false || !(data.value instanceof ArrayBuffer))
+    {
+        return;
+    }
+
+    let opus_bytes = new Uint8Array(data.value);
+    let decoded = new Uint8Array(6 + opus_bytes.length);
+    let view = new DataView(decoded.buffer);
+
+    view.setInt32(0, VIDEO_STREAM_SOUND_SENDER_ID, true);
+    view.setUint16(4, data.sequence_number & 0xffff, true);
+    decoded.set(opus_bytes, 6);
+
+    g_opus_decoder_worker.postMessage({ type: "mainthread__add_decrypted_data_to_opus_decoder", value: decoded.buffer }, [decoded.buffer]);
 }
 
 /**
@@ -1261,7 +1609,7 @@ function video__post_transport_keys_to_worker()
  */
 function video__on_state(msg)
 {
-    // the headless node runtime (android) has no page: video lives in the webview only
+    // the headless node runtime (android) has no page: video runs in the webview only
     if (typeof document === "undefined")
     {
         return;
@@ -1281,6 +1629,7 @@ function video__on_state(msg)
         g_video_stream.width = msg.message.width;
         g_video_stream.height = msg.message.height;
         g_video_stream.fps = msg.message.fps;
+        g_video_stream.is_sound_included = (msg.message.is_sound_included == true);
 
         if (msg.message.streamer_client_id == g_local_client_id)
         {
@@ -1299,6 +1648,7 @@ function video__on_state(msg)
             g_video_stream.role = "viewer";
             g_video_stream.is_offered = false;
             g_video_stream.is_watching = false;
+            g_video_stream.watching_client_ids = [];
         }
     }
     else
@@ -1316,6 +1666,8 @@ function video__on_state(msg)
 
         g_video_stream.is_active = false;
         g_video_stream.streamer_client_id = -1;
+        g_video_stream.is_sound_included = false;
+        g_video_stream.watching_client_ids = [];
     }
 
     video__refresh_controls();
@@ -1339,6 +1691,7 @@ function video__teardown_viewer(reason)
     g_video_stream.is_offered = false;
     g_video_stream.is_watching = false;
     g_video_stream.is_decoder_supported = false;
+    g_video_stream.watching_client_ids = [];
 
     document.getElementById("video-stream-canvas").style.display = "none";
 
@@ -1372,7 +1725,9 @@ function video__teardown_all(reason)
 
     g_video_stream.is_active = false;
     g_video_stream.streamer_client_id = -1;
+    g_video_stream.is_sound_included = false;
     g_video_stream.viewer_count = 0;
+    g_video_stream.watching_client_ids = [];
     g_video_stream.pending_viewer_requests = [];
     video__render_pending_requests();
     video__refresh_controls();
@@ -1422,7 +1777,7 @@ function video__answer_viewer_request(client_id, is_allowed)
 }
 
 /**
- * @brief draws the "allow x to watch?" strip of the streamer's popup from the pending list
+ * @brief draws the "allow x to watch?" row of the streamer's popup from the pending list
  *
  * @return void
  */
@@ -1464,7 +1819,9 @@ function video__render_pending_requests()
 }
 
 /**
- * @brief video_stream_viewer_state: a viewer connected or dropped; the count follows and a new viewer gets a keyframe
+ * @brief video_stream_viewer_state: a viewer connected or dropped. the server sends it to the streamer and to the members the streamer allowed,
+ *        so a member the streamer refused never learns who watches. the set of watching ids marks the rows in the channel tree; the
+ *        streamer also counts its viewers from it and sends a new viewer a keyframe
  *
  * @param object msg -> the server message (client_id, is_watching)
  *
@@ -1472,22 +1829,37 @@ function video__render_pending_requests()
  */
 function video__on_viewer_state(msg)
 {
-    if (typeof document === "undefined" || g_video_stream.role != "streamer")
+    if (typeof document === "undefined")
     {
         return;
     }
 
+    let client_id = msg.message.client_id;
+    let index = g_video_stream.watching_client_ids.indexOf(client_id);
+
     if (msg.message.is_watching == true)
     {
-        g_video_stream.viewer_count++;
-        video_force_keyframe = true;
+        if (index == -1)
+        {
+            g_video_stream.watching_client_ids.push(client_id);
+        }
+        if (g_video_stream.role == "streamer")
+        {
+            video_force_keyframe = true;
+        }
     }
-    else if (g_video_stream.viewer_count > 0)
+    else if (index != -1)
     {
-        g_video_stream.viewer_count--;
+        g_video_stream.watching_client_ids.splice(index, 1);
     }
 
-    video__refresh_popup_buttons();
+    if (g_video_stream.role == "streamer")
+    {
+        g_video_stream.viewer_count = g_video_stream.watching_client_ids.length;
+        video__refresh_popup_buttons();
+    }
+
+    video__refresh_tree_icons();
 }
 
 /**
@@ -1540,6 +1912,7 @@ function video__on_refused(msg)
     if (msg.message.reason == "revoked")
     {
         g_video_stream.is_offered = false;
+        g_video_stream.watching_client_ids = [];
     }
 
     if (g_video_stream.is_popup_open == true)
@@ -1700,6 +2073,8 @@ function video__refresh_popup_buttons()
     let disconnect = document.getElementById("video-stream-disconnect-button");
     let stop = document.getElementById("video-stream-stop-button");
     let count = document.getElementById("video-stream-viewer-count");
+    let volume_label = document.getElementById("video-stream-sound-volume-label");
+    let monitor_label = document.getElementById("video-stream-monitor-label");
 
     if (connect == null)
     {
@@ -1713,6 +2088,16 @@ function video__refresh_popup_buttons()
     disconnect.style.display = (is_viewer && g_video_stream.is_watching == true) ? "" : "none";
     stop.style.display = (g_video_stream.role == "streamer" || g_video_stream.is_start_pending == true) ? "" : "none";
 
+    // the sound controls: a viewer's volume while the stream has sound, the streamer's "hear my stream" for a file with sound
+    if (volume_label != null)
+    {
+        volume_label.style.display = (is_viewer && g_video_stream.is_sound_included == true) ? "" : "none";
+    }
+    if (monitor_label != null)
+    {
+        monitor_label.style.display = (g_video_stream.role == "streamer" && g_video_stream.source == "file" && g_video_stream.is_sound_included == true) ? "" : "none";
+    }
+
     if (g_video_stream.role == "streamer")
     {
         count.textContent = g_video_stream.viewer_count + (g_video_stream.viewer_count == 1 ? " viewer" : " viewers");
@@ -1720,6 +2105,68 @@ function video__refresh_popup_buttons()
     else
     {
         count.textContent = "";
+    }
+}
+
+/**
+ * @brief restores the two local sound settings of the stream window (the volume of a stream's sound, "hear my stream") and shows them in the controls
+ *
+ * @return void
+ */
+function video__load_sound_settings()
+{
+    let stored_volume = utils__storage_get("lemon_video_stream_sound_volume");
+    let stored_monitor = utils__storage_get("lemon_video_stream_monitor");
+    let volume = document.getElementById("video-stream-sound-volume");
+    let monitor = document.getElementById("video-stream-monitor-checkbox");
+
+    if (stored_volume != null && isNaN(parseFloat(stored_volume)) == false)
+    {
+        g_video_stream_sound_volume = Math.min(1, Math.max(0, parseFloat(stored_volume)));
+    }
+    if (stored_monitor != null)
+    {
+        g_is_video_stream_monitor_enabled = (stored_monitor === "1");
+    }
+    if (volume != null)
+    {
+        volume.value = Math.round(g_video_stream_sound_volume * 100);
+    }
+    if (monitor != null)
+    {
+        monitor.checked = (g_is_video_stream_monitor_enabled == true);
+    }
+}
+
+/**
+ * @brief the volume slider of a stream's sound: applied to the sound's playback buffer at once and remembered
+ *
+ * @return void
+ */
+function video__sound_volume_oninput()
+{
+    g_video_stream_sound_volume = Math.min(1, Math.max(0, parseInt(this.value) / 100));
+    utils__storage_set("lemon_video_stream_sound_volume", String(g_video_stream_sound_volume));
+
+    if (typeof audio__set_client_playback_volume === "function")
+    {
+        audio__set_client_playback_volume(VIDEO_STREAM_SOUND_SENDER_ID, g_video_stream_sound_volume);
+    }
+}
+
+/**
+ * @brief the streamer's "hear my stream" checkbox: the monitor gain of a running file capture follows it, and the choice is remembered
+ *
+ * @return void
+ */
+function video__monitor_checkbox_onchange()
+{
+    g_is_video_stream_monitor_enabled = (this.checked == true);
+    utils__storage_set("lemon_video_stream_monitor", this.checked ? "1" : "0");
+
+    if (video_sound_capture != null && video_sound_capture.monitor_gain_node != null)
+    {
+        video_sound_capture.monitor_gain_node.gain.value = (this.checked == true) ? 1 : 0;
     }
 }
 
@@ -1799,7 +2246,7 @@ function video__popup_drag_start(event)
 
     video_popup_drag = { start_x: event.clientX, start_y: event.clientY, left: rect.left, top: rect.top };
 
-    // once dragged the popup is pinned by left/top instead of right/bottom
+    // once dragged the popup is positioned by left/top instead of right/bottom
     popup.style.left = rect.left + "px";
     popup.style.top = rect.top + "px";
     popup.style.right = "auto";

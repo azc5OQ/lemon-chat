@@ -4,6 +4,7 @@
 // everything should be as simple as possible, but not simpler!
 
 int64   base__get_new_index_for_client(void);
+boole   base__is_server_banner_valid(cstring banner);
 boole   base__set_icon_base64(icon_t* icon, cstring base64);
 void    base__free_icon_base64(icon_t* icon);
 
@@ -43,6 +44,8 @@ boole   base__queue_offline_message(char* recipient_identity_hash, char* sender_
 void    base__free_offline_messages_for_identity(char* identity_hash);
 void    base__close_websocket_connection(uint64 client_id, boole use_readlock);
 uint64  base__get_timestamp_ms(void);
+void    base__start_server_uptime(void);
+uint64  base__get_server_uptime_seconds(void);
 void    base__sleep_for_milliseconds(uint64 milliseconds);
 uint64  base__get_chat_message_id(void);
 void    base__increment_chat_message_id(void);
@@ -81,11 +84,11 @@ extern offline_chat_message_t* g_offline_messages;
 extern pthread_mutex_t g_offline_messages_mutex;
 extern uint64 g_offline_message_sequence_counter;
 
-// global lock ordering goes like this: clients, muggles, channels, icons, tags, bans (bans is always taken last)
+// global lock ordering goes like this: clients, webrtc peers (g_webrtc_peers_rwlock_guard), channels, icons, tags, bans (bans is always taken last)
 
 extern server_settings_t g_server_settings;
 extern custom_rwlock_t g_clients_global_rwlock_guard;
-extern custom_rwlock_t g_webrtc_muggles_rwlock_guard;
+extern custom_rwlock_t g_webrtc_peers_rwlock_guard;
 extern custom_rwlock_t g_channels_global_rwlock_guard;
 extern custom_rwlock_t g_icons_global_rwlock_guard;
 extern custom_rwlock_t g_tags_global_rwlock_guard;

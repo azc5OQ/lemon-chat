@@ -1,7 +1,7 @@
 #ifndef VIDEO_STREAM_H
 #define VIDEO_STREAM_H 1
 
-boole video_stream__start(client_t* streamer, cstring source, cstring codec, int64 width, int64 height, int64 fps, cstring* out_refusal_reason);
+boole video_stream__start(client_t* streamer, cstring source, cstring codec, int64 width, int64 height, int64 fps, boole is_sound_included, cstring* out_refusal_reason);
 void video_stream__stop(uint64 channel_id, cstring reason);
 void video_stream__stop_all(cstring reason);
 void video_stream__process_channel_toggle_changed(uint64 channel_id);

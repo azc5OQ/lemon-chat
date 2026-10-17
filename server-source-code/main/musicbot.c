@@ -423,7 +423,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
         drmp3_init_memory(&mp3, mp3_data_buffer1, mp3_data_buffer_length1, NULL_POINTER);
         frameCount = drmp3_get_pcm_frame_count(&mp3);
 
-        // sampleRate is 0 when no frame header was found, dividing by it kills the server
+        // sampleRate is 0 when no frame header was found, dividing by it crashes the server
         if (frameCount == 0 || mp3.sampleRate == 0)
         {
             DBG_MUSIC_BOT log_info("%s", "musicbot__add_song: undecodable mp3, rejecting song \n");
@@ -775,7 +775,7 @@ void* musicbot__threadstart(void* argument)
         }
     }
 
-    // the bot is shutting down: collect and drop any preparation still in flight so nothing leaks
+    // the bot is shutting down: collect and drop any preparation still running so nothing leaks
     if (is_preload_running == TRUE)
     {
         pthread_join(preload_thread, NULL_POINTER);

@@ -10,7 +10,7 @@ var g_channel_list = null;
 var g_send_go_to_idle_mode_request = null;
 var g_send_come_from_idle_mode_request = null;
 var g_accept_current_settings_from_android = null;
-var g_nudge_loopback_reattach = null;
+var g_request_loopback_reattach = null;
 var g_show_connection_phase = null;
 var g_mark_call_accept_presence = null;
 
@@ -68,11 +68,11 @@ function JavascriptJavaBridge__set_username_on_connect(username)
  *
  * @return void
  */
-function JavascriptJavaBridge__nudge_loopback_reattach()
+function JavascriptJavaBridge__request_loopback_reattach()
 {
-    if (typeof g_nudge_loopback_reattach === "function" && g_nudge_loopback_reattach != null)
+    if (typeof g_request_loopback_reattach === "function" && g_request_loopback_reattach != null)
     {
-        g_nudge_loopback_reattach();
+        g_request_loopback_reattach();
     }
 }
 

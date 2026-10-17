@@ -43,7 +43,19 @@
 static pthread_key_t g_tls_key;
 static pthread_once_t g_tls_once = PTHREAD_ONCE_INIT;
 
-/* Called by pthreads when a thread exits — frees this thread's entire map. */
+// declarations
+static void _clib_rwlock_internal__tls_destructor(void* data);
+static void _clib_rwlock_internal__make_tls_key(void);
+static thread_lock_map_t* _clib_rwlock_internal__get_thread_map(void);
+static int* _clib_rwlock_internal__get_read_count(custom_rwlock_t* lock);
+static void _clib_rwlock_internal__enqueue(custom_rwlock_t* lock, fifo_rwlock_node_t* node);
+static fifo_rwlock_node_t* _clib_rwlock_internal__dequeue(custom_rwlock_t* lock);
+
+/**
+ * @brief Frees a thread's saved lock counts when that thread exits.
+ * @param void* data -> thread_lock_map_t stored for the exiting thread
+ * @return void
+ */
 static void _clib_rwlock_internal__tls_destructor(void* data)
 {
     thread_lock_map_t* map = NULL_POINTER;
@@ -60,13 +72,19 @@ static void _clib_rwlock_internal__tls_destructor(void* data)
     free(map);
 }
 
-/* pthread_once callback: creates the TLS key exactly once for the process. */
+/**
+ * @brief Creates the storage key for each thread's lock counts and exit cleanup.
+ * @return void
+ */
 static void _clib_rwlock_internal__make_tls_key(void)
 {
     pthread_key_create(&g_tls_key, _clib_rwlock_internal__tls_destructor);
 }
 
-/* Returns the lock map for the calling thread, allocating it on first call. */
+/**
+ * @brief Gets the calling thread's saved lock counts, creating the map on first use.
+ * @return thread_lock_map_t* -> this thread's map; allocation failure stops the process
+ */
 static thread_lock_map_t* _clib_rwlock_internal__get_thread_map(void)
 {
     thread_lock_map_t* map = NULL_POINTER;
@@ -84,10 +102,11 @@ static thread_lock_map_t* _clib_rwlock_internal__get_thread_map(void)
     return map;
 }
 
-/*
- * Returns a pointer to the read-count integer for the calling thread and the
- * given lock pointer. Allocates a new entry (count = 0) on first use.
- * Linear scan is fine: the list has at most one entry per distinct lock held.
+/**
+ * @brief Finds this thread's read count for one lock, creating a zero count if needed.
+ * @param custom_rwlock_t* lock -> lock whose read count is needed
+ * @return int* -> saved read count; allocation failure stops the process
+ * @attention The caller holds lock->mutex.
  */
 static int* _clib_rwlock_internal__get_read_count(custom_rwlock_t* lock)
 {
@@ -121,7 +140,13 @@ static int* _clib_rwlock_internal__get_read_count(custom_rwlock_t* lock)
    FIFO queue helpers
    ============================================================================= */
 
-/* Append node to the tail of the queue. Called with lock->mutex held. */
+/**
+ * @brief Adds a waiting thread to the end of the lock's queue.
+ * @param custom_rwlock_t* lock -> lock the thread is waiting for
+ * @param fifo_rwlock_node_t* node -> waiting thread's queue entry
+ * @return void
+ * @attention The caller holds lock->mutex.
+ */
 static void _clib_rwlock_internal__enqueue(custom_rwlock_t* lock, fifo_rwlock_node_t* node)
 {
     node->next = NULL_POINTER;
@@ -136,8 +161,12 @@ static void _clib_rwlock_internal__enqueue(custom_rwlock_t* lock, fifo_rwlock_no
     }
 }
 
-/* Remove and return the head of the queue. Returns NULL if empty.
-   Called with lock->mutex held. */
+/**
+ * @brief Removes the first waiting thread's entry without freeing it.
+ * @param custom_rwlock_t* lock -> lock whose queue is being updated
+ * @return fifo_rwlock_node_t* -> removed entry, or NULL when the queue is empty
+ * @attention The caller holds lock->mutex.
+ */
 static fifo_rwlock_node_t* _clib_rwlock_internal__dequeue(custom_rwlock_t* lock)
 {
     fifo_rwlock_node_t* node = NULL_POINTER;
@@ -157,6 +186,11 @@ static fifo_rwlock_node_t* _clib_rwlock_internal__dequeue(custom_rwlock_t* lock)
    Public API
    ============================================================================= */
 
+/**
+ * @brief Initializes an unused lock before any thread starts using it.
+ * @param custom_rwlock_t* lock -> lock storage to initialize
+ * @return void
+ */
 void clib__rwlock_init(custom_rwlock_t* lock)
 {
     pthread_mutex_init(&lock->mutex, NULL_POINTER);
@@ -171,10 +205,11 @@ void clib__rwlock_init(custom_rwlock_t* lock)
     pthread_cond_init(&lock->upgrade_cv, NULL_POINTER);
 }
 
-/*
- * Destroy the lock. The caller MUST ensure no threads are waiting or holding
- * the lock at the time of this call. Drains any leftover queue nodes defensively
- * (there should be none in a correct shutdown) to avoid leaking condvars.
+/**
+ * @brief Releases a lock's mutex, conditions and any leftover queue entries.
+ * @param custom_rwlock_t* lock -> initialized lock to destroy
+ * @return void
+ * @attention No thread may hold, wait for or start using this lock during destruction.
  */
 void clib__rwlock_destroy(custom_rwlock_t* lock)
 {
@@ -197,14 +232,12 @@ void clib__rwlock_destroy(custom_rwlock_t* lock)
     pthread_mutex_destroy(&lock->mutex);
 }
 
-/* -----------------------------------------------------------------------------
-   clib__read_lock
-
-   Acquisition order:
-     Fast-path 1  — this thread already holds the WRITE lock (write→read nesting)
-     Fast-path 2  — this thread already holds a READ lock (recursive read)
-     Slow path    — first acquisition: take FIFO ticket and wait
-   ----------------------------------------------------------------------------- */
+/**
+ * @brief Acquires read access, also allowing this thread to take a lock it already holds.
+ * @param custom_rwlock_t* lock -> initialized lock to acquire
+ * @return void
+ * @attention Release each acquisition with clib__unlock, unless it is converted to a write lock.
+ */
 void clib__read_lock(custom_rwlock_t* lock)
 {
     pthread_t self = 0;
@@ -302,23 +335,14 @@ void clib__read_lock(custom_rwlock_t* lock)
     pthread_mutex_unlock(&lock->mutex);
 }
 
-/* -----------------------------------------------------------------------------
-   clib__write_lock
-
-   Three cases handled internally:
-
-     Case 1 — recursive write: same thread already owns the write lock.
-              Increment write_recursion and return.
-
-     Case 2 — upgrade: this thread already holds a read lock.
-              Cannot take a normal FIFO ticket (would deadlock — see comment
-              inside). Instead waits for other readers to drain, then converts
-              atomically. If another upgrade is already in progress, surrenders
-              reads and falls through to the normal ticket path.
-
-     Case 3 — normal slow path: take a FIFO ticket and wait until the lock is
-              fully free (num_readers == 0 AND write_recursion == 0).
-   ----------------------------------------------------------------------------- */
+/**
+ * @brief Acquires write access, reusing this thread's write lock or converting its read locks.
+ * @param custom_rwlock_t* lock -> initialized lock to acquire
+ * @return void
+ * @attention Converting read access consumes all this thread's read acquisitions and needs
+ * one clib__unlock. If another reader is already converting, this thread releases its reads
+ * and waits in the normal queue, so the protected data may change before it gets write access.
+ */
 void clib__write_lock(custom_rwlock_t* lock)
 {
     pthread_t self = 0;
@@ -461,27 +485,12 @@ void clib__write_lock(custom_rwlock_t* lock)
     pthread_mutex_unlock(&lock->mutex);
 }
 
-/* -----------------------------------------------------------------------------
-   clib__unlock
-
-   Identifies which lock type this thread last acquired and releases one level:
-
-     A. Writer with nested reads outstanding (write_recursion > 0 AND my_read_count > 0)
-        → release one nested read (TLS counter only; num_readers was never
-          incremented for writer-nested reads per fast-path 1 above).
-
-     B. Writer, no nested reads (write_recursion > 0 AND my_read_count == 0)
-        → release one write recursion level. If write_recursion hits 0, clear
-          writer identity and wake the next queued waiter.
-
-     C. Reader (not the current writer)
-        → decrement TLS counter and num_readers. Signal the upgrader if one is
-          waiting. Wake the next queued waiter if the lock is now fully free.
-
-   The LIFO ordering between A and B is automatic: as long as the caller
-   matches each clib__read_lock / clib__write_lock with exactly one clib__unlock,
-   the nested reads are always released before the write lock.
-   ----------------------------------------------------------------------------- */
+/**
+ * @brief Releases one read or write acquisition held by the calling thread.
+ * @param custom_rwlock_t* lock -> lock to release; an unheld lock is left unchanged
+ * @return void
+ * @note Reads taken while holding write access are released before that write access.
+ */
 void clib__unlock(custom_rwlock_t* lock)
 {
     pthread_t self = 0;

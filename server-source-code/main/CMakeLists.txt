@@ -61,6 +61,7 @@ add_executable(chat-server
         clib/clib_string.c
         clib/clib_rwlock.c
         client_message.c
+        login_admission.c
         server_message.c
         server_logs.c
         memory_manager.c

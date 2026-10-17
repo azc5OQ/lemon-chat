@@ -22,6 +22,7 @@
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/entropy.h"
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/ctr_drbg.h"
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/bignum.h"
+#include "../third-party/mbedtls-3.6.6/include/mbedtls/base64.h"
 
 #include "memory_manager.h"
 #include "audio_channel.h"
@@ -32,6 +33,7 @@
 #include "../third-party/eteran-cvector/cvector.h"
 
 #include "util.h"
+#include <string.h>
 
 #ifdef WIN32
 #include <Windows.h>
@@ -39,13 +41,14 @@
 #include <io.h>
 #else
 #include <unistd.h>
+#include <time.h>
 #endif
 
 custom_rwlock_t g_clients_global_rwlock_guard;
 custom_rwlock_t g_channels_global_rwlock_guard;
 custom_rwlock_t g_icons_global_rwlock_guard;
 custom_rwlock_t g_tags_global_rwlock_guard;
-custom_rwlock_t g_webrtc_muggles_rwlock_guard;
+custom_rwlock_t g_webrtc_peers_rwlock_guard;
 custom_rwlock_t g_bans_global_rwlock_guard;
 
 pthread_mutex_t g_chat_message_id_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -69,9 +72,16 @@ icon_t* g_icons_array;
 tag_t* g_tags_array;
 ban_entry_t* g_ban_array;
 server_settings_t g_server_settings;
+static uint64 g_server_started_monotonic_ms = 0;
+static boole g_server_uptime_started = FALSE;
 
+// declarations
 static void _base_internal__serialize_identities(cJSON* json_root);
 static boole _base_internal__are_strings_equal_ignoring_ascii_case(char* string1, char* string2);
+static boole _base_internal__get_monotonic_ms(uint64* milliseconds);
+static boole _base_internal__is_png_banner_header_valid(const ubyte* image, size_t length);
+static boole _base_internal__is_jpeg_banner_header_valid(const ubyte* image, size_t length);
+static boole _base_internal__is_webp_banner_header_valid(const ubyte* image, size_t length);
 
 /**
  * @brief writes contents to path atomically: it writes a temp file, flushes it to disk, then atomically
@@ -350,7 +360,7 @@ boole base__remove_ban_by_ip(char* ip_address)
  * @brief writes the in-memory identity store (g_client_stored_data) into json_root under the "identities"
  *        key: one object per stored identity with its public-key hash and the tag ids it owns. entries with
  *        no hash or no tags are skipped. when identities are disabled the existing "identities" key is left
- *        untouched, so disabling then re-enabling does not wipe the stored data. guarded by the store mutex.
+ *        untouched, so disabling then re-enabling does not delete the stored data. guarded by the store mutex.
  *
  * @param cJSON* json_root -> the settings document being written
  *
@@ -491,6 +501,24 @@ boole base__save_server_settings_to_file(void)
     }
 
     // update the general-settings toggles (delete-then-add so a value already present is replaced)
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "server_banner");
+    if (cJSON_AddStringToObject(json_root, "server_banner", g_server_settings.server_banner != NULL_POINTER ? g_server_settings.server_banner : "") == NULL_POINTER)
+    {
+        cJSON_Delete(json_root);
+        return FALSE;
+    }
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "publish_server_uptime");
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "publish_server_slots");
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "publish_server_banner");
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "publish_server_features");
+    if (cJSON_AddBoolToObject(json_root, "publish_server_uptime", g_server_settings.publish_server_uptime) == NULL_POINTER
+        || cJSON_AddBoolToObject(json_root, "publish_server_slots", g_server_settings.publish_server_slots) == NULL_POINTER
+        || cJSON_AddBoolToObject(json_root, "publish_server_banner", g_server_settings.publish_server_banner) == NULL_POINTER
+        || cJSON_AddBoolToObject(json_root, "publish_server_features", g_server_settings.publish_server_features) == NULL_POINTER)
+    {
+        cJSON_Delete(json_root);
+        return FALSE;
+    }
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_display_country_flags_active");
     cJSON_AddItemToObject(json_root, "is_display_country_flags_active", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "hide_admin_country_flag");
@@ -528,6 +556,10 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_websocket_ping_active");
     cJSON_AddItemToObject(json_root, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "enforce_connection_check");
+    cJSON_AddBoolToObject(json_root, "enforce_connection_check", g_server_settings.enforce_connection_check == TRUE);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "max_concurrent_logins");
+    cJSON_AddNumberToObject(json_root, "max_concurrent_logins", (double)g_server_settings.max_concurrent_logins);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "webrtc_datachannel_cooldown_seconds");
     cJSON_AddNumberToObject(json_root, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "icon_max_size_bytes");
@@ -1028,7 +1060,7 @@ boole base__is_public_key_present_in_client_stored_data(char* public_key)
  * @param uint64 index_of_client_that_left -> id of the client that just left
  * @param boole do_not_include_client_that_left_when_searching_for_new_maintainer -> TRUE to skip the client that left
  *
- * @note this is used function in situation where client leaves the channel for whatever reason and he happens to be the maintainer of it
+ * @note this function is used when a client leaves the channel for whatever reason and that client happens to be the maintainer of it
  *
  * @return boole -> TRUE if a maintainer was found and written to _out__new_index_of_maintainer, FALSE if not
  *
@@ -1415,12 +1447,52 @@ uint64 base__get_timestamp_ms(void)
 }
 
 /**
- * @brief sleeps for X milliseconds
- * *
- * @return void
- *
- * @attention should work on windows and linux
+ * @brief Reads a clock that is unaffected by changes to the calendar time.
+ * @param uint64* milliseconds -> receives the clock reading
+ * @return boole -> TRUE when the clock was read successfully
  */
+static boole _base_internal__get_monotonic_ms(uint64* milliseconds)
+{
+#ifdef WIN32
+    *milliseconds = GetTickCount64();
+#else
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+    {
+        return FALSE;
+    }
+    *milliseconds = (uint64)now.tv_sec * 1000 + (uint64)now.tv_nsec / 1000000;
+#endif
+    return TRUE;
+}
+
+/**
+ * @brief Records when this server run begins, before any worker threads start.
+ * @return void
+ */
+void base__start_server_uptime(void)
+{
+    g_server_uptime_started = _base_internal__get_monotonic_ms(&g_server_started_monotonic_ms);
+}
+
+/**
+ * @brief Returns how many whole seconds this server run has been active.
+ * @return uint64 -> elapsed seconds, or zero if the clock is unavailable
+ */
+uint64 base__get_server_uptime_seconds(void)
+{
+    uint64 now = 0;
+
+    if (g_server_uptime_started == FALSE
+        || _base_internal__get_monotonic_ms(&now) == FALSE
+        || now < g_server_started_monotonic_ms)
+    {
+        return 0;
+    }
+    return (now - g_server_started_monotonic_ms) / 1000;
+}
+
 #ifdef WIN32
 #include <windows.h>
 #elif _POSIX_C_SOURCE >= 199309L
@@ -1429,6 +1501,11 @@ uint64 base__get_timestamp_ms(void)
 #include <unistd.h> // for usleep
 #endif
 
+/**
+ * @brief Pauses the calling thread for the requested number of milliseconds.
+ * @param uint64 milliseconds -> requested pause length
+ * @return void
+ */
 void base__sleep_for_milliseconds(uint64 milliseconds)
 { // cross-platform sleep function
 #ifdef WIN32
@@ -1447,15 +1524,6 @@ void base__sleep_for_milliseconds(uint64 milliseconds)
 #endif
 }
 
-/**
- * @brief returns TRUE if an authenticated client with the same public key already exists
- *
- * @param cstring public_key -> the public key to look for
- *
- * @return boole
- *
- * @attention output of this function is stored on heap, and must be freed manually
- */
 /**
  * @brief drops every OTHER connected client holding this public key, so a returning identity
  *        replaces its own stale session instead of being locked out by it
@@ -1496,13 +1564,13 @@ uint64 base__disconnect_other_clients_with_same_public_key(uint64 client_index_t
             continue;
         }
 
-        // the socket may be long dead (a drop the server never saw); closing it makes that
+        // the socket may have been closed long ago (a drop the server never saw); closing it makes that
         // client's own reader thread run the normal disconnect teardown
         log_info("%s %llu %s %llu %s", "identity takeover: client", i, "is replaced by the returning client", client_index_to_keep, "\n");
         server_logs__client_disconnect_reason(&g_clients_array[i], "identity takeover");
         base__close_websocket_connection(i, FALSE);
 
-        // torn down right here, not when the socket dies: the returning client's list and the
+        // torn down right here, not when the socket closes: the returning client's list and the
         // disconnect broadcast must both precede its join, so nobody ever sees both sessions
         clib__write_lock(&g_channels_global_rwlock_guard);
         base__process_client_disconnect(i);
@@ -1586,7 +1654,7 @@ int64 base__adopt_socket_into_existing_session(uint64 new_client_index, cstring 
     old_session->is_idle = FALSE;
     old_session->has_pending_maintainer_reset_vote = FALSE;
 
-    // an upload that was in flight on the old socket died with it
+    // an upload that was running on the old socket ended with it
     if (old_session->file_upload_extension.file_upload_buffer != NULL_POINTER)
     {
         memorymanager__free((nuint)old_session->file_upload_extension.file_upload_buffer);
@@ -1651,6 +1719,12 @@ boole base__is_there_another_authenticated_client_with_same_public_key(uint64 cl
     return FALSE;
 }
 
+/**
+ * @brief Checks whether an existing authenticated client has the given public key.
+ * @param cstring public_key -> public key to look for
+ * @return boole -> TRUE when a matching client exists; FALSE otherwise
+ * @attention The caller holds the clients lock.
+ */
 boole base__is_there_a_client_with_same_public_key(cstring public_key)
 {
     boole result = FALSE;
@@ -1707,17 +1781,17 @@ boole base__is_there_an_unfinished_handshake_from_same_ip_address(cstring ip_add
 }
 
 /**
- * @brief the login half of the same-ip rule, judged only once the challenge proved the identity, so
- *        a returning client is refused by a second person on his ip and never by his own dropped session
+ * @brief the login half of the same-ip rule, checked only once the challenge proved the identity, so
+ *        a returning client is refused because of a second person on the same ip and never because of its own dropped session
  *
- * @param uint64 client_index -> the client being judged, never counted
- * @param cstring ip_address -> his ip address
- * @param cstring public_key -> his identity, older sessions holding it are the ghosts being disconnected and are skipped
+ * @param uint64 client_index -> the client being checked, never counted
+ * @param cstring ip_address -> the client's ip address
+ * @param cstring public_key -> the client's identity; older sessions holding it are earlier sessions of the same identity that are being disconnected, and they are skipped
  *
  * @return boole
  *
  * @attention the caller must hold the clients write lock. only authenticated sessions count: an unfinished
- *            handshake from the same ip is judged when it gets here itself, which lets exactly one of them in
+ *            handshake from the same ip is checked when it gets here itself, which lets exactly one of them in
  */
 boole base__is_there_another_authenticated_client_with_same_ip_address(uint64 client_index, cstring ip_address, cstring public_key)
 {
@@ -2070,7 +2144,7 @@ void base__snapshot_connected_clients_into_identity_store(void)
         }
 
         // rewrite the identity fields but PRESERVE base64_avatar and alias - nulling the whole slot
-        // would wipe them (sync_client_identity_in_store already preserves them the same way)
+        // would delete them (sync_client_identity_in_store already preserves them the same way)
         clib__null_memory(&g_client_stored_data[slot].public_key[0], MAX_PUBLIC_KEY_LENGTH);
         clib__null_memory(&g_client_stored_data[slot].username[0], USERNAME_MAX_LENGTH);
         clib__null_memory(&g_client_stored_data[slot].tag_ids[0], sizeof(g_client_stored_data[slot].tag_ids));
@@ -2189,7 +2263,7 @@ void base__sync_client_identity_in_store(client_t* client)
         return;
     }
 
-    // rewrite the identity fields but PRESERVE base64_avatar (nulling the whole slot would wipe a
+    // rewrite the identity fields but PRESERVE base64_avatar (nulling the whole slot would delete a
     // stored avatar). a first-free slot is already fully zeroed, so this is correct for new entries too
     clib__null_memory(&g_client_stored_data[slot].public_key[0], MAX_PUBLIC_KEY_LENGTH);
     clib__null_memory(&g_client_stored_data[slot].username[0], USERNAME_MAX_LENGTH);
@@ -2639,7 +2713,7 @@ boole base__is_identity_registered_by_hash(char* identity_hash)
 }
 
 /**
- * @brief parks one text message for an identity that is not connected right now. the payload is
+ * @brief stores one text message for an identity that is not connected right now. the payload is
  *        copied onto the heap and is never inspected: it arrived encrypted with the RECIPIENT's
  *        public key, so the server cannot read it and neither can anybody else.
  *
@@ -3000,18 +3074,6 @@ boole base__modify_identity_tag_in_store(char* identity_hash, uint64 tag_id, boo
 }
 
 /**
- * @brief encrypts string with public key
- *
- * @param char* public_key_modulus -> the RSA modulus as a base64 string
- * @param unsigned char* bytes -> the bytes to encrypt
- * @param uint64 buffer_length -> number of bytes to encrypt
- *
- * @return char* encrypted string
- *
- * @attention only modulus is needed, exponent is defined in code, base is defined in code
- * @note this function is used only once, when server sends out public key challenge to client to find out if client is owner of that public key
- */
-/**
  * @brief bit length of a base64-encoded rsa public key modulus. leading zero bytes are
  *        skipped so a padded key cannot claim a bigger size than it has
  *
@@ -3063,6 +3125,14 @@ uint64 base__get_public_key_bit_length(char* public_key_modulus)
     return bits;
 }
 
+/**
+ * @brief Encrypts the login challenge with the client's RSA modulus and fixed exponent 3.
+ * @param char* public_key_modulus -> RSA modulus encoded as base64
+ * @param unsigned char* bytes -> challenge bytes to encrypt
+ * @param uint64 buffer_length -> challenge length; the input copy supports up to 256 bytes
+ * @return char* -> allocated base64 ciphertext, or an empty string for an oversized modulus
+ * @attention Release the returned string with memorymanager__free.
+ */
 char* base__encrypt_string_with_public_key(char* public_key_modulus, unsigned char* bytes, uint64 buffer_length)
 {
     int status = 0;
@@ -3248,7 +3318,7 @@ void base__destroy_temp_channel(uint64 temp_channel_id)
 
 /**
  * @brief moves a client into a channel server-side and tells everyone, the same way the delete path moves
- *        clients to the root channel: hand off the maintainer of the channel being left, set the new
+ *        clients to the root channel: pass the maintainer role of the channel being left to another client, set the new
  *        channel id, broadcast the channel join, sync the audio peer, then send the new maintainer id and
  *        the active microphone usage to the moved client
  *
@@ -3357,7 +3427,7 @@ void base__process_client_disconnect(uint64 client_index)
 
         channel_id = g_clients_array[client_index].channel_id;
 
-        /* Idle clients use an out-of-range sentinel instead of a real channel. */
+        /* Idle clients use a marker value outside the valid channel range instead of a real channel. */
         is_client_also_channel_maintainer = (boole)(channel_id < g_server_settings.max_channel_count
             && g_channel_array[channel_id].is_existing == TRUE
             && g_channel_array[channel_id].is_channel_maintainer_present == TRUE
@@ -3481,6 +3551,14 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     if (clib__is_string_equal(message_type, "client_connection_check"))
     {
         client_msg__process_client_connection_check(json_root, client_index);
+    }
+    else if (clib__is_string_equal(message_type, "load_server_info"))
+    {
+        client_msg__process_load_server_info_request(json_root, client_index, websocket);
+    }
+    else if (clib__is_string_equal(message_type, "set_server_banner"))
+    {
+        client_msg__process_set_server_banner_request(json_root, client_index, websocket);
     }
     else if (clib__is_string_equal(message_type, "create_new_webrtc_datachannel_connection"))
     {
@@ -3846,7 +3924,7 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
     if (json_root == 0)
     {
         DBG_AUTHENTICATION log_info("%s %llu %s", "client : ", index, " json_root is null \n");
-        // a wrong key decrypts the handshake into garbage, which is exactly what lands here
+        // a wrong key decrypts the handshake into garbage, which is exactly what arrives here
         server_logs__join_refused("wrong key or malformed handshake", g_clients_array[index].ip_address);
         ws_close_client(websocket);
         // there is no json object to cJSON_Delete, since it's 0
@@ -3868,7 +3946,7 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
 
     if (clib__is_string_equal(message_type, "public_key_info"))
     {
-        client_msg__process_public_key_info(json_root, index);
+        client_msg__process_public_key_info(json_root, index, websocket);
     }
     else if (clib__is_string_equal(message_type, "public_key_challenge_response"))
     {
@@ -3915,6 +3993,264 @@ uint64 base__get_other_clients_in_channel(int client_to_ignore, uint64 channel_i
     }
 
     return count;
+}
+
+/**
+ * @brief Checks the PNG signature, first image header and banner dimensions.
+ * @param const ubyte* image -> decoded image bytes
+ * @param size_t length -> available image bytes
+ * @return boole -> TRUE when the header describes an allowed banner size
+ */
+static boole _base_internal__is_png_banner_header_valid(const ubyte* image, size_t length)
+{
+    static const ubyte signature[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+    uint width = 0;
+    uint height = 0;
+
+    if (length < 33 || memcmp(image, signature, sizeof(signature)) != 0
+        || image[8] != 0 || image[9] != 0 || image[10] != 0 || image[11] != 13
+        || memcmp(image + 12, "IHDR", 4) != 0)
+    {
+        return FALSE;
+    }
+    width = ((uint)image[16] << 24) | ((uint)image[17] << 16) | ((uint)image[18] << 8) | image[19];
+    height = ((uint)image[20] << 24) | ((uint)image[21] << 16) | ((uint)image[22] << 8) | image[23];
+    return width >= 1 && width <= 2048 && height >= 1 && height <= 512;
+}
+
+/**
+ * @brief Finds JPEG image dimensions without reading beyond any marker segment.
+ * @param const ubyte* image -> decoded image bytes
+ * @param size_t length -> available image bytes
+ * @return boole -> TRUE when a complete frame header gives an allowed banner size
+ */
+static boole _base_internal__is_jpeg_banner_header_valid(const ubyte* image, size_t length)
+{
+    size_t offset = 2;
+    uint marker = 0;
+    uint segment_length = 0;
+    uint width = 0;
+    uint height = 0;
+
+    if (length < 4 || image[0] != 0xff || image[1] != 0xd8
+        || image[length - 2] != 0xff || image[length - 1] != 0xd9)
+    {
+        return FALSE;
+    }
+    while (offset < length)
+    {
+        if (image[offset] != 0xff)
+        {
+            return FALSE;
+        }
+        while (offset < length && image[offset] == 0xff)
+        {
+            offset++;
+        }
+        if (offset >= length)
+        {
+            return FALSE;
+        }
+        marker = image[offset++];
+        if (marker == 0x01)
+        {
+            continue;
+        }
+        if (marker == 0x00 || (marker >= 0xd0 && marker <= 0xda) || length - offset < 2)
+        {
+            return FALSE;
+        }
+        segment_length = ((uint)image[offset] << 8) | image[offset + 1];
+        if (segment_length < 2 || segment_length > length - offset)
+        {
+            return FALSE;
+        }
+        if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7)
+            || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf))
+        {
+            if (segment_length < 8 || image[offset + 7] == 0
+                || segment_length != 8 + 3 * (uint)image[offset + 7])
+            {
+                return FALSE;
+            }
+            height = ((uint)image[offset + 3] << 8) | image[offset + 4];
+            width = ((uint)image[offset + 5] << 8) | image[offset + 6];
+            return width >= 1 && width <= 2048 && height >= 1 && height <= 512;
+        }
+        offset += segment_length;
+    }
+    return FALSE;
+}
+
+/**
+ * @brief Checks the WebP container and reads its image or canvas dimensions.
+ * @param const ubyte* image -> decoded image bytes
+ * @param size_t length -> available image bytes
+ * @return boole -> TRUE when the header describes an allowed banner size
+ */
+static boole _base_internal__is_webp_banner_header_valid(const ubyte* image, size_t length)
+{
+    uint container_length = 0;
+    uint chunk_length = 0;
+    uint width = 0;
+    uint height = 0;
+
+    if (length < 20 || memcmp(image, "RIFF", 4) != 0 || memcmp(image + 8, "WEBP", 4) != 0)
+    {
+        return FALSE;
+    }
+    container_length = (uint)image[4] | ((uint)image[5] << 8) | ((uint)image[6] << 16) | ((uint)image[7] << 24);
+    chunk_length = (uint)image[16] | ((uint)image[17] << 8) | ((uint)image[18] << 16) | ((uint)image[19] << 24);
+    if (container_length != length - 8 || chunk_length > length - 20
+        || (chunk_length & 1) > length - 20 - chunk_length)
+    {
+        return FALSE;
+    }
+    if (memcmp(image + 12, "VP8 ", 4) == 0)
+    {
+        if (chunk_length < 10 || (image[20] & 1) != 0
+            || image[23] != 0x9d || image[24] != 0x01 || image[25] != 0x2a)
+        {
+            return FALSE;
+        }
+        width = ((uint)image[26] | ((uint)image[27] << 8)) & 0x3fff;
+        height = ((uint)image[28] | ((uint)image[29] << 8)) & 0x3fff;
+    }
+    else if (memcmp(image + 12, "VP8L", 4) == 0)
+    {
+        if (chunk_length < 5 || image[20] != 0x2f || (image[24] >> 5) != 0)
+        {
+            return FALSE;
+        }
+        width = 1 + (((uint)image[21] | ((uint)image[22] << 8)) & 0x3fff);
+        height = 1 + ((uint)(image[22] >> 6) | ((uint)image[23] << 2) | ((uint)(image[24] & 0x0f) << 10));
+    }
+    else if (memcmp(image + 12, "VP8X", 4) == 0)
+    {
+        if (chunk_length != 10 || (image[20] & 0xc1) != 0
+            || image[21] != 0 || image[22] != 0 || image[23] != 0)
+        {
+            return FALSE;
+        }
+        width = 1 + ((uint)image[24] | ((uint)image[25] << 8) | ((uint)image[26] << 16));
+        height = 1 + ((uint)image[27] | ((uint)image[28] << 8) | ((uint)image[29] << 16));
+    }
+    else
+    {
+        return FALSE;
+    }
+    return width >= 1 && width <= 2048 && height >= 1 && height <= 512;
+}
+
+/**
+ * @brief Checks an uploaded banner's data URL, size, image header and dimensions.
+ * @param cstring banner -> PNG, JPEG or WebP data URL; an empty string removes it
+ * @return boole -> TRUE for an empty string or a supported image header within the limits
+ */
+boole base__is_server_banner_valid(cstring banner)
+{
+    cstring alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    cstring payload = NULL_POINTER;
+    cstring symbol = NULL_POINTER;
+    ubyte* image = NULL_POINTER;
+    int64 banner_length = 0;
+    size_t prefix_length = 0;
+    size_t payload_length = 0;
+    size_t decoded_length = 0;
+    size_t bytes_written = 0;
+    size_t index = 0;
+    uint image_type = 0;
+    uint padding = 0;
+    uint last_value = 0;
+    boole valid = FALSE;
+
+    if (banner == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    if (banner[0] == 0)
+    {
+        return TRUE;
+    }
+    banner_length = clib__utf8_string_length_check_max_length(banner, sizeof("data:image/jpeg;base64,") - 1 + 4 * ((SERVER_BANNER_MAX_BYTES + 2) / 3));
+    if (banner_length < 0)
+    {
+        return FALSE;
+    }
+    if (strncmp(banner, "data:image/png;base64,", sizeof("data:image/png;base64,") - 1) == 0)
+    {
+        prefix_length = sizeof("data:image/png;base64,") - 1;
+        image_type = 1;
+    }
+    else if (strncmp(banner, "data:image/jpeg;base64,", sizeof("data:image/jpeg;base64,") - 1) == 0)
+    {
+        prefix_length = sizeof("data:image/jpeg;base64,") - 1;
+        image_type = 2;
+    }
+    else if (strncmp(banner, "data:image/webp;base64,", sizeof("data:image/webp;base64,") - 1) == 0)
+    {
+        prefix_length = sizeof("data:image/webp;base64,") - 1;
+        image_type = 3;
+    }
+    else
+    {
+        return FALSE;
+    }
+    payload = banner + prefix_length;
+    payload_length = (size_t)banner_length - prefix_length;
+    if (payload_length < 4 || payload_length % 4 != 0)
+    {
+        return FALSE;
+    }
+    if (payload[payload_length - 1] == '=')
+    {
+        padding++;
+    }
+    if (payload[payload_length - 2] == '=')
+    {
+        padding++;
+    }
+    for (index = 0; index < payload_length - padding; index++)
+    {
+        symbol = strchr(alphabet, payload[index]);
+        if (symbol == NULL_POINTER)
+        {
+            return FALSE;
+        }
+        last_value = (uint)(symbol - alphabet);
+    }
+    if ((padding == 1 && (last_value & 3) != 0) || (padding == 2 && (last_value & 15) != 0))
+    {
+        return FALSE;
+    }
+    decoded_length = payload_length / 4 * 3 - padding;
+    if (decoded_length > SERVER_BANNER_MAX_BYTES)
+    {
+        return FALSE;
+    }
+    image = (ubyte*)malloc(decoded_length);
+    if (image == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    if (mbedtls_base64_decode(image, decoded_length, &bytes_written, (const ubyte*)payload, payload_length) == 0
+        && bytes_written == decoded_length)
+    {
+        if (image_type == 1)
+        {
+            valid = _base_internal__is_png_banner_header_valid(image, bytes_written);
+        }
+        else if (image_type == 2)
+        {
+            valid = _base_internal__is_jpeg_banner_header_valid(image, bytes_written);
+        }
+        else
+        {
+            valid = _base_internal__is_webp_banner_header_valid(image, bytes_written);
+        }
+    }
+    free(image);
+    return valid;
 }
 
 /**

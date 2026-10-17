@@ -3,6 +3,12 @@
 
 #include <string.h>
 
+/**
+ * @brief Writes uppercase hexadecimal digits for a nonnegative integer.
+ * @param int n -> number to convert; must not be negative
+ * @param char* out_hex_string -> zeroed output buffer with at least 14 bytes
+ * @return void
+ */
 void clib__int_to_hex_string(int n, char* out_hex_string)
 {
     uint64 i = 12;
@@ -24,6 +30,11 @@ void clib__int_to_hex_string(int n, char* out_hex_string)
     /* add null terminator to end of string */
 }
 
+/**
+ * @brief Checks that a string contains only decimal digits.
+ * @param char* string_to_check -> non-NULL, null-terminated string
+ * @return boole -> TRUE for digits or an empty string; FALSE for any other character
+ */
 boole clib__is_str_number(char* string_to_check)
 {
     boole result = TRUE;
@@ -60,6 +71,11 @@ boole clib__is_str_number(char* string_to_check)
     return result;
 }
 
+/**
+ * @brief Removes one trailing line-feed character from input, if present.
+ * @param char* input -> writable, null-terminated input; NULL is ignored
+ * @return void
+ */
 void clib__sanitize_stdin(char* input)
 {
     if (input == 0)
@@ -76,6 +92,12 @@ void clib__sanitize_stdin(char* input)
     }
 }
 
+/**
+ * @brief Counts string bytes until its terminator or the size limit is exceeded.
+ * @param cstring arg_string -> non-NULL, null-terminated string
+ * @param int max_length -> largest accepted byte count, excluding the terminator
+ * @return int64 -> byte count, or -1 when the string exceeds max_length
+ */
 int64 clib__utf8_string_length_check_max_length(cstring arg_string, int max_length)
 {
     /* ASCII string */
@@ -107,6 +129,11 @@ int64 clib__utf8_string_length_check_max_length(cstring arg_string, int max_leng
     return curr_string_length;
 }
 
+/**
+ * @brief Counts string bytes, excluding the terminating zero.
+ * @param cstring arg_string -> null-terminated string, or NULL
+ * @return uint64 -> byte count; 0 for NULL or an empty string
+ */
 uint64 clib__utf8_string_length(cstring arg_string)
 {
     /* ASCII string */
@@ -138,6 +165,12 @@ uint64 clib__utf8_string_length(cstring arg_string)
     return curr_string_length;
 }
 
+/**
+ * @brief Compares two strings byte for byte, including letter case.
+ * @param cstring str1 -> first null-terminated string
+ * @param cstring str2 -> second null-terminated string
+ * @return boole -> TRUE when both strings match; FALSE when either is NULL
+ */
 boole clib__is_string_equal(cstring str1, cstring str2)
 {
     boole result = TRUE;

@@ -18,6 +18,7 @@ void server_msg__send_identity_list_to_single_client(client_t* receiver);
 void server_msg__send_active_microphone_usage_for_current_channel_to_single_client(client_t* receiver, uint64 channel_id);
 void server_msg__send_client_connect_message_to_all_clients(client_t* subject);
 void server_msg__send_maintainer_id_to_single_client(client_t* receiver, channel_t* channel, uint64 maintainer_id);
+boole server_msg__queue_text_to_client(client_t* client, const char* plaintext);
 void server_msg__send_connection_check_response_to_single_client(client_t* receiver);
 void server_msg__send_fast_reconnect_ok_to_single_client(client_t* receiver);
 void server_msg__send_datachannel_cooldown_to_single_client(client_t* receiver, uint64 seconds_left);
@@ -27,6 +28,10 @@ void server_msg__send_force_admin_password_change_to_single_client(client_t* rec
 void server_msg__send_client_info_to_single_client(client_t* receiver, client_t* subject);
 void server_msg__send_channel_full_to_single_client(client_t* receiver, uint64 channel_id);
 void server_msg__send_server_settings_to_single_client(client_t* receiver);
+void server_msg__send_server_info_to_single_client(client_t* receiver, boole include_banner, boole banner_changed);
+void server_msg__send_server_info_to_all_clients(boole banner_changed);
+void server_msg__send_server_banner_changed_to_all_clients(void);
+void server_msg__send_server_banner_result_to_single_client(client_t* receiver, boole success, cstring error);
 void server_msg__send_admin_log_to_single_client(client_t* receiver);
 void server_msg__send_policy_update_to_all_clients(void);
 void server_msg__send_channel_create_message_to_all_clients(channel_t* channel, client_t* creator);

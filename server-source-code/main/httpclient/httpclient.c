@@ -36,9 +36,24 @@
 // or nothing more because the response is complete (state 7).
 #include "httpclient_internal.h"
 
-// Check the address that will actually be used by connect(), after DNS. The
-// preview service uses this to avoid fetching a router page, localhost service
-// or another private machine when someone posts a URL in chat.
+// declarations
+static uint _httpclient_internal__length(const char* text, uint maximum);
+static boole _httpclient_internal__equal(const char* text, uint length, const char* literal);
+static boole _httpclient_internal__token(const char* text, uint size);
+static void _httpclient_internal__consume(http_buffer_t* buffer, uint size);
+static int _httpclient_internal__line(const ubyte* bytes, uint size);
+static boole _httpclient_internal__number(const char* text, uint length, uint base, uint* value);
+static httpclient_error_t _httpclient_internal__headers(http_parser_t* parser, httpclient_response_t* response, uint size);
+static httpclient_error_t _httpclient_internal__request_head(http_buffer_t* buffer, const httpclient_request_t* request,
+    const char* host, const char* port, const char* target, boole ipv6);
+
+/**
+ * @brief Checks whether a resolved address is public before requesting a URL preview.
+ *
+ * @param const struct sockaddr* address -> the IPv4 or IPv6 address that connect() would use
+ *
+ * @return int -> 1 for an allowed public address, or 0 for a private, reserved or unsupported address
+ */
 int httpclient_internal__address_allowed(const struct sockaddr* address)
 {
     if (address->sa_family == AF_INET)
@@ -67,7 +82,14 @@ int httpclient_internal__address_allowed(const struct sockaddr* address)
     return 0;
 }
 
-// Count the bytes of a string, stopping at the supplied limit.
+/**
+ * @brief Counts the bytes in a string without reading beyond the supplied limit.
+ *
+ * @param const char* text -> the string to measure, or NULL for an empty string
+ * @param uint maximum -> the maximum number of bytes to examine
+ *
+ * @return uint -> the number of bytes before the ending zero byte, limited to maximum
+ */
 static uint _httpclient_internal__length(const char* text, uint maximum)
 {
     uint length = 0;
@@ -83,7 +105,15 @@ static uint _httpclient_internal__length(const char* text, uint maximum)
     return length;
 }
 
-// Compare an HTTP word without treating uppercase and lowercase as different letters.
+/**
+ * @brief Compares an HTTP word without treating uppercase and lowercase letters as different.
+ *
+ * @param const char* text -> the bytes to compare; they do not need an ending zero byte
+ * @param uint length -> the number of bytes available in text
+ * @param const char* literal -> the comparison string, ending with a zero byte
+ *
+ * @return boole -> 1 when the lengths and letters match, otherwise 0
+ */
 static boole _httpclient_internal__equal(const char* text, uint length, const char* literal)
 {
     uint index = 0;
@@ -114,7 +144,14 @@ static boole _httpclient_internal__equal(const char* text, uint length, const ch
     return 1;
 }
 
-// Check that a method or header name contains only characters allowed in HTTP names.
+/**
+ * @brief Checks that a method or header name contains only characters allowed in HTTP names.
+ *
+ * @param const char* text -> the bytes of the name to check
+ * @param uint size -> the number of bytes in the name
+ *
+ * @return boole -> 1 for a nonempty valid name, otherwise 0
+ */
 static boole _httpclient_internal__token(const char* text, uint size)
 {
     uint index = 0;
@@ -136,7 +173,16 @@ static boole _httpclient_internal__token(const char* text, uint size)
     return size != 0;
 }
 
-// Grow a buffer only as far as its limit, then append the received bytes.
+/**
+ * @brief Adds bytes to a buffer, growing it only as far as its permitted size.
+ *
+ * @param http_buffer_t* buffer -> the buffer to grow and update
+ * @param const void* data -> the bytes to append, or NULL when size is zero
+ * @param uint size -> the number of bytes to append
+ * @param uint limit -> the maximum number of stored bytes, excluding the ending zero byte
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK on success, HTTPCLIENT_LIMIT when too large, or HTTPCLIENT_MEMORY on allocation failure
+ */
 httpclient_error_t _httpclient_internal__append(http_buffer_t* buffer, const void* data, uint size, uint limit)
 {
     uint needed = 0;
@@ -173,7 +219,14 @@ httpclient_error_t _httpclient_internal__append(http_buffer_t* buffer, const voi
     return HTTPCLIENT_OK;
 }
 
-// Remove bytes already read by the parser and keep the unfinished part for the next read.
+/**
+ * @brief Removes bytes already read by the parser and keeps the unfinished part for the next read.
+ *
+ * @param http_buffer_t* buffer -> the buffer whose remaining bytes are moved to the start
+ * @param uint size -> the number of bytes to remove, which must not exceed buffer->size
+ *
+ * @return void
+ */
 static void _httpclient_internal__consume(http_buffer_t* buffer, uint size)
 {
     buffer->size -= size;
@@ -187,7 +240,14 @@ static void _httpclient_internal__consume(http_buffer_t* buffer, uint size)
     }
 }
 
-// Find the end of a complete HTTP line, or wait for another piece of the response.
+/**
+ * @brief Finds the carriage return and line feed that finish a complete HTTP line.
+ *
+ * @param const ubyte* bytes -> the received bytes to inspect
+ * @param uint size -> the number of bytes available
+ *
+ * @return int -> the position of the carriage return, or -1 when the line is incomplete
+ */
 static int _httpclient_internal__line(const ubyte* bytes, uint size)
 {
     uint index = 0;
@@ -202,7 +262,16 @@ static int _httpclient_internal__line(const ubyte* bytes, uint size)
     return -1;
 }
 
-// Read a bounded decimal or hexadecimal number without allowing integer overflow.
+/**
+ * @brief Reads a decimal or hexadecimal number without allowing it to overflow a uint.
+ *
+ * @param const char* text -> the digits to read; no ending zero byte is required
+ * @param uint length -> the number of digits to read
+ * @param uint base -> 10 for decimal or 16 for hexadecimal
+ * @param uint* value -> receives the parsed number when the digits are valid
+ *
+ * @return boole -> 1 for a nonempty valid number, otherwise 0
+ */
 static boole _httpclient_internal__number(const char* text, uint length, uint base, uint* value)
 {
     uint index = 0;
@@ -226,7 +295,15 @@ static boole _httpclient_internal__number(const char* text, uint length, uint ba
     return length != 0;
 }
 
-// Read the status and headers and decide how many body bytes the response contains.
+/**
+ * @brief Reads the HTTP status and headers and decides how the response body ends.
+ *
+ * @param http_parser_t* parser -> holds the complete headers in pending and receives the body-reading state
+ * @param httpclient_response_t* response -> receives the final status and an allocated copy of the headers
+ * @param uint size -> the complete header size in bytes, including the ending empty line
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK for accepted headers, or the parsing, size or allocation error
+ */
 static httpclient_error_t _httpclient_internal__headers(http_parser_t* parser, httpclient_response_t* response, uint size)
 {
     const char* text = (const char*)parser->pending.data;
@@ -358,7 +435,14 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t* parser, h
     return HTTPCLIENT_OK;
 }
 
-// Continue reading an HTTP response even when a socket read ends halfway through a header or chunk.
+/**
+ * @brief Reads as much of a URL preview response as the currently received bytes allow.
+ *
+ * @param http_parser_t* parser -> the current reading state, unfinished bytes and accumulated response body
+ * @param httpclient_response_t* response -> receives the HTTP status and headers
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when the bytes are valid, including when more bytes are needed, or a parsing error
+ */
 httpclient_error_t _httpclient_internal__parse(http_parser_t* parser, httpclient_response_t* response)
 {
     uint index = 0;
@@ -497,7 +581,20 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t* parser, httpclient
     }
 }
 
-// Write the method, path and headers. The client controls body lengths and connection headers.
+/**
+ * @brief Writes the request method, path and headers for a URL preview download.
+ *
+ * Extra headers cannot replace body-length or connection headers.
+ *
+ * @param http_buffer_t* buffer -> receives the request line and headers, excluding the body
+ * @param const httpclient_request_t* request -> the method, extra headers and body size to validate and write
+ * @param const char* host -> the hostname or IP address without IPv6 brackets
+ * @param const char* port -> the destination port written as decimal text
+ * @param const char* target -> the request path and query, beginning with a slash
+ * @param boole ipv6 -> nonzero when the Host header needs brackets around host
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK when the headers are ready, or an argument, size or allocation error
+ */
 static httpclient_error_t _httpclient_internal__request_head(http_buffer_t* buffer, const httpclient_request_t* request,
     const char* host, const char* port, const char* target, boole ipv6)
 {
@@ -604,7 +701,16 @@ static httpclient_error_t _httpclient_internal__request_head(http_buffer_t* buff
     return _httpclient_internal__append(buffer, "\r\n", 2, HTTP_HEADER_LIMIT);
 }
 
-// Split an HTTP or HTTPS URL into its host, port and request path.
+/**
+ * @brief Splits an HTTP or HTTPS URL into the host, port and request path used for a preview download.
+ *
+ * Missing ports use 80 for HTTP or 443 for HTTPS. Fragments and credentials are rejected.
+ *
+ * @param const char* url -> an absolute ASCII URL; spaces and non-ASCII path bytes must already be percent-encoded
+ * @param httpclient_url_t* parsed -> receives the URL parts and HTTPS and IPv6 flags
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK for a supported URL, otherwise HTTPCLIENT_ARGUMENT
+ */
 httpclient_error_t httpclient__parse_url(const char* url, httpclient_url_t* parsed)
 {
     if (parsed == NULL)
@@ -708,6 +814,13 @@ httpclient_error_t httpclient__parse_url(const char* url, httpclient_url_t* pars
     return HTTPCLIENT_OK;
 }
 
+/**
+ * @brief Frees the downloaded HTTP headers and body and clears the response for reuse.
+ *
+ * @param httpclient_response_t* response -> the response to clear, or NULL to do nothing
+ *
+ * @return void
+ */
 void httpclient__response_free(httpclient_response_t* response)
 {
     if (response == NULL)
@@ -725,8 +838,17 @@ void httpclient__response_free(httpclient_response_t* response)
     memset(response, 0, sizeof(*response));
 }
 
-// Make one request using the selected operating-system connection code. Each
-// request owns its buffers, so several resolver threads can use this at once.
+/**
+ * @brief Downloads one HTTP response for a URL preview using the connection code for this operating system.
+ *
+ * Requests have separate buffers for simultaneous use and do not follow redirects.
+ * On failure, only the native error and TLS version remain in the response.
+ *
+ * @param const httpclient_request_t* request -> the URL, headers, body and connection limits; the caller keeps these values alive until return
+ * @param httpclient_response_t* response -> an empty response that receives owned headers and body; release them with httpclient__response_free()
+ *
+ * @return httpclient_error_t -> HTTPCLIENT_OK for a complete response, including HTTP error statuses, or the connection or parsing error
+ */
 httpclient_error_t httpclient__request(const httpclient_request_t* request, httpclient_response_t* response)
 {
     httpclient_connection_t* connection = NULL;
@@ -806,6 +928,13 @@ httpclient_error_t httpclient__request(const httpclient_request_t* request, http
     return error;
 }
 
+/**
+ * @brief Returns a readable explanation of a URL preview HTTP client error.
+ *
+ * @param httpclient_error_t error -> the error code to describe
+ *
+ * @return const char* -> fixed text owned by this file; the caller must not change or free it
+ */
 const char* httpclient__error_text(httpclient_error_t error)
 {
     switch (error)

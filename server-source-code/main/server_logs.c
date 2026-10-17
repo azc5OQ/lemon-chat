@@ -9,7 +9,7 @@
 
 #include <time.h> // the log lines are stamped with local date and time
 
-// ADMIN_LOG_TEST_FAST build: retention days count as seconds, the daily purge fires every 5s
+// ADMIN_LOG_TEST_FAST build: retention days count as seconds, the daily purge runs every 5s
 // and the size cap reads as KB, so the purge behaviour can be watched live
 #ifdef ADMIN_LOG_TEST_FAST
 #define ADMIN_LOG_RETENTION_UNIT_SECONDS 1
@@ -38,7 +38,16 @@ static uint64 g_admin_log_count = 0;
 static uint64 g_admin_log_last_purge_ms = 0;
 static pthread_mutex_t g_admin_log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// drops the oldest entry; caller holds the mutex
+// declarations
+static void _server_logs_internal__pop_oldest_locked(void);
+static void _server_logs_internal__purge_over_cap_locked(void);
+static void _server_logs_internal__append(char* text);
+
+/**
+ * @brief Removes and frees the oldest admin log entry, if one exists.
+ * @return void
+ * @attention The caller holds g_admin_log_mutex.
+ */
 static void _server_logs_internal__pop_oldest_locked(void)
 {
     admin_log_entry_t* entry = g_admin_log_head;
@@ -60,7 +69,11 @@ static void _server_logs_internal__pop_oldest_locked(void)
     memorymanager__free((nuint)entry);
 }
 
-// keeps the log under the admin's size cap, always leaving at least the newest entry
+/**
+ * @brief Removes old entries until the log fits its size cap, keeping at least the newest entry.
+ * @return void
+ * @attention The caller holds g_admin_log_mutex.
+ */
 static void _server_logs_internal__purge_over_cap_locked(void)
 {
     uint64 cap = (uint64)g_server_settings.admin_log_max_size_bytes / ADMIN_LOG_SIZE_DIVISOR;
@@ -174,7 +187,7 @@ void server_logs__purge_tick(void)
 /**
  * @brief records a completed join (username and ip address), if join logging is on
  *
- * @param client_t* client -> the client that finished joining; his username must be final
+ * @param client_t* client -> the client that finished joining; its username must be final
  *
  * @return void
  */
@@ -193,7 +206,7 @@ void server_logs__client_joined(client_t* client)
 
 /**
  * @brief records a fast reconnect: an identity adopted its still-open session instead of joining fresh.
- *        always logged, it is the one visible trace that the feature did its job
+ *        always logged, it is the one visible log entry that shows the feature did its job
  *
  * @param client_t* client -> the resumed session, already carrying the new socket's ip
  *
@@ -281,7 +294,7 @@ void server_logs__tag_added(int tag_id, char* target_username, char* admin_usern
  * @brief records a client being kicked
  *
  * @param char* target_username -> who got kicked
- * @param char* admin_username -> who kicked him
+ * @param char* admin_username -> the admin who kicked the client
  *
  * @return void
  */
@@ -303,7 +316,7 @@ void server_logs__client_kicked(char* target_username, char* admin_username)
  *
  * @param char* target_username -> who got banned
  * @param char* target_ip -> the ip address the ban is placed on
- * @param char* admin_username -> who banned him
+ * @param char* admin_username -> the admin who banned the client
  *
  * @return void
  */
@@ -364,7 +377,7 @@ void server_logs__join_refused(char* reason, char* ip_address)
 }
 
 /**
- * @brief records a socket opening, before any check has judged it, so a bot that never logs in still leaves a trace
+ * @brief records a socket opening, before any check has been applied, so a bot that never logs in still leaves a log entry
  *
  * @param char* ip_address -> where the socket came from
  *
@@ -438,6 +451,7 @@ void server_logs__join_refused_country(char* country_iso_code, char* ip_address)
  *
  * @param char* username -> who tried
  * @param char* ip_address -> from where
+ * @param char* attempted_password -> attempted password; at most 64 bytes are included in the log
  *
  * @return void
  */

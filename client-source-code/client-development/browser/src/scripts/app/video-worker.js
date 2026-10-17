@@ -15,10 +15,20 @@
 //
 // packet layout inside the encryption (12 byte header, little endian):
 //   [1 B stream epoch][2 B frame number][2 B packet index][2 B packet count][1 B flags][4 B timestamp, low 32 bits of the chunk's microseconds]
-//   flags: bit0 = keyframe, bit1 = last packet of the frame
+//   flags: bit0 = keyframe, bit1 = last packet of the frame, bit2 = a sound packet
+//
+// a sound packet carries one opus packet of the stream's sound instead of a piece of a picture (video.js explains the
+// sound): its frame number is the sound's own sequence number, it is always a single packet, and on the viewer side it is
+// handed to the main thread for the opus decoder worker instead of the picture decoder. while a stream has sound, every
+// decoded picture is held for a fixed time before it is drawn (picture_hold_ms of the decoder setup), as long as the sound
+// waits in its playback buffer, so the picture does not run ahead of the sound
 
 var VIDEO_WORKER_HEADER_BYTES = 12;
 var VIDEO_WORKER_MAX_PACKETS_PER_FRAME = 256;
+var VIDEO_WORKER_FLAG_KEYFRAME = 1;
+var VIDEO_WORKER_FLAG_LAST_PACKET = 2;
+var VIDEO_WORKER_FLAG_SOUND = 4;
+var VIDEO_WORKER_MAX_HELD_PICTURES = 60; // two seconds at 30 frames; a longer queue means the timers fell behind, the oldest are drawn at once
 
 var video_worker_channel_keys = null;      // the channel's key layers as the main thread holds them (key_bytes, iv_bytes)
 var video_worker_native_keys = null;       // the same keys imported into the browser's AES; null while aes-js is in use
@@ -39,6 +49,8 @@ var video_worker_assembly = null;          // the frame being reassembled: { epo
 var video_worker_epoch = -1;
 var video_worker_has_drawn = false;
 var video_worker_last_keyframe_request_ms = 0;
+var video_worker_picture_hold_ms = 0;      // while the stream has sound: how long a decoded picture waits before it is drawn
+var video_worker_held_pictures = [];       // the pictures waiting: { bitmap, width, height, is_failed, due_ms } in decode order
 
 /**
  * @brief the video worker's message handler (see worker-entry.js)
@@ -70,7 +82,7 @@ function video_worker__onmessage(e)
     }
     else if (data.type == "mainthread__video_worker_decoder_setup")
     {
-        video_worker__decoder_setup(data.codec, data.width, data.height, data.streamer_client_id);
+        video_worker__decoder_setup(data.codec, data.width, data.height, data.streamer_client_id, data.picture_hold_ms);
     }
     else if (data.type == "mainthread__video_worker_decoder_reset")
     {
@@ -233,7 +245,7 @@ function video_worker__authentication_code(bytes)
 }
 
 /**
- * @brief encrypts one packet of this streamer into a frame for the wire
+ * @brief encrypts one packet of this streamer into a frame ready to send
  *
  *        the packet goes under the channel keys, then the server keys, gets the sender id and the counter in
  *        front, goes under the session key, and gets the authentication code at the end; the layout is in
@@ -276,7 +288,7 @@ function video_worker__encrypt_packet(packet)
 }
 
 /**
- * @brief opens one frame from the wire on the viewer side: the authentication code is checked, the layers come off in reverse order
+ * @brief opens one received frame on the viewer side: the authentication code is checked, the layers come off in reverse order
  *
  *        a frame whose code does not match, or that was not sent by the channel's streamer, gives null
  *
@@ -341,10 +353,18 @@ function video_worker__packetize(data)
     let packets = [];
     let timestamp_low = Math.floor(data.timestamp) >>> 0;
     let epoch = data.epoch;
+    let is_sound = (data.is_sound == true);
 
     if (packet_count > VIDEO_WORKER_MAX_PACKETS_PER_FRAME)
     {
         global.postMessage({ type: "video_worker__log", value: "frame too large (" + bytes.length + " bytes), dropped" });
+        return;
+    }
+
+    // a sound packet is one opus packet, a few hundred bytes; it is never split
+    if (is_sound == true && packet_count != 1)
+    {
+        global.postMessage({ type: "video_worker__log", value: "sound packet too large (" + bytes.length + " bytes), dropped" });
         return;
     }
 
@@ -353,7 +373,8 @@ function video_worker__packetize(data)
         let start = index * piece_size;
         let end = Math.min(bytes.length, start + piece_size);
         let packet = new Uint8Array(VIDEO_WORKER_HEADER_BYTES + (end - start));
-        let flags = (data.is_keyframe ? 1 : 0) | ((index == packet_count - 1) ? 2 : 0);
+        let flags = is_sound ? VIDEO_WORKER_FLAG_SOUND
+            : ((data.is_keyframe ? VIDEO_WORKER_FLAG_KEYFRAME : 0) | ((index == packet_count - 1) ? VIDEO_WORKER_FLAG_LAST_PACKET : 0));
 
         packet[0] = data.epoch & 0xff;
         packet[1] = data.frame_number & 0xff;
@@ -399,13 +420,15 @@ function video_worker__packetize(data)
  * @param number width -> coded width
  * @param number height -> coded height
  * @param number streamer_client_id -> the client whose packets are decoded; packets of anybody else are dropped
+ * @param number picture_hold_ms -> how long every decoded picture waits before it is drawn; 0 or missing draws at once (set while the stream has sound)
  *
  * @return void
  */
-function video_worker__decoder_setup(codec, width, height, streamer_client_id)
+function video_worker__decoder_setup(codec, width, height, streamer_client_id, picture_hold_ms)
 {
     video_worker__decoder_close();
     video_worker_streamer_client_id = (typeof streamer_client_id === "number") ? streamer_client_id : -1;
+    video_worker_picture_hold_ms = (typeof picture_hold_ms === "number" && picture_hold_ms > 0) ? picture_hold_ms : 0;
 
     if (typeof VideoDecoder !== "function")
     {
@@ -421,8 +444,8 @@ function video_worker__decoder_setup(codec, width, height, streamer_client_id)
             {
                 global.postMessage({ type: "video_worker__decoder_error", value: error.message });
                 video_worker_waiting_for_keyframe = true;
-                // a broken decoder is rebuilt on the spot so the next keyframe can be decoded
-                video_worker__decoder_setup(video_worker_decoder_codec, width, height);
+                // a broken decoder is rebuilt on the spot so the next keyframe can be decoded; the streamer id and the hold are kept
+                video_worker__decoder_setup(video_worker_decoder_codec, width, height, video_worker_streamer_client_id, video_worker_picture_hold_ms);
             }
         });
 
@@ -456,6 +479,7 @@ function video_worker__decoder_close()
     video_worker_assembly = null;
     video_worker_waiting_for_keyframe = true;
     video_worker_has_drawn = false;
+    video_worker__drop_held_pictures();
 }
 
 /**
@@ -473,7 +497,8 @@ function video_worker__clear_canvas()
 }
 
 /**
- * @brief a decoded frame: drawn onto the offscreen canvas, which follows the frame's size
+ * @brief a decoded frame: drawn at once, or, while the stream has sound, copied into a bitmap that waits for the picture hold
+ *        the copy frees the decoder's frame right away; a decoder has only a few frames to hand out, and holding them would stall it
  *
  * @param VideoFrame frame -> the frame
  *
@@ -481,31 +506,152 @@ function video_worker__clear_canvas()
  */
 function video_worker__on_decoded_frame(frame)
 {
-    try
+    let width = frame.displayWidth || frame.codedWidth;
+    let height = frame.displayHeight || frame.codedHeight;
+
+    if (video_worker_picture_hold_ms <= 0 || typeof createImageBitmap !== "function")
     {
-        if (video_worker_canvas != null && video_worker_context != null)
+        video_worker__draw_picture(frame, width, height);
+        frame.close();
+        return;
+    }
+
+    let held = { bitmap: null, width: width, height: height, is_failed: false, due_ms: Date.now() + video_worker_picture_hold_ms };
+
+    video_worker_held_pictures.push(held);
+
+    createImageBitmap(frame).then(function(bitmap)
+    {
+        // an entry dropped or skipped meanwhile is marked failed: its late copy is closed, not kept
+        if (held.is_failed == true)
         {
-            let width = frame.displayWidth || frame.codedWidth;
-            let height = frame.displayHeight || frame.codedHeight;
+            bitmap.close();
+        }
+        else
+        {
+            held.bitmap = bitmap;
+        }
+        frame.close();
+    }, function()
+    {
+        // this browser cannot copy a decoded frame: the picture is drawn now, without the hold
+        held.is_failed = true;
+        video_worker__draw_picture(frame, width, height);
+        frame.close();
+    });
 
-            if (video_worker_canvas.width != width || video_worker_canvas.height != height)
-            {
-                video_worker_canvas.width = width;
-                video_worker_canvas.height = height;
-            }
+    // the queue must not grow without bound: beyond the limit the oldest pictures are drawn now
+    while (video_worker_held_pictures.length > VIDEO_WORKER_MAX_HELD_PICTURES)
+    {
+        video_worker__draw_oldest_held_picture(true);
+    }
 
-            video_worker_context.drawImage(frame, 0, 0, width, height);
+    setTimeout(video_worker__draw_due_held_pictures, video_worker_picture_hold_ms);
+}
 
-            if (video_worker_has_drawn == false)
-            {
-                video_worker_has_drawn = true;
-                global.postMessage({ type: "video_worker__first_frame" });
-            }
+/**
+ * @brief draws every held picture whose hold is over; a picture whose copy is not finished yet waits for the next timer
+ *
+ * @return void
+ */
+function video_worker__draw_due_held_pictures()
+{
+    let now = Date.now();
+
+    while (video_worker_held_pictures.length > 0 && video_worker_held_pictures[0].due_ms <= now)
+    {
+        if (video_worker__draw_oldest_held_picture(false) == false)
+        {
+            // the copy of the oldest picture is still in progress: try again shortly, in order
+            setTimeout(video_worker__draw_due_held_pictures, 5);
+            return;
         }
     }
-    finally
+}
+
+/**
+ * @brief draws the oldest held picture, or skips it when its copy failed
+ *
+ * @param boolean is_forced -> true to wait no longer for an unfinished copy: the picture is skipped instead
+ *
+ * @return boolean false when the oldest picture is not ready and was not forced
+ */
+function video_worker__draw_oldest_held_picture(is_forced)
+{
+    let held = video_worker_held_pictures[0];
+
+    if (held == null)
     {
-        frame.close();
+        return true;
+    }
+
+    if (held.bitmap == null && held.is_failed == false)
+    {
+        if (is_forced == false)
+        {
+            return false;
+        }
+        held.is_failed = true; // the late copy is closed on arrival
+    }
+
+    video_worker_held_pictures.shift();
+
+    if (held.bitmap != null)
+    {
+        video_worker__draw_picture(held.bitmap, held.width, held.height);
+        held.bitmap.close();
+    }
+
+    return true;
+}
+
+/**
+ * @brief closes every held picture without drawing it (a decoder reset or close)
+ *
+ * @return void
+ */
+function video_worker__drop_held_pictures()
+{
+    for (let i = 0; i < video_worker_held_pictures.length; i++)
+    {
+        if (video_worker_held_pictures[i].bitmap != null)
+        {
+            video_worker_held_pictures[i].bitmap.close();
+        }
+        video_worker_held_pictures[i].is_failed = true;
+    }
+
+    video_worker_held_pictures = [];
+}
+
+/**
+ * @brief draws one picture onto the offscreen canvas, which follows the picture's size
+ *
+ * @param VideoFrame|ImageBitmap picture -> the picture
+ * @param number width -> its width
+ * @param number height -> its height
+ *
+ * @return void
+ */
+function video_worker__draw_picture(picture, width, height)
+{
+    if (video_worker_canvas == null || video_worker_context == null)
+    {
+        return;
+    }
+
+    if (video_worker_canvas.width != width || video_worker_canvas.height != height)
+    {
+        video_worker_canvas.width = width;
+        video_worker_canvas.height = height;
+    }
+
+    video_worker_context.drawImage(picture, 0, 0, width, height);
+
+    if (video_worker_has_drawn == false)
+    {
+        video_worker_has_drawn = true;
+        global.postMessage({ type: "video_worker__first_frame" });
     }
 }
 
@@ -590,9 +736,9 @@ function video_worker__process_packet(packet)
     let packet_count = packet[5] | (packet[6] << 8);
     let flags = packet[7];
     let timestamp = (packet[8] | (packet[9] << 8) | (packet[10] << 16) | (packet[11] << 24)) >>> 0;
-    let is_keyframe = (flags & 1) != 0;
+    let is_keyframe = (flags & VIDEO_WORKER_FLAG_KEYFRAME) != 0;
 
-    // a header that cannot be right is a decrypt with the wrong keys (a rotation in flight) or damage
+    // a header that cannot be right is a decrypt with the wrong keys (a key change still in progress) or damage
     if (packet_count == 0 || packet_count > VIDEO_WORKER_MAX_PACKETS_PER_FRAME || packet_index >= packet_count)
     {
         video_worker__mark_gap();
@@ -605,6 +751,15 @@ function video_worker__process_packet(packet)
         video_worker_epoch = epoch;
         video_worker_assembly = null;
         video_worker_waiting_for_keyframe = true;
+    }
+
+    if ((flags & VIDEO_WORKER_FLAG_SOUND) != 0)
+    {
+        // a sound packet is never part of a picture: its opus packet goes to the main thread, which feeds the opus decoder worker
+        let opus_bytes = packet.slice(VIDEO_WORKER_HEADER_BYTES);
+
+        global.postMessage({ type: "video_worker__sound_packet", sequence_number: frame_number, timestamp: timestamp, value: opus_bytes.buffer }, [opus_bytes.buffer]);
+        return;
     }
 
     if (video_worker_assembly == null || video_worker_assembly.frame_number != frame_number)

@@ -47,7 +47,19 @@
 #define MEDIA_DIRECTION_FROM_CLIENT 0
 #define MEDIA_DIRECTION_TO_CLIENT 1
 
-/** @brief writes a 64 bit number into 8 bytes, the most significant byte first */
+// declarations
+static void _media_auth_internal__write_u64(unsigned char* out, uint64 value);
+static uint64 _media_auth_internal__read_u64(const unsigned char* in);
+static void _media_auth_internal__session_block(uint64 frame_counter, int direction, int stream, unsigned char* out_block);
+
+/**
+ * @brief Writes a 64-bit number into eight bytes, with the most significant byte first.
+ *
+ * @param unsigned char* out -> buffer with room for eight bytes
+ * @param uint64 value -> number to write
+ *
+ * @return void
+ */
 static void _media_auth_internal__write_u64(unsigned char* out, uint64 value)
 {
     int i = 0;
@@ -58,7 +70,13 @@ static void _media_auth_internal__write_u64(unsigned char* out, uint64 value)
     }
 }
 
-/** @brief reads 8 bytes, the most significant byte first, as a 64 bit number */
+/**
+ * @brief Reads eight bytes as a 64-bit number, with the most significant byte first.
+ *
+ * @param const unsigned char* in -> buffer containing at least eight bytes
+ *
+ * @return uint64 -> number stored in those eight bytes.
+ */
 static uint64 _media_auth_internal__read_u64(const unsigned char* in)
 {
     uint64 value = 0;
@@ -71,7 +89,16 @@ static uint64 _media_auth_internal__read_u64(const unsigned char* in)
     return value;
 }
 
-/** @brief builds the session counter block described at the top of this file */
+/**
+ * @brief Builds the 16-byte AES starting value for one audio or video packet on a connection.
+ *
+ * @param uint64 frame_counter -> connection packet number written into the first eight bytes
+ * @param int direction -> MEDIA_DIRECTION_FROM_CLIENT or MEDIA_DIRECTION_TO_CLIENT
+ * @param int stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ * @param unsigned char* out_block -> caller-owned buffer with room for the 16-byte starting value
+ *
+ * @return void
+ */
 static void _media_auth_internal__session_block(uint64 frame_counter, int direction, int stream, unsigned char* out_block)
 {
     clib__null_memory(out_block, 16);
@@ -80,6 +107,16 @@ static void _media_auth_internal__session_block(uint64 frame_counter, int direct
     out_block[9] = (unsigned char)stream;
 }
 
+/**
+ * @brief Builds the starting value used to encrypt the audio or video contents inside a packet.
+ *
+ * @param uint64 sender_id -> sender ID; its low 32 bits are written into the starting value
+ * @param uint64 sender_counter -> packet number assigned by the original sender
+ * @param const unsigned char* layer_iv -> optional 16-byte starting value belonging to the key, or NULL_POINTER
+ * @param unsigned char* out_block -> caller-owned buffer with room for the 16-byte result
+ *
+ * @return void
+ */
 void media_auth__inner_block(uint64 sender_id, uint64 sender_counter, const unsigned char* layer_iv, unsigned char* out_block)
 {
     int i = 0;
@@ -101,6 +138,18 @@ void media_auth__inner_block(uint64 sender_id, uint64 sender_counter, const unsi
     }
 }
 
+/**
+ * @brief Applies one key to the audio or video contents using the sender ID and packet number.
+ *
+ * @param const crypto_key_t* key -> encryption key for this layer
+ * @param const unsigned char* layer_iv -> optional 16-byte starting value for the key, or NULL_POINTER
+ * @param uint64 sender_id -> ID of the client or music bot that produced the packet
+ * @param uint64 sender_counter -> packet number assigned by that sender
+ * @param unsigned char* data -> caller-owned contents changed in place
+ * @param uint64 size -> number of bytes in data
+ *
+ * @return boole -> TRUE when the encryption method accepted the key and processed the data; otherwise FALSE.
+ */
 boole media_auth__apply_inner_layer(const crypto_key_t* key, const unsigned char* layer_iv, uint64 sender_id, uint64 sender_counter, unsigned char* data, uint64 size)
 {
     unsigned char block[16];
@@ -109,6 +158,18 @@ boole media_auth__apply_inner_layer(const crypto_key_t* key, const unsigned char
     return metadata_crypto__crypt(key, block, sizeof(block), data, size, CRYPTO_ENCRYPT);
 }
 
+/**
+ * @brief Encrypts locally produced audio with each key from the server settings.
+ *
+ * @param uint64 sender_id -> ID of the music bot or other local sender
+ * @param uint64 sender_counter -> packet number assigned by that sender
+ * @param unsigned char* data -> caller-owned contents changed in place
+ * @param uint64 size -> number of bytes to encrypt
+ *
+ * @attention Server key settings must remain stable during the call. A failed result may already have been changed by earlier keys and must be discarded.
+ *
+ * @return boole -> TRUE when all server keys were applied, or FALSE when a step fails.
+ */
 boole media_auth__apply_server_key_layers(uint64 sender_id, uint64 sender_counter, unsigned char* data, uint64 size)
 {
     unsigned char block[16];
@@ -121,6 +182,15 @@ boole media_auth__apply_server_key_layers(uint64 sender_id, uint64 sender_counte
         block, sizeof(block), data, size, CRYPTO_ENCRYPT);
 }
 
+/**
+ * @brief Writes the sender ID and original packet number before the encrypted audio or video contents.
+ *
+ * @param unsigned char* body -> buffer with room for the 12-byte body header
+ * @param uint64 sender_id -> sender ID; its low 32 bits are written with the least significant byte first
+ * @param uint64 sender_counter -> sender packet number, written with the most significant byte first
+ *
+ * @return void
+ */
 void media_auth__write_body_header(unsigned char* body, uint64 sender_id, uint64 sender_counter)
 {
     body[0] = (unsigned char)sender_id;
@@ -130,6 +200,20 @@ void media_auth__write_body_header(unsigned char* body, uint64 sender_id, uint64
     _media_auth_internal__write_u64(body + 4, sender_counter);
 }
 
+/**
+ * @brief Checks a received packet and removes its connection encryption while keeping its channel encryption intact.
+ *
+ * @param client_t* sender -> client whose keys protect the packet and whose ID must appear in its body
+ * @param int stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ * @param const unsigned char* frame -> received packet containing its header, encrypted body, and check value
+ * @param uint64 size -> number of bytes in frame
+ * @param unsigned char* out_body -> caller-owned buffer that receives the sender header and still-encrypted channel contents
+ * @param uint64 out_capacity -> size of out_body in bytes
+ *
+ * @attention The caller must keep the sender and its keys stable, normally with the clients lock. Ignore out_body when zero is returned; it may contain a partial result.
+ *
+ * @return uint64 -> number of body bytes written, or zero when the packet is invalid, cannot fit, or cannot be decrypted.
+ */
 uint64 media_auth__decrypt_from_client(client_t* sender, int stream, const unsigned char* frame, uint64 size, unsigned char* out_body, uint64 out_capacity)
 {
     unsigned char code[32];
@@ -174,6 +258,20 @@ uint64 media_auth__decrypt_from_client(client_t* sender, int stream, const unsig
     return body_size;
 }
 
+/**
+ * @brief Protects a copy of an audio or video body with the receiving client's connection keys.
+ *
+ * @param client_t* receiver -> client whose keys are used and whose outgoing packet counter is increased
+ * @param int stream -> MEDIA_STREAM_AUDIO or MEDIA_STREAM_VIDEO
+ * @param const unsigned char* body -> sender header followed by contents already encrypted for the channel
+ * @param uint64 body_size -> number of bytes in body
+ * @param unsigned char* out_frame -> caller-owned buffer that receives the packet header, encrypted body, and check value
+ * @param uint64 out_capacity -> size of out_frame in bytes
+ *
+ * @attention The caller must keep the client and its keys stable, normally with the clients lock. The counter is increased atomically, so several senders can prepare packets for this client.
+ *
+ * @return uint64 -> total packet length in bytes, or zero when keys are unavailable, output cannot fit, or encryption fails.
+ */
 uint64 media_auth__encrypt_for_client(client_t* receiver, int stream, const unsigned char* body, uint64 body_size, unsigned char* out_frame, uint64 out_capacity)
 {
     unsigned char code[32];

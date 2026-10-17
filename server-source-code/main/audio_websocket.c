@@ -18,12 +18,12 @@
 #include "audio_webrtc.h"
 #include "audio_websocket.h"
 #include "metadata_crypto.h"
+#include "server_message.h"
 #include "memory_manager.h"
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/md.h"
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/platform_util.h"
 #include <string.h>
 #include "media_auth.h"
-#include "server_message.h"
 #include "../third-party/rxi-log/log.h"
 
 // voice is 50 frames per second at most; this limit only stops a flood
@@ -39,14 +39,42 @@ typedef struct audio_websocket_session
     uint64 expires_at;                // the proof frame must arrive before this time
     uint64 requested_at;              // when the session was issued; a client gets one per 3 seconds at most
     uint64 rate_window;               // start of the current one-second window in which received frames are counted
-    uint32_t rate_count;              // frames received in that window
+    uint rate_count;                  // frames received in that window
 } audio_websocket_session_t;
 
-static uint32_t _audio_websocket_internal__read_u32(const unsigned char* bytes)
+// declarations
+static uint _audio_websocket_internal__read_u32(const unsigned char* bytes);
+static boole _audio_websocket_internal__authentication_code(mbedtls_md_context_t* context, const unsigned char* data, size_t size, unsigned char* out_code);
+static boole _audio_websocket_internal__is_equal(const unsigned char* left, const unsigned char* right, size_t size);
+static boole _audio_websocket_internal__issue_session(client_t* client);
+static uint64 _audio_websocket_internal__attach(ws_cli_conn_t* socket, const unsigned char* data, uint64 size, uint64 now);
+static boole _audio_websocket_internal__is_frame_allowed(audio_websocket_session_t* session, uint64 now, uint limit_per_second);
+static boole _audio_websocket_internal__is_served(void);
+
+/**
+ * @brief Reads a four-byte number with the most significant byte first.
+ *
+ * @param const unsigned char* bytes -> buffer containing at least four bytes
+ *
+ * @return uint -> number stored in those bytes.
+ */
+static uint _audio_websocket_internal__read_u32(const unsigned char* bytes)
 {
-    return ((uint32_t)bytes[0] << 24) | ((uint32_t)bytes[1] << 16) | ((uint32_t)bytes[2] << 8) | bytes[3];
+    return ((uint)bytes[0] << 24) | ((uint)bytes[1] << 16) | ((uint)bytes[2] << 8) | bytes[3];
 }
 
+/**
+ * @brief Calculates the HMAC-SHA256 check value with the session key already set in the context.
+ *
+ * @param mbedtls_md_context_t* context -> initialized HMAC context, reused for this calculation
+ * @param const unsigned char* data -> bytes to check
+ * @param size_t size -> number of bytes in data
+ * @param unsigned char* out_code -> buffer with room for the 32-byte result
+ *
+ * @attention Do not use the same context concurrently from another thread.
+ *
+ * @return boole -> TRUE when the check value was written; FALSE if an HMAC operation fails.
+ */
 static boole _audio_websocket_internal__authentication_code(mbedtls_md_context_t* context, const unsigned char* data, size_t size, unsigned char* out_code)
 {
     return mbedtls_md_hmac_reset(context) == 0
@@ -54,6 +82,15 @@ static boole _audio_websocket_internal__authentication_code(mbedtls_md_context_t
         && mbedtls_md_hmac_finish(context, out_code) == 0;
 }
 
+/**
+ * @brief Compares every byte of two buffers without stopping at the first difference.
+ *
+ * @param const unsigned char* left -> first buffer, readable for size bytes
+ * @param const unsigned char* right -> second buffer, readable for size bytes
+ * @param size_t size -> number of bytes to compare
+ *
+ * @return boole -> TRUE when all bytes match, including an empty comparison; otherwise FALSE.
+ */
 static boole _audio_websocket_internal__is_equal(const unsigned char* left, const unsigned char* right, size_t size)
 {
     unsigned char difference = 0;
@@ -66,8 +103,18 @@ static boole _audio_websocket_internal__is_equal(const unsigned char* left, cons
     return difference == 0;
 }
 
-// Send the ticket and its secret key through the client's encrypted chat connection.
-// The caller holds the clients write lock while this replaces the previous session.
+/**
+ * @brief Creates a ticket and secret key for the client's audio WebSocket, then
+ * queues those details for delivery through the client's encrypted chat connection.
+ *
+ * @param client_t* client -> client requesting a new audio WebSocket session
+ *
+ * @attention The caller must hold the clients write lock while this function
+ * replaces the previous session and copies the offer into the outgoing queue.
+ *
+ * @return boole -> TRUE when the session offer was queued; FALSE when the request
+ * is too frequent or the offer could not be prepared or queued
+ */
 static boole _audio_websocket_internal__issue_session(client_t* client)
 {
     audio_websocket_session_t** slot = &client->audio_websocket;
@@ -76,8 +123,6 @@ static boole _audio_websocket_internal__issue_session(client_t* client)
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     char* plaintext = NULL_POINTER;
-    char* encrypted = NULL_POINTER;
-    int64 allocated = 0;
     char key_hex[65] = {0};
     char ticket_hex[33] = {0};
     size_t i = 0;
@@ -130,15 +175,12 @@ static boole _audio_websocket_internal__issue_session(client_t* client)
     }
     if (plaintext != NULL_POINTER)
     {
-        encrypted = metadata_crypto__encrypt_with_secret(plaintext, &allocated, client->dh_shared_secret);
-        if (encrypted != NULL_POINTER)
+        is_issued = server_msg__queue_text_to_client(client, plaintext);
+        if (is_issued == TRUE)
         {
-            ws_sendframe_txt(client->p_ws_connection, encrypted);
-            memorymanager__free((nuint)encrypted);
-            is_issued = TRUE;
             DBG_AUDIO_WEBSOCKET log_info("%s %s %llu", "audio", "websocket session issued to client", client->client_id);
         }
-        // the key was in the plaintext: wiped before the memory is given back
+        // the key was in the plaintext: set to zero before the memory is given back
         mbedtls_platform_zeroize(plaintext, strlen(plaintext));
         cJSON_free(plaintext);
     }
@@ -147,8 +189,18 @@ static boole _audio_websocket_internal__issue_session(client_t* client)
     return is_issued;
 }
 
-// Check the first frame before attaching this socket to a logged-in client.
-// The caller holds the clients write lock, so a ticket cannot attach two sockets.
+/**
+ * @brief Checks the first frame and attaches the socket to the client that owns its ticket.
+ *
+ * @param ws_cli_conn_t* socket -> newly opened audio WebSocket
+ * @param const unsigned char* data -> first frame containing the client ID, ticket, and check value
+ * @param uint64 size -> number of bytes in the first frame
+ * @param uint64 now -> current timestamp in milliseconds, used to check ticket expiry
+ *
+ * @attention The caller holds the clients write lock. If reply queueing fails after attachment, the caller must close the socket.
+ *
+ * @return uint64 -> attached client ID, or UINT64_MAX if the proof or reply queueing fails.
+ */
 static uint64 _audio_websocket_internal__attach(ws_cli_conn_t* socket, const unsigned char* data, uint64 size, uint64 now)
 {
     unsigned char code[32] = {0};
@@ -198,7 +250,18 @@ static uint64 _audio_websocket_internal__attach(ws_cli_conn_t* socket, const uns
     return id;
 }
 
-static boole _audio_websocket_internal__is_frame_allowed(audio_websocket_session_t* session, uint64 now, uint32_t limit_per_second)
+/**
+ * @brief Counts the incoming frame and checks the session's one-second limit.
+ *
+ * @param audio_websocket_session_t* session -> session whose frame count and time window are updated
+ * @param uint64 now -> current timestamp in milliseconds
+ * @param uint limit_per_second -> maximum frames allowed in one time window
+ *
+ * @attention Only this socket's reader may update the session counters.
+ *
+ * @return boole -> TRUE when this frame is within the limit; otherwise FALSE.
+ */
+static boole _audio_websocket_internal__is_frame_allowed(audio_websocket_session_t* session, uint64 now, uint limit_per_second)
 {
     // a one second window: when the current window is older than a second a new one starts at zero
     if (now - session->rate_window >= 1000)
@@ -209,14 +272,29 @@ static boole _audio_websocket_internal__is_frame_allowed(audio_websocket_session
     return ++session->rate_count <= limit_per_second;
 }
 
-/** @brief whether the server offers the audio socket at all: the websocket connections must be allowed and some audio must be on */
+/**
+ * @brief Checks whether WebSocket audio is allowed and voice or music-bot audio is enabled.
+ *
+ * @return boole -> TRUE when the server offers the audio WebSocket; otherwise FALSE.
+ */
 static boole _audio_websocket_internal__is_served(void)
 {
     return g_server_settings.is_audio_over_websocket_allowed == TRUE
         && (g_server_settings.is_voice_chat_active == TRUE || g_server_settings.is_music_bot_audio_active == TRUE);
 }
 
-/** @brief puts one audio frame that is meant for this client into the queue of its audio socket; a music bot frame may wait longer in the queue than voice. Clients lock required. */
+/**
+ * @brief Queues one audio packet for the receiving client's attached WebSocket.
+ *
+ * @param client_t* client -> receiving client
+ * @param const unsigned char* data -> packet to copy into the socket queue
+ * @param uint64 size -> packet length in bytes
+ * @param boole is_music -> TRUE for music-bot audio, which may wait longer than voice
+ *
+ * @attention The caller holds the clients lock. The caller keeps data and may reuse it after this call.
+ *
+ * @return boole -> TRUE when the packet was queued; FALSE if its size, socket, or queue is invalid.
+ */
 boole audio_websocket__send(client_t* client, const unsigned char* data, uint64 size, boole is_music)
 {
     if (size < MEDIA_FRAME_OVERHEAD || size > WS_AUDIO_FRAME_MAX)
@@ -230,13 +308,30 @@ boole audio_websocket__send(client_t* client, const unsigned char* data, uint64 
     return ws_media_queue_frame(client->audio_websocket->socket, data, size, is_music == TRUE ? WS_MEDIA_KIND_MUSIC : WS_MEDIA_KIND_VOICE) == 0;
 }
 
-/** @brief whether this socket is the client's attached audio socket */
+/**
+ * @brief Checks whether the session stores the supplied audio socket.
+ *
+ * @param client_t* client -> client whose session is inspected
+ * @param ws_cli_conn_t* socket -> socket pointer to compare with the session
+ *
+ * @attention The caller holds the clients lock.
+ *
+ * @return boole -> TRUE when the session exists and stores this pointer; otherwise FALSE.
+ */
 boole audio_websocket__owns_socket(client_t* client, ws_cli_conn_t* socket)
 {
     return client->audio_websocket != NULL_POINTER && client->audio_websocket->socket == socket;
 }
 
-/** @brief the client asked for an audio socket: it gets a session over its chat connection when the socket is served and the client may have one. Clients write lock required. */
+/**
+ * @brief Issues audio connection details when the server policy and client state allow it.
+ *
+ * @param client_t* client -> authenticated, active client requesting a audio WebSocket
+ *
+ * @attention The caller holds the clients write lock.
+ *
+ * @return void
+ */
 void audio_websocket__request(client_t* client)
 {
     if (_audio_websocket_internal__is_served() == FALSE
@@ -249,7 +344,13 @@ void audio_websocket__request(client_t* client)
     _audio_websocket_internal__issue_session(client);
 }
 
-/** @brief a socket connected to /audio: closed at once when the audio socket is not served */
+/**
+ * @brief Closes a newly opened audio socket when the server has disabled this connection.
+ *
+ * @param ws_cli_conn_t* socket -> WebSocket opened on /audio
+ *
+ * @return void
+ */
 void audio_websocket__onopen(ws_cli_conn_t* socket)
 {
     if (_audio_websocket_internal__is_served() == FALSE)
@@ -362,7 +463,7 @@ void audio_websocket__onclose(ws_cli_conn_t* socket)
     client_t* client = NULL_POINTER;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    clib__read_lock(&g_webrtc_muggles_rwlock_guard);
+    clib__read_lock(&g_webrtc_peers_rwlock_guard);
     if (id < g_server_settings.max_client_count)
     {
         client = &g_clients_array[id];
@@ -378,11 +479,19 @@ void audio_websocket__onclose(ws_cli_conn_t* socket)
             }
         }
     }
-    clib__unlock(&g_webrtc_muggles_rwlock_guard);
+    clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
-/** @brief ends the client's audio session and closes its audio socket, also before a client slot is reused. Clients write lock required. */
+/**
+ * @brief Ends the client's audio session, closes its socket, and erases its key.
+ *
+ * @param client_t* client -> client whose audio session is removed
+ *
+ * @attention The caller holds the clients write lock; this also runs before a client slot is reused.
+ *
+ * @return void
+ */
 void audio_websocket__disconnect(client_t* client)
 {
     audio_websocket_session_t** slot = &client->audio_websocket;
@@ -398,13 +507,21 @@ void audio_websocket__disconnect(client_t* client)
     {
         ws_abort_client(session->socket);
     }
-    // the key lives in the session: wiped before the memory is given back
+    // the key is in the session: set to zero before the memory is given back
     mbedtls_md_free(&session->receive_mac);
     mbedtls_platform_zeroize(session, sizeof(*session));
     free(session);
 }
 
-/** @brief drops the audio frames waiting in the queue of the client's audio socket, used when the client changes channel */
+/**
+ * @brief Drops queued audio packets when a client changes channel.
+ *
+ * @param client_t* client -> client whose attached audio socket queue is cleared
+ *
+ * @attention The caller holds the clients lock.
+ *
+ * @return void
+ */
 void audio_websocket__clear_queue(client_t* client)
 {
     if (client->audio_websocket != NULL_POINTER && client->audio_websocket->socket != NULL_POINTER)

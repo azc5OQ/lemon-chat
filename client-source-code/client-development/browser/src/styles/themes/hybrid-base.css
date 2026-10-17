@@ -87,7 +87,7 @@
     border-color: #3d7ac8;
 }
 
-#channel-properties-edit, #channel-password-enter, #admin-password-enter, #poke-client-enter, #set-new-username-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter {
+#channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #poke-client-enter, #set-new-username-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter {
     background: #f4f4f4;
     border: 1px solid rgba(61, 122, 200, 0.18);
     border-radius: 16px;
@@ -1491,7 +1491,7 @@ a-toast:hover {
     overflow: hidden;
 }
 
-#poke-client-enter-container, #set-new-username-enter-container, #channel-properties-edit-container, #channel-password-enter-container, #admin-password-enter-container, #secret-identity-string-container, #client-info-container {
+#poke-client-enter-container, #set-new-username-enter-container, #channel-properties-edit-container, #channel-password-enter-container, #musicbot-management-background-container, #admin-password-enter-container, #secret-identity-string-container, #client-info-container {
     position: absolute;
     width: 0px;
     height: 0px;
@@ -1540,7 +1540,7 @@ a-toast:hover {
     padding-bottom: 8px;
 }
 
-#poke-client-enter-container-enter, #channel-properties-edit, #channel-password-enter, #admin-password-enter, #secret-identity-string-container-enter {
+#poke-client-enter-container-enter, #channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #secret-identity-string-container-enter {
     top: 25%;
     width: 322px;
     background-color: #f0f0f0;
@@ -1611,7 +1611,7 @@ a-toast:hover {
     background-color: rgba(61,122,200,0.18);
 }
 
-#poke-client-enter, #set-new-username-enter, #poke-client-enter-container-enter, #channel-properties-edit, #channel-password-enter, #admin-password-enter, #secret-identity-string-container-enter, #identity-string-use-container-enter {
+#poke-client-enter, #set-new-username-enter, #poke-client-enter-container-enter, #channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #secret-identity-string-container-enter, #identity-string-use-container-enter {
     background-color: #f8f8f8;
     border: 1px solid #c0c0c0;
     box-shadow: 0 4px 16px rgba(0,0,0,0.2);
@@ -2240,7 +2240,7 @@ body, input, button, textarea, select, p, li, label {
     top: 0 !important;
 }
 
-#channel-properties-edit, #channel-password-enter, #admin-password-enter, #poke-client-enter, #set-new-username-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter, #client-info-container {
+#channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #poke-client-enter, #set-new-username-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter, #client-info-container {
     border-radius: 0 !important;
     border: 1px solid #808080 !important;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
@@ -2273,7 +2273,7 @@ body, input, button, textarea, select, p, li, label {
     border-color: #3d7ac8 !important;
 }
 
-#channel-properties-input-container .text-input-not-pretty-2, #channel-password-enter .text-input-not-pretty-2, #admin-password-enter .text-input-not-pretty-2, #poke-client-enter .text-input-not-pretty-2, #set-new-username-enter .text-input-not-pretty-2 {
+#channel-properties-input-container .text-input-not-pretty-2, #channel-password-enter .text-input-not-pretty-2, #musicbot-management-dialog .text-input-not-pretty-2, #admin-password-enter .text-input-not-pretty-2, #poke-client-enter .text-input-not-pretty-2, #set-new-username-enter .text-input-not-pretty-2 {
     border-radius: 0 !important;
     border: 1px solid #7f9db9 !important;
 }
@@ -2300,7 +2300,7 @@ body, input, button, textarea, select, p, li, label {
     color: #ffffff !important;
 }
 
-#channel-properties-input-container .text-input-not-pretty-2[disabled], #channel-password-enter .text-input-not-pretty-2[disabled], #admin-password-enter .text-input-not-pretty-2[disabled], #poke-client-enter .text-input-not-pretty-2[disabled], #set-new-username-enter .text-input-not-pretty-2[disabled] {
+#channel-properties-input-container .text-input-not-pretty-2[disabled], #channel-password-enter .text-input-not-pretty-2[disabled], #musicbot-management-dialog .text-input-not-pretty-2[disabled], #admin-password-enter .text-input-not-pretty-2[disabled], #poke-client-enter .text-input-not-pretty-2[disabled], #set-new-username-enter .text-input-not-pretty-2[disabled] {
     border: none !important;
     background: transparent !important;
     color: #000000 !important;
@@ -2340,11 +2340,11 @@ body, input, button, textarea, select, p, li, label {
     color: #000000 !important;
 }
 
-#channel-properties-edit, #channel-properties-edit *, #channel-password-enter, #channel-password-enter *, #admin-password-enter, #admin-password-enter *, #poke-client-enter, #poke-client-enter *, #set-new-username-enter, #set-new-username-enter *, #client-info-container, #client-info-container *, #identity-string-use-container, #identity-string-use-container *, #secret-identity-string-container-enter, #secret-identity-string-container-enter * {
+#channel-properties-edit, #channel-properties-edit *, #channel-password-enter, #musicbot-management-dialog, #channel-password-enter *, #musicbot-management-dialog *, #admin-password-enter, #admin-password-enter *, #poke-client-enter, #poke-client-enter *, #set-new-username-enter, #set-new-username-enter *, #client-info-container, #client-info-container *, #identity-string-use-container, #identity-string-use-container *, #secret-identity-string-container-enter, #secret-identity-string-container-enter * {
     font-family: Arial,  Tahoma, "Segoe UI", sans-serif !important;
 }
 
-#channel-properties-edit, #channel-password-enter, #admin-password-enter, #poke-client-enter, #set-new-username-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter, #client-info-enter {
+#channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #poke-client-enter, #set-new-username-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter, #client-info-enter {
     background: #ffffff !important;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28) !important;
 }
@@ -2359,7 +2359,7 @@ body, input, button, textarea, select, p, li, label {
     border-bottom: 1px solid #d0d0d0 !important;
 }
 
-#channel-properties-edit-container, #channel-password-enter-container, #admin-password-enter-container, #poke-client-enter-container, #set-new-username-enter-container, #secret-identity-string-container, #client-info-container, #identity-string-use-container {
+#channel-properties-edit-container, #channel-password-enter-container, #musicbot-management-background-container, #admin-password-enter-container, #poke-client-enter-container, #set-new-username-enter-container, #secret-identity-string-container, #client-info-container, #identity-string-use-container {
     background: transparent !important;
     background-color: transparent !important;
     backdrop-filter: none !important;
@@ -2367,7 +2367,7 @@ body, input, button, textarea, select, p, li, label {
     box-shadow: none !important;
 }
 
-#channel-properties-input-container .text-input-not-pretty-2:not([disabled]), #channel-password-enter .text-input-not-pretty-2:not([disabled]), #admin-password-enter .text-input-not-pretty-2:not([disabled]), #poke-client-enter .text-input-not-pretty-2:not([disabled]), #set-new-username-enter .text-input-not-pretty-2:not([disabled]) {
+#channel-properties-input-container .text-input-not-pretty-2:not([disabled]), #channel-password-enter .text-input-not-pretty-2:not([disabled]), #musicbot-management-dialog .text-input-not-pretty-2:not([disabled]), #admin-password-enter .text-input-not-pretty-2:not([disabled]), #poke-client-enter .text-input-not-pretty-2:not([disabled]), #set-new-username-enter .text-input-not-pretty-2:not([disabled]) {
     border: 1px solid #7a7a7a !important;
     border-radius: 0 !important;
     background: #ffffff !important;
@@ -2606,3 +2606,8 @@ body, input, button, textarea, select, p, li, label {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='14' rx='2'/%3E%3Cpath d='M10 7l5 3-5 3z' fill='%231a1a1a'/%3E%3C/svg%3E");
 }
 
+
+/* the connect window: the title bar spans the card above its padding */
+#container-2 > #menu-bar-container {
+    margin: -28px -36px 18px -36px;
+}

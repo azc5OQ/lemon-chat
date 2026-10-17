@@ -328,7 +328,7 @@ var UI = {
             }
         }
 
-        // the member strip marks the on-screen conversation with a ring on its circle
+        // the member list marks the on-screen conversation with a ring on its circle
         UI.schedule_member_list_sync();
 
         chat__scroll_chat_to_end(true);
@@ -684,6 +684,8 @@ var UI = {
             event.stopPropagation();
         }
 
+        console.log(event.which);
+
         let clientX = 0;
         let clientY = 0;
         let currentTarget = null;
@@ -731,11 +733,13 @@ var UI = {
                 document.getElementsByClassName('connected-client')[i].style.backgroundColor = "";
             }
 
+
+
             g_chat_message_receiver_id = currentTarget.getAttribute("data-connected-client-id");
 
-            if (g_chat_message_receiver_id != g_local_client_id)
+            if (g_chat_message_receiver_id != g_local_client_id && is_this_music_bot_client == false)
             {
-                // change color of chat context selector only if client that is not local client is selected
+                // change color of chat context selector only if client that is not local client is selected and it is not a music bot
 
                 for (let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
                 {
@@ -744,7 +748,7 @@ var UI = {
 
                 g_chat_message_receiver_type = "user";
 
-                // alias when he has one: this labels the chat header and the pill, and
+                // alias when there is one: this labels the chat header and the conversation tab, and
                 // "now talking to user: user0" for somebody everyone knows as fred was
                 // the whole confusion
                 let data_username = channel_tree__get_display_name_by_client_id(g_chat_message_receiver_id);
@@ -822,7 +826,7 @@ var UI = {
                 UI.enable_inputs();
             }
 
-            // remember which client the right-pane profile shows, so its avatar (if any) lands in
+            // remember which client the right-pane profile shows, so its avatar (if any) goes into
             // the big #current-client-avatar when the response arrives
             g_profile_avatar_client_id = parseInt(g_chat_message_receiver_id);
 
@@ -1108,7 +1112,11 @@ var UI = {
 
         UI.delete_contextmenus();
 
-        if (action == 0)
+        if (action == "server-info")
+        {
+            server_info__open();
+        }
+        else if (action == 0)
         {
             document.getElementById("background-container").style.display = "block";
             document.getElementById("channel-properties-edit-container").style.display = "block";
@@ -1519,7 +1527,7 @@ var UI = {
     },
 
     /**
-     * @brief the send button: sends the message and collapses the image-upload preview; a refused file stays attached, so its chip comes back
+     * @brief the send button: sends the message and collapses the image-upload preview; a refused file stays attached, so its label comes back
      *
      * @return void
      */
@@ -1528,12 +1536,12 @@ var UI = {
         chat__send_chat_message();
         document.getElementById("image-upload-preview").style.display = "none";
 
-        // a refused file stays attached, so its chip comes back
-        chat_files__render_pending_chat_file_chip();
+        // a refused file stays attached, so its label comes back
+        chat_files__render_pending_chat_file_label();
     },
 
     /**
-     * @brief the connect button on the login form: hands the driver a target
+     * @brief the connect button on the login form: gives the connect loop of connection.js a target
      *
      * @return void
      */
@@ -1560,7 +1568,7 @@ var UI = {
     },
 
     /**
-     * @brief an image picked for the chat: the preview path lives in chat_files__attach_chat_picture, shared with drag and drop
+     * @brief an image picked for the chat: the preview path is in chat_files__attach_chat_picture, shared with drag and drop
      *
      * @return void
      */
@@ -1584,65 +1592,85 @@ var UI = {
      *
      * @return void
      */
-    add_key_button_on_click: function()
+    /**
+     * @brief appends one row to the key grid of the connect window: a "key N" label and a field with the type select, the
+     *        key input and the remove mark. the "add key" button appends an empty row; connection.js appends one filled row
+     *        per key the page wrote in (the server puts its keys into the page it serves), so the user sees which keys the
+     *        page logs in with and can change or remove them like any other row
+     *
+     * @param key_string the key to show, "" for an empty row the user fills in
+     *
+     * @return void
+     */
+    add_key_row: function(key_string)
     {
-        const node = document.createElement("div");
-        node.style.paddingTop = "10px";
-        node.style.padingBottom = "10px";
-        node.className = "text-input-container";
-        node.setAttribute("data-key-id", custom_key_count);
+        const grid = document.getElementById("connect-keys-grid");
+        const label = document.createElement("label");
+        const field = document.createElement("div");
+        const key_input = document.createElement("input");
+        const generated_id_for_html_input = "input-key-" + custom_key_count;
 
-        const node2 = document.createElement("input");
-        node2.className = "text-input-pretty";
-        node2.value = "key " + custom_key_count;
-        node2.disabled = true;
-        node.appendChild(node2);
+        label.className = "connect-window-label";
+        label.setAttribute("data-key-id", custom_key_count);
+        label.setAttribute("for", generated_id_for_html_input);
+        label.textContent = "key " + custom_key_count;
 
-        document.getElementById('connect-form-sub-container-1').appendChild(node);
+        field.className = "connect-window-field";
+        field.setAttribute("data-key-id", custom_key_count);
 
-        let generated_id_for_html_input = "input-key-" + custom_key_count;
+        // the type of the key, in front of the key itself; one type exists so far (keys.js hashes the key with sha-256 into an aes-256 key)
+        const key_type = document.createElement("select");
+        const key_type_option = document.createElement("option");
+        key_type.className = "connect-key-type";
+        key_type.id = "input-key-type-" + custom_key_count;
+        key_type.title = "the type of this key";
+        key_type_option.value = "aes256";
+        key_type_option.textContent = "AES-256";
+        key_type.appendChild(key_type_option);
+        field.appendChild(key_type);
 
-        const node3 = document.createElement("div");
-        node3.style.paddingTop = "10px";
-        node3.style.padingBottom = "10px";
-        node3.className = "text-input-container";
-        node3.setAttribute("data-key-id", custom_key_count);
+        key_input.className = "text-input-pretty";
+        key_input.id = generated_id_for_html_input;
+        key_input.setAttribute("data-id", custom_key_count);
+        key_input.placeholder = "the key";
+        key_input.value = (typeof key_string === "string") ? key_string : "";
+        field.appendChild(key_input);
 
-        const node4 = document.createElement("input");
-        node4.className = "text-input-pretty";
-        node4.id = generated_id_for_html_input;
-        node4.setAttribute("data-id", custom_key_count);
-
-        node3.appendChild(node4);
-
-        // per-key remove button (hover-revealed; styled in flags.style so every theme gets
-        // it). removes both the label and value row for this key. connect-time collection
-        // iterates the surviving key inputs, so a gap left behind is harmless.
+        // per-key remove mark (styled in flags.style so every theme gets it). it removes the label and the field of this
+        // key. connect-time collection iterates the surviving key inputs, so a gap in the numbering is harmless
         const remove_button = document.createElement("div");
         remove_button.className = "remove-key-button";
-        remove_button.textContent = "✕";
+        remove_button.textContent = "\u2715";
         remove_button.title = "remove this key";
         const removed_key_id = custom_key_count;
         remove_button.onclick = function()
         {
-            const label_node = document.querySelector('#connect-form-sub-container-1 .text-input-container[data-key-id="' + removed_key_id + '"]');
-            const value_node = document.querySelector('#connect-form-sub-container-2 .text-input-container[data-key-id="' + removed_key_id + '"]');
-            if (label_node != null) { label_node.remove(); }
-            if (value_node != null) { value_node.remove(); }
+            const removed = document.querySelectorAll('#connect-keys-grid [data-key-id="' + removed_key_id + '"]');
+            for (let i = 0; i < removed.length; i++)
+            {
+                removed[i].remove();
+            }
 
             // renumber the visible "key N" labels so they stay 0..n-1 with no gaps
-            // (the value inputs keep their unique ids; collection is by dom order)
-            const remaining_labels = document.querySelectorAll('#connect-form-sub-container-1 .text-input-container[data-key-id] .text-input-pretty');
+            // (the inputs keep their unique ids; collection is by dom order)
+            const remaining_labels = document.querySelectorAll('#connect-keys-grid label[data-key-id]');
             for (let j = 0; j < remaining_labels.length; j++)
             {
-                remaining_labels[j].value = "key " + j;
+                remaining_labels[j].textContent = "key " + j;
             }
         };
-        node3.appendChild(remove_button);
+        field.appendChild(remove_button);
 
-        document.getElementById('connect-form-sub-container-2').appendChild(node3);
-        document.getElementById("verification-system").scrollTop = document.getElementById("verification-system").scrollHeight;
+        grid.appendChild(label);
+        grid.appendChild(field);
         custom_key_count++;
+    },
+
+    add_key_button_on_click: function()
+    {
+        // one more empty row of the connect window's grid, scrolled into view
+        UI.add_key_row("");
+        document.getElementById("verification-system").scrollTop = document.getElementById("verification-system").scrollHeight;
     },
 
     /**
@@ -1765,7 +1793,7 @@ var UI = {
             document.getElementById("current-client-description").style.display = "none";
             document.getElementById("current-channel-description").style.display = "block";
 
-            document.getElementById("current-channel-description").innerHTML = chat__sanitize_string(g_channel_list[index].description);
+            server_info__show_channel_description(g_channel_list[index]);
         }
         if (event.which == 3 || is_touch_event == true)
         {
@@ -1794,11 +1822,16 @@ var UI = {
             let delete_menu_item_html =
                 (selected_channel_index != -1 && g_channel_list[selected_channel_index].is_root_channel == true)
                     ? "" : "<p class='context-menu-item' data-action='1'>delete</p>";
+            let server_info_menu_item_html =
+                (selected_channel_index != -1 && g_channel_list[selected_channel_index].is_root_channel == true
+                    && g_server_info.visibility.features)
+                    ? "<p class='context-menu-item' data-action='server-info'>server info</p>" : "";
 
             let contextmenu_html = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY + "px; left:" + clientX.toString() + "px; \">\n\
                                         <div class='channel-list-context-menu-background'>\n\
                                         </div>\n\
                                         <div class='channel-list-context-menu-items'>\n\
+                                            " + server_info_menu_item_html + "\n\
                                             <p class='context-menu-item' data-action='0'>create</p>\n\
                                             " + delete_menu_item_html + "\n\
                                             <p class='context-menu-item' data-action='2'>edit</p>\n\
@@ -1821,7 +1854,7 @@ var UI = {
             let channel_id = parseInt(currentTarget.getAttribute("data-channel-id"));
             let index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, channel_id);
 
-            document.getElementById("current-channel-description").innerHTML = chat__sanitize_string(g_channel_list[index].description);
+            server_info__show_channel_description(g_channel_list[index]);
         }
     },
 
@@ -1908,7 +1941,7 @@ var UI = {
             offline_context.remove();
         }
 
-        // the pill (desktop themes) was keyed by alias; re-key it to the live client
+        // the conversation tab (desktop themes) was keyed by alias; re-key it to the live client
         let offline_selector = document.querySelector('[data-chat-context-selector-id="offline-' + client.alias + '"]');
         if (offline_selector != null)
         {
@@ -2148,12 +2181,20 @@ var UI = {
             sheets[i].setAttribute("media", "(max-width: 1px)");
         }
         document.getElementById(sheet_id).removeAttribute("media");
+        chat__apply_theme_formatting();
+        theme_effects__refresh();
 
-        // the new theme may show or hide the right-pane member list; (re)wire its live mirror
+        // the connect form is a window in most themes and a page of its own in the member list themes: shaped again on every switch
+        if (typeof connection__apply_connect_window_mode === "function")
+        {
+            connection__apply_connect_window_mode();
+        }
+
+        // the new theme may show or hide the right-pane member list; (re)attach its live mirror
         // accordingly. driven off the computed style, so any theme that shows it gets the mirror
         UI.refresh_member_list_state();
 
-        // persist defaults to true (user picks); the server-baked default passes false so it never sticks in localStorage
+        // persist defaults to true (user picks); the default set by the server passes false so it is never saved in localStorage
         if (persist !== false) { utils__storage_set("lemon_theme", themename); }
     },
 
@@ -2170,7 +2211,7 @@ var UI = {
 
         let is_visible = getComputedStyle(container).display != "none";
 
-        // the member list IS the avatar grid: when it's visible (a strip theme) and the
+        // the member list IS the avatar grid: when it's visible (a member list theme) and the
         // server allows avatars, paint avatars into the circles and bulk-load everyone's.
         let grid_now_visible = (is_visible == true && g_server_policy.allow_avatars == true);
         let grid_just_appeared = (grid_now_visible == true && g_avatar.grid_visible == false);
@@ -2189,8 +2230,8 @@ var UI = {
                 member_list_observer.observe(tree, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "value"] });
             }
 
-            // idle people live in their own container next to the tree; without watching
-            // it too, an idle client disconnecting would linger in the strip
+            // idle people are in their own container next to the tree; without watching
+            // it too, an idle client disconnecting would stay in the member list
             let idle_container = document.getElementById("idle-clients-container");
             if (idle_container != null)
             {
@@ -2199,7 +2240,7 @@ var UI = {
 
             UI.sync_member_list();
 
-            // switching into a strip theme after connect: pull every avatar for the grid now
+            // switching into a member list theme after connect: pull every avatar for the grid now
             if (grid_just_appeared == true) { channel_tree__enqueue_all_avatars_for_loading(); }
         }
         else
@@ -2247,7 +2288,7 @@ var UI = {
 
         let tree = document.getElementById("channel-list-container");
         // idle people are MOVED out of the tree into #idle-clients-container, but they
-        // are still connected - the strip keeps showing them (their .idle-client class
+        // are still connected - the member list keeps showing them (their .idle-client class
         // turns the presence dot amber)
         let rows = document.querySelectorAll("#channel-list-container .connected-client, #idle-clients-container .connected-client");
 
@@ -2265,8 +2306,8 @@ var UI = {
         let active_is_offline = (g_current_chat_context_id != null && g_current_chat_context_id.indexOf("chat-context-offline-") == 0);
         let active_offline_alias = (active_is_offline == true) ? g_current_chat_context_id.substring("chat-context-offline-".length) : "";
 
-        // the current channel leads the strip as its own circle ("the room you are in").
-        // taps on it are forwarded at init (member-strip forwarding): tap = show the
+        // the current channel leads the member list as its own circle ("the room you are in").
+        // taps on it are forwarded at init (member list forwarding in main.js): tap = show the
         // channel chat, hold = the channel switch list
         let current_channel_row = (tree != null) ? tree.querySelector('.single-channel[data-channel-id="' + g_current_channel_id + '"]') : null;
         if (current_channel_row != null)
@@ -2297,9 +2338,9 @@ var UI = {
             channel_name.className = "member-list-channel-name";
             channel_name.textContent = (channel_name_element != null) ? channel_name_element.textContent : "";
 
-            // unread counter on the circle itself. the strip themes hide the channel
+            // unread counter on the circle itself. the member list themes hide the channel
             // tree entirely, so the badge in those rows can never be seen there - this
-            // is the only channel surface bluebell/simpledark actually show
+            // is the only channel element bluebell/simpledark actually show
             let channel_unread = document.createElement("p");
             let channel_unread_count = chat__get_channel_unread_count(g_current_channel_id);
             channel_unread.className = "member-list-channel-unread"
@@ -2342,7 +2383,7 @@ var UI = {
                 inp.parentNode.replaceChild(p, inp);
             }
 
-            // paint this client's avatar (if any) onto the clone's circle. avatars live only in
+            // paint this client's avatar (if any) onto the clone's circle. avatars are shown only in
             // the member list; the left tree keeps its plain circle + green dot + speaking ring
             if (g_server_policy.allow_avatars == true)
             {
@@ -2372,8 +2413,8 @@ var UI = {
                 clone_circle.setAttribute("data-initials", UI.initials_for_name((clone_name_element != null) ? clone_name_element.textContent : ""));
             }
 
-            // second caption under the name: which channel this person sits in
-            // (the strip is the only channel ui in those themes, so this is how you see
+            // second caption under the name: which channel this person is in
+            // (the member list is the only channel ui in those themes, so this is how you see
             // where everyone is). offline contacts have no live channel - skipped.
             let caption_client_object = channel_tree__get_client_by_client_id(rows[i].getAttribute("data-connected-client-id"));
             if (caption_client_object != null)
@@ -2797,7 +2838,7 @@ var UI = {
             }
 
             // chevron is shown only when the channel has a subchannel or a client
-            // (TS3: leaf channels have no expand/collapse arrow). everything is linked by id in the objects.
+            // (a leaf channel has no expand/collapse arrow). everything is linked by id in the objects.
             let has_children = false;
             for (let k = 0; k < g_channel_list.length; k++)
             {
@@ -2893,6 +2934,7 @@ var UI = {
             if (action == 2)
             {
                 document.getElementById("server-settings-tab-general-settings").style.display = "block";
+                server_info__request(!g_server_info.banner_loaded);
             }
             else
             {
@@ -3425,7 +3467,7 @@ var UI = {
     },
 
     /**
-     * @brief closes the secret-identity dialog and wipes the shown identity string from the dom
+     * @brief closes the secret-identity dialog and removes the shown identity string from the dom
      *
      * @return void
      */
@@ -3558,7 +3600,7 @@ var UI = {
      */
     identity_apply_passphrase: function(identity_passphrase_string)
     {
-        // clears the identity slot; the driver dials again only once the new keypair exists
+        // clears the identity slot; the connect loop connects again only once the new keypair exists
         connection__request_identity(identity_passphrase_string);
 
         document.getElementById("identity-string-use-container").style.display = "none";
@@ -3571,7 +3613,7 @@ var UI = {
         if (g_is_authenticated == true)
         {
             // deliberate close; the user asked for this reconnect, so it is a button-class
-            // request and redials once the new identity slot fills
+            // request and connects again once the new identity slot fills
             g_is_identity_switch_in_progress = true;
             g_websocket_worker.postMessage({ type: "close" });
             connection__request_connect("button");
@@ -3693,7 +3735,7 @@ var UI = {
     },
 
     /**
-     * @brief reads a picked or dropped identity file; a valid one arms the confirm button, anything else (too big, not a passphrase) is refused with a status line
+     * @brief reads a picked or dropped identity file; a valid one enables the confirm button, anything else (too big, not a passphrase) is refused with a status line
      *
      * @param File file -> the file
      *
@@ -4547,9 +4589,9 @@ var webrtc = {
     },
 
     /**
-     * @brief the datachannel opened by the server: stored in g_datachannel, its handlers wired, and the microphone activated right away in always-on mode
+     * @brief the datachannel opened by the server: stored in g_datachannel, its handlers attached, and the microphone activated right away in always-on mode
      *        only the current peer connection may install it; a replaced pc finishing its handshake
-     *        late used to hijack g_datachannel and fake the connected flag
+     *        late used to overwrite g_datachannel and set the connected flag wrongly
      *
      * @param object event -> the RTCDataChannelEvent
      *
@@ -4558,7 +4600,7 @@ var webrtc = {
     peerconnection_on_datachannel_receive: function(event)
     {
         // only the current peer connection may install the channel: a replaced pc finishing
-        // its handshake late used to hijack g_datachannel and fake the connected flag
+        // its handshake late used to overwrite g_datachannel and set the connected flag wrongly
         if (event.currentTarget !== g_peer_connection_with_server)
         {
             console.log("datachannel from a replaced peer connection ignored");
@@ -4627,7 +4669,7 @@ var webrtc = {
         }
 
         // the server's disabled-audio broadcast was the only recovery trigger here, and that
-        // edge can be lost when the server slot is wiped first - recover from our own close too
+        // edge can be lost when the server slot is cleared first - recover from our own close too
         g_is_webrtc_datachannel_connected = false;
 
         if (g_is_voice_chat_allowed_by_server == true && g_is_deep_idle == false

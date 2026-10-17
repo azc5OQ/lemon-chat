@@ -55,7 +55,11 @@
     user-select: none;
     z-index: 5;
 }
-#connect-form-sub-container-2 .text-input-container[data-key-id]:hover .remove-key-button {
+/* the key rows of the connect window's grid (ui.js): the mark shows while the row is pointed at */
+.connect-window-field[data-key-id] {
+    position: relative;
+}
+.connect-window-field[data-key-id]:hover .remove-key-button {
     display: block;
 }
 .remove-key-button:hover {

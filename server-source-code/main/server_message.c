@@ -18,6 +18,178 @@
 #include "../third-party/zhicheng/base64.h"  // BASE64_ENCODE_OUT_SIZE (identity hash buffer)
 
 #include "util.h"
+#include "../third-party/mbedtls-3.6.6/include/mbedtls/platform_util.h"
+
+typedef struct outgoing_metadata
+{
+    crypto_session_keys_t session;
+    size_t text_size;
+    char text[];
+} outgoing_metadata_t;
+
+// declarations
+static char* _server_msg_internal__encode_queued_text(void* context, size_t* size);
+static void _server_msg_internal__release_queued_text(void* context);
+static void _server_msg_internal__release_encoded_text(char* text);
+static boole _server_msg_internal__queue_text(ws_cli_conn_t* socket,
+    const crypto_session_keys_t* session, const char* plaintext);
+static cJSON* _server_msg_internal__new_message(const char* type, cJSON** out_message);
+static void _server_msg_internal__send_text(ws_cli_conn_t* socket, char* dh_shared_secret, char* plaintext);
+static void _server_msg_internal__send_json(ws_cli_conn_t* socket, char* dh_shared_secret, cJSON* json_root);
+static void _server_msg_internal__send_text_to_client(client_t* client, char* plaintext);
+static void _server_msg_internal__send_json_to_client(client_t* client, cJSON* json_root);
+static void _server_msg_internal__send_text_to_all_clients(char* plaintext, client_t* except);
+static void _server_msg_internal__send_text_to_channel(char* plaintext, uint64 channel_id, client_t* except);
+static void _server_msg_internal__send_json_to_all_clients(cJSON* json_root, client_t* except);
+static void _server_msg_internal__send_json_to_channel(cJSON* json_root, uint64 channel_id, client_t* except);
+static cstring _server_msg_internal__country_code_to_send(client_t* client);
+static void _server_msg_internal__add_server_info(cJSON* message, boole include_banner, boole banner_changed);
+
+/**
+ * @brief Encrypts a queued message using the private copy of its text and keys.
+ * This lets a worker prepare it after the caller releases the clients lock,
+ * even if the client disconnects or reconnects through another socket meanwhile.
+ *
+ * @param void* context -> outgoing_metadata_t owned by this queued message
+ * @param size_t* size -> receives the encrypted message length, excluding the terminating zero
+ *
+ * @return char* -> allocated encrypted text for the queue to release, or NULL_POINTER on failure
+ */
+static char* _server_msg_internal__encode_queued_text(void* context, size_t* size)
+{
+    outgoing_metadata_t* outgoing = context;
+    int64 encoded_size = 0;
+    char* encoded = metadata_crypto__encrypt(outgoing->text, &encoded_size,
+        outgoing->session.is_ready ? &outgoing->session : NULL_POINTER);
+
+    *size = encoded_size > 0 ? (size_t)encoded_size - 1 : 0;
+    return encoded;
+}
+
+/**
+ * @brief Erases and frees a queued message's private copy of its text and keys.
+ *
+ * @param void* context -> outgoing_metadata_t to release, or NULL_POINTER
+ *
+ * @return void
+ */
+static void _server_msg_internal__release_queued_text(void* context)
+{
+    outgoing_metadata_t* outgoing = context;
+
+    if (outgoing != NULL_POINTER)
+    {
+        mbedtls_platform_zeroize(outgoing, sizeof(*outgoing) + outgoing->text_size + 1);
+        memorymanager__free((nuint)outgoing);
+    }
+}
+
+/**
+ * @brief Frees the encrypted text after the queue has sent it or cancelled delivery.
+ *
+ * @param char* text -> encrypted message allocated by metadata_crypto__encrypt
+ *
+ * @return void
+ */
+static void _server_msg_internal__release_encoded_text(char* text)
+{
+    memorymanager__free((nuint)text);
+}
+
+/**
+ * @brief Copies a message and its connection keys into the socket's outgoing
+ * queue so a worker can encrypt it and the socket writer can send it later.
+ *
+ * @param ws_cli_conn_t* socket -> the chat connection that will receive the message
+ * @param const crypto_session_keys_t* session -> connection keys to copy, or NULL_POINTER before the key exchange
+ * @param const char* plaintext -> zero-terminated message to copy; the caller keeps the original text
+ *
+ * @attention The caller holds the clients lock while choosing the socket and
+ * copying its keys. The queue takes ownership of the copy, including on failure.
+ * Server-wide keys and the message-size limit cannot change after startup, so
+ * workers can safely read them without the clients lock.
+ *
+ * @return boole -> TRUE when the copy was queued; FALSE on failure. Being queued
+ * does not mean the message has already reached the client.
+ */
+static boole _server_msg_internal__queue_text(ws_cli_conn_t* socket,
+    const crypto_session_keys_t* session, const char* plaintext)
+{
+    size_t text_size = 0;
+    size_t charged_bytes = 0;
+    outgoing_metadata_t* outgoing = NULL_POINTER;
+
+    if (socket == NULL_POINTER || plaintext == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    text_size = strlen(plaintext);
+    if (text_size > (size_t)g_server_settings.websocket_message_max_length
+        || text_size > (SIZE_MAX - sizeof(*outgoing) - 8192) / 5)
+    {
+        ws_abort_client(socket);
+        return FALSE;
+    }
+    outgoing = (outgoing_metadata_t*)memorymanager__allocate(
+        sizeof(*outgoing) + text_size + 1, MEMALLOC_TYPE_ENCRYPT);
+    if (outgoing == NULL_POINTER)
+    {
+        ws_abort_client(socket);
+        return FALSE;
+    }
+    outgoing->text_size = text_size;
+    memcpy(outgoing->text, plaintext, text_size + 1);
+    if (session != NULL_POINTER)
+    {
+        outgoing->session = *session;
+    }
+    // Reserve room for the text, encryption buffers, base64 and WebSocket frame.
+    // The fixed allowance also covers padding when the message itself is short.
+    charged_bytes = sizeof(*outgoing) + text_size * 5 + 8192;
+    return ws_queue_text(socket, outgoing, charged_bytes,
+        _server_msg_internal__encode_queued_text,
+        _server_msg_internal__release_queued_text,
+        _server_msg_internal__release_encoded_text) >= 0;
+}
+
+/**
+ * @brief Queues a message for a client's current socket using a private copy of
+ * its connection keys and message text for later encryption and delivery.
+ *
+ * @param client_t* client -> client whose current connection will receive the message
+ * @param const char* plaintext -> zero-terminated message to copy; the caller keeps the original text
+ *
+ * @attention The caller must hold the clients lock until this function returns.
+ * The queued message stores its own data and does not keep a client_t pointer.
+ *
+ * @return boole -> TRUE when the message was queued; FALSE on failure
+ */
+boole server_msg__queue_text_to_client(client_t* client, const char* plaintext)
+{
+    crypto_session_keys_t session = {0};
+    boole result = FALSE;
+
+    if (client == NULL_POINTER || client->p_ws_connection == NULL_POINTER || plaintext == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    if (client->session_keys.is_ready == TRUE)
+    {
+        return _server_msg_internal__queue_text(client->p_ws_connection, &client->session_keys, plaintext);
+    }
+    if (client->dh_shared_secret[0] != 0)
+    {
+        if (!metadata_crypto__derive_session_keys(client->dh_shared_secret, &session))
+        {
+            ws_abort_client(client->p_ws_connection);
+            return FALSE;
+        }
+    }
+    result = _server_msg_internal__queue_text(client->p_ws_connection,
+        session.is_ready ? &session : NULL_POINTER, plaintext);
+    metadata_crypto__clear_session_keys(&session);
+    return result;
+}
 
 /**
  * @brief starts a message: the root object with a "message" object inside that already carries the type
@@ -37,36 +209,46 @@ static cJSON* _server_msg_internal__new_message(const char* type, cJSON** out_me
 }
 
 /**
- * @brief encrypts one printed message for a socket and sends it; the lowest sender, every other one ends here
+ * @brief Queues a message for a particular chat socket. The message and keys are
+ * copied now, then encrypted and sent after this function returns.
  *
- * @param ws_cli_conn_t* socket -> the receiving chat socket
- * @param char* dh_shared_secret -> the secret that encrypts for it, NULL_POINTER before the key exchange
- * @param char* plaintext -> the message text, printed once by the caller
+ * @param ws_cli_conn_t* socket -> the chat connection that will receive the message
+ * @param char* dh_shared_secret -> connection's shared secret, or NULL_POINTER before the key exchange;
+ * without a shared secret, only the server's configured keys protect the message
+ * @param char* plaintext -> zero-terminated message to copy; the caller keeps the original text
+ *
+ * @attention The caller holds the clients lock while choosing the socket and secret.
  *
  * @return void
  */
 static void _server_msg_internal__send_text(ws_cli_conn_t* socket, char* dh_shared_secret, char* plaintext)
 {
-    int64 allocated_size = 0;
-    char* encrypted = NULL_POINTER;
+    crypto_session_keys_t session = {0};
 
     if (socket == NULL_POINTER || plaintext == NULL_POINTER)
     {
         return;
     }
-    // every message the server sends passes here: one trace for all of them
-    DBG_SERVER_MESSAGE log_info("%s %s", "outgoing:", plaintext);
-    encrypted = metadata_crypto__encrypt_with_secret(plaintext, &allocated_size, dh_shared_secret);
-    if (encrypted == NULL_POINTER)
+    if (dh_shared_secret != NULL_POINTER && dh_shared_secret[0] != 0
+        && !metadata_crypto__derive_session_keys(dh_shared_secret, &session))
     {
+        ws_abort_client(socket);
         return;
     }
-    ws_sendframe_txt(socket, encrypted);
-    memorymanager__free((nuint)encrypted);
+    _server_msg_internal__queue_text(socket, session.is_ready ? &session : NULL_POINTER, plaintext);
+    metadata_crypto__clear_session_keys(&session);
 }
 
 /**
- * @brief prints a message once and sends it over a socket; the message object stays the caller's to delete
+ * @brief Queues a JSON message for encrypted delivery to one socket.
+ *
+ * @param ws_cli_conn_t* socket -> receiving chat connection
+ * @param char* dh_shared_secret -> connection secret, or NULL_POINTER before key exchange
+ * @param cJSON* json_root -> message owned by the caller
+ *
+ * @attention The caller holds the clients lock.
+ *
+ * @return void
  */
 static void _server_msg_internal__send_json(ws_cli_conn_t* socket, char* dh_shared_secret, cJSON* json_root)
 {
@@ -77,38 +259,29 @@ static void _server_msg_internal__send_json(ws_cli_conn_t* socket, char* dh_shar
 }
 
 /**
- * @brief sends a printed message to one client over its chat socket, encrypted with its secret
+ * @brief Queues a printed message for encrypted delivery to one client's chat socket.
  *
- * @attention clients read lock held by the caller, like every function in this file
+ * @param client_t* client -> client whose current connection will receive the message
+ * @param char* plaintext -> zero-terminated message to copy; the caller keeps the original text
+ *
+ * @attention The caller must hold the clients lock until the message and keys are copied.
+ *
+ * @return void
  */
 static void _server_msg_internal__send_text_to_client(client_t* client, char* plaintext)
 {
-    int64 allocated_size = 0;
-    char* encrypted = NULL_POINTER;
-
-    if (client->session_keys.is_ready == FALSE)
-    {
-        // before the key exchange, or for a session that never stored its keys: the slow path derives them
-        _server_msg_internal__send_text(client->p_ws_connection, client->dh_shared_secret, plaintext);
-        return;
-    }
-    if (client->p_ws_connection == NULL_POINTER || plaintext == NULL_POINTER)
-    {
-        return;
-    }
-    DBG_SERVER_MESSAGE log_info("%s %s", "outgoing:", plaintext);
-    // the keys stored at the key exchange: no derivation per message
-    encrypted = metadata_crypto__encrypt(plaintext, &allocated_size, &client->session_keys);
-    if (encrypted == NULL_POINTER)
-    {
-        return;
-    }
-    ws_sendframe_txt(client->p_ws_connection, encrypted);
-    memorymanager__free((nuint)encrypted);
+    server_msg__queue_text_to_client(client, plaintext);
 }
 
 /**
- * @brief prints a message once and sends it to one client; the message object stays the caller's to delete
+ * @brief Queues a JSON message for encrypted delivery to one client.
+ *
+ * @param client_t* client -> receiving client
+ * @param cJSON* json_root -> message owned by the caller
+ *
+ * @attention The caller holds the clients lock.
+ *
+ * @return void
  */
 static void _server_msg_internal__send_json_to_client(client_t* client, cJSON* json_root)
 {
@@ -125,6 +298,8 @@ static void _server_msg_internal__send_json_to_client(client_t* client, cJSON* j
  * @param client_t* except -> one client that does not get it, or NULL_POINTER
  *
  * @attention clients read lock held by the caller
+ *
+ * @return void
  */
 static void _server_msg_internal__send_text_to_all_clients(char* plaintext, client_t* except)
 {
@@ -143,7 +318,15 @@ static void _server_msg_internal__send_text_to_all_clients(char* plaintext, clie
 }
 
 /**
- * @brief like _server_msg_internal__send_text_to_all_clients, limited to the clients standing in one channel
+ * @brief Queues text for authenticated clients in one channel, excluding music bots.
+ *
+ * @param char* plaintext -> message text to copy
+ * @param uint64 channel_id -> receiving channel
+ * @param client_t* except -> client to skip, or NULL_POINTER
+ *
+ * @attention The caller holds the clients lock.
+ *
+ * @return void
  */
 static void _server_msg_internal__send_text_to_channel(char* plaintext, uint64 channel_id, client_t* except)
 {
@@ -162,7 +345,16 @@ static void _server_msg_internal__send_text_to_channel(char* plaintext, uint64 c
     }
 }
 
-/** @brief prints a message once and sends it to every authenticated client that is not a music bot; the object stays the caller's to delete */
+/**
+ * @brief Queues a JSON message for all authenticated clients except music bots.
+ *
+ * @param cJSON* json_root -> message owned by the caller
+ * @param client_t* except -> client to skip, or NULL_POINTER
+ *
+ * @attention The caller holds the clients lock.
+ *
+ * @return void
+ */
 static void _server_msg_internal__send_json_to_all_clients(cJSON* json_root, client_t* except)
 {
     char* plaintext = cJSON_PrintUnformatted(json_root);
@@ -171,7 +363,17 @@ static void _server_msg_internal__send_json_to_all_clients(cJSON* json_root, cli
     cJSON_free(plaintext);
 }
 
-/** @brief prints a message once and sends it to the clients standing in one channel; the object stays the caller's to delete */
+/**
+ * @brief Queues a JSON message for authenticated clients in one channel, excluding music bots.
+ *
+ * @param cJSON* json_root -> message owned by the caller
+ * @param uint64 channel_id -> receiving channel
+ * @param client_t* except -> client to skip, or NULL_POINTER
+ *
+ * @attention The caller holds the clients lock.
+ *
+ * @return void
+ */
 static void _server_msg_internal__send_json_to_channel(cJSON* json_root, uint64 channel_id, client_t* except)
 {
     char* plaintext = cJSON_PrintUnformatted(json_root);
@@ -180,7 +382,17 @@ static void _server_msg_internal__send_json_to_channel(cJSON* json_root, uint64 
     cJSON_free(plaintext);
 }
 
-/** @brief attaches a bot's own keys for a receiver in its channel. Clients lock required. */
+/**
+ * @brief Adds a music bot's audio keys when the receiver is active in its channel.
+ *
+ * @param cJSON* object -> message to receive the encryption flag and eligible keys
+ * @param client_t* receiver -> client that will receive the message
+ * @param client_t* bot -> music bot whose keys are being shared
+ *
+ * @attention The caller holds the clients lock.
+ *
+ * @return void
+ */
 void server_msg__add_music_bot_keys(cJSON* object, client_t* receiver, client_t* bot)
 {
     cJSON* keys = NULL_POINTER;
@@ -213,7 +425,16 @@ void server_msg__add_music_bot_keys(cJSON* object, client_t* receiver, client_t*
     }
 }
 
-/** @brief delivers a bot key to a late channel joiner through the existing encrypted chat connection. the caller has checked that the receiver stands in the bot's channel and is not idle. */
+/**
+ * @brief Queues a music bot's audio keys for a client joining its channel.
+ *
+ * @param client_t* receiver -> active client in the bot's channel
+ * @param client_t* bot -> music bot whose keys are being shared
+ *
+ * @attention The caller holds the clients lock and checks the receiver's channel and idle state.
+ *
+ * @return void
+ */
 void server_msg__send_music_bot_key(client_t* receiver, client_t* bot)
 {
     cJSON* root = NULL_POINTER;
@@ -243,7 +464,7 @@ void server_msg__send_music_bot_key(client_t* receiver, client_t* bot)
  *
  * @param client_t* client -> the client being described
  *
- * @return cstring -> the code to put on the wire, possibly ""
+ * @return cstring -> the code to send, possibly ""
  */
 static cstring _server_msg_internal__country_code_to_send(client_t* client)
 {
@@ -296,7 +517,7 @@ void server_msg__send_rsa_key_too_weak_to_single_client(client_t* receiver)
  *
  * @param client_t* receiver -> the client that receives it; no shared secret exists for it yet
  * @param char* random_value_challenge_string -> randomly generated string to be sent as challenge
- * @param char* dh_public_mix_for_client -> dh public mix that client needs to set on his side, result of diffie hellman key exchange
+ * @param char* dh_public_mix_for_client -> dh public mix that the client needs to set on its side, result of diffie hellman key exchange
  *
  * @return void
  */
@@ -343,6 +564,7 @@ void server_msg__send_authentication_status_to_single_client(client_t* receiver)
     cJSON_AddBoolToObject(message, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
     // the receiver attempts a fast reconnect only on a server that allows it
     cJSON_AddBoolToObject(message, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
+    cJSON_AddBoolToObject(message, "enforce_connection_check", g_server_settings.enforce_connection_check);
     // the receiver keeps marquees of streaming bots in other channels visible when this is on
     cJSON_AddBoolToObject(message, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
     cJSON_AddBoolToObject(message, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
@@ -368,6 +590,8 @@ void server_msg__send_authentication_status_to_single_client(client_t* receiver)
 
     _server_msg_internal__send_json_to_client(receiver, root);
     cJSON_Delete(root);
+    server_msg__send_server_info_to_single_client(receiver, FALSE,
+        (boole)(g_server_settings.server_banner != NULL_POINTER));
 }
 
 /**
@@ -572,7 +796,7 @@ void server_msg__send_client_list_to_single_client(client_t* receiver)
 
         audio_state_to_send = client_in_loop->audio_state;
 
-        // only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
+        // only send the "PUSH_TO_TALK_ACTIVE" state to the connected client for other clients in the same channel as the client (the root channel in this case)
         // privacy reasons
         if (client_in_loop->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != ROOT_CHANNEL_ID)
         {
@@ -602,7 +826,7 @@ void server_msg__send_client_list_to_single_client(client_t* receiver)
         cJSON_AddStringToObject(single_client, "country_iso_code", _server_msg_internal__country_code_to_send(client_in_loop));
 
         // a stream already running when somebody logs in: the list is the only place a late
-        // joiner can learn about it, start_song_stream went out before he was here
+        // joiner can learn about it, start_song_stream went out before the joiner was here
         cJSON_AddBoolToObject(single_client, "is_streaming_song", client_in_loop->is_streaming_song);
         cJSON_AddBoolToObject(single_client, "is_streaming_video", client_in_loop->is_streaming_video);
         cJSON_AddStringToObject(single_client, "song_name", client_in_loop->song_name);
@@ -797,10 +1021,10 @@ void server_msg__send_identity_list_to_single_client(client_t* receiver)
 }
 
 /**
- * @brief This function microphone usage of all clients for current clients channel.
+ * @brief Sends the microphone states of clients in the selected channel.
  *
  * @param client_t* receiver -> the client that receives it
- * @param uint64 current_channel_id -> current channel id
+ * @param uint64 channel_id -> channel whose microphone states are reported
  *
  * @attention it doesnt need readlock, already called within writelock in client_message.c
  *
@@ -930,7 +1154,7 @@ void server_msg__send_client_connect_message_to_all_clients(client_t* subject)
 
         audio_state_to_send = subject->audio_state;
 
-        // only send "PUSH_TO_TALK_ACTIVE" state to connected client for other clients in same channel as he is (root channel in this case)
+        // only send the "PUSH_TO_TALK_ACTIVE" state to the connected client for other clients in the same channel as the client (the root channel in this case)
         // privacy reasons
         if (subject->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != subject->channel_id)
         {
@@ -947,7 +1171,7 @@ void server_msg__send_client_connect_message_to_all_clients(client_t* subject)
 }
 
 /**
- * @brief This function sends maintainer of current channel where client just joined. Used when client joins the server or when he swiches channel
+ * @brief This function sends the maintainer of the current channel the client just joined. Used when the client joins the server or when it switches channel
  *
  * @param client_t* receiver -> the client to send the maintainer id to
  * @param channel_t* channel -> the channel
@@ -1135,9 +1359,25 @@ void server_msg__send_server_settings_to_single_client(client_t* receiver)
     cJSON* json_blocked_countries = 0;
     ban_entry_t* ban_in_loop = 0;
     uint64 i = 0;
+    uint64 used_slots = 0;
 
     root = _server_msg_internal__new_message("server_settings_values", &message);
 
+    cJSON_AddBoolToObject(message, "publish_server_uptime", g_server_settings.publish_server_uptime);
+    cJSON_AddBoolToObject(message, "publish_server_slots", g_server_settings.publish_server_slots);
+    cJSON_AddBoolToObject(message, "publish_server_banner", g_server_settings.publish_server_banner);
+    cJSON_AddBoolToObject(message, "publish_server_features", g_server_settings.publish_server_features);
+    cJSON_AddNumberToObject(message, "uptime_seconds", (double)base__get_server_uptime_seconds());
+    cJSON_AddStringToObject(message, "server_banner", g_server_settings.server_banner != NULL_POINTER ? g_server_settings.server_banner : "");
+    for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
+    {
+        if (g_clients_array[i].is_existing == TRUE || g_clients_array[i].timestamp_connected != 0)
+        {
+            used_slots++;
+        }
+    }
+    cJSON_AddNumberToObject(message, "used_slots", (double)used_slots);
+    cJSON_AddNumberToObject(message, "max_slots", (double)g_server_settings.max_client_count);
     cJSON_AddItemToObject(message, "display_country_flags", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
     cJSON_AddItemToObject(message, "hide_admin_country_flag", cJSON_CreateBool(g_server_settings.hide_admin_country_flag == TRUE));
     cJSON_AddItemToObject(message, "enable_audio", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
@@ -1155,6 +1395,8 @@ void server_msg__send_server_settings_to_single_client(client_t* receiver)
     cJSON_AddItemToObject(message, "is_fast_reconnect_allowed", cJSON_CreateBool(g_server_settings.is_fast_reconnect_allowed == TRUE));
     cJSON_AddItemToObject(message, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
     cJSON_AddItemToObject(message, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
+    cJSON_AddBoolToObject(message, "enforce_connection_check", g_server_settings.enforce_connection_check);
+    cJSON_AddNumberToObject(message, "max_concurrent_logins", (double)g_server_settings.max_concurrent_logins);
     cJSON_AddNumberToObject(message, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
     cJSON_AddNumberToObject(message, "icon_max_size_bytes", (double)g_server_settings.icon_max_size_bytes);
     cJSON_AddItemToObject(message, "show_music_bot_marquee_to_everyone", cJSON_CreateBool(g_server_settings.show_music_bot_marquee_to_everyone == TRUE));
@@ -1203,6 +1445,154 @@ void server_msg__send_server_settings_to_single_client(client_t* receiver)
     }
     clib__unlock(&g_bans_global_rwlock_guard);
 
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
+}
+
+/**
+ * @brief Adds only the server information the administrator has chosen to share.
+ * @param cJSON* message -> message object to fill
+ * @param boole include_banner -> include the saved banner when TRUE
+ * @param boole banner_changed -> ask visible clients to refresh their banner when TRUE
+ * @return void
+ * @attention The caller holds the clients lock while reading settings and slots.
+ */
+static void _server_msg_internal__add_server_info(cJSON* message, boole include_banner, boole banner_changed)
+{
+    cJSON* visibility = NULL_POINTER;
+    cJSON* features = NULL_POINTER;
+    uint64 used_slots = 0;
+    uint64 i = 0;
+
+    visibility = cJSON_AddObjectToObject(message, "visibility");
+    cJSON_AddBoolToObject(visibility, "uptime", g_server_settings.publish_server_uptime);
+    cJSON_AddBoolToObject(visibility, "slots", g_server_settings.publish_server_slots);
+    cJSON_AddBoolToObject(visibility, "banner", g_server_settings.publish_server_banner);
+    cJSON_AddBoolToObject(visibility, "features", g_server_settings.publish_server_features);
+    if (g_server_settings.publish_server_uptime == TRUE)
+    {
+        cJSON_AddNumberToObject(message, "uptime_seconds", (double)base__get_server_uptime_seconds());
+    }
+    if (g_server_settings.publish_server_slots == TRUE)
+    {
+        for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
+        {
+            if (g_clients_array[i].is_existing == TRUE || g_clients_array[i].timestamp_connected != 0)
+            {
+                used_slots++;
+            }
+        }
+        cJSON_AddNumberToObject(message, "used_slots", (double)used_slots);
+        cJSON_AddNumberToObject(message, "max_slots", (double)g_server_settings.max_client_count);
+    }
+    if (g_server_settings.publish_server_banner == TRUE && include_banner == TRUE)
+    {
+        cJSON_AddStringToObject(message, "server_banner", g_server_settings.server_banner != NULL_POINTER ? g_server_settings.server_banner : "");
+    }
+    if (g_server_settings.publish_server_banner == TRUE && banner_changed == TRUE)
+    {
+        cJSON_AddBoolToObject(message, "banner_changed", TRUE);
+    }
+    if (g_server_settings.publish_server_features == FALSE)
+    {
+        return;
+    }
+
+    // Only public feature switches belong here. Passwords, keys, bans and
+    // administrator-only settings must stay in their existing private replies.
+    features = cJSON_AddObjectToObject(message, "features");
+    cJSON_AddBoolToObject(features, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
+    cJSON_AddBoolToObject(features, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
+    cJSON_AddBoolToObject(features, "is_video_streaming_allowed", g_server_settings.is_video_streaming_active);
+    cJSON_AddBoolToObject(features, "is_audio_over_websocket_allowed", g_server_settings.is_audio_over_websocket_allowed);
+    cJSON_AddBoolToObject(features, "is_audio_over_webrtc_allowed", g_server_settings.is_audio_over_webrtc_allowed);
+    cJSON_AddBoolToObject(features, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
+    cJSON_AddBoolToObject(features, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
+    cJSON_AddBoolToObject(features, "enforce_connection_check", g_server_settings.enforce_connection_check);
+    cJSON_AddBoolToObject(features, "allow_typing_indicator", g_server_settings.allow_typing_indicator);
+    cJSON_AddBoolToObject(features, "allow_client_renames", g_server_settings.allow_client_renames);
+    cJSON_AddBoolToObject(features, "allow_link_previews", g_server_settings.allow_link_previews);
+    cJSON_AddBoolToObject(features, "allow_avatars", g_server_settings.allow_avatars);
+    cJSON_AddBoolToObject(features, "allow_private_messages", g_server_settings.allow_private_messages);
+    cJSON_AddBoolToObject(features, "allow_file_uploads", g_server_settings.allow_file_uploads);
+    cJSON_AddBoolToObject(features, "allow_chat_pictures", g_server_settings.allow_chat_pictures);
+    cJSON_AddBoolToObject(features, "allow_temp_channels", g_server_settings.is_temp_channel_creation_allowed);
+    cJSON_AddBoolToObject(features, "are_identities_enabled", g_server_settings.are_identities_enabled);
+    cJSON_AddBoolToObject(features, "is_alias_registration_allowed", g_server_settings.are_identities_enabled && g_server_settings.allow_alias_registrations);
+    cJSON_AddBoolToObject(features, "allow_stored_clients_list", g_server_settings.are_identities_enabled && g_server_settings.allow_stored_clients_list);
+    cJSON_AddBoolToObject(features, "allow_last_seen", g_server_settings.are_identities_enabled && g_server_settings.allow_last_seen);
+    cJSON_AddBoolToObject(features, "allow_offline_messages", g_server_settings.are_identities_enabled && g_server_settings.allow_stored_clients_list && g_server_settings.allow_offline_messages);
+    cJSON_AddBoolToObject(features, "display_country_flags", g_server_settings.is_display_country_flags_active);
+    cJSON_AddBoolToObject(features, "hide_clients_in_password_channels", g_server_settings.is_hide_clients_in_password_protected_channels_active);
+    cJSON_AddBoolToObject(features, "is_sending_text_to_idle_clients_allowed", g_server_settings.is_sending_text_to_idle_clients_allowed);
+    cJSON_AddBoolToObject(features, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
+}
+
+/**
+ * @brief Sends public server information to an authenticated client.
+ * @param client_t* receiver -> client that requested the information
+ * @param boole include_banner -> include the saved banner when TRUE
+ * @param boole banner_changed -> tell the client its cached banner needs refreshing
+ * @return void
+ * @attention The caller holds the clients lock.
+ */
+void server_msg__send_server_info_to_single_client(client_t* receiver, boole include_banner, boole banner_changed)
+{
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
+
+    root = _server_msg_internal__new_message("server_info", &message);
+    _server_msg_internal__add_server_info(message, include_banner, banner_changed);
+    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
+}
+
+/**
+ * @brief Updates every client's public server information, including users in idle mode.
+ * @param boole banner_changed -> ask clients to refresh the banner when it is published
+ * @return void
+ * @attention The caller holds the clients lock.
+ */
+void server_msg__send_server_info_to_all_clients(boole banner_changed)
+{
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
+
+    root = _server_msg_internal__new_message("server_info", &message);
+    _server_msg_internal__add_server_info(message, FALSE, banner_changed);
+    _server_msg_internal__send_json_to_all_clients(root, NULL_POINTER);
+    cJSON_Delete(root);
+}
+
+/**
+ * @brief Announces a changed banner only when the administrator publishes it.
+ * @return void
+ * @attention The caller holds the clients lock.
+ */
+void server_msg__send_server_banner_changed_to_all_clients(void)
+{
+    if (g_server_settings.publish_server_banner == TRUE)
+    {
+        server_msg__send_server_info_to_all_clients(TRUE);
+    }
+}
+
+/**
+ * @brief Tells an administrator whether saving the banner succeeded.
+ * @param client_t* receiver -> administrator that sent the change
+ * @param boole success -> TRUE when the banner was saved
+ * @param cstring error -> short failure code, or an empty string on success
+ * @return void
+ * @attention The caller holds the clients lock.
+ */
+void server_msg__send_server_banner_result_to_single_client(client_t* receiver, boole success, cstring error)
+{
+    cJSON* root = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
+
+    root = _server_msg_internal__new_message("server_banner_result", &message);
+    cJSON_AddBoolToObject(message, "success", success);
+    cJSON_AddStringToObject(message, "error", error);
     _server_msg_internal__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -1262,6 +1652,7 @@ void server_msg__send_policy_update_to_all_clients(void)
     cJSON_AddNumberToObject(message, "icon_max_size", (double)g_server_settings.icon_max_size_bytes);
     cJSON_AddBoolToObject(message, "is_alias_registration_allowed", g_server_settings.allow_alias_registrations);
     cJSON_AddBoolToObject(message, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
+    cJSON_AddBoolToObject(message, "enforce_connection_check", g_server_settings.enforce_connection_check);
     cJSON_AddBoolToObject(message, "show_music_bot_marquee_to_everyone", g_server_settings.show_music_bot_marquee_to_everyone);
     cJSON_AddBoolToObject(message, "is_video_streaming_allowed", g_server_settings.is_video_streaming_active);
     cJSON_AddBoolToObject(message, "is_audio_over_websocket_allowed", g_server_settings.is_audio_over_websocket_allowed);
@@ -1352,7 +1743,7 @@ void server_msg__send_channel_edit_message_to_all_clients(channel_t* channel, cl
 }
 
 /**
- * @brief metadata are sent, so that client knows image is being sent to him.
+ * @brief metadata are sent, so that the client knows an image is being sent to it.
  *
  * @param client_t* receiver -> the client that sent the message
  * @param uint64 chat_message_id -> id of server message
@@ -1411,10 +1802,10 @@ void server_msg__send_chat_message_to_single_client(client_t* receiver, client_t
 /**
  * @brief send chat message itself to all clients in same channel
  *
- * @param uint64 client_sender_id -> self explanatory
- * @param uint64 receiving_channel_id -> self explanatory
+ * @param client_t* sender -> client that sent the message
+ * @param uint64 channel_id -> channel whose other members receive the message
  * @param uint64 server_chat_message_id -> server assigned id of the chat message
- * @param char* chat_message_value -> self explanatory
+ * @param char* chat_message_value -> message content to forward
  *
  * @attention this function is used within read lock on clinets array
  *
@@ -1513,9 +1904,10 @@ void server_msg__send_chat_message_action_to_clients_in_same_channel(uint64 rece
 /**
  * @brief sends chat-picture metadata to all clients in the sender's channel
  *
- * @param uint64 client_sender_id -> self explanatory
- * @param uint64 receiving_channel_id -> self explanatory
+ * @param client_t* sender -> client that sent the picture
+ * @param uint64 channel_id -> channel whose other members receive the picture details
  * @param uint64 server_chat_message_id -> server assigned id of the picture
+ * @param uint64 encrypted_size -> encrypted picture length in bytes
  *
  * @attention this function is used within read lock on clinets array
  *
@@ -1574,7 +1966,7 @@ void server_msg__send_channel_chat_picture_to_clients_in_same_channel(client_t* 
 }
 
 /**
- * @brief This function sends image status to the client that SENT the image so client knows that server received and sent his message to other clients / client
+ * @brief This function sends the image status to the client that SENT the image, so the client knows that the server received and sent its message to the other clients / client
  *
  * @param client_t* receiver -> self explanatory
  * @param char* status -> status string that is put into the "value" field of the image_sent_status message
@@ -1604,6 +1996,7 @@ void server_msg__send_image_status_to_single_client(client_t* receiver, char* st
  * @param client_t* receiver -> the client that receives the message
  * @param client_t* sender -> the client that sent it
  * @param uint64 server_chat_message_id -> server assigned id of the picture
+ * @param uint64 encrypted_size -> encrypted picture length in bytes
  *
  * @attention this function is used within read lock on clinets array
  *
@@ -1633,8 +2026,8 @@ void server_msg__send_chat_picture_metadata_to_single_client(client_t* receiver,
  *        name/size/mime header (opaque here) and the encrypted body length, so receivers can draw
  *        the file card and a progress ring before the chunks arrive
  *
- * @param uint64 client_sender_id -> self explanatory
- * @param uint64 receiving_channel_id -> self explanatory
+ * @param client_t* sender -> client that sent the file
+ * @param uint64 channel_id -> channel whose other members receive the file details
  * @param uint64 server_chat_message_id -> server assigned id of the file
  * @param char* file_header -> the sender's encrypted header, forwarded as is
  * @param uint64 encrypted_size -> length of the encrypted body that follows in chunks
@@ -1734,7 +2127,7 @@ void server_msg__send_file_send_error_to_single_client(client_t* receiver, char*
  *
  * @attention
  * this function gets called AFTER new channel id is assigned to client struct, not before
- * so this function must assume client is already in his new channel, if it is going to do any logical operations based on that
+ * so this function must assume the client is already in its new channel, if it is going to do any logical operations based on that
  *
  * @return void
  */
@@ -1838,8 +2231,8 @@ void server_msg__send_channel_join_message_to_all_clients(client_t* subject, cha
  *        to talk enabled and the streamed song name is cleared.
  *
  * @param client_t* subject -> the client whose channel change is being announced
- * @param channel_t* new_channel -> the channel that client_that_switched_channel joined
- * @param client_t* receiving_client -> the single client this message is encrypted for and sent to
+ * @param channel_t* new_channel -> channel that the subject joined
+ * @param client_t* receiver -> client that receives the channel change
  *
  * @return void
  */
@@ -1946,7 +2339,7 @@ void server_msg__send_channel_delete_message_to_all_clients(uint64 deleted_chann
 /**
  * @brief broadcasts a client-disconnected event to all clients
  *
- * @param client_t* client -> the client that sent the message
+ * @param uint64 client_index -> array index of the disconnected client
  *
  * @attention used within acquired write lock for clients_array
  *
@@ -1994,7 +2387,7 @@ void server_msg__send_poke_to_single_client(client_t* receiver, client_t* sender
 }
 
 /**
- * @brief tells the people a client is writing to that he is typing. carries no message content at
+ * @brief tells the people a client is writing to that the client is typing. carries no message content at
  *        all - only who is typing and which conversation it belongs to, so the receiver can show it
  *        against the right chat and drop it again when it stops being refreshed.
  *
@@ -3036,6 +3429,7 @@ void server_msg__send_video_stream_state_to_clients_in_same_channel(uint64 chann
         cJSON_AddNumberToObject(message, "width", (double)streamer->video_stream_width);
         cJSON_AddNumberToObject(message, "height", (double)streamer->video_stream_height);
         cJSON_AddNumberToObject(message, "fps", (double)streamer->video_stream_fps);
+        cJSON_AddBoolToObject(message, "is_sound_included", streamer->is_video_stream_sound_included);
     }
 
     _server_msg_internal__send_json_to_channel(root, channel_id, NULL_POINTER);
@@ -3047,7 +3441,7 @@ void server_msg__send_video_stream_state_to_clients_in_same_channel(uint64 chann
  * @brief hands one member the stream's offer: it may now press connect. sent to everybody present at the start and to a later joiner the streamer allowed
  *
  * @param client_t* receiver -> the member
- * @param client_t* streamer -> the streamer, whose announced source / codec / size ride along so the receiver can probe its decoder first
+ * @param client_t* streamer -> the streamer, whose announced source / codec / size are sent with it so the receiver can probe its decoder first, with whether sound is included and the ids of the members watching right now
  *
  * @return void
  */
@@ -3055,6 +3449,9 @@ void server_msg__send_video_stream_offer_to_single_client(client_t* receiver, cl
 {
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
+    cJSON* watching_client_ids = NULL_POINTER;
+    client_t* member = NULL_POINTER;
+    uint64 i = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -3066,6 +3463,19 @@ void server_msg__send_video_stream_offer_to_single_client(client_t* receiver, cl
     cJSON_AddNumberToObject(message, "width", (double)streamer->video_stream_width);
     cJSON_AddNumberToObject(message, "height", (double)streamer->video_stream_height);
     cJSON_AddNumberToObject(message, "fps", (double)streamer->video_stream_fps);
+    cJSON_AddBoolToObject(message, "is_sound_included", streamer->is_video_stream_sound_included);
+
+    // who watches right now, so the receiver can mark those rows at once; every later change reaches
+    // it as a video_stream_viewer_state message, which an allowed member receives from here on
+    watching_client_ids = cJSON_AddArrayToObject(message, "watching_client_ids");
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        member = &g_clients_array[i];
+        if (member->is_existing == TRUE && member->channel_id == streamer->channel_id && member->is_video_viewer_watching == TRUE)
+        {
+            cJSON_AddItemToArray(watching_client_ids, cJSON_CreateNumber((double)member->client_id));
+        }
+    }
 
     _server_msg_internal__send_json_to_client(receiver, root);
     cJSON_Delete(root);
@@ -3096,9 +3506,11 @@ void server_msg__send_video_stream_viewer_request_to_single_client(client_t* rec
 }
 
 /**
- * @brief tells the streamer that a viewer connected or disconnected, so it can count viewers and send a keyframe for a new one
+ * @brief tells one client that a viewer connected or disconnected. the streamer counts its viewers from it and sends a keyframe for a
+ *        new one; a member the streamer allowed marks the watching row in its channel tree. video_stream.c sends it to those clients
+ *        only, so a member that was not allowed never learns who watches
  *
- * @param client_t* receiver -> the streamer
+ * @param client_t* receiver -> the streamer, or a member the streamer allowed
  * @param uint64 viewer_client_id -> the viewer
  * @param boole is_watching -> TRUE when it connected, FALSE when it dropped out
  *
@@ -3144,7 +3556,7 @@ void server_msg__send_video_stream_keyframe_request_to_single_client(client_t* r
  * @brief tells a client why its stream request was refused ("disabled", "channel_disabled", "busy", "not_allowed", "no_stream", "revoked")
  *
  * @param client_t* receiver -> the client that asked
- * @param cstring reason -> the short wire reason
+ * @param cstring reason -> the short reason code sent to the clients
  *
  * @return void
  */
@@ -3163,8 +3575,18 @@ void server_msg__send_video_stream_refused_to_single_client(client_t* receiver, 
     cJSON_Delete(root);
 }
 
-// Send a URL lookup result only to the client that requested it. This uses the
-// normal metadata encryption shared by that client and this server.
+/**
+ * @brief Queues an encrypted URL preview reply for the client that requested it.
+ *
+ * @param client_t* client -> receiving client
+ * @param const char* request_id -> id used to match the reply to its request
+ * @param const char* url -> requested website URL
+ * @param const cJSON* result -> preview to copy, or NULL_POINTER when unavailable or disabled
+ *
+ * @attention The caller holds the clients lock and keeps ownership of result.
+ *
+ * @return void
+ */
 void server_msg__send_url_resolved_to_single_client(client_t* client, const char* request_id,
     const char* url, const cJSON* result)
 {

@@ -412,7 +412,7 @@ div#image-upload-preview {
     padding: 4px 8px;
 }
 
-#channel-properties-edit, #channel-password-enter, #admin-password-enter, #poke-client-enter,
+#channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #poke-client-enter,
 #set-new-username-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter,
 #client-info-enter, #server-settings-tab {
     background: var(--tmx-sidebar);
@@ -469,7 +469,7 @@ div#image-upload-preview {
     color: var(--tmx-bright);
 }
 
-.identity-tag-chip {
+.identity-tag-label {
     background: var(--tmx-input);
     color: var(--tmx-text);
 }
@@ -747,7 +747,10 @@ div#image-upload-preview {
 }
 
 /* this theme's --set-* dialog palette, because layout.style lays out and paints every dialog from these variables */
-:root {
+:root
+{
+    --context-menu-icon-display: none;
+    --context-menu-text-padding: 10px;
 
     --set-font: 'Segoe UI', 'Raleway', sans-serif;
     --set-panel: var(--tmx-sidebar);
@@ -1057,7 +1060,7 @@ a-toast:hover { background-color: var(--tmx-hover) !important; }
     to   { opacity: 1; }
 }
 
-#channel-properties-edit, #channel-password-enter, #admin-password-enter, #poke-client-enter,
+#channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #poke-client-enter,
 #set-new-username-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter,
 #client-info-enter, #server-settings-tab {
     animation: tmx-pop 0.16s ease-out;
@@ -1902,7 +1905,7 @@ input[type="radio"] {
     gap: 4px;
     padding: 6px 8px;
 }
-.identity-tag-chip {
+.identity-tag-label {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -2214,4 +2217,9 @@ input[type="radio"] {
 
 #local-settings-button:hover {
     background-color: var(--tmx-hover) !important;
+}
+
+/* the connect window: the title bar spans the card above its padding */
+#container-2 > #menu-bar-container {
+    margin: -26px -34px 18px -34px;
 }

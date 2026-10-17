@@ -202,7 +202,7 @@ public class NodeBridge
 					{
 						public void run()
 						{
-							webView.evaluateJavascript("if (typeof JavascriptJavaBridge__nudge_loopback_reattach === 'function') { JavascriptJavaBridge__nudge_loopback_reattach(); }", null);
+							webView.evaluateJavascript("if (typeof JavascriptJavaBridge__request_loopback_reattach === 'function') { JavascriptJavaBridge__request_loopback_reattach(); }", null);
 						}
 					});
 				}
