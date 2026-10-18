@@ -538,10 +538,15 @@ var server_msg = {
      */
     process_client_connect_from_server: function(msg)
     {
+        let local_client = channel_tree__get_client_by_client_id(g_local_client_id);
+        if (!g_is_authenticated || local_client == null)
+        {
+            return;
+        }
         let username = chat__sanitize_string(msg.message.username);
         let client_id = msg.message.client_id;
 
-        if (channel_tree__get_client_by_client_id(g_local_client_id).channel_id == msg.message.channel_id)
+        if (local_client.channel_id == msg.message.channel_id)
         {
             if (g_are_sound_effects_enabled)
             {
@@ -595,7 +600,7 @@ var server_msg = {
 
         channel_tree__get_channel_own_clients_last_element(msg.message.channel_id).insertAdjacentHTML("afterend", html_to_append);
 
-        let elements = document.getElementsByClassName('connected-client');
+        let elements = document.querySelectorAll('.connected-client[data-connected-client-id="' + single_client.client_id + '"]');
 
         // local user uses diferent handler
         for (let i = 0; i < elements.length; i++)
@@ -660,7 +665,7 @@ var server_msg = {
 
         if (g_current_channel_id == 0)
         {
-            g_current_channel_keys = null;
+            keys__set_current_channel_keys(null);
             console.log("setting current keys to null");
         }
 
@@ -857,7 +862,7 @@ var server_msg = {
         {
             g_current_channel_id = msg.message.channel_id;
             video__on_local_channel_changed();
-            g_current_channel_keys = null;
+            keys__set_current_channel_keys(null);
 
             // the server answered, so we are allowed to go idle again
             android_host__clear_come_from_idle_in_flight();
@@ -1078,6 +1083,11 @@ var server_msg = {
      */
     process_server_chat_message_id_for_local_message_id_from_server: function(msg)
     {
+        // A late acknowledgement must not keep author data for a message already removed locally.
+        if (document.querySelector('[data-single-chat-message-local-message-id="' + msg.message.local_message_id + '"]') == null)
+        {
+            return;
+        }
         g_chat_message_author_public_keys[msg.message.server_chat_message_id] = g_rsa_public_key_string;
 
         let element = document.querySelector('.local-single-chat-message-content-p[data-single-chat-message-local-message-id="' + msg.message.local_message_id + '"]');
@@ -1758,6 +1768,7 @@ var server_msg = {
 
             // keys from this maintainer are expected shortly; if none arrive within the
             // timeout, the timer votes for a maintainer reset (and keeps re-voting)
+            keys__cancel_channel_key_creation();
             keys__arm_maintainer_keys_wait_timer();
         }
         else
@@ -2160,7 +2171,7 @@ var server_msg = {
             if (g_channel_list[index].has_maintainer && g_channel_list[index].maintainer_id == msg.message.sender_id)
             {
                 console.log("received keys for channel '" + g_channel_list[index].name + "' from user : '" + msg.message.sender_username + "'. Setting new value of current_channel_keys");
-                g_current_channel_keys = JSON.parse(msg.message.some_json.value);
+                keys__set_current_channel_keys(JSON.parse(msg.message.some_json.value));
                 console.log("current_channel_keys -> ", g_current_channel_keys);
 
                 // the workers run their own copy of every global, so the new channel keys are posted
@@ -2852,9 +2863,10 @@ var server_msg = {
                 channel_tree__get_channel_own_clients_last_element(msg.message.channel_id).insertAdjacentHTML("afterend", html_to_append);
                 { let rename_input = document.getElementById('connected-local-client-input'); if (rename_input != null) { rename_input.addEventListener("focusout", UI.connected_local_user_input_on_focusout); } }
 
+                keys__cancel_channel_key_creation();
                 g_current_channel_id = msg.message.channel_id;
             video__on_local_channel_changed();
-                g_current_channel_keys = null;
+                keys__set_current_channel_keys(null);
 
                 console.log("local_user joined new channel, nulling out current_channel_keys");
 
@@ -2960,7 +2972,7 @@ var server_msg = {
                 g_chat_message_receiver_type = "channel";
             g_offline_chat_recipient_alias = ""; // back on a channel: no offline target
                 console.log("joined new channel, nulling out current_channel_keys");
-                g_current_channel_keys = null;
+                keys__set_current_channel_keys(null);
 
                 // joined new channel, now loop through clients and set microphone state to 2 for all clients that have it set to 1
                 // only clients in current channel should have microphone state set to 1
@@ -3006,7 +3018,7 @@ var server_msg = {
                 if (msg.message.channel_id == g_current_channel_id)
                 {
                     console.log("user '" + client_that_joined.username + "' joined current_channel where local_user is. setting current_channel_keys to null");
-                    g_current_channel_keys = null;
+                    keys__set_current_channel_keys(null);
                     let channel_index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, g_current_channel_id);
                     if (g_channel_list[channel_index].has_maintainer && g_channel_list[channel_index].maintainer_id == g_local_client_id)
                     {

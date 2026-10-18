@@ -14,6 +14,7 @@ var g_server_info =
     banner_loaded: false,
     generation: 0,
     last_request: 0,
+    slots_changed: false,
     timer: null,
     banner_timer: null
 };
@@ -103,7 +104,17 @@ function server_info__request(include_banner = false)
         return;
     }
     g_server_info.last_request = performance.now();
+    g_server_info.slots_changed = false;
     connection__send_message_object({ message: { type: "load_server_info", include_banner: include_banner && g_server_info.visibility.banner } });
+}
+
+/**
+ * @brief Refreshes the visible slot count on the next timer tick after clients join or leave.
+ * @return void
+ */
+function server_info__clients_changed()
+{
+    g_server_info.slots_changed = true;
 }
 
 /**
@@ -112,12 +123,23 @@ function server_info__request(include_banner = false)
  */
 function server_info__tick()
 {
+    let ram_element = document.querySelector("[data-admin-server-ram]");
+
     server_info__render_counters(g_server_info, "[data-server-uptime]", "[data-server-slots]");
     server_info__render_counters(g_server_info.admin, "[data-admin-server-uptime]", "[data-admin-server-slots]");
 
+    if (!document.hidden && g_is_authenticated && g_is_local_client_admin
+        && g_server_info.admin.memory_supported && ram_element && ram_element.getClientRects().length > 0
+        && performance.now() - g_server_info.admin.last_memory_request >= 5000)
+    {
+        g_server_info.admin.last_memory_request = performance.now();
+        connection__send_message_object({ message: { type: "load_server_settings", memory_only: true } });
+    }
+
     if (!document.hidden && server_info__is_visible()
         && (g_server_info.visibility.uptime || g_server_info.visibility.slots || g_server_info.visibility.features)
-        && performance.now() - g_server_info.last_request >= 15000)
+        && performance.now() - g_server_info.last_request >=
+            (g_server_info.visibility.slots && g_server_info.slots_changed ? 1000 : 15000))
     {
         server_info__request(false);
     }
@@ -327,6 +349,7 @@ function server_info__apply_admin_settings(data)
         g_server_info.admin[field] = Number.isSafeInteger(data[field]) && data[field] >= 0 ? data[field] : null;
     }
     g_server_info.admin.received_at = performance.now();
+    server_info__apply_admin_memory(data);
     image.hidden = banner === "";
     if (banner !== "")
     {
@@ -341,6 +364,68 @@ function server_info__apply_admin_settings(data)
         g_server_info.timer = setInterval(server_info__tick, 1000);
     }
     server_info__tick();
+}
+
+/**
+ * @brief Updates the admin's RAM, slots and uptime without changing settings inputs.
+ * @param object data -> server reply with the current readings
+ * @return void
+ */
+function server_info__apply_admin_memory(data)
+{
+    let element = document.querySelector("[data-admin-server-ram]");
+    let field = null;
+    let websocket = 0;
+    let webrtc = 0;
+    let total = null;
+    let unit = 0;
+    let units = ["B", "KiB", "MiB", "GiB", "TiB"];
+
+    for (field of ["uptime_seconds", "used_slots", "max_slots"])
+    {
+        if (Number.isSafeInteger(data[field]) && data[field] >= 0)
+        {
+            g_server_info.admin[field] = data[field];
+        }
+    }
+    if (Number.isSafeInteger(data.uptime_seconds) && data.uptime_seconds >= 0)
+    {
+        g_server_info.admin.received_at = performance.now();
+    }
+    server_info__render_counters(g_server_info.admin, "[data-admin-server-uptime]", "[data-admin-server-slots]");
+    g_server_info.admin.memory_supported = Object.prototype.hasOwnProperty.call(data, "ram_bytes");
+    g_server_info.admin.last_memory_request = performance.now();
+    if (element)
+    {
+        element.textContent = Number.isSafeInteger(data.ram_bytes) && data.ram_bytes >= 0
+            ? (data.ram_bytes / (1024 * 1024)).toLocaleString(undefined, { maximumFractionDigits: 1 }) + " MiB"
+            : g_server_info.admin.memory_supported ? "The server could not read its RAM usage."
+                : "The server did not send a RAM reading.";
+    }
+    for (field of ["received", "sent"])
+    {
+        element = document.querySelector("[data-admin-server-" + field + "]");
+        websocket = data["websocket_" + field + "_bytes"];
+        webrtc = data["webrtc_" + field + "_bytes"];
+        if (!element)
+        {
+            continue;
+        }
+        if (!Number.isSafeInteger(websocket) || websocket < 0 || !Number.isSafeInteger(webrtc) || webrtc < 0)
+        {
+            element.textContent = "The server did not send a traffic reading.";
+            continue;
+        }
+        total = websocket + webrtc;
+        unit = 0;
+        while (total >= 1024 && unit < units.length - 1)
+        {
+            total /= 1024;
+            unit++;
+        }
+        element.textContent = total.toLocaleString(undefined, {maximumFractionDigits: 1}) + " " + units[unit];
+        element.title = "WebSocket: " + websocket.toLocaleString() + " bytes; WebRTC: " + webrtc.toLocaleString() + " bytes";
+    }
 }
 
 /**
@@ -538,7 +623,9 @@ function server_info__remove_banner()
 function server_info__banner_result(data)
 {
     document.getElementById("server-banner-status").textContent = data.success === true
-        ? "Banner saved." : "Could not save the banner. Check the image size and your admin access.";
+        ? "Banner saved." : data.error === "server_ram_budget_reached"
+            ? "The server has reached its RAM budget. Try uploading again later."
+            : "Could not save the banner. Check the image size and your admin access.";
     if (data.success === true)
     {
         connection__send_message_object({ message: { type: "load_server_settings" } });
@@ -571,6 +658,7 @@ function server_info__reset()
     g_server_info.banner = "";
     g_server_info.banner_loaded = false;
     g_server_info.last_request = 0;
+    g_server_info.slots_changed = false;
     document.getElementById("server-banner-status").textContent = "";
     server_info__apply_admin_settings({});
     if (dialog && dialog.open)

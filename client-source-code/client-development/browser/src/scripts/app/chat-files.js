@@ -12,6 +12,75 @@ var FILE_UPLOAD_WARNING_MB = 20;
 // body (up to 20 MB) is not tried against every historic key set
 var chat_file_keys_by_file_id = {};
 
+/**
+ * @brief Tells the server which new pictures and files this device wants to block.
+ * @return void
+ */
+function chat_files__send_receive_preferences()
+{
+    if (g_is_authenticated)
+    {
+        connection__send_message_object(
+        {
+            message: Object.assign({ type: "set_attachment_receive_preferences" }, g_attachment_receive_preferences)
+        });
+    }
+}
+
+/**
+ * @brief Shows the receive choices allowed by the connected server.
+ * @return void
+ */
+function chat_files__refresh_receive_preferences_controls()
+{
+    let preference = null;
+    let element = null;
+    let allowed = false;
+
+    if (typeof document === "undefined")
+    {
+        return;
+    }
+    for (preference of Object.keys(g_attachment_receive_preferences))
+    {
+        element = document.getElementById("local-settings-" + preference.replaceAll("_", "-"));
+        if (element == null)
+        {
+            continue;
+        }
+        allowed = g_is_authenticated && g_server_policy["allow_" + preference] === true;
+        element.disabled = !allowed;
+        element.checked = allowed && g_attachment_receive_preferences[preference];
+        element.closest("label").title = allowed ? "Applies to new attachments; transfers already started will finish."
+            : "This feature must also be enabled on the server.";
+    }
+}
+
+/**
+ * @brief Restores this device's receive choices and sends changes to the server.
+ * @return void
+ */
+function chat_files__setup_receive_preferences_controls()
+{
+    let preference = null;
+    let element = null;
+
+    for (preference of Object.keys(g_attachment_receive_preferences))
+    {
+        g_attachment_receive_preferences[preference] = utils__storage_get("lemon_" + preference) === "1";
+        element = document.getElementById("local-settings-" + preference.replaceAll("_", "-"));
+        element.onchange = function()
+        {
+            let field = this.dataset.attachmentPreference;
+
+            g_attachment_receive_preferences[field] = this.checked;
+            utils__storage_set("lemon_" + field, this.checked ? "1" : "0");
+            chat_files__send_receive_preferences();
+        };
+    }
+    chat_files__refresh_receive_preferences_controls();
+}
+
 // the circumference of the progress ring (radius 15.5). stroke-dashoffset counts down from this value
 var CHAT_FILE_RING_LENGTH = 97.4;
 
@@ -149,26 +218,6 @@ function chat_files__decrypt_base64_with_aes_keys_fast(keys, base64_string)
 }
 
 /**
- * @brief four fresh random aes-ctr keys, the key set a direct message envelope uses
- *
- * @return array the keys as [{ key_bytes, iv_bytes }]
- */
-function chat_files__create_random_message_keys()
-{
-    let keys = [];
-
-    for (let i = 0; i < 4; i++)
-    {
-        keys.push({
-            key_bytes: Array.from(crypto.getRandomValues(new Uint8Array(32))),
-            iv_bytes: Array.from(crypto.getRandomValues(new Uint8Array(16)))
-        });
-    }
-
-    return keys;
-}
-
-/**
  * @brief builds the direct chat envelope: message_keys carries the aes keys encrypted with the receiver's rsa key, message_value the aes-encrypted plaintext
  *
  * @param string receiver_public_key -> the receiver's public key string
@@ -179,7 +228,7 @@ function chat_files__create_random_message_keys()
  */
 function chat_files__create_direct_chat_file_envelope(receiver_public_key, plaintext, minimum_padded_bytes)
 {
-    let keys = chat_files__create_random_message_keys();
+    let keys = keys__create_random_message_keys();
     let encryption_result = lemon_crypto.encrypt(JSON.stringify(keys), receiver_public_key);
 
     if (encryption_result == null || encryption_result.status != "success")
@@ -248,27 +297,7 @@ function chat_files__open_direct_chat_file_envelope(envelope_json_string)
  */
 function chat_files__get_channel_key_candidates(hinted_keys)
 {
-    let candidates = [];
-
-    if (hinted_keys != null)
-    {
-        candidates.push(hinted_keys);
-    }
-
-    if (g_current_channel_keys != null && g_current_channel_keys !== hinted_keys)
-    {
-        candidates.push(g_current_channel_keys);
-    }
-
-    for (let i = 0; i < g_historic_keys_of_current_channel.length; i++)
-    {
-        if (g_historic_keys_of_current_channel[i] !== hinted_keys)
-        {
-            candidates.push(g_historic_keys_of_current_channel[i]);
-        }
-    }
-
-    return candidates;
+    return keys__get_channel_key_candidates(hinted_keys);
 }
 
 /**
@@ -920,6 +949,14 @@ function chat_files__prune_chat_files_without_cards()
  */
 function chat_files__explain_file_send_error(reason, max_bytes)
 {
+    if (reason == "server_ram_budget_reached")
+    {
+        return "The server has reached its RAM budget. Try uploading again later.";
+    }
+    if (reason == "receiver_blocked_attachment")
+    {
+        return "not sent: the receiver has blocked this type of attachment";
+    }
     if (reason == "file_uploads_disabled")
     {
         return "file not sent: file uploads are not allowed on this server";

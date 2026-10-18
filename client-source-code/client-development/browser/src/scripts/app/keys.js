@@ -13,6 +13,219 @@ var MAINTAINER_KEYS_WAIT_TIMEOUT_MS = 5000;
 var maintainer_keys_wait_timer = null;
 
 var maintainer_keys_wait_channel_id = -1;
+var channel_key_expiry_timer = null;
+var channel_key_expiry_deadline = 0;
+var CHANNEL_KEY_HISTORY_MS = 10 * 60 * 1000;
+
+/**
+ * @brief Creates four random AES keys and starting counters for encrypting a direct message.
+ *
+ * @return array the keys as [{ key_bytes, iv_bytes }]
+ */
+function keys__create_random_message_keys()
+{
+    let keys = [];
+    let i = 0;
+
+    for (i = 0; i < 4; i++)
+    {
+        keys.push(
+        {
+            key_bytes: Array.from(crypto.getRandomValues(new Uint8Array(32))),
+            iv_bytes: Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        });
+    }
+
+    return keys;
+}
+
+/**
+ * @brief Removes previous channel keys ten minutes after they were replaced.
+ * @return void
+ */
+function keys__remove_expired_channel_keys()
+{
+    let now = performance.now();
+    let deadline = 0;
+    let retained = new Set();
+    let entry = null;
+    let file_id = null;
+    g_historic_keys_of_current_channel = g_historic_keys_of_current_channel.filter(function(entry)
+    {
+        return entry.expires_at > now;
+    });
+    retained.add(g_current_channel_keys);
+    for (entry of g_historic_keys_of_current_channel)
+    {
+        retained.add(entry.keys);
+        if (deadline === 0 || entry.expires_at < deadline)
+        {
+            deadline = entry.expires_at;
+        }
+    }
+    // A file download may remember which keys opened its header.
+    // Forget that copy too when the keys expire.
+    if (typeof chat_file_keys_by_file_id !== "undefined")
+    {
+        for (file_id of Object.keys(chat_file_keys_by_file_id))
+        {
+            if (!retained.has(chat_file_keys_by_file_id[file_id]))
+            {
+                delete chat_file_keys_by_file_id[file_id];
+            }
+        }
+    }
+    if (deadline !== channel_key_expiry_deadline)
+    {
+        clearTimeout(channel_key_expiry_timer);
+        channel_key_expiry_timer = null;
+        channel_key_expiry_deadline = deadline;
+        if (deadline > 0)
+        {
+            channel_key_expiry_timer = setTimeout(function()
+            {
+                channel_key_expiry_deadline = 0;
+                channel_key_expiry_timer = null;
+                keys__remove_expired_channel_keys();
+            }, Math.max(1, deadline - now));
+        }
+    }
+}
+
+/**
+ * @brief Replaces the current channel keys and starts the old set's ten-minute lifetime.
+ * @param array|null keys -> the new set, or null while waiting for replacement keys
+ * @return void
+ */
+function keys__set_current_channel_keys(keys)
+{
+    if (g_current_channel_keys !== keys)
+    {
+        if (g_current_channel_keys != null)
+        {
+            g_historic_keys_of_current_channel.push(
+            {
+                keys: g_current_channel_keys,
+                expires_at: performance.now() + CHANNEL_KEY_HISTORY_MS
+            });
+        }
+        g_current_channel_keys = keys;
+    }
+    keys__remove_expired_channel_keys();
+}
+
+/**
+ * @brief Returns the current keys and unexpired previous sets, newest first.
+ * @param array|null preferred -> the set that decrypted a file header, if still valid
+ * @return array the key sets that may still be tried
+ */
+function keys__get_channel_key_candidates(preferred = null)
+{
+    let candidates = [];
+    let preferred_index = -1;
+    let i = 0;
+    keys__remove_expired_channel_keys();
+    if (g_current_channel_keys != null)
+    {
+        candidates.push(g_current_channel_keys);
+    }
+    for (i = g_historic_keys_of_current_channel.length - 1; i >= 0; i--)
+    {
+        candidates.push(g_historic_keys_of_current_channel[i].keys);
+    }
+    preferred_index = candidates.indexOf(preferred);
+    if (preferred_index > 0)
+    {
+        candidates.splice(preferred_index, 1);
+        candidates.unshift(preferred);
+    }
+    return candidates;
+}
+
+/**
+ * @brief Forgets the current and previous channel keys after a full connection reset.
+ * @return void
+ */
+function keys__clear_channel_keys()
+{
+    g_current_channel_keys = null;
+    g_historic_keys_of_current_channel.length = 0;
+    keys__remove_expired_channel_keys();
+}
+
+/**
+ * @brief Tries current and unexpired keys when channel text or a picture arrives late.
+ * @param string encrypted -> the encrypted message contents
+ * @param boolean picture -> true for an image data URL, false for chat text in JSON
+ * @return string|null the readable contents, or null when no retained set works
+ */
+function keys__decrypt_channel_contents(encrypted, picture)
+{
+    let candidates = keys__get_channel_key_candidates();
+    let envelope = null;
+    let bytes = null;
+    let iv = null;
+    let prefix = null;
+    let block = null;
+    let text = "";
+    let parsed = null;
+    let keys = null;
+    let i = 0;
+    if (typeof encrypted !== "string")
+    {
+        return null;
+    }
+    try
+    {
+        if (encrypted.startsWith("{"))
+        {
+            envelope = JSON.parse(encrypted);
+            iv = new Uint8Array(utils__base64StringToBytes(envelope.iv));
+            if (iv.length !== 16)
+            {
+                return null;
+            }
+        }
+        bytes = new Uint8Array(utils__base64StringToBytes(envelope == null ? encrypted : envelope.data));
+        for (keys of candidates)
+        {
+            // Try the keys on the first few bytes before decrypting the whole image.
+            prefix = bytes.slice(0, 64);
+            for (i = keys.length - 1; i >= 0; i--)
+            {
+                block = iv == null ? keys[i].iv_bytes : keys__media_xor_blocks(keys[i].iv_bytes, iv);
+                prefix = keys__aes_ctr(keys[i].key_bytes, block, prefix);
+            }
+            text = new TextDecoder().decode(prefix);
+            if (picture ? !text.startsWith("data:image/") : !text.trimStart().startsWith("{"))
+            {
+                continue;
+            }
+            text = keys__decrypt_base64_contents_with_aes_keys(keys, encrypted);
+            if (picture)
+            {
+                return text;
+            }
+            try
+            {
+                parsed = JSON.parse(text);
+                if (parsed != null && typeof parsed.value === "string")
+                {
+                    return text;
+                }
+            }
+            catch (parse_error)
+            {
+                // This set did not produce the expected message. Try the next retained set.
+            }
+        }
+    }
+    catch (decode_error)
+    {
+        return null;
+    }
+    return null;
+}
 
 // ---- identity and message encryption ----
 
@@ -722,31 +935,130 @@ function keys__maintainer_keys_wait_timer_fired()
     maintainer_keys_wait_timer = setTimeout(keys__maintainer_keys_wait_timer_fired, MAINTAINER_KEYS_WAIT_TIMEOUT_MS);
 }
 
+var channel_key_creation_timer = null;
+var channel_key_creation_generation = 0;
+var channel_key_creation_members = null;
+var channel_key_creation_pending = false;
+
 /**
- * @brief asks the data-processing worker to create a fresh channel key set and send it to every member, encrypted for each one's public key
- *        reactive protocol runs in ONE runtime, node: the webview reacting too sent a second key
- *        set on the same connection and the server kicked it
- *
+ * @brief Stops unfinished channel key work when its member list is no longer current.
+ * @return void
+ */
+function keys__cancel_channel_key_creation()
+{
+    channel_key_creation_generation++;
+    clearTimeout(channel_key_creation_timer);
+    channel_key_creation_timer = null;
+    channel_key_creation_members = null;
+    channel_key_creation_pending = false;
+    if (g_data_processing_worker != null)
+    {
+        g_data_processing_worker.postMessage({ type: "mainthread__cancel_channel_key_creation" });
+    }
+}
+
+/**
+ * @brief Checks that a key result still belongs to this channel and its current members.
+ * @param object result -> the worker's result, including its generation and channel id
+ * @return boolean true when this client should still distribute these keys
+ */
+function keys__is_channel_key_creation_current(result)
+{
+    let index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, g_current_channel_id);
+    let local_client = channel_tree__get_client_by_client_id(g_local_client_id);
+    return g_is_authenticated && result.generation === channel_key_creation_generation
+        && result.channel_id === g_current_channel_id && index >= 0
+        && local_client != null && !local_client.is_idle
+        && g_channel_list[index].has_maintainer && g_channel_list[index].maintainer_id === g_local_client_id;
+}
+
+/**
+ * @brief Stops distributing keys if a recipient has left or changed identity.
+ * @return void
+ */
+function keys__check_channel_key_recipients()
+{
+    let client = null;
+    let request = { generation: channel_key_creation_generation, channel_id: g_current_channel_id };
+    if (channel_key_creation_members == null)
+    {
+        return;
+    }
+    for (let recipient of channel_key_creation_members)
+    {
+        client = channel_tree__get_client_by_client_id(recipient.client_id);
+        if (client == null || client.is_idle || client.channel_id !== recipient.channel_id
+            || client.public_key !== recipient.public_key)
+        {
+            keys__cancel_channel_key_creation();
+            keys__set_current_channel_keys(null);
+            request.generation = channel_key_creation_generation;
+            if (keys__is_channel_key_creation_current(request))
+            {
+                keys__create_and_send_new_channel_keys();
+            }
+            return;
+        }
+    }
+}
+
+/**
+ * @brief Starts one more distribution if people joined while the previous one was being sent.
+ * @return void
+ */
+function keys__finish_channel_key_creation()
+{
+    channel_key_creation_members = null;
+    if (channel_key_creation_pending)
+    {
+        keys__create_and_send_new_channel_keys();
+    }
+}
+
+/**
+ * @brief Waits briefly for more people to join before creating and sending new channel keys.
  * @return void
  */
 function keys__create_and_send_new_channel_keys()
 {
-    // reactive protocol runs in ONE runtime: node. the webview reacting too sent a
-    // second key set on the same connection and the server kicked it
     if (android_host__is_ui_only_runtime())
     {
         return;
     }
 
-    g_data_processing_worker.postMessage({
-        type: "mainthread__create_websocket_channel_keys_message",
-        clients: g_client_list,
-        local_client_id: g_local_client_id,
-        current_channel_id: g_current_channel_id
-    });
-
-    // rsa stays in the data-processing worker (the private key is kept only there), so each public key
-    // is posted to it and the encrypted keys come back for the main thread to route
+    channel_key_creation_pending = true;
+    if (channel_key_creation_timer != null || channel_key_creation_members != null)
+    {
+        return;
+    }
+    // More arrivals must not keep restarting the wait, or the keys may never be sent.
+    channel_key_creation_timer = setTimeout(function()
+    {
+        let request =
+        {
+            type: "mainthread__create_websocket_channel_keys_message",
+            generation: ++channel_key_creation_generation,
+            channel_id: g_current_channel_id,
+            local_client_id: g_local_client_id,
+            current_channel_id: g_current_channel_id
+        };
+        channel_key_creation_timer = null;
+        channel_key_creation_pending = false;
+        if (!keys__is_channel_key_creation_current(request))
+        {
+            return;
+        }
+        request.clients = g_client_list.filter(function(client)
+        {
+            return client.channel_id === request.channel_id && !client.is_idle;
+        }).map(function(client)
+        {
+            return { client_id: client.client_id, username: client.username,
+                channel_id: client.channel_id, public_key: client.public_key };
+        });
+        channel_key_creation_members = request.clients;
+        g_data_processing_worker.postMessage(request);
+    }, 100);
 }
 
 // ================================================================================================

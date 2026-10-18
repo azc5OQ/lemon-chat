@@ -1,5 +1,6 @@
 #include "definitions.h"
 #include "audio_channel.h"
+#include <limits.h>
 
 #ifdef WIN32
 #include <Windows.h>
@@ -27,19 +28,53 @@ typedef struct outgoing_metadata
     char text[];
 } outgoing_metadata_t;
 
+typedef struct listed_client_t
+{
+    uint64 client_id;
+    int64 channel_id;
+    int64 audio_state;
+    boole is_music_bot;
+    boole is_idle;
+    boole is_streaming_song;
+    boole is_streaming_video;
+    boole has_music_keys;
+    boole include_music_keys;
+    music_bot_audio_keys_t music_keys;
+    int* tag_ids;
+    int tag_count;
+    char username[USERNAME_MAX_LENGTH];
+    char alias[USERNAME_MAX_LENGTH];
+    char public_key[MAX_PUBLIC_KEY_LENGTH];
+    char song_name[SONG_NAME_MAX_LENGTH];
+    char country_iso_code[COUNTRY_ISO_CODE_LENGTH];
+} listed_client_t;
+
+typedef struct outgoing_client_list_t
+{
+    crypto_session_keys_t session;
+    size_t allocation_size;
+    uint64 count;
+    char local_username[USERNAME_MAX_LENGTH];
+    listed_client_t clients[];
+} outgoing_client_list_t;
+
 // declarations
+static char* _server_msg_internal__encode_client_list(void* context, size_t* size);
+static void _server_msg_internal__release_client_list(void* context);
 static char* _server_msg_internal__encode_queued_text(void* context, size_t* size);
 static void _server_msg_internal__release_queued_text(void* context);
 static void _server_msg_internal__release_encoded_text(char* text);
-static boole _server_msg_internal__queue_text(ws_cli_conn_t* socket,
-    const crypto_session_keys_t* session, const char* plaintext);
+static int _server_msg_internal__queue_text(ws_cli_conn_t* socket,
+    const crypto_session_keys_t* session, const char* plaintext, boole bulk, boole keepalive);
 static cJSON* _server_msg_internal__new_message(const char* type, cJSON** out_message);
 static void _server_msg_internal__send_text(ws_cli_conn_t* socket, char* dh_shared_secret, char* plaintext);
 static void _server_msg_internal__send_json(ws_cli_conn_t* socket, char* dh_shared_secret, cJSON* json_root);
 static void _server_msg_internal__send_text_to_client(client_t* client, char* plaintext);
 static void _server_msg_internal__send_json_to_client(client_t* client, cJSON* json_root);
 static void _server_msg_internal__send_text_to_all_clients(char* plaintext, client_t* except);
-static void _server_msg_internal__send_text_to_channel(char* plaintext, uint64 channel_id, client_t* except);
+static void _server_msg_internal__send_text_to_channel(char* plaintext, uint64 channel_id, client_t* except, cstring receive_type);
+static void _server_msg_internal__send_attachment_to_channel(cJSON* root, uint64 channel_id, client_t* except, cstring receive_type);
+static void _server_msg_internal__add_attachment_receive_policy(cJSON* message);
 static void _server_msg_internal__send_json_to_all_clients(cJSON* json_root, client_t* except);
 static void _server_msg_internal__send_json_to_channel(cJSON* json_root, uint64 channel_id, client_t* except);
 static cstring _server_msg_internal__country_code_to_send(client_t* client);
@@ -103,17 +138,19 @@ static void _server_msg_internal__release_encoded_text(char* text)
  * @param ws_cli_conn_t* socket -> the chat connection that will receive the message
  * @param const crypto_session_keys_t* session -> connection keys to copy, or NULL_POINTER before the key exchange
  * @param const char* plaintext -> zero-terminated message to copy; the caller keeps the original text
+ * @param boole bulk -> TRUE lets file delivery retry when the queue is busy
+ * @param boole keepalive -> TRUE sends a connection-check reply before waiting messages
  *
  * @attention The caller holds the clients lock while choosing the socket and
  * copying its keys. The queue takes ownership of the copy, including on failure.
  * Server-wide keys and the message-size limit cannot change after startup, so
  * workers can safely read them without the clients lock.
  *
- * @return boole -> TRUE when the copy was queued; FALSE on failure. Being queued
+ * @return int -> 0 queued, 1 busy for file delivery, -1 failed. Being queued
  * does not mean the message has already reached the client.
  */
-static boole _server_msg_internal__queue_text(ws_cli_conn_t* socket,
-    const crypto_session_keys_t* session, const char* plaintext)
+static int _server_msg_internal__queue_text(ws_cli_conn_t* socket,
+    const crypto_session_keys_t* session, const char* plaintext, boole bulk, boole keepalive)
 {
     size_t text_size = 0;
     size_t charged_bytes = 0;
@@ -121,21 +158,21 @@ static boole _server_msg_internal__queue_text(ws_cli_conn_t* socket,
 
     if (socket == NULL_POINTER || plaintext == NULL_POINTER)
     {
-        return FALSE;
+        return -1;
     }
     text_size = strlen(plaintext);
     if (text_size > (size_t)g_server_settings.websocket_message_max_length
         || text_size > (SIZE_MAX - sizeof(*outgoing) - 8192) / 5)
     {
         ws_abort_client(socket);
-        return FALSE;
+        return -1;
     }
     outgoing = (outgoing_metadata_t*)memorymanager__allocate(
         sizeof(*outgoing) + text_size + 1, MEMALLOC_TYPE_ENCRYPT);
     if (outgoing == NULL_POINTER)
     {
         ws_abort_client(socket);
-        return FALSE;
+        return -1;
     }
     outgoing->text_size = text_size;
     memcpy(outgoing->text, plaintext, text_size + 1);
@@ -146,10 +183,24 @@ static boole _server_msg_internal__queue_text(ws_cli_conn_t* socket,
     // Reserve room for the text, encryption buffers, base64 and WebSocket frame.
     // The fixed allowance also covers padding when the message itself is short.
     charged_bytes = sizeof(*outgoing) + text_size * 5 + 8192;
+    if (keepalive == TRUE)
+    {
+        return ws_queue_keepalive(socket, outgoing, charged_bytes,
+            _server_msg_internal__encode_queued_text,
+            _server_msg_internal__release_queued_text,
+            _server_msg_internal__release_encoded_text);
+    }
+    if (bulk == TRUE)
+    {
+        return ws_try_queue_text(socket, outgoing, charged_bytes,
+            _server_msg_internal__encode_queued_text,
+            _server_msg_internal__release_queued_text,
+            _server_msg_internal__release_encoded_text);
+    }
     return ws_queue_text(socket, outgoing, charged_bytes,
         _server_msg_internal__encode_queued_text,
         _server_msg_internal__release_queued_text,
-        _server_msg_internal__release_encoded_text) >= 0;
+        _server_msg_internal__release_encoded_text);
 }
 
 /**
@@ -175,7 +226,7 @@ boole server_msg__queue_text_to_client(client_t* client, const char* plaintext)
     }
     if (client->session_keys.is_ready == TRUE)
     {
-        return _server_msg_internal__queue_text(client->p_ws_connection, &client->session_keys, plaintext);
+        return _server_msg_internal__queue_text(client->p_ws_connection, &client->session_keys, plaintext, FALSE, FALSE) == 0;
     }
     if (client->dh_shared_secret[0] != 0)
     {
@@ -186,7 +237,7 @@ boole server_msg__queue_text_to_client(client_t* client, const char* plaintext)
         }
     }
     result = _server_msg_internal__queue_text(client->p_ws_connection,
-        session.is_ready ? &session : NULL_POINTER, plaintext);
+        session.is_ready ? &session : NULL_POINTER, plaintext, FALSE, FALSE) == 0;
     metadata_crypto__clear_session_keys(&session);
     return result;
 }
@@ -235,7 +286,7 @@ static void _server_msg_internal__send_text(ws_cli_conn_t* socket, char* dh_shar
         ws_abort_client(socket);
         return;
     }
-    _server_msg_internal__queue_text(socket, session.is_ready ? &session : NULL_POINTER, plaintext);
+    _server_msg_internal__queue_text(socket, session.is_ready ? &session : NULL_POINTER, plaintext, FALSE, FALSE);
     metadata_crypto__clear_session_keys(&session);
 }
 
@@ -323,12 +374,13 @@ static void _server_msg_internal__send_text_to_all_clients(char* plaintext, clie
  * @param char* plaintext -> message text to copy
  * @param uint64 channel_id -> receiving channel
  * @param client_t* except -> client to skip, or NULL_POINTER
+ * @param cstring receive_type -> attachment type to check, or NULL_POINTER for ordinary messages
  *
  * @attention The caller holds the clients lock.
  *
  * @return void
  */
-static void _server_msg_internal__send_text_to_channel(char* plaintext, uint64 channel_id, client_t* except)
+static void _server_msg_internal__send_text_to_channel(char* plaintext, uint64 channel_id, client_t* except, cstring receive_type)
 {
     uint64 i = 0;
     client_t* client = NULL_POINTER;
@@ -337,7 +389,8 @@ static void _server_msg_internal__send_text_to_channel(char* plaintext, uint64 c
     {
         client = &g_clients_array[i];
         if (client == except || client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE
-            || client->channel_id != channel_id)
+            || client->channel_id != channel_id
+            || (receive_type != NULL_POINTER && util__is_attachment_blocked(client, receive_type)))
         {
             continue;
         }
@@ -378,8 +431,38 @@ static void _server_msg_internal__send_json_to_channel(cJSON* json_root, uint64 
 {
     char* plaintext = cJSON_PrintUnformatted(json_root);
 
-    _server_msg_internal__send_text_to_channel(plaintext, channel_id, except);
+    _server_msg_internal__send_text_to_channel(plaintext, channel_id, except, NULL_POINTER);
     cJSON_free(plaintext);
+}
+
+/**
+ * @brief Announces a channel attachment only to clients who will receive its data.
+ * @param cJSON* root -> attachment details owned by the caller
+ * @param uint64 channel_id -> receiving channel
+ * @param client_t* except -> sender to skip
+ * @param cstring receive_type -> channel_chat_picture or channel_chat_file
+ * @return void
+ * @attention The caller holds the clients lock.
+ */
+static void _server_msg_internal__send_attachment_to_channel(cJSON* root, uint64 channel_id, client_t* except, cstring receive_type)
+{
+    char* plaintext = cJSON_PrintUnformatted(root);
+
+    _server_msg_internal__send_text_to_channel(plaintext, channel_id, except, receive_type);
+    cJSON_free(plaintext);
+}
+
+/**
+ * @brief Tells clients which attachment types they are allowed to block.
+ * @param cJSON* message -> login, settings or policy message being built
+ * @return void
+ */
+static void _server_msg_internal__add_attachment_receive_policy(cJSON* message)
+{
+    cJSON_AddBoolToObject(message, "allow_block_direct_chat_pictures", g_server_settings.allow_block_direct_chat_pictures);
+    cJSON_AddBoolToObject(message, "allow_block_direct_chat_files", g_server_settings.allow_block_direct_chat_files);
+    cJSON_AddBoolToObject(message, "allow_block_channel_chat_pictures", g_server_settings.allow_block_channel_chat_pictures);
+    cJSON_AddBoolToObject(message, "allow_block_channel_chat_files", g_server_settings.allow_block_channel_chat_files);
 }
 
 /**
@@ -580,6 +663,7 @@ void server_msg__send_authentication_status_to_single_client(client_t* receiver)
     // the settings tab's icon upload refuses oversize files itself, with the same cap the server enforces
     cJSON_AddNumberToObject(message, "icon_max_size", (double)g_server_settings.icon_max_size_bytes);
     // chat file policy: the receiver refuses oversize/forbidden files itself, with a reason, before uploading
+    _server_msg_internal__add_attachment_receive_policy(message);
     cJSON_AddBoolToObject(message, "allow_file_uploads", g_server_settings.allow_file_uploads);
     cJSON_AddNumberToObject(message, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
     cJSON_AddNumberToObject(message, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
@@ -709,25 +793,149 @@ void server_msg__send_channel_list_to_single_client(client_t* receiver)
 }
 
 /**
- * @brief This function sends client list to single client. Called when client sents challenge_response message to server during authentication process.
- *
- * @param client_t* client -> the client that receives it
- * @param char* local_clients_username -> username of local client
- * @param client_t* receiver -> the client to send the action to
- *                                     against every listed client when hiding clients that sit in
- *                                     password protected channels
- *
- * @attention it doesnt need readlock, already called within writelock in client_message.c
- *
+ * @brief Copies the visible client details so a worker can build the login list later.
+ * @param client_t* receiver -> newly authenticated client receiving the list
+ * @attention The caller holds the clients and channels locks. The queued copy
+ * contains no pointers to live client records, so disconnects cannot change it.
  * @return void
  */
 void server_msg__send_client_list_to_single_client(client_t* receiver)
 {
+    outgoing_client_list_t* outgoing = NULL_POINTER;
+    listed_client_t* listed = NULL_POINTER;
+    client_t* client = NULL_POINTER;
+    size_t allocation_size = sizeof(outgoing_client_list_t);
+    size_t tag_count = 0;
+    size_t count = 0;
+    uint64 i = 0;
+    int* tags = NULL_POINTER;
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+        if (client->is_existing == FALSE || client->is_authenticated == FALSE)
+        {
+            continue;
+        }
+        tag_count = cvector_size(client->tag_ids);
+        if (tag_count > INT_MAX || allocation_size > SIZE_MAX - sizeof(listed_client_t)
+            || tag_count > (SIZE_MAX - allocation_size - sizeof(listed_client_t)) / sizeof(int))
+        {
+            ws_abort_client(receiver->p_ws_connection);
+            return;
+        }
+        allocation_size += sizeof(listed_client_t) + tag_count * sizeof(int);
+        count++;
+    }
+    if (allocation_size > (SIZE_MAX - 8192) / 6 || !receiver->session_keys.is_ready)
+    {
+        ws_abort_client(receiver->p_ws_connection);
+        return;
+    }
+    outgoing = (outgoing_client_list_t*)memorymanager__allocate(allocation_size, MEMALLOC_TYPE_ENCRYPT);
+    if (outgoing == NULL_POINTER)
+    {
+        ws_abort_client(receiver->p_ws_connection);
+        return;
+    }
+    outgoing->allocation_size = allocation_size;
+    outgoing->count = count;
+    outgoing->session = receiver->session_keys;
+    memcpy(outgoing->local_username, receiver->username, sizeof(outgoing->local_username));
+    tags = (int*)(outgoing->clients + count);
+    count = 0;
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+        if (client->is_existing == FALSE || client->is_authenticated == FALSE)
+        {
+            continue;
+        }
+        listed = &outgoing->clients[count++];
+        listed->client_id = client->client_id;
+        listed->channel_id = (int64)client->channel_id;
+        listed->audio_state = client->audio_state;
+        listed->is_music_bot = client->is_music_bot;
+        listed->is_idle = client->is_idle;
+        listed->is_streaming_song = client->is_streaming_song;
+        listed->is_streaming_video = client->is_streaming_video;
+        memcpy(listed->username, client->username, sizeof(listed->username));
+        memcpy(listed->alias, client->alias, sizeof(listed->alias));
+        memcpy(listed->public_key, client->public_key, sizeof(listed->public_key));
+        memcpy(listed->song_name, client->song_name, sizeof(listed->song_name));
+        snprintf(listed->country_iso_code, sizeof(listed->country_iso_code), "%s",
+            _server_msg_internal__country_code_to_send(client));
+        listed->tag_count = (int)cvector_size(client->tag_ids);
+        if (listed->tag_count != 0)
+        {
+            listed->tag_ids = tags;
+            memcpy(tags, client->tag_ids, (size_t)listed->tag_count * sizeof(int));
+            tags += listed->tag_count;
+        }
+        // Decide what this receiver may see while the channel settings are locked.
+        if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE
+            && receiver->channel_id != client->channel_id
+            && client->channel_id < g_server_settings.max_channel_count
+            && g_channel_array[client->channel_id].is_existing == TRUE
+            && g_channel_array[client->channel_id].is_using_password == TRUE)
+        {
+            listed->channel_id = -1;
+        }
+        if (listed->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client->channel_id != ROOT_CHANNEL_ID)
+        {
+            listed->audio_state = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
+        }
+        if (client->is_music_bot == TRUE && client->music_bot_client_extension.audio_keys != NULL_POINTER)
+        {
+            listed->has_music_keys = TRUE;
+            if (receiver->is_idle == FALSE && receiver->channel_id == client->channel_id)
+            {
+                listed->include_music_keys = TRUE;
+                listed->music_keys = *client->music_bot_client_extension.audio_keys;
+            }
+        }
+    }
+    ws_queue_text(receiver->p_ws_connection, outgoing, allocation_size * 6 + 8192,
+        _server_msg_internal__encode_client_list, _server_msg_internal__release_client_list,
+        _server_msg_internal__release_encoded_text);
+}
+
+/**
+ * @brief Erases and frees the client-list copy, including its copied connection and music keys.
+ * @param void* context -> client-list copy owned by the outgoing queue
+ * @return void
+ */
+static void _server_msg_internal__release_client_list(void* context)
+{
+    outgoing_client_list_t* outgoing = context;
+    size_t allocation_size = outgoing->allocation_size;
+
+    mbedtls_platform_zeroize(outgoing, allocation_size);
+    memorymanager__free((nuint)outgoing);
+}
+
+/**
+ * @brief Builds and encrypts the copied client list without taking the clients lock.
+ * @param void* context -> client details and connection keys copied during login
+ * @param size_t* size -> receives the encrypted message length
+ * @return char* -> encrypted message owned by the outgoing queue, or NULL_POINTER
+ */
+static char* _server_msg_internal__encode_client_list(void* context, size_t* size)
+{
+    outgoing_client_list_t* outgoing = context;
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     cJSON* json_client_array = 0;
     cJSON* json_tag_ids_array = 0;
-    client_t* client_in_loop = 0;
+    listed_client_t* client_in_loop = 0;
+    cJSON* single_client = NULL_POINTER;
+    cJSON* music_keys = NULL_POINTER;
+    char key_hex[65] = {0};
+    char* plaintext = NULL_POINTER;
+    char* encoded = NULL_POINTER;
+    int64 encoded_size = 0;
+    uint key_index = 0;
+    uint byte_index = 0;
     uint64 x = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
@@ -736,78 +944,39 @@ void server_msg__send_client_list_to_single_client(client_t* receiver)
     json_client_array = cJSON_CreateArray();
 
     // create array of clients
-    for (x = 0; x < g_server_settings.max_client_count; x++)
+    for (x = 0; x < outgoing->count; x++)
     {
-        cJSON* single_client = NULL_POINTER;
-        boole is_hide_client_active = FALSE;
-        int64 audio_state_to_send = 0;
-
-        client_in_loop = &g_clients_array[x];
-
-        if (client_in_loop->is_existing == FALSE)
-        {
-            continue;
-        }
-
-        if (client_in_loop->is_authenticated == FALSE)
-        {
-            continue;
-        }
-
+        client_in_loop = &outgoing->clients[x];
         single_client = cJSON_CreateObject();
         cJSON_AddStringToObject(single_client, "username", client_in_loop->username);
         cJSON_AddStringToObject(single_client, "public_key", client_in_loop->public_key);
 
-        // check if client in loop is in different channel that receiving client
-        // check if client is in password protected channel
-        is_hide_client_active = FALSE;
-
-        if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE)
-        {
-            if (receiver->channel_id != client_in_loop->channel_id)
-            {
-                // bounds check, channel_id is not validated anywhere
-                if (client_in_loop->channel_id < g_server_settings.max_channel_count
-                    && g_channel_array[client_in_loop->channel_id].is_existing == TRUE
-                    && g_channel_array[client_in_loop->channel_id].is_using_password == TRUE)
-                {
-                    is_hide_client_active = TRUE;
-                }
-            }
-        }
-        if (is_hide_client_active == TRUE)
-        {
-            cJSON_AddNumberToObject(single_client, "channel_id", (double)-1);
-        }
-        else
-        {
-            cJSON_AddNumberToObject(single_client, "channel_id", (double)client_in_loop->channel_id);
-        }
+        cJSON_AddNumberToObject(single_client, "channel_id", (double)client_in_loop->channel_id);
 
         cJSON_AddNumberToObject(single_client, "client_id", (double)client_in_loop->client_id);
 
         cJSON_AddBoolToObject(single_client, "is_music_bot", client_in_loop->is_music_bot);
-        server_msg__add_music_bot_keys(single_client, receiver, client_in_loop);
-
-        if (client_in_loop->is_music_bot == TRUE)
+        if (client_in_loop->has_music_keys == TRUE)
         {
-            DBG_SERVER_MESSAGE log_info("%s %lld %s", "server_msg client id is -> ", client_in_loop->client_id, "\n");
+            cJSON_AddNumberToObject(single_client, "music_bot_encryption", 1);
         }
-
-        audio_state_to_send = client_in_loop->audio_state;
-
-        // only send the "PUSH_TO_TALK_ACTIVE" state to the connected client for other clients in the same channel as the client (the root channel in this case)
-        // privacy reasons
-        if (client_in_loop->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != ROOT_CHANNEL_ID)
+        if (client_in_loop->include_music_keys == TRUE)
         {
-            audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
+            music_keys = cJSON_AddArrayToObject(single_client, "music_bot_keys");
+            for (key_index = 0; key_index < 4; key_index++)
+            {
+                for (byte_index = 0; byte_index < 32; byte_index++)
+                {
+                    snprintf(key_hex + byte_index * 2, 3, "%02x", client_in_loop->music_keys.keys[key_index][byte_index]);
+                }
+                cJSON_AddItemToArray(music_keys, cJSON_CreateString(key_hex));
+            }
         }
-
-        cJSON_AddNumberToObject(single_client, "audio_state", (double)audio_state_to_send);
+        cJSON_AddNumberToObject(single_client, "audio_state", (double)client_in_loop->audio_state);
 
         if (client_in_loop->tag_ids != NULL_POINTER)
         {
-            json_tag_ids_array = cJSON_CreateIntArray(client_in_loop->tag_ids, cvector_size(client_in_loop->tag_ids));
+            json_tag_ids_array = cJSON_CreateIntArray(client_in_loop->tag_ids, client_in_loop->tag_count);
             cJSON_AddItemToObject(single_client, "tag_ids", json_tag_ids_array);
         }
         else
@@ -823,7 +992,7 @@ void server_msg__send_client_list_to_single_client(client_t* receiver)
 
         // property country_iso_code will always be part of response; empty for an unknown country,
         // whenever flags are not displayed, and for an admin when admin flags are kept private
-        cJSON_AddStringToObject(single_client, "country_iso_code", _server_msg_internal__country_code_to_send(client_in_loop));
+        cJSON_AddStringToObject(single_client, "country_iso_code", client_in_loop->country_iso_code);
 
         // a stream already running when somebody logs in: the list is the only place a late
         // joiner can learn about it, start_song_stream went out before the joiner was here
@@ -835,10 +1004,16 @@ void server_msg__send_client_list_to_single_client(client_t* receiver)
     }
 
     cJSON_AddItemToObject(message, "clients", json_client_array);
-    cJSON_AddStringToObject(message, "local_username", receiver->username);
-
-    _server_msg_internal__send_json_to_client(receiver, root);
+    cJSON_AddStringToObject(message, "local_username", outgoing->local_username);
+    plaintext = cJSON_PrintUnformatted(root);
+    if (plaintext != NULL_POINTER)
+    {
+        encoded = metadata_crypto__encrypt(plaintext, &encoded_size, &outgoing->session);
+    }
+    cJSON_free(plaintext);
     cJSON_Delete(root);
+    *size = encoded_size > 0 ? (size_t)encoded_size - 1 : 0;
+    return encoded;
 }
 
 /**
@@ -885,7 +1060,7 @@ void server_msg__send_icon_list_to_single_client(client_t* receiver)
 }
 
 /**
- * @brief This function sends tag list to single client. Called when client sents challenge_response message to server during authentication process.
+ * @brief Sends the available tags to a client after login.
  *
  * @param client_t* receiver -> the client that receives it
  *
@@ -1093,14 +1268,14 @@ void server_msg__send_active_microphone_usage_for_current_channel_to_single_clie
 }
 
 /**
- * @brief This function sends tag list to single client. Called when client sents challenge_response message to server during authentication process.
+ * @brief Announces a connected client, building each version of the message only once.
  *
  * @param client_t* subject -> the client that connected
  *
  * @attention it doesnt need readlock, already called within writelock in client_message.c
  *
- * @note, this function is somewhat expensive, the json is constructed in loop individually for each client...
- * same as send_client_list_to_single_client,
+ * Recipients in other channels must not receive active microphone state or
+ * music bot keys. Those recipients receive a separate version of the message.
  *
  * @return void
  */
@@ -1111,13 +1286,14 @@ void server_msg__send_client_connect_message_to_all_clients(client_t* subject)
     cJSON* json_tag_ids_array = 0;
     uint64 x = 0;
     client_t* client_in_loop = 0;
+    char* texts[4] = {0};
+    uint variant = 0;
+    int64 audio_state_to_send = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
-        int64 audio_state_to_send = 0;
-
         client_in_loop = &g_clients_array[x];
 
         if (client_in_loop->is_existing == FALSE)
@@ -1137,6 +1313,22 @@ void server_msg__send_client_connect_message_to_all_clients(client_t* subject)
 
         if (client_in_loop->is_music_bot == TRUE)
         {
+            continue;
+        }
+
+        variant = 0;
+        if (subject->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != subject->channel_id)
+        {
+            variant |= 1;
+        }
+        if (subject->is_music_bot == TRUE && client_in_loop->is_idle == FALSE
+            && client_in_loop->channel_id == subject->channel_id)
+        {
+            variant |= 2;
+        }
+        if (texts[variant] != NULL_POINTER)
+        {
+            _server_msg_internal__send_text_to_client(client_in_loop, texts[variant]);
             continue;
         }
 
@@ -1165,8 +1357,16 @@ void server_msg__send_client_connect_message_to_all_clients(client_t* subject)
         cJSON_AddStringToObject(message, "country_iso_code", _server_msg_internal__country_code_to_send(subject));
         cJSON_AddItemToObject(message, "tag_ids", json_tag_ids_array);
 
-        _server_msg_internal__send_json_to_client(client_in_loop, root);
+        texts[variant] = cJSON_PrintUnformatted(root);
+        if (texts[variant] != NULL_POINTER)
+        {
+            _server_msg_internal__send_text_to_client(client_in_loop, texts[variant]);
+        }
         cJSON_Delete(root);
+    }
+    for (variant = 0; variant < 4; variant++)
+    {
+        cJSON_free(texts[variant]);
     }
 }
 
@@ -1199,25 +1399,14 @@ void server_msg__send_maintainer_id_to_single_client(client_t* receiver, channel
 }
 
 /**
- * @brief This function sends connection check response to client
- *
- * @param client_t* receiver -> self explanatory
- *
- * @attention thanks for your attention
- *
+ * @brief Queues a keepalive reply ahead of waiting uploads and announcements.
+ * @param client_t* receiver -> authenticated connection, kept alive by the clients lock
  * @return void
  */
 void server_msg__send_connection_check_response_to_single_client(client_t* receiver)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
-
-    root = _server_msg_internal__new_message("connection_check_response", &message);
-
-    _server_msg_internal__send_json_to_client(receiver, root);
-    cJSON_Delete(root);
+    _server_msg_internal__queue_text(receiver->p_ws_connection, &receiver->session_keys,
+        "{\"message\":{\"type\":\"connection_check_response\"}}", FALSE, TRUE);
 }
 
 /**
@@ -1346,11 +1535,12 @@ void server_msg__send_access_denied_to_single_client(client_t* receiver, char* r
  * @brief replies to a single client with the current general-settings toggle values, so the client can
  *        reflect the live server state (used when an admin opens the general-settings tab)
  *
- * @param client_t* receiver -> the client to reply to
+ * @param client_t* receiver -> authenticated administrator receiving the reply
+ * @param boole memory_only -> TRUE refreshes RAM, slots and uptime without replacing edited settings
  *
  * @return void
  */
-void server_msg__send_server_settings_to_single_client(client_t* receiver)
+void server_msg__send_server_settings_to_single_client(client_t* receiver, boole memory_only)
 {
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
@@ -1360,15 +1550,25 @@ void server_msg__send_server_settings_to_single_client(client_t* receiver)
     ban_entry_t* ban_in_loop = 0;
     uint64 i = 0;
     uint64 used_slots = 0;
+    uint64 ram_bytes = 0;
+    uint64 webrtc_received = 0;
+    uint64 webrtc_sent = 0;
 
     root = _server_msg_internal__new_message("server_settings_values", &message);
-
-    cJSON_AddBoolToObject(message, "publish_server_uptime", g_server_settings.publish_server_uptime);
-    cJSON_AddBoolToObject(message, "publish_server_slots", g_server_settings.publish_server_slots);
-    cJSON_AddBoolToObject(message, "publish_server_banner", g_server_settings.publish_server_banner);
-    cJSON_AddBoolToObject(message, "publish_server_features", g_server_settings.publish_server_features);
+    util__get_webrtc_bytes(&webrtc_received, &webrtc_sent);
+    cJSON_AddNumberToObject(message, "websocket_received_bytes", (double)ws_get_received_bytes());
+    cJSON_AddNumberToObject(message, "websocket_sent_bytes", (double)ws_get_sent_bytes());
+    cJSON_AddNumberToObject(message, "webrtc_received_bytes", (double)webrtc_received);
+    cJSON_AddNumberToObject(message, "webrtc_sent_bytes", (double)webrtc_sent);
+    if (util__get_process_ram_usage(&ram_bytes))
+    {
+        cJSON_AddNumberToObject(message, "ram_bytes", (double)ram_bytes);
+    }
+    else
+    {
+        cJSON_AddNullToObject(message, "ram_bytes");
+    }
     cJSON_AddNumberToObject(message, "uptime_seconds", (double)base__get_server_uptime_seconds());
-    cJSON_AddStringToObject(message, "server_banner", g_server_settings.server_banner != NULL_POINTER ? g_server_settings.server_banner : "");
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
         if (g_clients_array[i].is_existing == TRUE || g_clients_array[i].timestamp_connected != 0)
@@ -1378,6 +1578,19 @@ void server_msg__send_server_settings_to_single_client(client_t* receiver)
     }
     cJSON_AddNumberToObject(message, "used_slots", (double)used_slots);
     cJSON_AddNumberToObject(message, "max_slots", (double)g_server_settings.max_client_count);
+    if (memory_only)
+    {
+        cJSON_AddBoolToObject(message, "memory_only", TRUE);
+        _server_msg_internal__send_json_to_client(receiver, root);
+        cJSON_Delete(root);
+        return;
+    }
+    _server_msg_internal__add_attachment_receive_policy(message);
+    cJSON_AddBoolToObject(message, "publish_server_uptime", g_server_settings.publish_server_uptime);
+    cJSON_AddBoolToObject(message, "publish_server_slots", g_server_settings.publish_server_slots);
+    cJSON_AddBoolToObject(message, "publish_server_banner", g_server_settings.publish_server_banner);
+    cJSON_AddBoolToObject(message, "publish_server_features", g_server_settings.publish_server_features);
+    cJSON_AddStringToObject(message, "server_banner", g_server_settings.server_banner != NULL_POINTER ? g_server_settings.server_banner : "");
     cJSON_AddItemToObject(message, "display_country_flags", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
     cJSON_AddItemToObject(message, "hide_admin_country_flag", cJSON_CreateBool(g_server_settings.hide_admin_country_flag == TRUE));
     cJSON_AddItemToObject(message, "enable_audio", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
@@ -1639,6 +1852,7 @@ void server_msg__send_policy_update_to_all_clients(void)
     cJSON* message = NULL_POINTER;
 
     root = _server_msg_internal__new_message("server_policy", &message);
+    _server_msg_internal__add_attachment_receive_policy(message);
 
     cJSON_AddBoolToObject(message, "allow_file_uploads", g_server_settings.allow_file_uploads);
     cJSON_AddNumberToObject(message, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
@@ -1928,7 +2142,7 @@ void server_msg__send_channel_chat_picture_metadata_to_clients_in_same_channel(c
     // the encrypted length the receiver counts its chunks against, for the progress ring
     cJSON_AddNumberToObject(message, "size", (double)encrypted_size);
 
-    _server_msg_internal__send_json_to_channel(root, channel_id, sender);
+    _server_msg_internal__send_attachment_to_channel(root, channel_id, sender, "channel_chat_picture");
 
     cJSON_Delete(root);
 }
@@ -2051,7 +2265,7 @@ void server_msg__send_channel_chat_file_metadata_to_clients_in_same_channel(clie
     cJSON_AddStringToObject(message, "file_header", file_header);
     cJSON_AddNumberToObject(message, "encrypted_size", (double)encrypted_size);
 
-    _server_msg_internal__send_json_to_channel(root, channel_id, sender);
+    _server_msg_internal__send_attachment_to_channel(root, channel_id, sender, "channel_chat_file");
 
     cJSON_Delete(root);
 }
@@ -3346,21 +3560,53 @@ void server_msg__send_file_send_completed_status_to_single_client(client_t* rece
  *
  * @return void
  */
-void server_msg__send_file_by_chunk_to_single_client(client_t* receiver, client_t* sender, char* chunk, uint64 current_size, uint64 server_chat_message_id)
+int server_msg__send_file_by_chunk_to_single_client(client_t* receiver, client_t* sender, char* chunk, uint64 current_size, uint64 server_chat_message_id)
+{
+    char* plaintext = server_msg__prepare_file_chunk(sender->client_id, chunk, server_chat_message_id);
+    int result = -1;
+
+    if (plaintext != NULL_POINTER)
+    {
+        result = server_msg__queue_file_chunk(receiver, plaintext);
+    }
+    cJSON_free(plaintext);
+    return result;
+}
+
+/**
+ * @brief Builds one file-piece message so it can be reused for every receiver.
+ * @param uint64 sender_id -> client sending the file
+ * @param char* chunk -> encrypted file bytes, ending with a zero byte
+ * @param uint64 server_chat_message_id -> message containing the file
+ * @return char* -> JSON text to release with cJSON_free, or NULL_POINTER on failure
+ */
+char* server_msg__prepare_file_chunk(uint64 sender_id, char* chunk, uint64 server_chat_message_id)
 {
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
-
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
+    char* plaintext = NULL_POINTER;
 
     root = _server_msg_internal__new_message("file_receive_chunk", &message);
 
     cJSON_AddStringToObject(message, "value", chunk);
-    cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
+    cJSON_AddNumberToObject(message, "sender_id", (double)sender_id);
     cJSON_AddNumberToObject(message, "server_chat_message_id", server_chat_message_id);
 
-    _server_msg_internal__send_json_to_client(receiver, root);
+    plaintext = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
+    return plaintext;
+}
+
+/**
+ * @brief Tries to queue a file piece without waiting for a slow receiver.
+ * @param client_t* receiver -> current connection, protected by the clients lock
+ * @param const char* plaintext -> prepared message; the caller keeps its copy
+ * @return int -> 0 queued, 1 retry later, -1 connection unavailable
+ */
+int server_msg__queue_file_chunk(client_t* receiver, const char* plaintext)
+{
+    return _server_msg_internal__queue_text(receiver->p_ws_connection,
+        &receiver->session_keys, plaintext, TRUE, FALSE);
 }
 
 /**

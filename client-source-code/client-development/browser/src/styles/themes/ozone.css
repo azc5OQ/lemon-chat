@@ -1,3 +1,12 @@
+:root
+{
+    --chat-tab-close-color: #9fbcb5;
+    --chat-tab-close-hover-color: #e4fff2;
+    --chat-tab-close-hover-background: rgb(133 241 210 / 16%);
+    --chat-tab-close-hover-border: rgb(133 241 210 / 48%);
+    --chat-tab-close-radius: 5px;
+}
+
 /* Ozone gives Lemon Chat dark glass panels, warm light and moving reflections.
    The shared theme helper supplies the mouse position; the lighting is drawn here. */
 
@@ -7,12 +16,13 @@
     --theme-pointer-light: 1;
     --theme-pointer-surfaces: #space-devider1, #space-devider2, #space-devider-42, #space-devider4,
         #choose-theme-button-list, .channel-list-context-menu, .add-tag-context-menu,
-        .chat-message-context-menu, .chat-input-container-context-menu,
+        .chat-message-context-menu, .chat-input-container-context-menu, .chat-context-selector,
         #local-settings-container, #server-settings-tab, #server-info-dialog, #container-2,
         #channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter,
         #poke-client-enter, #set-alias-enter, #adjust-volume-card, #set-new-username-enter,
         #client-info-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter,
-        #android-settings-warning, #rsa-key-too-weak-container-enter, #tag-icon-picker-popup, #video-stream-popup;
+        #android-settings-warning, #rsa-key-too-weak-container-enter, #tag-icon-picker-popup, #video-stream-popup,
+        #communication-system-head-menu > input[type="button"], #head-menu-left-group .head-menu-dropdown-button;
     --context-menu-icon-display: none;
     --context-menu-text-padding: 12px;
     --ozone-ink: #080f16;
@@ -253,12 +263,13 @@ html.custom-cursor-off::after
 /* Only the part of an edge near the mouse lights up, even from outside the panel. */
 :is(#space-devider1, #space-devider2, #space-devider-42, #space-devider4,
     #choose-theme-button-list, .channel-list-context-menu, .add-tag-context-menu,
-    .chat-message-context-menu, .chat-input-container-context-menu,
+    .chat-message-context-menu, .chat-input-container-context-menu, .chat-context-selector,
     #local-settings-container, #server-settings-tab, #server-info-dialog, #container-2,
     #channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter,
     #poke-client-enter, #set-alias-enter, #adjust-volume-card, #set-new-username-enter,
     #client-info-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter,
-    #android-settings-warning, #rsa-key-too-weak-container-enter, #tag-icon-picker-popup, #video-stream-popup)::after
+    #android-settings-warning, #rsa-key-too-weak-container-enter, #tag-icon-picker-popup, #video-stream-popup)::after,
+.theme-pointer-border-light
 {
     content: "";
     position: absolute;
@@ -276,6 +287,16 @@ html.custom-cursor-off::after
     mask-composite: exclude;
     opacity: var(--theme-pointer-active, 0);
     transition: opacity 180ms ease;
+}
+
+/* Toolbar inputs need a separate border because they cannot display ::after. */
+.theme-pointer-border-light
+{
+    box-sizing: border-box;
+    display: block;
+    inset: auto;
+    margin: 0;
+    border: 0;
 }
 
 #space-devider1,

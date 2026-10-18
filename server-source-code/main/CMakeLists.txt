@@ -4,6 +4,16 @@ cmake_minimum_required(VERSION 3.22)
 project(untitled C)
 set(CMAKE_C_STANDARD 99)
 
+# A direct CMake build should use the same optimized configuration as the scripts.
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Server build configuration" FORCE)
+endif()
+
+option(LEMON_ENABLE_AESNI "Use CPU AES instructions when supported, with portable tiny-AES as fallback" ON)
+option(LEMON_ENABLE_LTO "Optimize across source files in Release builds when the compiler supports it" ON)
+option(LEMON_TRACK_ALLOCATIONS "Keep a list of live allocations for memory debugging in Release builds" OFF)
+set_source_files_properties(../third-party/kokke-tiny-aes-c/aes.c
+    PROPERTIES COMPILE_DEFINITIONS "TINY_AES_ENABLE_AESNI=$<BOOL:${LEMON_ENABLE_AESNI}>")
 
 get_filename_component(PROJECT_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 
@@ -74,6 +84,11 @@ add_executable(chat-server
         httpclient/url_resolver.c
         )
 
+# Allocation tracking takes a shared lock on every allocation and free.
+# Keep it in Debug builds; Release builds can enable it when investigating leaks.
+target_compile_definitions(chat-server PRIVATE
+    LEMON_TRACK_ALLOCATIONS=$<IF:$<CONFIG:Debug>,1,$<BOOL:${LEMON_TRACK_ALLOCATIONS}>>)
+
 
 # Build the parser from source so security fixes cannot be bypassed by a stale
 # prebuilt libws.a in linkage-files.
@@ -89,11 +104,25 @@ target_include_directories(server-websocket PRIVATE ../third-party/theldus-webso
 target_link_libraries(server-websocket PUBLIC Threads::Threads)
 target_link_libraries(chat-server PRIVATE server-websocket)
 
+# Keep Debug builds easy to inspect. CMake checks both the compiler and linker
+# before enabling optimization across the server's C files in Release builds.
+if(LEMON_ENABLE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT LEMON_LTO_SUPPORTED OUTPUT LEMON_LTO_ERROR LANGUAGES C)
+    if(LEMON_LTO_SUPPORTED)
+        set_target_properties(chat-server server-websocket PROPERTIES
+            INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE
+            INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
+    else()
+        message(STATUS "Link-time optimization unavailable; using normal Release optimization")
+    endif()
+endif()
+
 if(WIN32)
     target_sources(chat-server PRIVATE httpclient/httpclient_windows.c)
     set_source_files_properties(httpclient/httpclient.c httpclient/httpclient_windows.c
         PROPERTIES COMPILE_DEFINITIONS "_WIN32_WINNT=0x0A00")
-    target_link_libraries(chat-server PRIVATE secur32)
+    target_link_libraries(chat-server PRIVATE secur32 psapi)
 else()
     target_sources(chat-server PRIVATE httpclient/httpclient_posix.c)
     if(APPLE)

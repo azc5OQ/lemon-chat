@@ -14,6 +14,7 @@
 #include "audio_webrtc.h"
 #include "video_webrtc.h"
 #include "video_stream.h"
+#include "util.h"
 
 // declarations
 static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id, void* ptr);
@@ -110,6 +111,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int 
         return;
     }
     // peer slots never move: the index comes from the pointer, not from fields another callback can reset
+    util__count_webrtc_bytes((uint64)size, 0);
     video_stream__relay_packet((uint64)(peer_sender - g_webrtc_peers_array), NULL_POINTER, id, (const unsigned char*)message, (uint64)size);
 }
 
@@ -128,7 +130,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_error_callback(int id
 }
 
 /**
- * @brief Creates the reliable, ordered video channel on the client's WebRTC connection.
+ * @brief Creates an ordered video channel that stops retrying packets after 250 milliseconds.
  *
  * @param webrtc_peer_t* peer -> peer that receives the new video handle and callbacks
  *
@@ -141,8 +143,9 @@ void video_webrtc__create_data_channel(webrtc_peer_t* peer)
     rtcDataChannelInit video_init;
 
     clib__null_memory(&video_init, sizeof(rtcDataChannelInit));
-    video_init.reliability.unreliable = FALSE;
+    video_init.reliability.unreliable = TRUE;
     video_init.reliability.unordered = FALSE;
+    video_init.reliability.maxPacketLifeTime = 250;
 
     peer->video_data_channel_handle = rtcCreateDataChannelEx(peer->peer_connection_handle, VIDEO_DATACHANNEL_LABEL, &video_init);
     peer->is_video_channel_connected = FALSE;
@@ -235,5 +238,10 @@ boole video_webrtc__send(uint64 client_id, const unsigned char* packet, uint64 s
     {
         return FALSE;
     }
-    return rtcSendMessage(peer->video_data_channel_handle, (const char*)packet, (int)size) >= 0;
+    if (rtcSendMessage(peer->video_data_channel_handle, (const char*)packet, (int)size) < 0)
+    {
+        return FALSE;
+    }
+    util__count_webrtc_bytes(0, size);
+    return TRUE;
 }

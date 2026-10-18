@@ -647,7 +647,8 @@ async function main__window_onload()
         channels: document.getElementById("space-devider1"),
         chat: document.getElementById("space-devider2"),
         info: document.getElementById("space-devider-42"),
-        input: document.getElementById("space-devider4")
+        input: document.getElementById("space-devider4"),
+        toolbar: document.getElementById("communication-system-head-menu")
     };
     if (g_is_client_running_under_touch_device == false)
     {
@@ -841,11 +842,15 @@ async function main__window_onload()
     document.getElementById("sound-effects-button").onclick = UI.sound_effects_button_onclick;
 
     // These settings apply only on this device.
+    UI.setup_local_settings_tabs();
+    chat_history__setup();
+    chat_files__setup_receive_preferences_controls();
     document.getElementById("local-settings-button").onclick = function()
     {
         let panel = document.getElementById("local-settings-container");
         document.getElementById("local-settings-show-avatars").checked = g_show_message_avatars;
         document.getElementById("local-settings-theme-chat-formatting").checked = g_use_theme_chat_formatting;
+        chat_files__refresh_receive_preferences_controls();
         document.getElementById("local-settings-rsa-key-bits").value = String(g_rsa_key_bits);
         document.getElementById("local-settings-seen-indicator").checked = g_show_seen_indicator;
         document.getElementById("local-settings-send-seen").checked = g_send_seen_receipts;
@@ -1542,6 +1547,7 @@ async function main__window_onload()
         });
     })();
 
+    UI.setup_theme_menu_positioning();
     for (let i = 0; i < document.getElementsByClassName("choose-theme-item").length; i++)
     {
         document.getElementsByClassName("choose-theme-item")[i].onclick = UI.choose_theme_item_onclick;

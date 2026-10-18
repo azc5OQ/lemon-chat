@@ -1,3 +1,12 @@
+:root
+{
+    --chat-tab-close-color: #a8bfec;
+    --chat-tab-close-hover-color: #ffffff;
+    --chat-tab-close-hover-background: #334e7d;
+    --chat-tab-close-hover-border: #6286c3;
+    --chat-tab-close-radius: 6px;
+}
+
 /* Menu icons use this theme's own colors and are included with its styles. */
 :root
 {

@@ -1,17 +1,8 @@
-// video.js is embedded in template.html along with the other client files
-// it is the video streaming side of the page: a member streams its screen or a video file to the
-// channel it is in, one stream per channel, and every other member opts in. frames are encoded with
-// webcodecs, packetized and encrypted with the channel keys in the video worker (video-worker.js),
-// and travel on the second, reliable datachannel the server opens next to the audio one. the server
-// relays them blindly. the headers of video-worker.js, video-transport.js and the server's video_stream.c explain the parts
-// messages.js hands the six server messages in here, dispatch.js the worker's answers, ui.js the datachannel
-//
-// the sound of a stream (the sound of the shared screen, or the sound of the file) travels next to the pictures when the
-// streamer chose so: it is captured with web audio, encoded with a second opus encoder (stereo, the music setting;
-// audio-opus-glue.js) and packed by the video worker into packets of the picture packet format with a sound flag, so it
-// reaches exactly the viewers the streamer allowed, over the same connection. a viewer decodes it with the opus decoder
-// worker under a reserved sender id (VIDEO_STREAM_SOUND_SENDER_ID in audio.js), so it has its own playback buffer and its
-// own volume next to the streamer's voice, whose own path stays untouched
+// This file lets a client share its screen or a video file with viewers in its channel.
+// It controls capture, encoding, quality settings and the stream window.
+// The video worker encrypts the pictures and optional sound with the channel keys.
+// WebSocket or WebRTC DataChannel carries them through the server to approved viewers.
+// The server forwards the encrypted data without the keys to read it.
 
 // ---- constants private to this file ----
 
@@ -28,7 +19,7 @@ var VIDEO_KEYFRAME_INTERVAL_MS = 8000;
 // current bitrate, at least the minimum below (video__send_buffer_limit). a run of skips halves the
 // bitrate, stepped back up slowly once the queue drains
 var VIDEO_SEND_BUFFER_MIN_BYTES = 32 * 1024;
-var VIDEO_SKIPS_BEFORE_BITRATE_STEP = 8;
+var VIDEO_FRAME_DEADLINE_MS = 250;
 
 // a viewer asks for a keyframe at most this often, the server rate limits per streamer on top
 var VIDEO_KEYFRAME_REQUEST_MIN_INTERVAL_MS = 1000;
@@ -41,18 +32,17 @@ var VIDEO_SOUND_FRAME_MS = 20;
 // does not run ahead of the sound. a fixed value; alignment on the timestamps of the packets is a later step
 var VIDEO_SOUND_PICTURE_HOLD_MS = 300;
 
-// one conservative preset per source, no selector yet (see the design notes)
+// Starting values; the streamer can change them in the stream window.
 var VIDEO_PRESETS = {
-    screen: { max_edge: 1280, fps: 15, bitrate: 1500000, content_hint: "detail" },
+    screen: { max_edge: 1280, fps: 30, bitrate: 2500000, content_hint: "motion" },
     file: { max_edge: 1280, fps: 30, bitrate: 2500000, content_hint: "motion" }
 };
 
-// h.264 first, annex b keeps the parameter sets in-band with every keyframe so a viewer can join on
-// any of them. level 3.1 covers 1280x720 at 30 frames; level 3.0 did not, so a hardware encoder could
-// refuse it. the hardware encoder is asked for first, the browser's software encoder second, vp8 last
+// H.264 level 4.2 allows the 1080p and 60 FPS choices. Every keyframe includes
+// the information a new viewer needs. Try hardware encoding first, then software and VP8.
 var VIDEO_CODEC_CANDIDATES = [
-    { codec: "avc1.42E01F", avc: { format: "annexb" }, hardware: "prefer-hardware" },
-    { codec: "avc1.42E01F", avc: { format: "annexb" }, hardware: "no-preference" },
+    { codec: "avc1.42E02A", avc: { format: "annexb" }, hardware: "prefer-hardware" },
+    { codec: "avc1.42E02A", avc: { format: "annexb" }, hardware: "no-preference" },
     { codec: "vp8", hardware: "no-preference" }
 ];
 
@@ -80,8 +70,21 @@ var video_frame_number = 0;
 var video_last_keyframe_ms = 0;
 var video_force_keyframe = false;
 var video_last_encoded_ms = 0;
-var video_skip_streak = 0;
+var video_last_source_time = null;
+var video_quality_window = {started: 0, frames: 0, skipped: 0, slow: 0, clean_since: 0};
+var video_pending_encryption = false;
+var video_sender_generation = 0;
+var video_sender_needs_keyframe = true;
 var video_current_bitrate = 0;
+var video_quality_scale = 1;
+var video_adaptive_quality = true;
+var video_settings = {max_edge: 1280, fps: 30, bitrate: 2500000};
+var video_throughput_bytes = 0;
+var video_throughput_frames = 0;
+var video_throughput_last_bytes = 0;
+var video_throughput_last_frames = 0;
+var video_throughput_last_time = 0;
+var video_throughput_timer = null;
 var video_pump_timer = null;
 var video_pump_is_rvfc = false;
 var video_is_pumping = false;
@@ -282,6 +285,7 @@ function video__init_ui()
     if (sound_volume != null) { sound_volume.oninput = video__sound_volume_oninput; }
     if (monitor_checkbox != null) { monitor_checkbox.onchange = video__monitor_checkbox_onchange; }
     video__load_sound_settings();
+    video__setup_quality_controls();
 
     document.getElementById("video-stream-connect-button").onclick = video__connect;
     document.getElementById("video-stream-disconnect-button").onclick = function() { video__disconnect(true); };
@@ -468,9 +472,9 @@ function video__start_screen_share(is_sound_included)
         return;
     }
 
-    let preset = VIDEO_PRESETS.screen;
+    let preset = Object.assign({}, VIDEO_PRESETS.screen, video_settings);
     let constraints = {
-        video: { width: { max: preset.max_edge }, height: { max: preset.max_edge }, frameRate: { max: preset.fps } },
+        video: { width: { max: 1920 }, height: { max: 1920 }, frameRate: { max: 60 } },
         audio: (is_sound_included == true)
     };
 
@@ -547,7 +551,7 @@ function video__file_input_onchange(event)
 function video__begin_stream(source, media_stream, object_url)
 {
     let preview = document.getElementById("video-stream-preview");
-    let preset = VIDEO_PRESETS[source];
+    let preset = Object.assign({}, VIDEO_PRESETS[source], video_settings);
 
     if (g_video_stream.is_active == true && g_video_stream.streamer_client_id != g_local_client_id)
     {
@@ -712,23 +716,41 @@ function video__pick_codec(width, height, preset)
 function video__on_stream_confirmed()
 {
     let preview = document.getElementById("video-stream-preview");
+    let generation = ++video_sender_generation;
 
     g_video_stream.is_start_pending = false;
     g_video_stream.role = "streamer";
     g_video_stream.viewer_count = 0;
     g_video_stream.epoch = (g_video_stream.epoch + 1) & 0xff;
     video_frame_number = 0;
+    video_last_source_time = null;
     video_last_keyframe_ms = 0;
     video_force_keyframe = true;
-    video_skip_streak = 0;
+    video_quality_window = {started: performance.now(), frames: 0, skipped: 0, slow: 0, clean_since: performance.now()};
+    video_pending_encryption = false;
+    video_sender_needs_keyframe = true;
     video_current_bitrate = video_encoder_config.bitrate;
+    video_quality_scale = 1;
+    video_throughput_bytes = 0;
+    video_throughput_frames = 0;
+    video_throughput_last_bytes = 0;
+    video_throughput_last_frames = 0;
+    video_throughput_last_time = performance.now();
+    clearInterval(video_throughput_timer);
+    video_throughput_timer = setInterval(video__update_throughput, 1000);
     video__post_transport_keys_to_worker();
     video_transport__tick();
 
     try
     {
         video_encoder = new VideoEncoder({
-            output: video__on_encoded_chunk,
+            output: function(chunk, metadata)
+            {
+                if (generation === video_sender_generation)
+                {
+                    video__on_encoded_chunk(chunk, metadata);
+                }
+            },
             error: function(error)
             {
                 console.log("video encoder error: " + error.message);
@@ -788,7 +810,7 @@ function video__schedule_next_frame()
 }
 
 /**
- * @brief one frame: rate limited to the preset, skipped under backpressure, scaled through the canvas when the source is larger than the cap, then handed to the encoder
+ * @brief Encodes the newest picture if the encoder and connection can keep up.
  *
  * @param number now -> the callback's time in ms
  * @param object metadata -> the frame metadata from requestVideoFrameCallback, or null
@@ -800,47 +822,28 @@ function video__pump_frame(now, metadata)
     let preview = document.getElementById("video-stream-preview");
     let frame = null;
     let min_interval_ms = 1000 / g_video_stream.fps;
+    let is_busy = false;
+    let timestamp_us = 0;
+    let want_keyframe = false;
 
     if (video_is_pumping == false || video_encoder == null || video_encoder.state != "configured")
     {
         return;
     }
 
-    // the element's callback runs once per composited frame (60 a second on a screen): keep to the preset rate
-    if (video_pump_is_rvfc == true && now - video_last_encoded_ms < min_interval_ms - 2)
+    // Use the video's frame time. Browser callbacks can run late and then close together.
+    if (video_pump_is_rvfc && metadata && video_last_source_time !== null
+        && metadata.mediaTime >= video_last_source_time
+        && (metadata.mediaTime - video_last_source_time) * 1000 < min_interval_ms - 0.5)
     {
         video__schedule_next_frame();
         return;
     }
 
-    // backpressure: a full send queue means the link cannot keep up; skip, and after a run of skips
-    // halve the bitrate (stepped back up slowly once it drains)
-    if (video_transport__buffered_amount() > video__send_buffer_limit())
-    {
-        video_skip_streak++;
-
-        if (video_skip_streak >= VIDEO_SKIPS_BEFORE_BITRATE_STEP && video_current_bitrate > 200000)
-        {
-            video_skip_streak = 0;
-            video_current_bitrate = Math.floor(video_current_bitrate / 2);
-            video__reconfigure_bitrate(video_current_bitrate);
-            console.log("video: link is slow, bitrate down to " + video_current_bitrate);
-        }
-
-        video__schedule_next_frame();
-        return;
-    }
-
-    if (video_skip_streak == 0 && video_current_bitrate < video_encoder_config.bitrate && video_frame_number % 150 == 0 && video_frame_number > 0)
-    {
-        video_current_bitrate = Math.min(video_encoder_config.bitrate, Math.floor(video_current_bitrate * 1.25));
-        video__reconfigure_bitrate(video_current_bitrate);
-    }
-
-    video_skip_streak = 0;
-
-    // pending queue in the encoder: never let it pile up, drop instead
-    if (video_encoder.encodeQueueSize > 2)
+    is_busy = video_transport__buffered_amount() > video__send_buffer_limit()
+        || video_pending_encryption || video_encoder.encodeQueueSize >= 2;
+    video__update_adaptive_quality(is_busy);
+    if (is_busy)
     {
         video__schedule_next_frame();
         return;
@@ -848,7 +851,7 @@ function video__pump_frame(now, metadata)
 
     try
     {
-        let timestamp_us = Math.round(now * 1000);
+        timestamp_us = Math.round(now * 1000);
 
         if (preview.videoWidth != g_video_stream.width || preview.videoHeight != g_video_stream.height)
         {
@@ -872,7 +875,7 @@ function video__pump_frame(now, metadata)
             frame = new VideoFrame(preview, { timestamp: timestamp_us });
         }
 
-        let want_keyframe = video_force_keyframe || (now - video_last_keyframe_ms >= VIDEO_KEYFRAME_INTERVAL_MS);
+        want_keyframe = video_force_keyframe || (now - video_last_keyframe_ms >= VIDEO_KEYFRAME_INTERVAL_MS);
 
         video_encoder.encode(frame, { keyFrame: want_keyframe });
         frame.close();
@@ -884,10 +887,14 @@ function video__pump_frame(now, metadata)
         }
 
         video_last_encoded_ms = now;
+        video_last_source_time = metadata ? metadata.mediaTime : null;
     }
     catch (frame_error)
     {
-        if (frame != null) { try { frame.close(); } catch (close_error) { } }
+        if (frame != null)
+        {
+            frame.close();
+        }
         console.log("video frame skipped: " + frame_error.message);
     }
 
@@ -895,7 +902,53 @@ function video__pump_frame(now, metadata)
 }
 
 /**
- * @brief re-configures the running encoder with a new bitrate, keeping everything else
+ * @brief Lowers picture quality when frames keep falling behind, then restores it slowly.
+ * @param boolean is_skipped -> this picture could not be encoded or sent yet
+ * @return void
+ */
+function video__update_adaptive_quality(is_skipped)
+{
+    let now = performance.now();
+    let samples = video_quality_window;
+    let pressured = 0;
+    let bitrate = video_current_bitrate;
+    let scale = video_quality_scale;
+
+    samples.frames++;
+    samples.skipped += is_skipped ? 1 : 0;
+    if (now - samples.started < 2000)
+    {
+        return;
+    }
+    pressured = Math.max(samples.skipped, samples.slow);
+    if (video_adaptive_quality && samples.frames >= 10 && pressured >= 3 && pressured / samples.frames > 0.1)
+    {
+        video_current_bitrate = Math.max(200000, Math.floor(bitrate * 0.75));
+        video_quality_scale = Math.max(0.375, scale * 0.75);
+        samples.clean_since = now;
+    }
+    else if (pressured > 0 || !video_adaptive_quality)
+    {
+        samples.clean_since = now;
+    }
+    else if (now - samples.clean_since >= 10000)
+    {
+        video_current_bitrate = Math.min(video_encoder_config.bitrate, Math.floor(bitrate * 1.15));
+        video_quality_scale = Math.min(1, scale * 1.1);
+        samples.clean_since = now;
+    }
+    samples.started = now;
+    samples.frames = 0;
+    samples.skipped = 0;
+    samples.slow = 0;
+    if (bitrate !== video_current_bitrate || scale !== video_quality_scale)
+    {
+        video__reconfigure_bitrate(video_current_bitrate);
+    }
+}
+
+/**
+ * @brief Applies the current picture size and bitrate, then requests a fresh keyframe.
  *
  * @param number bitrate -> bits per second
  *
@@ -903,6 +956,8 @@ function video__pump_frame(now, metadata)
  */
 function video__reconfigure_bitrate(bitrate)
 {
+    let config = null;
+
     if (video_encoder == null || video_encoder.state != "configured")
     {
         return;
@@ -910,15 +965,108 @@ function video__reconfigure_bitrate(bitrate)
 
     try
     {
-        let config = Object.assign({}, video_encoder_config);
+        config = Object.assign({}, video_encoder_config);
         config.bitrate = bitrate;
+        config.width = Math.max(16, Math.floor(config.width * video_quality_scale / 2) * 2);
+        config.height = Math.max(16, Math.floor(config.height * video_quality_scale / 2) * 2);
         video_encoder.configure(config);
+        g_video_stream.width = config.width;
+        g_video_stream.height = config.height;
         video_force_keyframe = true;
     }
     catch (reconfigure_error)
     {
         console.log("video bitrate change failed: " + reconfigure_error.message);
     }
+}
+
+/**
+ * @brief Restores the streamer's quality choices and connects the Apply button.
+ * @return void
+ */
+function video__setup_quality_controls()
+{
+    let saved = null;
+
+    try
+    {
+        saved = JSON.parse(utils__storage_get("lemon_video_quality") || "null");
+        if (saved && [24, 25, 30, 60].includes(saved.fps) && [640, 854, 1280, 1920].includes(saved.max_edge)
+            && Number.isFinite(saved.bitrate) && saved.bitrate >= 200000 && saved.bitrate <= 20000000)
+        {
+            video_settings = {fps: saved.fps, max_edge: saved.max_edge, bitrate: saved.bitrate};
+            video_adaptive_quality = saved.adaptive !== false;
+        }
+    }
+    catch (error)
+    {
+        // Ignore a damaged saved value and keep the defaults.
+    }
+    document.getElementById("video-stream-fps").value = String(video_settings.fps);
+    document.getElementById("video-stream-resolution").value = String(video_settings.max_edge);
+    document.getElementById("video-stream-bitrate").value = String(video_settings.bitrate / 1000000);
+    document.getElementById("video-stream-adaptive").checked = video_adaptive_quality;
+    document.getElementById("video-stream-apply-settings").onclick = video__apply_quality_controls;
+}
+
+/**
+ * @brief Applies the chosen frame rate, resolution and bitrate to this stream and remembers them.
+ * @return void
+ */
+function video__apply_quality_controls()
+{
+    let fps = Number(document.getElementById("video-stream-fps").value);
+    let edge = Number(document.getElementById("video-stream-resolution").value);
+    let bitrate_input = document.getElementById("video-stream-bitrate");
+    let bitrate = Math.round(Number(bitrate_input.value) * 1000000);
+    let preview = document.getElementById("video-stream-preview");
+    let scale = 1;
+
+    if (!bitrate_input.reportValidity() || ![24, 25, 30, 60].includes(fps)
+        || ![640, 854, 1280, 1920].includes(edge) || !Number.isFinite(bitrate)
+        || bitrate < 200000 || bitrate > 20000000)
+    {
+        return;
+    }
+    video_settings = {fps: fps, max_edge: edge, bitrate: bitrate};
+    video_adaptive_quality = document.getElementById("video-stream-adaptive").checked;
+    utils__storage_set("lemon_video_quality", JSON.stringify(Object.assign({}, video_settings, {adaptive: video_adaptive_quality})));
+    if (g_video_stream.role !== "streamer" || video_encoder_config === null || !preview.videoWidth || !preview.videoHeight)
+    {
+        return;
+    }
+    scale = Math.min(1, edge / Math.max(preview.videoWidth, preview.videoHeight));
+    video_encoder_config.width = Math.max(16, Math.floor(preview.videoWidth * scale / 2) * 2);
+    video_encoder_config.height = Math.max(16, Math.floor(preview.videoHeight * scale / 2) * 2);
+    video_encoder_config.framerate = fps;
+    video_encoder_config.bitrate = bitrate;
+    g_video_stream.fps = fps;
+    video_current_bitrate = bitrate;
+    video_quality_scale = 1;
+    video_quality_window = {started: performance.now(), frames: 0, skipped: 0, slow: 0, clean_since: performance.now()};
+    video__reconfigure_bitrate(bitrate);
+}
+
+/**
+ * @brief Shows the actual upload rate and sent frame rate once a second.
+ * @return void
+ */
+function video__update_throughput()
+{
+    let output = document.getElementById("video-stream-throughput");
+    let now = performance.now();
+    let seconds = Math.max(0.001, (now - video_throughput_last_time) / 1000);
+    let mbps = (video_throughput_bytes - video_throughput_last_bytes) * 8 / seconds / 1000000;
+    let fps = (video_throughput_frames - video_throughput_last_frames) / seconds;
+
+    if (output)
+    {
+        output.textContent = "Sending " + fps.toFixed(1) + " FPS · " + mbps.toFixed(2) + " Mbps · "
+            + g_video_stream.width + " × " + g_video_stream.height;
+    }
+    video_throughput_last_time = now;
+    video_throughput_last_bytes = video_throughput_bytes;
+    video_throughput_last_frames = video_throughput_frames;
 }
 
 /**
@@ -931,19 +1079,37 @@ function video__reconfigure_bitrate(bitrate)
  */
 function video__on_encoded_chunk(chunk, metadata)
 {
+    let data = null;
+    let captured_at = performance.timeOrigin + chunk.timestamp / 1000;
+
     if (g_video_stream.role != "streamer" || g_video_worker == null)
     {
         return;
     }
 
-    let data = new ArrayBuffer(chunk.byteLength);
-    chunk.copyTo(data);
+    if (performance.now() - chunk.timestamp / 1000 > Math.max(50, 1500 / g_video_stream.fps))
+    {
+        video_quality_window.slow++;
+    }
 
     video_frame_number = (video_frame_number + 1) & 0xffff;
+    if (performance.now() - chunk.timestamp / 1000 > VIDEO_FRAME_DEADLINE_MS
+        || video_pending_encryption || (video_sender_needs_keyframe && chunk.type !== "key"))
+    {
+        video_sender_needs_keyframe = true;
+        video_force_keyframe = true;
+        return;
+    }
+    data = new ArrayBuffer(chunk.byteLength);
+    chunk.copyTo(data);
+    video_pending_encryption = true;
+    video_sender_needs_keyframe = false;
 
     g_video_worker.postMessage({
         type: "mainthread__video_worker_packetize",
         epoch: g_video_stream.epoch,
+        generation: video_sender_generation,
+        expires_at: captured_at + VIDEO_FRAME_DEADLINE_MS,
         frame_number: video_frame_number,
         is_keyframe: (chunk.type == "key"),
         timestamp: chunk.timestamp,
@@ -956,13 +1122,20 @@ function video__on_encoded_chunk(chunk, metadata)
  *
  * @param array packets -> ArrayBuffers
  *
- * @return void
+ * @return boolean -> true when every packet was handed to the connection
  */
 function video__send_packets(packets)
 {
-    if (g_video_stream.role != "streamer")
+    let bytes = 0;
+
+    for (let packet of packets)
     {
-        return;
+        bytes += packet.byteLength;
+    }
+    if (g_video_stream.role != "streamer" || video_transport__active() === null
+        || video_transport__buffered_amount() + bytes > VIDEO_TRANSPORT_SEND_BUFFER_LIMIT)
+    {
+        return false;
     }
 
     for (let i = 0; i < packets.length; i++)
@@ -971,8 +1144,14 @@ function video__send_packets(packets)
         if (video_transport__send(packets[i]) == true)
         {
             g_session.bytes_sent += packets[i].byteLength;
+            video_throughput_bytes += packets[i].byteLength;
+        }
+        else
+        {
+            return false;
         }
     }
+    return true;
 }
 
 /**
@@ -988,6 +1167,11 @@ function video__stop_stream(tell_server, reason)
     let was_streaming = (g_video_stream.role == "streamer" || g_video_stream.is_start_pending == true);
 
     video_is_pumping = false;
+    video_sender_generation++;
+    video_pending_encryption = false;
+    video_sender_needs_keyframe = true;
+    clearInterval(video_throughput_timer);
+    video_throughput_timer = null;
 
     if (video_pump_timer != null)
     {
@@ -1235,6 +1419,8 @@ function video__on_sound_encoded(opus_packets)
             frame_number: video_sound_sequence_number,
             is_keyframe: false,
             is_sound: true,
+            generation: video_sender_generation,
+            expires_at: performance.timeOrigin + now_us / 1000 + VIDEO_FRAME_DEADLINE_MS,
             timestamp: now_us - (opus_packets.length - 1 - i) * VIDEO_SOUND_FRAME_MS * 1000,
             data: data
         }, [data]);
@@ -1457,7 +1643,8 @@ function video__on_media_frame(frame)
         return;
     }
 
-    g_video_worker.postMessage({ type: "mainthread__video_worker_decode_packet", value: frame }, [frame]);
+    g_video_worker.postMessage({ type: "mainthread__video_worker_decode_packet",
+        received_at: performance.timeOrigin + performance.now(), value: frame }, [frame]);
 }
 
 /**
@@ -1492,11 +1679,29 @@ function video__request_keyframe()
  */
 function video__on_worker_message(data)
 {
-    if (data.type == "video_worker__packets_ready")
+    if (data.type == "video_worker__packets_ready" || data.type == "video_worker__frame_dropped")
     {
-        if (data.epoch == g_video_stream.epoch)
+        if (data.epoch !== g_video_stream.epoch || data.generation !== video_sender_generation)
         {
-            video__send_packets(data.packets);
+            return;
+        }
+        if (!data.is_sound)
+        {
+            video_pending_encryption = false;
+        }
+        if (data.type === "video_worker__frame_dropped"
+            || performance.timeOrigin + performance.now() > data.expires_at
+            || !video__send_packets(data.packets))
+        {
+            if (!data.is_sound)
+            {
+                video_sender_needs_keyframe = true;
+                video_force_keyframe = true;
+            }
+        }
+        else if (!data.is_sound)
+        {
+            video_throughput_frames++;
         }
     }
     else if (data.type == "video_worker__sound_packet")
@@ -2075,6 +2280,12 @@ function video__refresh_popup_buttons()
     let count = document.getElementById("video-stream-viewer-count");
     let volume_label = document.getElementById("video-stream-sound-volume-label");
     let monitor_label = document.getElementById("video-stream-monitor-label");
+    let settings = document.getElementById("video-stream-settings");
+
+    if (settings)
+    {
+        settings.hidden = g_video_stream.role !== "streamer";
+    }
 
     if (connect == null)
     {

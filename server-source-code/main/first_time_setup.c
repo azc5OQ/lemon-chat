@@ -269,6 +269,10 @@ static void _first_time_setup_internal__save_server_settings(char plaintext_keys
     cJSON_AddItemToObject(json_root, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
     cJSON_AddBoolToObject(json_root, "enforce_connection_check", g_server_settings.enforce_connection_check == TRUE);
     cJSON_AddNumberToObject(json_root, "max_concurrent_logins", (double)g_server_settings.max_concurrent_logins);
+    cJSON_AddBoolToObject(json_root, "allow_block_direct_chat_pictures", g_server_settings.allow_block_direct_chat_pictures);
+    cJSON_AddBoolToObject(json_root, "allow_block_direct_chat_files", g_server_settings.allow_block_direct_chat_files);
+    cJSON_AddBoolToObject(json_root, "allow_block_channel_chat_pictures", g_server_settings.allow_block_channel_chat_pictures);
+    cJSON_AddBoolToObject(json_root, "allow_block_channel_chat_files", g_server_settings.allow_block_channel_chat_files);
     cJSON_AddNumberToObject(json_root, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
     cJSON_AddItemToObject(json_root, "show_music_bot_marquee_to_everyone", cJSON_CreateBool(g_server_settings.show_music_bot_marquee_to_everyone == TRUE));
     cJSON_AddItemToObject(json_root, "restart_on_crash", cJSON_CreateBool(g_server_settings.restart_on_crash == TRUE));

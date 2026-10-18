@@ -28,6 +28,17 @@ NOTE:   String length must be evenly divisible by 16byte (str_len % 16 == 0)
 #include <string.h> // CBC mode, for memset
 #include "aes.h"
 
+#ifndef TINY_AES_ENABLE_AESNI
+#define TINY_AES_ENABLE_AESNI 1
+#endif
+
+#if TINY_AES_ENABLE_AESNI && (defined(__GNUC__) || defined(__clang__)) && (defined(__i386__) || defined(__x86_64__))
+#include <wmmintrin.h>
+#define TINY_AES_HAS_AESNI 1
+#else
+#define TINY_AES_HAS_AESNI 0
+#endif
+
 /*****************************************************************************/
 /* Defines:                                                                  */
 /*****************************************************************************/
@@ -57,6 +68,11 @@ NOTE:   String length must be evenly divisible by 16byte (str_len % 16 == 0)
 /*****************************************************************************/
 // state - array holding the intermediate results during decryption.
 typedef uint8_t state_t[4][4];
+
+#if TINY_AES_HAS_AESNI && defined(CTR) && CTR == 1
+static void _aes_internal__encrypt_block_aesni(uint8_t* block, const uint8_t* round_keys)
+    __attribute__((target("aes,sse2")));
+#endif
 
 // The lookup-tables are marked const so they can be placed in read-only storage instead of RAM
 // The numbers below can be computed dynamically trading ROM for RAM -
@@ -481,18 +497,53 @@ void AES_CBC_decrypt_buffer(struct AES_ctx *ctx, uint8_t *buf, uint32_t length)
 
 #if defined(CTR) && (CTR == 1)
 
+#if TINY_AES_HAS_AESNI
+/**
+ * @brief Uses the CPU's AES instructions with tiny-AES's existing round keys.
+ * @param uint8_t* block -> 16 bytes replaced with their encrypted form
+ * @param const uint8_t* round_keys -> keys already expanded by AES_init_ctx
+ */
+static void _aes_internal__encrypt_block_aesni(uint8_t* block, const uint8_t* round_keys)
+{
+    __m128i value = _mm_loadu_si128((const __m128i*)block);
+    int round = 0;
+
+    value = _mm_xor_si128(value, _mm_loadu_si128((const __m128i*)round_keys));
+    for (round = 1; round < Nr; round++)
+    {
+        value = _mm_aesenc_si128(value, _mm_loadu_si128((const __m128i*)(round_keys + round * AES_BLOCKLEN)));
+    }
+    value = _mm_aesenclast_si128(value, _mm_loadu_si128((const __m128i*)(round_keys + Nr * AES_BLOCKLEN)));
+    _mm_storeu_si128((__m128i*)block, value);
+}
+#endif
+
 /* Symmetrical operation: same function for encrypting as for decrypting. Note any IV/nonce should never be reused with the same key */
 void AES_CTR_xcrypt_buffer(struct AES_ctx *ctx, uint8_t *buf, size_t length)
 {
     size_t i = 0;
     int counter_byte = 0;
+#if TINY_AES_HAS_AESNI
+    int use_aesni = __builtin_cpu_supports("aes") && __builtin_cpu_supports("sse2");
+#endif
 
     for (i = 0; i < length; i++)
     {
         if (ctx->CtrOffset == AES_BLOCKLEN)
         {
             memcpy(ctx->CtrBlock, ctx->Iv, AES_BLOCKLEN);
-            Cipher((state_t*)ctx->CtrBlock, ctx->RoundKey);
+#if TINY_AES_HAS_AESNI
+            // Check support before entering the function that uses AES instructions.
+            // Other processors keep using the same portable tiny-AES implementation.
+            if (use_aesni)
+            {
+                _aes_internal__encrypt_block_aesni(ctx->CtrBlock, ctx->RoundKey);
+            }
+            else
+#endif
+            {
+                Cipher((state_t*)ctx->CtrBlock, ctx->RoundKey);
+            }
 
             // Treat the 16-byte IV as one number and increase it by one. Its
             // last byte is the lowest-value byte; if that byte wraps to zero,

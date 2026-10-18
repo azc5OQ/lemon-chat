@@ -668,7 +668,8 @@ function connection__connection_check_sleep(ms)
 // server's setting. Android waits another 15 seconds before its backup takes over.
 function connection__has_keepalive_timed_out(timestamp_now, extra_wait_ms = 0)
 {
-    return g_server_policy.enforce_connection_check !== false
+    return g_worker_connection_active === false
+        && g_server_policy.enforce_connection_check !== false
         && g_connection_check.last_response_timestamp > 0
         && g_connection_check.last_response_timestamp + g_connection_check.lost_threshold_ms + extra_wait_ms < timestamp_now;
 }
@@ -762,10 +763,12 @@ function connection__try_start_fast_reconnect(reason)
     g_is_authenticated = false;
     g_should_connection_check_be_running = false;
     g_connection_check.last_response_timestamp = 0;
+    g_worker_connection_ended = true;
     channel_tree__stop_avatar_prefetch();
 
     // the worker goes back to handshake mode; it keeps the identity and the channel keys
-    g_data_processing_worker.postMessage({ type: "mainthread_reset_data" });
+    keys__cancel_channel_key_creation();
+    g_data_processing_worker.postMessage({ type: "mainthread_reset_data", preserve_channel_keys: true });
 
     console.log("%cfast reconnect: " + reason + " - connecting again with the same identity", "color: #ffa500; font-weight: bold; font-size: 14px;");
     utils__custom_log("fast reconnect attempt (" + reason + ")");
@@ -904,6 +907,7 @@ function connection__fast_reconnect_apply_lists()
  */
 function connection__reset_chat_app_keep_identity()
 {
+    g_worker_connection_ended = true;
     if (typeof server_info__reset === "function")
     {
         server_info__reset();
@@ -971,6 +975,7 @@ function connection__reset_chat_app_keep_identity()
         document.getElementsByClassName("connected-client")[0].remove();
     }
 
+    keys__cancel_channel_key_creation();
     g_data_processing_worker.postMessage({
         type: "mainthread_reset_data"
     });
@@ -1027,7 +1032,8 @@ function connection__reset_chat_app_keep_identity()
 
     g_selected_channel_id = null;
     g_selected_client_id = null;
-    g_current_channel_keys = null;
+    keys__clear_channel_keys();
+    chat_files__refresh_receive_preferences_controls();
     g_chat_context_array = [
         {
             type: "channel",
@@ -1235,6 +1241,23 @@ function connection__set_connect_button_pending(is_pending)
  */
 async function connection__attempt_connection(target, identity)
 {
+    let worker_channel = null;
+
+    g_worker_connection_ended = false;
+    g_worker_connection_active = target.kind !== "loopback"
+        && typeof process === "undefined" && typeof MessageChannel === "function";
+    if (g_worker_connection_active)
+    {
+        worker_channel = new MessageChannel();
+        g_worker_connection_generation++;
+        g_data_processing_worker.postMessage(
+        {
+            type: "mainthread__connect_socket_port",
+            port: worker_channel.port1,
+            connection_generation: g_worker_connection_generation
+        }, [worker_channel.port1]);
+    }
+
     if (android_host__is_ui_only_runtime())
     {
         // the page stays exactly as it is; only the button signals the running attempt
@@ -1282,6 +1305,7 @@ async function connection__attempt_connection(target, identity)
     g_host = target.host;
     port = target.port;
 
+    g_keys_init_status = false;
     keys__init_keys_object();
 
     while (g_keys_init_status == false)
@@ -1327,11 +1351,13 @@ async function connection__attempt_connection(target, identity)
 
     g_websocket_worker.postMessage({
         type: "create_websocket_object",
+        port: worker_channel == null ? null : worker_channel.port2,
+        connection_generation: g_worker_connection_generation,
         value: {
             connection_string: connection_string,
             onopen_data: data
         }
-    });
+    }, worker_channel == null ? [] : [worker_channel.port2]);
 }
 
 /**
@@ -1347,6 +1373,7 @@ function connection__websocket_worker_send(data_to_send)
 
     g_websocket_worker.postMessage({
         type: "send",
+        connection_generation: g_worker_connection_active ? g_worker_connection_generation : undefined,
         value: data_to_send
     });
 }

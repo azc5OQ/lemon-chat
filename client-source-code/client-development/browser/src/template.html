@@ -114,6 +114,7 @@
 /* @@INCLUDE: scripts/app/keys.js @@ */
 /* @@INCLUDE: scripts/app/channel-tree.js @@ */
 /* @@INCLUDE: scripts/app/chat.js @@ */
+/* @@INCLUDE: scripts/app/chat-history.js @@ */
 /* @@INCLUDE: scripts/app/link-previews.js @@ */
 /* @@INCLUDE: scripts/app/layout.js @@ */
 /* @@INCLUDE: scripts/app/voice.js @@ */
@@ -188,6 +189,9 @@
                             <dl>
                                 <div><dt>Used slots</dt><dd data-admin-server-slots>Unavailable</dd></div>
                                 <div><dt>Uptime</dt><dd data-admin-server-uptime>Unavailable</dd></div>
+                                <div title="RAM currently used by the server process, including shared memory. Refreshed every five seconds while this tab is visible."><dt>Server RAM usage</dt><dd data-admin-server-ram>Waiting for the server…</dd></div>
+                                <div title="Total WebSocket and WebRTC data received since this server started. Includes chat, audio and video. Excludes the client web page and network protocol overhead outside WebSocket."><dt>Data received</dt><dd data-admin-server-received>Waiting for the server…</dd></div>
+                                <div title="Total WebSocket and WebRTC data sent since this server started. Sending one stream to ten viewers counts ten copies. WebRTC counts data accepted for sending, without retransmissions or transport headers."><dt>Data sent</dt><dd data-admin-server-sent>Waiting for the server…</dd></div>
                             </dl>
                             <p class="server-settings-general-subheader">server banner</p>
                             <img data-admin-server-banner class="server-info-banner" alt="Server banner preview" hidden>
@@ -323,6 +327,24 @@
                         <label class="server-settings-general-row server-settings-general-row-number">
                             <span>voice datachannel cooldown after 10 failed connection attempts (seconds, 0 = keep trying)</span>
                             <input type="number" min="0" max="86400" step="1" id="server-settings-general-datachannel-cooldown-input">
+                        </label>
+
+                        <p class="server-settings-general-subheader">attachment receive choices</p>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-allow-block-direct-chat-pictures">
+                            <span>allow clients to block direct chat pictures</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-allow-block-direct-chat-files">
+                            <span>allow clients to block direct chat files</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-allow-block-channel-chat-pictures">
+                            <span>allow clients to block channel chat pictures</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-allow-block-channel-chat-files">
+                            <span>allow clients to block channel chat files</span>
                         </label>
 
                         <p class="server-settings-general-subheader">connections and security</p>
@@ -478,165 +500,241 @@
             <input type="button" id="local-settings-button" value="local" title="settings stored only on this device, no admin involved">
             <div id="local-settings-container" style="display: none;">
                 <div id="menu-bar-container"><p id="local-settings-title">local settings</p><div class="close-button" id="local-settings-x-button"></div></div>
-                <div id="local-settings-scroll">
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">show avatars</span>
-                            <span class="local-settings-hint">draws each person's picture beside their messages</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-show-avatars">
-                    </label>
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">disable custom fonts in chat messages</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-theme-chat-formatting">
-                    </label>
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">read receipts</span>
-                            <span class="local-settings-hint">shows an eye on a private message once the other person has read it</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-seen-indicator">
-                    </label>
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">tell others when you read</span>
-                            <span class="local-settings-hint">sends the eye back, so people can see you have read their private message</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-send-seen">
-                    </label>
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">auto-scroll to the end</span>
-                            <span class="local-settings-hint">a new message scrolls the chat down; off keeps your place while you read older messages</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-auto-scroll">
-                    </label>
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">sound effects</span>
-                            <span class="local-settings-hint">a short sound when someone joins, leaves or writes</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-sound-effects">
-                    </label>
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">country flags</span>
-                            <span class="local-settings-hint">shows the flag of the country each person connects from</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-country-flags">
-                    </label>
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">theme cursor</span>
-                            <span class="local-settings-hint">lets a theme replace the mouse cursor and draw a glow around it (ozone does); off keeps the system cursor</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-custom-cursor">
-                    </label>
-                    <div class="local-settings-row local-settings-row-select">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">microphone</span>
-                            <span class="local-settings-hint">whether you hold the mic to speak or leave it running</span>
-                        </span>
-                        <select id="local-settings-mic-mode">
-                            <option value="push-to-talk">push to talk</option>
-                            <option value="continuous">continuous</option>
-                        </select>
-                        <!-- touch themes use these instead of the select: an android webview cancels a
-                             native dropdown as soon as an ancestor animates, so the list never opened -->
-                        <div id="local-settings-mic-mode-segmented">
-                            <input type="button" class="local-settings-segment" data-mic-mode="push-to-talk" value="hold">
-                            <input type="button" class="local-settings-segment" data-mic-mode="continuous" value="hands free">
-                        </div>
+                <div id="local-settings-body">
+                    <div id="local-settings-tabs" role="tablist" aria-label="local settings sections" aria-orientation="vertical">
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-appearance" role="tab" aria-controls="local-settings-page-appearance" aria-selected="true" tabindex="0">Appearance</button>
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-chat" role="tab" aria-controls="local-settings-page-chat" aria-selected="false" tabindex="-1">Chat</button>
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-audio" role="tab" aria-controls="local-settings-page-audio" aria-selected="false" tabindex="-1">Audio</button>
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-files" role="tab" aria-controls="local-settings-page-files" aria-selected="false" tabindex="-1">Files & pictures</button>
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-identity" role="tab" aria-controls="local-settings-page-identity" aria-selected="false" tabindex="-1">Identity</button>
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-advanced" role="tab" aria-controls="local-settings-page-advanced" aria-selected="false" tabindex="-1">Advanced</button>
                     </div>
-                    <div class="local-settings-row local-settings-row-select" id="local-settings-ptt-key-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">push-to-talk key</span>
-                            <span class="local-settings-hint">the keyboard key you hold down while speaking</span>
-                        </span>
-                        <input type="button" id="local-settings-ptt-key" value="Q">
-                    </div>
-                    <div class="local-settings-row local-settings-row-select" id="local-settings-audio-connection-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">audio and video connection</span>
-                            <span class="local-settings-hint">the server decides which connections it allows</span>
-                        </span>
-                        <select id="local-settings-audio-connection" aria-describedby="local-settings-webrtc-note">
-                            <option value="webrtc">Prefer WebRTC DataChannel (not peer-to-peer)</option>
-                            <option value="websocket">Prefer WebSocket</option>
-                        </select>
-                        <p id="local-settings-webrtc-note" class="local-settings-hint">Lemon Chat uses only the DataChannel part of the WebRTC stack. It works like a WebSocket over UDP. The server acts as the other WebRTC peer, so users do not connect directly to each other or share their IP addresses through WebRTC. With either connection, the server relays your encrypted audio without having the keys to decrypt it. Both WebRTC DataChannel and WebSocket are available as an experiment to see which works better for audio.</p>
-                    </div>
-                    <!-- the device list fills once the microphone permission has been granted -->
-                    <div class="local-settings-row local-settings-row-select" id="local-settings-mic-device-row" style="display: none;">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">microphone input</span>
-                            <span class="local-settings-hint">which microphone the app captures from</span>
-                        </span>
-                        <select id="local-settings-mic-device"></select>
-                    </div>
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">hide the microphone button</span>
-                            <span class="local-settings-hint">removes the round mic button from the chat screen entirely</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-hide-mic">
-                    </label>
-                    <div class="local-settings-row local-settings-row-select">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">identity key size</span>
-                            <span class="local-settings-hint">bigger is stronger but slower to create, and it changes which identity a passphrase produces</span>
-                        </span>
-                        <select id="local-settings-rsa-key-bits">
-                            <option value="2048">2048 bits</option>
-                            <option value="3072">3072 bits</option>
-                            <option value="4096">4096 bits</option>
-                            <option value="6144">6144 bits</option>
-                            <option value="8192">8192 bits</option>
-                        </select>
-                    </div>
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">app log button</span>
-                            <span class="local-settings-hint">adds a toolbar button that opens the connection log</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-show-log">
-                    </label>
-                    <label class="local-settings-row">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">write a debug log file</span>
-                            <span class="local-settings-hint">records what the app does, so a fault can be looked at afterwards</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-file-logging">
-                    </label>
-                    <label class="local-settings-row local-settings-row-member-list">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">people on the side</span>
-                            <span class="local-settings-hint">moves the people strip from the top to the left edge</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-member-list-vertical">
-                    </label>
-                    <label class="local-settings-row local-settings-row-member-list">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">only my channel</span>
-                            <span class="local-settings-hint">hides everyone who is not in the channel you are in</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-member-list-neighbors">
-                    </label>
-                    <label class="local-settings-row local-settings-row-member-list">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">show who has audio off</span>
-                            <span class="local-settings-hint">marks people who cannot receive audio at all, so you know before you speak</span>
-                        </span>
-                        <input type="checkbox" id="local-settings-audio-availability">
-                    </label>
-                    <div class="local-settings-row local-settings-row-select">
-                        <span class="local-settings-text">
-                            <span class="local-settings-label">avatar and account</span>
-                            <span class="local-settings-hint">change your picture, alias and stored identity</span>
-                        </span>
-                        <input type="button" id="local-settings-avatar-button" value="open">
+                    <div id="local-settings-scroll">
+                        <section class="local-settings-page" id="local-settings-page-appearance" role="tabpanel" aria-labelledby="local-settings-tab-appearance" tabindex="0">
+                            <h2 class="local-settings-section-title">Appearance</h2>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">show avatars</span>
+                                    <span class="local-settings-hint">draws each person's picture beside their messages</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-show-avatars">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">disable custom fonts in chat messages</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-theme-chat-formatting">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">country flags</span>
+                                    <span class="local-settings-hint">shows the flag of the country each person connects from</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-country-flags">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">theme cursor</span>
+                                    <span class="local-settings-hint">lets a theme replace the mouse cursor and draw a glow around it (ozone does); off keeps the system cursor</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-custom-cursor">
+                            </label>
+                            <label class="local-settings-row local-settings-row-member-list">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">people on the side</span>
+                                    <span class="local-settings-hint">moves the people strip from the top to the left edge</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-member-list-vertical">
+                            </label>
+                            <label class="local-settings-row local-settings-row-member-list">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">only my channel</span>
+                                    <span class="local-settings-hint">hides everyone who is not in the channel you are in</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-member-list-neighbors">
+                            </label>
+                            <label class="local-settings-row local-settings-row-member-list">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">show who has audio off</span>
+                                    <span class="local-settings-hint">marks people who cannot receive audio at all, so you know before you speak</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-audio-availability">
+                            </label>
+                        </section>
+                        <section class="local-settings-page" id="local-settings-page-chat" role="tabpanel" aria-labelledby="local-settings-tab-chat" tabindex="0" hidden>
+                            <h2 class="local-settings-section-title">Chat</h2>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">auto-scroll to the end</span>
+                                    <span class="local-settings-hint">a new message scrolls the chat down; off keeps your place while you read older messages</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-auto-scroll">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">limit messages kept in each chat</span>
+                                    <span class="local-settings-hint">keeps the newest entries in each channel or private chat; older entries are removed from this device's view</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-limit-chat-messages">
+                            </label>
+                            <label class="local-settings-row" id="local-settings-chat-message-limit-row" hidden>
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">messages per chat</span>
+                                    <span class="local-settings-hint">pictures and files count too; increasing this number cannot restore removed entries</span>
+                                </span>
+                                <input type="number" id="local-settings-chat-message-limit" value="1000" min="1" step="1" required>
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">search chat with Ctrl+F</span>
+                                    <span class="local-settings-hint">off uses the browser's normal Find command</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-chat-search">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">read receipts</span>
+                                    <span class="local-settings-hint">shows an eye on a private message once the other person has read it</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-seen-indicator">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">tell others when you read</span>
+                                    <span class="local-settings-hint">sends the eye back, so people can see you have read their private message</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-send-seen">
+                            </label>
+                        </section>
+                        <section class="local-settings-page" id="local-settings-page-audio" role="tabpanel" aria-labelledby="local-settings-tab-audio" tabindex="0" hidden>
+                            <h2 class="local-settings-section-title">Audio</h2>
+                            <div class="local-settings-row local-settings-row-select">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">microphone</span>
+                                    <span class="local-settings-hint">whether you hold the mic to speak or leave it running</span>
+                                </span>
+                                <select id="local-settings-mic-mode">
+                                    <option value="push-to-talk">push to talk</option>
+                                    <option value="continuous">continuous</option>
+                                </select>
+                                <!-- touch themes use these instead of the select: an android webview cancels a
+                                     native dropdown as soon as an ancestor animates, so the list never opened -->
+                                <div id="local-settings-mic-mode-segmented">
+                                    <input type="button" class="local-settings-segment" data-mic-mode="push-to-talk" value="hold">
+                                    <input type="button" class="local-settings-segment" data-mic-mode="continuous" value="hands free">
+                                </div>
+                            </div>
+                            <div class="local-settings-row local-settings-row-select" id="local-settings-ptt-key-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">push-to-talk key</span>
+                                    <span class="local-settings-hint">the keyboard key you hold down while speaking</span>
+                                </span>
+                                <input type="button" id="local-settings-ptt-key" value="Q">
+                            </div>
+                            <div class="local-settings-row local-settings-row-select" id="local-settings-mic-device-row" style="display: none;">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">microphone input</span>
+                                    <span class="local-settings-hint">which microphone the app captures from</span>
+                                </span>
+                                <select id="local-settings-mic-device"></select>
+                            </div>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">hide the microphone button</span>
+                                    <span class="local-settings-hint">removes the round mic button from the chat screen entirely</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-hide-mic">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">sound effects</span>
+                                    <span class="local-settings-hint">a short sound when someone joins, leaves or writes</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-sound-effects">
+                            </label>
+                            <div class="local-settings-row local-settings-row-select" id="local-settings-audio-connection-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">audio and video connection</span>
+                                    <span class="local-settings-hint">the server decides which connections it allows</span>
+                                </span>
+                                <select id="local-settings-audio-connection" aria-describedby="local-settings-webrtc-note">
+                                    <option value="webrtc">Prefer WebRTC DataChannel (not peer-to-peer)</option>
+                                    <option value="websocket">Prefer WebSocket</option>
+                                </select>
+                                <p id="local-settings-webrtc-note" class="local-settings-hint">Lemon Chat uses only the DataChannel part of the WebRTC stack. It works like a WebSocket over UDP. The server acts as the other WebRTC peer, so users do not connect directly to each other or share their IP addresses through WebRTC. With either connection, the server relays your encrypted audio without having the keys to decrypt it. Both WebRTC DataChannel and WebSocket are available as an experiment to see which works better for audio.</p>
+                            </div>
+                        </section>
+                        <section class="local-settings-page" id="local-settings-page-files" role="tabpanel" aria-labelledby="local-settings-tab-files" tabindex="0" hidden>
+                            <h2 class="local-settings-section-title">Files & pictures</h2>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">block direct chat pictures</span>
+                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-block-direct-chat-pictures" data-attachment-preference="block_direct_chat_pictures">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">block direct chat files</span>
+                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-block-direct-chat-files" data-attachment-preference="block_direct_chat_files">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">block channel chat pictures</span>
+                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-block-channel-chat-pictures" data-attachment-preference="block_channel_chat_pictures">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">block channel chat files</span>
+                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-block-channel-chat-files" data-attachment-preference="block_channel_chat_files">
+                            </label>
+                        </section>
+                        <section class="local-settings-page" id="local-settings-page-identity" role="tabpanel" aria-labelledby="local-settings-tab-identity" tabindex="0" hidden>
+                            <h2 class="local-settings-section-title">Identity</h2>
+                            <div class="local-settings-row local-settings-row-select">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">avatar and account</span>
+                                    <span class="local-settings-hint">change your picture, alias and stored identity</span>
+                                </span>
+                                <input type="button" id="local-settings-avatar-button" value="open">
+                            </div>
+                            <div class="local-settings-row local-settings-row-select">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">identity key size</span>
+                                    <span class="local-settings-hint">bigger is stronger but slower to create, and it changes which identity a passphrase produces</span>
+                                </span>
+                                <select id="local-settings-rsa-key-bits">
+                                    <option value="2048">2048 bits</option>
+                                    <option value="3072">3072 bits</option>
+                                    <option value="4096">4096 bits</option>
+                                    <option value="6144">6144 bits</option>
+                                    <option value="8192">8192 bits</option>
+                                </select>
+                            </div>
+                        </section>
+                        <section class="local-settings-page" id="local-settings-page-advanced" role="tabpanel" aria-labelledby="local-settings-tab-advanced" tabindex="0" hidden>
+                            <h2 class="local-settings-section-title">Advanced</h2>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">app log button</span>
+                                    <span class="local-settings-hint">adds a toolbar button that opens the connection log</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-show-log">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">write a debug log file</span>
+                                    <span class="local-settings-hint">records what the app does, so a fault can be looked at afterwards</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-file-logging">
+                            </label>
+                        </section>
                     </div>
                 </div>
                 <input type="button" id="local-settings-close-button" value="save">
@@ -774,6 +872,13 @@
             <div id="space-devider2">
                 <div id="drag-resize-chat"></div>
                 <div id="chat-window-container">
+                    <div id="chat-search" role="search" aria-label="search this chat" hidden>
+                        <input type="search" id="chat-search-input" placeholder="search this chat" aria-label="search retained messages in this chat" autocomplete="off" spellcheck="false">
+                        <span id="chat-search-count" role="status" aria-live="polite">0 matches</span>
+                        <button type="button" id="chat-search-previous" title="previous match (Shift+Enter)" aria-label="previous match">&#8593;</button>
+                        <button type="button" id="chat-search-next" title="next match (Enter)" aria-label="next match">&#8595;</button>
+                        <button type="button" id="chat-search-close" title="close search (Escape)" aria-label="close search">&#215;</button>
+                    </div>
                     <div id="chat-context-selectors-container">
                         <div class="chat-context-selector" data-chat-context-selector-type="channel" data-chat-context-selector-id="channel-0" style="background-color: rgb(54, 57, 63);">
                             <div class="p-container">
@@ -899,6 +1004,18 @@
                 <p id="video-stream-popup-status" style="display: none;"></p>
             </div>
             <div id="video-stream-popup-requests" style="display: none;"></div>
+            <details id="video-stream-settings" hidden>
+                <summary>Stream settings</summary>
+                <div class="video-stream-settings-controls">
+                    <label>Frame rate <select id="video-stream-fps"><option value="24">24 FPS</option><option value="25">25 FPS</option><option value="30" selected>30 FPS</option><option value="60">60 FPS</option></select></label>
+                    <label>Resolution limit <select id="video-stream-resolution"><option value="640">360p</option><option value="854">480p</option><option value="1280" selected>720p</option><option value="1920">1080p</option></select></label>
+                    <label>Video bitrate <input id="video-stream-bitrate" type="number" min="0.2" max="20" step="0.1" value="2.5"> Mbps</label>
+                    <label><input id="video-stream-adaptive" type="checkbox" checked> Adjust quality automatically</label>
+                    <button type="button" id="video-stream-apply-settings">Apply</button>
+                </div>
+                <p>Automatic adjustment lowers quality when sending falls behind. Frame rate is a target; a movie keeps its original frame rate if it is lower.</p>
+                <output id="video-stream-throughput" aria-live="off"></output>
+            </details>
             <div id="video-stream-popup-footer">
                 <input type="button" id="video-stream-connect-button" value="connect" style="display: none;">
                 <input type="button" id="video-stream-disconnect-button" value="disconnect" style="display: none;">

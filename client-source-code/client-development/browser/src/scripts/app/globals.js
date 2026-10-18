@@ -43,6 +43,11 @@ var g_is_authenticated = false;
 
 var g_should_connection_check_be_running = false;
 
+// Each browser connection gets a new pair of ports between the existing workers.
+var g_worker_connection_generation = 0;
+var g_worker_connection_active = false;
+var g_worker_connection_ended = false;
+
 // the heartbeat: one every interval_ms, the link counts as lost after lost_threshold_ms without
 // a reply (three missed 10 s heartbeats plus some allowance, so a lost network shows within a minute)
 var g_connection_check = {
@@ -143,6 +148,10 @@ var g_rsa_key_too_weak_prompted_for_bits = 0;
 // admin save (server_policy); absent fields on an older server keep these defaults. the keys are the
 // field names of the message, so server_settings_tab__apply_server_policy_fields copies them generically (a number only when positive)
 var g_server_policy = {
+    allow_block_direct_chat_pictures: false,
+    allow_block_direct_chat_files: false,
+    allow_block_channel_chat_pictures: false,
+    allow_block_channel_chat_files: false,
     enforce_connection_check: true,
     is_fast_reconnect_allowed: false,          // a lost socket may resume its session instead of starting over
     show_music_bot_marquee_to_everyone: false, // a streaming bot's marquee also for people outside its channel
@@ -210,9 +219,7 @@ var g_chat_message_author_public_keys = {}; // server chat message id -> author'
 
 var g_current_channel_keys = null;
 
-// the previous channel keys: keys change when somebody joins, so a message encrypted with the old ones
-// can still arrive; the data-processing worker tries these too, and drops them on a channel switch
-
+// Previous channel key sets, each with an expiry time ten minutes after replacement.
 var g_historic_keys_of_current_channel = [];
 
 // ---- chat context and composer ----
@@ -370,6 +377,8 @@ var g_layout = {
         order: ["channels", "chat", "info"], // left-to-right column order
         input_col: "chat",                   // which column holds the chat-input row
         input_pos: "bottom",                 // "top" or "bottom" inside that column
+        toolbar_col: "full",                 // full width, or attached to one column
+        toolbar_pos: "top",
         col_channels: "15%",                 // channels column width (becomes px after a drag)
         col_info: "13%"                      // info column width
     }
@@ -416,6 +425,13 @@ var g_show_message_avatars = false;
 
 // Display message text in this theme's font, size and color without changing what was sent.
 var g_use_theme_chat_formatting = false;
+var g_attachment_receive_preferences =
+{
+    block_direct_chat_pictures: false,
+    block_direct_chat_files: false,
+    block_channel_chat_pictures: false,
+    block_channel_chat_files: false
+};
 
 // read receipts have two halves that are set separately: whether we draw the eye others send
 // us, and whether we send one back. both are on unless turned off

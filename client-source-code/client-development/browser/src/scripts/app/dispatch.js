@@ -14,6 +14,13 @@
  */
 function dispatch__mainthread_onmessage(e)
 {
+    if (e.data.connection_generation != null
+        && (e.data.connection_generation !== g_worker_connection_generation
+            || (g_worker_connection_ended && e.data.type !== "websocket_worker_onclose"
+                && e.data.type !== "websocket_worker_onerror")))
+    {
+        return;
+    }
     if (DBG_WORKER_BOOT_LOG) { console.log("[m<-w] " + (e.data && e.data.type)); }
 
     if (e.data.type == "log")
@@ -112,6 +119,10 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "websocket_worker_onclose")
     {
+        if (e.data.reason)
+        {
+            g_last_disconnect_reason = e.data.reason;
+        }
         audio_transport__reset();
         // the connect loop of connection.js waits for this signal; it decides whether and when to connect again
         g_last_connect_attempt_failed = true;
@@ -297,6 +308,8 @@ function dispatch__mainthread_onmessage(e)
             }
 
             g_is_authenticated = true;
+            chat_files__refresh_receive_preferences_controls();
+            chat_files__send_receive_preferences();
             // the audio connection mode was picked above, with the policy; the socket of a previous session is dropped here
             audio_transport__reset();
             console.log("client authenticated");
@@ -327,6 +340,7 @@ function dispatch__mainthread_onmessage(e)
 
             document.getElementById('verification-system').style.display = "none";
             document.getElementById('communication-system-container').style.display = (g_layout.grid_active == true) ? "grid" : "block";
+            layout__layout_apply();
             connection__mark_connected_ui_hidden(false);
 
             // an open list of the head menu closes with the page switch, and the "disconnect" entry becomes available
@@ -353,7 +367,7 @@ function dispatch__mainthread_onmessage(e)
                 UI.hide_chat_container();
             }
 
-            if (!g_should_connection_check_be_running)
+            if (!g_worker_connection_active && !g_should_connection_check_be_running)
             {
                 g_should_connection_check_be_running = true;
                 connection__websocket_connection_check();
@@ -509,6 +523,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__client_list_from_server")
     {
+        server_info__clients_changed();
         if (connection__fast_reconnect_buffer_list("client", e.data.value) == false)
         {
             channel_tree__apply_server_update(server_msg.process_client_list_from_server, e.data.value);
@@ -522,11 +537,20 @@ function dispatch__mainthread_onmessage(e)
     {
         server_msg.process_avatar_changed_from_server(e.data.value);
     }
+    else if (e.data.type == "data_processing_worker__connection_bytes")
+    {
+        g_session.bytes_sent += e.data.bytes_sent;
+        g_session.bytes_received += e.data.bytes_received;
+    }
     else if (e.data.type == "data_processing_worker__connection_check_response")
     {
-        g_connection_check.last_response_timestamp = new Date().valueOf();
+        g_connection_check.last_response_timestamp = e.data.received_at || Date.now();
 
-        if (g_session.ping_sent_at > 0)
+        if (typeof e.data.ping_ms === "number")
+        {
+            g_session.last_ping_ms = e.data.ping_ms;
+        }
+        else if (g_session.ping_sent_at > 0)
         {
             g_session.last_ping_ms = g_connection_check.last_response_timestamp - g_session.ping_sent_at;
         }
@@ -726,11 +750,6 @@ function dispatch__mainthread_onmessage(e)
 
         console.log("public_key_challenge_response result -> ", msg.message.decryption_result);
 
-        g_data_processing_worker.postMessage({
-            type: "mainthread__metadata_keys",
-            value: g_metadata_keys
-        });
-
         let message_object = {
             message: {
                 type: "public_key_challenge_response",
@@ -747,7 +766,27 @@ function dispatch__mainthread_onmessage(e)
             message_object.message.chosen_username = g_chosen_username;
         }
 
-        connection__send_message_object(message_object);
+        if (g_worker_connection_active)
+        {
+            let response = keys__encrypt_all_message_data_and_convert_to_base64(connection__process_message_before_sending(message_object));
+            g_session.bytes_sent += response.length;
+            g_data_processing_worker.postMessage(
+            {
+                type: "mainthread__metadata_keys",
+                value: g_metadata_keys,
+                connection_generation: g_worker_connection_generation,
+                send_after_update: response
+            });
+        }
+        else
+        {
+            g_data_processing_worker.postMessage(
+            {
+                type: "mainthread__metadata_keys",
+                value: g_metadata_keys
+            });
+            connection__send_message_object(message_object);
+        }
     }
     else if (e.data.type == "data_processing_worker__chat_message_edit_from_server")
     {
@@ -798,6 +837,11 @@ function dispatch__mainthread_onmessage(e)
     else if (e.data.type == "data_processing_worker__server_settings_values_from_server")
     {
         let msg = e.data.value;
+        if (msg.message.memory_only === true)
+        {
+            server_info__apply_admin_memory(msg.message);
+            return;
+        }
         server_settings_tab__apply_server_settings_values_to_tab(msg.message);
         server_settings_tab__refresh_hide_admin_flag_row_visibility();
         server_settings_tab__refresh_audio_connections_row_visibility();
@@ -829,6 +873,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__client_connect_from_server")
     {
+        server_info__clients_changed();
         channel_tree__apply_server_update(server_msg.process_client_connect_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_rename_from_server")
@@ -837,6 +882,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__client_disconnect_from_server")
     {
+        server_info__clients_changed();
         channel_tree__apply_server_update(server_msg.process_client_disconnect_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__audio_state_of_single_client_from_server")
@@ -960,11 +1006,19 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__create_websocket_channel_keys_message_result")
     {
+        if (!keys__is_channel_key_creation_current(e.data))
+        {
+            return;
+        }
         console.log("sending channel keys to user -> " + e.data.username);
         connection__websocket_worker_send(e.data.channel_keys_message_content);
     }
     else if (e.data.type == "data_processing_worker__local_channel_keys_for_ui")
     {
+        if (!keys__is_channel_key_creation_current(e.data))
+        {
+            return;
+        }
         // node is the maintainer: it generated these keys itself, so no inbound frame
         // exists to forward. deliver our own copy to the attached ui directly
         if (g_node_frame_listener != null)
@@ -973,9 +1027,20 @@ function dispatch__mainthread_onmessage(e)
             g_node_frame_listener(e.data.value);
         }
     }
+    else if (e.data.type == "data_processing_worker__channel_key_creation_failed")
+    {
+        if (keys__is_channel_key_creation_current(e.data))
+        {
+            keys__finish_channel_key_creation();
+        }
+    }
     else if (e.data.type == "data_processing_worker__new_channel_keys_from_data_processing_worker")
     {
-        g_current_channel_keys = e.data.value;
+        if (!keys__is_channel_key_creation_current(e.data))
+        {
+            return;
+        }
+        keys__set_current_channel_keys(e.data.value);
 
         // data processing worker created new channel keys and sent them to UI thread, now send them from UI thread to opus_decoder worker
         g_opus_decoder_worker.postMessage({
@@ -985,6 +1050,7 @@ function dispatch__mainthread_onmessage(e)
 
         // the video worker encrypts and decrypts stream packets with the same keys
         video__post_channel_keys_to_worker();
+        keys__finish_channel_key_creation();
     }
     else if (e.data.type == "data_processing_worker__tell_websocket_worker_to_send_data")
     {
@@ -997,7 +1063,7 @@ function dispatch__mainthread_onmessage(e)
     else if (e.data.type == "data_processing_worker__direct_chat_picture_to_be_uploaded_by_parts")
     {
         let total_bytes_length = e.data.data_for_upload_process.length;
-        let parts = chat__split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
+        let parts = chat__split_upload_into_chunks(e.data.data_for_upload_process);
 
         // the send path took the upload lock before handing the picture to the worker
         g_file_send_intent = "direct_chat_picture_file";
@@ -1008,7 +1074,7 @@ function dispatch__mainthread_onmessage(e)
     else if (e.data.type == "data_processing_worker__channel_chat_picture_to_be_uploaded_by_parts")
     {
         let total_bytes_length = e.data.data_for_upload_process.length;
-        let parts = chat__split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
+        let parts = chat__split_upload_into_chunks(e.data.data_for_upload_process);
 
         // the send path took the upload lock before handing the picture to the worker
         g_file_send_intent = "channel_chat_picture_file";
@@ -1022,7 +1088,7 @@ function dispatch__mainthread_onmessage(e)
         // the send path took the upload lock before handing the file to the worker, so this
         // cannot collide with another upload the way a refused picture could
         let total_bytes_length = e.data.data_for_upload_process.length;
-        let parts = chat__split_string_into_smaller_parts(e.data.data_for_upload_process, 400);
+        let parts = chat__split_upload_into_chunks(e.data.data_for_upload_process);
 
         g_file_send_intent = (e.data.type == "data_processing_worker__direct_chat_file_to_be_uploaded_by_parts") ? "direct_chat_file" : "channel_chat_file";
         g_file_send_intent_extra_data = e.data.extra_data;

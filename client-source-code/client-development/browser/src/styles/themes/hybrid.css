@@ -1,3 +1,12 @@
+:root
+{
+    --chat-tab-close-color: #606873;
+    --chat-tab-close-hover-color: #202b37;
+    --chat-tab-close-hover-background: #dce9f5;
+    --chat-tab-close-hover-border: #88a9c6;
+    --chat-tab-close-radius: 2px;
+}
+
 /* Hybrid-v1 keeps grey panels and Tahoma text. These rules arrange its toolbar,
    message box and channel menus after hybrid-base.css supplies the base styles. */
 

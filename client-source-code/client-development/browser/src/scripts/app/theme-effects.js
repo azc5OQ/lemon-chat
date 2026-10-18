@@ -20,11 +20,14 @@ var theme_effects__refresh = (function()
     let reduced_motion = null;
     let mouse_available = null;
     let surface_selector = "";
-    let surfaces = [];
-    let removed_surfaces = [];
+    let separate_border_selector = "input, select, textarea, img, .client-audio-state";
+    let surfaces = new Set();
+    let visible_surfaces = new Set();
+    let separate_lights = new Map();
     let surfaces_dirty = false;
     let surface_observer = null;
     let size_observer = null;
+    let visibility_observer = null;
     let written_styles = new WeakMap();
 
     /**
@@ -50,10 +53,103 @@ var theme_effects__refresh = (function()
      */
     function _internal__clear_surface(element)
     {
+        let light = separate_lights.get(element);
+
+        if (light != null)
+        {
+            light.remove();
+            separate_lights.delete(element);
+        }
+        element.removeAttribute("data-theme-pointer-border");
         element.style.removeProperty("--theme-pointer-local-x");
         element.style.removeProperty("--theme-pointer-local-y");
         element.style.removeProperty("--theme-pointer-active");
         written_styles.set(element, element.style.cssText);
+    }
+
+    /**
+     * @brief Registers a bordered element without reading its position yet.
+     * @param Element element -> element selected by the theme
+     * @return void
+     */
+    function _internal__add_surface(element)
+    {
+        if (surfaces.has(element) || element.classList.contains("theme-pointer-border-light"))
+        {
+            return;
+        }
+        surfaces.add(element);
+        element.setAttribute("data-theme-pointer-border", element.matches(separate_border_selector) ? "overlay" : "box");
+        _internal__set_value(element, "--theme-pointer-active", "0");
+        if (visibility_observer != null)
+        {
+            visibility_observer.observe(element);
+        }
+        else
+        {
+            visible_surfaces.add(element);
+        }
+    }
+
+    /**
+     * @brief Stops watching an element that was removed or no longer has a themed border.
+     * @param Element element -> element to forget
+     * @return void
+     */
+    function _internal__remove_surface(element)
+    {
+        surfaces.delete(element);
+        visible_surfaces.delete(element);
+        if (visibility_observer != null)
+        {
+            visibility_observer.unobserve(element);
+        }
+        if (size_observer != null)
+        {
+            size_observer.unobserve(element);
+        }
+        _internal__clear_surface(element);
+    }
+
+    /**
+     * @brief Keeps offscreen messages and closed dialogs out of the mouse calculations.
+     * @param IntersectionObserverEntry[] entries -> elements whose visibility changed
+     * @return void
+     */
+    function _internal__visibility_changed(entries)
+    {
+        let entry = null;
+
+        for (entry of entries)
+        {
+            if (!surfaces.has(entry.target))
+            {
+                continue;
+            }
+            if (entry.isIntersecting)
+            {
+                visible_surfaces.add(entry.target);
+                if (size_observer != null)
+                {
+                    size_observer.observe(entry.target);
+                }
+            }
+            else
+            {
+                visible_surfaces.delete(entry.target);
+                _internal__set_value(entry.target, "--theme-pointer-active", "0");
+                if (separate_lights.has(entry.target))
+                {
+                    separate_lights.get(entry.target).remove();
+                    separate_lights.delete(entry.target);
+                }
+                if (size_observer != null)
+                {
+                    size_observer.unobserve(entry.target);
+                }
+            }
+        }
+        _internal__schedule();
     }
 
     /**
@@ -77,7 +173,7 @@ var theme_effects__refresh = (function()
     {
         let element = null;
 
-        for (element of surfaces)
+        for (element of visible_surfaces)
         {
             if (event.target == element || event.target.contains(element))
             {
@@ -88,24 +184,65 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Updates light positions after a panel moves or a context menu changes.
-     * @param MutationRecord[] records -> changes to the watched panels and their parents
+     * @brief Finds borders in new messages and controls without rescanning the chat history.
+     * @param MutationRecord[] records -> changes to the page
      * @return void
      */
     function _internal__surface_changes(records)
     {
         let record = null;
         let changed = false;
+        let node = null;
+        let element = null;
 
         for (record of records)
         {
             if (record.type == "childList")
             {
-                surfaces_dirty = true;
-                changed = true;
+                for (node of record.removedNodes)
+                {
+                    if (node.nodeType != 1 || node.isConnected || node.classList.contains("theme-pointer-border-light"))
+                    {
+                        continue;
+                    }
+                    if (surfaces.has(node))
+                    {
+                        _internal__remove_surface(node);
+                    }
+                    for (element of node.querySelectorAll("[data-theme-pointer-border]"))
+                    {
+                        _internal__remove_surface(element);
+                    }
+                    changed = true;
+                }
+                for (node of record.addedNodes)
+                {
+                    if (node.nodeType != 1 || !node.isConnected || node.classList.contains("theme-pointer-border-light"))
+                    {
+                        continue;
+                    }
+                    if (node.matches(surface_selector))
+                    {
+                        _internal__add_surface(node);
+                    }
+                    for (element of node.querySelectorAll(surface_selector))
+                    {
+                        _internal__add_surface(element);
+                    }
+                    changed = true;
+                }
             }
-            else if (record.attributeName != "style" || written_styles.get(record.target) != record.target.style.cssText)
+            else if (!record.target.classList.contains("theme-pointer-border-light")
+                && (record.attributeName != "style" || written_styles.get(record.target) != record.target.style.cssText))
             {
+                if (record.target.matches(surface_selector))
+                {
+                    _internal__add_surface(record.target);
+                }
+                else if (surfaces.has(record.target))
+                {
+                    _internal__remove_surface(record.target);
+                }
                 changed = true;
             }
         }
@@ -116,36 +253,13 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Finds the selected panels and watches only their layout and menu changes.
+     * @brief Starts watching the borders selected by the current theme.
      * @return void
      */
     function _internal__collect_surfaces()
     {
-        let next_surfaces = [];
         let element = null;
-        let ancestor = null;
-        let watched = new Set();
-        let menu_container = document.getElementById("contextmenus-container");
 
-        if (surface_selector != "")
-        {
-            try
-            {
-                next_surfaces = Array.from(document.querySelectorAll(surface_selector));
-            }
-            catch (error)
-            {
-                next_surfaces = [];
-            }
-        }
-        for (element of surfaces)
-        {
-            if (next_surfaces.includes(element) == false)
-            {
-                removed_surfaces.push(element);
-            }
-        }
-        surfaces = next_surfaces;
         surfaces_dirty = false;
         if (surface_observer != null)
         {
@@ -155,39 +269,34 @@ var theme_effects__refresh = (function()
         {
             size_observer.disconnect();
         }
+        if (visibility_observer != null)
+        {
+            visibility_observer.disconnect();
+        }
+        for (element of surfaces)
+        {
+            _internal__clear_surface(element);
+        }
+        surfaces.clear();
+        visible_surfaces.clear();
         if (surface_selector == "")
         {
             return;
         }
 
-        for (element of surfaces)
+        for (element of document.querySelectorAll(surface_selector))
         {
-            ancestor = element;
-            while (ancestor != null)
-            {
-                watched.add(ancestor);
-                ancestor = ancestor.parentElement;
-            }
-            if (size_observer != null)
-            {
-                size_observer.observe(element);
-            }
-        }
-        if (menu_container != null)
-        {
-            watched.add(menu_container);
+            _internal__add_surface(element);
         }
         if (surface_observer != null)
         {
-            for (element of watched)
+            surface_observer.observe(document.documentElement,
             {
-                surface_observer.observe(element,
-                {
-                    attributes: true,
-                    attributeFilter: ["style", "class", "hidden", "open"],
-                    childList: element == menu_container
-                });
-            }
+                attributes: true,
+                attributeFilter: ["style", "class", "hidden", "open"],
+                childList: true,
+                subtree: true
+            });
         }
     }
 
@@ -209,11 +318,77 @@ var theme_effects__refresh = (function()
         if (enabled == true)
         {
             _internal__set_value(document.documentElement, "--theme-pointer-active", "0");
-            for (element of surfaces)
+            for (element of visible_surfaces)
+            {
+                _internal__set_value(element, "--theme-pointer-active", "0");
+            }
+            for (element of separate_lights.values())
             {
                 _internal__set_value(element, "--theme-pointer-active", "0");
             }
         }
+    }
+
+    /**
+     * @brief Keeps a separate border light inside the same scrolling and popup layers as its control.
+     * @param Element element -> field, picture or audio icon
+     * @param DOMRect rectangle -> control position on the screen
+     * @return object -> parent and dimensions for the light
+     */
+    function _internal__separate_light_layout(element, rectangle)
+    {
+        let host = element.parentElement;
+        let host_rectangle = null;
+        let scale_x = 1;
+        let scale_y = 1;
+        let computed = window.getComputedStyle(element);
+
+        while (host.parentElement != null && window.getComputedStyle(host).position == "static")
+        {
+            host = host.parentElement;
+        }
+        host_rectangle = host.getBoundingClientRect();
+        scale_x = host_rectangle.width > 0 ? host.offsetWidth / host_rectangle.width : 1;
+        scale_y = host_rectangle.height > 0 ? host.offsetHeight / host_rectangle.height : 1;
+        return {
+            host: host,
+            left: (rectangle.left - host_rectangle.left) * scale_x - host.clientLeft + host.scrollLeft,
+            top: (rectangle.top - host_rectangle.top) * scale_y - host.clientTop + host.scrollTop,
+            width: rectangle.width * scale_x,
+            height: rectangle.height * scale_y,
+            radius: computed.borderRadius,
+            scale_x: scale_x,
+            scale_y: scale_y
+        };
+    }
+
+    /**
+     * @brief Adds a light without covering a native control or replacing an audio icon's CSS drawing.
+     * @param Element element -> control or picture to highlight
+     * @param object layout -> previously measured position inside its parent
+     * @return Element -> decorative light, which cannot receive clicks or focus
+     */
+    function _internal__separate_light(element, layout)
+    {
+        let light = separate_lights.get(element);
+
+        if (light == null)
+        {
+            light = document.createElement("span");
+            light.className = "theme-pointer-border-light";
+            light.setAttribute("aria-hidden", "true");
+            separate_lights.set(element, light);
+        }
+        if (light.parentElement !== layout.host)
+        {
+            layout.host.appendChild(light);
+        }
+        _internal__set_value(light, "left", layout.left.toFixed(3) + "px");
+        _internal__set_value(light, "top", layout.top.toFixed(3) + "px");
+        _internal__set_value(light, "width", layout.width.toFixed(3) + "px");
+        _internal__set_value(light, "height", layout.height.toFixed(3) + "px");
+        _internal__set_value(light, "border-radius", layout.radius);
+        return light;
     }
 
     /**
@@ -232,7 +407,13 @@ var theme_effects__refresh = (function()
         let light_x = 0;
         let light_y = 0;
         let rectangles = [];
+        let elements = [];
+        let layouts = [];
         let element = null;
+        let target = null;
+        let rectangle = null;
+        let layout = null;
+        let near = false;
         let index = 0;
 
         frame = 0;
@@ -258,9 +439,16 @@ var theme_effects__refresh = (function()
         }
         light_x = current_x * width / 100;
         light_y = current_y * height / 100;
-        for (element of surfaces)
+        for (element of visible_surfaces)
         {
-            rectangles.push(element.getBoundingClientRect());
+            rectangle = element.getBoundingClientRect();
+            near = rectangle.width > 0 && rectangle.height > 0
+                && light_x > rectangle.left - 210 && light_x < rectangle.right + 210
+                && light_y > rectangle.top - 210 && light_y < rectangle.bottom + 210;
+            elements.push(element);
+            rectangles.push(rectangle);
+            layouts.push(near && element.matches(separate_border_selector)
+                ? _internal__separate_light_layout(element, rectangle) : null);
         }
 
         // Read every panel first so our CSS writes do not force repeated layout work.
@@ -269,17 +457,28 @@ var theme_effects__refresh = (function()
         _internal__set_value(root, "--theme-pointer-raw-x", pointer_x.toFixed(1) + "px");
         _internal__set_value(root, "--theme-pointer-raw-y", pointer_y.toFixed(1) + "px");
         _internal__set_value(root, "--theme-pointer-active", "1");
-        for (index = 0; index < surfaces.length; index++)
+        for (index = 0; index < elements.length; index++)
         {
-            _internal__set_value(surfaces[index], "--theme-pointer-local-x", (light_x - rectangles[index].left).toFixed(3) + "px");
-            _internal__set_value(surfaces[index], "--theme-pointer-local-y", (light_y - rectangles[index].top).toFixed(3) + "px");
-            _internal__set_value(surfaces[index], "--theme-pointer-active", "1");
+            element = elements[index];
+            rectangle = rectangles[index];
+            layout = layouts[index];
+            target = element;
+            if (element.matches(separate_border_selector))
+            {
+                if (layout == null)
+                {
+                    if (separate_lights.has(element))
+                    {
+                        _internal__set_value(separate_lights.get(element), "--theme-pointer-active", "0");
+                    }
+                    continue;
+                }
+                target = _internal__separate_light(element, layout);
+            }
+            _internal__set_value(target, "--theme-pointer-local-x", ((light_x - rectangle.left) * (layout == null ? 1 : layout.scale_x)).toFixed(3) + "px");
+            _internal__set_value(target, "--theme-pointer-local-y", ((light_y - rectangle.top) * (layout == null ? 1 : layout.scale_y)).toFixed(3) + "px");
+            _internal__set_value(target, "--theme-pointer-active", "1");
         }
-        for (element of removed_surfaces)
-        {
-            _internal__clear_surface(element);
-        }
-        removed_surfaces = [];
         previous_time = moving ? time : 0;
         if (moving == true)
         {
@@ -343,6 +542,10 @@ var theme_effects__refresh = (function()
             {
                 size_observer = new window.ResizeObserver(_internal__schedule);
             }
+            if (typeof window.IntersectionObserver === "function")
+            {
+                visibility_observer = new window.IntersectionObserver(_internal__visibility_changed);
+            }
         }
 
         computed = window.getComputedStyle(root);
@@ -359,11 +562,6 @@ var theme_effects__refresh = (function()
             if (enabled == true && surfaces_dirty == true)
             {
                 _internal__collect_surfaces();
-                for (element of removed_surfaces)
-                {
-                    _internal__clear_surface(element);
-                }
-                removed_surfaces = [];
                 _internal__schedule();
             }
             return;
@@ -399,12 +597,16 @@ var theme_effects__refresh = (function()
             {
                 size_observer.disconnect();
             }
-            for (element of surfaces.concat(removed_surfaces))
+            if (visibility_observer != null)
+            {
+                visibility_observer.disconnect();
+            }
+            for (element of surfaces)
             {
                 _internal__clear_surface(element);
             }
-            surfaces = [];
-            removed_surfaces = [];
+            surfaces.clear();
+            visible_surfaces.clear();
             surfaces_dirty = false;
             root.style.removeProperty("--theme-pointer-x");
             root.style.removeProperty("--theme-pointer-y");

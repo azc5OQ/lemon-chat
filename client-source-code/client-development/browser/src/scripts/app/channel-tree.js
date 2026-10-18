@@ -40,6 +40,7 @@ function channel_tree__apply_server_update(handler, message)
     }
     finally
     {
+        keys__check_channel_key_recipients();
         for (let anchor of anchors)
         {
             let row = container.querySelector('[' + anchor.attribute + '="' + anchor.id + '"]');

@@ -22,6 +22,112 @@ var channel_icon_picker_target_channel_id = null; // channel whose icon the curr
 var UI = {
 
     /**
+     * @brief Places the theme list against its button, including in a moved toolbar.
+     * @return void
+     */
+    position_theme_menu: function()
+    {
+        let button = document.getElementById("choose-theme-button");
+        let menu = document.getElementById("choose-theme-button-list");
+        let parent = menu.offsetParent;
+        let button_box = null;
+        let parent_box = null;
+        let left = 0;
+        let top = 0;
+
+        if (parent == null)
+        {
+            return;
+        }
+        button_box = button.getBoundingClientRect();
+        parent_box = parent.getBoundingClientRect();
+        left = button_box.left - parent_box.left - parent.clientLeft + parent.scrollLeft;
+        top = button_box.bottom - parent_box.top - parent.clientTop + parent.scrollTop;
+        left = Math.max(0, Math.min(left, parent.clientWidth - menu.offsetWidth));
+        menu.style.setProperty("--theme-menu-left", left + "px");
+        menu.style.setProperty("--theme-menu-top", top + "px");
+        menu.style.setProperty("--theme-menu-bottom", (parent.clientHeight - top + button_box.height) + "px");
+    },
+
+    /**
+     * @brief Updates the theme list position when it opens or the window changes size.
+     * @return void
+     */
+    setup_theme_menu_positioning: function()
+    {
+        let button = document.getElementById("choose-theme-button");
+
+        button.addEventListener("mouseenter", UI.position_theme_menu);
+        button.addEventListener("focus", UI.position_theme_menu);
+        window.addEventListener("resize", UI.position_theme_menu);
+    },
+
+    /**
+     * @brief Shows one local settings section without changing its controls.
+     * @param HTMLButtonElement selected_tab -> tab to open
+     * @return void
+     */
+    select_local_settings_tab: function(selected_tab)
+    {
+        let tabs = document.querySelectorAll("#local-settings-tabs [role='tab']");
+        let tab = null;
+        let selected = false;
+
+        for (tab of tabs)
+        {
+            selected = tab === selected_tab;
+            tab.setAttribute("aria-selected", String(selected));
+            tab.tabIndex = selected ? 0 : -1;
+            document.getElementById(tab.getAttribute("aria-controls")).hidden = !selected;
+        }
+        document.getElementById("local-settings-scroll").scrollTop = 0;
+    },
+
+    /**
+     * @brief Lets the local settings tabs open with a click or the arrow keys.
+     * @return void
+     */
+    setup_local_settings_tabs: function()
+    {
+        let tab_list = document.getElementById("local-settings-tabs");
+
+        tab_list.onclick = function(event)
+        {
+            let tab = event.target.closest("[role='tab']");
+
+            if (tab != null && tab_list.contains(tab))
+            {
+                UI.select_local_settings_tab(tab);
+            }
+        };
+        tab_list.onkeydown = function(event)
+        {
+            let tabs = Array.from(tab_list.querySelectorAll("[role='tab']"));
+            let index = tabs.indexOf(event.target);
+
+            if (index < 0 || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+            {
+                return;
+            }
+            event.preventDefault();
+            if (event.key === "Home")
+            {
+                index = 0;
+            }
+            else if (event.key === "End")
+            {
+                index = tabs.length - 1;
+            }
+            else
+            {
+                index = (index + (["ArrowUp", "ArrowLeft"].includes(event.key) ? -1 : 1) + tabs.length) % tabs.length;
+            }
+            UI.select_local_settings_tab(tabs[index]);
+            tabs[index].focus();
+        };
+    },
+
+    /**
      * @brief removes every open channel-list, add-tag and chat-input context menu
      *        clicks on add-tag menu items are left alone, so their own handler still runs
      *
@@ -3542,9 +3648,11 @@ var UI = {
      */
     save_server_settings_button_onclick: function(event)
     {
+        let settings = null;
+
         event.stopPropagation();
 
-        let settings = server_settings_tab__collect_server_settings_from_tab("general");
+        settings = server_settings_tab__collect_server_settings_from_tab("general");
         settings.blocked_countries = g_blocked_countries_draft;
 
         connection__send_message_object({ message: settings });
@@ -4469,7 +4577,7 @@ var UI = {
                     // non-empty picture and re-uploaded the whole song
                     let song_base64 = chat__remove_data_url_prefix_from_base64_string(event.target.result);
                     let total_bytes_length = song_base64.length;
-                    let parts = chat__split_string_into_smaller_parts(song_base64, 400);
+                    let parts = chat__split_upload_into_chunks(song_base64);
 
                     if (chat__can_start_file_upload() == true)
                     {

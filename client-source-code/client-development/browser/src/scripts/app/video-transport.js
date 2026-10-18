@@ -137,27 +137,26 @@ function video_transport__buffered_amount()
 function video_transport__send(frame)
 {
     let active = video_transport__active();
-    if (active === "websocket")
+    if (video_transport__buffered_amount() + frame.byteLength > VIDEO_TRANSPORT_SEND_BUFFER_LIMIT)
     {
-        if (g_video_transport.socket.bufferedAmount > VIDEO_TRANSPORT_SEND_BUFFER_LIMIT)
-        {
-            return false;
-        }
-        g_video_transport.socket.send(frame);
-        return true;
+        return false;
     }
-    if (active === "webrtc")
+    try
     {
-        try
+        if (active === "websocket")
+        {
+            g_video_transport.socket.send(frame);
+            return true;
+        }
+        if (active === "webrtc")
         {
             g_video_datachannel.send(frame);
             return true;
         }
-        catch (send_error)
-        {
-            console.log("video packet not sent: " + send_error.message);
-            return false;
-        }
+    }
+    catch (send_error)
+    {
+        return false;
     }
     return false;
 }

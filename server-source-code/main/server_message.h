@@ -27,7 +27,7 @@ void server_msg__send_access_denied_to_single_client(client_t* receiver, char* r
 void server_msg__send_force_admin_password_change_to_single_client(client_t* receiver);
 void server_msg__send_client_info_to_single_client(client_t* receiver, client_t* subject);
 void server_msg__send_channel_full_to_single_client(client_t* receiver, uint64 channel_id);
-void server_msg__send_server_settings_to_single_client(client_t* receiver);
+void server_msg__send_server_settings_to_single_client(client_t* receiver, boole memory_only);
 void server_msg__send_server_info_to_single_client(client_t* receiver, boole include_banner, boole banner_changed);
 void server_msg__send_server_info_to_all_clients(boole banner_changed);
 void server_msg__send_server_banner_changed_to_all_clients(void);
@@ -78,7 +78,9 @@ void server_msg__send_client_going_to_idle_mode_info_to_all_clients(client_t* su
 void server_msg__send_client_coming_back_from_idle_mode_info_to_all_clients(client_t* subject, uint64 channel_the_client_joins);
 void server_msg__send_music_bot_song_list_to_single_client(client_t* receiver, client_t* music_bot);
 void server_msg__send_file_send_completed_status_to_single_client(client_t* receiver);
-void server_msg__send_file_by_chunk_to_single_client(client_t* receiver, client_t* sender, char* chunk, uint64 current_size, uint64 server_chat_message_id);
+int server_msg__send_file_by_chunk_to_single_client(client_t* receiver, client_t* sender, char* chunk, uint64 current_size, uint64 server_chat_message_id);
+char* server_msg__prepare_file_chunk(uint64 sender_id, char* chunk, uint64 server_chat_message_id);
+int server_msg__queue_file_chunk(client_t* receiver, const char* plaintext);
 void server_msg__send_file_receive_completed_to_single_client(client_t* receiver, data_for_file_send_thread_t* info, char* receive_type);
 
 // audio related

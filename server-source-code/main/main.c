@@ -202,6 +202,10 @@ void onopen(ws_cli_conn_t* client)
     DBG_AUTHENTICATION log_info("%s%lld", "[i] onopen : new client id: ", index);
 
     g_clients_array[index].is_authenticated = FALSE;
+    g_clients_array[index].block_direct_chat_pictures = FALSE;
+    g_clients_array[index].block_direct_chat_files = FALSE;
+    g_clients_array[index].block_channel_chat_pictures = FALSE;
+    g_clients_array[index].block_channel_chat_files = FALSE;
     g_clients_array[index].timestamp_connected = base__get_timestamp_ms();
     g_clients_array[index].p_ws_connection = client;
     g_clients_array[index].is_existing = TRUE;

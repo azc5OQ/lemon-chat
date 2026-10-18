@@ -278,6 +278,10 @@ typedef struct server_settings
     boole is_websocket_ping_active;    // ws-level ping every check tick; 4 unanswered pings shut the socket
     boole enforce_connection_check;
     int64 max_concurrent_logins;
+    boole allow_block_direct_chat_pictures;
+    boole allow_block_direct_chat_files;
+    boole allow_block_channel_chat_pictures;
+    boole allow_block_channel_chat_files;
     int64 webrtc_datachannel_cooldown_seconds; // no new peers for a client after 10 attempts that never connected
     boole show_music_bot_marquee_to_everyone; // the "now playing" marquee also for people outside the bot's channel
     boole is_voice_chat_active;
@@ -425,6 +429,10 @@ typedef struct client_file_upload_extension_t
 
 typedef struct client_t
 {
+    boole block_direct_chat_pictures;
+    boole block_direct_chat_files;
+    boole block_channel_chat_pictures;
+    boole block_channel_chat_files;
     struct audio_websocket_session* audio_websocket; // the session of this client's /audio socket (audio_websocket.c), NULL_POINTER without one
     struct video_websocket_session* video_websocket; // the session of this client's /video socket (video_websocket.c), NULL_POINTER without one
     uint64 timestamp_last_music_bot_key_request;
@@ -664,6 +672,8 @@ typedef struct data_for_file_send_thread_t
     uint64 server_chat_message_id;
     uint64 local_chat_message_id;
     char receive_type[32]; // what the receivers are told arrived: direct/channel chat picture or file
+    crypto_key_t sender_authentication_key;
+    crypto_key_t* receiver_authentication_keys;
     uint64 receiving_client_ids[]; // channel transfers allocate room for the startup slot count
 } data_for_file_send_thread_t;
 

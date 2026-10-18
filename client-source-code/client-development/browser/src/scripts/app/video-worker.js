@@ -28,7 +28,9 @@ var VIDEO_WORKER_MAX_PACKETS_PER_FRAME = 256;
 var VIDEO_WORKER_FLAG_KEYFRAME = 1;
 var VIDEO_WORKER_FLAG_LAST_PACKET = 2;
 var VIDEO_WORKER_FLAG_SOUND = 4;
-var VIDEO_WORKER_MAX_HELD_PICTURES = 60; // two seconds at 30 frames; a longer queue means the timers fell behind, the oldest are drawn at once
+var VIDEO_WORKER_MAX_HELD_PICTURES = 16;
+var VIDEO_WORKER_FRAME_DEADLINE_MS = 250;
+var VIDEO_WORKER_MAX_PENDING_PACKETS = 256;
 
 var video_worker_channel_keys = null;      // the channel's key layers as the main thread holds them (key_bytes, iv_bytes)
 var video_worker_native_keys = null;       // the same keys imported into the browser's AES; null while aes-js is in use
@@ -51,6 +53,13 @@ var video_worker_has_drawn = false;
 var video_worker_last_keyframe_request_ms = 0;
 var video_worker_picture_hold_ms = 0;      // while the stream has sound: how long a decoded picture waits before it is drawn
 var video_worker_held_pictures = [];       // the pictures waiting: { bitmap, width, height, is_failed, due_ms } in decode order
+var video_worker_receive_generation = 0;
+var video_worker_pending_packets = 0;
+var video_worker_last_frame_number = null;
+var video_worker_clock_offset = null;
+var video_worker_last_timestamp = null;
+var video_worker_timestamp_ms = 0;
+var video_worker_decode_deadlines = new Map();
 
 /**
  * @brief the video worker's message handler (see worker-entry.js)
@@ -91,7 +100,7 @@ function video_worker__onmessage(e)
     }
     else if (data.type == "mainthread__video_worker_decode_packet")
     {
-        video_worker__decode_packet(data.value);
+        video_worker__decode_packet(data.value, data.received_at);
     }
 }
 
@@ -343,7 +352,7 @@ function video_worker__packetize(data)
 {
     if (video_worker_channel_keys == null || video_worker_transport == null || video_worker_transport.session == null)
     {
-        global.postMessage({ type: "video_worker__log", value: "no keys yet, frame dropped" });
+        video_worker__report_dropped_frame(data);
         return;
     }
 
@@ -357,14 +366,14 @@ function video_worker__packetize(data)
 
     if (packet_count > VIDEO_WORKER_MAX_PACKETS_PER_FRAME)
     {
-        global.postMessage({ type: "video_worker__log", value: "frame too large (" + bytes.length + " bytes), dropped" });
+        video_worker__report_dropped_frame(data);
         return;
     }
 
     // a sound packet is one opus packet, a few hundred bytes; it is never split
     if (is_sound == true && packet_count != 1)
     {
-        global.postMessage({ type: "video_worker__log", value: "sound packet too large (" + bytes.length + " bytes), dropped" });
+        video_worker__report_dropped_frame(data);
         return;
     }
 
@@ -395,22 +404,45 @@ function video_worker__packetize(data)
     // the encryption is asynchronous on the browser's crypto; the chain keeps the frames in encoder order
     video_worker_send_chain = video_worker_send_chain.then(function()
     {
+        if (performance.timeOrigin + performance.now() > data.expires_at)
+        {
+            return null;
+        }
         return Promise.all(packets.map(function(packet)
         {
             return video_worker__encrypt_packet(packet);
         }));
     }).then(function(encrypted_packets)
     {
+        if (encrypted_packets === null || performance.timeOrigin + performance.now() > data.expires_at)
+        {
+            video_worker__report_dropped_frame(data);
+            return;
+        }
         let buffers = encrypted_packets.map(function(encrypted)
         {
             return (encrypted.byteOffset == 0 && encrypted.byteLength == encrypted.buffer.byteLength) ? encrypted.buffer : encrypted.slice().buffer;
         });
 
-        global.postMessage({ type: "video_worker__packets_ready", epoch: epoch, packets: buffers }, buffers);
+        global.postMessage({ type: "video_worker__packets_ready", epoch: epoch,
+            generation: data.generation, frame_number: data.frame_number,
+            expires_at: data.expires_at, is_sound: is_sound, packets: buffers }, buffers);
     }, function(error)
     {
-        global.postMessage({ type: "video_worker__log", value: "frame not encrypted: " + error.message });
+        video_worker__report_dropped_frame(data);
     });
+}
+
+/**
+ * @brief Lets the sender continue after a frame was dropped during encryption.
+ * @param object data -> the frame's stream, deadline and sound flag
+ * @return void
+ */
+function video_worker__report_dropped_frame(data)
+{
+    global.postMessage({ type: "video_worker__frame_dropped", epoch: data.epoch,
+        generation: data.generation, frame_number: data.frame_number,
+        expires_at: data.expires_at, is_sound: data.is_sound === true });
 }
 
 /**
@@ -470,6 +502,13 @@ function video_worker__decoder_setup(codec, width, height, streamer_client_id, p
  */
 function video_worker__decoder_close()
 {
+    video_worker_receive_generation++;
+    video_worker_pending_packets = 0;
+    video_worker_receive_chain = Promise.resolve();
+    video_worker_last_frame_number = null;
+    video_worker_clock_offset = null;
+    video_worker_last_timestamp = null;
+    video_worker_decode_deadlines.clear();
     if (video_worker_decoder != null)
     {
         try { video_worker_decoder.close(); } catch (close_error) { }
@@ -508,6 +547,15 @@ function video_worker__on_decoded_frame(frame)
 {
     let width = frame.displayWidth || frame.codedWidth;
     let height = frame.displayHeight || frame.codedHeight;
+    let due_ms = video_worker_decode_deadlines.get(frame.timestamp);
+    let now = performance.timeOrigin + performance.now();
+
+    video_worker_decode_deadlines.delete(frame.timestamp);
+    if (due_ms === undefined || now > due_ms + VIDEO_WORKER_FRAME_DEADLINE_MS)
+    {
+        frame.close();
+        return;
+    }
 
     if (video_worker_picture_hold_ms <= 0 || typeof createImageBitmap !== "function")
     {
@@ -516,7 +564,7 @@ function video_worker__on_decoded_frame(frame)
         return;
     }
 
-    let held = { bitmap: null, width: width, height: height, is_failed: false, due_ms: Date.now() + video_worker_picture_hold_ms };
+    let held = { bitmap: null, width: width, height: height, is_failed: false, due_ms: due_ms };
 
     video_worker_held_pictures.push(held);
 
@@ -534,30 +582,36 @@ function video_worker__on_decoded_frame(frame)
         frame.close();
     }, function()
     {
-        // this browser cannot copy a decoded frame: the picture is drawn now, without the hold
+        if (!held.is_failed && performance.timeOrigin + performance.now() <= held.due_ms + VIDEO_WORKER_FRAME_DEADLINE_MS)
+        {
+            video_worker__draw_picture(frame, width, height);
+        }
         held.is_failed = true;
-        video_worker__draw_picture(frame, width, height);
         frame.close();
     });
 
-    // the queue must not grow without bound: beyond the limit the oldest pictures are drawn now
+    // Release old pictures when drawing or bitmap copying falls behind.
     while (video_worker_held_pictures.length > VIDEO_WORKER_MAX_HELD_PICTURES)
     {
         video_worker__draw_oldest_held_picture(true);
     }
 
-    setTimeout(video_worker__draw_due_held_pictures, video_worker_picture_hold_ms);
+    setTimeout(video_worker__draw_due_held_pictures, Math.max(0, due_ms - now));
 }
 
 /**
- * @brief draws every held picture whose hold is over; a picture whose copy is not finished yet waits for the next timer
+ * @brief Draws the newest picture that is due and releases older pictures that were delayed.
  *
  * @return void
  */
 function video_worker__draw_due_held_pictures()
 {
-    let now = Date.now();
+    let now = performance.timeOrigin + performance.now();
 
+    while (video_worker_held_pictures.length > 1 && video_worker_held_pictures[1].due_ms <= now)
+    {
+        video_worker__draw_oldest_held_picture(true);
+    }
     while (video_worker_held_pictures.length > 0 && video_worker_held_pictures[0].due_ms <= now)
     {
         if (video_worker__draw_oldest_held_picture(false) == false)
@@ -572,7 +626,7 @@ function video_worker__draw_due_held_pictures()
 /**
  * @brief draws the oldest held picture, or skips it when its copy failed
  *
- * @param boolean is_forced -> true to wait no longer for an unfinished copy: the picture is skipped instead
+ * @param boolean is_forced -> true to discard this picture without drawing it
  *
  * @return boolean false when the oldest picture is not ready and was not forced
  */
@@ -583,6 +637,11 @@ function video_worker__draw_oldest_held_picture(is_forced)
     if (held == null)
     {
         return true;
+    }
+
+    if (is_forced || performance.timeOrigin + performance.now() > held.due_ms + VIDEO_WORKER_FRAME_DEADLINE_MS)
+    {
+        held.is_failed = true;
     }
 
     if (held.bitmap == null && held.is_failed == false)
@@ -598,7 +657,10 @@ function video_worker__draw_oldest_held_picture(is_forced)
 
     if (held.bitmap != null)
     {
-        video_worker__draw_picture(held.bitmap, held.width, held.height);
+        if (!held.is_failed)
+        {
+            video_worker__draw_picture(held.bitmap, held.width, held.height);
+        }
         held.bitmap.close();
     }
 
@@ -680,30 +742,58 @@ function video_worker__ask_for_keyframe()
  *        order. a packet that cannot be decrypted counts as a gap
  *
  * @param ArrayBuffer buffer -> the encrypted packet
+ * @param number received_at -> arrival time, including the page's performance.timeOrigin
  *
  * @return void
  */
-function video_worker__decode_packet(buffer)
+function video_worker__decode_packet(buffer, received_at)
 {
+    let generation = video_worker_receive_generation;
+
     if (video_worker_channel_keys == null || video_worker_transport == null || video_worker_transport.session == null || video_worker_decoder == null)
     {
         return;
     }
 
+    if (video_worker_pending_packets >= VIDEO_WORKER_MAX_PENDING_PACKETS)
+    {
+        video_worker__mark_gap();
+        return;
+    }
+    video_worker_pending_packets++;
+
     video_worker_receive_chain = video_worker_receive_chain.then(function()
     {
+        if (generation !== video_worker_receive_generation
+            || performance.timeOrigin + performance.now() - received_at > VIDEO_WORKER_FRAME_DEADLINE_MS)
+        {
+            return null;
+        }
         return video_worker__decrypt_packet(new Uint8Array(buffer));
     }).then(function(packet)
     {
-        if (packet == null)
+        if (generation !== video_worker_receive_generation)
+        {
+            return;
+        }
+        if (packet == null || performance.timeOrigin + performance.now() - received_at > VIDEO_WORKER_FRAME_DEADLINE_MS)
         {
             video_worker__mark_gap();
             return;
         }
-        video_worker__process_packet(packet);
+        video_worker__process_packet(packet, received_at);
     }, function(error)
     {
-        video_worker__mark_gap();
+        if (generation === video_worker_receive_generation)
+        {
+            video_worker__mark_gap();
+        }
+    }).then(function()
+    {
+        if (generation === video_worker_receive_generation)
+        {
+            video_worker_pending_packets--;
+        }
     });
 }
 
@@ -713,10 +803,11 @@ function video_worker__decode_packet(buffer)
  *        showing as a nonsense header) drop the frame and wait for the next keyframe
  *
  * @param Uint8Array packet -> the decrypted packet, header first
+ * @param number received_at -> packet arrival time in milliseconds
  *
  * @return void
  */
-function video_worker__process_packet(packet)
+function video_worker__process_packet(packet, received_at)
 {
     // the decoder may have been closed while the packet was being decrypted
     if (video_worker_decoder == null)
@@ -751,6 +842,9 @@ function video_worker__process_packet(packet)
         video_worker_epoch = epoch;
         video_worker_assembly = null;
         video_worker_waiting_for_keyframe = true;
+        video_worker_last_frame_number = null;
+        video_worker_clock_offset = null;
+        video_worker_last_timestamp = null;
     }
 
     if ((flags & VIDEO_WORKER_FLAG_SOUND) != 0)
@@ -764,6 +858,19 @@ function video_worker__process_packet(packet)
 
     if (video_worker_assembly == null || video_worker_assembly.frame_number != frame_number)
     {
+        if (video_worker_last_frame_number !== null)
+        {
+            let distance = (frame_number - video_worker_last_frame_number) & 0xffff;
+
+            if (distance === 0 || distance > 0x8000)
+            {
+                return;
+            }
+            if (distance !== 1)
+            {
+                video_worker__mark_gap();
+            }
+        }
         if (video_worker_assembly != null && video_worker_assembly.received < video_worker_assembly.packet_count)
         {
             // the previous frame never completed: the reference chain is broken until a keyframe
@@ -777,8 +884,16 @@ function video_worker__process_packet(packet)
             parts: new Array(packet_count),
             is_keyframe: is_keyframe,
             timestamp: timestamp,
-            total_bytes: 0
+            total_bytes: 0,
+            received_at: received_at
         };
+    }
+
+    if (video_worker_assembly.packet_count !== packet_count || video_worker_assembly.timestamp !== timestamp
+        || video_worker_assembly.is_keyframe !== is_keyframe)
+    {
+        video_worker__mark_gap();
+        return;
     }
 
     if (video_worker_assembly.parts[packet_index] != null)
@@ -798,6 +913,29 @@ function video_worker__process_packet(packet)
     // the frame is complete
     let assembly = video_worker_assembly;
     video_worker_assembly = null;
+    video_worker_last_frame_number = frame_number;
+
+    // Compare elapsed sender time with arrival time; the two computers need no shared clock.
+    if (video_worker_last_timestamp === null)
+    {
+        video_worker_timestamp_ms = 0;
+    }
+    else
+    {
+        video_worker_timestamp_ms += ((timestamp - video_worker_last_timestamp) | 0) / 1000;
+    }
+    video_worker_last_timestamp = timestamp;
+    video_worker_clock_offset = Math.min(video_worker_clock_offset === null || is_keyframe ? Infinity : video_worker_clock_offset,
+        assembly.received_at - video_worker_timestamp_ms);
+    let due_ms = video_worker_clock_offset + video_worker_timestamp_ms;
+    let now = performance.timeOrigin + performance.now();
+
+    if (now - assembly.received_at > VIDEO_WORKER_FRAME_DEADLINE_MS || now - due_ms > VIDEO_WORKER_FRAME_DEADLINE_MS
+        || video_worker_decoder.decodeQueueSize >= 3 || video_worker_decode_deadlines.size >= 3)
+    {
+        video_worker__mark_gap();
+        return;
+    }
 
     if (video_worker_waiting_for_keyframe == true && assembly.is_keyframe == false)
     {
@@ -821,6 +959,7 @@ function video_worker__process_packet(packet)
             return;
         }
 
+        video_worker_decode_deadlines.set(assembly.timestamp, due_ms + video_worker_picture_hold_ms);
         video_worker_decoder.decode(new EncodedVideoChunk({
             type: assembly.is_keyframe ? "key" : "delta",
             timestamp: assembly.timestamp,
@@ -831,6 +970,7 @@ function video_worker__process_packet(packet)
     }
     catch (decode_error)
     {
+        video_worker_decode_deadlines.delete(assembly.timestamp);
         global.postMessage({ type: "video_worker__decoder_error", value: decode_error.message });
         video_worker_waiting_for_keyframe = true;
         video_worker__ask_for_keyframe();

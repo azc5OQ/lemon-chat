@@ -27,6 +27,7 @@ var seen_state_by_context = {};
 // private messages that arrived while their conversation was closed. a receipt is owed
 // for each, and is sent when the user actually opens it
 var unreceipted_messages_by_sender = {};
+var chat_scroll_pending = false;
 
 /**
  * @brief Uses the current theme's text style for displayed messages when the local setting is on.
@@ -641,6 +642,10 @@ function chat__setup_public_key_expand()
  */
 function chat__scroll_chat_to_end(is_forced)
 {
+    if (typeof chat_history__is_search_open === "function" && chat_history__is_search_open())
+    {
+        return;
+    }
     if (is_forced != true && g_auto_scroll_chat_to_end == false)
     {
         return;
@@ -653,7 +658,27 @@ function chat__scroll_chat_to_end(is_forced)
         return;
     }
 
-    container.scrollTop = container.scrollHeight;
+    if (is_forced === true)
+    {
+        container.scrollTop = container.scrollHeight;
+        return;
+    }
+    if (chat_scroll_pending)
+    {
+        return;
+    }
+    // Scroll once for messages arriving together. Reading the height after
+    // every message makes the browser lay out the whole chat repeatedly.
+    chat_scroll_pending = true;
+    (typeof requestAnimationFrame === "function" ? requestAnimationFrame : setTimeout)(function()
+    {
+        chat_scroll_pending = false;
+        if (container.isConnected && g_auto_scroll_chat_to_end
+            && !(typeof chat_history__is_search_open === "function" && chat_history__is_search_open()))
+        {
+            container.scrollTop = container.scrollHeight;
+        }
+    });
 }
 
 /**
@@ -954,17 +979,16 @@ function chat__remove_data_url_prefix_from_base64_string(base64string)
 }
 
 /**
- * @brief splits a string into up to required_parts_count roughly equal slices
+ * @brief Splits an upload into pieces of at most 16 KiB, so small files need fewer messages.
  *
  * @param string string_to_split -> the text
- * @param number required_parts_count -> how many slices
  *
  * @return array the slices
  */
-function chat__split_string_into_smaller_parts(string_to_split, required_parts_count)
+function chat__split_upload_into_chunks(string_to_split)
 {
     const result = [];
-    const partsize = Math.ceil(string_to_split.length / required_parts_count);
+    const partsize = 16384;
 
     let start = 0;
 

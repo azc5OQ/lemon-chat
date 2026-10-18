@@ -8,6 +8,7 @@ void client_msg__get_public_key_and_verification_string_and_dh_public_mix(cJSON*
 void client_msg__process_public_key_challenge_response(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_public_key_info(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket);
 void client_msg__process_client_connection_check(cJSON* json_root, uint64 sender_client_id);
+void client_msg__process_attachment_receive_preferences(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket);
 void client_msg__process_change_client_username(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_create_channel_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__process_edit_channel_request(cJSON* json_root, uint64 sender_client_id);

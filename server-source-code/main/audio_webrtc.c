@@ -575,9 +575,10 @@ void RTC_API audio_webrtc__datachannel_on_message_callback(int id, const char* m
     // tell a transport that no longer works, while the browser still reports it open, from a quiet one
     if (size == 1)
     {
-        rtcSendMessage(id, message, 1);
+        util__count_webrtc_bytes(1, rtcSendMessage(id, message, 1) >= 0 ? 1 : 0);
         return;
     }
+    util__count_webrtc_bytes((uint64)size, 0);
     // Peer slots never move. Derive the index without reading fields another callback can reset.
     sender_id = (uint64)(peer - g_webrtc_peers_array);
     audio_channel__relay_voice(sender_id, NULL_POINTER, id, (const unsigned char*)message, (uint64)size);
@@ -1160,5 +1161,10 @@ boole audio_webrtc__send(uint64 client_id, const unsigned char* packet, uint64 s
     {
         return FALSE;
     }
-    return rtcSendMessage(peer->data_channel_handle, (const char*)packet, (int)size) >= 0;
+    if (rtcSendMessage(peer->data_channel_handle, (const char*)packet, (int)size) < 0)
+    {
+        return FALSE;
+    }
+    util__count_webrtc_bytes(0, size);
+    return TRUE;
 }

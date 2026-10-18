@@ -560,6 +560,16 @@ boole base__save_server_settings_to_file(void)
     cJSON_AddBoolToObject(json_root, "enforce_connection_check", g_server_settings.enforce_connection_check == TRUE);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "max_concurrent_logins");
     cJSON_AddNumberToObject(json_root, "max_concurrent_logins", (double)g_server_settings.max_concurrent_logins);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "outgoing_queue_limit_mb");
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "server_ram_limit_mb");
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_block_direct_chat_pictures");
+    cJSON_AddBoolToObject(json_root, "allow_block_direct_chat_pictures", g_server_settings.allow_block_direct_chat_pictures);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_block_direct_chat_files");
+    cJSON_AddBoolToObject(json_root, "allow_block_direct_chat_files", g_server_settings.allow_block_direct_chat_files);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_block_channel_chat_pictures");
+    cJSON_AddBoolToObject(json_root, "allow_block_channel_chat_pictures", g_server_settings.allow_block_channel_chat_pictures);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "allow_block_channel_chat_files");
+    cJSON_AddBoolToObject(json_root, "allow_block_channel_chat_files", g_server_settings.allow_block_channel_chat_files);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "webrtc_datachannel_cooldown_seconds");
     cJSON_AddNumberToObject(json_root, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "icon_max_size_bytes");
@@ -3555,6 +3565,10 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     else if (clib__is_string_equal(message_type, "load_server_info"))
     {
         client_msg__process_load_server_info_request(json_root, client_index, websocket);
+    }
+    else if (clib__is_string_equal(message_type, "set_attachment_receive_preferences"))
+    {
+        client_msg__process_attachment_receive_preferences(json_root, client_index, websocket);
     }
     else if (clib__is_string_equal(message_type, "set_server_banner"))
     {

@@ -18,6 +18,41 @@
 static void _settings_internal__build_and_push_client_config(int64 websocket_port, char plaintext_keys[][256], uint64 keys_count);
 
 /**
+ * @brief Reads which attachment types clients may choose to block.
+ * @param cJSON* message -> saved settings or an admin request, with optional boolean fields
+ * @return void
+ * @attention Runtime callers hold the clients write lock.
+ */
+void settings__read_attachment_receive_policy(cJSON* message)
+{
+    cJSON* field = NULL_POINTER;
+
+    field = cJSON_GetObjectItemCaseSensitive(message, "allow_block_direct_chat_pictures");
+    if (cJSON_IsBool(field))
+    {
+        g_server_settings.allow_block_direct_chat_pictures = cJSON_IsTrue(field);
+    }
+
+    field = cJSON_GetObjectItemCaseSensitive(message, "allow_block_direct_chat_files");
+    if (cJSON_IsBool(field))
+    {
+        g_server_settings.allow_block_direct_chat_files = cJSON_IsTrue(field);
+    }
+
+    field = cJSON_GetObjectItemCaseSensitive(message, "allow_block_channel_chat_pictures");
+    if (cJSON_IsBool(field))
+    {
+        g_server_settings.allow_block_channel_chat_pictures = cJSON_IsTrue(field);
+    }
+
+    field = cJSON_GetObjectItemCaseSensitive(message, "allow_block_channel_chat_files");
+    if (cJSON_IsBool(field))
+    {
+        g_server_settings.allow_block_channel_chat_files = cJSON_IsTrue(field);
+    }
+}
+
+/**
  * @brief seeds channel slot 0 as the root channel every client starts in: named "root", audio on,
  *        no parent and no maintainer yet.
  *
@@ -803,6 +838,7 @@ void settings__load(void)
                 {
                     g_server_settings.enforce_connection_check = cJSON_IsTrue(json_field);
                 }
+                settings__read_attachment_receive_policy(json_root);
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "max_concurrent_logins");
                 if (cJSON_IsNumber(json_field))
                 {

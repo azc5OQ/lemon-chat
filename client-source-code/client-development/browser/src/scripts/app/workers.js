@@ -1,8 +1,9 @@
 // workers.js is embedded in template.html along with the other client files, and in the node bundle
 // it holds the two worker handlers, each running inside its worker only: the data-processing worker
 // (the rsa keypair, decrypting what the socket delivers, encrypting what the page sends) and the
-// websocket worker (the socket to the server, frames relayed both ways)
-// worker-entry.js picks the handler; connection.js posts to them, dispatch.js receives what they post
+// websocket worker (the socket to the server). In the browser, they exchange received frames
+// and keepalives directly. The page receives the results it needs to display.
+// worker-entry.js picks the handler; connection.js sets up the ports for each connection.
 
 // state private to this file
 // the server refuses uploads of 4096 base64 characters or less, so file bodies are padded to this
@@ -17,12 +18,246 @@ var websocket_instance = null;
 // counts sockets ever created. events from an old (replaced) socket are ignored
 var websocket_generation = 0;
 
+var dpw_channel_key_request = null;
+
+var dpw_socket_port = null;
+var dpw_connection_generation = 0;
+var dpw_connection_open = false;
+var dpw_keepalive_timer = null;
+var dpw_keepalive_last_reply = 0;
+var dpw_keepalive_sent_at = 0;
+var dpw_received_bytes = 0;
+
+var websocket_data_port = null;
+var websocket_connection_generation = 0;
+var websocket_close_reason = "";
+
+/**
+ * @brief Identifies the connection that produced a result, so an old result cannot change a new session.
+ * @param object message -> the result sent to the page
+ */
+function workers__post_to_main(message)
+{
+    if (dpw_connection_generation > 0 && message.type !== "data_processing_worker__generate_rsa_keypair_result")
+    {
+        message.connection_generation = dpw_connection_generation;
+    }
+    global.postMessage(message);
+}
+
+/**
+ * @brief Stops checking the old connection before closing it or replacing its keys.
+ */
+function workers__stop_keepalive()
+{
+    if (dpw_keepalive_timer != null)
+    {
+        clearInterval(dpw_keepalive_timer);
+        dpw_keepalive_timer = null;
+    }
+}
+
+/**
+ * @brief Sends the usual encrypted keepalive without waiting for the page to finish drawing.
+ */
+function workers__send_keepalive()
+{
+    let now = performance.now();
+    let data = null;
+
+    if (!dpw_connection_open || !g_is_authenticated || dpw_socket_port == null)
+    {
+        return;
+    }
+    if (g_server_policy.enforce_connection_check !== false
+        && now - dpw_keepalive_last_reply > g_connection_check.lost_threshold_ms)
+    {
+        workers__stop_keepalive();
+        dpw_connection_open = false;
+        dpw_socket_port.postMessage(
+        {
+            type: "close",
+            connection_generation: dpw_connection_generation,
+            reason: "no heartbeat reply for " + Math.round(now - dpw_keepalive_last_reply) + " ms"
+        });
+        return;
+    }
+    data = keys__encrypt_all_message_data_and_convert_to_base64(JSON.stringify(
+    {
+        message: { type: "client_connection_check" }
+    }));
+    dpw_keepalive_sent_at = now;
+    dpw_socket_port.postMessage(
+    {
+        type: "send",
+        value: data,
+        connection_generation: dpw_connection_generation
+    });
+    workers__post_to_main(
+    {
+        type: "data_processing_worker__connection_bytes",
+        bytes_received: dpw_received_bytes,
+        bytes_sent: data.length
+    });
+    dpw_received_bytes = 0;
+}
+
+/**
+ * @brief Applies the server's timeout setting without waiting for the settings window.
+ * @param object policy -> fields from the login reply or a later server policy message
+ */
+function workers__apply_keepalive_policy(policy)
+{
+    if (dpw_socket_port == null || typeof policy.enforce_connection_check !== "boolean")
+    {
+        return;
+    }
+    if (g_server_policy.enforce_connection_check === false && policy.enforce_connection_check)
+    {
+        dpw_keepalive_last_reply = performance.now();
+    }
+    g_server_policy.enforce_connection_check = policy.enforce_connection_check;
+}
+
+/**
+ * @brief Receives socket frames directly, while keeping close events in the same order as those frames.
+ * @param object e -> a message from this connection's WebSocket worker
+ */
+function workers__socket_port_onmessage(e)
+{
+    if (e.data.connection_generation !== dpw_connection_generation)
+    {
+        return;
+    }
+    if (e.data.type === "websocket_worker_onmessage")
+    {
+        if (!dpw_connection_open)
+        {
+            return;
+        }
+        dpw_received_bytes += e.data.value.length;
+        workers__mainthread__process_received_websocket_message_continue(e);
+    }
+    else
+    {
+        workers__stop_keepalive();
+        dpw_channel_key_request = null;
+        dpw_connection_open = false;
+        g_is_authenticated = false;
+        workers__post_to_main(e.data);
+    }
+}
+
+/**
+ * @brief Distributes channel keys without blocking incoming messages for the whole member list.
+ * @param object request -> the current members, channel id and request generation
+ * @return Promise<void> finishes after delivery or cancellation
+ */
+async function workers__create_channel_keys(request)
+{
+    let new_channel_keys = keys__create_random_message_keys();
+    let recipient = null;
+    let message_keys = null;
+    let encrypted_keys = null;
+    let message_value = { type: "channel_keys_from_maintainer", value: JSON.stringify(new_channel_keys) };
+    let message_data = null;
+    let message = null;
+    let x = 0;
+    dpw_channel_key_request = request;
+    // Recipients can reply with these keys before distribution finishes.
+    keys__set_current_channel_keys(new_channel_keys);
+    for (x = 0; x < request.clients.length; x++)
+    {
+        // Let received messages and keepalives run between recipient encryptions.
+        await new Promise(function(resolve)
+        {
+            setTimeout(resolve, 0);
+        });
+        if (dpw_channel_key_request !== request)
+        {
+            return;
+        }
+        recipient = request.clients[x];
+        if (recipient.channel_id !== request.current_channel_id
+            || (recipient.client_id === request.local_client_id && typeof process === "undefined"))
+        {
+            continue;
+        }
+        message_keys = keys__create_random_message_keys();
+        encrypted_keys = lemon_crypto.encrypt(JSON.stringify(message_keys), recipient.public_key);
+        if (encrypted_keys.status !== "success")
+        {
+            throw new Error("cannot encrypt channel keys for client " + recipient.client_id);
+        }
+        message_data =
+        {
+            message_keys: encrypted_keys.cipher,
+            message_value: keys__encrypt_with_aes_keys_and_convert_to_base64(message_keys, JSON.stringify(message_value))
+        };
+        message =
+        {
+            message:
+            {
+                type: "direct_chat_message",
+                value: JSON.stringify(message_data),
+                receiver_type: null,
+                receiver_id: recipient.client_id,
+                local_message_id: 1
+            }
+        };
+        if (recipient.client_id === request.local_client_id)
+        {
+            // The Android host gives its own copy directly to its attached interface.
+            workers__post_to_main(
+            {
+                type: "data_processing_worker__local_channel_keys_for_ui",
+                generation: request.generation,
+                channel_id: request.channel_id,
+                value: JSON.stringify(
+                {
+                    message:
+                    {
+                        type: "direct_chat_message",
+                        sender_id: request.local_client_id,
+                        sender_username: recipient.username,
+                        value: null,
+                        some_json: message_value
+                    }
+                })
+            });
+        }
+        else
+        {
+            workers__post_to_main(
+            {
+                type: "data_processing_worker__create_websocket_channel_keys_message_result",
+                generation: request.generation,
+                channel_id: request.channel_id,
+                channel_keys_message_content: keys__encrypt_all_message_data_and_convert_to_base64(JSON.stringify(message)),
+                username: recipient.username
+            });
+        }
+    }
+    if (dpw_channel_key_request !== request)
+    {
+        return;
+    }
+    dpw_channel_key_request = null;
+    workers__post_to_main(
+    {
+        type: "data_processing_worker__new_channel_keys_from_data_processing_worker",
+        generation: request.generation,
+        channel_id: request.channel_id,
+        value: new_channel_keys
+    });
+}
+
 // ---- data-processing worker ----
 
 /**
  * @brief the data-processing worker's message handler
  *        generates the rsa keypair, decrypts what the socket delivers, encrypts what the page sends
- *        (chat messages, pictures, channel keys) and posts every result back to the main thread
+ *        (chat messages, pictures, channel keys). Socket frames also arrive through its MessagePort.
  *
  * @param object e -> the worker message event; e.data.type picks the branch
  *
@@ -31,7 +266,23 @@ var websocket_generation = 0;
 function workers__data_processing_worker_onmessage(e)
 {
     if (DBG_WORKER_BOOT_LOG) { console.log("[dpw] got: " + (e.data && e.data.type)); }
-    if (e.data.type == "mainthread__set_frame_forwarding")
+    if (e.data.type == "mainthread__connect_socket_port")
+    {
+        workers__stop_keepalive();
+        dpw_channel_key_request = null;
+        if (dpw_socket_port != null)
+        {
+            dpw_socket_port.close();
+        }
+        dpw_socket_port = e.data.port;
+        dpw_connection_generation = e.data.connection_generation;
+        dpw_connection_open = true;
+        dpw_received_bytes = 0;
+        g_is_authenticated = false;
+        g_server_policy.enforce_connection_check = true;
+        dpw_socket_port.onmessage = workers__socket_port_onmessage;
+    }
+    else if (e.data.type == "mainthread__set_frame_forwarding")
     {
         dpw_forward_frames = (e.data.value == true);
     }
@@ -44,13 +295,27 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread__metadata_keys")
     {
+        if (e.data.connection_generation != null && e.data.connection_generation !== dpw_connection_generation)
+        {
+            return;
+        }
         g_metadata_keys = [];
         g_metadata_keys.length = 0;
         g_metadata_keys = e.data.value;
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__metadata_keys_accepted",
             value: null
         });
+        // The server may reply immediately. Install its new keys before sending the login response.
+        if (dpw_socket_port != null && dpw_connection_open && e.data.send_after_update != null)
+        {
+            dpw_socket_port.postMessage(
+            {
+                type: "send",
+                value: e.data.send_after_update,
+                connection_generation: dpw_connection_generation
+            });
+        }
     }
     else if (e.data.type == "mainthread__generate_rsa_keypair")
     {
@@ -103,7 +368,7 @@ function workers__data_processing_worker_onmessage(e)
 
         utils__custom_log("identity_passphrase_string now in use -> " + identity_passphrase_string);
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__generate_rsa_keypair_result",
             value: g_rsa_public_key_string,
             identity_string: identity_passphrase_string
@@ -118,20 +383,19 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread_reset_data")
     {
+        workers__stop_keepalive();
+        dpw_connection_open = false;
+        dpw_channel_key_request = null;
+        if (e.data.preserve_channel_keys !== true)
+        {
+            keys__clear_channel_keys();
+        }
         g_is_authenticated = false;
     }
     else if (e.data.type == "mainthread__channel_keys_for_data_processing_worker")
     {
-        if (g_current_channel_keys != null)
-        {
-            g_historic_keys_of_current_channel.push(g_current_channel_keys);
-
-            if (g_historic_keys_of_current_channel.length > 7)
-            {
-                g_historic_keys_of_current_channel.shift();
-            }
-        }
-        g_current_channel_keys = e.data.value;
+        dpw_channel_key_request = null;
+        keys__set_current_channel_keys(e.data.value);
     }
     // a read receipt, encrypted for the original sender the same way channel keys are.
     // the server never learns what it says: to it this is an ordinary direct message
@@ -178,145 +442,27 @@ function workers__data_processing_worker_onmessage(e)
             }
         };
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__seen_receipt_message_result",
             seen_receipt_message_content: keys__encrypt_all_message_data_and_convert_to_base64(JSON.stringify(receipt_message_object))
         });
     }
+    else if (e.data.type == "mainthread__cancel_channel_key_creation")
+    {
+        dpw_channel_key_request = null;
+    }
     else if (e.data.type == "mainthread__create_websocket_channel_keys_message")
     {
-        let new_channel_keys = [];
-
-        for (let i = 0; i < 4; i++)
+        workers__create_channel_keys(e.data).catch(function(error)
         {
-            let single_key = {
-                key_bytes: [],
-                iv_bytes: []
-            };
-
-            for (let ii = 0; ii < 32; ii++)
+            console.error("channel key creation failed", error);
+            workers__post_to_main(
             {
-                let single_byte = crypto.getRandomValues(new Uint8Array(1))[0];
-                single_key.key_bytes.push(single_byte);
-            }
-
-            for (let ii = 0; ii < 16; ii++)
-            {
-                let single_byte = crypto.getRandomValues(new Uint8Array(1))[0];
-                single_key.iv_bytes.push(single_byte);
-            }
-
-            new_channel_keys.push(single_key);
-        }
-
-        g_current_channel_keys = new_channel_keys;
-
-        global.postMessage({
-            type: "data_processing_worker__new_channel_keys_from_data_processing_worker",
-            value: new_channel_keys
+                type: "data_processing_worker__channel_key_creation_failed",
+                generation: e.data.generation,
+                channel_id: e.data.channel_id
+            });
         });
-
-        for (let x = 0; x < e.data.clients.length; x++)
-        {
-            if (e.data.clients[x].channel_id != e.data.current_channel_id)
-            {
-                continue;
-            }
-            // under node the maintainer also sends ITSELF a keys message: the server
-            // echoes it back and the loopback forwards it, which is how the webview
-            // learns the keys. in a browser the local copy suffices, skip as before
-            if (e.data.clients[x].client_id == e.data.local_client_id && typeof process === "undefined")
-            {
-                continue;
-            }
-
-            let current_message_keys = [];
-
-            for (let i = 0; i < 4; i++)
-            {
-                let single_key = {
-                    key_bytes: [],
-                    iv_bytes: []
-                };
-
-                for (let ii = 0; ii < 32; ii++)
-                {
-                    let single_byte = crypto.getRandomValues(new Uint8Array(1))[0];
-                    single_key.key_bytes.push(single_byte);
-                }
-
-                for (let ii = 0; ii < 16; ii++)
-                {
-                    let single_byte = crypto.getRandomValues(new Uint8Array(1))[0];
-                    single_key.iv_bytes.push(single_byte);
-                }
-
-                current_message_keys.push(single_key);
-            }
-
-            let single_message_aes_keys_string = JSON.stringify(current_message_keys);
-
-            let encryption_result = lemon_crypto.encrypt(single_message_aes_keys_string, e.data.clients[x].public_key);
-
-            let message_data = {
-                message_keys: encryption_result.cipher,
-                message_value: ""
-            };
-
-            let message_value_object = {
-                type: "channel_keys_from_maintainer",
-                value: JSON.stringify(g_current_channel_keys)
-            };
-
-            message_data.message_value = keys__encrypt_with_aes_keys_and_convert_to_base64(current_message_keys, JSON.stringify(message_value_object));
-
-            let message_object = {
-                message: {
-                    type: null,
-                    value: null,
-                    receiver_type: null,
-                    receiver_id: null,
-                    local_message_id: 1 // local_message_id is not used but still needed because channel keys messages are subform of direct messages, and this is processed the same as direct message, this object property is also needed even if not used
-                    // because server side processes these type of messages same as direct messages, to prevent server from discarding this as wrong, this field is specified even if not needed
-                }
-            };
-
-            message_object.message.type = "direct_chat_message";
-            message_object.message.value = JSON.stringify(message_data);
-            message_object.message.receiver_id = parseInt(e.data.clients[x].client_id);
-
-            let message_json_string = JSON.stringify(message_object);
-            let data = keys__encrypt_all_message_data_and_convert_to_base64(message_json_string);
-
-            // channel keys message created, its contents encrypted
-            // send message data, to be sent over websocket, to main thread
-
-            if (e.data.clients[x].client_id == e.data.local_client_id)
-            {
-                // our own copy: the server never echoes a direct message back to its
-                // sender, so hand the ui the decrypted shape it now expects
-                global.postMessage({
-                    type: "data_processing_worker__local_channel_keys_for_ui",
-                    value: JSON.stringify({
-                        message: {
-                            type: "direct_chat_message",
-                            sender_id: e.data.local_client_id,
-                            sender_username: e.data.clients[x].username,
-                            value: null,
-                            some_json: message_value_object
-                        }
-                    })
-                });
-            }
-            else
-            {
-                global.postMessage({
-                    type: "data_processing_worker__create_websocket_channel_keys_message_result",
-                    channel_keys_message_content: data,
-                    username: e.data.clients[x].username
-                });
-            }
-        }
     }
     else if (e.data.type == "mainthread__create_direct_chat_message")
     {
@@ -376,7 +522,7 @@ function workers__data_processing_worker_onmessage(e)
 
         let data = keys__encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__tell_websocket_worker_to_send_data",
             data_to_be_sent_over_websocket: data
         });
@@ -437,7 +583,7 @@ function workers__data_processing_worker_onmessage(e)
 
         let data = keys__encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__tell_websocket_worker_to_send_data",
             data_to_be_sent_over_websocket: data
         });
@@ -489,7 +635,7 @@ function workers__data_processing_worker_onmessage(e)
             local_message_id: e.data.local_message_id
         };
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__direct_chat_picture_to_be_uploaded_by_parts",
             data_for_upload_process: data_for_upload_process,
             extra_data: extra_data
@@ -504,7 +650,7 @@ function workers__data_processing_worker_onmessage(e)
 
         let data_for_upload_process = keys__encrypt_with_aes_keys_and_convert_to_base64(e.data.current_channel_keys, e.data.base64_picture_string_to_send);
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__channel_chat_picture_to_be_uploaded_by_parts",
             data_for_upload_process: data_for_upload_process,
             extra_data: extra_data
@@ -526,7 +672,7 @@ function workers__data_processing_worker_onmessage(e)
         let message_json_string = connection__process_message_before_sending(message_object);
         let data = keys__encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__tell_websocket_worker_to_send_data",
             data_to_be_sent_over_websocket: data
         });
@@ -560,7 +706,7 @@ function workers__data_processing_worker_onmessage(e)
         // loopback: the ui has no key for this, so send it the finished picture
         if (dpw_forward_frames == true)
         {
-            global.postMessage({ type: "decrypted_frame", value: JSON.stringify({
+            workers__post_to_main({ type: "decrypted_frame", value: JSON.stringify({
                 message: {
                     type: "direct_chat_picture_decrypted",
                     picture_id: e.data.picture_id,
@@ -570,59 +716,30 @@ function workers__data_processing_worker_onmessage(e)
             }) });
         }
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__direct_chat_picture",
             value: msg
         });
     }
     else if (e.data.type == "mainthread__process_encrypted_channel_chat_picture_data")
     {
-        if (g_current_channel_keys != null)
+        let decrypted_picture = keys__decrypt_channel_contents(e.data.message_raw, true);
+        if (decrypted_picture != null)
         {
-            let msg = {
-                message : {
-                    picture_id: e.data.picture_id,
-                    client_id: e.data.sender_id,
-                    value: null,
-                    decrypted_base64_picture: ""
-                }
-            }
-
-            let is_decrypted = false;
-            let decrypted_base64_picture = keys__decrypt_base64_contents_with_aes_keys(g_current_channel_keys, e.data.message_raw);
-
-            if (decrypted_base64_picture.startsWith("data:image"))
+            workers__post_to_main(
             {
-                is_decrypted = true;
-            }
-            else
-            {
-                for (i = 0; i < g_historic_keys_of_current_channel.length; i++)
+                type: "data_processing_worker__channel_chat_picture",
+                value:
                 {
-                    decrypted_base64_picture = keys__decrypt_base64_contents_with_aes_keys(g_historic_keys_of_current_channel[i], e.data.message_raw);
-                    if (decrypted_base64_picture.startsWith("data:image"))
+                    message:
                     {
-                        console.log("managed to decrypt channel chat picture with channel key at" + i);
-                        is_decrypted = true;
-                        break;
+                        picture_id: e.data.picture_id,
+                        client_id: e.data.sender_id,
+                        value: null,
+                        decrypted_base64_picture: chat__sanitize_image_data_url(decrypted_picture)
                     }
                 }
-            }
-
-            if (is_decrypted)
-            {
-                let decrypted_base64_picture_sanitized = chat__sanitize_image_data_url(decrypted_base64_picture);
-                msg.message.decrypted_base64_picture = decrypted_base64_picture_sanitized;
-                msg.message.value = null;
-                global.postMessage({
-                    type: "data_processing_worker__channel_chat_picture",
-                    value: msg
-                });
-            }
-        }
-        else
-        {
-            utils__custom_log("channel_chat_picture decrypt failed, data_processing_worker thread missing current channel keys");
+            });
         }
     }
     else if (e.data.type == "mainthread__create_direct_chat_file")
@@ -634,7 +751,7 @@ function workers__data_processing_worker_onmessage(e)
 
         if (file_header == null || data_for_upload_process == null)
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__chat_file_send_failed",
                 local_message_id: e.data.local_message_id,
                 reason: "could not encrypt the file for this receiver"
@@ -642,7 +759,7 @@ function workers__data_processing_worker_onmessage(e)
             return;
         }
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__direct_chat_file_to_be_uploaded_by_parts",
             data_for_upload_process: data_for_upload_process,
             extra_data: {
@@ -654,7 +771,7 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread__create_channel_chat_file")
     {
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__channel_chat_file_to_be_uploaded_by_parts",
             data_for_upload_process: chat_files__encrypt_string_with_aes_keys_fast(e.data.current_channel_keys, chat_files__build_chat_file_body_json(e.data.file), CHAT_FILE_BODY_MIN_PADDED_BYTES),
             extra_data: {
@@ -671,7 +788,7 @@ function workers__data_processing_worker_onmessage(e)
         if (file == null)
         {
             utils__custom_log("failed to decrypt direct chat file");
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__chat_file_decrypt_failed",
                 value: { message: { file_id: e.data.file_id } }
             });
@@ -689,7 +806,7 @@ function workers__data_processing_worker_onmessage(e)
         // loopback: the ui has no key for this, so send it the finished file
         if (dpw_forward_frames == true)
         {
-            global.postMessage({ type: "decrypted_frame", value: JSON.stringify({
+            workers__post_to_main({ type: "decrypted_frame", value: JSON.stringify({
                 message: {
                     type: "direct_chat_file_decrypted",
                     file_id: e.data.file_id,
@@ -699,7 +816,7 @@ function workers__data_processing_worker_onmessage(e)
             }) });
         }
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__direct_chat_file",
             value: msg
         });
@@ -711,14 +828,14 @@ function workers__data_processing_worker_onmessage(e)
         if (file == null)
         {
             utils__custom_log("channel_chat_file decrypt failed, no channel key opened it");
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__chat_file_decrypt_failed",
                 value: { message: { file_id: e.data.file_id } }
             });
             return;
         }
 
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__channel_chat_file",
             value: {
                 message: {
@@ -776,7 +893,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
 
         if (announced_minimum_bits != null)
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__rsa_key_too_weak",
                 minimum_rsa_key_bits: announced_minimum_bits
             });
@@ -795,7 +912,11 @@ function workers__mainthread__process_received_websocket_message_continue(e)
     }
     catch (Exception)
     {
-        console.log(Exception+ " decrypted string length: " + decrypted_metadata.length + " "+ decrypted_metadata);
+        return;
+    }
+    if (msg == null || msg.message == null)
+    {
+        return;
     }
 
     // the webrtc handshake retries every 10s and its frames used to flood the 50kb log,
@@ -813,14 +934,14 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         && msg.message.type != "offline_chat_message"
         && msg.message.type != "direct_chat_file_metadata")
     {
-        global.postMessage({ type: "decrypted_frame", value: decrypted_metadata });
+        workers__post_to_main({ type: "decrypted_frame", value: decrypted_metadata });
     }
 
     // node's connection status for the login page - meta, not protocol, and it must
     // flow while unauthenticated, so it is handled before the auth gate
     if (msg.message.type == "loopback_status")
     {
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__loopback_status",
             value: msg.message.value
         });
@@ -834,21 +955,29 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         if (msg.message.value == "success")
         {
             g_is_authenticated = true;
+            workers__apply_keepalive_policy(msg.message);
 
             // the whole message is passed on as the policy: server_settings_tab__apply_server_policy_fields takes the
             // fields it knows, so a new server field never needs a second list here
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__authentication_status",
                 is_idle_mode_allowed: msg.message.is_idle_mode_allowed,
                 policy: msg.message,
                 value: "success"
             });
 
+            if (dpw_socket_port != null && dpw_connection_open && dpw_keepalive_timer == null)
+            {
+                dpw_keepalive_last_reply = performance.now();
+                workers__send_keepalive();
+                dpw_keepalive_timer = setInterval(workers__send_keepalive, g_connection_check.interval_ms);
+            }
+
             // the audio datachannel is needed when either client voice or music bots are on (the
             // server pushes bot audio through it); whether this client may transmit is a separate flag
             if (msg.message.is_voice_chat_active == true || msg.message.is_music_bot_audio_active == true)
             {
-                global.postMessage({
+                workers__post_to_main({
                     type: "data_processing_worker__audio_enabled",
                     value: true,
                     client_voice_allowed: msg.message.is_voice_chat_active == true,
@@ -863,7 +992,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
     // still in handshake mode, so it is handled ahead of the authenticated / unauthenticated split
     if (msg.message.type == "fast_reconnect_ok")
     {
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__fast_reconnect_ok",
             value: msg
         });
@@ -872,7 +1001,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
 
     if (msg.message.type == "datachannel_cooldown")
     {
-        global.postMessage({
+        workers__post_to_main({
             type: "data_processing_worker__datachannel_cooldown",
             value: msg
         });
@@ -887,7 +1016,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
 
             msg.message.decryption_result = decryption_result;
 
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__public_key_challenge_from_server",
                 value: msg
             });
@@ -895,7 +1024,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__authentication_status",
                 value: "fail"
             });
@@ -905,218 +1034,225 @@ function workers__mainthread__process_received_websocket_message_continue(e)
     {
         if (msg.message.type == "connection_check_response")
         {
-            global.postMessage({
+            if (dpw_socket_port != null)
+            {
+                dpw_keepalive_last_reply = performance.now();
+            }
+            workers__post_to_main({
                 type: "data_processing_worker__connection_check_response",
+                received_at: Date.now(),
+                ping_ms: dpw_socket_port == null ? null : Math.round(dpw_keepalive_last_reply - dpw_keepalive_sent_at),
                 value: msg
             });
         }
         else if (msg.message.type == "client_list")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_list_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "client_avatar")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_avatar_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "avatar_changed")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__avatar_changed_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "poke")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__poke_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "access_denied")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__access_denied_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "force_admin_password_change")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__force_admin_password_change",
                 value: msg
             });
         }
         else if (msg.message.type == "server_settings_values")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__server_settings_values_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "server_info" || msg.message.type == "server_banner_result")
         {
-            global.postMessage({ type: "data_processing_worker__" + msg.message.type, value: msg.message });
+            workers__post_to_main({ type: "data_processing_worker__" + msg.message.type, value: msg.message });
         }
         else if (msg.message.type == "admin_log")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__admin_log_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "url_resolved")
         {
-            global.postMessage({ type: "data_processing_worker__url_resolved", value: msg.message });
+            workers__post_to_main({ type: "data_processing_worker__url_resolved", value: msg.message });
         }
         else if (msg.message.type == "server_policy")
         {
-            global.postMessage({
+            workers__apply_keepalive_policy(msg.message);
+            workers__post_to_main({
                 type: "data_processing_worker__server_policy_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "client_info")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_info_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "channel_full")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__channel_full_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "channel_list")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__channel_list_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "icon_list")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__icon_list_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "tag_list")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__tag_list_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "identity_list")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__identity_list_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "icon_add")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__icon_add_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "tag_add_to_client")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__tag_add_to_client_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "remove_tag_from_client")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__remove_tag_from_client_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "client_alias_changed")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_alias_changed_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "client_country_code_changed")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_country_code_changed_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "typing_indicator")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__typing_indicator_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "stored_clients_list")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__stored_clients_list_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "tag_add")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__tag_add_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "tag_delete")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__tag_delete_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "icon_delete")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__icon_delete_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "tag_icon_changed")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__tag_icon_changed_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "channel_icon_changed")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__channel_icon_changed_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "start_song_stream")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__start_song_stream_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "stop_song_stream")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__stop_song_stream_from_server",
                 value: msg
             });
@@ -1124,101 +1260,101 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         // video streaming: the six control messages pass through untouched, video.js reads them on the main thread
         else if (msg.message.type == "video_stream_state")
         {
-            global.postMessage({ type: "data_processing_worker__video_stream_state_from_server", value: msg });
+            workers__post_to_main({ type: "data_processing_worker__video_stream_state_from_server", value: msg });
         }
         else if (msg.message.type == "video_stream_offer")
         {
-            global.postMessage({ type: "data_processing_worker__video_stream_offer_from_server", value: msg });
+            workers__post_to_main({ type: "data_processing_worker__video_stream_offer_from_server", value: msg });
         }
         else if (msg.message.type == "video_stream_viewer_request")
         {
-            global.postMessage({ type: "data_processing_worker__video_stream_viewer_request_from_server", value: msg });
+            workers__post_to_main({ type: "data_processing_worker__video_stream_viewer_request_from_server", value: msg });
         }
         else if (msg.message.type == "video_stream_viewer_state")
         {
-            global.postMessage({ type: "data_processing_worker__video_stream_viewer_state_from_server", value: msg });
+            workers__post_to_main({ type: "data_processing_worker__video_stream_viewer_state_from_server", value: msg });
         }
         else if (msg.message.type == "video_stream_keyframe_request")
         {
-            global.postMessage({ type: "data_processing_worker__video_stream_keyframe_request_from_server", value: msg });
+            workers__post_to_main({ type: "data_processing_worker__video_stream_keyframe_request_from_server", value: msg });
         }
         else if (msg.message.type == "video_stream_refused")
         {
-            global.postMessage({ type: "data_processing_worker__video_stream_refused_from_server", value: msg });
+            workers__post_to_main({ type: "data_processing_worker__video_stream_refused_from_server", value: msg });
         }
         else if (msg.message.type == "chat_message_delete")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__chat_message_delete_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "chat_message_edit")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__chat_message_edit_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "server_chat_message_id_for_local_message_id")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__server_chat_message_id_for_local_message_id_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "channel_join")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__channel_join_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "client_role_add")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_role_add_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "client_connect")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_connect_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "client_disconnect")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_disconnect_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "client_rename")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_rename_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "audio_state_of_single_client")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__audio_state_of_single_client_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "current_channel_active_microphone_usage")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__current_channel_active_microphone_usage_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "music_bot_key")
         {
-            global.postMessage(
+            workers__post_to_main(
             {
                 type: "data_processing_worker__music_bot_key",
                 value: msg.message
@@ -1226,7 +1362,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "audio_websocket_session")
         {
-            global.postMessage(
+            workers__post_to_main(
             {
                 type: "data_processing_worker__audio_websocket_session",
                 value: msg.message
@@ -1234,7 +1370,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "video_websocket_session")
         {
-            global.postMessage(
+            workers__post_to_main(
             {
                 type: "data_processing_worker__video_websocket_session",
                 value: msg.message
@@ -1244,7 +1380,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         {
             // only over the loopback: the node runtime on the same device hands the webview the two keys
             // for its media frames. a real server never gets to send this
-            global.postMessage(
+            workers__post_to_main(
             {
                 type: "data_processing_worker__local_media_keys",
                 value: msg.message
@@ -1252,70 +1388,70 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "sdp_offer")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__sdp_offer_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "ice_candidate")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__ice_candidate_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "server_info_broadcast")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__server_info_broadcast_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "channel_edit")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__channel_edit_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "client_going_to_idle_mode")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_going_to_idle_mode",
                 value: msg
             });
         }
         else if (msg.message.type == "client_coming_back_from_idle_mode")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__client_coming_back_from_idle_mode",
                 value: msg
             });
         }
         else if (msg.message.type == "channel_delete")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__channel_delete_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "channel_create")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__channel_create_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "channel_chat_picture_metadata")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__channel_chat_picture_metadata",
                 value: msg
             });
         }
         else if (msg.message.type == "direct_chat_picture_metadata")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__direct_chat_picture_metadata",
                 value: msg
             });
@@ -1327,7 +1463,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 ? chat_files__decrypt_channel_chat_file_header(msg.message.file_id, msg.message.file_header) : null;
             msg.message.file_header = null;
 
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__channel_chat_file_metadata",
                 value: msg
             });
@@ -1344,11 +1480,11 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 // opened shape, so the ui reads it without a key of its own
                 if (dpw_forward_frames == true)
                 {
-                    global.postMessage({ type: "decrypted_frame", value: JSON.stringify(msg) });
+                    workers__post_to_main({ type: "decrypted_frame", value: JSON.stringify(msg) });
                 }
             }
 
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__direct_chat_file_metadata",
                 value: msg
             });
@@ -1356,7 +1492,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         else if (msg.message.type == "direct_chat_file_decrypted")
         {
             // loopback only: node decrypted it for us
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__direct_chat_file",
                 value: { message: {
                     file_id: msg.message.file_id,
@@ -1367,35 +1503,30 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "file_send_error")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__file_send_error_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "channel_maintainer_id")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__channel_maintainer_id",
                 value: msg
             });
         }
         else if (msg.message.type == "channel_chat_message")
         {
-            if (g_current_channel_keys != null)
+            let decrypted_value = keys__decrypt_channel_contents(msg.message.value, false);
+            if (decrypted_value != null)
             {
-                let decrypted_value = keys__decrypt_base64_contents_with_aes_keys(g_current_channel_keys, msg.message.value);
-
                 msg.message.decrypted_value = decrypted_value;
                 msg.message.value = null;
-
-                global.postMessage({
+                workers__post_to_main(
+                {
                     type: "data_processing_worker__channel_chat_message",
                     value: msg
                 });
-            }
-            else
-            {
-                utils__custom_log("channel_chat_message decrypt failed");
             }
         }
         else if (msg.message.type == "direct_chat_message")
@@ -1403,7 +1534,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             // loopback: node already decrypted this, so just pass it on
             if (msg.message.some_json != null)
             {
-                global.postMessage({
+                workers__post_to_main({
                     type: "data_processing_worker__direct_chat_message",
                     value: msg
                 });
@@ -1436,10 +1567,10 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             // decrypted shape, so the ui reads it without a key of its own
             if (dpw_forward_frames == true)
             {
-                global.postMessage({ type: "decrypted_frame", value: JSON.stringify(msg) });
+                workers__post_to_main({ type: "decrypted_frame", value: JSON.stringify(msg) });
             }
 
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__direct_chat_message",
                 value: msg
             });
@@ -1449,7 +1580,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             // loopback: node already decrypted this, so just pass it on
             if (msg.message.some_json != null)
             {
-                global.postMessage({
+                workers__post_to_main({
                     type: "data_processing_worker__offline_chat_message",
                     value: msg
                 });
@@ -1478,10 +1609,10 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             // decrypted shape, so the ui reads it without a key of its own
             if (dpw_forward_frames == true)
             {
-                global.postMessage({ type: "decrypted_frame", value: JSON.stringify(msg) });
+                workers__post_to_main({ type: "decrypted_frame", value: JSON.stringify(msg) });
             }
 
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__offline_chat_message",
                 value: msg
             });
@@ -1489,7 +1620,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         else if (msg.message.type == "direct_chat_picture_decrypted")
         {
             // loopback only: node decrypted it for us
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__direct_chat_picture",
                 value: { message: {
                     picture_id: msg.message.picture_id,
@@ -1501,42 +1632,42 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "image_sent_status")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__image_sent_status_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "call")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__call_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "music_bot_song_list")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__music_bot_song_list_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "file_send_success")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__file_send_success_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "file_receive_chunk")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__file_receive_chunk_from_server",
                 value: msg
             });
         }
         else if (msg.message.type == "file_receive_completed")
         {
-            global.postMessage({
+            workers__post_to_main({
                 type: "data_processing_worker__file_receive_completed_from_server",
                 value: msg
             });
@@ -1547,8 +1678,25 @@ function workers__mainthread__process_received_websocket_message_continue(e)
 // ---- websocket worker ----
 
 /**
+ * @brief Sends received frames and connection events to the decryption thread, or to the Android host's existing path.
+ * @param object message -> a received frame, socket error or close event
+ */
+function workers__deliver_socket_event(message)
+{
+    if (websocket_data_port != null)
+    {
+        message.connection_generation = websocket_connection_generation;
+        websocket_data_port.postMessage(message);
+    }
+    else
+    {
+        global.postMessage(message);
+    }
+}
+
+/**
  * @brief the websocket worker's message handler
- *        creates the socket (relaying its events to the main thread), sends data when the socket
+ *        creates the socket, sends received frames to the decryption thread, sends data when the socket
  *        is open, and closes it on request
  *
  * @param object e -> the worker message event; e.data.type picks the branch
@@ -1568,13 +1716,32 @@ function workers__websocket_worker_onmessage(e)
             try { websocket_instance.close(); } catch (close_error) { }
         }
 
+        if (websocket_data_port != null)
+        {
+            websocket_data_port.close();
+        }
+        websocket_data_port = e.data.port || null;
+        websocket_connection_generation = e.data.connection_generation;
+        websocket_close_reason = "";
+        if (websocket_data_port != null)
+        {
+            websocket_data_port.onmessage = function(port_event)
+            {
+                if (generation === websocket_generation
+                    && port_event.data.connection_generation === websocket_connection_generation)
+                {
+                    workers__websocket_worker_onmessage(port_event);
+                }
+            };
+        }
+
         websocket_instance = new WebSocket(e.data.value.connection_string);
 
         websocket_instance.addEventListener('message', function (event)
         {
             if (generation != websocket_generation) { return; }
 
-            global.postMessage({
+            workers__deliver_socket_event({
                 type: "websocket_worker_onmessage",
                 value: event.data
             });
@@ -1585,8 +1752,9 @@ function workers__websocket_worker_onmessage(e)
             if (generation != websocket_generation) { return; }
 
             console.log("websocket closed");
-            global.postMessage({
-                type: "websocket_worker_onclose"
+            workers__deliver_socket_event({
+                type: "websocket_worker_onclose",
+                reason: websocket_close_reason
             });
         }
 
@@ -1600,7 +1768,7 @@ function workers__websocket_worker_onmessage(e)
             let error_code = (error != null && typeof error.code === "string") ? error.code : "";
 
             console.error("websocket error event" + (error_code !== "" ? " (" + error_code + ")" : ""));
-            global.postMessage({
+            workers__deliver_socket_event({
                 type: "websocket_worker_onerror",
                 error_code: error_code
             });
@@ -1616,6 +1784,10 @@ function workers__websocket_worker_onmessage(e)
 
     else if (e.data.type == "send")
     {
+        if (e.data.connection_generation != null && e.data.connection_generation !== websocket_connection_generation)
+        {
+            return;
+        }
         // null before the first connect: the loopback ui can forward a request while
         // node still has no socket, and dereferencing it threw out of the handler
         if (websocket_instance == null)
@@ -1634,6 +1806,11 @@ function workers__websocket_worker_onmessage(e)
 
     else if (e.data.type == "close")
     {
+        if (e.data.connection_generation != null && e.data.connection_generation !== websocket_connection_generation)
+        {
+            return;
+        }
+        websocket_close_reason = e.data.reason || "";
         // deliberate disconnect (identity switch): the onclose event that follows
         // drives the normal reset path on the main thread
         if (websocket_instance != null)

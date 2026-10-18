@@ -7,6 +7,22 @@
     text-align: left;
 }
 
+#server-settings-general-settings-container
+{
+    font-family: var(--set-font, inherit);
+    font-size: 12px;
+}
+
+#server-settings-server-info dt
+{
+    font-weight: normal;
+}
+
+#server-settings-server-info .server-banner-actions button
+{
+    font: inherit;
+}
+
 .server-info-banner
 {
     display: block;

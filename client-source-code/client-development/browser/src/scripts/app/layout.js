@@ -27,6 +27,14 @@ function layout__layout_load_saved_state()
             // a collapsed info column (saved before the 90px minimum existed) looks like
             // the panel was deleted - snap it back to the default width
             if (parseInt(saved.col_info, 10) < 90) { saved.col_info = "13%"; }
+            if (!["full", "channels", "chat", "info"].includes(saved.toolbar_col))
+            {
+                saved.toolbar_col = "full";
+            }
+            if (!["top", "bottom"].includes(saved.toolbar_pos))
+            {
+                saved.toolbar_pos = "top";
+            }
             g_layout.state = saved;
         }
     }
@@ -59,10 +67,33 @@ function layout__layout_apply()
 
     let container = document.getElementById("communication-system-container");
 
-    // fill everything under the head menu: the themes' height:80% left an empty band at
-    // the bottom (the legacy layout covered it only by overflowing past the container)
     let head_menu = document.getElementById("communication-system-head-menu");
-    container.style.height = "calc(100vh - " + ((head_menu != null) ? head_menu.offsetHeight : 30) + "px)";
+    let connected = getComputedStyle(container).display === "grid";
+    let toolbar_column = g_layout.state.toolbar_col || "full";
+    let toolbar_position = g_layout.state.toolbar_pos || "top";
+    let rows = null;
+    let heights = null;
+    let toolbar_row = null;
+
+    // Keep connection and local-settings buttons available while the chat is hidden after disconnecting.
+    if (connected)
+    {
+        if (head_menu.parentElement !== container)
+        {
+            container.prepend(head_menu);
+        }
+        container.style.height = "100vh";
+        head_menu.dataset.layoutToolbar = toolbar_position;
+    }
+    else
+    {
+        if (head_menu.parentElement === container)
+        {
+            container.parentElement.insertBefore(head_menu, container);
+        }
+        delete head_menu.dataset.layoutToolbar;
+        container.style.height = "calc(100vh - " + head_menu.offsetHeight + "px)";
+    }
 
     let order = g_layout.state.order.slice();
     if (g_is_chat_hidden == true)
@@ -90,14 +121,40 @@ function layout__layout_apply()
         widths[order.indexOf("channels")] = "minmax(150px, 1fr)"; // chat gone: channels takes the space
     }
 
-    container.style.gridTemplateAreas = '"' + row_a.join(" ") + '" "' + row_b.join(" ") + '"';
+    rows = [row_a, row_b];
+    heights = g_layout.state.input_pos === "top" ? ["auto", "minmax(0, 1fr)"] : ["minmax(0, 1fr)", "auto"];
+    if (connected)
+    {
+        // Extending the adjacent row keeps the other panels rectangular when the toolbar shares a column.
+        toolbar_row = (toolbar_position === "top" ? row_a : row_b).slice();
+        if (!order.includes(toolbar_column))
+        {
+            toolbar_row.fill("toolbar");
+        }
+        else
+        {
+            toolbar_row[order.indexOf(toolbar_column)] = "toolbar";
+        }
+        if (toolbar_position === "top")
+        {
+            rows.unshift(toolbar_row);
+            heights.unshift("auto");
+        }
+        else
+        {
+            rows.push(toolbar_row);
+            heights.push("auto");
+        }
+    }
+    container.style.gridTemplateAreas = rows.map(row => '"' + row.join(" ") + '"').join(" ");
     container.style.gridTemplateColumns = widths.join(" ");
-    container.style.gridTemplateRows = (g_layout.state.input_pos == "top") ? "auto minmax(0, 1fr)" : "minmax(0, 1fr) auto";
+    container.style.gridTemplateRows = heights.join(" ");
 
     g_layout.panels.channels.style.gridArea = "channels";
     g_layout.panels.chat.style.gridArea = "chat";
     g_layout.panels.info.style.gridArea = "info";
     g_layout.panels.input.style.gridArea = "input";
+    head_menu.style.gridArea = "toolbar";
 
     // neutralize the legacy inline-block sizing: the grid alone decides the geometry
     let names = ["channels", "chat", "info", "input"];
@@ -240,7 +297,7 @@ function layout__layout_edit_toggle()
     button.value = g_layout.edit_active ? "lock layout" : "layout";
     button.setAttribute("aria-pressed", g_layout.edit_active ? "true" : "false");
     button.title = g_layout.edit_active
-        ? "drag panels to rearrange them; release to save, Escape to cancel; click here to lock"
+        ? "drag panels or the toolbar; use the top or bottom edge for a full-width toolbar; Escape cancels; click here to lock"
         : "rearrange the panels";
 }
 
@@ -251,7 +308,7 @@ function layout__layout_edit_toggle()
  */
 function layout__layout_panel_name_from_event(e)
 {
-    let names = ["channels", "chat", "info", "input"];
+    let names = ["channels", "chat", "info", "input", "toolbar"];
     let i;
 
     for (i = 0; i < names.length; i++)
@@ -269,7 +326,7 @@ function layout__layout_panel_name_from_event(e)
  */
 function layout__layout_edit_clear_highlight()
 {
-    let names = ["channels", "chat", "info", "input"];
+    let names = ["channels", "chat", "info", "input", "toolbar"];
     let i;
 
     for (i = 0; i < names.length; i++)
@@ -298,7 +355,7 @@ function _internal__layout_edit_boxes()
     let boxes = {};
     let name;
 
-    for (name of ["channels", "chat", "info", "input"])
+    for (name of ["channels", "chat", "info", "input", "toolbar"])
     {
         boxes[name] = g_layout.panels[name].getBoundingClientRect();
     }
@@ -352,7 +409,7 @@ function _internal__layout_edit_animate(before, after, dragged)
     {
         return;
     }
-    for (name of ["channels", "chat", "info", "input"])
+    for (name of ["channels", "chat", "info", "input", "toolbar"])
     {
         panel = g_layout.panels[name];
         if (name == dragged || before[name].width == 0 || after[name].width == 0 || typeof panel.animate != "function")
@@ -413,7 +470,7 @@ function _internal__layout_edit_position(drag)
 }
 
 /**
- * @brief Chooses a column position, or a top or bottom position for the message box.
+ * @brief Chooses a column position, or a top or bottom position for the message box and toolbar.
  * @param object drag -> Current panel move with unanimated grid positions.
  * @return object Layout preview for the current mouse position.
  */
@@ -441,7 +498,25 @@ function _internal__layout_edit_next_state(drag)
             bottom = Math.max(bottom, box.bottom);
         }
     }
-    if (drag.source == "input")
+    if (drag.source == "toolbar")
+    {
+        next.toolbar_col = "full";
+        next.toolbar_pos = drag.y < (drag.container_rect.top + drag.container_rect.bottom) / 2 ? "top" : "bottom";
+        if (drag.y > drag.container_rect.top + 45 && drag.y < drag.container_rect.bottom - 45)
+        {
+            for (name of columns)
+            {
+                box = drag.boxes[name];
+                distance = Math.max(box.left - drag.x, 0, drag.x - box.right);
+                if (distance < nearest)
+                {
+                    nearest = distance;
+                    next.toolbar_col = name;
+                }
+            }
+        }
+    }
+    else if (drag.source == "input")
     {
         top = Math.min(top, drag.boxes.input.top);
         bottom = Math.max(bottom, drag.boxes.input.bottom);
@@ -529,7 +604,9 @@ function _internal__layout_edit_frame()
     if (drag.valid)
     {
         next = _internal__layout_edit_next_state(drag);
-        if (next.order.join() != g_layout.state.order.join() || next.input_col != g_layout.state.input_col || next.input_pos != g_layout.state.input_pos)
+        if (next.order.join() != g_layout.state.order.join()
+            || next.input_col != g_layout.state.input_col || next.input_pos != g_layout.state.input_pos
+            || next.toolbar_col != g_layout.state.toolbar_col || next.toolbar_pos != g_layout.state.toolbar_pos)
         {
             before = _internal__layout_edit_boxes();
             _internal__layout_edit_stop_animations();
@@ -619,6 +696,10 @@ function layout__layout_edit_mousedown(e)
     let style;
 
     if (e.button != 0 || !g_layout.edit_active || !g_layout.grid_active || getComputedStyle(container).display != "grid")
+    {
+        return;
+    }
+    if (e.target.closest("#layout-edit-button, #local-settings-container") != null)
     {
         return;
     }

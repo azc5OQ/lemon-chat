@@ -18,7 +18,9 @@
     var color = COLORS[context_name] || "#9aa0a6";
 
     var LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
-    var cfg = global.__LOG || (global.__LOG = { enabled: true, level: "debug", mute: [], time: true, raw: false });
+    // Printing every message and building a stack trace for it can stall a busy
+    // browser. Keep warnings and errors; developers can enable more detail.
+    var cfg = global.__LOG || (global.__LOG = { enabled: true, level: "warn", mute: [], time: true, raw: false });
 
     // cross-context control: cfg.set / .disable / .enable / .setTime broadcast to every context over
     // a BroadcastChannel; the receive handler only copies fields and never re-broadcasts (no echo loop)

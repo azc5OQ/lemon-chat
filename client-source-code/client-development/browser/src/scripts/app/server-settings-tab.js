@@ -6,6 +6,30 @@
 // the server settings tab, one row per input: "key" is the field name in the settings message, "kind" says checkbox or
 // number field, "tab" which save button sends it. the load and both saves walk this table
 var SERVER_SETTINGS_FIELDS = [
+    {
+        key: "allow_block_direct_chat_pictures",
+        id: "server-settings-allow-block-direct-chat-pictures",
+        kind: "bool",
+        tab: "general"
+    },
+    {
+        key: "allow_block_direct_chat_files",
+        id: "server-settings-allow-block-direct-chat-files",
+        kind: "bool",
+        tab: "general"
+    },
+    {
+        key: "allow_block_channel_chat_pictures",
+        id: "server-settings-allow-block-channel-chat-pictures",
+        kind: "bool",
+        tab: "general"
+    },
+    {
+        key: "allow_block_channel_chat_files",
+        id: "server-settings-allow-block-channel-chat-files",
+        kind: "bool",
+        tab: "general"
+    },
     { key: "publish_server_uptime", id: "server-settings-publish-uptime", kind: "bool", fallback: true, tab: "general" },
     { key: "publish_server_slots", id: "server-settings-publish-slots", kind: "bool", fallback: true, tab: "general" },
     { key: "publish_server_banner", id: "server-settings-publish-banner", kind: "bool", fallback: true, tab: "general" },
@@ -161,6 +185,13 @@ function server_settings_tab__refresh_audio_connections_row_visibility()
 function server_settings_tab__apply_server_policy_fields(data)
 {
     let previous_enforce_connection_check = g_server_policy.enforce_connection_check;
+    let preference = null;
+
+    for (preference of Object.keys(g_attachment_receive_preferences))
+    {
+        g_server_policy["allow_" + preference] = data["allow_" + preference] === true;
+    }
+    chat_files__refresh_receive_preferences_controls();
 
     for (let policy_field in g_server_policy)
     {

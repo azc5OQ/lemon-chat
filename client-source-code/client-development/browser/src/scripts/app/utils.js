@@ -65,10 +65,12 @@ function utils__sleep(ms)
     return new Promise(resolve => window.setTimeout(resolve, ms));
 }
 
+var utils_log_pending = "";
+var utils_log_timer = null;
+
 /**
- * @brief appends a timestamped line to the on-page log textarea
- *        a worker has no textarea and posts the text to the main thread instead; a touch device
- *        skips logging entirely, and past ~50 KB only the newest half of the log is kept
+ * @brief Collects log lines and adds them to the log together every 100 ms.
+ * Updating the textarea for every file piece can delay chat and keepalives.
  *
  * @param string text -> the line to log
  *
@@ -76,30 +78,31 @@ function utils__sleep(ms)
  */
 function utils__custom_log(text)
 {
-    // g_textarea_log only exists in main thread
-    // in case its null, use global log
-
-    if (g_textarea_log == null)
+    utils_log_pending += text + "\n";
+    if (utils_log_pending.length > 50000)
     {
-        global.postMessage({
-            type: "log",
-            value: text
-        });
+        utils_log_pending = utils_log_pending.slice(-25000);
+    }
+    if (utils_log_timer != null)
+    {
         return;
     }
-
-    // keep the log bounded (phones keep the page alive for days, and every
-    // append copies the whole string): past ~50 KB keep only the newest half
-    if (g_textarea_log.value.length > 50000)
+    utils_log_timer = setTimeout(function()
     {
-        g_textarea_log.value = g_textarea_log.value.slice(-25000);
-    }
-
-    // append via .value, never textContent: textContent is only the textarea's
-    // DEFAULT value - the first manual edit detaches the display from it forever
-    let aa = new Date();
-    let a = aa.toLocaleTimeString();
-    g_textarea_log.value += a + " | " + text + "\n";
+        let lines = utils_log_pending;
+        utils_log_pending = "";
+        utils_log_timer = null;
+        if (g_textarea_log == null)
+        {
+            global.postMessage({ type: "log", value: lines });
+            return;
+        }
+        if (g_textarea_log.value.length > 50000)
+        {
+            g_textarea_log.value = g_textarea_log.value.slice(-25000);
+        }
+        g_textarea_log.value += new Date().toLocaleTimeString() + " | " + lines;
+    }, 100);
 }
 
 /**

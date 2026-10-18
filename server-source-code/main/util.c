@@ -10,6 +10,162 @@
 
 #include "util.h"
 #include "../third-party/rxi-log/log.h"
+#include <string.h>
+#include <stdatomic.h>
+
+static _Atomic(uint64) webrtc_received_bytes;
+static _Atomic(uint64) webrtc_sent_bytes;
+
+/**
+ * @brief Counts WebRTC data-channel bytes received or accepted for sending since startup.
+ * @param uint64 received -> bytes received in this call
+ * @param uint64 sent -> bytes accepted for sending in this call
+ * @return void
+ */
+void util__count_webrtc_bytes(uint64 received, uint64 sent)
+{
+    if (received != 0)
+    {
+        atomic_fetch_add_explicit(&webrtc_received_bytes, received, memory_order_relaxed);
+    }
+    if (sent != 0)
+    {
+        atomic_fetch_add_explicit(&webrtc_sent_bytes, sent, memory_order_relaxed);
+    }
+}
+
+/**
+ * @brief Reads WebRTC traffic totals without blocking the threads that relay audio and video.
+ * @param uint64* received -> receives the incoming byte total
+ * @param uint64* sent -> receives the outgoing byte total
+ * @return void
+ */
+void util__get_webrtc_bytes(uint64* received, uint64* sent)
+{
+    *received = atomic_load_explicit(&webrtc_received_bytes, memory_order_relaxed);
+    *sent = atomic_load_explicit(&webrtc_sent_bytes, memory_order_relaxed);
+}
+
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#elif defined(__APPLE__)
+#include <mach/mach.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
+
+#if SIZE_MAX <= UINT32_MAX
+// Leave room for libraries and thread stacks in a 32-bit process.
+#ifndef LEMON_32BIT_RAM_BUDGET_MB
+#define LEMON_32BIT_RAM_BUDGET_MB 1536U
+#endif
+#endif
+
+/**
+ * @brief Reads the RAM currently occupied by this server process, including shared pages.
+ * @param uint64* bytes -> receives the resident memory size in bytes, or zero on failure
+ * @return boole -> TRUE when the operating system supplied a value
+ */
+boole util__get_process_ram_usage(uint64* bytes)
+{
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS counters = {0};
+#elif defined(__APPLE__)
+    mach_task_basic_info_data_t info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+#elif defined(__linux__)
+    FILE* file = NULL_POINTER;
+    uint64 virtual_pages = 0;
+    uint64 resident_pages = 0;
+    long page_size = 0;
+    int fields = 0;
+#endif
+
+    if (bytes == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    *bytes = 0;
+#ifdef _WIN32
+    counters.cb = sizeof(counters);
+    if (!GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters)))
+    {
+        return FALSE;
+    }
+    *bytes = (uint64)counters.WorkingSetSize;
+#elif defined(__APPLE__)
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &count) != KERN_SUCCESS)
+    {
+        return FALSE;
+    }
+    *bytes = (uint64)info.resident_size;
+#elif defined(__linux__)
+    page_size = sysconf(_SC_PAGESIZE);
+    file = fopen("/proc/self/statm", "r");
+    if (file == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    fields = fscanf(file, "%llu %llu", &virtual_pages, &resident_pages);
+    fclose(file);
+    if (fields != 2 || page_size <= 0 || resident_pages > UINT64_MAX / (uint64)page_size)
+    {
+        return FALSE;
+    }
+    *bytes = resident_pages * (uint64)page_size;
+#else
+    return FALSE;
+#endif
+    return TRUE;
+}
+
+/**
+ * @brief Pauses new logins and uploads near the 32-bit build's memory budget.
+ * Existing connections and transfers continue. The 64-bit build has no RAM budget.
+ * @return boole -> TRUE when the 32-bit budget is reached or usage cannot be read
+ */
+boole util__is_server_ram_budget_reached(void)
+{
+#if SIZE_MAX <= UINT32_MAX
+    uint64 bytes = 0;
+
+    if (!util__get_process_ram_usage(&bytes))
+    {
+        return TRUE;
+    }
+    return bytes / (1024U * 1024U) >= LEMON_32BIT_RAM_BUDGET_MB;
+#else
+    return FALSE;
+#endif
+}
+
+/**
+ * @brief Checks whether this user chose to block this kind of picture or file and the server allows it.
+ * @param client_t* client -> recipient, protected by the clients lock
+ * @param cstring receive_type -> direct_chat_picture, direct_chat_file, channel_chat_picture or channel_chat_file
+ * @return boole -> TRUE when a new attachment should skip this recipient
+ */
+boole util__is_attachment_blocked(client_t* client, cstring receive_type)
+{
+    if (strcmp(receive_type, "direct_chat_picture") == 0)
+    {
+        return g_server_settings.allow_block_direct_chat_pictures && client->block_direct_chat_pictures;
+    }
+    if (strcmp(receive_type, "direct_chat_file") == 0)
+    {
+        return g_server_settings.allow_block_direct_chat_files && client->block_direct_chat_files;
+    }
+    if (strcmp(receive_type, "channel_chat_picture") == 0)
+    {
+        return g_server_settings.allow_block_channel_chat_pictures && client->block_channel_chat_pictures;
+    }
+    if (strcmp(receive_type, "channel_chat_file") == 0)
+    {
+        return g_server_settings.allow_block_channel_chat_files && client->block_channel_chat_files;
+    }
+    return FALSE;
+}
 
 /**
  * @brief Starts a worker thread that releases its thread resources when it finishes.
