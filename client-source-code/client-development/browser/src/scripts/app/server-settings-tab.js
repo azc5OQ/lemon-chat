@@ -7,70 +7,76 @@
 // number field, "tab" which save button sends it. the load and both saves walk this table
 var SERVER_SETTINGS_FIELDS = [
     {
-        key: "allow_block_direct_chat_pictures",
+        key: "is_blocking_direct_chat_pictures_active",
         id: "server-settings-allow-block-direct-chat-pictures",
         kind: "bool",
         tab: "general"
     },
     {
-        key: "allow_block_direct_chat_files",
+        key: "is_blocking_direct_chat_files_active",
         id: "server-settings-allow-block-direct-chat-files",
         kind: "bool",
         tab: "general"
     },
     {
-        key: "allow_block_channel_chat_pictures",
+        key: "is_blocking_channel_chat_pictures_active",
         id: "server-settings-allow-block-channel-chat-pictures",
         kind: "bool",
         tab: "general"
     },
     {
-        key: "allow_block_channel_chat_files",
+        key: "is_blocking_channel_chat_files_active",
         id: "server-settings-allow-block-channel-chat-files",
         kind: "bool",
         tab: "general"
     },
-    { key: "publish_server_uptime", id: "server-settings-publish-uptime", kind: "bool", fallback: true, tab: "general" },
-    { key: "publish_server_slots", id: "server-settings-publish-slots", kind: "bool", fallback: true, tab: "general" },
-    { key: "publish_server_banner", id: "server-settings-publish-banner", kind: "bool", fallback: true, tab: "general" },
-    { key: "publish_server_features", id: "server-settings-publish-features", kind: "bool", fallback: true, tab: "general" },
-    { key: "display_country_flags", id: "server-settings-general-display-flags-checkbox", kind: "bool", tab: "general" },
-    { key: "hide_admin_country_flag", id: "server-settings-general-hide-admin-flag-checkbox", kind: "bool", tab: "general" },
-    { key: "enable_audio", id: "server-settings-general-enable-audio", kind: "bool", tab: "general" },
+    { key: "is_server_uptime_published", id: "server-settings-publish-uptime", kind: "bool", fallback: true, tab: "general" },
+    { key: "is_server_slots_published", id: "server-settings-publish-slots", kind: "bool", fallback: true, tab: "general" },
+    { key: "is_server_banner_published", id: "server-settings-publish-banner", kind: "bool", fallback: true, tab: "general" },
+    { key: "is_server_features_published", id: "server-settings-publish-features", kind: "bool", fallback: true, tab: "general" },
+    { key: "is_display_country_flags_active", id: "server-settings-general-display-flags-checkbox", kind: "bool", tab: "general" },
+    { key: "is_admin_country_flag_hidden", id: "server-settings-general-hide-admin-flag-checkbox", kind: "bool", tab: "general" },
+    { key: "is_voice_chat_active", id: "server-settings-general-enable-audio", kind: "bool", tab: "general" },
     { key: "audio_connections", id: "server-settings-general-audio-connections", kind: "select", fallback: "both", tab: "general" },
-    { key: "enable_music_bot_audio", id: "server-settings-general-enable-music-bot-audio-checkbox", kind: "bool", tab: "general" },
+    { key: "is_music_bot_audio_active", id: "server-settings-general-enable-music-bot-audio-checkbox", kind: "bool", tab: "general" },
     { key: "is_video_streaming_active", id: "server-settings-general-enable-video-streaming-checkbox", kind: "bool", tab: "general" },
-    { key: "hide_clients_in_password_channels", id: "server-settings-general-hide-clients-in-password-protected-channels", kind: "bool", tab: "general" },
-    { key: "allow_temp_channels", id: "server-settings-general-allow-temp-channels-checkbox", kind: "bool", tab: "general" },
-    { key: "allow_typing_indicator", id: "server-settings-general-allow-typing-indicator-checkbox", kind: "bool", tab: "general" },
-    { key: "allow_client_renames", id: "server-settings-general-allow-renames-checkbox", kind: "bool", tab: "general" },
-    { key: "allow_link_previews", id: "server-settings-general-link-previews-checkbox", kind: "bool", tab: "general" },
+    { key: "is_hide_clients_in_password_protected_channels_active", id: "server-settings-general-hide-clients-in-password-protected-channels", kind: "bool", tab: "general" },
+    { key: "is_temp_channel_creation_allowed", id: "server-settings-general-allow-temp-channels-checkbox", kind: "bool", tab: "general" },
+    { key: "is_typing_indicator_allowed", id: "server-settings-general-allow-typing-indicator-checkbox", kind: "bool", tab: "general" },
+    { key: "is_client_rename_allowed", id: "server-settings-general-allow-renames-checkbox", kind: "bool", tab: "general" },
+    { key: "is_link_preview_allowed", id: "server-settings-general-link-previews-checkbox", kind: "bool", tab: "general" },
     { key: "is_sending_text_to_idle_clients_allowed", id: "server-settings-general-allow-text-to-idle-clients-checkbox", kind: "bool", tab: "general" },
-    { key: "allow_private_messages", id: "server-settings-general-allow-private-messages-checkbox", kind: "bool", tab: "general" },
-    { key: "allow_file_uploads", id: "server-settings-general-allow-file-uploads-checkbox", kind: "bool", tab: "general" },
+    { key: "is_private_messaging_allowed", id: "server-settings-general-allow-private-messages-checkbox", kind: "bool", tab: "general" },
+    { key: "is_file_upload_allowed", id: "server-settings-general-allow-file-uploads-checkbox", kind: "bool", tab: "general" },
     { key: "file_upload_max_size_mb", id: "server-settings-general-file-upload-max-size-input", kind: "number", fallback: 10, tab: "general" },
-    { key: "allow_chat_pictures", id: "server-settings-general-allow-pictures-checkbox", kind: "bool", tab: "general" },
+    { key: "is_chat_picture_allowed", id: "server-settings-general-allow-pictures-checkbox", kind: "bool", tab: "general" },
     { key: "chat_picture_max_size_mb", id: "server-settings-general-picture-max-size-input", kind: "number", fallback: 4, tab: "general" },
     { key: "is_same_ip_address_allowed", id: "server-settings-general-allow-same-ip-checkbox", kind: "bool", tab: "general" },
     { key: "is_fast_reconnect_allowed", id: "server-settings-general-fast-reconnect-checkbox", kind: "bool", tab: "general" },
     { key: "is_identity_takeover_allowed", id: "server-settings-general-identity-takeover-checkbox", kind: "bool", tab: "general" },
     { key: "is_websocket_ping_active", id: "server-settings-general-websocket-ping-checkbox", kind: "bool", tab: "general" },
-    { key: "enforce_connection_check", id: "server-settings-general-connection-check-checkbox", kind: "bool", fallback: true, tab: "general" },
+    { key: "is_connection_check_enforced", id: "server-settings-general-connection-check-checkbox", kind: "bool", fallback: true, tab: "general" },
+    { key: "is_channel_key_reuse_enabled", id: "server-settings-channel-key-reuse-enabled", kind: "bool", fallback: true, tab: "general" },
+    { key: "is_channel_key_reuse_on_join_allowed", id: "server-settings-channel-key-reuse-on-join", kind: "bool", fallback: true, tab: "general" },
+    { key: "is_channel_key_reuse_on_leave_allowed", id: "server-settings-channel-key-reuse-on-leave", kind: "bool", fallback: true, tab: "general" },
+    { key: "channel_key_reuse_join_min_clients", id: "server-settings-channel-key-reuse-join-min-clients", kind: "number", fallback: 50, min: 30, max: 1000000, tab: "general" },
+    { key: "channel_key_reuse_leave_min_clients", id: "server-settings-channel-key-reuse-leave-min-clients", kind: "number", fallback: 100, min: 30, max: 1000000, tab: "general" },
     { key: "max_concurrent_logins", id: "server-settings-general-concurrent-logins-input", kind: "number", fallback: 4, tab: "general" },
     { key: "webrtc_datachannel_cooldown_seconds", id: "server-settings-general-datachannel-cooldown-input", kind: "number", fallback: 600, tab: "general" },
     { key: "icon_max_size_bytes", id: "server-settings-general-icon-max-size-input", kind: "number", fallback: 5000, tab: "general" },
-    { key: "show_music_bot_marquee_to_everyone", id: "server-settings-general-marquee-everyone-checkbox", kind: "bool", tab: "general" },
+    { key: "avatar_max_size_kb", id: "server-settings-general-avatar-max-size-input", kind: "number", fallback: 50, min: 1, max: 90, tab: "general" },
+    { key: "is_music_bot_marquee_visible_to_everyone", id: "server-settings-general-marquee-everyone-checkbox", kind: "bool", tab: "general" },
     { key: "minimum_rsa_key_bits", id: "server-settings-general-minimum-rsa-bits-input", kind: "number", fallback: 2048, tab: "general" },
-    { key: "announce_minimum_rsa_key_bits", id: "server-settings-general-announce-rsa-bits-checkbox", kind: "bool", tab: "general" },
+    { key: "is_minimum_rsa_key_bits_announced", id: "server-settings-general-announce-rsa-bits-checkbox", kind: "bool", tab: "general" },
     { key: "is_country_blocking_active", id: "server-settings-general-country-blocking-checkbox", kind: "bool", tab: "general" },
-    { key: "log_client_joins", id: "server-settings-log-joins-checkbox", kind: "bool", tab: "log" },
-    { key: "log_username_changes", id: "server-settings-log-renames-checkbox", kind: "bool", tab: "log" },
-    { key: "log_tag_changes", id: "server-settings-log-tags-checkbox", kind: "bool", tab: "log" },
-    { key: "log_server_settings_updates", id: "server-settings-log-settings-checkbox", kind: "bool", tab: "log" },
-    { key: "log_kicks_and_bans", id: "server-settings-log-kicks-bans-checkbox", kind: "bool", tab: "log" },
-    { key: "log_client_disconnects", id: "server-settings-log-disconnects-checkbox", kind: "bool", tab: "log" },
-    { key: "log_socket_opens_and_closes", id: "server-settings-log-sockets-checkbox", kind: "bool", tab: "log" },
-    { key: "log_failed_attempts", id: "server-settings-log-failed-checkbox", kind: "bool", tab: "log" },
+    { key: "is_logging_client_joins_enabled", id: "server-settings-log-joins-checkbox", kind: "bool", tab: "log" },
+    { key: "is_logging_username_changes_enabled", id: "server-settings-log-renames-checkbox", kind: "bool", tab: "log" },
+    { key: "is_logging_tag_changes_enabled", id: "server-settings-log-tags-checkbox", kind: "bool", tab: "log" },
+    { key: "is_logging_server_settings_updates_enabled", id: "server-settings-log-settings-checkbox", kind: "bool", tab: "log" },
+    { key: "is_logging_kicks_and_bans_enabled", id: "server-settings-log-kicks-bans-checkbox", kind: "bool", tab: "log" },
+    { key: "is_logging_client_disconnects_enabled", id: "server-settings-log-disconnects-checkbox", kind: "bool", tab: "log" },
+    { key: "is_logging_socket_opens_and_closes_enabled", id: "server-settings-log-sockets-checkbox", kind: "bool", tab: "log" },
+    { key: "is_logging_failed_attempts_enabled", id: "server-settings-log-failed-checkbox", kind: "bool", tab: "log" },
     { key: "admin_log_max_size_mb", id: "server-settings-log-max-size-input", kind: "number", fallback: 10, tab: "log" },
     { key: "admin_log_retention_days", id: "server-settings-log-retention-select", kind: "number", fallback: 7, tab: "log" }
 ];
@@ -113,6 +119,18 @@ function server_settings_tab__apply_server_settings_values_to_tab(values)
             element.value = (typeof values[field.key] === "number") ? values[field.key] : field.fallback;
         }
     }
+    server_settings_tab__refresh_channel_key_reuse_options();
+}
+
+/**
+ * @brief Shows the channel size and event choices when key reuse is enabled.
+ */
+function server_settings_tab__refresh_channel_key_reuse_options()
+{
+    let checkbox = document.getElementById("server-settings-channel-key-reuse-enabled");
+    let options = document.getElementById("server-settings-channel-key-reuse-options");
+    checkbox.onchange = server_settings_tab__refresh_channel_key_reuse_options;
+    options.hidden = !checkbox.checked;
 }
 
 /**
@@ -149,7 +167,13 @@ function server_settings_tab__collect_server_settings_from_tab(tab)
         else
         {
             let number = parseInt(element.value);
-            settings[field.key] = isNaN(number) ? field.fallback : number;
+            number = isNaN(number) ? field.fallback : number;
+            if (field.min != null && field.max != null)
+            {
+                number = Math.min(field.max, Math.max(field.min, number));
+                element.value = number;
+            }
+            settings[field.key] = number;
         }
     }
 
@@ -184,12 +208,13 @@ function server_settings_tab__refresh_audio_connections_row_visibility()
  */
 function server_settings_tab__apply_server_policy_fields(data)
 {
-    let previous_enforce_connection_check = g_server_policy.enforce_connection_check;
+    let previous_is_connection_check_enforced = g_server_policy.is_connection_check_enforced;
     let preference = null;
+    let previous_key_policy = keys__channel_key_reuse_policy_signature(g_server_policy);
 
     for (preference of Object.keys(g_attachment_receive_preferences))
     {
-        g_server_policy["allow_" + preference] = data["allow_" + preference] === true;
+        g_server_policy["is_" + preference.replace(/^block_/, "blocking_") + "_active"] = data["is_" + preference.replace(/^block_/, "blocking_") + "_active"] === true;
     }
     chat_files__refresh_receive_preferences_controls();
 
@@ -215,9 +240,19 @@ function server_settings_tab__apply_server_policy_fields(data)
 
     // The server also starts a fresh waiting period when checks are enabled again.
     // A long pause while they were disabled must not cause an immediate reconnect.
-    if (previous_enforce_connection_check === false && g_server_policy.enforce_connection_check === true)
+    if (previous_is_connection_check_enforced === false && g_server_policy.is_connection_check_enforced === true)
     {
         g_connection_check.last_response_timestamp = new Date().valueOf();
+    }
+
+    if (previous_key_policy !== keys__channel_key_reuse_policy_signature(g_server_policy))
+    {
+        // Refresh once so stricter settings also apply to keys already in use.
+        keys__cancel_channel_key_creation();
+        if (g_is_authenticated)
+        {
+            keys__create_and_send_new_channel_keys();
+        }
     }
 
     server_settings_tab__apply_rename_policy_to_ui();
@@ -242,7 +277,7 @@ function server_settings_tab__apply_rename_policy_to_ui()
         return;
     }
 
-    let may_rename = (g_server_policy.allow_client_renames == true) || (g_is_local_client_admin == true);
+    let may_rename = (g_server_policy.is_client_rename_allowed == true) || (g_is_local_client_admin == true);
 
     rename_input.readOnly = (may_rename == false);
     rename_input.title = (may_rename == false) ? "renames are disabled on this server" : "";

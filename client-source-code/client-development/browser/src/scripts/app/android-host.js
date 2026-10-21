@@ -129,6 +129,8 @@ g_selected_microphone_device_id = utils__storage_get("lemon_mic_device_id", "");
 
 g_is_continuous_mic_mode = (utils__storage_get("lemon_continuous_mic") === "1");
 
+g_is_push_to_talk_disabled_while_typing = (utils__storage_get("lemon_ptt_disable_while_typing") !== "0");
+
 let stored_key_code = parseInt(utils__storage_get("lemon_ptt_key_code"));
 let stored_key_label = utils__storage_get("lemon_ptt_key_label");
 if (stored_key_code > 0) { g_push_to_talk_key_code = stored_key_code; }

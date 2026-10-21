@@ -40,6 +40,52 @@ function keys__create_random_message_keys()
 }
 
 /**
+ * @brief Reads channel keys only when their encrypted channel and maintainer version match this client's channel.
+ * @param object message -> the received message with its decrypted contents in some_json
+ * @param number channel_id -> the client's current channel
+ * @param number maintainer_generation -> the current maintainer version announced by the server
+ * @return array|null four valid AES keys, or null for an invalid delivery
+ */
+function keys__read_channel_key_message(message, channel_id, maintainer_generation)
+{
+    let content = message.some_json;
+    let keys = null;
+    if (content == null || content.type !== "channel_keys_from_maintainer"
+        || !Number.isSafeInteger(content.channel_id) || content.channel_id < 0
+        || !Number.isSafeInteger(content.maintainer_generation) || content.maintainer_generation < 0
+        || content.channel_id !== channel_id
+        || content.maintainer_generation !== maintainer_generation)
+    {
+        return null;
+    }
+    try
+    {
+        keys = JSON.parse(content.value);
+    }
+    catch (error)
+    {
+        return null;
+    }
+    if (!Array.isArray(keys) || keys.length !== 4)
+    {
+        return null;
+    }
+    for (let key of keys)
+    {
+        if (key == null || !Array.isArray(key.key_bytes) || key.key_bytes.length !== 32
+            || !Array.isArray(key.iv_bytes) || key.iv_bytes.length !== 16
+            || !key.key_bytes.concat(key.iv_bytes).every(function(byte)
+            {
+                return Number.isInteger(byte) && byte >= 0 && byte <= 255;
+            }))
+        {
+            return null;
+        }
+    }
+    return keys;
+}
+
+/**
  * @brief Removes previous channel keys ten minutes after they were replaced.
  * @return void
  */
@@ -939,6 +985,108 @@ var channel_key_creation_timer = null;
 var channel_key_creation_generation = 0;
 var channel_key_creation_members = null;
 var channel_key_creation_pending = false;
+var channel_key_creation_force_fresh = false;
+var channel_key_creation_arrivals = new Set();
+
+/**
+ * @brief Compares the settings that decide when existing channel keys may be kept.
+ * @param object policy -> the server's announced settings
+ * @return string the settings in a fixed order
+ */
+function keys__channel_key_reuse_policy_signature(policy)
+{
+    return JSON.stringify([policy.is_channel_key_reuse_enabled, policy.is_channel_key_reuse_on_join_allowed,
+        policy.is_channel_key_reuse_on_leave_allowed, policy.channel_key_reuse_join_min_clients, policy.channel_key_reuse_leave_min_clients]);
+}
+
+/**
+ * @brief Checks whether the server allows keeping keys for this change and channel size.
+ * @param string event -> "join" or "leave"
+ * @param number count -> active people remaining in the channel after the change
+ * @return boolean true when this change may keep the existing keys
+ */
+function keys__may_reuse_channel_keys(event, count)
+{
+    let policy = typeof g_server_policy === "undefined" ? {} : g_server_policy;
+    let threshold = policy["channel_key_reuse_" + event + "_min_clients"];
+    return policy.is_channel_key_reuse_enabled === true
+        && policy["is_channel_key_reuse_on_" + event + "_allowed"] === true
+        && Number.isSafeInteger(threshold)
+        && threshold >= 30
+        && count >= threshold;
+}
+
+/**
+ * @brief Counts people who need keys, excluding idle clients and server music bots.
+ * @return number active people in this client's channel
+ */
+function keys__current_channel_member_count()
+{
+    return g_client_list.filter(function(client)
+    {
+        return client.channel_id === g_current_channel_id && !client.is_idle && !client.is_music_bot;
+    }).length;
+}
+
+/**
+ * @brief Gives an arrival the current keys, or requests fresh keys for everyone when required.
+ * @param object client -> the person who has just entered the channel
+ */
+function keys__channel_member_joined(client)
+{
+    let index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, g_current_channel_id);
+    if (client == null || client.client_id === g_local_client_id || client.is_idle || client.is_music_bot
+        || client.channel_id !== g_current_channel_id || index < 0)
+    {
+        return;
+    }
+    if (!keys__may_reuse_channel_keys("join", keys__current_channel_member_count()))
+    {
+        keys__set_current_channel_keys(null);
+    }
+    if (g_channel_list[index].has_maintainer && g_channel_list[index].maintainer_id === g_local_client_id)
+    {
+        keys__create_and_send_new_channel_keys(client.client_id);
+    }
+    else if (g_current_channel_keys == null)
+    {
+        keys__arm_maintainer_keys_wait_timer();
+    }
+}
+
+/**
+ * @brief Replaces keys after a departure unless the server permits keeping them.
+ * @param object client -> the departing person, with their previous channel id
+ */
+function keys__channel_member_left(client)
+{
+    let index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, g_current_channel_id);
+    if (client == null || client.is_music_bot || client.is_idle || client.channel_id !== g_current_channel_id || index < 0)
+    {
+        return;
+    }
+    if (client.client_id === g_local_client_id || client.client_id === g_channel_list[index].maintainer_id)
+    {
+        keys__cancel_channel_key_creation();
+        keys__set_current_channel_keys(null);
+        return;
+    }
+    if (keys__may_reuse_channel_keys("leave", keys__current_channel_member_count()))
+    {
+        return;
+    }
+    keys__cancel_channel_key_creation();
+    keys__set_current_channel_keys(null);
+    if (g_channel_list[index].has_maintainer && g_channel_list[index].maintainer_id === g_local_client_id)
+    {
+        keys__create_and_send_new_channel_keys();
+    }
+    else
+    {
+        keys__arm_maintainer_keys_wait_timer();
+    }
+}
+
 
 /**
  * @brief Stops unfinished channel key work when its member list is no longer current.
@@ -951,6 +1099,8 @@ function keys__cancel_channel_key_creation()
     channel_key_creation_timer = null;
     channel_key_creation_members = null;
     channel_key_creation_pending = false;
+    channel_key_creation_force_fresh = false;
+    channel_key_creation_arrivals.clear();
     if (g_data_processing_worker != null)
     {
         g_data_processing_worker.postMessage({ type: "mainthread__cancel_channel_key_creation" });
@@ -969,7 +1119,9 @@ function keys__is_channel_key_creation_current(result)
     return g_is_authenticated && result.generation === channel_key_creation_generation
         && result.channel_id === g_current_channel_id && index >= 0
         && local_client != null && !local_client.is_idle
-        && g_channel_list[index].has_maintainer && g_channel_list[index].maintainer_id === g_local_client_id;
+        && g_channel_list[index].has_maintainer && g_channel_list[index].maintainer_id === g_local_client_id
+        && (result.maintainer_generation == null
+            || result.maintainer_generation === g_channel_list[index].maintainer_generation);
 }
 
 /**
@@ -990,6 +1142,11 @@ function keys__check_channel_key_recipients()
         if (client == null || client.is_idle || client.channel_id !== recipient.channel_id
             || client.public_key !== recipient.public_key)
         {
+            if ((client == null || client.is_idle || client.channel_id !== recipient.channel_id)
+                && keys__may_reuse_channel_keys("leave", keys__current_channel_member_count()))
+            {
+                continue;
+            }
             keys__cancel_channel_key_creation();
             keys__set_current_channel_keys(null);
             request.generation = channel_key_creation_generation;
@@ -1011,22 +1168,41 @@ function keys__finish_channel_key_creation()
     channel_key_creation_members = null;
     if (channel_key_creation_pending)
     {
-        keys__create_and_send_new_channel_keys();
+        keys__start_pending_channel_key_creation();
     }
 }
 
 /**
- * @brief Waits briefly for more people to join before creating and sending new channel keys.
- * @return void
+ * @brief Queues an arrival for existing keys, or requests a fresh set when no arrival is specified.
+ * @param number|null joining_client_id -> the arrival's id; null requires fresh keys for everyone
  */
-function keys__create_and_send_new_channel_keys()
+function keys__create_and_send_new_channel_keys(joining_client_id = null)
 {
     if (android_host__is_ui_only_runtime())
     {
         return;
     }
-
     channel_key_creation_pending = true;
+    if (joining_client_id == null)
+    {
+        channel_key_creation_force_fresh = true;
+    }
+    else
+    {
+        channel_key_creation_arrivals.add(joining_client_id);
+        if (!keys__may_reuse_channel_keys("join", keys__current_channel_member_count()))
+        {
+            channel_key_creation_force_fresh = true;
+        }
+    }
+    keys__start_pending_channel_key_creation();
+}
+
+/**
+ * @brief Combines nearby arrivals and waits for an unfinished distribution before starting another.
+ */
+function keys__start_pending_channel_key_creation()
+{
     if (channel_key_creation_timer != null || channel_key_creation_members != null)
     {
         return;
@@ -1046,16 +1222,25 @@ function keys__create_and_send_new_channel_keys()
         channel_key_creation_pending = false;
         if (!keys__is_channel_key_creation_current(request))
         {
+            channel_key_creation_force_fresh = false;
+            channel_key_creation_arrivals.clear();
             return;
         }
+        request.maintainer_generation = g_channel_list[
+            channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, request.channel_id)].maintainer_generation;
         request.clients = g_client_list.filter(function(client)
         {
-            return client.channel_id === request.channel_id && !client.is_idle;
+            return client.channel_id === request.channel_id && !client.is_idle && !client.is_music_bot;
         }).map(function(client)
         {
             return { client_id: client.client_id, username: client.username,
                 channel_id: client.channel_id, public_key: client.public_key };
         });
+        request.reuse_existing_keys = !channel_key_creation_force_fresh && g_current_channel_keys != null
+            && keys__may_reuse_channel_keys("join", request.clients.length);
+        request.arriving_client_ids = Array.from(channel_key_creation_arrivals);
+        channel_key_creation_force_fresh = false;
+        channel_key_creation_arrivals.clear();
         channel_key_creation_members = request.clients;
         g_data_processing_worker.postMessage(request);
     }, 100);

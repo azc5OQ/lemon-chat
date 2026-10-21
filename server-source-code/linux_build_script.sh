@@ -5,6 +5,8 @@
 #   ./linux_build_script.sh --wsl    building inside WSL on /mnt/c with a modern
 #                                    toolchain (GCC 15 / CMake 4)
 #
+set -euo pipefail
+
 LRED='\033[01;31m'
 GREEN='\033[0;32m'
 LCYAN='\033[1;36m'
@@ -33,7 +35,7 @@ CMAKE_CXX_COMPILER="g++"
 CMAKE_C_COMPILER="gcc"
 CMAKE_LINKER="ld"
 CMAKE_C_FLAGS="-Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement -DUSE_LTM -DLTM_DESC"
-CMAKE_C_FLAGS_RELEASE="-DDEBUG -Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement"
+CMAKE_C_FLAGS_RELEASE="-O3 -DNDEBUG -Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement"
 BUILD_CONFIG="Release"
 
 #BUILD_CONFIG="Debug"
@@ -92,6 +94,7 @@ then
     rm -fv "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/libviolet.a"
     rm -rfv "$ROOT_DIRECTORY/main/linkage-files/windows/"*
     rm -rfv "$ROOT_DIRECTORY/main/linkage-files/linux/"*
+    rm -rfv "$ROOT_DIRECTORY/build/linux"
     rm -rfv "$ROOT_DIRECTORY/main/CMakeFiles"
     rm -fv "$ROOT_DIRECTORY/main/CMakeCache.txt"
     rm -fv "$ROOT_DIRECTORY/main/cmake_install.cmake"
@@ -294,14 +297,15 @@ fi
 
 message "building chat server executable"
 cd "$ROOT_DIRECTORY/main"
-cmake_lib
-cmake --build . -j"$JOBS"
+# Keep compiler output and CMake's cache outside the source directory.
+cmake_lib -B "$ROOT_DIRECTORY/build/linux"
+cmake --build "$ROOT_DIRECTORY/build/linux" -j"$JOBS"
 
 # =============================================================================
 # PACKAGE | Server, shared library, launcher, and browser page
 # =============================================================================
 
-cp -v "$ROOT_DIRECTORY/main/chat-server" "$ROOT_DIRECTORY/../buildresult/chat-server.bin"
+cp -v "$ROOT_DIRECTORY/build/linux/chat-server" "$ROOT_DIRECTORY/../buildresult/chat-server.bin"
 cp -v "$ROOT_DIRECTORY/main/linkage-files/linux/libdatachannel.so" "$ROOT_DIRECTORY/../buildresult/libdatachannel.so"
 
 # The loader looks for the versioned SONAME; its target must stay relative.

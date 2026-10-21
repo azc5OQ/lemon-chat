@@ -1,3 +1,4 @@
+#include "util.h"
 // This file lets Lemon Chat clients send and receive video through the /video WebSocket.
 // It creates a ticket and a secret key, checks the client's first frame, and connects the socket
 // to the correct logged-in client. It also limits incoming traffic, queues outgoing packets,
@@ -9,20 +10,20 @@
 // Both sides check these codes to confirm that the socket belongs to the requested session.
 // Tickets expire after 15 seconds and may be used by only one socket.
 //
-// Received packets go to video_stream.c, which checks the stream and sends them to its viewers.
+// Received packets go to video_channel.c, which checks the stream and sends them to its viewers.
 // video_webrtc.c provides the WebRTC connection for the same kind of packets.
 #include "definitions.h"
 #include "../third-party/dave-g-json/cJSON.h"
 #include "base.h"
 #include "metadata_crypto.h"
-#include "server_message.h"
+#include "msg/server/server_msg.h"
 #include "memory_manager.h"
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/md.h"
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/platform_util.h"
 #include <string.h>
 #include "media_auth.h"
 #include "video_webrtc.h"
-#include "video_stream.h"
+#include "core/video_channel.h"
 #include "video_websocket.h"
 #include "../third-party/rxi-log/log.h"
 
@@ -119,7 +120,7 @@ static boole _video_websocket_internal__issue_session(client_t* client)
 {
     video_websocket_session_t** slot = &client->video_websocket;
     video_websocket_session_t* session = *slot;
-    uint64 now = base__get_timestamp_ms();
+    uint64 now = util__get_timestamp_ms();
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     char* plaintext = NULL_POINTER;
@@ -146,8 +147,8 @@ static boole _video_websocket_internal__issue_session(client_t* client)
     session->expires_at = now + 15000;
     // the ticket and the key are random; the HMAC context is set up with the key once, for the proof
     // frame and the acknowledgement
-    if (base__fill_secure_random_bytes(session->auth_key, sizeof(session->auth_key)) == FALSE
-        || base__fill_secure_random_bytes(session->ticket, sizeof(session->ticket)) == FALSE
+    if (util__fill_secure_random_bytes(session->auth_key, sizeof(session->auth_key)) == FALSE
+        || util__fill_secure_random_bytes(session->ticket, sizeof(session->ticket)) == FALSE
         || mbedtls_md_setup(&session->receive_mac, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1) != 0
         || mbedtls_md_hmac_starts(&session->receive_mac, session->auth_key, 32) != 0)
     {
@@ -175,7 +176,7 @@ static boole _video_websocket_internal__issue_session(client_t* client)
     }
     if (plaintext != NULL_POINTER)
     {
-        is_issued = server_msg__queue_text_to_client(client, plaintext);
+        is_issued = server_msg__delivery__queue_text_to_client(client, plaintext);
         if (is_issued == TRUE)
         {
             DBG_VIDEO_WEBSOCKET log_info("%s %s %llu", "video", "websocket session issued to client", client->client_id);
@@ -379,7 +380,7 @@ void video_websocket__onmessage(ws_cli_conn_t* socket, unsigned char* data, uint
     client_t* client = NULL_POINTER;
     boole valid = FALSE;
     boole relay = FALSE;
-    uint64 now = base__get_timestamp_ms();
+    uint64 now = util__get_timestamp_ms();
 
     if (type != WS_FR_OP_BIN || size > WS_VIDEO_FRAME_MAX)
     {
@@ -429,7 +430,7 @@ done:
     }
     else if (relay == TRUE)
     {
-        video_stream__relay_packet(id, socket, 0, data, size);
+        video_channel__relay_packet(id, socket, 0, data, size);
     }
 }
 
@@ -460,7 +461,7 @@ void video_websocket__onclose(ws_cli_conn_t* socket)
             video_websocket__disconnect(client);
             if (video_webrtc__is_connected(id) == FALSE)
             {
-                video_stream__process_transport_lost(id);
+                video_channel__process_transport_lost(id);
             }
         }
     }

@@ -1,5 +1,6 @@
 :root
 {
+    --chat-picture-deleted-icon: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDI0IDI0Ij48ZyBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMuNSIgeT0iMy41IiB3aWR0aD0iMTciIGhlaWdodD0iMTciIHJ4PSIyIiBmaWxsPSIjMjMzNDRkIiBzdHJva2U9IiM5OGE5YzMiIHN0cm9rZS13aWR0aD0iMS40Ii8+PGNpcmNsZSBjeD0iOCIgY3k9IjgiIHI9IjEuNCIgZmlsbD0iIzk4YTljMyIvPjxwYXRoIGQ9Im00IDE3IDUtNSA0IDQgMy0zIDQgNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOThhOWMzIiBzdHJva2Utd2lkdGg9IjEuNCIvPjxwYXRoIGQ9Im0zIDMgMTggMTgiIHN0cm9rZT0iI2I2YTZlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+PC9nPjwvc3ZnPg==");
     --chat-tab-close-color: var(--tmx-muted);
     --chat-tab-close-hover-color: var(--tmx-bright);
     --chat-tab-close-hover-background: var(--tmx-active);
@@ -509,7 +510,18 @@ div#image-upload-preview {
     }
 }
 
-#show-hide-log-button {
+#show-hide-log-button
+{
+    position: fixed;
+    z-index: 11;
+    right: 0;
+    bottom: 0;
+    width: 38px;
+    height: 24px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transform-origin: bottom right;
     background: var(--tmx-darkest);
     color: var(--tmx-muted);
     border: 0;
@@ -519,7 +531,15 @@ div#image-upload-preview {
     color: var(--tmx-bright);
 }
 
-#textarea-log {
+#textarea-log
+{
+    position: fixed;
+    z-index: 10;
+    right: 8px;
+    bottom: 32px;
+    width: min(640px, calc(100vw - 16px));
+    height: min(360px, calc(100vh - 48px));
+    padding: 10px;
     background: var(--tmx-darkest);
     color: var(--tmx-green);
     border: 1px solid var(--tmx-line);

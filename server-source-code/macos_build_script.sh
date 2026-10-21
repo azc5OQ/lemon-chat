@@ -91,6 +91,7 @@ then
     rm -rfv "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/CMakeFiles" "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/CMakeCache.txt" "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/libviolet.a"
     rm -rfv "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeFiles" "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeCache.txt"
     rm -rfv "$LINK_DIR"/*
+    rm -rfv "$ROOT_DIRECTORY/build/macos"
     rm -rfv "$ROOT_DIRECTORY/main/CMakeFiles" "$ROOT_DIRECTORY/main/CMakeCache.txt" "$ROOT_DIRECTORY/main/cmake_install.cmake" "$ROOT_DIRECTORY/main/build.ninja" "$ROOT_DIRECTORY/main/.ninja_deps" "$ROOT_DIRECTORY/main/.ninja_log"
     ( cd "$THIRD_PARTY_DIRECTORY/stunnel/stunnel-5.75" && make distclean ) >/dev/null 2>&1
     rm -rfv "$THIRD_PARTY_DIRECTORY/stunnel/openssl"
@@ -233,9 +234,10 @@ fi
 
 message "building chat server executable"
 cd "$ROOT_DIRECTORY/main"
-cmake_lib
-cmake --build . -j"$JOBS"
-cp -v "$ROOT_DIRECTORY/main/chat-server" "$ROOT_DIRECTORY/../buildresult/chat-server.bin"
+# Keep compiler output and CMake's cache outside the source directory.
+cmake_lib -B "$ROOT_DIRECTORY/build/macos"
+cmake --build "$ROOT_DIRECTORY/build/macos" -j"$JOBS"
+cp -v "$ROOT_DIRECTORY/build/macos/chat-server" "$ROOT_DIRECTORY/../buildresult/chat-server.bin"
 
 # =============================================================================
 # PACKAGE | Runtime files and macOS launcher
@@ -259,7 +261,7 @@ cd "$(dirname "$0")"
 chmod +x chat-server.bin
 ulimit -n 65535 2>/dev/null || ulimit -n 10240 2>/dev/null || true
 export DYLD_LIBRARY_PATH="$DYLD_LIBRARY_PATH:$PWD"
-if [ -f server_settings.json ] && grep -Eq '"restart_on_crash"[[:space:]]*:[[:space:]]*true' server_settings.json
+if [ -f server_settings.json ] && grep -Eq '"is_restart_on_crash_enabled"[[:space:]]*:[[:space:]]*true' server_settings.json
 then
     trap 'echo; echo "stopping (signal received)."; exit 0' INT TERM
     while true

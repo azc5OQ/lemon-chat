@@ -8,7 +8,7 @@ var g_server_info =
     used_slots: null,
     max_slots: null,
     visibility: { uptime: false, slots: false, banner: false, features: false },
-    admin: { uptime_seconds: null, received_at: 0, used_slots: null, max_slots: null },
+    admin: { uptime_seconds: null, received_at: 0, used_slots: null, max_slots: null, last_memory_request: null },
     features: {},
     banner: "",
     banner_loaded: false,
@@ -26,26 +26,26 @@ var SERVER_INFO_FEATURES =
     ["is_video_streaming_allowed", "Video streaming", "Allows screen sharing and video-file streams within a channel. Individual channels can still disable video."],
     ["is_audio_over_websocket_allowed", "Audio/video over WebSocket", "Allows audio and video to travel between each client and the server over WebSocket, using TCP."],
     ["is_audio_over_webrtc_allowed", "WebRTC DataChannel (not peer-to-peer)"],
-    ["allow_private_messages", "Private messages", "Allows users to send messages directly to one another, outside the channel chat."],
-    ["allow_file_uploads", "File uploads", "Allows users to attach files to chat messages, within the server's size limit."],
-    ["allow_chat_pictures", "Chat pictures", "Allows users to send pictures that appear inside the chat."],
-    ["allow_link_previews", "Link previews", "Lets the server look up shared links and show a preview, such as a title, description or image."],
-    ["allow_avatars", "Avatars", "Allows users to upload a picture to represent their identity."],
-    ["allow_typing_indicator", "Typing indicators", "Shows when someone is typing a message, without sharing what they are writing."],
-    ["allow_client_renames", "Name changes", "Allows users to change their display name after connecting. Admins can still rename users when this is disabled."],
-    ["allow_temp_channels", "Temporary channels", "Allows non-admin users to create one temporary channel. It is removed when its creator changes channels or disconnects."],
+    ["is_private_messaging_allowed", "Private messages", "Allows users to send messages directly to one another, outside the channel chat."],
+    ["is_file_upload_allowed", "File uploads", "Allows users to attach files to chat messages, within the server's size limit."],
+    ["is_chat_picture_allowed", "Chat pictures", "Allows users to send pictures that appear inside the chat."],
+    ["is_link_preview_allowed", "Link previews", "Lets the server look up shared links and show a preview, such as a title, description or image."],
+    ["is_avatar_upload_allowed", "Avatars", "Allows users to upload a picture to represent their identity."],
+    ["is_typing_indicator_allowed", "Typing indicators", "Shows when someone is typing a message, without sharing what they are writing."],
+    ["is_client_rename_allowed", "Name changes", "Allows users to change their display name after connecting. Admins can still rename users when this is disabled."],
+    ["is_temp_channel_creation_allowed", "Temporary channels", "Allows non-admin users to create one temporary channel. It is removed when its creator changes channels or disconnects."],
     ["is_idle_mode_allowed", "Idle mode", "Lets users stay signed in while away, without receiving channel messages or audio/video."],
     ["is_fast_reconnect_allowed", "Fast reconnect", "Lets a client resume its previous session after a brief connection loss."],
-    ["enforce_connection_check", "Disconnect on missed keep-alive messages", "Disconnects clients that stop sending Lemon Chat's keep-alive messages over their chat WebSocket."],
+    ["is_connection_check_enforced", "Disconnect on missed keep-alive messages", "Disconnects clients that stop sending Lemon Chat's keep-alive messages over their chat WebSocket."],
     ["is_alias_registration_allowed", "Username registration", "Allows admins to register a display name for a saved identity."],
-    ["are_identities_enabled", "Saved identities", "Lets the server remember identities between visits and restore their saved tags and registered names."],
-    ["allow_stored_clients_list", "Offline user list", "Allows users to see saved identities even when those people are offline."],
-    ["allow_last_seen", "Last seen times", "Shows when a saved identity was last connected to this server."],
-    ["allow_offline_messages", "Offline messages", "Holds private messages for registered users who are offline and delivers them when they return. Waiting messages are lost if the server restarts."],
-    ["display_country_flags", "Country flags", "Shows country flags based on users' connection addresses."],
-    ["hide_clients_in_password_channels", "Hide users in password-protected channels", "Hides which password-protected channel a user is in from people outside that channel."],
+    ["is_identity_storage_enabled", "Saved identities", "Lets the server remember identities between visits and restore their saved tags and registered names."],
+    ["is_stored_client_list_allowed", "Offline user list", "Allows users to see saved identities even when those people are offline."],
+    ["is_last_seen_enabled", "Last seen times", "Shows when a saved identity was last connected to this server."],
+    ["is_offline_messaging_allowed", "Offline messages", "Holds private messages for registered users who are offline and delivers them when they return. Waiting messages are lost if the server restarts."],
+    ["is_display_country_flags_active", "Country flags", "Shows country flags based on users' connection addresses."],
+    ["is_hide_clients_in_password_protected_channels_active", "Hide users in password-protected channels", "Hides which password-protected channel a user is in from people outside that channel."],
     ["is_sending_text_to_idle_clients_allowed", "Messages to idle users", "Allows private text messages to reach users who are connected in idle mode."],
-    ["show_music_bot_marquee_to_everyone", "Show music titles to everyone", "Shows a music bot's current song title even to users outside the bot's channel."]
+    ["is_music_bot_marquee_visible_to_everyone", "Show music titles to everyone", "Shows a music bot's current song title even to users outside the bot's channel."]
 ];
 
 /**
@@ -109,6 +109,25 @@ function server_info__request(include_banner = false)
 }
 
 /**
+ * @brief Requests admin settings and starts refreshing readings before the first reply arrives.
+ * @param boolean memory_only -> true requests readings without replacing settings being edited
+ * @return void
+ */
+function server_info__request_admin_settings(memory_only = false)
+{
+    if (!g_is_authenticated || !g_is_local_client_admin)
+    {
+        return;
+    }
+    g_server_info.admin.last_memory_request = performance.now();
+    if (g_server_info.timer === null)
+    {
+        g_server_info.timer = setInterval(server_info__tick, 1000);
+    }
+    connection__send_message_object({ message: { type: "load_server_settings", memory_only: memory_only } });
+}
+
+/**
  * @brief Refreshes the visible slot count on the next timer tick after clients join or leave.
  * @return void
  */
@@ -129,11 +148,10 @@ function server_info__tick()
     server_info__render_counters(g_server_info.admin, "[data-admin-server-uptime]", "[data-admin-server-slots]");
 
     if (!document.hidden && g_is_authenticated && g_is_local_client_admin
-        && g_server_info.admin.memory_supported && ram_element && ram_element.getClientRects().length > 0
+        && g_server_info.admin.last_memory_request !== null && ram_element && ram_element.getClientRects().length > 0
         && performance.now() - g_server_info.admin.last_memory_request >= 5000)
     {
-        g_server_info.admin.last_memory_request = performance.now();
-        connection__send_message_object({ message: { type: "load_server_settings", memory_only: true } });
+        server_info__request_admin_settings(true);
     }
 
     if (!document.hidden && server_info__is_visible()
@@ -217,7 +235,7 @@ function server_info__apply(data)
             g_server_info.features[field[0]] = data.features[field[0]];
         }
     }
-    if (g_server_info.features.are_identities_enabled === false)
+    if (g_server_info.features.is_identity_storage_enabled === false)
     {
         g_server_info.features.is_alias_registration_allowed = false;
     }
@@ -279,12 +297,12 @@ function server_info__apply(data)
         }
     }
     if (g_server_info.timer === null && (g_server_info.visibility.uptime || g_server_info.visibility.slots
-        || g_server_info.visibility.features || g_server_info.admin.uptime_seconds !== null))
+        || g_server_info.visibility.features || g_server_info.admin.last_memory_request !== null))
     {
         g_server_info.timer = setInterval(server_info__tick, 1000);
     }
     else if (!g_server_info.visibility.uptime && !g_server_info.visibility.slots
-        && !g_server_info.visibility.features && g_server_info.admin.uptime_seconds === null)
+        && !g_server_info.visibility.features && g_server_info.admin.last_memory_request === null)
     {
         clearInterval(g_server_info.timer);
         g_server_info.timer = null;
@@ -359,7 +377,7 @@ function server_info__apply_admin_settings(data)
     {
         image.removeAttribute("src");
     }
-    if (g_server_info.admin.uptime_seconds !== null && g_server_info.timer === null)
+    if (g_server_info.timer === null)
     {
         g_server_info.timer = setInterval(server_info__tick, 1000);
     }
@@ -380,6 +398,7 @@ function server_info__apply_admin_memory(data)
     let total = null;
     let unit = 0;
     let units = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let has_ram_reading = Object.prototype.hasOwnProperty.call(data, "ram_bytes");
 
     for (field of ["uptime_seconds", "used_slots", "max_slots"])
     {
@@ -393,13 +412,12 @@ function server_info__apply_admin_memory(data)
         g_server_info.admin.received_at = performance.now();
     }
     server_info__render_counters(g_server_info.admin, "[data-admin-server-uptime]", "[data-admin-server-slots]");
-    g_server_info.admin.memory_supported = Object.prototype.hasOwnProperty.call(data, "ram_bytes");
     g_server_info.admin.last_memory_request = performance.now();
     if (element)
     {
         element.textContent = Number.isSafeInteger(data.ram_bytes) && data.ram_bytes >= 0
             ? (data.ram_bytes / (1024 * 1024)).toLocaleString(undefined, { maximumFractionDigits: 1 }) + " MiB"
-            : g_server_info.admin.memory_supported ? "The server could not read its RAM usage."
+            : has_ram_reading ? "The server could not read its RAM usage."
                 : "The server did not send a RAM reading.";
     }
     for (field of ["received", "sent"])
@@ -414,6 +432,7 @@ function server_info__apply_admin_memory(data)
         if (!Number.isSafeInteger(websocket) || websocket < 0 || !Number.isSafeInteger(webrtc) || webrtc < 0)
         {
             element.textContent = "The server did not send a traffic reading.";
+            element.removeAttribute("title");
             continue;
         }
         total = websocket + webrtc;
@@ -628,7 +647,7 @@ function server_info__banner_result(data)
             : "Could not save the banner. Check the image size and your admin access.";
     if (data.success === true)
     {
-        connection__send_message_object({ message: { type: "load_server_settings" } });
+        server_info__request_admin_settings();
         if (g_server_info.visibility.banner)
         {
             server_info__request(true);
@@ -643,6 +662,8 @@ function server_info__banner_result(data)
 function server_info__reset()
 {
     let dialog = document.getElementById("server-info-dialog");
+    let banner = document.querySelector("[data-admin-server-banner]");
+    let element = null;
 
     clearInterval(g_server_info.timer);
     clearTimeout(g_server_info.banner_timer);
@@ -653,14 +674,24 @@ function server_info__reset()
     g_server_info.used_slots = null;
     g_server_info.max_slots = null;
     g_server_info.visibility = { uptime: false, slots: false, banner: false, features: false };
-    g_server_info.admin = { uptime_seconds: null, received_at: 0, used_slots: null, max_slots: null };
+    g_server_info.admin = { uptime_seconds: null, received_at: 0, used_slots: null, max_slots: null, last_memory_request: null };
     g_server_info.features = {};
     g_server_info.banner = "";
     g_server_info.banner_loaded = false;
     g_server_info.last_request = 0;
     g_server_info.slots_changed = false;
     document.getElementById("server-banner-status").textContent = "";
-    server_info__apply_admin_settings({});
+    server_info__render_counters(g_server_info.admin, "[data-admin-server-uptime]", "[data-admin-server-slots]");
+    if (banner)
+    {
+        banner.hidden = true;
+        banner.removeAttribute("src");
+    }
+    for (element of document.querySelectorAll("[data-admin-server-ram], [data-admin-server-received], [data-admin-server-sent]"))
+    {
+        element.textContent = "Waiting for server readings…";
+        element.removeAttribute("title");
+    }
     if (dialog && dialog.open)
     {
         dialog.close();

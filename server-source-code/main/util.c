@@ -1,64 +1,22 @@
+// This file provides general helpers for clocks, threads, memory usage, random data, hashing and JSON.
 #include "definitions.h"
-
-// use forward slashes "/" when specifying paths, not backward slashes "\" linux environment has trouble finding files that way
-// windows compiler will work with both
-
 #include "clib/clib_string.h"
 #include "clib/clib_memory.h"
-#include "../third-party/dave-g-json/cJSON.h" // needed by base.h
-#include "base.h"
-
 #include "util.h"
+#include "../third-party/zhicheng/base64.h"
+#include "../third-party/ITH-sha/sha256.h"
+#include "../third-party/mbedtls-3.6.6/include/mbedtls/entropy.h"
+#include "../third-party/mbedtls-3.6.6/include/mbedtls/ctr_drbg.h"
 #include "../third-party/rxi-log/log.h"
 #include <string.h>
-#include <stdatomic.h>
-
-static _Atomic(uint64) webrtc_received_bytes;
-static _Atomic(uint64) webrtc_sent_bytes;
-
-/**
- * @brief Counts WebRTC data-channel bytes received or accepted for sending since startup.
- * @param uint64 received -> bytes received in this call
- * @param uint64 sent -> bytes accepted for sending in this call
- * @return void
- */
-void util__count_webrtc_bytes(uint64 received, uint64 sent)
-{
-    if (received != 0)
-    {
-        atomic_fetch_add_explicit(&webrtc_received_bytes, received, memory_order_relaxed);
-    }
-    if (sent != 0)
-    {
-        atomic_fetch_add_explicit(&webrtc_sent_bytes, sent, memory_order_relaxed);
-    }
-}
-
-/**
- * @brief Reads WebRTC traffic totals without blocking the threads that relay audio and video.
- * @param uint64* received -> receives the incoming byte total
- * @param uint64* sent -> receives the outgoing byte total
- * @return void
- */
-void util__get_webrtc_bytes(uint64* received, uint64* sent)
-{
-    *received = atomic_load_explicit(&webrtc_received_bytes, memory_order_relaxed);
-    *sent = atomic_load_explicit(&webrtc_sent_bytes, memory_order_relaxed);
-}
-
 #ifdef _WIN32
 #include <windows.h>
 #include <psapi.h>
-#elif defined(__APPLE__)
-#include <mach/mach.h>
-#elif defined(__linux__)
+#else
 #include <unistd.h>
-#endif
-
-#if SIZE_MAX <= UINT32_MAX
-// Leave room for libraries and thread stacks in a 32-bit process.
-#ifndef LEMON_32BIT_RAM_BUDGET_MB
-#define LEMON_32BIT_RAM_BUDGET_MB 1536U
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach-o/dyld.h>
 #endif
 #endif
 
@@ -70,7 +28,7 @@ void util__get_webrtc_bytes(uint64* received, uint64* sent)
 boole util__get_process_ram_usage(uint64* bytes)
 {
 #ifdef _WIN32
-    PROCESS_MEMORY_COUNTERS counters = {0};
+    PROCESS_MEMORY_COUNTERS counters = { 0 };
 #elif defined(__APPLE__)
     mach_task_basic_info_data_t info;
     mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
@@ -121,53 +79,6 @@ boole util__get_process_ram_usage(uint64* bytes)
 }
 
 /**
- * @brief Pauses new logins and uploads near the 32-bit build's memory budget.
- * Existing connections and transfers continue. The 64-bit build has no RAM budget.
- * @return boole -> TRUE when the 32-bit budget is reached or usage cannot be read
- */
-boole util__is_server_ram_budget_reached(void)
-{
-#if SIZE_MAX <= UINT32_MAX
-    uint64 bytes = 0;
-
-    if (!util__get_process_ram_usage(&bytes))
-    {
-        return TRUE;
-    }
-    return bytes / (1024U * 1024U) >= LEMON_32BIT_RAM_BUDGET_MB;
-#else
-    return FALSE;
-#endif
-}
-
-/**
- * @brief Checks whether this user chose to block this kind of picture or file and the server allows it.
- * @param client_t* client -> recipient, protected by the clients lock
- * @param cstring receive_type -> direct_chat_picture, direct_chat_file, channel_chat_picture or channel_chat_file
- * @return boole -> TRUE when a new attachment should skip this recipient
- */
-boole util__is_attachment_blocked(client_t* client, cstring receive_type)
-{
-    if (strcmp(receive_type, "direct_chat_picture") == 0)
-    {
-        return g_server_settings.allow_block_direct_chat_pictures && client->block_direct_chat_pictures;
-    }
-    if (strcmp(receive_type, "direct_chat_file") == 0)
-    {
-        return g_server_settings.allow_block_direct_chat_files && client->block_direct_chat_files;
-    }
-    if (strcmp(receive_type, "channel_chat_picture") == 0)
-    {
-        return g_server_settings.allow_block_channel_chat_pictures && client->block_channel_chat_pictures;
-    }
-    if (strcmp(receive_type, "channel_chat_file") == 0)
-    {
-        return g_server_settings.allow_block_channel_chat_files && client->block_channel_chat_files;
-    }
-    return FALSE;
-}
-
-/**
  * @brief Starts a worker thread that releases its thread resources when it finishes.
  * @param void* (*)(void*) entry -> function run by the worker
  * @param void* argument -> value passed to entry; the caller retains it if starting fails
@@ -198,156 +109,6 @@ boole util__start_detached_thread(void* (*entry)(void*), void* argument)
 }
 
 /**
- * @brief Checks that a client slot exists, is authenticated and has a WebSocket connection.
- * @param int client_id -> index into g_clients_array; client id and client index are the same
- * @return boole -> TRUE when all checks pass; FALSE for an invalid or unused slot
- * @attention The caller holds the clients lock.
- */
-boole util__is_client_valid(int client_id)
-{
-    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count) { return FALSE; }
-    boole status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
-    boole status1 = g_clients_array[client_id].is_existing;
-    boole status2 = g_clients_array[client_id].is_authenticated;
-    boole status3 = g_clients_array[client_id].p_ws_connection != NULL_POINTER;
-
-    if (status0 == TRUE && status1 == TRUE && status2 == TRUE && status3 == TRUE)
-    {
-        return TRUE;
-    }
-    else
-    {
-        return FALSE;
-    }
-}
-
-/**
- * @brief tells whether the client id belongs to a usable human client, meaning a real
- *        connected and authenticated client that is not a music bot.
- *
- *        checks the id is inside the clients array range, the slot is existing, the client is
- *        authenticated, the websocket connection pointer is set, and the is_music_bot flag is
- *        FALSE. all five have to hold, otherwise FALSE is returned.
- *
- * @param int client_id -> index into g_clients_array, client id and client index are the same in the server's context
- *
- * @note ment to be used within acquired lock on clients
- *
- * @return boole -> TRUE when the client is valid and is not a music bot, FALSE otherwise
- */
-boole util__is_client_valid_and_not_music_bot(int client_id)
-{
-    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count) { return FALSE; }
-    boole status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
-    boole status1 = g_clients_array[client_id].is_existing;
-    boole status2 = g_clients_array[client_id].is_authenticated;
-    boole status3 = g_clients_array[client_id].p_ws_connection != NULL_POINTER;
-    boole status4 = g_clients_array[client_id].is_music_bot == FALSE;
-
-    if (status0 == TRUE && status1 == TRUE && status2 == TRUE && status3 == TRUE && status4 == TRUE)
-    {
-        return TRUE;
-    }
-    else
-    {
-        return FALSE;
-    }
-}
-
-/**
- * @brief tells whether the client id belongs to a valid client that also holds admin rights.
- *
- *        checks the id is inside the clients array range, the slot is existing, the client is
- *        authenticated, the websocket connection pointer is set, and the is_admin flag is set.
- *        all five have to hold, otherwise FALSE is returned.
- *
- * @param int client_id -> index into g_clients_array, client id and client index are the same in the server's context
- *
- * @note ment to be used within acquired lock on clients
- *
- * @return boole -> TRUE when the client is valid and is an admin, FALSE otherwise
- */
-boole util__is_client_valid_admin(int client_id)
-{
-    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count) { return FALSE; }
-    boole status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
-    boole status1 = g_clients_array[client_id].is_existing;
-    boole status2 = g_clients_array[client_id].is_authenticated;
-    boole status3 = g_clients_array[client_id].p_ws_connection != NULL_POINTER;
-    boole status4 = g_clients_array[client_id].is_admin;
-
-    if (status0 == TRUE && status1 == TRUE && status2 == TRUE && status3 == TRUE && status4 == TRUE)
-    {
-        return TRUE;
-    }
-    else
-    {
-        return FALSE;
-    }
-}
-
-/**
- * @brief tells whether the client id belongs to an existing music bot client.
- *
- *        checks the id is inside the clients array range, the slot is existing, and the
- *        is_music_bot flag is set. unlike the human client checks this one does not require
- *        authentication or a websocket connection pointer, since a music bot has neither.
- *
- * @param int client_id -> index into g_clients_array, client id and client index are the same in the server's context
- *
- * @note ment to be used within acquired lock on clients
- *
- * @return boole -> TRUE when the slot holds an existing music bot, FALSE otherwise
- */
-boole util__is_client_valid_musicbot(int client_id)
-{
-    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count) { return FALSE; }
-    boole status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
-    boole status1 = g_clients_array[client_id].is_existing;
-    boole status2 = g_clients_array[client_id].is_music_bot;
-
-    if (status0 == TRUE && status1 == TRUE && status2 == TRUE)
-    {
-        return TRUE;
-    }
-    else
-    {
-        return FALSE;
-    }
-}
-
-/**
- * @brief tells whether the client id belongs to an existing music bot that still has room for
- *        one more song.
- *
- *        checks the id is inside the clients array range, the slot is existing, the is_music_bot
- *        flag is set, and music_bot_client_extension.music_bot_songs_count has not reached
- *        MUSIC_BOT_MAX_FILE_COUNT. all four have to hold, otherwise FALSE is returned.
- *
- * @param int client_id -> index into g_clients_array, client id and client index are the same in the server's context
- *
- * @note ment to be used within acquired lock on clients
- *
- * @return boole -> TRUE when the slot holds an existing music bot with a free song slot, FALSE otherwise
- */
-boole util__is_music_bot_and_song_slot_valid(int client_id)
-{
-    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count) { return FALSE; }
-    boole status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
-    boole status1 = g_clients_array[client_id].is_existing;
-    boole status2 = g_clients_array[client_id].is_music_bot;
-    boole status3 = g_clients_array[client_id].music_bot_client_extension.music_bot_songs_count != MUSIC_BOT_MAX_FILE_COUNT;
-
-    if (status0 == TRUE && status1 == TRUE && status2 == TRUE && status3 == TRUE)
-    {
-        return TRUE;
-    }
-    else
-    {
-        return FALSE;
-    }
-}
-/**
  * @brief validates one json entry as an iso 3166-1 alpha-2 country code and writes it uppercased
  *
  * @param cJSON* json_entry -> candidate array element (must be a 2-letter string)
@@ -374,8 +135,14 @@ boole util__normalize_country_code(cJSON* json_entry, char* out_code)
     first = json_entry->valuestring[0];
     second = json_entry->valuestring[1];
 
-    if (first >= 'a' && first <= 'z') { first = (char)(first - 32); }
-    if (second >= 'a' && second <= 'z') { second = (char)(second - 32); }
+    if (first >= 'a' && first <= 'z')
+    {
+        first = (char)(first - 32);
+    }
+    if (second >= 'a' && second <= 'z')
+    {
+        second = (char)(second - 32);
+    }
 
     if (first < 'A' || first > 'Z' || second < 'A' || second > 'Z')
     {
@@ -387,4 +154,287 @@ boole util__normalize_country_code(cJSON* json_entry, char* out_code)
     out_code[1] = second;
     out_code[2] = 0;
     return TRUE;
+}
+
+/**
+ * @brief returns timestamp in milliseconds
+ *
+ *        on windows this is GetTickCount64 (milliseconds since boot), everywhere else it is
+ *        gettimeofday (milliseconds since the unix epoch). only differences between two readings
+ *        are meaningful, the absolute value is not comparable across platforms.
+ *
+ * @attention should work on windows and linux
+ *
+ * @return uint64 -> the current timestamp in milliseconds
+ */
+uint64 util__get_timestamp_ms(void)
+{
+#ifdef WIN32
+    uint64 timestamp_msec = GetTickCount64();
+    return timestamp_msec;
+#else
+    // every non-Windows platform (Linux, macOS, BSD) has POSIX gettimeofday. this MUST have an
+    // #else, not an #ifdef __linux__: on macOS __linux__ is undefined, so a linux-only branch left
+    // the function with no return - it fell off the end and returned garbage, which made every
+    // spam-protected request (channel create/join/delete, chat, etc.) compare against a bogus
+    // "now" and get silently rejected while auth (no spam check) still worked
+    struct timeval tv;
+    uint64 timestamp_msec = 0;
+    gettimeofday(&tv, NULL_POINTER);
+    timestamp_msec = (uint64)tv.tv_sec * 1000 + (uint64)tv.tv_usec / 1000;
+    return timestamp_msec;
+#endif
+}
+
+/**
+ * @brief Reads a clock that is unaffected by changes to the calendar time.
+ * @param uint64* milliseconds -> receives the clock reading
+ * @return boole -> TRUE when the clock was read successfully
+ */
+boole util__get_monotonic_ms(uint64* milliseconds)
+{
+#ifdef WIN32
+    *milliseconds = GetTickCount64();
+#else
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+    {
+        return FALSE;
+    }
+    *milliseconds = (uint64)now.tv_sec * 1000 + (uint64)now.tv_nsec / 1000000;
+#endif
+    return TRUE;
+}
+
+/**
+ * @brief Pauses the calling thread for the requested number of milliseconds.
+ * @param uint64 milliseconds -> requested pause length
+ * @return void
+ */
+void util__sleep_for_milliseconds(uint64 milliseconds)
+{ // cross-platform sleep function
+#ifdef WIN32
+    Sleep(milliseconds);
+#elif _POSIX_C_SOURCE >= 199309L
+    struct timespec ts;
+    ts.tv_sec = milliseconds / 1000;
+    ts.tv_nsec = (milliseconds % 1000) * 1000000;
+    nanosleep(&ts, NULL_POINTER);
+#else
+    if (milliseconds >= 1000)
+    {
+        sleep(milliseconds / 1000);
+    }
+    usleep((milliseconds % 1000) * 1000);
+#endif
+}
+
+#ifndef WIN32
+/**
+ * @brief Finds the executable directory so bundled files can be opened beside it.
+ * @param char* out_directory -> buffer receiving the directory, or an empty string on failure
+ * @param uint64 out_directory_size -> buffer capacity in bytes
+ */
+void util__get_executable_directory(char* out_directory, uint64 out_directory_size)
+{
+    char* last_slash = 0;
+#if defined(__APPLE__)
+    uint image_path_size = 0; // _NSGetExecutablePath takes a uint32_t* == unsigned int* == uint*
+    char image_path[4096]; // raw (possibly relative/symlinked) path from the loader
+    char resolved_path[4096]; // realpath output; realpath needs a PATH_MAX-sized buffer
+#else
+    int64 link_length = 0;
+#endif
+
+#if defined(__APPLE__)
+    // macOS has no /proc; the dynamic loader hands back the executable's path, then realpath
+    // canonicalizes it to an absolute path so sibling files (stunnel.conf, the binary) resolve
+    image_path_size = (uint)sizeof(image_path);
+    if (_NSGetExecutablePath(image_path, &image_path_size) != 0)
+    {
+        out_directory[0] = 0;
+        return;
+    }
+
+    if (realpath(image_path, resolved_path) == NULL_POINTER)
+    {
+        out_directory[0] = 0;
+        return;
+    }
+
+    snprintf(out_directory, out_directory_size, "%s", resolved_path);
+#else
+    link_length = readlink("/proc/self/exe", out_directory, out_directory_size - 1);
+    if (link_length <= 0)
+    {
+        out_directory[0] = 0;
+        return;
+    }
+
+    out_directory[link_length] = 0;
+#endif
+
+    last_slash = strrchr(out_directory, '/');
+    if (last_slash != NULL_POINTER)
+    {
+        *last_slash = 0;
+    }
+    else
+    {
+        out_directory[0] = 0;
+    }
+}
+#else
+/**
+ * @brief Finds the executable directory so bundled files can be opened beside it.
+ * @param char* out_directory -> buffer receiving the directory, or an empty string on failure
+ * @param uint64 out_directory_size -> buffer capacity in bytes
+ */
+void util__get_executable_directory(char* out_directory, uint64 out_directory_size)
+{
+    char* last_separator = 0;
+    DWORD length = 0;
+
+    length = GetModuleFileNameA(NULL_POINTER, out_directory, (DWORD)out_directory_size);
+    if (length == 0 || length >= out_directory_size)
+    {
+        out_directory[0] = 0;
+        return;
+    }
+
+    last_separator = strrchr(out_directory, '\\');
+    if (last_separator != NULL_POINTER)
+    {
+        *last_separator = 0;
+    }
+    else
+    {
+        out_directory[0] = 0;
+    }
+}
+#endif
+/**
+ * @brief Fills a buffer with unpredictable random bytes for keys and login checks.
+ * @param unsigned char* out_buffer -> buffer receiving the random bytes
+ * @param uint64 length -> byte count, at most MBEDTLS_CTR_DRBG_MAX_REQUEST
+ * @return boole -> TRUE on success; the caller must stop the operation on failure
+ */
+boole util__fill_secure_random_bytes(unsigned char* out_buffer, uint64 length)
+{
+    mbedtls_entropy_context entropy;
+    mbedtls_ctr_drbg_context ctr_drbg;
+    const char* pers = "lemonchat_csprng";
+    int ret = 0;
+    boole result = TRUE;
+
+    mbedtls_entropy_init(&entropy);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+
+    ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char*)pers, strlen(pers));
+    if (ret != 0)
+    {
+        DBG_ENCRYPTION log_info("%s %d", "util__fill_secure_random_bytes: ctr_drbg_seed failed ", ret);
+        result = FALSE;
+    }
+
+    if (result == TRUE)
+    {
+        ret = mbedtls_ctr_drbg_random(&ctr_drbg, out_buffer, length);
+        if (ret != 0)
+        {
+            DBG_ENCRYPTION log_info("%s %d", "util__fill_secure_random_bytes: ctr_drbg_random failed ", ret);
+            result = FALSE;
+        }
+    }
+
+    mbedtls_ctr_drbg_free(&ctr_drbg);
+    mbedtls_entropy_free(&entropy);
+
+    return result;
+}
+
+/**
+ * @brief Fills a buffer with unpredictable printable characters for a login challenge.
+ * @param char* block -> buffer receiving the characters, without a string terminator
+ * @param uint64 length -> number of characters to write
+ * @return boole -> TRUE on success; the caller must reject the login on failure
+ */
+boole util__fill_block_of_data_with_ascii_characters(char* block, uint64 length)
+{
+    uint64 lowerbound = 33;
+    uint64 upperbound = 126;
+    uint64 i = 0;
+
+    if (util__fill_secure_random_bytes((unsigned char*)block, length) == FALSE)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i < length; i++)
+    {
+        block[i] = (char)((unsigned char)block[i] % (upperbound - lowerbound + 1)) + lowerbound;
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief Deletes a JSON object and frees its printed string. Either may be NULL_POINTER.
+ * @param cJSON* json_root_object1 -> JSON object to delete
+ * @param char* json_root_object1_string -> printed JSON string to free
+ */
+void util__free_json_message(cJSON* json_root_object1, char* json_root_object1_string)
+{
+    if (json_root_object1 != NULL_POINTER)
+    {
+        cJSON_Delete(json_root_object1);
+    }
+
+    if (json_root_object1_string != NULL_POINTER)
+    {
+        free(json_root_object1_string);
+    }
+}
+
+/**
+ * @brief SHA256-hashes a password then base64-encodes it, so auth secrets can be stored without plaintext.
+ *
+ * @param char* plaintext -> the password to hash
+ * @param char* out -> caller buffer for the base64(SHA256) text (44 chars + NUL)
+ * @param int64 out_size -> size of out in bytes (must be >= 45)
+ *
+ * @return void
+ */
+void util__hash_password_to_base64(char* plaintext, char* out, int64 out_size)
+{
+    ITH_SHA256_CTX ctx;
+    unsigned char digest[32];
+    char encoded[BASE64_ENCODE_OUT_SIZE(32)];
+
+    ith_sha256_init(&ctx);
+    ith_sha256_update(&ctx, (unsigned char*)plaintext, strlen(plaintext));
+    ith_sha256_final(&ctx, digest);
+
+    clib__null_memory(encoded, sizeof(encoded));
+    zchg_base64_encode(digest, 32, encoded);
+
+    clib__null_memory(out, out_size);
+    clib__copy_memory(encoded, out, clib__utf8_string_length(encoded), out_size - 1);
+}
+
+/**
+ * @brief checks a submitted plaintext password against a stored base64(SHA256) hash.
+ *
+ * @param char* plaintext -> the submitted password
+ * @param char* stored_base64_hash -> the stored base64(SHA256) to compare against
+ *
+ * @return boole -> TRUE when they match
+ */
+boole util__password_matches(char* plaintext, char* stored_base64_hash)
+{
+    char computed[BASE64_ENCODE_OUT_SIZE(32)];
+
+    util__hash_password_to_base64(plaintext, computed, sizeof(computed));
+    return clib__is_string_equal(computed, stored_base64_hash);
 }

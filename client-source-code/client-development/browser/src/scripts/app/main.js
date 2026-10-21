@@ -7,6 +7,7 @@
 // true once java has answered whether anyone is looking. java watches the activity while the
 // loopback socket only knows whether anyone is connected, so java outranks it
 var node_ui_visibility_from_host = false;
+var main_is_push_to_talk_key_down = false;
 
 /**
  * @brief global mousedown: closes the chat-message context menu, and every other context menu
@@ -38,12 +39,19 @@ function main__document_onmousedown(event)
  */
 function main__document_onkeydown(event)
 {
+    let focused_element = document.activeElement;
+
     if (g_is_microphone_always_on == true || g_is_continuous_mic_mode == true)
     {
         return;
     }
     if (event.which == g_push_to_talk_key_code)
     {
+        if (g_is_push_to_talk_disabled_while_typing == true && focused_element != null && focused_element.id === "chat-input-container-text-input")
+        {
+            return;
+        }
+        main_is_push_to_talk_key_down = true;
         voice__process_start_sending_audio();
     }
 }
@@ -57,15 +65,29 @@ function main__document_onkeydown(event)
  */
 function main__document_onkeyup(event)
 {
+    if (event.which != g_push_to_talk_key_code || main_is_push_to_talk_key_down == false)
+    {
+        return;
+    }
+    main_is_push_to_talk_key_down = false;
     if (g_is_microphone_always_on == true || g_is_continuous_mic_mode == true)
     {
         return;
     }
-    if (event.which == g_push_to_talk_key_code)
+    // Finish the last audio frame before stopping after a normal key release.
+    voice__process_stop_sending_audio();
+}
+
+/**
+ * @brief Stops keyboard-triggered speech when the user focuses the chat box.
+ * @return void
+ */
+function main__chat_input_onfocus()
+{
+    if (g_is_push_to_talk_disabled_while_typing == true && main_is_push_to_talk_key_down == true && g_is_microphone_always_on == false && g_is_continuous_mic_mode == false)
     {
-        // the encoder clear moved into voice__process_stop_sending_audio_now: clearing here
-        // would discard the end of the recording that is still being captured after the key release
-        voice__process_stop_sending_audio();
+        main_is_push_to_talk_key_down = false;
+        voice__process_stop_sending_audio_now();
     }
 }
 
@@ -704,6 +726,8 @@ async function main__window_onload()
         head_menu__init();
     }
     document.getElementById("chat-input-container-text-input").onkeyup = UI.chat_input_on_keyup;
+    document.getElementById("chat-input-container-text-input").onfocus = main__chat_input_onfocus;
+    document.getElementById("chat-input-container-text-input").onpaste = chat_files__chat_input_onpaste;
     document.getElementById("choose_image_input").onchange = UI.choose_image_input;
     document.getElementById("choose-file-input").onchange = chat_files__choose_chat_file_input_onchange;
     document.getElementById("image-upload-preview-remove").onclick = chat_files__clear_pending_chat_picture;
@@ -918,9 +942,11 @@ async function main__window_onload()
     {
         document.getElementById("local-settings-mic-mode").value = g_is_continuous_mic_mode ? "continuous" : "push-to-talk";
         document.getElementById("local-settings-ptt-key").value = g_push_to_talk_key_label;
+        document.getElementById("local-settings-ptt-disable-while-typing").checked = g_is_push_to_talk_disabled_while_typing;
 
         // the key only means anything in push-to-talk mode
         document.getElementById("local-settings-ptt-key-row").style.display = g_is_continuous_mic_mode ? "none" : "";
+        document.getElementById("local-settings-ptt-disable-while-typing-row").style.display = g_is_continuous_mic_mode ? "none" : "";
 
         let segments = document.querySelectorAll("#local-settings-mic-mode-segmented .local-settings-segment");
 
@@ -1197,6 +1223,12 @@ async function main__window_onload()
     document.getElementById("local-settings-mic-mode").onchange = function()
     {
         apply_mic_mode(this.value === "continuous");
+    };
+
+    document.getElementById("local-settings-ptt-disable-while-typing").onchange = function()
+    {
+        g_is_push_to_talk_disabled_while_typing = this.checked;
+        utils__storage_set("lemon_ptt_disable_while_typing", this.checked ? "1" : "0");
     };
 
     document.getElementById("local-settings-mic-device").onchange = function()
@@ -1604,8 +1636,8 @@ async function main__window_onload()
     let persist_identity_enabled = (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.persist_identity === true);
 
     // avatars: server opt-in (default off) + the accepted max upload size (default 50 KB)
-    g_server_policy.allow_avatars = (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.allow_avatars === true);
-    if (g_server_policy.allow_avatars == true && typeof window.__SERVER_CONFIG__.avatar_max_size === "number" && window.__SERVER_CONFIG__.avatar_max_size > 0)
+    g_server_policy.is_avatar_upload_allowed = (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.is_avatar_upload_allowed === true);
+    if (g_server_policy.is_avatar_upload_allowed == true && typeof window.__SERVER_CONFIG__.avatar_max_size === "number" && window.__SERVER_CONFIG__.avatar_max_size > 0)
     {
         g_server_policy.avatar_max_size = window.__SERVER_CONFIG__.avatar_max_size;
     }
@@ -1706,9 +1738,9 @@ async function main__window_onload()
         // real place in their top bar; css alone cannot tell app from browser)
         document.body.classList.add("android-app");
 
-        // the app loads client.html from its assets, so the served config (and allow_avatars) never
+        // the app loads client.html from its assets, so the served config (and is_avatar_upload_allowed) never
         // arrives; assume avatars here, a server that has them off just ignores the upload
-        g_server_policy.allow_avatars = true;
+        g_server_policy.is_avatar_upload_allowed = true;
 
         document.getElementById("import-identity-button").style.display = "none";
 

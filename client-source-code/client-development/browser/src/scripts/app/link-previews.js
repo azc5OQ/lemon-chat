@@ -66,7 +66,7 @@ function link_previews__render(paragraph, state)
         state.cards.remove();
         state.cards = null;
     }
-    if (!paragraph.isConnected || !g_server_policy.allow_link_previews)
+    if (!paragraph.isConnected || !g_server_policy.is_link_preview_allowed)
     {
         return;
     }
@@ -188,7 +188,7 @@ function link_previews__scan(paragraph)
 // forever, for example when the connection drops during a website lookup.
 function link_previews__pump()
 {
-    if (!g_is_authenticated || !g_server_policy.allow_link_previews)
+    if (!g_is_authenticated || !g_server_policy.is_link_preview_allowed)
     {
         return;
     }
@@ -239,7 +239,7 @@ function link_previews__pump()
 
 function link_previews__resolved(message)
 {
-    if (!message || !g_server_policy.allow_link_previews)
+    if (!message || !g_server_policy.is_link_preview_allowed)
     {
         return;
     }
@@ -277,7 +277,7 @@ function link_previews__reset()
 
 function link_previews__apply_policy()
 {
-    if (!g_server_policy.allow_link_previews)
+    if (!g_server_policy.is_link_preview_allowed)
     {
         link_previews__reset();
         return;

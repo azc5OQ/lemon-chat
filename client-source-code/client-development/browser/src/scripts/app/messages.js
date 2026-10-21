@@ -590,6 +590,7 @@ var server_msg = {
         channel_tree__forget_client(single_client.client_id);
         g_client_list.push(single_client);
         g_map_client_id_to_array_index.set(single_client.client_id, g_client_list.length - 1);
+        keys__channel_member_joined(single_client);
 
         // an offline conversation with this person becomes their live private chat, history kept;
         // the merge is state and happens here, only the markup move is left to the ui
@@ -659,29 +660,6 @@ var server_msg = {
 
         { let rename_input = document.getElementById('connected-local-client-input'); if (rename_input != null) { rename_input.addEventListener("focusout", UI.connected_local_user_input_on_focusout); } }
 
-        // if local_user is maintainer of root channel, he will sent new keys for root channel
-        // if not, client will wait for channel keys
-        // current_channel_keys must be set to null at client_connect if local client is at current_channnel_id
-
-        if (g_current_channel_id == 0)
-        {
-            keys__set_current_channel_keys(null);
-            console.log("setting current keys to null");
-        }
-
-        let index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, g_current_channel_id);
-
-        // if we are maintainers of root channel, send new keys
-
-        if (g_channel_list[index].has_maintainer && g_channel_list[index].maintainer_id == g_local_client_id && g_current_channel_id == 0)
-        {
-            keys__create_and_send_new_channel_keys();
-        }
-        else
-        {
-            console.log("waiting for keys from maintainer");
-        }
-
         // add tag ids
 
         console.log("process_tag_list_from_server | processing client: " +  single_client.username);
@@ -742,6 +720,7 @@ var server_msg = {
         // Remove the user before updating chat panels or playing a sound.
         // A missing panel must not leave a disconnected user in the channel list.
         channel_tree__forget_client(msg.message.client_id);
+        keys__channel_member_left(disconnecting_client);
         chat__clear_typing_from_client(msg.message.client_id);
 
         // a disconnect can arrive for a client we never fully registered locally (e.g. one still
@@ -868,18 +847,7 @@ var server_msg = {
             android_host__clear_come_from_idle_in_flight();
         }
 
-        // someone else returned into OUR channel and we are its maintainer: rotate the
-        // keys so the returner can communicate - same as on a normal channel join
-        if (msg.message.client_id != g_local_client_id && msg.message.channel_id == g_current_channel_id)
-        {
-            let key_channel_index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, g_current_channel_id);
-
-            if (key_channel_index != -1 && g_channel_list[key_channel_index].has_maintainer && g_channel_list[key_channel_index].maintainer_id == g_local_client_id)
-            {
-                console.log("client " + msg.message.client_id + " returned from idle into current channel, rotating channel keys as maintainer");
-                keys__create_and_send_new_channel_keys();
-            }
-        }
+        keys__channel_member_joined(channel_tree__get_client_by_client_id(msg.message.client_id));
 
         if (document.querySelector('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]') != null)
         {
@@ -1721,7 +1689,12 @@ var server_msg = {
      */
     process_channel_maintainer_id_from_server: function(msg)
     {
-        console.log(msg);
+        // A delayed announcement for a channel we left must not change this channel's maintainer.
+        if (msg.message.channel_id !== g_current_channel_id
+            || !Number.isSafeInteger(msg.message.maintainer_generation) || msg.message.maintainer_generation < 0)
+        {
+            return;
+        }
 
         // we received some maintainer id from server and we are expected to set it
         // but not so fast, dont let server to trick us...
@@ -1750,7 +1723,13 @@ var server_msg = {
             return;
         }
 
+        if (g_channel_list[index].maintainer_id !== msg.message.maintainer_id
+            || g_channel_list[index].maintainer_generation !== msg.message.maintainer_generation)
+        {
+            keys__cancel_channel_key_creation();
+        }
         g_channel_list[index].maintainer_id = msg.message.maintainer_id;
+        g_channel_list[index].maintainer_generation = msg.message.maintainer_generation;
         g_channel_list[index].has_maintainer = msg.message.has_maintainer;
         if (msg.message.has_maintainer && (g_local_client_id == msg.message.maintainer_id) && (g_current_channel_id == msg.message.channel_id))
         {
@@ -2168,19 +2147,19 @@ var server_msg = {
                 return;
             }
 
+            let received_keys = keys__read_channel_key_message(msg.message, g_current_channel_id,
+                g_channel_list[index].maintainer_generation);
+            if (received_keys == null)
+            {
+                return;
+            }
             if (g_channel_list[index].has_maintainer && g_channel_list[index].maintainer_id == msg.message.sender_id)
             {
                 console.log("received keys for channel '" + g_channel_list[index].name + "' from user : '" + msg.message.sender_username + "'. Setting new value of current_channel_keys");
-                keys__set_current_channel_keys(JSON.parse(msg.message.some_json.value));
-                console.log("current_channel_keys -> ", g_current_channel_keys);
+                keys__set_current_channel_keys(received_keys);
 
-                // the workers run their own copy of every global, so the new channel keys are posted
-                // to the data-processing and opus decoder workers explicitly
-
-                g_data_processing_worker.postMessage({
-                    type: "mainthread__channel_keys_for_data_processing_worker",
-                    value: g_current_channel_keys
-                });
+                // The decryption thread already installed these keys before processing more messages.
+                // Sending this older interface result back could overwrite a newer set in that thread.
 
                 g_opus_decoder_worker.postMessage({
                     type: "mainthread__channel_keys_for_opus_decoder",
@@ -2316,11 +2295,13 @@ var server_msg = {
      */
     process_client_client_going_to_idle_mode_from_server: function(msg)
     {
+        let departing_client = { ...channel_tree__get_client_by_client_id(msg.message.client_id) };
         let client_old_channel_id = channel_tree__get_client_by_client_id(msg.message.client_id).channel_id;
         let local_client_channel_id = channel_tree__get_client_by_client_id(g_local_client_id).channel_id;
 
         g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)].channel_id = -2;
         g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)].is_idle = true;
+        keys__channel_member_left(departing_client);
 
         let single_client = g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)];
 
@@ -2463,7 +2444,7 @@ var server_msg = {
      */
     process_avatar_changed_from_server: function(msg)
     {
-        if (g_server_policy.allow_avatars == false) { return; }
+        if (g_server_policy.is_avatar_upload_allowed == false) { return; }
         let client_object = channel_tree__get_client_by_client_id(msg.message.client_id);
         if (client_object != null) { client_object.base64_avatar = null; }
         channel_tree__request_single_avatar(msg.message.client_id);
@@ -2752,7 +2733,7 @@ var server_msg = {
             let listed = msg.message.clients[i];
 
             if (listed.is_streaming_song != true) { continue; }
-            if (g_server_policy.show_music_bot_marquee_to_everyone == false && listed.channel_id != g_current_channel_id) { continue; }
+            if (g_server_policy.is_music_bot_marquee_visible_to_everyone == false && listed.channel_id != g_current_channel_id) { continue; }
 
             server_msg.process_start_song_stream_from_server({ message: { client_id: listed.client_id, song_name: listed.song_name } });
         }
@@ -2803,7 +2784,13 @@ var server_msg = {
     {
         let client_that_joined = g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)];
         let client_old_channel_id = client_that_joined.channel_id;
+        let departing_client = { ...client_that_joined };
         client_that_joined.channel_id = msg.message.channel_id;
+        if (client_old_channel_id !== msg.message.channel_id)
+        {
+            keys__channel_member_left(departing_client);
+        }
+        keys__channel_member_joined(client_that_joined);
 
         // check if client went into unknown channel (-1)
         // or known channel
@@ -2845,7 +2832,7 @@ var server_msg = {
                 audio__audio_player_clear();
 
                 // leaving a channel drops its marquees, unless the server shows them to everyone
-                if (g_server_policy.show_music_bot_marquee_to_everyone == false)
+                if (g_server_policy.is_music_bot_marquee_visible_to_everyone == false)
                 {
                     let marquee_containers = document.getElementsByClassName("marquee-music-playing-container");
                     for (let i = 0; i < marquee_containers.length; i++)
@@ -3015,25 +3002,7 @@ var server_msg = {
 
                 channel_tree__get_channel_own_clients_last_element(msg.message.channel_id).insertAdjacentHTML("afterend", html_to_append);
 
-                if (msg.message.channel_id == g_current_channel_id)
-                {
-                    console.log("user '" + client_that_joined.username + "' joined current_channel where local_user is. setting current_channel_keys to null");
-                    keys__set_current_channel_keys(null);
-                    let channel_index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, g_current_channel_id);
-                    if (g_channel_list[channel_index].has_maintainer && g_channel_list[channel_index].maintainer_id == g_local_client_id)
-                    {
-                        console.log("local_user is the maintainer of current_channel. keys__create_and_send_new_channel_keys()");
-                        keys__create_and_send_new_channel_keys();
-                    }
-                    else
-                    {
-                        console.log("local user is not maintainer of current channel. Waiting for new keys");
 
-                        // somebody joined -> the maintainer must re-key the whole channel;
-                        // if the fresh keys never arrive, vote for a maintainer reset
-                        keys__arm_maintainer_keys_wait_timer();
-                    }
-                }
             }
 
             // html element that represents client is now appended to newly joined channel at this point
@@ -3167,8 +3136,11 @@ var server_msg = {
             if (element != null)
             {
                 element.removeEventListener("mousedown", UI.single_chat_message_onrightclick);
-                element.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADF0lEQVRIx71VsU5cRxQ9d98s1UoUISYFJUIgpUDySiloUIqUTmeUwo27lPmCOHWadEhUFBRQOK7sD9hNEcWhoDG4iGQs2ayNFBuZArN7z0lx580+bC/QxCPtvpl5896599xz7gP+52HXObS1tbU2Pz//A0mQhLtrfX39x+3t7cFVz6brAHQ6na+Xl5e/H7nDR47z4ZAkfwEwuFYGm5ubt6anpxcllRv1nCTm5ua+W1xc/NadcLr5yPXw0cPfOp3OwPJZCRAESKCEfq93f2Nj458EAEtLS3e73e4tAKYYUJ5DgiSTJMYcorB2e+0nibFHGSVJhChQsr8fP34NIABUPxiL8fqDXxMg1uWFUHNOQpmdBAC7u7t/npycfLWwsPBNRAsAJXIogrAxOPK+TBTUOPv27cnp88PDv07fnb4oADs7O7+urKz0V1dX/wDqRGTjUsiCYqGmsXENwEDH3t7e8wcPfr99fHz8BgBaANDr9TylNEwpIaWEKiVUVYXhcIiUKqSUkKqE0WgEM4szVYK1WhgOR6hShVRVqKqEqqp0fn7+vt/vswA0R6bCXr16jSdP9s3dCx37+wf28uio0DE4GtjBwYGJrPesIcSPfZD5VkiNBkAkYWYmIERFZqXBSCoX31BUqssBMrehiHhZDWzh5LqgAEXziD48VXvhUwAKjyAHConmdBXVQPJoFcZANFGiO0QZLGc4OQMVJ0oAKdDZ8IhA99B7jqbuTbFGLdcrKJIsdE+Q3qBIRnr9Qqvr5O4Xqb0MIBtJAkDK3KMVtESTIHeClCk4MpIivQhCQs3zJSqqG1dkcGGvkUFuGYR7tAjYuOlNKHL0EdQKIUF3EwW2BAhGJyhGxHEmaIsalFZyVQ2Ui2zurJVhkuT0D3wgRQ1o4+Z7GQBrJQFTU220qhbMrOynlNBuT5V1u91GSiloEUNpkwBUnBxtYGbmS3wxM2NN6m52uyjOlTA7O2s3Zm+gkeXkDBp9P2CUrVNAiwMtT8cfJ8nGBp0AcPjs2dN7936+I6CdG/ZH31dd/PvkvbOzs39JvsfnGv8B0U6eGZr+co0AAAAASUVORK5CYII=";
-                element.classList.add("chat-picture-img-default");
+                element.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDI0IDI0Ij48ZyBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMuNSIgeT0iMy41IiB3aWR0aD0iMTciIGhlaWdodD0iMTciIHJ4PSIyIiBmaWxsPSIjMjIzMTNhIiBzdHJva2U9IiNhZWJiYzUiIHN0cm9rZS13aWR0aD0iMS40Ii8+PGNpcmNsZSBjeD0iOCIgY3k9IjgiIHI9IjEuNCIgZmlsbD0iI2FlYmJjNSIvPjxwYXRoIGQ9Im00IDE3IDUtNSA0IDQgMy0zIDQgNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYWViYmM1IiBzdHJva2Utd2lkdGg9IjEuNCIvPjxwYXRoIGQ9Im0zIDMgMTggMTgiIHN0cm9rZT0iI2MzY2RkNCIgc3Ryb2tlLXdpZHRoPSIyIi8+PC9nPjwvc3ZnPg==";
+                element.classList.add("chat-picture-img-default", "chat-picture-deleted");
+                element.classList.remove("local-client-chat-picture-img", "imgnotsentyet");
+                element.alt = "Image deleted";
+                element.title = "Image deleted";
             }
             else
             {
@@ -3494,6 +3466,11 @@ var server_msg = {
             // an admin may rename even when renames are off for users, so the input un-greys
             g_is_local_client_admin = true;
             server_settings_tab__apply_rename_policy_to_ui();
+            // Resume readings if the settings panel stayed open through a reconnect.
+            if (G_HAS_DOM && document.querySelector("[data-admin-server-ram]").getClientRects().length > 0)
+            {
+                server_info__request_admin_settings();
+            }
         }
     },
     /**

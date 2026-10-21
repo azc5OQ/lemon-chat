@@ -48,7 +48,7 @@ function chat_files__refresh_receive_preferences_controls()
         {
             continue;
         }
-        allowed = g_is_authenticated && g_server_policy["allow_" + preference] === true;
+        allowed = g_is_authenticated && g_server_policy["is_" + preference.replace(/^block_/, "blocking_") + "_active"] === true;
         element.disabled = !allowed;
         element.checked = allowed && g_attachment_receive_preferences[preference];
         element.closest("label").title = allowed ? "Applies to new attachments; transfers already started will finish."
@@ -1083,8 +1083,33 @@ function chat_files__download_chat_file(key)
 }
 
 // ---------------------------------------------------------------------------
-// attaching: paperclip, drag & drop, the label of the pending file
+// attaching: paperclip, pasted pictures, drag & drop, the label of the pending file
 // ---------------------------------------------------------------------------
+
+/**
+ * @brief Previews a pasted image using the same limits as a picture picked from disk.
+ * @param ClipboardEvent event -> paste event from the chat message box
+ * @return void
+ */
+function chat_files__chat_input_onpaste(event)
+{
+    let files = event.clipboardData == null ? null : event.clipboardData.files;
+    let file;
+
+    if (files == null)
+    {
+        return;
+    }
+    for (file of files)
+    {
+        if (file.type.indexOf("image/") === 0)
+        {
+            event.preventDefault();
+            chat_files__attach_chat_file_or_picture(file);
+            return;
+        }
+    }
+}
 
 /**
  * @brief the drag and drop entry point; every refusal explains why
@@ -1110,9 +1135,9 @@ function chat_files__attach_chat_file_or_picture(file)
 
     if (chat_files__is_chat_picture_file(file))
     {
-        if (g_server_policy.allow_chat_pictures == false)
+        if (g_server_policy.is_chat_picture_allowed == false)
         {
-            if (g_server_policy.allow_file_uploads == true && file.size <= g_server_policy.file_upload_max_size)
+            if (g_server_policy.is_file_upload_allowed == true && file.size <= g_server_policy.file_upload_max_size)
             {
                 utils__custom_alert("inline pictures are disabled on this server, so the image goes as a file");
                 chat_files__attach_chat_file(file);
@@ -1129,7 +1154,7 @@ function chat_files__attach_chat_file_or_picture(file)
             return;
         }
 
-        if (g_server_policy.allow_file_uploads == true && file.size <= g_server_policy.file_upload_max_size)
+        if (g_server_policy.is_file_upload_allowed == true && file.size <= g_server_policy.file_upload_max_size)
         {
             utils__custom_alert("image is over the server's " + chat_files__format_file_size(g_server_policy.chat_picture_max_size) + " picture limit, so it goes as a file - the receiver downloads it instead of seeing it inline");
             chat_files__attach_chat_file(file);
@@ -1152,7 +1177,7 @@ function chat_files__attach_chat_file_or_picture(file)
  */
 function chat_files__attach_chat_picture(file)
 {
-    if (g_server_policy.allow_chat_pictures == false)
+    if (g_server_policy.is_chat_picture_allowed == false)
     {
         utils__custom_alert("inline pictures are disabled on this server");
         return;
@@ -1160,7 +1185,7 @@ function chat_files__attach_chat_picture(file)
 
     if (file.size > g_server_policy.chat_picture_max_size)
     {
-        if (g_server_policy.allow_file_uploads == true && file.size <= g_server_policy.file_upload_max_size)
+        if (g_server_policy.is_file_upload_allowed == true && file.size <= g_server_policy.file_upload_max_size)
         {
             utils__custom_alert("image is too large to send as a picture (this server allows up to " + chat_files__format_file_size(g_server_policy.chat_picture_max_size) + "). use the paperclip to send it as a file");
         }
@@ -1215,7 +1240,7 @@ function chat_files__attach_chat_picture(file)
  */
 function chat_files__attach_chat_file(file)
 {
-    if (g_server_policy.allow_file_uploads == false)
+    if (g_server_policy.is_file_upload_allowed == false)
     {
         utils__custom_alert("file uploads are not allowed on this server");
         return;
@@ -1474,7 +1499,7 @@ function chat_files__apply_file_upload_policy_to_ui()
         return;
     }
 
-    if (g_server_policy.allow_file_uploads == true)
+    if (g_server_policy.is_file_upload_allowed == true)
     {
         button.classList.remove("chat-file-uploads-off");
         button.title = "attach a file (up to " + chat_files__format_file_size(g_server_policy.file_upload_max_size) + ")";
@@ -1505,7 +1530,7 @@ function chat_files__apply_chat_picture_policy_to_ui()
         return;
     }
 
-    if (g_server_policy.allow_chat_pictures == true)
+    if (g_server_policy.is_chat_picture_allowed == true)
     {
         button.classList.remove("chat-file-uploads-off");
         button.title = "attach a picture (up to " + chat_files__format_file_size(g_server_policy.chat_picture_max_size) + ")";

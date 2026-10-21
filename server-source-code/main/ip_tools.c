@@ -1,3 +1,14 @@
+#ifdef _WIN32
+#include <winsock2.h>
+#include <iphlpapi.h>
+#else
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <net/if.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#endif
+
 #include "definitions.h"
 
 #include "../third-party/libmaxminddb-1.12.2/include/maxminddb.h"
@@ -12,6 +23,120 @@
 
 #include <stdio.h>
 #include <string.h>
+
+// declarations
+static uint _ip_tools_internal__add_local_ipv4(struct sockaddr* address, char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint count, uint capacity);
+
+/**
+ * @brief Adds one IPv4 address, skipping duplicates, loopback and unusable addresses.
+ * @param struct sockaddr* address -> address supplied by the operating system
+ * @param char[][IPV4_ADDRESS_STRING_LENGTH] addresses -> output list
+ * @param uint count -> entries already written
+ * @param uint capacity -> number of entries that fit in the list
+ * @return uint -> updated number of entries
+ */
+static uint _ip_tools_internal__add_local_ipv4(struct sockaddr* address, char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint count, uint capacity)
+{
+    const unsigned char* bytes;
+    char text[IPV4_ADDRESS_STRING_LENGTH];
+    uint index;
+
+    if (address == NULL_POINTER || address->sa_family != AF_INET || count >= capacity)
+    {
+        return count;
+    }
+    bytes = (const unsigned char*)&((struct sockaddr_in*)address)->sin_addr;
+    if (bytes[0] == 0 || bytes[0] == 127 || bytes[0] >= 224 || (bytes[0] == 169 && bytes[1] == 254))
+    {
+        return count;
+    }
+    snprintf(text, sizeof(text), "%u.%u.%u.%u", (uint)bytes[0], (uint)bytes[1], (uint)bytes[2], (uint)bytes[3]);
+    for (index = 0; index < count; index++)
+    {
+        if (strcmp(addresses[index], text) == 0)
+        {
+            return count;
+        }
+    }
+    strcpy(addresses[count], text);
+    return count + 1;
+}
+
+/**
+ * @brief Lists this machine's IPv4 addresses on active network interfaces without a DNS lookup.
+ * @param char[][IPV4_ADDRESS_STRING_LENGTH] addresses -> receives addresses for startup links
+ * @param uint capacity -> number of entries that fit in the output list
+ * @return uint -> number written, or zero if none could be found
+ */
+uint ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint capacity)
+{
+    uint count = 0;
+#ifdef _WIN32
+    IP_ADAPTER_ADDRESSES* adapters = NULL_POINTER;
+    IP_ADAPTER_ADDRESSES* adapter;
+    IP_ADAPTER_UNICAST_ADDRESS* address;
+    ULONG size = 15000;
+    ULONG result = ERROR_BUFFER_OVERFLOW;
+    uint attempt;
+#else
+    struct ifaddrs* interfaces = NULL_POINTER;
+    struct ifaddrs* interface;
+#endif
+
+    if (addresses == NULL_POINTER || capacity == 0)
+    {
+        return 0;
+    }
+#ifdef _WIN32
+    for (attempt = 0; attempt < 3; attempt++)
+    {
+        adapters = malloc(size);
+        if (adapters == NULL_POINTER)
+        {
+            return 0;
+        }
+        result = GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, NULL_POINTER, adapters, &size);
+        if (result != ERROR_BUFFER_OVERFLOW)
+        {
+            break;
+        }
+        free(adapters);
+        adapters = NULL_POINTER;
+    }
+    if (result == NO_ERROR)
+    {
+        for (adapter = adapters; adapter != NULL_POINTER && count < capacity; adapter = adapter->Next)
+        {
+            if (adapter->OperStatus != IfOperStatusUp || adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
+            {
+                continue;
+            }
+            for (address = adapter->FirstUnicastAddress; address != NULL_POINTER && count < capacity; address = address->Next)
+            {
+                if (address->DadState == IpDadStatePreferred || address->DadState == IpDadStateDeprecated)
+                {
+                    count = _ip_tools_internal__add_local_ipv4(address->Address.lpSockaddr, addresses, count, capacity);
+                }
+            }
+        }
+    }
+    free(adapters);
+#else
+    if (getifaddrs(&interfaces) != 0)
+    {
+        return 0;
+    }
+    for (interface = interfaces; interface != NULL_POINTER && count < capacity; interface = interface->ifa_next)
+    {
+        if ((interface->ifa_flags & IFF_UP) != 0 && (interface->ifa_flags & IFF_LOOPBACK) == 0)
+        {
+            count = _ip_tools_internal__add_local_ipv4(interface->ifa_addr, addresses, count, capacity);
+        }
+    }
+    freeifaddrs(interfaces);
+#endif
+    return count;
+}
 
 /**
  * @brief appends a null-terminated string to a StringBuffer, growing the backing buffer if needed.

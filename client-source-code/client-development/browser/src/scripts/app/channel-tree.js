@@ -624,7 +624,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
     // the avatar is offered to the row as a css variable plus a marker, not painted: in most themes
     // that circle is the mic-state icon; a theme that wants faces (termix) reads var(--client-avatar)
     let avatar_inline_style = "";
-    if (g_server_policy.allow_avatars == true && typeof client.base64_avatar === "string" && client.base64_avatar.length > 0)
+    if (g_server_policy.is_avatar_upload_allowed == true && typeof client.base64_avatar === "string" && client.base64_avatar.length > 0)
     {
         avatar_inline_style = " data-has-avatar=\"1\" style=\"--client-avatar: url(" + client.base64_avatar + ");\"";
     }
@@ -826,7 +826,7 @@ function channel_tree__apply_avatar_to_ui(client_id, base64)
     let tree_circle = document.getElementById("client-audio-state-" + client_id);
     if (tree_circle != null)
     {
-        if (has_avatar == true && g_server_policy.allow_avatars == true)
+        if (has_avatar == true && g_server_policy.is_avatar_upload_allowed == true)
         {
             tree_circle.style.setProperty("--client-avatar", "url(" + base64 + ")");
             tree_circle.setAttribute("data-has-avatar", "1");
@@ -917,7 +917,7 @@ function channel_tree__describe_client_for_profile(client)
  */
 function channel_tree__request_single_avatar(client_id)
 {
-    if (g_server_policy.allow_avatars == false || client_id === undefined || client_id === null) { return; }
+    if (g_server_policy.is_avatar_upload_allowed == false || client_id === undefined || client_id === null) { return; }
     let message_object = { message: { type: "request_avatar_for_client", client_id: parseInt(client_id) } };
     connection__send_message_object(message_object);
 }
@@ -932,7 +932,7 @@ function channel_tree__enqueue_all_avatars_for_loading()
 {
     // only bulk-load everyone's avatar for the avatar grid member list (shown all at once).
     // other themes only ever fetch the clicked client's avatar for the big right-pane.
-    if (g_server_policy.allow_avatars == false || g_avatar.grid_visible == false) { return; }
+    if (g_server_policy.is_avatar_upload_allowed == false || g_avatar.grid_visible == false) { return; }
     for (let i = 0; i < g_client_list.length; i++)
     {
         if (g_client_list[i] != null) { g_avatar.load_queue.push(g_client_list[i].client_id); }
@@ -949,7 +949,7 @@ function channel_tree__enqueue_all_avatars_for_loading()
  */
 function channel_tree__start_avatar_prefetch()
 {
-    if (PREFETCH_AVATARS_AUTOMATICALLY == false || g_server_policy.allow_avatars == false) { return; }
+    if (PREFETCH_AVATARS_AUTOMATICALLY == false || g_server_policy.is_avatar_upload_allowed == false) { return; }
 
     // the member list themes (simpledark/bluebell) show everybody at once and already bulk-load
     // through channel_tree__enqueue_all_avatars_for_loading; prefetching on top would double the requests
@@ -973,7 +973,7 @@ function channel_tree__start_avatar_prefetch()
     // one request per tick, so a room full of people never arrives as a burst
     g_avatar.prefetch_timer = setInterval(function()
     {
-        if (g_server_policy.allow_avatars == false || g_avatar.prefetch_queue.length == 0)
+        if (g_server_policy.is_avatar_upload_allowed == false || g_avatar.prefetch_queue.length == 0)
         {
             channel_tree__stop_avatar_prefetch();
             return;
@@ -1015,7 +1015,7 @@ function channel_tree__stop_avatar_prefetch()
  */
 function channel_tree__pump_avatar_load_queue(chunk_size)
 {
-    if (g_server_policy.allow_avatars == false || g_avatar.load_queue.length === 0)
+    if (g_server_policy.is_avatar_upload_allowed == false || g_avatar.load_queue.length === 0)
     {
         g_avatar.load_scheduled = false;
         return;

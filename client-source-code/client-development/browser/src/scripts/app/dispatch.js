@@ -1040,6 +1040,11 @@ function dispatch__mainthread_onmessage(e)
         {
             return;
         }
+        if (e.data.reused_keys === true && g_current_channel_keys != null)
+        {
+            keys__finish_channel_key_creation();
+            return;
+        }
         keys__set_current_channel_keys(e.data.value);
 
         // data processing worker created new channel keys and sent them to UI thread, now send them from UI thread to opus_decoder worker

@@ -669,7 +669,7 @@ function connection__connection_check_sleep(ms)
 function connection__has_keepalive_timed_out(timestamp_now, extra_wait_ms = 0)
 {
     return g_worker_connection_active === false
-        && g_server_policy.enforce_connection_check !== false
+        && g_server_policy.is_connection_check_enforced !== false
         && g_connection_check.last_response_timestamp > 0
         && g_connection_check.last_response_timestamp + g_connection_check.lost_threshold_ms + extra_wait_ms < timestamp_now;
 }
@@ -913,8 +913,8 @@ function connection__reset_chat_app_keep_identity()
         server_info__reset();
     }
     link_previews__reset();
-    g_server_policy.allow_link_previews = false;
-    g_server_policy.enforce_connection_check = true;
+    g_server_policy.is_link_preview_allowed = false;
+    g_server_policy.is_connection_check_enforced = true;
     // no connection, nobody is typing - drop the notices and the ticker with them
     g_typing.state = {};
     chat__render_typing_indicator();

@@ -3,7 +3,7 @@
 // and sends packets to viewers whose connection can accept more data.
 //
 // audio_webrtc.c creates and closes the WebRTC connection shared by audio and video.
-// This file handles only its video data channel. video_stream.c decides who may stream
+// This file handles only its video data channel. video_channel.c decides who may stream
 // or watch and forwards the packets through each viewer's chosen connection.
 #include "definitions.h"
 #include "../third-party/dave-g-json/cJSON.h"
@@ -13,7 +13,7 @@
 #include "clib/clib_memory.h"
 #include "audio_webrtc.h"
 #include "video_webrtc.h"
-#include "video_stream.h"
+#include "core/video_channel.h"
 #include "util.h"
 
 // declarations
@@ -49,7 +49,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id,
 
 /**
  * @brief the client's video data channel closed, so stop using it to send or receive video
- *        video_stream.c decides whether to stop streaming or watching; a working video WebSocket
+ *        video_channel.c decides whether to stop streaming or watching; a working video WebSocket
  *        can keep either one going. When audio_webrtc.c closes the whole connection, it removes the
  *        pointer to the client before deleting the channels, so later callbacks do nothing.
  *
@@ -84,7 +84,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int i
 
     if (is_current == TRUE)
     {
-        video_stream__process_transport_lost(client_id);
+        video_channel__process_transport_lost(client_id);
     }
 
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -93,7 +93,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int i
 }
 
 /**
- * @brief pass a video packet to video_stream.c, which checks the sender and forwards it to viewers
+ * @brief pass a video packet to video_channel.c, which checks the sender and forwards it to viewers
  *
  * @param int id -> data channel handle the packet arrived on
  * @param const char* message -> the packet
@@ -111,8 +111,8 @@ static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int 
         return;
     }
     // peer slots never move: the index comes from the pointer, not from fields another callback can reset
-    util__count_webrtc_bytes((uint64)size, 0);
-    video_stream__relay_packet((uint64)(peer_sender - g_webrtc_peers_array), NULL_POINTER, id, (const unsigned char*)message, (uint64)size);
+    base__count_webrtc_bytes((uint64)size, 0);
+    video_channel__relay_packet((uint64)(peer_sender - g_webrtc_peers_array), NULL_POINTER, id, (const unsigned char*)message, (uint64)size);
 }
 
 /**
@@ -242,6 +242,6 @@ boole video_webrtc__send(uint64 client_id, const unsigned char* packet, uint64 s
     {
         return FALSE;
     }
-    util__count_webrtc_bytes(0, size);
+    base__count_webrtc_bytes(0, size);
     return TRUE;
 }

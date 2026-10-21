@@ -1,0 +1,19 @@
+#ifndef CLIENT_SESSION_H
+#define CLIENT_SESSION_H
+
+#include "../definitions.h"
+
+void client_session__close_websocket_connection(uint64 client_index, boole use_readlock);
+boole client_session__assign_username_for_newly_joined_client(uint64 client_index, cstring default_name);
+int64 client_session__get_new_index_for_client(void);
+uint64 client_session__disconnect_other_clients_with_same_public_key(uint64 client_index_to_keep, cstring public_key);
+int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index, cstring public_key);
+boole client_session__is_there_another_authenticated_client_with_same_public_key(uint64 client_index, cstring public_key);
+boole client_session__is_there_a_client_with_same_public_key(cstring public_key);
+boole client_session__is_there_an_unfinished_handshake_from_same_ip_address(cstring ip_address);
+boole client_session__is_there_another_authenticated_client_with_same_ip_address(uint64 client_index, cstring ip_address, cstring public_key);
+void client_session__process_client_disconnect(uint64 client_index);
+
+boole client_session__is_username_taken_by_another_client(char* username, uint64 client_id_to_skip);
+
+#endif

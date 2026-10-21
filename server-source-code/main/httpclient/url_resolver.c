@@ -1,3 +1,4 @@
+#include "../util.h"
 // This file starts URL preview lookups when a client posts a website link in
 // chat. The feature must be enabled in the server settings. It arranges for
 // the page's title, description and picture to be downloaded and sent back
@@ -8,7 +9,7 @@
 // recent results so repeated links do not need to be downloaded again.
 //
 // The administrator can enable "show link previews" in the general server
-// settings, or set allow_link_previews to true in server_settings.json. It is
+// settings, or set is_link_preview_allowed to true in server_settings.json. It is
 // off by default. Clients send a resolve_url message containing a URL and a
 // request_id. The server replies with url_resolved and the same request_id,
 // using the normal metadata encryption between that client and this server.
@@ -30,7 +31,7 @@
 #include "httpclient.h"
 #include "url_preview.h"
 #include "../base.h"
-#include "../server_message.h"
+#include "../msg/server/server_msg.h"
 #include "../clib/clib_rwlock.h"
 #include <stdlib.h>
 #include <string.h>
@@ -105,7 +106,7 @@ static boole _url_resolver_internal__same_session(const url_resolver_job_t* job)
  */
 static cJSON* _url_resolver_internal__result(const char* url)
 {
-    uint64 now = base__get_timestamp_ms();
+    uint64 now = util__get_timestamp_ms();
     pthread_mutex_lock(&g_url_resolver_mutex);
     for (unsigned int index = 0; index < URL_RESOLVER_CACHE_SIZE; index++)
     {
@@ -141,7 +142,7 @@ static cJSON* _url_resolver_internal__result(const char* url)
     url_resolver_cache_t* entry = &g_url_resolver_cache[g_url_resolver_cache_next++ % URL_RESOLVER_CACHE_SIZE];
     cJSON_Delete(entry->result);
     strcpy(entry->url, url);
-    entry->expires = base__get_timestamp_ms() + (succeeded ? 600000 : 60000);
+    entry->expires = util__get_timestamp_ms() + (succeeded ? 600000 : 60000);
     entry->result = cJSON_Duplicate(result, TRUE);
     pthread_mutex_unlock(&g_url_resolver_mutex);
     return result;
@@ -177,15 +178,15 @@ static void* _url_resolver_internal__worker(void* unused)
         pthread_mutex_unlock(&g_url_resolver_mutex);
 
         clib__read_lock(&g_clients_global_rwlock_guard);
-        boole active = _url_resolver_internal__same_session(job) && g_server_settings.allow_link_previews;
+        boole active = _url_resolver_internal__same_session(job) && g_server_settings.is_link_preview_allowed;
         clib__unlock(&g_clients_global_rwlock_guard);
         cJSON* result = active ? _url_resolver_internal__result(job->url) : NULL_POINTER;
 
         clib__read_lock(&g_clients_global_rwlock_guard);
         if (_url_resolver_internal__same_session(job))
         {
-            server_msg__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url,
-                g_server_settings.allow_link_previews ? result : NULL_POINTER);
+            server_msg__chat__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url,
+                g_server_settings.is_link_preview_allowed ? result : NULL_POINTER);
         }
         clib__unlock(&g_clients_global_rwlock_guard);
         cJSON_Delete(result);
@@ -225,30 +226,19 @@ static void _url_resolver_internal__start(void)
 }
 
 /**
- * @brief Checks a client URL preview request and queues a website lookup when the server allows previews.
- *
- * The job copies its request and session details; workers reply only to that session.
- * Invalid requests are ignored; disabled or busy lookups return an empty preview.
- * The caller must not hold the clients lock.
- *
- * @param cJSON* json_root -> the parsed message containing the URL and request ID; the caller retains ownership
- * @param uint64 client_id -> the client slot that sent the request
- * @param ws_cli_conn_t* socket -> the original WebSocket connection, checked before accepting the request
- *
- * @return void
+ * @brief Queues a page lookup and sends its result to the connection that requested it.
+ * @param cstring url -> checked HTTP or HTTPS URL, no more than 2048 characters
+ * @param cstring request_id -> checked request ID, from 1 to 64 characters
+ * @param uint64 client_id -> client requesting the preview
+ * @param ws_cli_conn_t* socket -> connection that sent the request
+ * @attention The caller must not hold the clients lock. The queue copies the strings.
  */
-void url_resolver__request(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket)
+void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_id, ws_cli_conn_t* socket)
 {
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    cJSON* url = cJSON_GetObjectItemCaseSensitive(message, "url");
-    cJSON* request_id = cJSON_GetObjectItemCaseSensitive(message, "request_id");
-    httpclient_url_t parsed;
-    if (!cJSON_IsString(url) || !cJSON_IsString(request_id)
-        || strlen(url->valuestring) > 2048 || !request_id->valuestring[0] || strlen(request_id->valuestring) > 64
-        || httpclient__parse_url(url->valuestring, &parsed) != HTTPCLIENT_OK)
-    {
-        return;
-    }
+    client_t* client = NULL_POINTER;
+    uint64 now = 0;
+    url_resolver_job_t* job = NULL_POINTER;
+
     clib__write_lock(&g_clients_global_rwlock_guard);
     if (client_id >= g_server_settings.max_client_count || !g_clients_array[client_id].is_existing
         || !g_clients_array[client_id].is_authenticated || !g_clients_array[client_id].session_keys.is_ready
@@ -257,33 +247,33 @@ void url_resolver__request(cJSON* json_root, uint64 client_id, ws_cli_conn_t* so
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
-    client_t* client = &g_clients_array[client_id];
-    uint64 now = base__get_timestamp_ms();
-    if (!g_server_settings.allow_link_previews)
+    client = &g_clients_array[client_id];
+    now = util__get_timestamp_ms();
+    if (!g_server_settings.is_link_preview_allowed)
     {
-        server_msg__send_url_resolved_to_single_client(client, request_id->valuestring, url->valuestring, NULL_POINTER);
+        server_msg__chat__send_url_resolved_to_single_client(client, request_id, url, NULL_POINTER);
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
     if (now - client->timestamp_last_url_lookup < 500)
     {
-        server_msg__send_url_resolved_to_single_client(client, request_id->valuestring, url->valuestring, NULL_POINTER);
+        server_msg__chat__send_url_resolved_to_single_client(client, request_id, url, NULL_POINTER);
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
     client->timestamp_last_url_lookup = now;
-    url_resolver_job_t* job = calloc(1, sizeof(*job));
+    job = calloc(1, sizeof(*job));
     if (job != NULL_POINTER)
     {
         job->client_id = client_id;
         job->socket = client->p_ws_connection;
         job->session_authentication = client->session_keys.authentication;
-        strcpy(job->url, url->valuestring);
-        strcpy(job->request_id, request_id->valuestring);
+        strcpy(job->url, url);
+        strcpy(job->request_id, request_id);
     }
     else
     {
-        server_msg__send_url_resolved_to_single_client(client, request_id->valuestring, url->valuestring, NULL_POINTER);
+        server_msg__chat__send_url_resolved_to_single_client(client, request_id, url, NULL_POINTER);
     }
     clib__unlock(&g_clients_global_rwlock_guard);
     if (job == NULL_POINTER)
@@ -298,7 +288,7 @@ void url_resolver__request(cJSON* json_root, uint64 client_id, ws_cli_conn_t* so
         clib__read_lock(&g_clients_global_rwlock_guard);
         if (_url_resolver_internal__same_session(job))
         {
-            server_msg__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url, NULL_POINTER);
+            server_msg__chat__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url, NULL_POINTER);
         }
         clib__unlock(&g_clients_global_rwlock_guard);
         memset(&job->session_authentication, 0, sizeof(job->session_authentication));

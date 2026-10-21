@@ -12,6 +12,7 @@
 // Private message contents are encrypted and decrypted by the clients; they
 // are separate from the metadata handled here.
 #include "metadata_crypto.h"
+#include "util.h"
 
 #include "../third-party/dave-g-json/cJSON.h"
 #include "../third-party/mbedtls-3.6.6/include/mbedtls/base64.h"
@@ -400,7 +401,7 @@ char* metadata_crypto__encrypt(const char* plaintext, int64* out_size, const cry
     }
     encoded_capacity = 4 * ((buffer_size + 2) / 3) + 1;
     if (encoded_capacity > (uint64)g_server_settings.websocket_message_max_length
-        || !base__fill_secure_random_bytes(iv, sizeof(iv)))
+        || !util__fill_secure_random_bytes(iv, sizeof(iv)))
     {
         return NULL_POINTER;
     }

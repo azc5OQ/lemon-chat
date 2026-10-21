@@ -101,17 +101,18 @@ client-source-code/nodejs-client/node-log.txt*
 # gradle native build output (regenerated from src/main/cpp/CMakeLists.txt on every build)
 client-source-code/android/app/.cxx/
 
-# server-source-code/tools/wireguard/ setup: saved answers, key pairs and the tunnel config of this machine
-server-source-code/tools/wireguard/answers.json
-server-source-code/tools/wireguard/keys/
-server-source-code/tools/wireguard/ssh/
-server-source-code/tools/wireguard/lemon-wg0.conf
+# selfhosting-tools/wireguard/ setup: saved answers, key pairs and the tunnel config of this machine
+selfhosting-tools/wireguard/answers.json
+selfhosting-tools/wireguard/keys/
+selfhosting-tools/wireguard/ssh/
+selfhosting-tools/wireguard/lemon-wg0.conf
 
-# written by server-source-code/tests/audio-websocket-test.js on every run
+# written by tests/server/audio-websocket-test.js on every run
 .audio-test-runtime/
 
-# ---- local test suites: node scripts for the server (tests/server) and the headless client (tests/client) ----
+# Local tests are kept on this computer, not in Git.
 /tests/
 
 # Reuse the extracted OpenSSL sources locally; do not commit the build cache.
 /server-source-code/third-party/stunnel/win-build/
+/server-source-code/build/

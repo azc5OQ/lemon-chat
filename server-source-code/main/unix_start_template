@@ -45,10 +45,10 @@ ulimit -n 65535
 
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$PWD"
 
-# Auto-restart on crash, if enabled in server_settings.json ("restart_on_crash": true).
+# Auto-restart on crash, if enabled in server_settings.json ("is_restart_on_crash_enabled": true).
 # A clean exit (code 0) stops the loop; a crash (non-zero exit) is timestamped into
 # crashes.txt and the server is relaunched. Ctrl+C / SIGTERM stops the loop.
-if [ -f server_settings.json ] && grep -Eq '"restart_on_crash"[[:space:]]*:[[:space:]]*true' server_settings.json; then
+if [ -f server_settings.json ] && grep -Eq '"is_restart_on_crash_enabled"[[:space:]]*:[[:space:]]*true' server_settings.json; then
     trap 'echo; echo "stopping (signal received)."; exit 0' INT TERM
     while true; do
         ./chat-server.bin

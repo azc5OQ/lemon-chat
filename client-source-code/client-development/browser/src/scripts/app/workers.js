@@ -19,6 +19,12 @@ var websocket_instance = null;
 var websocket_generation = 0;
 
 var dpw_channel_key_request = null;
+var dpw_channel_members = new Map();
+var dpw_local_client_id = -1;
+var dpw_current_channel_id = -1;
+var dpw_channel_maintainer_id = -1;
+var dpw_maintainer_generation = -1;
+var dpw_channel_keys_need_refresh = true;
 
 var dpw_socket_port = null;
 var dpw_connection_generation = 0;
@@ -31,6 +37,212 @@ var dpw_received_bytes = 0;
 var websocket_data_port = null;
 var websocket_connection_generation = 0;
 var websocket_close_reason = "";
+
+/**
+ * @brief Tracks channel membership in socket order so received keys need not wait for the interface.
+ * @param object message -> a decrypted server message
+ */
+function workers__update_channel_members(message)
+{
+    let member = null;
+    let local = null;
+    let departing_member = dpw_channel_members.get(message.client_id);
+    let was_maintainer = departing_member != null && departing_member.client_id === dpw_channel_maintainer_id;
+    let left_channel = departing_member != null && !departing_member.is_idle && !departing_member.is_music_bot
+        && departing_member.channel_id === dpw_current_channel_id
+        && (message.type === "client_disconnect" || message.type === "client_going_to_idle_mode"
+            || ((message.type === "channel_join" || message.type === "client_coming_back_from_idle_mode")
+                && message.channel_id !== dpw_current_channel_id));
+    if (message.type === "client_list")
+    {
+        dpw_channel_keys_need_refresh = true;
+        dpw_channel_members.clear();
+        dpw_local_client_id = -1;
+        dpw_current_channel_id = -1;
+        dpw_channel_maintainer_id = -1;
+        dpw_maintainer_generation = -1;
+        dpw_channel_key_request = null;
+        for (member of message.clients)
+        {
+            dpw_channel_members.set(member.client_id,
+            {
+                client_id: member.client_id, channel_id: member.channel_id,
+                is_idle: member.is_idle, is_music_bot: member.is_music_bot, public_key: member.public_key
+            });
+            if (member.public_key === g_rsa_public_key_string && !member.is_music_bot)
+            {
+                dpw_local_client_id = member.client_id;
+                dpw_current_channel_id = member.channel_id;
+            }
+        }
+    }
+    else if (message.type === "client_connect")
+    {
+        dpw_channel_members.set(message.client_id,
+        {
+            client_id: message.client_id, channel_id: message.channel_id,
+            is_idle: message.is_idle, is_music_bot: message.is_music_bot, public_key: message.public_key
+        });
+    }
+    else if (message.type === "client_disconnect")
+    {
+        dpw_channel_members.delete(message.client_id);
+    }
+    else if (message.type === "channel_join" || message.type === "client_coming_back_from_idle_mode"
+        || message.type === "client_going_to_idle_mode")
+    {
+        member = dpw_channel_members.get(message.client_id);
+        if (member != null)
+        {
+            member.is_idle = message.type === "client_going_to_idle_mode";
+            member.channel_id = member.is_idle ? -2 : message.channel_id;
+            if (member.client_id === dpw_local_client_id && member.channel_id !== dpw_current_channel_id)
+            {
+                dpw_current_channel_id = member.channel_id;
+                dpw_channel_maintainer_id = -1;
+                dpw_maintainer_generation = -1;
+                dpw_channel_keys_need_refresh = true;
+                dpw_channel_key_request = null;
+                keys__set_current_channel_keys(null);
+            }
+        }
+    }
+    if (message.type === "channel_maintainer_id" && message.channel_id === dpw_current_channel_id)
+    {
+        member = dpw_channel_members.get(message.maintainer_id);
+        local = dpw_channel_members.get(dpw_local_client_id);
+        if (message.has_maintainer && member != null && !member.is_idle && !member.is_music_bot
+            && local != null && !local.is_idle && member.channel_id === dpw_current_channel_id
+            && Number.isSafeInteger(message.maintainer_generation) && message.maintainer_generation >= 0)
+        {
+            if (dpw_channel_maintainer_id !== message.maintainer_id
+                || dpw_maintainer_generation !== message.maintainer_generation)
+            {
+                dpw_channel_key_request = null;
+                dpw_channel_keys_need_refresh = true;
+            }
+            dpw_channel_maintainer_id = message.maintainer_id;
+            dpw_maintainer_generation = message.maintainer_generation;
+        }
+        else
+        {
+            dpw_channel_maintainer_id = -1;
+            dpw_maintainer_generation = -1;
+            dpw_channel_key_request = null;
+        }
+    }
+    if (left_channel && (was_maintainer || !keys__may_reuse_channel_keys("leave", workers__channel_member_count())))
+    {
+        dpw_channel_keys_need_refresh = true;
+        workers__cancel_channel_key_distribution();
+    }
+    member = dpw_channel_members.get(dpw_channel_maintainer_id);
+    if (member == null || member.is_idle || member.is_music_bot || member.channel_id !== dpw_current_channel_id)
+    {
+        dpw_channel_maintainer_id = -1;
+        dpw_maintainer_generation = -1;
+        dpw_channel_key_request = null;
+    }
+}
+
+/**
+ * @brief Counts active people using membership received directly from the socket.
+ * @return number people in the worker's current channel
+ */
+function workers__channel_member_count()
+{
+    let count = 0;
+    for (let member of dpw_channel_members.values())
+    {
+        if (member.channel_id === dpw_current_channel_id && !member.is_idle && !member.is_music_bot)
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+/**
+ * @brief Stops obsolete key delivery and tells the interface that it has finished.
+ */
+function workers__cancel_channel_key_distribution()
+{
+    let request = dpw_channel_key_request;
+    dpw_channel_key_request = null;
+    if (request != null)
+    {
+        workers__post_to_main(
+        {
+            type: "data_processing_worker__channel_key_creation_failed",
+            cancelled: true,
+            generation: request.generation,
+            channel_id: request.channel_id
+        });
+    }
+}
+
+/**
+ * @brief Applies key reuse settings immediately, including while the interface is busy.
+ * @param object policy -> settings from login or a live server policy message
+ */
+function workers__apply_channel_key_policy(policy)
+{
+    let previous = keys__channel_key_reuse_policy_signature(g_server_policy);
+    for (let field of ["is_channel_key_reuse_enabled", "is_channel_key_reuse_on_join_allowed", "is_channel_key_reuse_on_leave_allowed"])
+    {
+        if (typeof policy[field] === "boolean")
+        {
+            g_server_policy[field] = policy[field];
+        }
+    }
+    for (let field of ["channel_key_reuse_join_min_clients", "channel_key_reuse_leave_min_clients"])
+    {
+        if (Number.isSafeInteger(policy[field]) && policy[field] >= 30 && policy[field] <= 1000000)
+        {
+            g_server_policy[field] = policy[field];
+        }
+    }
+    if (previous !== keys__channel_key_reuse_policy_signature(g_server_policy))
+    {
+        dpw_channel_keys_need_refresh = true;
+        workers__cancel_channel_key_distribution();
+    }
+}
+
+/**
+ * @brief Checks a distribution request against membership already received from the socket.
+ * @param object request -> the interface's request to create keys
+ * @return boolean true when this client still maintains that channel
+ */
+function workers__is_channel_key_request_current(request)
+{
+    return g_is_authenticated && request.local_client_id === dpw_local_client_id
+        && request.channel_id === dpw_current_channel_id && dpw_channel_maintainer_id === dpw_local_client_id
+        && request.maintainer_generation === dpw_maintainer_generation;
+}
+
+/**
+ * @brief Installs received keys before the next encrypted chat message is processed.
+ * @param object msg -> a decrypted private message containing channel keys
+ * @return boolean true when the keys belong to this channel and its current maintainer
+ */
+function workers__receive_channel_keys(msg)
+{
+    let message = msg.message;
+    let keys = null;
+    if (message.sender_id !== dpw_channel_maintainer_id || dpw_channel_maintainer_id < 0)
+    {
+        return false;
+    }
+    keys = keys__read_channel_key_message(message, dpw_current_channel_id, dpw_maintainer_generation);
+    if (keys == null)
+    {
+        return false;
+    }
+    dpw_channel_key_request = null;
+    keys__set_current_channel_keys(keys);
+    return true;
+}
 
 /**
  * @brief Identifies the connection that produced a result, so an old result cannot change a new session.
@@ -69,7 +281,7 @@ function workers__send_keepalive()
     {
         return;
     }
-    if (g_server_policy.enforce_connection_check !== false
+    if (g_server_policy.is_connection_check_enforced !== false
         && now - dpw_keepalive_last_reply > g_connection_check.lost_threshold_ms)
     {
         workers__stop_keepalive();
@@ -108,15 +320,15 @@ function workers__send_keepalive()
  */
 function workers__apply_keepalive_policy(policy)
 {
-    if (dpw_socket_port == null || typeof policy.enforce_connection_check !== "boolean")
+    if (dpw_socket_port == null || typeof policy.is_connection_check_enforced !== "boolean")
     {
         return;
     }
-    if (g_server_policy.enforce_connection_check === false && policy.enforce_connection_check)
+    if (g_server_policy.is_connection_check_enforced === false && policy.is_connection_check_enforced)
     {
         dpw_keepalive_last_reply = performance.now();
     }
-    g_server_policy.enforce_connection_check = policy.enforce_connection_check;
+    g_server_policy.is_connection_check_enforced = policy.is_connection_check_enforced;
 }
 
 /**
@@ -155,29 +367,60 @@ function workers__socket_port_onmessage(e)
  */
 async function workers__create_channel_keys(request)
 {
-    let new_channel_keys = keys__create_random_message_keys();
+    let reuse = request.reuse_existing_keys === true && !dpw_channel_keys_need_refresh
+        && g_current_channel_keys != null && keys__may_reuse_channel_keys("join", workers__channel_member_count());
+    let new_channel_keys = reuse ? g_current_channel_keys : keys__create_random_message_keys();
+    let arrivals = new Set(request.arriving_client_ids || []);
+    let recipients = reuse ? request.clients.filter(function(client)
+    {
+        return arrivals.has(client.client_id);
+    }) : request.clients;
+    let member = null;
     let recipient = null;
     let message_keys = null;
     let encrypted_keys = null;
-    let message_value = { type: "channel_keys_from_maintainer", value: JSON.stringify(new_channel_keys) };
+    let message_value =
+    {
+        type: "channel_keys_from_maintainer",
+        channel_id: request.channel_id,
+        maintainer_generation: request.maintainer_generation,
+        value: JSON.stringify(new_channel_keys)
+    };
     let message_data = null;
     let message = null;
     let x = 0;
+    if (!workers__is_channel_key_request_current(request))
+    {
+        workers__post_to_main(
+        {
+            type: "data_processing_worker__channel_key_creation_failed",
+            generation: request.generation,
+            channel_id: request.channel_id
+        });
+        return;
+    }
     dpw_channel_key_request = request;
     // Recipients can reply with these keys before distribution finishes.
     keys__set_current_channel_keys(new_channel_keys);
-    for (x = 0; x < request.clients.length; x++)
+    dpw_channel_keys_need_refresh = false;
+    for (x = 0; x < recipients.length; x++)
     {
         // Let received messages and keepalives run between recipient encryptions.
         await new Promise(function(resolve)
         {
             setTimeout(resolve, 0);
         });
-        if (dpw_channel_key_request !== request)
+        if (dpw_channel_key_request !== request || !workers__is_channel_key_request_current(request))
         {
             return;
         }
-        recipient = request.clients[x];
+        recipient = recipients[x];
+        member = dpw_channel_members.get(recipient.client_id);
+        if (member == null || member.is_idle || member.is_music_bot || member.channel_id !== request.channel_id
+            || member.public_key !== recipient.public_key || (reuse && !arrivals.has(recipient.client_id)))
+        {
+            continue;
+        }
         if (recipient.channel_id !== request.current_channel_id
             || (recipient.client_id === request.local_client_id && typeof process === "undefined"))
         {
@@ -212,6 +455,7 @@ async function workers__create_channel_keys(request)
             {
                 type: "data_processing_worker__local_channel_keys_for_ui",
                 generation: request.generation,
+                maintainer_generation: request.maintainer_generation,
                 channel_id: request.channel_id,
                 value: JSON.stringify(
                 {
@@ -232,13 +476,14 @@ async function workers__create_channel_keys(request)
             {
                 type: "data_processing_worker__create_websocket_channel_keys_message_result",
                 generation: request.generation,
+                maintainer_generation: request.maintainer_generation,
                 channel_id: request.channel_id,
                 channel_keys_message_content: keys__encrypt_all_message_data_and_convert_to_base64(JSON.stringify(message)),
                 username: recipient.username
             });
         }
     }
-    if (dpw_channel_key_request !== request)
+    if (dpw_channel_key_request !== request || !workers__is_channel_key_request_current(request))
     {
         return;
     }
@@ -247,7 +492,9 @@ async function workers__create_channel_keys(request)
     {
         type: "data_processing_worker__new_channel_keys_from_data_processing_worker",
         generation: request.generation,
+        maintainer_generation: request.maintainer_generation,
         channel_id: request.channel_id,
+        reused_keys: reuse,
         value: new_channel_keys
     });
 }
@@ -279,7 +526,13 @@ function workers__data_processing_worker_onmessage(e)
         dpw_connection_open = true;
         dpw_received_bytes = 0;
         g_is_authenticated = false;
-        g_server_policy.enforce_connection_check = true;
+        dpw_channel_keys_need_refresh = true;
+        dpw_channel_members.clear();
+        dpw_local_client_id = -1;
+        dpw_current_channel_id = -1;
+        dpw_channel_maintainer_id = -1;
+        dpw_maintainer_generation = -1;
+        g_server_policy.is_connection_check_enforced = true;
         dpw_socket_port.onmessage = workers__socket_port_onmessage;
     }
     else if (e.data.type == "mainthread__set_frame_forwarding")
@@ -391,11 +644,12 @@ function workers__data_processing_worker_onmessage(e)
             keys__clear_channel_keys();
         }
         g_is_authenticated = false;
-    }
-    else if (e.data.type == "mainthread__channel_keys_for_data_processing_worker")
-    {
-        dpw_channel_key_request = null;
-        keys__set_current_channel_keys(e.data.value);
+        dpw_channel_keys_need_refresh = true;
+        dpw_channel_members.clear();
+        dpw_local_client_id = -1;
+        dpw_current_channel_id = -1;
+        dpw_channel_maintainer_id = -1;
+        dpw_maintainer_generation = -1;
     }
     // a read receipt, encrypted for the original sender the same way channel keys are.
     // the server never learns what it says: to it this is an ordinary direct message
@@ -956,6 +1210,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         {
             g_is_authenticated = true;
             workers__apply_keepalive_policy(msg.message);
+            workers__apply_channel_key_policy(msg.message);
 
             // the whole message is passed on as the policy: server_settings_tab__apply_server_policy_fields takes the
             // fields it knows, so a new server field never needs a second list here
@@ -1032,6 +1287,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
     }
     else
     {
+        workers__update_channel_members(msg.message);
         if (msg.message.type == "connection_check_response")
         {
             if (dpw_socket_port != null)
@@ -1112,6 +1368,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         else if (msg.message.type == "server_policy")
         {
             workers__apply_keepalive_policy(msg.message);
+            workers__apply_channel_key_policy(msg.message);
             workers__post_to_main({
                 type: "data_processing_worker__server_policy_from_server",
                 value: msg
@@ -1534,6 +1791,11 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             // loopback: node already decrypted this, so just pass it on
             if (msg.message.some_json != null)
             {
+                if (msg.message.some_json.type === "channel_keys_from_maintainer"
+                    && !workers__receive_channel_keys(msg))
+                {
+                    return;
+                }
                 workers__post_to_main({
                     type: "data_processing_worker__direct_chat_message",
                     value: msg
@@ -1563,6 +1825,11 @@ function workers__mainthread__process_received_websocket_message_continue(e)
 
             msg.message.some_json = some_json;
             msg.message.value = null;
+            // Install keys before the next socket frame, even while the interface is busy.
+            if (some_json.type === "channel_keys_from_maintainer" && !workers__receive_channel_keys(msg))
+            {
+                return;
+            }
 
             // decrypted shape, so the ui reads it without a key of its own
             if (dpw_forward_frames == true)

@@ -4,8 +4,8 @@
 extern webrtc_peer_t* g_webrtc_peers_array;
 
 boole audio_webrtc__initialize_datachannel_connection(client_t* client);
-void audio_webrtc__process_sdp_answer_from_remote_peer(client_t* client, cJSON* RTCSessionDescription);
-void audio_webrtc__process_ice_candidate_from_remote_peer(client_t* client, cJSON* json_root);
+void audio_webrtc__set_remote_description(client_t* client, cstring sdp, cstring type);
+void audio_webrtc__add_remote_candidate(client_t* client, cstring candidate);
 void audio_webrtc__set_is_client_sending_audio(uint64 client_id, boole is_active);
 void audio_webrtc__process_client_channel_join(client_t* client);
 void audio_webrtc__process_client_disconnect(client_t* client);

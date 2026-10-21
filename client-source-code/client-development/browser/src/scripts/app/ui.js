@@ -1091,7 +1091,7 @@ var UI = {
             else
             {
                 let avatar_menu_html = "";
-                if (g_server_policy.allow_avatars == true)
+                if (g_server_policy.is_avatar_upload_allowed == true)
                 {
                     avatar_menu_html = "<label class='context-menu-item' data-action='10' id='custom-file-upload-avatar' for='choose_avatar_input'>set avatar<input id='choose_avatar_input' type='file' accept='.png,.jpg,.jpeg' style='display: none'></label><p class='context-menu-item' data-action='17'>delete avatar</p>";
                 }
@@ -1425,7 +1425,7 @@ var UI = {
         }
         else if (action == 17) // delete your own avatar
         {
-            if (g_server_policy.allow_avatars == false) { return; }
+            if (g_server_policy.is_avatar_upload_allowed == false) { return; }
 
             let message_object = { message: { type: "delete_avatar" } };
             connection__send_message_object(message_object);
@@ -2319,7 +2319,7 @@ var UI = {
 
         // the member list IS the avatar grid: when it's visible (a member list theme) and the
         // server allows avatars, paint avatars into the circles and bulk-load everyone's.
-        let grid_now_visible = (is_visible == true && g_server_policy.allow_avatars == true);
+        let grid_now_visible = (is_visible == true && g_server_policy.is_avatar_upload_allowed == true);
         let grid_just_appeared = (grid_now_visible == true && g_avatar.grid_visible == false);
         g_avatar.grid_visible = grid_now_visible;
 
@@ -2491,7 +2491,7 @@ var UI = {
 
             // paint this client's avatar (if any) onto the clone's circle. avatars are shown only in
             // the member list; the left tree keeps its plain circle + green dot + speaking ring
-            if (g_server_policy.allow_avatars == true)
+            if (g_server_policy.is_avatar_upload_allowed == true)
             {
                 let cid = rows[i].getAttribute("data-connected-client-id");
                 let client_object = (cid != null) ? channel_tree__get_client_by_client_id(cid) : null;
@@ -2592,7 +2592,7 @@ var UI = {
 
                 let circle = document.createElement("div");
                 circle.className = "client-audio-state";
-                if (g_server_policy.allow_avatars == true && stored_client.base64_avatar.length > 0)
+                if (g_server_policy.is_avatar_upload_allowed == true && stored_client.base64_avatar.length > 0)
                 {
                     circle.style.backgroundImage = "url(" + stored_client.base64_avatar + ")";
                     circle.style.backgroundSize = "cover";
@@ -3032,7 +3032,7 @@ var UI = {
 
             // the settings request fills the four toggle checkboxes, the log request fills the
             // textarea (the server answers both only for admins)
-            connection__send_message_object({ message: { type: "load_server_settings" } });
+            server_info__request_admin_settings();
             connection__send_message_object({ message: { type: "admin_log_request" } });
         }
         else if (action == 2 || action == 3)
@@ -3049,13 +3049,7 @@ var UI = {
 
             // ask the server for the current settings + ban list so both tabs reflect the live
             // state (the server only answers admins)
-            let message_object = {
-                message: {
-                    type: "load_server_settings"
-                }
-            };
-
-            connection__send_message_object(message_object);
+            server_info__request_admin_settings();
         }
     },
 
@@ -3115,7 +3109,7 @@ var UI = {
             return;
         }
 
-        if (g_server_policy.allow_avatars == false)
+        if (g_server_policy.is_avatar_upload_allowed == false)
         {
             utils__custom_alert("avatars are disabled on this server");
             return;

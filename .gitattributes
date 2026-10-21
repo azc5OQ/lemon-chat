@@ -1,0 +1,6 @@
+# cmd.exe needs Windows line endings to find batch labels reliably.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Unix shells need Unix line endings.
+*.sh text eol=lf

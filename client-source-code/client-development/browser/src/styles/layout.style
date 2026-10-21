@@ -118,6 +118,14 @@
 #server-settings-tab {
     overflow: hidden;
     resize: both;
+    font-size: 12px;
+}
+
+/* Settings labels, notes and controls use the selected theme's font. */
+#server-settings-tab,
+#server-settings-tab *
+{
+    font-family: var(--set-font, 'Raleway', sans-serif);
 }
 
 /* the settings dialog is laid out and painted here once, from the --set-* variables each theme
@@ -390,6 +398,7 @@
 
 #server-settings-tab input[type="text"],
 #server-settings-tab input[type="password"],
+#server-settings-tab input[type="number"],
 #server-settings-tab select,
 #server-settings-tab .identity-alias-input,
 #server-settings-tab .identity-tag-add {
@@ -406,6 +415,7 @@
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 #server-settings-tab input[type="text"]:focus,
+#server-settings-tab input[type="number"]:focus,
 #server-settings-tab select:focus,
 #server-settings-tab .identity-alias-input:focus {
     border-color: var(--set-accent, #5a8cff);
@@ -2194,6 +2204,22 @@ div#local-settings-container.closing {
     stroke-dasharray: 97.4;
     stroke-dashoffset: 97.4;
     transition: stroke-dashoffset 0.15s linear;
+}
+
+/* Each theme supplies its own icon for a deleted chat picture. */
+.chat-picture-img.chat-picture-deleted
+{
+    content: var(--chat-picture-deleted-icon);
+    width: 32px !important;
+    height: 32px !important;
+    object-fit: contain;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
+    opacity: 1;
+    cursor: default;
 }
 
 /* incoming-picture placeholder img hidden while it has no src, because a src-less img paints a broken-image glyph */

@@ -148,22 +148,27 @@ var g_rsa_key_too_weak_prompted_for_bits = 0;
 // admin save (server_policy); absent fields on an older server keep these defaults. the keys are the
 // field names of the message, so server_settings_tab__apply_server_policy_fields copies them generically (a number only when positive)
 var g_server_policy = {
-    allow_block_direct_chat_pictures: false,
-    allow_block_direct_chat_files: false,
-    allow_block_channel_chat_pictures: false,
-    allow_block_channel_chat_files: false,
-    enforce_connection_check: true,
+    is_blocking_direct_chat_pictures_active: false,
+    is_blocking_direct_chat_files_active: false,
+    is_blocking_channel_chat_pictures_active: false,
+    is_blocking_channel_chat_files_active: false,
+    is_connection_check_enforced: true,
+    is_channel_key_reuse_enabled: true,
+    is_channel_key_reuse_on_join_allowed: true,
+    is_channel_key_reuse_on_leave_allowed: true,
+    channel_key_reuse_join_min_clients: 50,
+    channel_key_reuse_leave_min_clients: 100,
     is_fast_reconnect_allowed: false,          // a lost socket may resume its session instead of starting over
-    show_music_bot_marquee_to_everyone: false, // a streaming bot's marquee also for people outside its channel
+    is_music_bot_marquee_visible_to_everyone: false, // a streaming bot's marquee also for people outside its channel
     is_alias_registration_allowed: false,      // admins may register aliases (display names) on identities
-    allow_typing_indicator: false,             // "x is typing ..." is sent and shown
-    allow_client_renames: true,                // users may rename themselves (admins always may); on unless the server says otherwise
-    allow_link_previews: false, // URL lookup is available only when the server enables it.
-    allow_avatars: false,                      // image avatars on identities
+    is_typing_indicator_allowed: false,             // "x is typing ..." is sent and shown
+    is_client_rename_allowed: true,                // users may rename themselves (admins always may); on unless the server says otherwise
+    is_link_preview_allowed: false, // URL lookup is available only when the server enables it.
+    is_avatar_upload_allowed: false,                      // image avatars on identities
     avatar_max_size: 51200,                    // largest raw avatar image in bytes
-    allow_file_uploads: false,                 // any file may be sent in chat; off until the server says so
+    is_file_upload_allowed: false,                 // any file may be sent in chat; off until the server says so
     file_upload_max_size: 10 * 1024 * 1024,    // largest raw chat file in bytes
-    allow_chat_pictures: true,                 // inline pictures in chat; on unless the server says otherwise
+    is_chat_picture_allowed: true,                 // inline pictures in chat; on unless the server says otherwise
     chat_picture_max_size: 4 * 1024 * 1024,    // largest raw inline picture in bytes; bigger images still travel as files
     icon_max_size: 5000,                       // largest raw tag/channel icon in bytes (the server settings tab upload)
     is_video_streaming_allowed: false,         // members may stream their screen or a video file to their channel; off = no stream ui at all
@@ -349,7 +354,7 @@ var g_typing = {
 // kept as state, not only in the badge markup, so node can raise a notification without a dom
 var g_channel_unread_counts = {};
 
-// avatars (server opt-in, g_server_policy.allow_avatars). cache maps client_id -> base64
+// avatars (server opt-in, g_server_policy.is_avatar_upload_allowed). cache maps client_id -> base64
 // data-url; the queue drives chunked lazy loading; g_profile_avatar_client_id is the client whose
 // avatar belongs in the big right-pane #current-client-avatar.
 var g_profile_avatar_client_id = -1;
@@ -458,6 +463,9 @@ var g_is_continuous_transmission_active = false;
 var g_push_to_talk_key_code = 81;
 
 var g_push_to_talk_key_label = "Q";
+
+// Keep typing in the chat box from opening the microphone.
+var g_is_push_to_talk_disabled_while_typing = true;
 
 // just a copy so the checkbox can show the right state, because the real flag is kept in java
 var g_is_file_logging_enabled = false;

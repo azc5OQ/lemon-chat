@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableExtensions DisableDelayedExpansion
 
 :: Build the Windows server and browser client into ..\buildresult.
 :: Run this script from cmd; all paths are relative to this file.
@@ -19,6 +19,7 @@ set "BUILD_CONFIG=Release"
 set "BUILD_JOBS=2"
 :: Use Debug for native debugging; lower BUILD_JOBS if the compiler runs out of RAM.
 set "ROOT_DIRECTORY=%~dp0"
+set "SERVER_BUILD_DIRECTORY=%ROOT_DIRECTORY%build\windows"
 set "THIRD_PARTY_DIRECTORY=%ROOT_DIRECTORY%third-party"
 set "CMAKE_MAKE_PROGRAM=%MINGWPATH%\ninja.exe"
 SET "PATH=%MINGWPATH%;%PATH%"
@@ -37,7 +38,13 @@ set "CMAKE_POLICY_VERSION_MINIMUM=3.5"
 set "W64DEVKIT_VERSION=2.8.0"
 set "NINJA_VERSION=1.12.1"
 set "CMAKE_VERSION=4.3.1"
+:: Mbed TLS needs Python 3.8 or newer. Keep an existing compatible Python.
+:: When changing this download version, update its directory and checksum too.
+set "PYTHON_VERSION=3.14.8"
+set "PYTHON_INSTALL_DIRECTORY=%LOCALAPPDATA%\Programs\Python\Python314"
+set "PYTHON_INSTALLER_SHA256=759be887b96e736a3ca886daf8d575f18fcae1a09efab6902f42d59e8999f8ef"
 set "TOOLDOWNLOADS=%USERPROFILE%\Downloads"
+set "PYTHON_INSTALLER=%TOOLDOWNLOADS%\python-%PYTHON_VERSION%-amd64.exe"
 
 :: ---- w64devkit (gcc, g++, ld, make, windres) ----
 if exist "%MINGWPATH%\gcc.exe" goto bootstrap_have_w64devkit
@@ -152,13 +159,75 @@ set "PATH=%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64\bin;%PATH%"
 
 :bootstrap_have_cmake
 
+:: ---- Python (needed before configuring Mbed TLS, and later for client.html) ----
+call :find_python
+if defined PYTHON_EXECUTABLE goto bootstrap_have_python
+
+echo.
+echo Python 3.8 or newer was not found.
+echo Installing Python %PYTHON_VERSION% for your Windows account from python.org.
+echo The installer will also add Python to your user PATH.
+if not exist "%PYTHON_INSTALLER%" goto bootstrap_download_python
+call :verify_python_installer
+if not errorlevel 1 goto bootstrap_install_python
+echo The cached Python installer is incomplete or does not match this version. Downloading it again.
+
+:bootstrap_download_python
+if not exist "%TOOLDOWNLOADS%" mkdir "%TOOLDOWNLOADS%"
+curl --fail --location --retry 2 --output "%PYTHON_INSTALLER%" ^
+    "https://www.python.org/ftp/python/%PYTHON_VERSION%/python-%PYTHON_VERSION%-amd64.exe"
+if not errorlevel 1 goto bootstrap_check_python_download
+echo curl failed, retrying with bitsadmin...
+if exist "%PYTHON_INSTALLER%" del /q "%PYTHON_INSTALLER%"
+bitsadmin /transfer lemon_python_download /download /priority FOREGROUND ^
+    "https://www.python.org/ftp/python/%PYTHON_VERSION%/python-%PYTHON_VERSION%-amd64.exe" ^
+    "%PYTHON_INSTALLER%"
+if errorlevel 1 goto bootstrap_python_failed
+
+:bootstrap_check_python_download
+call :verify_python_installer
+if errorlevel 1 (
+    echo ERROR: The Python download does not match its published SHA-256 checksum.
+    goto bootstrap_python_failed
+)
+
+:bootstrap_install_python
+start "" /wait "%PYTHON_INSTALLER%" /quiet /norestart ^
+    InstallAllUsers=0 PrependPath=1 Include_launcher=0 Include_test=0 Include_doc=0 ^
+    TargetDir="%PYTHON_INSTALL_DIRECTORY%"
+set "PYTHON_INSTALL_RESULT=%ERRORLEVEL%"
+if not "%PYTHON_INSTALL_RESULT%"=="0" if not "%PYTHON_INSTALL_RESULT%"=="3010" (
+    echo ERROR: Python installer returned %PYTHON_INSTALL_RESULT%.
+    goto bootstrap_python_failed
+)
+call :try_python "%PYTHON_INSTALL_DIRECTORY%\python.exe"
+if not defined PYTHON_EXECUTABLE goto bootstrap_python_failed
+
+:bootstrap_have_python
+:: Use it in this command window too; an installer cannot update its parent's PATH.
+for %%P in ("%PYTHON_EXECUTABLE%") do set "PATH=%%~dpP;%PATH%"
+echo.
+echo Using Python: "%PYTHON_EXECUTABLE%"
+"%PYTHON_EXECUTABLE%" --version
+goto bootstrap_python_done
+
+:bootstrap_python_failed
+echo.
+echo ERROR: A working Python 3.8 or newer could not be installed.
+echo Check the download or installer error above, or install Python from https://www.python.org/downloads/windows/
+echo Then run this build script again. No libraries have been built yet.
+pause
+exit /b 1
+
+:bootstrap_python_done
+
 :: =============================================================================
 :: SETUP | Confirm the selected toolchain
 :: =============================================================================
 
 :: Static libraries use the MinGW .a suffix. libdatachannel also supplies a DLL.
 echo.
-echo Tools used for building : cmake, ninja, w64devkit  [gcc, g++, ld, make, windres]
+echo Tools used for building : cmake, ninja, Python, w64devkit  [gcc, g++, ld, make, windres]
 echo Missing ones were just auto-downloaded to %TOOLDOWNLOADS% by the bootstrap above.
 echo The optional stunnel/wss build runs in Git for Windows' bash (no extra Perl needed).
 
@@ -168,6 +237,7 @@ echo The build will use these paths:
 echo.
 echo    MINGWPATH      = %MINGWPATH%
 echo    ninja          = %CMAKE_MAKE_PROGRAM%
+echo    Python         = "%PYTHON_EXECUTABLE%"
 echo    gcc            = %MINGWPATH%/gcc.exe
 echo    g++            = %MINGWPATH%/g++.exe
 echo    ld             = %MINGWPATH%/ld.exe
@@ -232,6 +302,7 @@ IF /i "%choice%"=="y" (
     del "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a"
     del "%ROOT_DIRECTORY%\main\linkage-files\windows\*" /S /Q
     del "%ROOT_DIRECTORY%\main\linkage-files\linux\*" /S /Q
+    if exist "%SERVER_BUILD_DIRECTORY%" rd "%SERVER_BUILD_DIRECTORY%" /S /Q
     rd "%ROOT_DIRECTORY%\main\CMakeFiles"  /S /Q
     del "%ROOT_DIRECTORY%\main\CMakeCache.txt"
     del "%ROOT_DIRECTORY%\main\cmake_install.cmake"
@@ -425,15 +496,10 @@ copy "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a" "%ROOT_DIRECTORY%\main\li
 :: CLIENT | Generate the browser page
 :: =============================================================================
 
-:: the bundled http server serves client.html out of the buildresult directory, so build it here and copy
-:: it in next to the exe below. build.py is fast (about a second) and needs python on PATH.
-where python >nul 2>nul
-if errorlevel 1 (
-    echo   WARNING: python not on PATH - skipping client build, the served client.html may be stale or missing.
-) else (
-    echo Building the browser client client.html ...
-    python "%ROOT_DIRECTORY%\..\client-source-code\client-development\browser\build.py"
-)
+:: Build the page with the Python checked above. Stop if it fails, so an old page is not shipped.
+echo Building the browser client client.html ...
+"%PYTHON_EXECUTABLE%" "%ROOT_DIRECTORY%\..\client-source-code\client-development\browser\build.py"
+if errorlevel 1 goto build_failed
 
 :: =============================================================================
 :: SERVER | Build chat-server
@@ -441,9 +507,10 @@ if errorlevel 1 (
 
 cd /d "%ROOT_DIRECTORY%\main"
 if errorlevel 1 goto build_failed
-call :configure_cmake
+:: Keep compiler output and CMake's cache outside the source directory.
+call :configure_cmake -B "%SERVER_BUILD_DIRECTORY%"
 if errorlevel 1 goto build_failed
-cmake --build . -j%BUILD_JOBS%
+cmake --build "%SERVER_BUILD_DIRECTORY%" -j%BUILD_JOBS%
 if errorlevel 1 goto build_failed
 
 :: =============================================================================
@@ -453,7 +520,7 @@ if errorlevel 1 goto build_failed
 copy "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\dbip-country-lite-2025-06.mmdb" "%ROOT_DIRECTORY%\..\buildresult\"
 copy /Y "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll" "%ROOT_DIRECTORY%\..\buildresult\"
 if errorlevel 1 goto deployment_failed
-copy /Y "%ROOT_DIRECTORY%\main\chat-server.exe" "%ROOT_DIRECTORY%\..\buildresult\"
+copy /Y "%SERVER_BUILD_DIRECTORY%\chat-server.exe" "%ROOT_DIRECTORY%\..\buildresult\"
 if errorlevel 1 goto deployment_failed
 
 :: the page the bundled http server serves (built above)
@@ -533,11 +600,40 @@ pause
 exit /b 1
 
 :: =============================================================================
+:: HELPERS | Find a working Python and check its installer
+:: =============================================================================
+
+:find_python
+set "PYTHON_EXECUTABLE="
+call :try_python python
+call :try_python python3
+call :try_python py -3
+:: An installation may exist even when its directory was never added to PATH.
+for /d %%P in ("%LOCALAPPDATA%\Programs\Python\Python3*") do call :try_python "%%P\python.exe"
+for /d %%P in ("%ProgramFiles%\Python3*") do call :try_python "%%P\python.exe"
+exit /b 0
+
+:try_python
+if defined PYTHON_EXECUTABLE exit /b 0
+:: Running code rejects Python 2, old releases, and Store aliases that have no interpreter.
+for /f "delims=" %%P in ('call %* -c "import sys; sys.exit(1) if sys.version_info[0] != 3 or sys.version_info < (3, 8) else print(sys.executable)" 2^>nul') do (
+    if exist "%%P" set "PYTHON_EXECUTABLE=%%P"
+)
+exit /b 0
+
+:verify_python_installer
+:: Check both cached and newly downloaded installers before running them.
+certutil -hashfile "%PYTHON_INSTALLER%" SHA256 | findstr /i /x /c:"%PYTHON_INSTALLER_SHA256%" >nul
+exit /b %ERRORLEVEL%
+
+:: =============================================================================
 :: HELPERS | Configure the current CMake project
 :: =============================================================================
 
 :configure_cmake
-cmake -G Ninja . ^
+cmake -G Ninja . %* ^
+    "-DPython3_EXECUTABLE:FILEPATH=%PYTHON_EXECUTABLE%" ^
+    "-DPYTHON_EXECUTABLE:FILEPATH=%PYTHON_EXECUTABLE%" ^
     -DCMAKE_BUILD_TYPE=%BUILD_CONFIG% ^
     "-DCMAKE_MAKE_PROGRAM=%CMAKE_MAKE_PROGRAM%" ^
     "-DCMAKE_LINKER=%CMAKE_LINKER%" ^

@@ -259,6 +259,11 @@
                             <input type="number" min="1000" max="30000" step="1" id="server-settings-general-icon-max-size-input">
                         </label>
 
+                        <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>max avatar size (KB)</span>
+                            <input type="number" min="1" max="90" step="1" id="server-settings-general-avatar-max-size-input">
+                        </label>
+
                         <p class="server-settings-general-subheader">chat</p>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-allow-typing-indicator-checkbox">
@@ -376,6 +381,34 @@
                             <input type="checkbox" id="server-settings-general-websocket-ping-checkbox">
                             <span>additional WebSocket ping check: disconnect after 4 unanswered pings (independent of the keep-alive setting above)</span>
                         </label>
+
+                        <p class="server-settings-general-subheader">channel keys in large channels</p>
+                        <p>When key reuse is disabled, each join or departure makes the maintainer send fresh keys separately to everyone in the channel. With hundreds of users, frequent changes can delay key delivery and chat. These options keep the current keys for the events you choose. New users still receive their own encrypted copy. A new maintainer always creates fresh keys.</p>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-channel-key-reuse-enabled">
+                            <span>enable channel key reuse in large channels</span>
+                        </label>
+                        <div id="server-settings-channel-key-reuse-options" hidden>
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-channel-key-reuse-on-join">
+                                <span>keep the current keys when someone joins</span>
+                            </label>
+                            <label class="server-settings-general-row server-settings-general-row-number">
+                                <span>keep keys on joins with at least this many active users (minimum 30)</span>
+                                <input type="number" min="30" max="1000000" step="1" id="server-settings-channel-key-reuse-join-min-clients" value="50">
+                            </label>
+                            <p>New users may be able to read earlier channel traffic if they obtain a copy encrypted with these same keys.</p>
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-channel-key-reuse-on-leave">
+                                <span>keep the current keys when someone leaves, disconnects or goes idle</span>
+                            </label>
+                            <label class="server-settings-general-row server-settings-general-row-number">
+                                <span>keep keys on departures with at least this many active users (minimum 30)</span>
+                                <input type="number" min="30" max="1000000" step="1" id="server-settings-channel-key-reuse-leave-min-clients" value="100">
+                            </label>
+                            <p>Users who leave still know these keys. They may be able to read later channel traffic if they obtain a copy, until the keys change.</p>
+                            <p>The count is taken after the join or departure and excludes idle users and music bots. Below the relevant threshold, fresh keys are required. By default, keys are kept on joins at 50 users and on departures at 100 users. Saved changes reach connected clients immediately.</p>
+                        </div>
 
                         <input type="button" value="save server settings" id="save-server-settings-button">
                     </div>
@@ -631,6 +664,13 @@
                                 </span>
                                 <input type="button" id="local-settings-ptt-key" value="Q">
                             </div>
+                            <label class="local-settings-row" id="local-settings-ptt-disable-while-typing-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">disable push-to-talk while typing in chat</span>
+                                    <span class="local-settings-hint">ignores the push-to-talk key while the chat message box is focused</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-ptt-disable-while-typing" checked>
+                            </label>
                             <div class="local-settings-row local-settings-row-select" id="local-settings-mic-device-row" style="display: none;">
                                 <span class="local-settings-text">
                                     <span class="local-settings-label">microphone input</span>

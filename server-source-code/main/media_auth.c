@@ -283,10 +283,9 @@ uint64 media_auth__encrypt_for_client(client_t* receiver, int stream, const unsi
     {
         return 0;
     }
-    // several relay threads may send to the same receiver at the same time (every talking client has its
-    // own thread). the counter is read and increased in one step that no other thread can interrupt, so
-    // no two frames get the same counter
-    frame_counter = __atomic_fetch_add(&receiver->media_send_counter, 1, __ATOMIC_RELAXED);
+    // Several threads can send to this client. Increase the counter in one atomic
+    // operation so they cannot assign the same packet number to different frames.
+    frame_counter = atomic_fetch_add_explicit(&receiver->media_send_counter, 1, memory_order_relaxed);
     out_frame[0] = MEDIA_FRAME_VERSION;
     _media_auth_internal__write_u64(out_frame + 1, frame_counter);
     memcpy(out_frame + MEDIA_FRAME_HEADER, body, body_size);

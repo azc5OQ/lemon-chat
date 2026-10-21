@@ -18,11 +18,11 @@
 #include "clib/clib_string.h"
 
 #include "memory_manager.h"
-#include "server_message.h"
+#include "msg/server/server_msg.h"
 
-#include "audio_channel.h"
+#include "core/audio_channel.h"
 #include "audio_webrtc.h"
-#include "video_stream.h"
+#include "core/video_channel.h"
 #include "video_webrtc.h"
 
 #include "util.h"
@@ -46,12 +46,12 @@ void RTC_API audio_webrtc__peerconnection_on_datachannel_callback(int pc, int dc
 void RTC_API audio_webrtc__datachannel_on_open_callback(int id, void* ptr);
 void RTC_API audio_webrtc__datachannel_on_closed_callback(int id, void* ptr);
 void RTC_API audio_webrtc__datachannel_on_message_callback(int id, const char* message, int size, void* ptr);
+// declarations
+static void _audio_webrtc_internal__send_public_candidate(const char* candidate, const char* mid, client_t* client);
 static char* _audio_webrtc_internal__state_print(rtcState state);
 static char* _audio_webrtc_internal__gathering_state_print(rtcGatheringState state);
-
 static void* _audio_webrtc_internal__teardown_thread(void* arg_void);
 static void _audio_webrtc_internal__spawn_teardown(int peer_connection_handle, int data_channel_handle, int video_data_channel_handle);
-static void _audio_webrtc_internal__send_public_candidate(const char* candidate, const char* mid, client_t* client);
 
 /**
  * @brief error callback
@@ -113,7 +113,7 @@ void RTC_API audio_webrtc__peerconnection_on_setlocaldescription_callback(int pc
         goto label_descriptionCallback_end;
     }
 
-    status = util__is_client_valid(peer->client_id);
+    status = base__is_client_valid(peer->client_id);
 
     if (status == FALSE || g_clients_array[peer->client_id].p_ws_connection != peer->p_ws_connection)
     {
@@ -147,9 +147,9 @@ void RTC_API audio_webrtc__peerconnection_on_setlocaldescription_callback(int pc
 
         json_root_object_string = cJSON_PrintUnformatted(json_root_object);
 
-        server_msg__queue_text_to_client(&g_clients_array[peer->client_id], json_root_object_string);
+        server_msg__delivery__queue_text_to_client(&g_clients_array[peer->client_id], json_root_object_string);
 
-        base__free_json_message(json_root_object, json_root_object_string);
+        util__free_json_message(json_root_object, json_root_object_string);
 
         DBG_AUDIO_WEBRTC log_info("%s", "test 3");
     }
@@ -264,7 +264,7 @@ static void _audio_webrtc_internal__send_public_candidate(const char* candidate,
 
     DBG_AUDIO_WEBRTC log_info("%s %s", "public candidate:", rewritten);
 
-    server_msg__send_webrtc_sdp_offer_to_single_client(client, rewritten, mid);
+    server_msg__audio__send_webrtc_sdp_offer_to_single_client(client, rewritten, mid);
 }
 
 /**
@@ -298,7 +298,7 @@ void RTC_API audio_webrtc__peerconnection_on_icecandidate_callback(int pc, const
     // stale peer connections (slot re-initialized since) must not push their candidates to the client
     if (peer->is_existing == TRUE && peer->peer_connection_handle == pc)
     {
-        is_client_valid = util__is_client_valid(peer->client_id);
+        is_client_valid = base__is_client_valid(peer->client_id);
 
         if (is_client_valid == FALSE)
         {
@@ -306,7 +306,7 @@ void RTC_API audio_webrtc__peerconnection_on_icecandidate_callback(int pc, const
         }
 
         DBG_AUDIO_WEBRTC log_info("%s", "sending sdp offer to client \n");
-        server_msg__send_webrtc_sdp_offer_to_single_client(&g_clients_array[peer->client_id], cand, mid);
+        server_msg__audio__send_webrtc_sdp_offer_to_single_client(&g_clients_array[peer->client_id], cand, mid);
 
         // wireguard mode: the same candidate once more with the router's public address (no-op otherwise)
         _audio_webrtc_internal__send_public_candidate(cand, mid, &g_clients_array[peer->client_id]);
@@ -373,7 +373,7 @@ void RTC_API audio_webrtc__peerconnection_on_statechanged_callback(int pc, rtcSt
                 peer->cooldown_until_ms = 0;
             }
 
-            status = util__is_client_valid(peer->client_id);
+            status = base__is_client_valid(peer->client_id);
 
             if (status == TRUE)
             {
@@ -393,14 +393,14 @@ void RTC_API audio_webrtc__peerconnection_on_statechanged_callback(int pc, rtcSt
                     // drops to disconnected (the channels lock comes after the webrtc peers lock in the lock order)
                     peer->is_video_channel_connected = FALSE;
                     clib__write_lock(&g_channels_global_rwlock_guard);
-                    video_stream__process_transport_lost(peer->client_id);
+                    video_channel__process_transport_lost(peer->client_id);
                     clib__unlock(&g_channels_global_rwlock_guard);
                 }
 
                 if (peer->last_sent_audio_state != client->audio_state)
                 {
                     peer->last_sent_audio_state = client->audio_state;
-                    server_msg__send_audio_state_of_client_to_all_clients(client, client->audio_state);
+                    server_msg__audio__send_state_of_client_to_all_clients(client, client->audio_state);
                 }
             }
         }
@@ -523,14 +523,14 @@ void RTC_API audio_webrtc__datachannel_on_closed_callback(int id, void* ptr)
 
         // the transport is gone, say so - the statechange callback skips cleared slots, so a client
         // still believing it is connected would otherwise never learn and never re-create
-        status = util__is_client_valid(client_id);
+        status = base__is_client_valid(client_id);
 
         if (status == TRUE && g_clients_array[client_id].is_audio_websocket_authenticated == FALSE
             && g_clients_array[client_id].audio_state != AUDIO_STATE__AUDIO_COMPLETELY_DISABLED)
         {
             client = &g_clients_array[client_id];
             client->audio_state = AUDIO_STATE__AUDIO_COMPLETELY_DISABLED;
-            server_msg__send_audio_state_of_client_to_all_clients(client, AUDIO_STATE__AUDIO_COMPLETELY_DISABLED);
+            server_msg__audio__send_state_of_client_to_all_clients(client, AUDIO_STATE__AUDIO_COMPLETELY_DISABLED);
         }
 
         // the whole transport goes with the slot: a streamer's stream ends, a viewer drops to
@@ -538,7 +538,7 @@ void RTC_API audio_webrtc__datachannel_on_closed_callback(int id, void* ptr)
         if (status == TRUE)
         {
             clib__write_lock(&g_channels_global_rwlock_guard);
-            video_stream__process_transport_lost(client_id);
+            video_channel__process_transport_lost(client_id);
             clib__unlock(&g_channels_global_rwlock_guard);
         }
     }
@@ -575,10 +575,10 @@ void RTC_API audio_webrtc__datachannel_on_message_callback(int id, const char* m
     // tell a transport that no longer works, while the browser still reports it open, from a quiet one
     if (size == 1)
     {
-        util__count_webrtc_bytes(1, rtcSendMessage(id, message, 1) >= 0 ? 1 : 0);
+        base__count_webrtc_bytes(1, rtcSendMessage(id, message, 1) >= 0 ? 1 : 0);
         return;
     }
-    util__count_webrtc_bytes((uint64)size, 0);
+    base__count_webrtc_bytes((uint64)size, 0);
     // Peer slots never move. Derive the index without reading fields another callback can reset.
     sender_id = (uint64)(peer - g_webrtc_peers_array);
     audio_channel__relay_voice(sender_id, NULL_POINTER, id, (const unsigned char*)message, (uint64)size);
@@ -819,118 +819,39 @@ void audio_webrtc__process_client_disconnect(client_t* client)
 }
 
 /**
- * @brief applies an ICE candidate received from the client to that client's peer connection
- *
- * @param client_t* client -> the client the candidate came from
- * @param cJSON* json_root -> parsed message; its "candidate" field holds the ICE candidate string
- *
- * @return void
+ * @brief Adds a client's ICE candidate to its WebRTC connection.
+ * @param client_t* client -> client that owns the connection
+ * @param cstring candidate -> checked candidate from the client's message
  */
-void audio_webrtc__process_ice_candidate_from_remote_peer(client_t* client, cJSON* json_root)
+void audio_webrtc__add_remote_candidate(client_t* client, cstring candidate)
 {
-    cJSON* cjson_candidate = NULL_POINTER;
     webrtc_peer_t* peer = NULL_POINTER;
 
-    DBG_AUDIO_WEBRTC log_info("%s", "audio_webrtc__process_ice_candidate_from_remote_peer \n");
-
-    if (json_root == NULL_POINTER)
-    {
-        DBG_AUDIO_WEBRTC log_info("%s", "audio_webrtc__process_ice_candidate_from_remote_peer json root is null \n");
-        return;
-    }
-
     clib__read_lock(&g_webrtc_peers_rwlock_guard);
-
     peer = &g_webrtc_peers_array[client->client_id];
-
-    if (peer->is_existing == FALSE)
+    if (peer->is_existing == TRUE)
     {
-        DBG_AUDIO_WEBRTC log_info("%s", "audio_webrtc__process_ice_candidate_from_remote_peer peer not is_existing \n");
-        goto label_audio_webrtc__process_ice_candidate_from_remote_peer_end;
+        rtcAddRemoteCandidate(peer->peer_connection_handle, candidate, 0);
     }
-
-    cjson_candidate = cJSON_GetObjectItemCaseSensitive(json_root, "candidate");
-
-    if (cjson_candidate == NULL_POINTER)
-    {
-        DBG_AUDIO_WEBRTC log_info("%s %lld %s", "process_ice_candidate_from_remote_peer ", client->client_id, "candicate is null \n");
-        goto label_audio_webrtc__process_ice_candidate_from_remote_peer_end;
-    }
-
-    if (cJSON_IsString(cjson_candidate) == FALSE || cjson_candidate->valuestring == NULL_POINTER)
-    {
-        DBG_AUDIO_WEBRTC log_info("%s %lld %s", "process_ice_candidate_from_remote_peer ", client->client_id, "cJSON_IsString(cjson_candidate) == FALSE || cjson_candidate->valuestring == NULL \n");
-        goto label_audio_webrtc__process_ice_candidate_from_remote_peer_end;
-    }
-
-    DBG_AUDIO_WEBRTC log_info("%s", "process_ice_candidate_from_remote_peer rtcAddRemoteCandidate \n");
-
-    // 3rd arg is the sdpMid (id of the SDP media section the candidate belongs to); 0 means the single default media line; WebRTC's other router is sdpMLineIndex, the m= line's zero-based position
-    rtcAddRemoteCandidate(peer->peer_connection_handle, cjson_candidate->valuestring, 0); // it is possible that value cjson_candidate->valuestring will have to be stored on heap, test for crashes
-
-label_audio_webrtc__process_ice_candidate_from_remote_peer_end:
-
     clib__unlock(&g_webrtc_peers_rwlock_guard);
 }
 
 /**
- * @brief applies the client's SDP answer to its peer connection, completing the offer/answer handshake
- *
- * @param client_t* client -> the client that sent the answer
- * @param cJSON* RTCSessionDescription -> parsed message holding the answer's "type" and "sdp" fields
- *
- * @return void
+ * @brief Applies the client's answer to the server's WebRTC connection offer.
+ * @param client_t* client -> client that owns the connection
+ * @param cstring sdp -> checked session description from the client's message
+ * @param cstring type -> checked description type from the client's message
  */
-void audio_webrtc__process_sdp_answer_from_remote_peer(client_t* client, cJSON* RTCSessionDescription)
+void audio_webrtc__set_remote_description(client_t* client, cstring sdp, cstring type)
 {
     webrtc_peer_t* peer = NULL_POINTER;
-    cJSON* cjson_type = NULL_POINTER;
-    cJSON* cjson_sdp = NULL_POINTER;
-
-    DBG_AUDIO_WEBRTC log_info("%s", "audio_webrtc__process_sdp_answer_from_remote_peer \n");
-
-    if (RTCSessionDescription == NULL_POINTER || client == NULL_POINTER)
-    {
-        DBG_AUDIO_WEBRTC log_info("%s", "audio_webrtc__process_sdp_answer_from_remote_peer RTCSessionDescription == NULL_POINTER || client == NULL_POINTER  \n");
-        return;
-    }
 
     clib__write_lock(&g_webrtc_peers_rwlock_guard);
-
     peer = &g_webrtc_peers_array[client->client_id];
-
-    if (peer->is_existing == FALSE)
+    if (peer->is_existing == TRUE)
     {
-        DBG_AUDIO_WEBRTC log_info("%s", "audio_webrtc__process_sdp_answer_from_remote_peer peer not is_existing \n");
-        goto label_audio_webrtc__process_sdp_answer_from_remote_peer_end;
+        rtcSetRemoteDescription(peer->peer_connection_handle, sdp, type);
     }
-
-    cjson_type = cJSON_GetObjectItemCaseSensitive(RTCSessionDescription, "type");
-    cjson_sdp = cJSON_GetObjectItemCaseSensitive(RTCSessionDescription, "sdp");
-
-    if (cjson_type == 0 || cjson_sdp == 0)
-    {
-        DBG_AUDIO_WEBRTC log_info("%s %lld %s", "[!] audio_webrtc__process_sdp_answer_from_remote_peer : ", client->client_id, "\n");
-        goto label_audio_webrtc__process_sdp_answer_from_remote_peer_end;
-    }
-
-    if (cJSON_IsString(cjson_type) == FALSE || cjson_type->valuestring == NULL_POINTER || (cjson_type->valuestring) == 0)
-    {
-        DBG_AUDIO_WEBRTC log_info("%s%lld%s", "[!] audio_webrtc__process_sdp_answer_from_remote_peer : ", client->client_id, "\n");
-        goto label_audio_webrtc__process_sdp_answer_from_remote_peer_end;
-    }
-
-    if (cJSON_IsString(cjson_sdp) == FALSE || cjson_sdp->valuestring == NULL_POINTER || clib__utf8_string_length(cjson_sdp->valuestring) == 0)
-    {
-        DBG_AUDIO_WEBRTC log_info("%s%lld%s", "[!] audio_webrtc__process_sdp_answer_from_remote_peer : ", client->client_id, "\n");
-        goto label_audio_webrtc__process_sdp_answer_from_remote_peer_end;
-    }
-
-    DBG_AUDIO_WEBRTC log_info("%s", "audio_webrtc__process_sdp_answer_from_remote_peer rtcSetRemoteDescription \n");
-    rtcSetRemoteDescription(peer->peer_connection_handle, cjson_sdp->valuestring, cjson_type->valuestring);
-
-label_audio_webrtc__process_sdp_answer_from_remote_peer_end:
-
     clib__unlock(&g_webrtc_peers_rwlock_guard);
 }
 
@@ -1165,6 +1086,6 @@ boole audio_webrtc__send(uint64 client_id, const unsigned char* packet, uint64 s
     {
         return FALSE;
     }
-    util__count_webrtc_bytes(0, size);
+    base__count_webrtc_bytes(0, size);
     return TRUE;
 }

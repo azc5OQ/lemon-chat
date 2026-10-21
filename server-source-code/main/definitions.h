@@ -59,7 +59,7 @@ typedef const char* cstring;
 #define DBG_MUSIC_BOT if (0)
 #define DBG_RWLOCKS if (0)
 #define DBG_IDENTITIES if (0)
-#define DBG_VIDEO_STREAM if (0)
+#define DBG_VIDEO_CHANNEL if (0)
 #define DBG_AUDIO_CHANNEL if (0)
 #define DBG_AUDIO_WEBSOCKET if (0)
 #define DBG_MEDIA_AUTH if (0)
@@ -94,7 +94,7 @@ typedef const char* cstring;
 #define DBG_MUSIC_BOT if (0) 
 #define DBG_RWLOCKS if (0) 
 #define DBG_IDENTITIES if (0)
-#define DBG_VIDEO_STREAM if (0)
+#define DBG_VIDEO_CHANNEL if (0)
 #define DBG_AUDIO_CHANNEL if (0)
 #define DBG_AUDIO_WEBSOCKET if (0)
 #define DBG_MEDIA_AUTH if (0)
@@ -115,8 +115,6 @@ typedef const char* cstring;
 #define AUDIO_CHANNEL_CHECK_IF_RETURN_NEEDED if (0)
 #endif
 
-int mytypedef__check_data_types_for_consistency(void);
-
 #define MAX_CHANNELS 100
 #define DEFAULT_SERVER_SLOTS 500
 #define MAX_SERVER_SLOTS 100000
@@ -126,6 +124,7 @@ int mytypedef__check_data_types_for_consistency(void);
 #define MAX_TAGS 1000
 #define MAX_BANS 1024
 #define BAN_IP_MAX_LENGTH 46
+#define IPV4_ADDRESS_STRING_LENGTH 16
 #define BAN_EXTRA_DATA_MAX_LENGTH 256
 #define ROOT_CHANNEL_ID 0
 #define USERNAME_MAX_LENGTH 100
@@ -155,7 +154,7 @@ int mytypedef__check_data_types_for_consistency(void);
 
 // offline messages: text sent to a REGISTERED identity that is not connected right now. the server
 // holds them in ram only (never in server_settings.json) and hands them over when that identity
-// comes back, so a restart drops whatever is waiting - that is by design. see allow_offline_messages
+// comes back, so a restart drops whatever is waiting - that is by design. see is_offline_messaging_allowed
 #define MAX_OFFLINE_MESSAGES 1000  // server-wide ceiling on queued messages
 #define MAX_OFFLINE_MESSAGES_PER_IDENTITY 50  // so one sender cannot fill the whole queue
 #define MAX_OFFLINE_MESSAGE_LENGTH 8192  // base64 ciphertext cap for ONE queued message
@@ -215,13 +214,14 @@ int mytypedef__check_data_types_for_consistency(void);
 #include "../third-party/theldus-websocket/include/ws.h"
 #include <pthread.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
 #include "clib/clib_rwlock.h"
 
 #ifndef WIN32
-#include <sys/time.h>   // struct timeval + gettimeofday, used by base__get_timestamp_ms; POSIX (Linux + macOS + BSD), absent on Windows
+#include <sys/time.h>   // struct timeval + gettimeofday, used by util__get_timestamp_ms; POSIX (Linux + macOS + BSD), absent on Windows
 #endif
 
 // Each key stores its type as well as the bytes needed to use it. The type tells
@@ -270,34 +270,39 @@ typedef struct server_settings
     boole is_restrict_channel_deletion_creation_editing_to_admin_active;
     boole is_temp_channel_creation_allowed;
     boole is_display_country_flags_active;
-    boole hide_admin_country_flag;     // admins are listed without a flag while flags are on (a comfort setting)
+    boole is_admin_country_flag_hidden;     // admins are listed without a flag while flags are on (a comfort setting)
     boole is_display_admin_tag_active;
     boole is_idle_mode_allowed;
     boole is_fast_reconnect_allowed;   // a returning identity may adopt its still-open session instead of replacing it
     boole is_identity_takeover_allowed; // a new login with an identity already online replaces that session (off: refused)
     boole is_websocket_ping_active;    // ws-level ping every check tick; 4 unanswered pings shut the socket
-    boole enforce_connection_check;
+    boole is_connection_check_enforced;
+    boole is_channel_key_reuse_enabled;
+    boole is_channel_key_reuse_on_join_allowed;
+    boole is_channel_key_reuse_on_leave_allowed;
+    int64 channel_key_reuse_join_min_clients;
+    int64 channel_key_reuse_leave_min_clients;
     int64 max_concurrent_logins;
-    boole allow_block_direct_chat_pictures;
-    boole allow_block_direct_chat_files;
-    boole allow_block_channel_chat_pictures;
-    boole allow_block_channel_chat_files;
+    boole is_blocking_direct_chat_pictures_active;
+    boole is_blocking_direct_chat_files_active;
+    boole is_blocking_channel_chat_pictures_active;
+    boole is_blocking_channel_chat_files_active;
     int64 webrtc_datachannel_cooldown_seconds; // no new peers for a client after 10 attempts that never connected
-    boole show_music_bot_marquee_to_everyone; // the "now playing" marquee also for people outside the bot's channel
+    boole is_music_bot_marquee_visible_to_everyone; // the "now playing" marquee also for people outside the bot's channel
     boole is_voice_chat_active;
     boole is_music_bot_audio_active;
     boole is_video_streaming_active;  // clients may stream their screen or a video file to their channel; every channel also has its own toggle. off by default and never a setup question, the admin switches it on in the server settings tab; while off no client shows any stream ui
     boole is_logging_of_failed_attempts_active;
-    boole are_identities_enabled;
-    boole persist_identity_in_localstorage;  // bake a flag into the served client so it saves/restores the identity passphrase in localStorage; default off
-    boole allow_avatars;  // let each user set an image avatar persisted with their identity; default off
-    boole allow_alias_registrations;  // admins may register an alias (display name) on a user's identity; needs identities; default off
-    boole allow_stored_clients_list;  // users may fetch the stored identities (alias/avatar/tags only) to list offline people; needs identities; default off
-    boole allow_last_seen;  // record and serve when an identity was last connected, so clients can show "last seen"; needs identities; default off
-    boole allow_offline_messages;  // queue text messages for registered identities that are offline and deliver them on reconnect. asked ONCE at first-time setup and never editable afterwards, because switching it on makes the server retain each identity's RAW public key (peers need it to encrypt while the owner is away). needs identities + allow_stored_clients_list; default off
-    boole allow_typing_indicator;  // clients may tell the people they are writing to that they are typing ("x is typing ..."). carries no message content, only who is typing and where; editable in the server settings tab; default off
-    boole allow_client_renames;  // users may rename themselves after connecting; when off a rename request is silently ignored, because the switch is meant against name games - an admin still renames freely; default on
-    boole allow_link_previews;
+    boole is_identity_storage_enabled;
+    boole is_identity_localstorage_enabled;  // bake a flag into the served client so it saves/restores the identity passphrase in localStorage; default off
+    boole is_avatar_upload_allowed;  // let each user set an image avatar persisted with their identity; default off
+    boole is_alias_registration_allowed;  // admins may register an alias (display name) on a user's identity; needs identities; default off
+    boole is_stored_client_list_allowed;  // users may fetch the stored identities (alias/avatar/tags only) to list offline people; needs identities; default off
+    boole is_last_seen_enabled;  // record and serve when an identity was last connected, so clients can show "last seen"; needs identities; default off
+    boole is_offline_messaging_allowed;  // queue text messages for registered identities that are offline and deliver them on reconnect. asked ONCE at first-time setup and never editable afterwards, because switching it on makes the server retain each identity's RAW public key (peers need it to encrypt while the owner is away). needs identities + is_stored_client_list_allowed; default off
+    boole is_typing_indicator_allowed;  // clients may tell the people they are writing to that they are typing ("x is typing ..."). carries no message content, only who is typing and where; editable in the server settings tab; default off
+    boole is_client_rename_allowed;  // users may rename themselves after connecting; when off a rename request is silently ignored, because the switch is meant against name games - an admin still renames freely; default on
+    boole is_link_preview_allowed;
     int64 avatar_max_size_bytes;  // largest accepted raw image size (bytes) for an avatar; larger uploads are silently dropped
     int64 icon_max_size_bytes;  // largest accepted raw image size (bytes) for a tag/channel icon, 1000-30000; editable in the server settings tab
     uint64 chat_cooldown_milliseconds;
@@ -310,7 +315,7 @@ typedef struct server_settings
     uint64 max_client_count;
     uint64 keys_count;
     int64 websocket_port;
-    // wireguard mode (see server-source-code/tools/wireguard/README.md): this server sits behind a router that forwards its ports
+    // wireguard mode (see selfhosting-tools/wireguard/README.md): this server sits behind a router that forwards its ports
     // through a tunnel. while the switch is on, the webrtc datachannel sockets use the fixed udp port
     // range below so the router can forward it, and every host candidate is also announced with the
     // public address so clients know where to send. off = the machine has a public address, the three
@@ -325,48 +330,49 @@ typedef struct server_settings
     // char client_verificaton_message_cleartext[1024]; not used right now, but it was supposed to be a welcome message that the server sends when somebody joins
     char default_client_name[30];
     char admin_password[ADMIN_PASSWORD_MAX_LENGTH];
-    boole admin_password_is_initial;
+    boole is_admin_password_initial;
 
-    boole restart_on_crash;
+    boole is_restart_on_crash_enabled;
 
-    boole use_stunnel;
+    boole is_stunnel_enabled;
+    boole is_external_wss_enabled;
     int64 wss_port;
     char stunnel_domain[256];
     char stunnel_cert_fullchain[512];
     char stunnel_cert_privkey[512];
     char client_html_dest[512];
 
-    boole serve_client_http;
+    boole is_client_http_enabled;
     int64 http_port;
     char http_webroot[512];
-    boole serve_https;
+    boole is_https_enabled;
     int64 https_port;
     char default_theme[32];
     char* server_banner;
-    boole publish_server_uptime;
-    boole publish_server_slots;
-    boole publish_server_banner;
-    boole publish_server_features;
-    boole embed_client_config;
+    boole is_server_uptime_published;
+    boole is_server_slots_published;
+    boole is_server_banner_published;
+    boole is_server_features_published;
+    boole is_client_config_embedded;
     boole is_sending_text_to_idle_clients_allowed;  // deliver direct text chat to idle clients; their websocket stays open in idle, so delivery works; default on
-    boole allow_private_messages;  // clients may send direct text chat to each other at all; off makes this a channels-only server; default on
-    boole allow_file_uploads;  // any file may be sent in chat, not just pictures; relayed through ram only, never written to disk; default off
+    boole is_private_messaging_allowed;  // clients may send direct text chat to each other at all; off makes this a channels-only server; default on
+    boole is_file_upload_allowed;  // any file may be sent in chat, not just pictures; relayed through ram only, never written to disk; default off
     int64 file_upload_max_size_bytes;  // largest accepted raw file size for a chat file; the server holds ~2x this in ram per transfer
     int64 chat_picture_max_size_bytes;  // largest raw picture clients may send inline; pictures are e2e encrypted, so clients enforce it (the upload gate is the hard bound)
-    boole allow_chat_pictures;  // inline chat pictures; on by default, never a setup question, the upload intents enforce it
+    boole is_chat_picture_allowed;  // inline chat pictures; on by default, never a setup question, the upload intents enforce it
     boole is_country_blocking_active;  // refuse joins whose ip resolves to a listed country (per connection, works with flags off); set in the settings tab, never in setup; default off
     int64 minimum_rsa_key_bits;  // weakest client rsa key accepted, 2048..8192; a modulus may come out one bit under its nominal size, so the check allows minimum-1. weaker clients are dropped silently
-    boole announce_minimum_rsa_key_bits;  // tell a rejected client which size is required so it can offer to regenerate. off keeps the requirement secret and the drop silent; default off
+    boole is_minimum_rsa_key_bits_announced;  // tell a rejected client which size is required so it can offer to regenerate. off keeps the requirement secret and the drop silent; default off
     char blocked_countries[MAX_BLOCKED_COUNTRIES][COUNTRY_ISO_CODE_LENGTH];  // uppercase iso 3166-1 alpha-2, the form the geoip db emits
     uint64 blocked_countries_count;
-    boole log_client_joins;  // admin log: record each completed join with username and ip; default off
-    boole log_username_changes;  // admin log: record renames (old -> new); default off
-    boole log_tag_changes;  // admin log: record tags being added to clients; default off
-    boole log_server_settings_updates;  // admin log: record who saved the server settings; default off
-    boole log_kicks_and_bans;  // admin log: record kicks and bans (who did it, to whom); default off
-    boole log_client_disconnects;  // admin log: record authenticated clients disconnecting; default off
-    boole log_socket_opens_and_closes;  // admin log: record every socket opening and closing, login or not (bots show up here); default off
-    boole log_failed_attempts;  // admin log: record refused joins (wrong key, banned ip or identity, country, same ip) and wrong admin passwords; default off
+    boole is_logging_client_joins_enabled;  // admin log: record each completed join with username and ip; default off
+    boole is_logging_username_changes_enabled;  // admin log: record renames (old -> new); default off
+    boole is_logging_tag_changes_enabled;  // admin log: record tags being added to clients; default off
+    boole is_logging_server_settings_updates_enabled;  // admin log: record who saved the server settings; default off
+    boole is_logging_kicks_and_bans_enabled;  // admin log: record kicks and bans (who did it, to whom); default off
+    boole is_logging_client_disconnects_enabled;  // admin log: record authenticated clients disconnecting; default off
+    boole is_logging_socket_opens_and_closes_enabled;  // admin log: record every socket opening and closing, login or not (bots show up here); default off
+    boole is_logging_failed_attempts_enabled;  // admin log: record refused joins (wrong key, banned ip or identity, country, same ip) and wrong admin passwords; default off
     int64 admin_log_max_size_bytes;  // ram cap of the admin log; oldest entries fall out over it
     int64 admin_log_retention_days;  // admin log entries older than this are purged once a day
 } server_settings_t;
@@ -390,7 +396,6 @@ typedef enum microphone_usage_e
 #ifndef INET6_ADDRSTRLEN
 #define INET6_ADDRSTRLEN 1025
 #endif
-
 
 typedef struct music_bot_single_song_data_t
 {
@@ -472,7 +477,7 @@ typedef struct client_t
     // takes over an existing session, copy both keys and their types together
     // so the server uses the same keys as the client that just reconnected.
     crypto_session_keys_t session_keys;
-    uint64 media_send_counter; // counts the frames the server sent to this client; every relay thread increases it atomically
+    _Atomic(uint64) media_send_counter; // counts the frames the server sent to this client; every relay thread increases it atomically
     char challenge_string[CHALLENGE_STRING_LENGTH];
     char song_name[SONG_NAME_MAX_LENGTH];
     char ip_address[INET6_ADDRSTRLEN]; // max size of an ipv6 address
@@ -581,8 +586,8 @@ typedef struct client_stored_data_t
     char username[USERNAME_MAX_LENGTH];
     char base64_avatar[MAX_CLIENT_AVATAR_LENGTH];
     char alias[USERNAME_MAX_LENGTH];  // admin-registered display name for this identity; empty = none
-    int64 last_seen_unix_seconds;  // when this identity was last connected; 0 = never recorded. only filled/served when allow_last_seen is on
-    char raw_public_key[MAX_PUBLIC_KEY_LENGTH];  // the ACTUAL rsa public key, not the hash in public_key above. only collected, persisted and served while allow_offline_messages is on - it is what lets a peer encrypt a message to this identity while it is offline. empty = not known (yet)
+    int64 last_seen_unix_seconds;  // when this identity was last connected; 0 = never recorded. only filled/served when is_last_seen_enabled is on
+    char raw_public_key[MAX_PUBLIC_KEY_LENGTH];  // the ACTUAL rsa public key, not the hash in public_key above. only collected, persisted and served while is_offline_messaging_allowed is on - it is what lets a peer encrypt a message to this identity while it is offline. empty = not known (yet)
 } client_stored_data_t;
 
 // one text message waiting for a registered identity to come back. the payload is opaque to the

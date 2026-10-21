@@ -1,91 +1,34 @@
 #ifndef BASE_H
 #define BASE_H
 
-// everything should be as simple as possible, but not simpler!
+#include "definitions.h"
 
-int64   base__get_new_index_for_client(void);
-boole   base__is_server_banner_valid(cstring banner);
-boole   base__set_icon_base64(icon_t* icon, cstring base64);
-void    base__free_icon_base64(icon_t* icon);
+boole base__is_request_allowed_based_on_spam_protection(uint64 client_index);
+uint64 base__get_chat_message_id(void);
+void base__increment_chat_message_id(void);
 
-void    base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64 client_id, char* decrypted_metadata_cstring);
-void    base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, uint64 index, char* decrypted_metadata_cstring);
-void    base__hash_password_to_base64(char* plaintext, char* out, int64 out_size);
-boole   base__password_matches(char* plaintext, char* stored_base64_hash);
-void    base__free_json_message(cJSON* json_root_object1, char* json_root_object1_string);
-uint64  base__get_client_count_for_channel(uint64 channel_id);
-char*   base__encrypt_string_with_public_key(char* public_key_modulus, unsigned char* bytes, uint64 buffer_length);
-uint64  base__get_public_key_bit_length(char* public_key_modulus);
-boole   base__fill_secure_random_bytes(unsigned char* out_buffer, uint64 length);
-boole   base__fill_block_of_data_with_ascii_characters(char* block, uint64 length);
-boole   base__is_there_a_client_with_same_public_key(cstring public_key);
-uint64  base__disconnect_other_clients_with_same_public_key(uint64 client_index_to_keep, cstring public_key);
-int64   base__adopt_socket_into_existing_session(uint64 new_client_index, cstring public_key);
-boole   base__is_there_another_authenticated_client_with_same_public_key(uint64 client_index, cstring public_key);
-boole   base__assign_username_for_newly_joined_client(uint64 client_id, cstring default_name);
-boole   base__is_public_key_present_in_client_stored_data(char* public_key);
-void    base__restore_identity_tags(client_t* client);
-void    base__restore_identity_avatar(client_t* client);
-void    base__snapshot_connected_clients_into_identity_store(void);
-void    base__sync_client_identity_in_store(client_t* client);
-boole   base__delete_identity_from_store_by_hash(char* identity_hash);
-boole   base__modify_identity_tag_in_store(char* identity_hash, uint64 tag_id, boole add);
-void    base__set_identity_avatar_by_hash(char* identity_hash, char* base64_avatar);
-boole   base__get_identity_avatar_by_hash(char* identity_hash, char* out_buffer, uint64 out_buffer_size);
-void    base__restore_identity_alias(client_t* client);
-void    base__set_identity_alias_by_hash(char* identity_hash, char* alias);
-void    base__touch_identity_last_seen_by_hash(char* identity_hash);
-boole   base__is_alias_taken_by_another_identity(char* alias, char* identity_hash);
-void    base__store_identity_raw_public_key(char* identity_hash, char* raw_public_key);
-void    base__clear_identity_raw_public_key(char* identity_hash);
-boole   base__get_identity_hash_by_alias(char* alias, char* out_identity_hash, uint64 out_buffer_size);
-boole   base__is_identity_registered_by_hash(char* identity_hash);
-boole   base__queue_offline_message(char* recipient_identity_hash, char* sender_identity_hash, char* sender_alias, char* base64_encrypted_message);
-void    base__free_offline_messages_for_identity(char* identity_hash);
-void    base__close_websocket_connection(uint64 client_id, boole use_readlock);
-uint64  base__get_timestamp_ms(void);
-void    base__start_server_uptime(void);
-uint64  base__get_server_uptime_seconds(void);
-void    base__sleep_for_milliseconds(uint64 milliseconds);
-uint64  base__get_chat_message_id(void);
-void    base__increment_chat_message_id(void);
-boole   base__is_request_allowed_based_on_spam_protection(uint64 client_id);
-boole   base__find_new_maintainer_for_channel(uint64* _out__new_index_of_maintainer, uint64 channel_id, uint64 client_left_id, boole do_not_include_client_that_left_when_searching_for_new_maintainer);
-boole   base__is_there_an_unfinished_handshake_from_same_ip_address(cstring ip_address);
-boole   base__is_there_another_authenticated_client_with_same_ip_address(uint64 client_index, cstring ip_address, cstring public_key);
-void    base__mark_channels_for_deletion(uint64 channel_id, uint64* out_current_index, uint64* out_channel_indices);
-boole   base__save_server_settings_to_file(void);
-boole   base__write_file_atomically(char* path, char* contents);
-boole   base__is_tag_id_real(uint64 tag_id);
-boole   base__is_client_already_assigned_this_tag_id(uint64 client_id, uint64 this_tag_id);
-int64   base__get_index_of_tag_id_of_client(uint64 client_id, uint64 this_tag_id);
-client_t* base__find_music_bot_in_channel(uint64 channel_id);
-void    base__process_client_disconnect(uint64 client_id);
-void    base__destroy_temp_channel(uint64 temp_channel_id);
-void    base__move_client_into_channel(uint64 client_id, uint64 destination_channel_id);
-boole   base__is_client_valid(uint64 client_id);
-uint64  base__get_other_clients_in_channel(int client_to_ignore, uint64 channel_id, int64* out_receiving_client_ids);
-boole   base__is_ip_banned(char* ip_address);
-boole   base__is_identity_banned(char* public_key);
-boole   base__is_country_blocked(char* country_iso_code);
-boole   base__add_ban(char* ip_address, char* country_iso_code, char* identity, char* extra_data);
-boole   base__remove_ban_by_ip(char* ip_address);
+boole base__is_client_valid(int client_id);
+boole base__is_client_valid_and_not_music_bot(int client_id);
+boole base__is_client_valid_admin(int client_id);
+boole base__is_client_valid_musicbot(int client_id);
+boole base__is_music_bot_and_song_slot_valid(int client_id);
+boole base__is_attachment_blocked(client_t* client, cstring receive_type);
+boole base__is_server_ram_budget_reached(void);
+void base__count_webrtc_bytes(uint64 received, uint64 sent);
+void base__get_webrtc_bytes(uint64* received, uint64* sent);
+void base__start_server_uptime(void);
+uint64 base__get_server_uptime_seconds(void);
+
+void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64 client_index, char* decrypted_metadata_cstring);
+
+void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, uint64 index, char* decrypted_metadata_cstring);
 
 extern uint64 g_chat_message_id;
-
 extern client_t* g_clients_array;
 extern channel_t* g_channel_array;
 extern icon_t* g_icons_array;
 extern tag_t* g_tags_array;
 extern ban_entry_t* g_ban_array;
-extern client_stored_data_t* g_client_stored_data;
-extern pthread_mutex_t g_client_stored_data_mutex;
-extern offline_chat_message_t* g_offline_messages;
-extern pthread_mutex_t g_offline_messages_mutex;
-extern uint64 g_offline_message_sequence_counter;
-
-// global lock ordering goes like this: clients, webrtc peers (g_webrtc_peers_rwlock_guard), channels, icons, tags, bans (bans is always taken last)
-
 extern server_settings_t g_server_settings;
 extern custom_rwlock_t g_clients_global_rwlock_guard;
 extern custom_rwlock_t g_webrtc_peers_rwlock_guard;
@@ -93,7 +36,6 @@ extern custom_rwlock_t g_channels_global_rwlock_guard;
 extern custom_rwlock_t g_icons_global_rwlock_guard;
 extern custom_rwlock_t g_tags_global_rwlock_guard;
 extern custom_rwlock_t g_bans_global_rwlock_guard;
-
 extern pthread_mutex_t g_chat_message_id_mutex;
 
 #endif

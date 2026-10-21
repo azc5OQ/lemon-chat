@@ -1,0 +1,59 @@
+{
+    "admin":
+    {
+        "disabled": true
+    },
+    "apps":
+    {
+        "http":
+        {
+            "servers":
+            {
+                "lemon_chat":
+                {
+                    "listen": ["127.0.0.1:8080"],
+                    "routes":
+                    [
+                        {
+                            "match":
+                            [
+                                {
+                                    "header":
+                                    {
+                                        "Upgrade": ["websocket"]
+                                    }
+                                }
+                            ],
+                            "handle":
+                            [
+                                {
+                                    "handler": "reverse_proxy",
+                                    "upstreams":
+                                    [
+                                        {
+                                            "dial": "127.0.0.1:1111"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "handle":
+                            [
+                                {
+                                    "handler": "reverse_proxy",
+                                    "upstreams":
+                                    [
+                                        {
+                                            "dial": "127.0.0.1:80"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}

@@ -62,7 +62,7 @@ final class ServerSettings
         {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(admin.getBytes(StandardCharsets.UTF_8));
             json.put("admin_password", Base64.encodeToString(digest, Base64.NO_WRAP));
-            json.put("admin_password_is_initial", true);
+            json.put("is_admin_password_initial", true);
         }
         else if (firstRun)
         {
@@ -89,10 +89,10 @@ final class ServerSettings
             json.put("is_display_country_flags_active", false);
             json.put("is_country_blocking_active", false);
             json.put("is_wireguard_mode_active", false);
-            json.put("use_stunnel", false);
-            json.put("serve_client_http", false);
-            json.put("serve_https", false);
-            json.put("restart_on_crash", false);
+            json.put("is_stunnel_enabled", false);
+            json.put("is_client_http_enabled", false);
+            json.put("is_https_enabled", false);
+            json.put("is_restart_on_crash_enabled", false);
         }
         json.put("is_video_streaming_active", video);
         AtomicFile file = new AtomicFile(destination);

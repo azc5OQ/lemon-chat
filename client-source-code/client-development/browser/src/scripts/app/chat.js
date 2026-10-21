@@ -1025,7 +1025,7 @@ function chat__get_file_extension(filename)
  */
 function chat__send_typing_indicator()
 {
-    if (g_server_policy.allow_typing_indicator == false || g_is_authenticated == false)
+    if (g_server_policy.is_typing_indicator_allowed == false || g_is_authenticated == false)
     {
         return;
     }
