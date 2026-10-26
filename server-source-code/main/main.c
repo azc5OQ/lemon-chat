@@ -1,6 +1,7 @@
 #include "chat_websocket.h"
 #include "core/identity_store.h"
 #include "stunnel.h"
+#include "tailscale.h"
 #include "util.h"
 #include "ip_tools.h"
 #include "definitions.h"
@@ -106,7 +107,11 @@ static void _main_internal__print_browser_addresses(boole is_stunnel_started)
     {
         printf("  %s  browser (network)  http://%s:%lld/\n", g_mark_info, addresses[index], g_server_settings.http_port);
     }
-    if (g_server_settings.is_external_wss_enabled == TRUE)
+    if (g_server_settings.is_tailscale_funnel_enabled == TRUE)
+    {
+        tailscale__print_addresses();
+    }
+    else if (g_server_settings.is_external_wss_enabled == TRUE)
     {
         printf("  %s  public page        use your tunnel's HTTPS address\n", g_mark_info);
     }
@@ -147,7 +152,18 @@ static void _main_internal__print_startup_summary(void)
     printf("  %s  %-18s port %lld\n", g_mark_ok, "websocket (ws)", g_server_settings.websocket_port);
 
     // Another program can provide WSS even when the bundled stunnel is disabled.
-    if (g_server_settings.is_external_wss_enabled == TRUE)
+    if (g_server_settings.is_tailscale_funnel_enabled == TRUE)
+    {
+        if (tailscale__is_ready() == TRUE)
+        {
+            printf("  %s  %-18s port %lld (Tailscale Funnel)\n", g_mark_ok, "websocket (wss)", g_server_settings.wss_port);
+        }
+        else
+        {
+            printf("  %s  %-18s Funnel setup incomplete\n", g_mark_warn, "websocket (wss)");
+        }
+    }
+    else if (g_server_settings.is_external_wss_enabled == TRUE)
     {
         printf("  %s  %-18s configured public port %lld (external program)\n", g_mark_info, "websocket (wss)", g_server_settings.wss_port);
     }
@@ -474,7 +490,7 @@ int main(void)
     clib__rwlock_init(&g_clients_global_rwlock_guard);
     clib__rwlock_init(&g_webrtc_peers_rwlock_guard);
     clib__rwlock_init(&g_channels_global_rwlock_guard);
-    clib__rwlock_init(&g_tags_global_rwlock_guard);
+    clib__rwlock_init(&g_groups_global_rwlock_guard);
     clib__rwlock_init(&g_icons_global_rwlock_guard);
     clib__rwlock_init(&g_bans_global_rwlock_guard);
 
@@ -498,7 +514,7 @@ int main(void)
     g_channel_array = (channel_t*)memorymanager__allocate(sizeof(channel_t) * g_server_settings.max_channel_count, MEMALLOC_CHANNELS_ARRAY);
     g_client_stored_data = (client_stored_data_t*)memorymanager__allocate(sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
     g_icons_array = (icon_t*)memorymanager__allocate(sizeof(icon_t) * MAX_ICONS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
-    g_tags_array = (tag_t*)memorymanager__allocate(sizeof(tag_t) * MAX_TAGS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
+    g_groups_array = (group_t*)memorymanager__allocate(sizeof(group_t) * MAX_GROUPS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
     g_ban_array = (ban_entry_t*)memorymanager__allocate(sizeof(ban_entry_t) * MAX_BANS, MEMALLOC_BANS_ARRAY);
 
     // offline message queue: ram only, allocated once, never persisted. the payloads themselves are
@@ -508,7 +524,7 @@ int main(void)
         g_offline_messages = (offline_chat_message_t*)memorymanager__allocate(sizeof(offline_chat_message_t) * MAX_OFFLINE_MESSAGES, MEMALLOC_OFFLINE_MESSAGES_ARRAY);
     }
     g_webrtc_peers_array = (webrtc_peer_t*)memorymanager__allocate(sizeof(webrtc_peer_t) * g_server_settings.max_client_count, MEMALLOC_WEBRTC_PEERS);
-    if (g_clients_array == NULL_POINTER || g_channel_array == NULL_POINTER || g_client_stored_data == NULL_POINTER || g_icons_array == NULL_POINTER || g_tags_array == NULL_POINTER || g_ban_array == NULL_POINTER || g_webrtc_peers_array == NULL_POINTER ||
+    if (g_clients_array == NULL_POINTER || g_channel_array == NULL_POINTER || g_client_stored_data == NULL_POINTER || g_icons_array == NULL_POINTER || g_groups_array == NULL_POINTER || g_ban_array == NULL_POINTER || g_webrtc_peers_array == NULL_POINTER ||
         (g_server_settings.is_offline_messaging_allowed == TRUE && g_offline_messages == NULL_POINTER)
         // reserve chat, audio and video sockets even when media is enabled later at run time
         || ws_init_client_slots((uint32_t)g_server_settings.max_client_count * WEBSOCKET_CONNECTIONS_PER_CLIENT) != 0)
@@ -523,8 +539,13 @@ int main(void)
     }
 
     settings__init_channel_list();
-    settings__init_tags_and_icons();
+    settings__init_groups_and_icons();
     settings__load_persisted_state();
+    if (settings__ensure_default_groups() == FALSE && g_server_settings.is_permission_system_enabled == TRUE)
+    {
+        fprintf(stderr, "Cannot create the Guest group because all server group slots are in use.\n");
+        return EXIT_FAILURE;
+    }
 
     // resolve the http webroot and warn about a missing client.html now (main thread), so this and the
     // startup summary print before any worker thread is launched and cannot interleave on the console
@@ -577,6 +598,10 @@ int main(void)
     // launch stunnel (on the main thread) and print the startup summary BEFORE
     // any worker thread is started, so they cannot interleave on the console with thread log output
     stunnel__launch();
+    if (tailscale__configure() == FALSE && g_server_settings.is_tailscale_funnel_enabled == TRUE)
+    {
+        printf("%s Funnel is not verified. Forwarded client IP headers will be ignored.\n", g_mark_warn);
+    }
 
     _main_internal__print_startup_summary();
 

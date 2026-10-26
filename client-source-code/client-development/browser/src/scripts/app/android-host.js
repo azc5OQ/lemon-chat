@@ -164,7 +164,7 @@ function android_host__generate_message_sender_html(sender_client_id, display_na
 }
 
 /**
- * @brief renames every already-rendered message header of one sender, after a rename or an alias change
+ * @brief renames every already-rendered message header of one sender, after a rename
  *
  * @param number sender_client_id -> the sender
  * @param string display_name -> the new name

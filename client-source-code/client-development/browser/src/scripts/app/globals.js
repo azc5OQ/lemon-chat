@@ -32,7 +32,7 @@ var g_autoconnect_details = {
 
 // the username this client asks for while connecting; the server uses it instead of the
 // assigned user0/user1/... name, provided nobody connected is using it. leave "" for the
-// assigned name. a registered identity's admin-set name still wins over this
+// assigned name.
 var g_chosen_username = "";
 
 var g_host = "";
@@ -148,6 +148,8 @@ var g_rsa_key_too_weak_prompted_for_bits = 0;
 // admin save (server_policy); absent fields on an older server keep these defaults. the keys are the
 // field names of the message, so server_settings_tab__apply_server_policy_fields copies them generically (a number only when positive)
 var g_server_policy = {
+    is_permission_system_enabled: true,
+    is_stored_client_list_allowed: false,
     is_blocking_direct_chat_pictures_active: false,
     is_blocking_direct_chat_files_active: false,
     is_blocking_channel_chat_pictures_active: false,
@@ -160,7 +162,6 @@ var g_server_policy = {
     channel_key_reuse_leave_min_clients: 100,
     is_fast_reconnect_allowed: false,          // a lost socket may resume its session instead of starting over
     is_music_bot_marquee_visible_to_everyone: false, // a streaming bot's marquee also for people outside its channel
-    is_alias_registration_allowed: false,      // admins may register aliases (display names) on identities
     is_typing_indicator_allowed: false,             // "x is typing ..." is sent and shown
     is_client_rename_allowed: true,                // users may rename themselves (admins always may); on unless the server says otherwise
     is_link_preview_allowed: false, // URL lookup is available only when the server enables it.
@@ -170,7 +171,7 @@ var g_server_policy = {
     file_upload_max_size: 10 * 1024 * 1024,    // largest raw chat file in bytes
     is_chat_picture_allowed: true,                 // inline pictures in chat; on unless the server says otherwise
     chat_picture_max_size: 4 * 1024 * 1024,    // largest raw inline picture in bytes; bigger images still travel as files
-    icon_max_size: 5000,                       // largest raw tag/channel icon in bytes (the server settings tab upload)
+    icon_max_size: 5000,                       // largest raw group/channel icon in bytes (the server settings tab upload)
     is_video_streaming_allowed: false,         // members may stream their screen or a video file to their channel; off = no stream ui at all
     is_audio_over_websocket_allowed: false,    // voice may use the /audio websocket; a server from before this setting sends nothing and keeps it off
     is_audio_over_webrtc_allowed: true,        // voice may use the webrtc datachannel
@@ -188,7 +189,7 @@ var g_local_username = "";
 
 var g_local_client_id = 0;
 
-// true once the server granted this session the admin tag
+// true once the server granted this session the admin group
 var g_is_local_client_admin = false;
 
 var g_client_list = [];
@@ -197,7 +198,7 @@ var g_channel_list = [];
 
 var g_icons = [];
 
-var g_tags = [];
+var g_groups = [];
 
 var g_map_client_id_to_array_index = new Map();
 
@@ -245,7 +246,7 @@ var g_chat_message_receiver_id = "main";
 
 // which offline person the chat input is currently addressing (set when their circle is
 // tapped). empty whenever the open conversation is a channel or a connected client.
-var g_offline_chat_recipient_alias = "";
+var g_offline_chat_recipient_identity_hash = "";
 
 var g_selected_server_chat_message_id = null;
 

@@ -5,6 +5,7 @@
 #include "../third-party/dave-g-json/cJSON.h"
 
 boole util__get_process_ram_usage(uint64* bytes);
+boole util__find_executable(cstring command, char* path, uint64 capacity);
 boole util__start_detached_thread(void* (*entry)(void*), void* argument);
 boole util__normalize_country_code(cJSON* json_entry, char* out_code);
 uint64 util__get_timestamp_ms(void);

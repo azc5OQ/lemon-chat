@@ -10,6 +10,7 @@
 #include "../third-party/dave-g-json/cJSON.h"
 #include "base.h"
 #include "first_time_setup.h"
+#include "tailscale.h"
 #include "core/server_settings.h"
 #include "core/audio_channel.h"
 #include "../third-party/rxi-log/log.h"
@@ -55,6 +56,10 @@ static const char* g_hosting_names[] =
 };
 
 // declarations
+static cstring _first_time_setup_internal__get_hosting_requirement(first_time_setup_hosting_t hosting);
+#ifdef WIN32
+static boole _first_time_setup_internal__has_wireguard(void);
+#endif
 static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void);
 static int64 _first_time_setup_internal__ask_port(const char* question, int64 default_port);
 static boole _first_time_setup_internal__prompt_network_settings(first_time_setup_hosting_t hosting);
@@ -417,6 +422,7 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
 #endif
 
     g_server_settings.is_stunnel_enabled = FALSE;
+    g_server_settings.is_tailscale_funnel_enabled = (hosting == HOSTING_FUNNEL);
     g_server_settings.is_external_wss_enabled = (hosting == HOSTING_FUNNEL || hosting == HOSTING_CLOUDFLARE || hosting == HOSTING_NGROK || hosting == HOSTING_OTHER_PROXY);
     if (g_server_settings.is_external_wss_enabled == FALSE)
     {
@@ -451,7 +457,14 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
 
     if (g_server_settings.is_external_wss_enabled == TRUE)
     {
-        printf("%s %s%lld%s%lld%s\n", g_mark_info, "Forward public WSS port ", g_server_settings.wss_port, " to local WebSocket port ", g_server_settings.websocket_port, ".");
+        if (hosting == HOSTING_FUNNEL)
+        {
+            printf("%s %s%lld%s%lld%s\n", g_mark_info, "Funnel will forward public WSS port ", g_server_settings.wss_port, " to WebSocket port ", g_server_settings.websocket_port, ".");
+        }
+        else
+        {
+            printf("%s %s%lld%s%lld%s\n", g_mark_info, "Forward public WSS port ", g_server_settings.wss_port, " to local WebSocket port ", g_server_settings.websocket_port, ".");
+        }
         return;
     }
 
@@ -633,22 +646,99 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
 #endif
 }
 
+#ifdef WIN32
 /**
- * @brief Asks how clients will reach the server before asking for network settings.
- * @return first_time_setup_hosting_t -> the chosen hosting method
+ * @brief Finds the WireGuard commands in PATH or their installation directory.
+ * @return Whether both WireGuard commands are installed.
+ */
+static boole _first_time_setup_internal__has_wireguard(void)
+{
+    cstring folders[] = {"ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"};
+    char directory[2048];
+    char command[4096];
+    DWORD length = 0;
+    DWORD attributes = 0;
+    DWORD binary_type = 0;
+    uint index = 0;
+
+    if (util__find_executable("wg", command, sizeof(command)) == TRUE &&
+        util__find_executable("wireguard", command, sizeof(command)) == TRUE)
+    {
+        return TRUE;
+    }
+    for (index = 0; index < sizeof(folders) / sizeof(folders[0]); index++)
+    {
+        length = GetEnvironmentVariableA(folders[index], directory, sizeof(directory));
+        if (length == 0 || length >= sizeof(directory))
+        {
+            continue;
+        }
+        snprintf(command, sizeof(command), "%s\\WireGuard\\wg.exe", directory);
+        attributes = GetFileAttributesA(command);
+        if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
+            GetBinaryTypeA(command, &binary_type) == 0)
+        {
+            continue;
+        }
+        snprintf(command, sizeof(command), "%s\\WireGuard\\wireguard.exe", directory);
+        attributes = GetFileAttributesA(command);
+        if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 &&
+            GetBinaryTypeA(command, &binary_type) != 0)
+        {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+#endif
+
+/**
+ * @brief Names a missing hosting tool before the user chooses that option.
+ * @param hosting Hosting method being checked.
+ * @return Missing tool name or NULL_POINTER when the option is available.
+ */
+static cstring _first_time_setup_internal__get_hosting_requirement(first_time_setup_hosting_t hosting)
+{
+    char command[4096];
+
+    switch (hosting)
+    {
+        case HOSTING_FUNNEL:
+            return tailscale__is_available() == TRUE ? NULL_POINTER : "Tailscale";
+        case HOSTING_CLOUDFLARE:
+            return util__find_executable("cloudflared", command, sizeof(command)) == TRUE ? NULL_POINTER : "cloudflared";
+        case HOSTING_NGROK:
+            return util__find_executable("ngrok", command, sizeof(command)) == TRUE ? NULL_POINTER : "ngrok";
+        case HOSTING_WIREGUARD:
+#ifdef WIN32
+            return _first_time_setup_internal__has_wireguard() == TRUE ? NULL_POINTER : "WireGuard";
+#else
+            return util__find_executable("wg", command, sizeof(command)) == TRUE ? NULL_POINTER : "wireguard-tools (wg)";
+#endif
+        default:
+            return NULL_POINTER;
+    }
+}
+
+/**
+ * @brief Shows installed hosting tools and refuses unavailable choices.
+ * @return The hosting method selected by the user.
  */
 static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void)
 {
     char input[64];
     char* end = NULL_POINTER;
+    cstring requirement = NULL_POINTER;
+    cstring name = NULL_POINTER;
     int64 choice = HOSTING_DIRECT;
+    uint index = 0;
 
-    printf("    1) Host directly (LAN or VPS)\n");
-    printf("    2) Tailscale Funnel\n");
-    printf("    3) Cloudflare Tunnel\n");
-    printf("    4) ngrok\n");
-    printf("    5) WireGuard through a VPS (forwards TCP and UDP to this server)\n");
-    printf("    6) Another HTTPS/WSS proxy\n");
+    for (index = HOSTING_DIRECT; index <= HOSTING_OTHER_PROXY; index++)
+    {
+        requirement = _first_time_setup_internal__get_hosting_requirement((first_time_setup_hosting_t)index);
+        name = index == HOSTING_DIRECT ? "Host directly (LAN or VPS)" : g_hosting_names[index - 1];
+        printf("    %u) %s%s\n", index, name, requirement == NULL_POINTER ? "" : " (unavailable, install first)");
+    }
     while (TRUE)
     {
         printf("%s %s", g_mark_ask, "How do you want to host this server? [1]: ");
@@ -664,6 +754,13 @@ static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void)
         choice = strtol(input, &end, 10);
         if (end != input && *end == 0 && choice >= HOSTING_DIRECT && choice <= HOSTING_OTHER_PROXY)
         {
+            requirement = _first_time_setup_internal__get_hosting_requirement((first_time_setup_hosting_t)choice);
+            if (requirement != NULL_POINTER)
+            {
+                printf("%s %s is unavailable. Install %s first and make its command available to the server.\n",
+                    g_mark_warn, g_hosting_names[choice - 1], requirement);
+                continue;
+            }
             return (first_time_setup_hosting_t)choice;
         }
         printf("%s %s\n", g_mark_warn, "Enter a number from 1 to 6.");
@@ -721,7 +818,11 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
     boole is_http_tunnel = (hosting == HOSTING_FUNNEL || hosting == HOSTING_CLOUDFLARE || hosting == HOSTING_NGROK);
 
     printf("%s Hosting: %s\n", g_mark_ok, g_hosting_names[hosting - 1]);
-    if (is_http_tunnel == TRUE || hosting == HOSTING_OTHER_PROXY)
+    if (hosting == HOSTING_FUNNEL)
+    {
+        printf("%s %s\n", g_mark_info, "Install Tailscale and sign in. Lemon Chat configures Funnel when the server starts.");
+    }
+    else if (is_http_tunnel == TRUE || hosting == HOSTING_OTHER_PROXY)
     {
         printf("%s %s\n", g_mark_info, "Configure the forwarding program separately; see selfhosting-tools/README.md.");
     }
@@ -749,7 +850,11 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
         }
 
         printf("%s %s%lld\n", g_mark_info, "HTTP port: ", g_server_settings.http_port);
-        if (g_server_settings.is_external_wss_enabled == TRUE)
+        if (hosting == HOSTING_FUNNEL)
+        {
+            printf("%s %s%lld%s\n", g_mark_info, "Funnel will forward HTTPS port 443 to HTTP port ", g_server_settings.http_port, ".");
+        }
+        else if (g_server_settings.is_external_wss_enabled == TRUE)
         {
             printf("%s %s%lld%s\n", g_mark_info, "Forward the public HTTPS page to local HTTP port ", g_server_settings.http_port, ".");
         }
@@ -891,7 +996,7 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
         {
             printf("\n");
             is_tunnel_setup_requested = _first_time_setup_internal__ask_yes_no_with_note("Run the WireGuard setup script after saving these settings?",
-                                                                                         "    Configures the VPS over SSH and installs WireGuard on this machine.\n"
+                                                                                         "    Configures the VPS over SSH and connects this machine through WireGuard.\n"
                                                                                          "    Answer no if it is already configured; enter its address and UDP ports below.\n",
                                                                                          TRUE);
         }
@@ -926,6 +1031,11 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     printf("\n%s %s\n", g_mark_info, "First-time setup. Answers will be saved to server_settings.json.");
     printf("%s %s\n", "   ", "Press Enter to use the default: (Y/n) means yes; (y/N) means no.");
+
+    g_server_settings.is_permission_system_enabled = _first_time_setup_internal__ask_yes_no_with_note(
+        "Enable server groups, icons and group permissions?",
+        "    Choose no for a simple chat. The admin password still works.\n"
+        "    To change this later, edit server_settings.json and restart the server.\n", TRUE);
 
     printf("\n%s %s\n\n", g_mark_info, "1/4  Hosting and network connections.");
     hosting = _first_time_setup_internal__ask_hosting();
@@ -1044,12 +1154,12 @@ void first_time_setup__run(char plaintext_keys[][256])
     printf("\n%s %s\n\n", g_mark_info, "4/4  Client profiles and chat features.");
 
     if (_first_time_setup_internal__ask_yes_no_with_note("Save client identities on the server?",
-                                                         "    Clients keep their assigned tags when they reconnect with the same identity.\n",
+                                                         "    Clients keep their assigned groups when they reconnect with the same identity.\n",
                                                          TRUE) == FALSE)
     {
         g_server_settings.is_identity_storage_enabled = FALSE;
         printf("%s %s\n", g_mark_off, "identities: off");
-        printf("%s %s\n", "   ", "Saved display names, the registered-client list, last-seen times and offline messages require saved identities. These options will be skipped.");
+        printf("%s %s\n", "   ", "The saved user list, last seen times and offline messages require saved identities. These options will be skipped.");
     }
 
     if (_first_time_setup_internal__ask_yes_no_with_note("Allow idle clients?", "    Useful for the Android app to wait for incoming calls in the background.\n", TRUE) == FALSE)
@@ -1074,51 +1184,22 @@ void first_time_setup__run(char plaintext_keys[][256])
     }
     clib__null_memory(input, sizeof(input));
 
-    // aliases are attached to identities - without them there is nothing persistent to attach the name to
     if (g_server_settings.is_identity_storage_enabled == TRUE)
     {
-        if (_first_time_setup_internal__ask_yes_no("Allow admins to assign saved display names to client identities?", FALSE) == TRUE)
+        if (_first_time_setup_internal__ask_yes_no("Show saved users, including offline users, to clients with permission?", FALSE) == TRUE)
         {
-            g_server_settings.is_alias_registration_allowed = TRUE;
-            printf("%s %s\n", g_mark_ok, "alias registrations: on");
+            g_server_settings.is_stored_client_list_allowed = TRUE;
+            if (_first_time_setup_internal__ask_yes_no("Show when saved users were last online?", FALSE) == TRUE)
+            {
+                g_server_settings.is_last_seen_enabled = TRUE;
+            }
         }
-        else
+        if (_first_time_setup_internal__ask_yes_no_with_note("Allow offline messages for users whose groups have permission?",
+            "    The server saves public keys so users can encrypt messages for offline recipients.\n"
+            "    Encrypted messages wait in RAM until the recipient reconnects.\n"
+            "    Pending messages are lost when the server stops.\n", FALSE) == TRUE)
         {
-            printf("%s %s\n", "   ", "The registered-client list, last-seen times and offline messages require saved display names. These options will be skipped.");
-        }
-
-        // the stored-clients list is keyed and labelled by alias, so it is only useful with aliases on
-        if (g_server_settings.is_alias_registration_allowed == TRUE)
-        {
-            if (_first_time_setup_internal__ask_yes_no("Allow users to view the registered-client list, including offline clients?", FALSE) == TRUE)
-            {
-                g_server_settings.is_stored_client_list_allowed = TRUE;
-                printf("%s %s\n", g_mark_ok, "stored clients list: on");
-            }
-            else
-            {
-                printf("%s %s\n", "   ", "Last-seen times and offline messages require the registered-client list. These options will be skipped.");
-            }
-
-            // last seen only makes sense next to that list - it labels the offline entries
-            if (g_server_settings.is_stored_client_list_allowed == TRUE)
-            {
-                if (_first_time_setup_internal__ask_yes_no("Show when registered clients were last online?", FALSE) == TRUE)
-                {
-                    g_server_settings.is_last_seen_enabled = TRUE;
-                    printf("%s %s\n", g_mark_ok, "last seen: on");
-                }
-
-                if (_first_time_setup_internal__ask_yes_no_with_note("Allow users to send messages to registered clients who are offline?",
-                                                                     "    The server keeps encrypted messages in RAM until the recipient reconnects.\n"
-                                                                     "    Pending messages are lost when the server stops.\n"
-                                                                     "    This option cannot be changed in the server settings tab.\n",
-                                                                     FALSE) == TRUE)
-                {
-                    g_server_settings.is_offline_messaging_allowed = TRUE;
-                    printf("%s %s\n", g_mark_ok, "offline messages: on");
-                }
-            }
+            g_server_settings.is_offline_messaging_allowed = TRUE;
         }
     }
 
@@ -1164,7 +1245,6 @@ void first_time_setup__run(char plaintext_keys[][256])
     printf("      %s%s\n", "idle clients ......... ", (g_server_settings.is_idle_mode_allowed == TRUE) ? "on" : "off");
     printf("      %s%s\n", "country flags ........ ", (g_server_settings.is_display_country_flags_active == TRUE) ? "on" : "off");
     printf("      %s%s\n", "avatars .............. ", (g_server_settings.is_avatar_upload_allowed == TRUE) ? "on" : "off");
-    printf("      %s%s\n", "display names ........ ", (g_server_settings.is_alias_registration_allowed == TRUE) ? "on" : "off");
     printf("      %s%s\n", "people list .......... ", (g_server_settings.is_stored_client_list_allowed == TRUE) ? "on" : "off");
     printf("      %s%s\n", "last seen ............ ", (g_server_settings.is_last_seen_enabled == TRUE) ? "on" : "off");
     printf("      %s%s\n", "offline messages ..... ", (g_server_settings.is_offline_messaging_allowed == TRUE) ? "on" : "off");

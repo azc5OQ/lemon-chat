@@ -70,6 +70,23 @@ typedef int socklen_t;
 static struct ws_events cli_events;
 static atomic_uint_fast64_t ws_received_bytes;
 static atomic_uint_fast64_t ws_sent_bytes;
+static int forwarded_ip_mode = WS_FORWARDED_IP_NONE;
+
+/**
+ * @brief Chooses which proxy header local connections may supply.
+ * @param mode Forwarded address mode, set before starting the listener.
+ */
+void ws_set_forwarded_ip_mode(int mode)
+{
+    if (mode == WS_FORWARDED_IP_STUNNEL || mode == WS_FORWARDED_IP_FUNNEL)
+    {
+        forwarded_ip_mode = mode;
+    }
+    else
+    {
+        forwarded_ip_mode = WS_FORWARDED_IP_NONE;
+    }
+}
 
 /**
  * @brief Reads the bytes received by all chat, audio and video WebSocket connections since startup.
@@ -2694,6 +2711,8 @@ static int do_handshake(struct ws_frame_data *wfd)
 	char *response; /* Handshake response message. */
 	char *p; /* Last request line pointer.  */
 	ssize_t n; /* Read/Write bytes.           */
+    const char* forwarded_header = NULL;
+    int forwarded_status = 0;
 
 	/* A socket is not visible to the application's auth timeout until onopen.
 	 * Bound this initial read, then remove the timeout for established clients. */
@@ -2713,6 +2732,7 @@ static int do_handshake(struct ws_frame_data *wfd)
 		return (-1);
 	}
 
+    wfd->frm[n] = '\0';
 	/* Advance our pointers before the first next_byte(). */
 	p = strstr((const char *)wfd->frm, "\r\n\r\n");
 	if (p == NULL)
@@ -2723,31 +2743,31 @@ static int do_handshake(struct ws_frame_data *wfd)
 	wfd->amt_read = n;
 	wfd->cur_pos = (size_t)((ptrdiff_t)(p - (char *)wfd->frm)) + 4;
 
-	char *forwarded_ip_address = 0;
-	/* Only trust the X-Stunnel-Client-IP header when the connection comes from
-	 * our local stunnel front-end (127.0.0.1). A direct (non-stunnel) client
-	 * must not be able to spoof its address, so for those we ignore the header
-	 * and fall back to the real socket address below. */
-	if (strcmp(wfd->client->ip, "127.0.0.1") == 0)
-	{
-		//get forwarded ip address that stunnel sent
-		forwarded_ip_address = get_forwarded_ip_address((char *)wfd->frm);
-	}
-
-	if (forwarded_ip_address != 0)
-	{
-		wfd->client->is_using_forwarded_ip_address = true;
-		memset((void *)&wfd->client->forwarded_ip_address[0], 0, INET6_ADDRSTRLEN);
-		memcpy((void *)&wfd->client->forwarded_ip_address[0], forwarded_ip_address, strlen(forwarded_ip_address));
-
-		DEBUG_THELDUS_WEBSOCKET printf("%s %s %s", "[theldus-websocket] forwarded_ip_address is", wfd->client->forwarded_ip_address, "\n");
-		free(forwarded_ip_address);
-	}
-	else
-	{
-		wfd->client->is_using_forwarded_ip_address = false;
-		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] failed to get forwarded ip address \n");
-	}
+    wfd->client->is_using_forwarded_ip_address = false;
+    wfd->client->forwarded_ip_address[0] = '\0';
+    if (strcmp(wfd->client->ip, "127.0.0.1") == 0)
+    {
+        if (forwarded_ip_mode == WS_FORWARDED_IP_FUNNEL)
+        {
+            forwarded_header = "X-Forwarded-For";
+        }
+        else if (forwarded_ip_mode == WS_FORWARDED_IP_STUNNEL)
+        {
+            forwarded_header = "X-Stunnel-Client-IP";
+        }
+    }
+    if (forwarded_header != NULL)
+    {
+        forwarded_status = get_forwarded_ip_address((const char*)wfd->frm, wfd->cur_pos,
+            forwarded_header, wfd->client->forwarded_ip_address,
+            sizeof(wfd->client->forwarded_ip_address));
+        if (forwarded_status < 0)
+        {
+            fprintf(stderr, "[websocket] Rejected local connection with an invalid or duplicate %s header.\n", forwarded_header);
+            return -1;
+        }
+        wfd->client->is_using_forwarded_ip_address = (forwarded_status == 1);
+    }
 
 	/* Get response. */
     wfd->client->media_purpose = WS_MEDIA_PURPOSE_NONE;

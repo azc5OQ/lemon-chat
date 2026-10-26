@@ -265,7 +265,7 @@ async function main__window_onload()
             let current_html_class = (parseInt(channel.channel_id) == parseInt(g_current_channel_id)) ? " context-menu-item-disabled" : "";
             // context-menu-item keeps main__document_onmousedown from closing the menu
             // before the item's own click handler can run
-            menu_items_html += "<p class='context-menu-item channel-switch-menu-item" + current_html_class + "' data-switch-channel-id='" + channel.channel_id + "'>" + lock_html + chat__sanitize_string(channel.name) + "</p>\n";
+            menu_items_html += "<p role='menuitem' tabindex='0' class='context-menu-item channel-switch-menu-item" + current_html_class + "' data-switch-channel-id='" + channel.channel_id + "'>" + lock_html + chat__sanitize_string(channel.name) + "</p>\n";
         }
 
         let menu_html = "<div class=\"channel-list-context-menu\" style=\"top: " + click_y + "px; left: " + click_x + "px;\">\n\
@@ -278,9 +278,46 @@ async function main__window_onload()
 
         document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend", menu_html);
 
+        let menu = document.querySelector("#contextmenus-container .channel-list-context-menu:last-child");
+        if (menu != null)
+        {
+            let menu_rect = menu.getBoundingClientRect();
+            menu.setAttribute("role", "menu");
+            menu.setAttribute("aria-label", "Choose channel");
+            menu.style.left = Math.max(8, Math.min(click_x, window.innerWidth - menu_rect.width - 8)) + "px";
+            menu.style.top = Math.max(8, Math.min(click_y, window.innerHeight - menu_rect.height - 8)) + "px";
+        }
+
         let switch_items = document.getElementsByClassName("channel-switch-menu-item");
         for (let i = 0; i < switch_items.length; i++)
         {
+            switch_items[i].onkeydown = function(event)
+            {
+                if (["Enter", " ", "ArrowDown", "ArrowUp", "Escape"].includes(event.key) == false)
+                {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.key == "Enter" || event.key == " ")
+                {
+                    this.click();
+                }
+                else if (event.key == "Escape")
+                {
+                    UI.delete_contextmenus(true);
+                    let chooser = document.getElementById("pocket-channel-switch");
+                    if (chooser != null)
+                    {
+                        chooser.focus();
+                    }
+                }
+                else
+                {
+                    let next = (i + (event.key == "ArrowDown" ? 1 : -1) + switch_items.length) % switch_items.length;
+                    switch_items[next].focus();
+                }
+            };
             switch_items[i].onclick = function()
             {
                 let switch_channel_id = this.getAttribute("data-switch-channel-id");
@@ -334,9 +371,8 @@ async function main__window_onload()
         // who are away (we can tell: we were given their public key), else the info popup
         if (clone.classList.contains("offline-contact") == true)
         {
-            let offline_alias_element = clone.querySelector(".client-alias");
-            let offline_alias = (offline_alias_element != null) ? offline_alias_element.textContent : "";
-            let offline_contact = channel_tree__get_stored_client_by_alias(offline_alias);
+            let offline_identity_hash = clone.dataset.identityHash;
+            let offline_contact = channel_tree__get_stored_client_by_identity_hash(offline_identity_hash);
 
             // a TAP opens the conversation like it does for anybody else - the chat itself
             // says whether it can actually be delivered. a HOLD shows their details.
@@ -346,7 +382,7 @@ async function main__window_onload()
             }
             else
             {
-                UI.show_offline_contact_info_popup(offline_alias);
+                UI.show_offline_contact_info_popup(offline_identity_hash);
             }
             return true;
         }
@@ -370,39 +406,139 @@ async function main__window_onload()
         let member_list_press_timer = null;
         let member_list_long_press = false;
         let member_list_moved = false;
+        let member_list_press_target = null;
+        let member_list_press_element = null;
+        let member_list_press_generation = null;
+        let member_list_press_channel = null;
 
-        member_list_body.addEventListener("touchstart", function(event) {
+        function cancel_member_list_press()
+        {
+            if (member_list_press_element != null)
+            {
+                member_list_press_element.removeEventListener("touchmove", move_member_list_press);
+                member_list_press_element.removeEventListener("touchend", end_member_list_press);
+                member_list_press_element.removeEventListener("touchcancel", cancel_member_list_press);
+                member_list_press_element = null;
+            }
+            clearTimeout(member_list_press_timer);
+            member_list_moved = true;
+            member_list_long_press = false;
+            member_list_press_target = null;
+        }
+
+        /**
+         * @brief Finds the pressed row again after a participant update replaces it.
+         * @return Element the current row or null when the connection or channel changed.
+         */
+        function current_member_list_press_target()
+        {
+            if (member_list_press_target == null || !g_is_websocket_connected
+                || member_list_press_generation != g_worker_connection_generation
+                || member_list_press_channel != g_current_channel_id)
+            {
+                return null;
+            }
+            for (let row of member_list_body.children)
+            {
+                if (row.getAttribute(member_list_press_target.attribute) == member_list_press_target.value)
+                {
+                    return row;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * @brief Cancels the pending menu when the finger moves.
+         */
+        function move_member_list_press()
+        {
+            member_list_moved = true;
+            clearTimeout(member_list_press_timer);
+        }
+
+        /**
+         * @brief Opens the selected conversation or completes a held menu.
+         * @param TouchEvent event The completed touch.
+         */
+        function end_member_list_press(event)
+        {
+            let target_element = current_member_list_press_target();
+            let is_long_press = member_list_long_press;
+            let is_short_press = !member_list_moved && target_element != null;
+            cancel_member_list_press();
+            if (is_long_press)
+            {
+                event.preventDefault();
+            }
+            else if (is_short_press)
+            {
+                member_list_forward(target_element, event.changedTouches[0].clientX, event.changedTouches[0].clientY, true);
+            }
+        }
+
+        member_list_body.addEventListener("keydown", function(event)
+        {
+            if (["Enter", " ", "ContextMenu"].includes(event.key) == false && !(event.shiftKey && event.key == "F10"))
+            {
+                return;
+            }
+            let row = event.target.closest(".member-list-channel, .member-list-client");
+            if (row == null)
+            {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            let rect = row.getBoundingClientRect();
+            member_list_forward(row, rect.left, rect.bottom, event.key == "Enter" || event.key == " ");
+        });
+
+        member_list_body.addEventListener("touchstart", function(event)
+        {
             if (g_is_client_running_under_touch_device == false) { return; }
+
+            cancel_member_list_press();
+            if (event.touches.length != 1)
+            {
+                return;
+            }
+            let row = event.target.closest(".member-list-channel, .member-list-client");
+            if (row == null)
+            {
+                return;
+            }
+            let attribute = row.hasAttribute("data-member-list-channel-id") ? "data-member-list-channel-id"
+                : row.hasAttribute("data-identity-hash") ? "data-identity-hash" : "data-connected-client-id";
+            member_list_press_target = { attribute: attribute, value: row.getAttribute(attribute) };
+            member_list_press_generation = g_worker_connection_generation;
+            member_list_press_channel = g_current_channel_id;
+            member_list_press_element = event.target;
+            member_list_press_element.addEventListener("touchmove", move_member_list_press, { passive: true });
+            member_list_press_element.addEventListener("touchend", end_member_list_press, { passive: false });
+            member_list_press_element.addEventListener("touchcancel", cancel_member_list_press);
 
             member_list_long_press = false;
             member_list_moved = false;
 
-            const target_element = event.target;
             const click_x = event.touches[0].clientX;
             const click_y = event.touches[0].clientY;
 
-            member_list_press_timer = window.setTimeout(function() {
+            member_list_press_timer = window.setTimeout(function()
+            {
+                let target_element = current_member_list_press_target();
+                if (target_element == null)
+                {
+                    return;
+                }
                 member_list_long_press = true;
                 member_list_forward(target_element, click_x, click_y, false);
             }, 600);
         }, { passive: true });
 
-        member_list_body.addEventListener("touchmove", function() {
-            // finger is scrolling the member list, not pressing a circle
-            member_list_moved = true;
-            clearTimeout(member_list_press_timer);
-        }, { passive: true });
-
-        member_list_body.addEventListener("touchend", function(event) {
-            if (g_is_client_running_under_touch_device == false) { return; }
-
-            clearTimeout(member_list_press_timer);
-
-            if (member_list_long_press == false && member_list_moved == false)
-            {
-                member_list_forward(event.target, event.changedTouches[0].clientX, event.changedTouches[0].clientY, true);
-            }
-        });
+        member_list_body.addEventListener("scroll", cancel_member_list_press, { passive: true });
+        window.addEventListener("blur", cancel_member_list_press);
+        document.addEventListener("visibilitychange", cancel_member_list_press);
 
         member_list_body.addEventListener("mousedown", function(event) {
             if (g_is_client_running_under_touch_device == true) { return; }
@@ -574,8 +710,53 @@ async function main__window_onload()
     document.getElementById("msgr-neighbors-button").onclick = function()
     {
         let neighbors_now = document.body.classList.toggle("msgr-neighbors-only");
-        utils__storage_set("lemon_strip_neighbors", neighbors_now ? "1" : "0");
+        if (!document.body.classList.contains("pocket-theme-active"))
+        {
+            utils__storage_set("lemon_strip_neighbors", neighbors_now ? "1" : "0");
+        }
+        UI.refresh_member_list_controls();
     };
+
+    document.getElementById("member-list-header").addEventListener("click", function(event)
+    {
+        let button = event.target.closest("button");
+        if (button == null)
+        {
+            return;
+        }
+        if (button.id == "pocket-channel-switch")
+        {
+            let rect = button.getBoundingClientRect();
+            member_list_show_channel_switch_menu(8, rect.bottom + 4);
+            let first = document.querySelector(".channel-switch-menu-item");
+            if (first != null)
+            {
+                first.focus();
+            }
+        }
+        else if (button.id == "pocket-people-toggle")
+        {
+            document.body.classList.toggle("pocket-people-open");
+            UI.refresh_member_list_controls();
+        }
+        else if (button.id == "pocket-people-close")
+        {
+            document.body.classList.remove("pocket-people-open");
+            UI.refresh_member_list_controls();
+            document.getElementById("pocket-people-toggle").focus();
+        }
+    });
+    document.addEventListener("keydown", function(event)
+    {
+        if (event.key == "Escape" && document.body.classList.contains("pocket-people-open"))
+        {
+            document.body.classList.remove("pocket-people-open");
+            UI.refresh_member_list_controls();
+            document.getElementById("pocket-people-toggle").focus();
+        }
+    });
+    window.addEventListener("resize", UI.refresh_member_list_controls);
+    UI.refresh_member_list_controls();
 
     // own actions (set avatar / delete avatar): the same menu a long press on
     // the own row would open - the row itself is hidden in the member list themes
@@ -745,10 +926,7 @@ async function main__window_onload()
     document.getElementById("add-key-button").onclick = UI.add_key_button_on_click;
     document.getElementById("show-hide-log-button").onclick = UI.show_hide_log_on_click;
     document.querySelector("[data-chat-context-remove-selector-id='channel-0']").onclick = UI.chat_context_remove_onclick;
-    document.getElementById("close-button").onclick = UI.channel_properties_closebutton_onclick;
-    document.getElementById("create-channel-button").onclick = UI.create_channel_button_onclick;
-    document.getElementById("edit-channel-button").onclick = UI.edit_channel_button_onclick;
-    document.getElementById("channel-properties-limit-clients-checkbox").onchange = UI.refresh_channel_limit_input_visibility;
+    UI.setup_channel_properties_controls();
     document.getElementById("close-button-enter-password").onclick = UI.enter_channel_password_closebutton_onclick;
     document.getElementById("close-button-admin-password").onclick = UI.close_admin_password_context_button;
     document.getElementById("close-button-secret-identity-string").onclick = UI.close_button_secret_identity_string_onclick;
@@ -759,10 +937,8 @@ async function main__window_onload()
     document.getElementById("hide-chat-button").onclick = UI.hide_chat_container;
     document.getElementById("show-admin-password-entry").onclick = UI.enter_admin_password_button_onclick;
     document.getElementById("choose-song-file-input").onchange = UI.choose_song_file_input_onchange;
-    document.getElementById("choose_icon_input").onchange = UI.choose_icon_input_onchange;
     document.getElementById("drag-resize-chat").addEventListener('mousedown', UI.drag_resize_chat_onclick, false);
     document.getElementById("stop-song").onclick = UI.stop_song_onclick;
-    document.getElementById("add-new-tag-to-server-button").onclick = UI.add_new_tag_to_server_button_onlick;
     document.getElementById("save-server-settings-button").onclick = UI.save_server_settings_button_onclick;
     document.getElementById("server-settings-log-save-button").onclick = UI.server_settings_log_save_button_onclick;
     document.getElementById("server-settings-log-refresh-button").onclick = UI.server_settings_log_refresh_button_onclick;
@@ -816,28 +992,6 @@ async function main__window_onload()
     document.getElementById("close-button-set-new-username").onclick = UI.close_button_set_new_username_onclick;
     document.getElementById("close-button-server-settings").onclick = UI.close_button_server_settings_onclick;
     document.getElementById("poke-client-send-button").onclick = UI.poke_client_send_button_onclick;
-    document.getElementById("set-alias-send-button").onclick = UI.set_alias_send_button_onclick;
-    document.getElementById("close-button-set-alias").onclick = UI.close_button_set_alias_onclick;
-
-    // channel edit form: clicking the icon box opens the shared icon picker for that channel.
-    // no admin gate here: the picker always opens, the server rejects the request if not allowed
-    document.getElementById("channel-properties-icon-box").onclick = function()
-    {
-        if (g_channel_properties_edit_channel_id != null)
-        {
-            UI.open_channel_icon_picker(g_channel_properties_edit_channel_id);
-        }
-    };
-
-    // "remove icon" next to the box: same set_channel_icon request with no icon_id, which the
-    // server treats as clearing it; its broadcast repaints the tree row and the edit form box
-    document.getElementById("channel-properties-icon-remove-button").onclick = function()
-    {
-        if (g_channel_properties_edit_channel_id != null)
-        {
-            UI.send_set_channel_icon_request(g_channel_properties_edit_channel_id, "none");
-        }
-    };
 
     // adjust-volume dialog: close button + live slider (updates the gain of that sender's playback buffer in the worklet as it moves)
     document.getElementById("close-button-adjust-volume").onclick = function()
@@ -867,7 +1021,14 @@ async function main__window_onload()
 
     // These settings apply only on this device.
     UI.setup_local_settings_tabs();
+    document.getElementById("local-settings-show-mp3-button").checked = utils__storage_get("lemon_show_mp3_button") !== "0";
+    document.body.classList.toggle("hide-mp3-button", !document.getElementById("local-settings-show-mp3-button").checked);
+    channel_tree__setup_icon_preference();
     chat_history__setup();
+    chat_reactions__setup();
+    chat_replies__setup();
+    groups__setup();
+    server_emojis__setup();
     chat_files__setup_receive_preferences_controls();
     document.getElementById("local-settings-button").onclick = function()
     {
@@ -880,6 +1041,7 @@ async function main__window_onload()
         document.getElementById("local-settings-send-seen").checked = g_send_seen_receipts;
         document.getElementById("local-settings-auto-scroll").checked = g_auto_scroll_chat_to_end;
         document.getElementById("local-settings-hide-mic").checked = g_hide_microphone_button;
+        document.getElementById("local-settings-show-mp3-button").checked = !document.body.classList.contains("hide-mp3-button");
         document.getElementById("local-settings-sound-effects").checked = g_are_sound_effects_enabled;
         document.getElementById("local-settings-country-flags").checked = (g_show_hide_toggle == false);
         document.getElementById("local-settings-custom-cursor").checked = g_is_custom_cursor_enabled;
@@ -1072,7 +1234,11 @@ async function main__window_onload()
     document.getElementById("local-settings-member-list-neighbors").onchange = function()
     {
         document.body.classList.toggle("msgr-neighbors-only", this.checked);
-        utils__storage_set("lemon_strip_neighbors", this.checked ? "1" : "0");
+        if (!document.body.classList.contains("pocket-theme-active"))
+        {
+            utils__storage_set("lemon_strip_neighbors", this.checked ? "1" : "0");
+        }
+        UI.refresh_member_list_controls();
     };
 
     document.getElementById("local-settings-audio-availability").onchange = function()
@@ -1191,6 +1357,12 @@ async function main__window_onload()
         g_hide_microphone_button = this.checked;
         utils__storage_set("lemon_hide_mic", this.checked ? "1" : "0");
         voice__update_microphone_button();
+    };
+
+    document.getElementById("local-settings-show-mp3-button").onchange = function()
+    {
+        document.body.classList.toggle("hide-mp3-button", !this.checked);
+        utils__storage_set("lemon_show_mp3_button", this.checked ? "1" : "0");
     };
 
     document.getElementById("local-settings-file-logging").onchange = function()
@@ -1332,93 +1504,6 @@ async function main__window_onload()
         document.getElementsByClassName("server-settings-tab-li")[i].onclick = UI.server_settings_tab_li_onclick;
     }
 
-    // identity list: delete buttons are rendered dynamically, so delegate their clicks. a
-    // delete sends the identity hash; the server clears it and strips the holder's tags
-    // send an add/remove of a single tag on a stored identity (works offline)
-    let send_modify_identity_tag = function(identity_hash, tag_id, add)
-    {
-        if (identity_hash == null || identity_hash.length == 0) { return; }
-        let message_object = { message: { type: "modify_identity_tag", public_key_hash: identity_hash, tag_id: parseInt(tag_id), add: add } };
-        connection__send_message_object(message_object);
-    };
-
-    // registers (or with an empty alias, unregisters) a STORED identity by hash, so it works
-    // whether or not its owner is connected. an empty result is normal: the server refuses
-    // silently when the alias is already taken by somebody else
-    let send_set_identity_alias = function(identity_hash, alias)
-    {
-        if (identity_hash == null || identity_hash.length == 0) { return; }
-
-        let message_object = { message: { type: "set_identity_alias_request", public_key_hash: identity_hash, alias: ("" + alias).trim() } };
-        connection__send_message_object(message_object);
-
-        // the list is a server-rendered snapshot; ask for a fresh one so the alias and the
-        // registered column reflect what the server actually accepted
-        setTimeout(function()
-        {
-            let refresh_object = { message: { type: "request_identity_list" } };
-            let refresh_json = connection__process_message_before_sending(refresh_object);
-            connection__websocket_worker_send(keys__encrypt_all_message_data_and_convert_to_base64(refresh_json));
-        }, 250);
-    };
-
-    document.getElementById("server-settings-identities-list").addEventListener("click", function(event)
-    {
-        // remove a single tag from an identity (the ✕ on the tag label)
-        let tag_remove = event.target.closest(".identity-tag-remove");
-        if (tag_remove != null)
-        {
-            send_modify_identity_tag(tag_remove.getAttribute("data-identity-hash"), tag_remove.getAttribute("data-tag-id"), false);
-            return;
-        }
-
-        // save the alias typed into this row (registers the identity)
-        let alias_set_button = event.target.closest(".identity-alias-set-button");
-        if (alias_set_button != null)
-        {
-            let alias_input = document.querySelector('.identity-alias-input[data-identity-hash="' + alias_set_button.getAttribute("data-identity-hash") + '"]');
-            send_set_identity_alias(alias_set_button.getAttribute("data-identity-hash"), (alias_input != null) ? alias_input.value : "");
-            return;
-        }
-
-        // clear the alias (unregisters the identity)
-        let alias_clear_button = event.target.closest(".identity-alias-clear-button");
-        if (alias_clear_button != null)
-        {
-            send_set_identity_alias(alias_clear_button.getAttribute("data-identity-hash"), "");
-            return;
-        }
-
-        // delete the whole identity (the row's ✕)
-        let button = event.target.closest(".identity-delete-button");
-        if (button == null) { return; }
-
-        let identity_hash = button.getAttribute("data-identity-hash");
-        if (identity_hash == null || identity_hash.length == 0) { return; }
-
-        let message_object = { message: { type: "delete_identity", public_key_hash: identity_hash } };
-        connection__send_message_object(message_object);
-    });
-
-    // enter in the alias field saves it, same as pressing the ✓
-    document.getElementById("server-settings-identities-list").addEventListener("keyup", function(event)
-    {
-        if (event.key != "Enter") { return; }
-
-        let alias_input = event.target.closest(".identity-alias-input");
-        if (alias_input == null) { return; }
-
-        send_set_identity_alias(alias_input.getAttribute("data-identity-hash"), alias_input.value);
-    });
-
-    // give an identity a tag (the "+ tag" dropdown)
-    document.getElementById("server-settings-identities-list").addEventListener("change", function(event)
-    {
-        let select = event.target.closest(".identity-tag-add");
-        if (select == null || select.value === "") { return; }
-        send_modify_identity_tag(select.getAttribute("data-identity-hash"), select.value, true);
-        select.value = "";
-    });
 
     // make the server settings window draggable by its left nav column (tab clicks still work,
     // since a click without movement does not reposition the window)
@@ -1461,7 +1546,7 @@ async function main__window_onload()
         let dragging = null;
         let ox = 0;
         let oy = 0;
-        let bars = document.querySelectorAll('[id="menu-bar-container"], #server-info-header');
+        let bars = document.querySelectorAll('[id="menu-bar-container"], #server-info-header, .groups-titlebar');
         let i = 0;
         let dialog = null;
 
@@ -1471,6 +1556,8 @@ async function main__window_onload()
             dialog.style.margin = "";
             dialog.style.left = "";
             dialog.style.top = "";
+            dialog.style.right = "";
+            dialog.style.bottom = "";
         };
 
         // recenter on every open: watch each dialog's container for its display flipping on
@@ -1518,6 +1605,14 @@ async function main__window_onload()
                 {
                     recenter_observer.observe(dialog.parentElement, { attributes: true, attributeFilter: ["style"] });
                 }
+            }
+
+            else
+            {
+                dialog.addEventListener("close", function()
+                {
+                    clear_drag_pin(this);
+                });
             }
 
             bars[i].addEventListener("mousedown", function(e)
@@ -1577,6 +1672,38 @@ async function main__window_onload()
         {
             dragging = null;
         });
+        window.addEventListener("blur", function()
+        {
+            dragging = null;
+        });
+        window.addEventListener("resize", function()
+        {
+            for (let bar of bars)
+            {
+                let dialog = bar.parentElement;
+                let rect = dialog.getBoundingClientRect();
+                if (dialog.tagName === "DIALOG" && dialog.open && dialog.style.left !== "")
+                {
+                    dialog.style.left = Math.max(0, Math.min(rect.left, window.innerWidth - dialog.offsetWidth)) + "px";
+                    dialog.style.top = Math.max(0, Math.min(rect.top, window.innerHeight - dialog.offsetHeight)) + "px";
+                }
+            }
+        });
+
+        // Keep the upper left corner in place when resizing Server groups.
+        document.getElementById("groups-dialog").addEventListener("mousedown", function(event)
+        {
+            let rect = this.getBoundingClientRect();
+            if (event.button === 0 && event.clientX >= rect.right - 18 && event.clientY >= rect.bottom - 18)
+            {
+                this.style.position = "fixed";
+                this.style.margin = "0";
+                this.style.right = "auto";
+                this.style.bottom = "auto";
+                this.style.left = rect.left + "px";
+                this.style.top = rect.top + "px";
+            }
+        });
     })();
 
     UI.setup_theme_menu_positioning();
@@ -1585,8 +1712,7 @@ async function main__window_onload()
         document.getElementsByClassName("choose-theme-item")[i].onclick = UI.choose_theme_item_onclick;
     }
 
-    // on a touch device, hide every theme not tagged mobile-capable, so a phone can only pick
-    // themes that are actually laid out for it (currently just the "mobile" theme)
+    // Touch devices only show themes marked for mobile use.
     if (g_is_client_running_under_touch_device)
     {
         let theme_items = document.getElementsByClassName("choose-theme-item");
@@ -2012,7 +2138,7 @@ return {
      * @brief a snapshot of the shared state for the host, built fresh per call since several entries are reassigned rather than mutated
      *        read-only: the arrays come back live, and writing through them bypasses the handlers' invariants
      *
-     * @return object the client and channel lists, chat contexts, tags, icons, the current channel and its keys, the local ids and the connection flags
+     * @return object the client and channel lists, chat contexts, groups, icons, the current channel and its keys, the local ids and the connection flags
      */
     read_state: function()
     {
@@ -2023,7 +2149,7 @@ return {
             g_map_client_id_to_array_index: g_map_client_id_to_array_index,
             g_offline_client_list: g_offline_client_list,
             g_chat_message_author_public_keys: g_chat_message_author_public_keys,
-            g_tags: g_tags,
+            g_groups: g_groups,
             g_icons: g_icons,
             current_channel_id: g_current_channel_id,
             current_channel_keys: g_current_channel_keys,
@@ -2044,4 +2170,3 @@ return {
     }
 };
 }));
-

@@ -2,6 +2,7 @@
 #include "client_msg.h"
 #include "../server/server_msg.h"
 #include "../../audio_webrtc.h"
+#include "../../core/permissions.h"
 #include "../../base.h"
 #include "../../util.h"
 #include "../../clib/clib_string.h"
@@ -334,6 +335,15 @@ void client_msg__audio__process_microphone_usage(cJSON* json_root, uint64 sender
         }
         else if (received_microphone_usage == MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
         {
+            clib__read_lock(&g_channels_global_rwlock_guard);
+            status = client->channel_id < g_server_settings.max_channel_count
+                && permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER);
+            clib__unlock(&g_channels_global_rwlock_guard);
+            if (status == FALSE)
+            {
+                server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
+                goto label_client_msg__process_microphone_usage_end;
+            }
             if (client->audio_state != MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
             {
                 client->audio_state = MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO;

@@ -21,6 +21,7 @@
 #include "../msg/server/server_msg.h"
 
 #include "audio_channel.h"
+#include "permissions.h"
 #include "../audio_webrtc.h"
 #include "../audio_websocket.h"
 #include "../video_websocket.h"
@@ -205,6 +206,10 @@ void audio_channel__relay_voice(uint64 sender_id, ws_cli_conn_t* socket, int dat
         DBG_AUDIO_CHANNEL log_info("%s %llu %s", "relay: data channel frame of client", sender_id, "dropped: webrtc audio is not allowed, or the channel is not the client's current one");
         goto done;
     }
+    if (permissions__can_use_channel(sender, &g_channel_array[channel_id], PERMISSION_TALK_POWER) == FALSE)
+    {
+        goto done;
+    }
     body_size = media_auth__decrypt_from_client(sender, MEDIA_STREAM_AUDIO, data, size, body, sizeof(body));
     if (body_size == 0)
     {
@@ -216,6 +221,68 @@ done:
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief Stops clients whose talk power no longer meets their channel's requirement.
+ * @attention The caller holds only the clients write lock.
+ */
+void audio_channel__apply_permission_changes(void)
+{
+    uint64 i = 0;
+    client_t* client = NULL_POINTER;
+    boole* muted_channels = NULL_POINTER;
+
+    clib__read_lock(&g_channels_global_rwlock_guard);
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+        if (client->is_existing == FALSE || client->is_authenticated == FALSE
+            || client->is_music_bot == TRUE || client->channel_id >= g_server_settings.max_channel_count
+            || (client->audio_state != AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client->is_streaming_song == FALSE))
+        {
+            continue;
+        }
+        if (permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER) == TRUE)
+        {
+            continue;
+        }
+        if (client->is_streaming_song == TRUE)
+        {
+            client->is_streaming_song = FALSE;
+            server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_channel(client);
+        }
+        if (client->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE)
+        {
+            client->audio_state = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
+            audio_webrtc__set_is_client_sending_audio(i, FALSE);
+            server_msg__audio__send_state_of_client_to_all_clients(client, client->audio_state);
+        }
+        server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
+        if (muted_channels == NULL_POINTER)
+        {
+            muted_channels = calloc(g_server_settings.max_channel_count, sizeof(*muted_channels));
+        }
+        if (muted_channels != NULL_POINTER)
+        {
+            muted_channels[client->channel_id] = TRUE;
+        }
+    }
+    if (muted_channels != NULL_POINTER)
+    {
+        for (i = 0; i < g_server_settings.max_client_count; i++)
+        {
+            client = &g_clients_array[i];
+            if (client->is_existing == TRUE && client->channel_id < g_server_settings.max_channel_count
+                && muted_channels[client->channel_id] == TRUE)
+            {
+                // Remove queued audio from these channels so a muted speaker does not keep playing.
+                audio_websocket__clear_queue(client);
+            }
+        }
+        free(muted_channels);
+    }
+    clib__unlock(&g_channels_global_rwlock_guard);
 }
 
 /**

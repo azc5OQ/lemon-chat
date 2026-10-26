@@ -30,6 +30,8 @@ var VIDEO_WORKER_FLAG_LAST_PACKET = 2;
 var VIDEO_WORKER_FLAG_SOUND = 4;
 var VIDEO_WORKER_MAX_HELD_PICTURES = 16;
 var VIDEO_WORKER_FRAME_DEADLINE_MS = 250;
+var VIDEO_WORKER_KEYFRAME_DEADLINE_MS = 1500;
+var VIDEO_WORKER_MAX_DECODER_FRAMES = 32;
 var VIDEO_WORKER_MAX_PENDING_PACKETS = 256;
 
 var video_worker_channel_keys = null;      // the channel's key layers as the main thread holds them (key_bytes, iv_bytes)
@@ -46,6 +48,7 @@ var video_worker_canvas = null;
 var video_worker_context = null;
 var video_worker_decoder = null;
 var video_worker_decoder_codec = "";
+var video_worker_decoder_config = null;
 var video_worker_waiting_for_keyframe = true;
 var video_worker_assembly = null;          // the frame being reassembled: { epoch, frame_number, packet_count, received, parts, is_keyframe, timestamp }
 var video_worker_epoch = -1;
@@ -426,7 +429,7 @@ function video_worker__packetize(data)
 
         global.postMessage({ type: "video_worker__packets_ready", epoch: epoch,
             generation: data.generation, frame_number: data.frame_number,
-            expires_at: data.expires_at, is_sound: is_sound, packets: buffers }, buffers);
+            expires_at: data.expires_at, is_sound: is_sound, is_keyframe: data.is_keyframe === true, packets: buffers }, buffers);
     }, function(error)
     {
         video_worker__report_dropped_frame(data);
@@ -481,7 +484,8 @@ function video_worker__decoder_setup(codec, width, height, streamer_client_id, p
             }
         });
 
-        video_worker_decoder.configure({ codec: codec, codedWidth: width, codedHeight: height, optimizeForLatency: true });
+        video_worker_decoder_config = { codec: codec, codedWidth: width, codedHeight: height, optimizeForLatency: true };
+        video_worker_decoder.configure(video_worker_decoder_config);
         video_worker_decoder_codec = codec;
         video_worker_waiting_for_keyframe = true;
         video_worker_assembly = null;
@@ -509,6 +513,7 @@ function video_worker__decoder_close()
     video_worker_clock_offset = null;
     video_worker_last_timestamp = null;
     video_worker_decode_deadlines.clear();
+    video_worker_decoder_config = null;
     if (video_worker_decoder != null)
     {
         try { video_worker_decoder.close(); } catch (close_error) { }
@@ -809,6 +814,9 @@ function video_worker__decode_packet(buffer, received_at)
  */
 function video_worker__process_packet(packet, received_at)
 {
+    let arrival_time = 0;
+    let assembly_limit = 0;
+
     // the decoder may have been closed while the packet was being decrypted
     if (video_worker_decoder == null)
     {
@@ -925,13 +933,28 @@ function video_worker__process_packet(packet, received_at)
         video_worker_timestamp_ms += ((timestamp - video_worker_last_timestamp) | 0) / 1000;
     }
     video_worker_last_timestamp = timestamp;
+    // A full picture can take longer to arrive than the smaller pictures that follow it.
+    arrival_time = is_keyframe ? received_at : assembly.received_at;
+    assembly_limit = is_keyframe ? VIDEO_WORKER_KEYFRAME_DEADLINE_MS : VIDEO_WORKER_FRAME_DEADLINE_MS;
+
     video_worker_clock_offset = Math.min(video_worker_clock_offset === null || is_keyframe ? Infinity : video_worker_clock_offset,
-        assembly.received_at - video_worker_timestamp_ms);
+        arrival_time - video_worker_timestamp_ms);
     let due_ms = video_worker_clock_offset + video_worker_timestamp_ms;
     let now = performance.timeOrigin + performance.now();
 
-    if (now - assembly.received_at > VIDEO_WORKER_FRAME_DEADLINE_MS || now - due_ms > VIDEO_WORKER_FRAME_DEADLINE_MS
-        || video_worker_decoder.decodeQueueSize >= 3 || video_worker_decode_deadlines.size >= 3)
+    // Some decoders need several inputs before returning a picture. Old deadlines must not stop new input.
+    for (let [frame_timestamp, deadline] of video_worker_decode_deadlines)
+    {
+        if (now > deadline + VIDEO_WORKER_FRAME_DEADLINE_MS)
+        {
+            video_worker_decode_deadlines.delete(frame_timestamp);
+        }
+    }
+
+    if (now - assembly.received_at > assembly_limit || now - received_at > VIDEO_WORKER_FRAME_DEADLINE_MS
+        || now - due_ms > VIDEO_WORKER_FRAME_DEADLINE_MS
+        || (!video_worker_waiting_for_keyframe && (video_worker_decoder.decodeQueueSize >= 3
+            || video_worker_decode_deadlines.size >= VIDEO_WORKER_MAX_DECODER_FRAMES)))
     {
         video_worker__mark_gap();
         return;
@@ -954,6 +977,13 @@ function video_worker__process_packet(packet, received_at)
 
     try
     {
+        if (video_worker_waiting_for_keyframe && assembly.is_keyframe)
+        {
+            // Discard unfinished decoding before starting again from a complete picture.
+            video_worker_decoder.reset();
+            video_worker_decoder.configure(video_worker_decoder_config);
+            video_worker_decode_deadlines.clear();
+        }
         if (video_worker_decoder.state != "configured")
         {
             return;

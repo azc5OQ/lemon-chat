@@ -22,10 +22,10 @@ typedef struct listed_client_t
     boole has_music_keys;
     boole include_music_keys;
     music_bot_audio_keys_t music_keys;
-    int* tag_ids;
-    int tag_count;
+    int* group_ids;
+    int group_count;
     char username[USERNAME_MAX_LENGTH];
-    char alias[USERNAME_MAX_LENGTH];
+    char identity_hash[IDENTITY_HASH_MAX_LENGTH];
     char public_key[MAX_PUBLIC_KEY_LENGTH];
     char song_name[SONG_NAME_MAX_LENGTH];
     char country_iso_code[COUNTRY_ISO_CODE_LENGTH];
@@ -127,6 +127,8 @@ void server_msg__connection__send_authentication_status_to_single_client(client_
     cJSON_AddBoolToObject(message, "is_idle_mode_allowed", g_server_settings.is_idle_mode_allowed);
     // the receiver attempts a fast reconnect only on a server that allows it
     cJSON_AddBoolToObject(message, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
+    cJSON_AddBoolToObject(message, "is_permission_system_enabled", g_server_settings.is_permission_system_enabled);
+    cJSON_AddBoolToObject(message, "is_stored_client_list_allowed", g_server_settings.is_identity_storage_enabled && g_server_settings.is_stored_client_list_allowed);
     cJSON_AddBoolToObject(message, "is_connection_check_enforced", g_server_settings.is_connection_check_enforced);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_enabled", g_server_settings.is_channel_key_reuse_enabled);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_on_join_allowed", g_server_settings.is_channel_key_reuse_on_join_allowed);
@@ -135,7 +137,6 @@ void server_msg__connection__send_authentication_status_to_single_client(client_
     cJSON_AddNumberToObject(message, "channel_key_reuse_leave_min_clients", (double)g_server_settings.channel_key_reuse_leave_min_clients);
     // the receiver keeps marquees of streaming bots in other channels visible when this is on
     cJSON_AddBoolToObject(message, "is_music_bot_marquee_visible_to_everyone", g_server_settings.is_music_bot_marquee_visible_to_everyone);
-    cJSON_AddBoolToObject(message, "is_alias_registration_allowed", g_server_settings.is_alias_registration_allowed);
     // avatars policy travels in-protocol so clients that were NOT served by this server's http
     // server (the android app loads the page from its assets) still learn it - otherwise they
     // fall back to "avatars off" and hide the set/delete avatar actions
@@ -159,7 +160,6 @@ void server_msg__connection__send_authentication_status_to_single_client(client_
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
-    server_msg__server_settings__send_info_to_single_client(receiver, FALSE, (boole)(g_server_settings.server_banner != NULL_POINTER));
 }
 
 /**
@@ -174,7 +174,7 @@ static char* _server_msg_connection_internal__encode_client_list(void* context, 
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     cJSON* json_client_array = 0;
-    cJSON* json_tag_ids_array = 0;
+    cJSON* json_group_ids_array = 0;
     listed_client_t* client_in_loop = 0;
     cJSON* single_client = NULL_POINTER;
     cJSON* music_keys = NULL_POINTER;
@@ -222,21 +222,20 @@ static char* _server_msg_connection_internal__encode_client_list(void* context, 
         }
         cJSON_AddNumberToObject(single_client, "audio_state", (double)client_in_loop->audio_state);
 
-        if (client_in_loop->tag_ids != NULL_POINTER)
+        if (client_in_loop->group_ids != NULL_POINTER)
         {
-            json_tag_ids_array = cJSON_CreateIntArray(client_in_loop->tag_ids, client_in_loop->tag_count);
-            cJSON_AddItemToObject(single_client, "tag_ids", json_tag_ids_array);
+            json_group_ids_array = cJSON_CreateIntArray(client_in_loop->group_ids, client_in_loop->group_count);
+            cJSON_AddItemToObject(single_client, "group_ids", json_group_ids_array);
         }
         else
         {
-            json_tag_ids_array = cJSON_CreateArray();
-            cJSON_AddItemToObject(single_client, "tag_ids", json_tag_ids_array);
+            json_group_ids_array = cJSON_CreateArray();
+            cJSON_AddItemToObject(single_client, "group_ids", json_group_ids_array);
         }
 
         cJSON_AddBoolToObject(single_client, "is_idle", client_in_loop->is_idle);
 
-        // admin-registered alias (display name); empty string when none
-        cJSON_AddStringToObject(single_client, "alias", &client_in_loop->alias[0]);
+        cJSON_AddStringToObject(single_client, "identity_hash", client_in_loop->identity_hash);
 
         // property country_iso_code will always be part of response; empty for an unknown country,
         // whenever flags are not displayed, and for an admin when admin flags are kept private
@@ -291,10 +290,10 @@ void server_msg__connection__send_client_list_to_single_client(client_t* receive
     listed_client_t* listed = NULL_POINTER;
     client_t* client = NULL_POINTER;
     size_t allocation_size = sizeof(outgoing_client_list_t);
-    size_t tag_count = 0;
+    size_t group_count = 0;
     size_t count = 0;
     uint64 i = 0;
-    int* tags = NULL_POINTER;
+    int* groups = NULL_POINTER;
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
@@ -303,13 +302,13 @@ void server_msg__connection__send_client_list_to_single_client(client_t* receive
         {
             continue;
         }
-        tag_count = cvector_size(client->tag_ids);
-        if (tag_count > INT_MAX || allocation_size > SIZE_MAX - sizeof(listed_client_t) || tag_count > (SIZE_MAX - allocation_size - sizeof(listed_client_t)) / sizeof(int))
+        group_count = g_server_settings.is_permission_system_enabled ? cvector_size(client->group_ids) : 0;
+        if (group_count > INT_MAX || allocation_size > SIZE_MAX - sizeof(listed_client_t) || group_count > (SIZE_MAX - allocation_size - sizeof(listed_client_t)) / sizeof(int))
         {
             ws_abort_client(receiver->p_ws_connection);
             return;
         }
-        allocation_size += sizeof(listed_client_t) + tag_count * sizeof(int);
+        allocation_size += sizeof(listed_client_t) + group_count * sizeof(int);
         count++;
     }
     if (allocation_size > (SIZE_MAX - 8192) / 6 || !receiver->session_keys.is_ready)
@@ -327,7 +326,7 @@ void server_msg__connection__send_client_list_to_single_client(client_t* receive
     outgoing->count = count;
     outgoing->session = receiver->session_keys;
     memcpy(outgoing->local_username, receiver->username, sizeof(outgoing->local_username));
-    tags = (int*)(outgoing->clients + count);
+    groups = (int*)(outgoing->clients + count);
     count = 0;
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
@@ -345,16 +344,16 @@ void server_msg__connection__send_client_list_to_single_client(client_t* receive
         listed->is_streaming_song = client->is_streaming_song;
         listed->is_streaming_video = client->is_streaming_video;
         memcpy(listed->username, client->username, sizeof(listed->username));
-        memcpy(listed->alias, client->alias, sizeof(listed->alias));
+        util__hash_password_to_base64(client->public_key, listed->identity_hash, sizeof(listed->identity_hash));
         memcpy(listed->public_key, client->public_key, sizeof(listed->public_key));
         memcpy(listed->song_name, client->song_name, sizeof(listed->song_name));
         snprintf(listed->country_iso_code, sizeof(listed->country_iso_code), "%s", server_msg__profile__country_code_to_send(client));
-        listed->tag_count = (int)cvector_size(client->tag_ids);
-        if (listed->tag_count != 0)
+        listed->group_count = g_server_settings.is_permission_system_enabled ? (int)cvector_size(client->group_ids) : 0;
+        if (listed->group_count != 0)
         {
-            listed->tag_ids = tags;
-            memcpy(tags, client->tag_ids, (size_t)listed->tag_count * sizeof(int));
-            tags += listed->tag_count;
+            listed->group_ids = groups;
+            memcpy(groups, client->group_ids, (size_t)listed->group_count * sizeof(int));
+            groups += listed->group_count;
         }
         // Decide what this receiver may see while the channel settings are locked.
         if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE && receiver->channel_id != client->channel_id && client->channel_id < g_server_settings.max_channel_count && g_channel_array[client->channel_id].is_existing == TRUE && g_channel_array[client->channel_id].is_using_password == TRUE)
@@ -392,9 +391,10 @@ void server_msg__connection__send_client_list_to_single_client(client_t* receive
  */
 void server_msg__connection__send_client_connect_message_to_all_clients(client_t* subject)
 {
+    char identity_hash[IDENTITY_HASH_MAX_LENGTH];
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
-    cJSON* json_tag_ids_array = 0;
+    cJSON* json_group_ids_array = 0;
     uint64 x = 0;
     client_t* client_in_loop = 0;
     char* texts[4] = { 0 };
@@ -443,12 +443,13 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
         }
 
         root = server_msg__delivery__new_message("client_connect", &message);
-        // carry the connecting client's tags so identity-restored tags show up on join without a page reload
-        json_tag_ids_array = cJSON_CreateIntArray(subject->tag_ids, (int)cvector_size(subject->tag_ids));
+        // carry the connecting client's groups so identity-restored groups show up on join without a page reload
+        json_group_ids_array = cJSON_CreateIntArray(subject->group_ids, g_server_settings.is_permission_system_enabled ? (int)cvector_size(subject->group_ids) : 0);
 
         server_msg__musicbot__add_keys(message, client_in_loop, subject);
         cJSON_AddStringToObject(message, "username", subject->username);
-        cJSON_AddStringToObject(message, "alias", subject->alias);
+        util__hash_password_to_base64(subject->public_key, identity_hash, sizeof(identity_hash));
+        cJSON_AddStringToObject(message, "identity_hash", identity_hash);
         cJSON_AddStringToObject(message, "public_key", subject->public_key);
         cJSON_AddNumberToObject(message, "channel_id", (double)subject->channel_id);
         cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
@@ -465,7 +466,7 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
 
         cJSON_AddNumberToObject(message, "audio_state", audio_state_to_send);
         cJSON_AddStringToObject(message, "country_iso_code", server_msg__profile__country_code_to_send(subject));
-        cJSON_AddItemToObject(message, "tag_ids", json_tag_ids_array);
+        cJSON_AddItemToObject(message, "group_ids", json_group_ids_array);
 
         texts[variant] = cJSON_PrintUnformatted(root);
         if (texts[variant] != NULL_POINTER)

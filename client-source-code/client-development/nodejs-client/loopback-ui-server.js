@@ -4,7 +4,7 @@
 // it already knows how to read
 // the "burst" is that replayed login sequence. a real server greets a fresh login with a fixed run
 // of frames: authentication_status, channel_list, client_list, channel_maintainer_id per channel,
-// tag_list, icon_list, and then the channel keys arrive as a direct message. the ui here logs in
+// group_list, icon_list, and then the channel keys arrive as a direct message. the ui here logs in
 // long after node did, so node rebuilds that exact run from its own state and sends it in one burst
 // the moment a ui attaches, or, if node is not logged in yet, as soon as its own login state is
 // complete. to the ui a burst is indistinguishable from a real server login
@@ -199,9 +199,9 @@ function start(bundle, on_ready)
             }
         });
 
-        if (state.g_tags.length > 0)
+        if (state.g_groups.length > 0)
         {
-            frames.push({ message: { type: "tag_list", tags: state.g_tags } });
+            frames.push({ message: { type: "group_list", groups: state.g_groups } });
         }
 
         if (state.g_icons.length > 0)

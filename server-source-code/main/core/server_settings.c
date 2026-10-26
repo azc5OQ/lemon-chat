@@ -1,5 +1,6 @@
 #include "identity_store.h"
 #include "administration.h"
+#include "emojis.h"
 #include "../definitions.h"
 #include "../metadata_crypto.h"
 
@@ -12,6 +13,8 @@
 #include "../util.h"
 #include "../first_time_setup.h"
 #include "server_settings.h"
+#include "permissions.h"
+#include "channel.h"
 #include "../memory_manager.h"
 #include "../audio_websocket.h"
 #include <string.h>
@@ -87,15 +90,15 @@ void settings__init_channel_list(void)
 }
 
 /**
- * @brief rebuilds the saved channels, icons, tags, bans and identities from server_settings.json into the
+ * @brief rebuilds the saved channels, icons, groups, bans and identities from server_settings.json into the
  *        already allocated global arrays. a missing or unparseable file is a no-op.
  *
- *        each channel/icon/tag is written into the slot matching its saved id, so id references stay valid
+ *        each channel/icon/group is written into the slot matching its saved id, so id references stay valid
  *        (ids are array indices, not opaque handles). runtime-only fields are reset to their empty defaults.
- *        the channel root and the admin tag/icon (id 0) are seeded separately before this runs and are left
- *        in place, so this only fills id >= 1 for tags and icons; the admin tag's saved icon link is
+ *        the channel root and the admin group/icon (id 0) are seeded separately before this runs and are left
+ *        in place, so this only fills id >= 1 for groups and icons; the admin group's saved icon link is
  *        re-applied at the end, once the icons it may point at are loaded. bans and identities are filled
- *        sequentially instead, and an identity with no tags, no avatar and no alias is dropped rather than
+ *        sequentially instead, and an identity with no groups, no avatar and no offline messaging key is dropped rather than
  *        occupying a slot.
  *
  * @note must run after the arrays are allocated and before any client can connect.
@@ -113,31 +116,35 @@ void settings__load_persisted_state(void)
     cJSON* json_channel = NULL_POINTER;
     cJSON* json_icons = NULL_POINTER;
     cJSON* json_icon = NULL_POINTER;
-    cJSON* json_tags = NULL_POINTER;
-    cJSON* json_tag = NULL_POINTER;
+    cJSON* json_groups = NULL_POINTER;
+    cJSON* json_group = NULL_POINTER;
     cJSON* json_bans = NULL_POINTER;
     cJSON* json_ban = NULL_POINTER;
     cJSON* json_identities = NULL_POINTER;
     cJSON* json_identity = NULL_POINTER;
-    cJSON* json_identity_tag_ids = NULL_POINTER;
-    cJSON* json_identity_tag_id = NULL_POINTER;
+    cJSON* json_identity_group_ids = NULL_POINTER;
+    cJSON* json_identity_group_id = NULL_POINTER;
     cJSON* json_field = NULL_POINTER;
     channel_t* channel_in_loop = NULL_POINTER;
     icon_t* icon_in_loop = NULL_POINTER;
-    tag_t* tag_in_loop = NULL_POINTER;
+    group_t* group_in_loop = NULL_POINTER;
     ban_entry_t* ban_in_loop = NULL_POINTER;
     client_stored_data_t* identity_in_loop = NULL_POINTER;
     int64 channel_id = 0;
     int64 icon_id = 0;
-    int64 tag_id = 0;
+    int64 group_id = 0;
     uint64 loaded_channels = 0;
     uint64 loaded_icons = 0;
-    uint64 loaded_tags = 0;
+    uint64 loaded_groups = 0;
+    uint default_channel_power = 25;
     uint64 loaded_bans = 0;
     uint64 loaded_identities = 0;
     uint64 ban_slot = 0;
     uint64 identity_slot = 0;
+    uint64 membership_index = 0;
+    boole duplicate_membership = FALSE;
 
+    emojis__load(NULL_POINTER);
     settings_file = fopen("server_settings.json", "rb");
     if (settings_file == NULL_POINTER)
     {
@@ -203,6 +210,7 @@ void settings__load_persisted_state(void)
             channel_in_loop->maintainer_generation = 0;
             channel_in_loop->is_music_bot_active_in_channel = FALSE;
             channel_in_loop->current_clients = 0;
+            channel__read_required_powers(json_channel, channel_in_loop);
             channel_in_loop->parent_channel_id = -1;
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "parent_channel_id");
@@ -324,54 +332,83 @@ void settings__load_persisted_state(void)
         }
     }
 
-    // tags (id is the array index; the admin tag id 0 is seeded separately, so skip it)
-    json_tags = cJSON_GetObjectItemCaseSensitive(json_root, "tags");
-    if (cJSON_IsArray(json_tags) == TRUE)
+    // groups (id is the array index; the admin group id 0 is seeded separately, so skip it)
+    json_groups = cJSON_GetObjectItemCaseSensitive(json_root, "groups");
+    if (cJSON_IsArray(json_groups) == TRUE)
     {
-        cJSON_ArrayForEach(json_tag, json_tags)
+        cJSON_ArrayForEach(json_group, json_groups)
         {
-            json_field = cJSON_GetObjectItemCaseSensitive(json_tag, "id");
+            json_field = cJSON_GetObjectItemCaseSensitive(json_group, "id");
             if (cJSON_IsNumber(json_field) == FALSE)
             {
                 continue;
             }
 
-            tag_id = json_field->valueint;
-            if (tag_id <= 0 || tag_id >= MAX_TAGS)
+            group_id = json_field->valueint;
+            if (group_id <= 0 || group_id >= MAX_GROUPS || json_field->valuedouble != (double)group_id)
             {
                 continue;
             }
 
-            tag_in_loop = &g_tags_array[tag_id];
-            clib__null_memory(tag_in_loop, sizeof(tag_t));
-            tag_in_loop->id = tag_id;
-            tag_in_loop->is_existing = TRUE;
+            group_in_loop = &g_groups_array[group_id];
+            clib__null_memory(group_in_loop, sizeof(group_t));
+            group_in_loop->id = group_id;
+            group_in_loop->is_existing = TRUE;
 
-            json_field = cJSON_GetObjectItemCaseSensitive(json_tag, "icon_id");
+            json_field = cJSON_GetObjectItemCaseSensitive(json_group, "group_type");
+            if (cJSON_IsString(json_field) == TRUE)
+            {
+                permissions__parse_group_type(json_field->valuestring, &group_in_loop->group_type);
+            }
+            group_in_loop->is_default_guest = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json_group, "is_default_guest"));
+
+            json_field = cJSON_GetObjectItemCaseSensitive(json_group, "icon_id");
             if (cJSON_IsNumber(json_field) == TRUE)
             {
-                tag_in_loop->icon_id = (uint64)json_field->valueint;
+                group_in_loop->icon_id = (uint64)json_field->valueint;
             }
 
-            json_field = cJSON_GetObjectItemCaseSensitive(json_tag, "has_icon");
+            json_field = cJSON_GetObjectItemCaseSensitive(json_group, "has_icon");
             if (cJSON_IsBool(json_field) == TRUE)
             {
-                tag_in_loop->has_icon = cJSON_IsTrue(json_field);
+                group_in_loop->has_icon = cJSON_IsTrue(json_field);
             }
             // settings written before has_icon existed had a mandatory icon, but icon id 0 is the seeded
-            // admin icon - defaulting those to TRUE hands every iconless tag the admin shield
+            // admin icon - defaulting those to TRUE hands every iconless group the admin shield
             else
             {
-                tag_in_loop->has_icon = (boole)(tag_in_loop->icon_id != 0);
+                group_in_loop->has_icon = (boole)(group_in_loop->icon_id != 0);
             }
 
-            json_field = cJSON_GetObjectItemCaseSensitive(json_tag, "name");
+            json_field = cJSON_GetObjectItemCaseSensitive(json_group, "name");
             if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
             {
-                clib__copy_memory(json_field->valuestring, &tag_in_loop->name[0], clib__utf8_string_length(json_field->valuestring), TAG_MAX_NAME_LENGTH - 1);
+                clib__copy_memory(json_field->valuestring, &group_in_loop->name[0], clib__utf8_string_length(json_field->valuestring), GROUP_MAX_NAME_LENGTH - 1);
             }
 
-            loaded_tags++;
+            json_field = cJSON_GetObjectItemCaseSensitive(json_group, "permissions");
+            if (json_field != NULL_POINTER && permissions__read(json_field, &group_in_loop->permissions) == FALSE)
+            {
+                log_warn("Group %llu has invalid permissions. Its permissions use the defaults.", (unsigned long long)group_in_loop->id);
+            }
+            default_channel_power = group_in_loop->group_type == GROUP_TYPE_MODERATOR ? 50 : group_in_loop->group_type == GROUP_TYPE_ADMIN ? PERMISSION_POWER_MAX : 25;
+            if (cJSON_GetObjectItemCaseSensitive(json_field, "talk_power") == NULL_POINTER)
+            {
+                group_in_loop->permissions.powers[PERMISSION_TALK_POWER] = default_channel_power;
+            }
+            if (cJSON_GetObjectItemCaseSensitive(json_field, "channel_message_power") == NULL_POINTER)
+            {
+                group_in_loop->permissions.powers[PERMISSION_CHANNEL_MESSAGE_POWER] = default_channel_power;
+            }
+            if (cJSON_GetObjectItemCaseSensitive(json_field, "channel_picture_power") == NULL_POINTER)
+            {
+                group_in_loop->permissions.powers[PERMISSION_CHANNEL_PICTURE_POWER] = default_channel_power;
+            }
+            if (cJSON_GetObjectItemCaseSensitive(json_field, "stream_power") == NULL_POINTER)
+            {
+                group_in_loop->permissions.powers[PERMISSION_STREAM_POWER] = default_channel_power;
+            }
+            loaded_groups++;
         }
     }
 
@@ -426,8 +463,8 @@ void settings__load_persisted_state(void)
         }
     }
 
-    // load the identity store (public-key hash -> tag ids). only consulted on auth when identities are
-    // enabled, but always loaded so the data survives a disable/re-enable cycle. entries with no tags are
+    // load the identity store (public-key hash -> group ids). only consulted on auth when identities are
+    // enabled, but always loaded so the data survives a disable/re-enable cycle. entries with no groups are
     // dropped so they don't occupy a slot
     json_identities = cJSON_GetObjectItemCaseSensitive(json_root, "identities");
     if (cJSON_IsArray(json_identities) == TRUE)
@@ -467,11 +504,6 @@ void settings__load_persisted_state(void)
                 identity_in_loop->last_seen_unix_seconds = (int64)json_field->valuedouble;
             }
 
-            json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "alias");
-            if (cJSON_IsString(json_field) == TRUE && json_field->valuestring != NULL_POINTER)
-            {
-                clib__copy_memory(json_field->valuestring, &identity_in_loop->alias[0], clib__utf8_string_length(json_field->valuestring), USERNAME_MAX_LENGTH - 1);
-            }
 
             // the raw rsa public key, so peers can encrypt to this identity while it is offline.
             // only meaningful while offline messages are enabled
@@ -481,89 +513,189 @@ void settings__load_persisted_state(void)
                 clib__copy_memory(json_field->valuestring, &identity_in_loop->raw_public_key[0], clib__utf8_string_length(json_field->valuestring), MAX_PUBLIC_KEY_LENGTH - 1);
             }
 
-            identity_in_loop->tag_id_count = 0;
-            json_identity_tag_ids = cJSON_GetObjectItemCaseSensitive(json_identity, "tag_ids");
-            if (cJSON_IsArray(json_identity_tag_ids) == TRUE)
+            identity_in_loop->group_id_count = 0;
+            json_identity_group_ids = cJSON_GetObjectItemCaseSensitive(json_identity, "group_ids");
+            if (cJSON_IsArray(json_identity_group_ids) == TRUE)
             {
-                cJSON_ArrayForEach(json_identity_tag_id, json_identity_tag_ids)
+                cJSON_ArrayForEach(json_identity_group_id, json_identity_group_ids)
                 {
-                    if (identity_in_loop->tag_id_count >= MAX_TAGS_FOR_SINGLE_CLIENT)
+                    if (identity_in_loop->group_id_count >= MAX_GROUPS_FOR_SINGLE_CLIENT)
                     {
                         break;
                     }
-                    if (cJSON_IsNumber(json_identity_tag_id) == FALSE)
+                    if (cJSON_IsNumber(json_identity_group_id) == FALSE
+                        || json_identity_group_id->valuedouble != (double)json_identity_group_id->valueint
+                        || json_identity_group_id->valueint < 0 || json_identity_group_id->valueint >= MAX_GROUPS)
                     {
                         continue;
                     }
-                    identity_in_loop->tag_ids[identity_in_loop->tag_id_count] = (uint64)json_identity_tag_id->valueint;
-                    identity_in_loop->tag_id_count++;
+                    group_id = json_identity_group_id->valueint;
+                    if (g_groups_array[group_id].is_existing == FALSE || g_groups_array[group_id].is_default_guest == TRUE)
+                    {
+                        continue;
+                    }
+                    duplicate_membership = FALSE;
+                    for (membership_index = 0; membership_index < identity_in_loop->group_id_count; membership_index++)
+                    {
+                        if (identity_in_loop->group_ids[membership_index] == (uint64)group_id)
+                        {
+                            duplicate_membership = TRUE;
+                            break;
+                        }
+                    }
+                    if (duplicate_membership == TRUE)
+                    {
+                        continue;
+                    }
+                    identity_in_loop->group_ids[identity_in_loop->group_id_count] = (uint64)json_identity_group_id->valueint;
+                    identity_in_loop->group_id_count++;
                 }
             }
 
-            if (identity_in_loop->tag_id_count == 0 && identity_in_loop->base64_avatar[0] == 0 && identity_in_loop->alias[0] == 0)
+            if (identity_in_loop->group_id_count == 0 && identity_in_loop->base64_avatar[0] == 0 && identity_in_loop->raw_public_key[0] == 0)
             {
-                DBG_IDENTITIES log_info("%s %s %s", "load_identities: dropping stored identity [", &identity_in_loop->public_key[0], "] - it has no tags, no avatar and no alias \n");
+                DBG_IDENTITIES log_info("%s %s %s", "load_identities: dropping stored identity [", &identity_in_loop->public_key[0], "] - it has no groups, no avatar and no offline messaging key \n");
                 clib__null_memory(identity_in_loop, sizeof(client_stored_data_t));
                 continue;
             }
 
-            DBG_IDENTITIES log_info("%s %llu %s %llu %s %s %s", "load_identities: loaded into store slot", identity_slot, "with", (uint64)identity_in_loop->tag_id_count, "tag(s), hash [", &identity_in_loop->public_key[0], "] \n");
+            DBG_IDENTITIES log_info("%s %llu %s %llu %s %s %s", "load_identities: loaded into store slot", identity_slot, "with", (uint64)identity_in_loop->group_id_count, "group(s), hash [", &identity_in_loop->public_key[0], "] \n");
 
             identity_slot++;
             loaded_identities++;
         }
     }
 
-    // re-apply the admin tag's saved icon link. the admin tag was re-seeded with icon_id 0 before this
+    // re-apply the admin group's saved icon link. the admin group was re-seeded with icon_id 0 before this
     // load ran; its runtime-chosen icon (and has_icon flag) is restored here, now that the icons it may
     // point at have been loaded above
-    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_tag_icon_id");
+    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_group_icon_id");
     if (cJSON_IsNumber(json_field))
     {
-        g_tags_array[ADMIN_TAG_ID].icon_id = (uint64)json_field->valuedouble;
+        g_groups_array[ADMIN_GROUP_ID].icon_id = (uint64)json_field->valuedouble;
     }
-    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_tag_has_icon");
+    json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_group_has_icon");
     if (cJSON_IsBool(json_field))
     {
-        g_tags_array[ADMIN_TAG_ID].has_icon = cJSON_IsTrue(json_field);
+        g_groups_array[ADMIN_GROUP_ID].has_icon = cJSON_IsTrue(json_field);
     }
 
+    emojis__load(cJSON_GetObjectItemCaseSensitive(json_root, "emojis"));
     cJSON_Delete(json_root);
 
-    if (loaded_channels > 0 || loaded_icons > 0 || loaded_tags > 0 || loaded_bans > 0 || loaded_identities > 0)
+    if (loaded_channels > 0 || loaded_icons > 0 || loaded_groups > 0 || loaded_bans > 0 || loaded_identities > 0)
     {
-        printf("%s %s%llu%s%llu%s%llu%s%llu%s%llu%s\n", g_mark_ok, "restored from server_settings.json (", loaded_channels, " channels, ", loaded_icons, " icons, ", loaded_tags, " tags, ", loaded_bans, " bans, ", loaded_identities, " identities)");
+        printf("%s %s%llu%s%llu%s%llu%s%llu%s%llu%s\n", g_mark_ok, "restored from server_settings.json (", loaded_channels, " channels, ", loaded_icons, " icons, ", loaded_groups, " groups, ", loaded_bans, " bans, ", loaded_identities, " identities)");
     }
 }
 
 /**
- * @brief seeds the built-in "admin" tag in slot 0 and the shield icon it may be given, at icon id 0.
- *
- *        the icon exists but the tag ships with has_icon FALSE - an icon lives at id 0, so anything
- *        resolving tag_linked_icon_id without checking has_icon paints the shield on every tag.
- *
- * @return void
+ * @brief Creates the admin group with a grey shield icon. Saved icon choices are loaded afterwards.
  */
-void settings__init_tags_and_icons(void)
+void settings__init_groups_and_icons(void)
 {
-    char tag_name[] = "admin";
-    char base64_icon[] = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsSAAALEgHS3X78AAACU0lEQVQ4jX2TX0hTYRjGf0eOicqUydEES9L+iHQRnNafu0ASYayrXWiS0S4HFQQhCQMzDEUGQUzIGyOJbrr03LSI/hFY5DBLhyut3CkkN9eZ7sx5bHVx9LgD0nv1vc/3PA/Py/d+AmYJLV3+fC67BsBGLst2bRo5CmszpwPw8fkzAUAAhI5AMF/RcNJGnBn02vobj6MAVJWXAnDlWjsRRXEIHYHg393Eo6Nu8iX1OJ0i0Q+fCfQ84erYe/ZJEmoiQVlpOb2BSxRlM9p/xQDNxw7TP9DG3Ysu1ESCaHzJ4hcVinV1GtklAeB0injdIbzukHUvuyTGw+MATMbmARC3hQDGyyCX+85QWduI1x2i4UIvAF53H+GJIfSsztj9IF+4vpNgXV/D3+mjpeUcajxjG8ff6cPf6bNhajxj8a0ED15NWoTK2kYcVfUAdLsP2MSNTUeB1za+aOR0dHUaR1k5sksiLzjQUinCE0M28eL8AgtzM8guieWv73YMAA41nyB6r52bg11oKylWV5aZWzOXKp02X0ksLqa6uoazrQaPHoao840Rm3phGhw/cpCnW/PHPk2hpdOMDM/aEnT3nLaM1HiGvdovs/+d+GGRlha/AjAyPEvrbcVMkDNXeeiWl/6BNpLJpM24COC7GrcALZ0GQCrbA0BFSQli3gAgXsBbSZrLJADFssezAVA69xaA83fCJPQNAPStDwbwpr8DgGzTKQAiiuIQASOiKAJQIXs8GkDs2zxVNfst8fpqCiO7WigUtk2tQ+FYssfzZxeciKLUAT8LsX+oaO/ttIYBtAAAAABJRU5ErkJggg==";
-    tag_t* admin_tag = NULL_POINTER;
+    char group_name[] = "admin";
+    cstring base64_icon =
+        "data:image/svg+xml;base64,"
+        "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0i"
+        "MCAwIDE2IDE2Ij48cGF0aCBkPSJNOCAxIDE0IDN2NGMwIDQtMyA2LTYgOC0zLTItNi00LTYtOFYzWiIgZmlsbD0iI2U1ZTdl"
+        "YiIgc3Ryb2tlPSIjZjhmYWZjIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48cGF0aCBkPSJN"
+        "OCAxIDE0IDN2NGMwIDQtMyA2LTYgOC0zLTItNi00LTYtOFYzWiIgZmlsbD0iI2NiZDBkNiIgc3Ryb2tlPSIjNDI0YjU3IiBz"
+        "dHJva2UtbGluZWpvaW49InJvdW5kIi8+PHBhdGggZD0ibTUgNyAyIDIgNC00IiBmaWxsPSJub25lIiBzdHJva2U9IiM0MjRi"
+        "NTciIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48"
+        "L3N2Zz4=";
+    group_t* admin_group = NULL_POINTER;
     icon_t* admin_icon = NULL_POINTER;
 
-    admin_tag = &g_tags_array[0];
-    admin_tag->id = ADMIN_TAG_ID;
-    admin_tag->icon_id = 0;
-    // stated outright rather than left to zero-init: the admin tag ships WITHOUT an icon, even though
-    // a real icon lives at id 0, and clients must not paint one until an admin assigns it
-    admin_tag->has_icon = FALSE;
-    admin_tag->is_existing = TRUE;
-    clib__copy_memory((void*)&tag_name, (void*)&admin_tag->name, strlen(tag_name), TAG_MAX_NAME_LENGTH);
+    admin_group = &g_groups_array[ADMIN_GROUP_ID];
+    admin_group->id = ADMIN_GROUP_ID;
+    admin_group->icon_id = 0;
+    admin_group->has_icon = TRUE;
+    admin_group->is_existing = TRUE;
+    admin_group->group_type = GROUP_TYPE_ADMIN;
+    permissions__set_preset(GROUP_TYPE_ADMIN, &admin_group->permissions);
+    clib__copy_memory((void*)&group_name, (void*)&admin_group->name, strlen(group_name), GROUP_MAX_NAME_LENGTH);
 
     admin_icon = &g_icons_array[0];
     admin_icon->id = 0;
     admin_icon->is_existing = TRUE;
-    server_admin__set_icon_base64(admin_icon, &base64_icon[0]);
+    server_admin__set_icon_base64(admin_icon, base64_icon);
+}
+
+/**
+ * @brief Restores the automatic Guest group or creates it in a free slot before clients connect.
+ * @return FALSE when every group slot is already occupied and no Guest group was saved.
+ */
+boole settings__ensure_default_groups(void)
+{
+    uint64 i = 0;
+    uint64 free_id = MAX_GROUPS;
+    uint64 existing_count = 0;
+    group_t* group = NULL_POINTER;
+
+    g_guest_group_id = MAX_GROUPS;
+    for (i = 1; i < MAX_GROUPS; i++)
+    {
+        group = &g_groups_array[i];
+        if (group->is_existing == FALSE)
+        {
+            if (free_id == MAX_GROUPS)
+            {
+                free_id = i;
+            }
+            continue;
+        }
+        existing_count++;
+        if (group->is_default_guest == TRUE)
+        {
+            if (g_guest_group_id == MAX_GROUPS)
+            {
+                g_guest_group_id = i;
+                group->group_type = GROUP_TYPE_GUEST;
+            }
+            else
+            {
+                group->is_default_guest = FALSE;
+            }
+        }
+    }
+    if (g_guest_group_id < MAX_GROUPS)
+    {
+        return TRUE;
+    }
+    if (free_id == MAX_GROUPS)
+    {
+        return FALSE;
+    }
+    group = &g_groups_array[free_id];
+    clib__null_memory(group, sizeof(*group));
+    group->id = free_id;
+    group->is_existing = TRUE;
+    group->is_default_guest = TRUE;
+    group->group_type = GROUP_TYPE_GUEST;
+    clib__copy_memory("Guest", group->name, 5, GROUP_MAX_NAME_LENGTH);
+    permissions__set_preset(GROUP_TYPE_GUEST, &group->permissions);
+    g_guest_group_id = free_id;
+
+    // A new server also starts with a Normal group that the admin can assign.
+    if (existing_count == 0)
+    {
+        for (i = 1; i < MAX_GROUPS; i++)
+        {
+            group = &g_groups_array[i];
+            if (group->is_existing == FALSE)
+            {
+                clib__null_memory(group, sizeof(*group));
+                group->id = i;
+                group->is_existing = TRUE;
+                group->group_type = GROUP_TYPE_NORMAL;
+                clib__copy_memory("Normal", group->name, 6, GROUP_MAX_NAME_LENGTH);
+                permissions__set_preset(GROUP_TYPE_NORMAL, &group->permissions);
+                break;
+            }
+        }
+    }
+    return TRUE;
 }
 
 /**
@@ -722,6 +854,7 @@ void settings__load(void)
 
     clib__null_memory(&g_server_settings, sizeof(server_settings_t));
     clib__null_memory(plaintext_keys, sizeof(plaintext_keys));
+    g_server_settings.is_tailscale_funnel_enabled = FALSE;
     g_server_settings.is_server_uptime_published = TRUE;
     g_server_settings.is_server_slots_published = TRUE;
     g_server_settings.is_server_banner_published = TRUE;
@@ -742,7 +875,8 @@ void settings__load(void)
     g_server_settings.is_restrict_channel_deletion_creation_editing_to_admin_active = FALSE;
     g_server_settings.is_display_country_flags_active = FALSE;
     g_server_settings.is_admin_country_flag_hidden = FALSE;
-    g_server_settings.is_display_admin_tag_active = TRUE;
+    g_server_settings.is_permission_system_enabled = TRUE;
+    g_server_settings.is_display_admin_group_active = TRUE;
     g_server_settings.is_idle_mode_allowed = TRUE;
     g_server_settings.is_fast_reconnect_allowed = FALSE;
     g_server_settings.is_identity_takeover_allowed = FALSE;
@@ -761,7 +895,6 @@ void settings__load(void)
     g_server_settings.is_identity_storage_enabled = TRUE;
     g_server_settings.is_identity_localstorage_enabled = FALSE;
     g_server_settings.is_avatar_upload_allowed = FALSE;
-    g_server_settings.is_alias_registration_allowed = FALSE;
     g_server_settings.is_stored_client_list_allowed = FALSE;
     g_server_settings.is_last_seen_enabled = FALSE;
     g_server_settings.is_offline_messaging_allowed = FALSE;
@@ -780,7 +913,7 @@ void settings__load(void)
     g_server_settings.blocked_countries_count = 0;
     g_server_settings.is_logging_client_joins_enabled = FALSE;
     g_server_settings.is_logging_username_changes_enabled = FALSE;
-    g_server_settings.is_logging_tag_changes_enabled = FALSE;
+    g_server_settings.is_logging_group_changes_enabled = FALSE;
     g_server_settings.is_logging_server_settings_updates_enabled = FALSE;
     g_server_settings.is_logging_kicks_and_bans_enabled = FALSE;
     g_server_settings.is_logging_client_disconnects_enabled = FALSE;
@@ -994,6 +1127,12 @@ void settings__load(void)
                     g_server_settings.channel_key_reuse_leave_min_clients = (int64)json_field->valuedouble;
                 }
 
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_permission_system_enabled");
+                if (cJSON_IsBool(json_field))
+                {
+                    g_server_settings.is_permission_system_enabled = cJSON_IsTrue(json_field);
+                }
+
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_connection_check_enforced");
                 if (cJSON_IsBool(json_field))
                 {
@@ -1051,11 +1190,6 @@ void settings__load(void)
                 {
                     g_server_settings.is_avatar_upload_allowed = cJSON_IsTrue(json_field);
                 }
-                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_alias_registration_allowed");
-                if (cJSON_IsBool(json_field))
-                {
-                    g_server_settings.is_alias_registration_allowed = cJSON_IsTrue(json_field);
-                }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_stored_client_list_allowed");
                 if (cJSON_IsBool(json_field))
                 {
@@ -1106,6 +1240,12 @@ void settings__load(void)
                     }
                 }
 
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_tailscale_funnel_enabled");
+                if (cJSON_IsBool(json_field))
+                {
+                    g_server_settings.is_tailscale_funnel_enabled = cJSON_IsTrue(json_field);
+                }
+
                 // optional bundled-stunnel front-end (wss)
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_stunnel_enabled");
                 if (cJSON_IsBool(json_field))
@@ -1116,6 +1256,11 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field))
                 {
                     g_server_settings.is_external_wss_enabled = cJSON_IsTrue(json_field);
+                }
+                if (g_server_settings.is_tailscale_funnel_enabled == TRUE && g_server_settings.is_stunnel_enabled == TRUE)
+                {
+                    printf("%s %s\n", g_mark_warn, "Tailscale Funnel is enabled. Bundled stunnel is disabled for this run.");
+                    g_server_settings.is_stunnel_enabled = FALSE;
                 }
                 if (g_server_settings.is_external_wss_enabled == TRUE)
                 {
@@ -1311,10 +1456,10 @@ void settings__load(void)
                 {
                     g_server_settings.is_logging_username_changes_enabled = cJSON_IsTrue(json_field);
                 }
-                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_logging_tag_changes_enabled");
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_logging_group_changes_enabled");
                 if (cJSON_IsBool(json_field))
                 {
-                    g_server_settings.is_logging_tag_changes_enabled = cJSON_IsTrue(json_field);
+                    g_server_settings.is_logging_group_changes_enabled = cJSON_IsTrue(json_field);
                 }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_logging_server_settings_updates_enabled");
                 if (cJSON_IsBool(json_field))
@@ -1488,8 +1633,8 @@ atomic_write_end:
 
 /**
  * @brief writes the in-memory identity store (g_client_stored_data) into json_root under the "identities"
- *        key: one object per stored identity with its public-key hash and the tag ids it owns. entries with
- *        no hash or no tags are skipped. when identities are disabled the existing "identities" key is left
+ *        key: one object per stored identity with its public-key hash and the group ids it owns. entries with
+ *        no hash or no groups are skipped. when identities are disabled the existing "identities" key is left
  *        untouched, so disabling then re-enabling does not delete the stored data. guarded by the store mutex.
  *
  * @param cJSON* json_root -> the settings document being written
@@ -1500,7 +1645,7 @@ static void _settings_internal__serialize_identities(cJSON* json_root)
 {
     cJSON* json_identities = NULL_POINTER;
     cJSON* json_identity = NULL_POINTER;
-    cJSON* json_identity_tag_ids = NULL_POINTER;
+    cJSON* json_identity_group_ids = NULL_POINTER;
     uint64 i = 0;
     uint64 t = 0;
 
@@ -1518,13 +1663,13 @@ static void _settings_internal__serialize_identities(cJSON* json_root)
 
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
-        // keep a slot that has tags, an avatar or an alias (any of them makes the identity worth storing)
-        if (g_client_stored_data[i].public_key[0] == 0 || (g_client_stored_data[i].tag_id_count == 0 && g_client_stored_data[i].base64_avatar[0] == 0 && g_client_stored_data[i].alias[0] == 0))
+        // keep a slot that has groups, an avatar or an offline messaging key (any of them makes the identity worth storing)
+        if (g_client_stored_data[i].public_key[0] == 0 || (g_client_stored_data[i].group_id_count == 0 && g_client_stored_data[i].base64_avatar[0] == 0 && g_client_stored_data[i].raw_public_key[0] == 0))
         {
             continue;
         }
 
-        DBG_IDENTITIES log_info("%s %llu %s %llu %s %s %s", "serialize_identities: writing store slot", i, "with", (uint64)g_client_stored_data[i].tag_id_count, "tag(s), hash [", &g_client_stored_data[i].public_key[0], "] \n");
+        DBG_IDENTITIES log_info("%s %llu %s %llu %s %s %s", "serialize_identities: writing store slot", i, "with", (uint64)g_client_stored_data[i].group_id_count, "group(s), hash [", &g_client_stored_data[i].public_key[0], "] \n");
 
         json_identity = cJSON_CreateObject();
         cJSON_AddStringToObject(json_identity, "public_key_hash", &g_client_stored_data[i].public_key[0]);
@@ -1532,10 +1677,6 @@ static void _settings_internal__serialize_identities(cJSON* json_root)
         if (g_client_stored_data[i].base64_avatar[0] != 0)
         {
             cJSON_AddStringToObject(json_identity, "base64_avatar", &g_client_stored_data[i].base64_avatar[0]);
-        }
-        if (g_client_stored_data[i].alias[0] != 0)
-        {
-            cJSON_AddStringToObject(json_identity, "alias", &g_client_stored_data[i].alias[0]);
         }
         // only ever written while the admin keeps last-seen enabled: switching the setting off stops
         // recording AND stops the recorded values from being carried into the next save
@@ -1550,12 +1691,12 @@ static void _settings_internal__serialize_identities(cJSON* json_root)
             cJSON_AddStringToObject(json_identity, "raw_public_key", &g_client_stored_data[i].raw_public_key[0]);
         }
 
-        json_identity_tag_ids = cJSON_CreateArray();
-        for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
+        json_identity_group_ids = cJSON_CreateArray();
+        for (t = 0; t < g_client_stored_data[i].group_id_count; t++)
         {
-            cJSON_AddItemToArray(json_identity_tag_ids, cJSON_CreateNumber((double)g_client_stored_data[i].tag_ids[t]));
+            cJSON_AddItemToArray(json_identity_group_ids, cJSON_CreateNumber((double)g_client_stored_data[i].group_ids[t]));
         }
-        cJSON_AddItemToObject(json_identity, "tag_ids", json_identity_tag_ids);
+        cJSON_AddItemToObject(json_identity, "group_ids", json_identity_group_ids);
 
         cJSON_AddItemToArray(json_identities, json_identity);
     }
@@ -1566,7 +1707,7 @@ static void _settings_internal__serialize_identities(cJSON* json_root)
 /**
  * @brief saves server settings to a file
  *
- * @note caller holds the channels, icons, tags and bans locks for reading
+ * @note caller holds the channels, icons, groups and bans locks for reading
  *
  * @return boole -> TRUE if the file was written
  */
@@ -1577,8 +1718,9 @@ boole settings__save_server_settings_to_file(void)
     cJSON* json_channel = NULL_POINTER;
     cJSON* json_icons = NULL_POINTER;
     cJSON* json_icon = NULL_POINTER;
-    cJSON* json_tags = NULL_POINTER;
-    cJSON* json_tag = NULL_POINTER;
+    cJSON* json_emojis = NULL_POINTER;
+    cJSON* json_groups = NULL_POINTER;
+    cJSON* json_group = NULL_POINTER;
     cJSON* json_bans = NULL_POINTER;
     cJSON* json_ban = NULL_POINTER;
     cJSON* json_blocked_countries = NULL_POINTER;
@@ -1589,7 +1731,7 @@ boole settings__save_server_settings_to_file(void)
     uint64 bytes_read = 0;
     channel_t* channel_in_loop = NULL_POINTER;
     icon_t* icon_in_loop = NULL_POINTER;
-    tag_t* tag_in_loop = NULL_POINTER;
+    group_t* group_in_loop = NULL_POINTER;
     ban_entry_t* ban_in_loop = NULL_POINTER;
     uint64 i = 0;
     boole write_succeeded = FALSE;
@@ -1693,7 +1835,9 @@ boole settings__save_server_settings_to_file(void)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "channel_key_reuse_leave_min_clients");
     cJSON_AddNumberToObject(json_root, "channel_key_reuse_join_min_clients", (double)g_server_settings.channel_key_reuse_join_min_clients);
     cJSON_AddNumberToObject(json_root, "channel_key_reuse_leave_min_clients", (double)g_server_settings.channel_key_reuse_leave_min_clients);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_permission_system_enabled");
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_connection_check_enforced");
+    cJSON_AddBoolToObject(json_root, "is_permission_system_enabled", g_server_settings.is_permission_system_enabled == TRUE);
     cJSON_AddBoolToObject(json_root, "is_connection_check_enforced", g_server_settings.is_connection_check_enforced == TRUE);
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "max_concurrent_logins");
     cJSON_AddNumberToObject(json_root, "max_concurrent_logins", (double)g_server_settings.max_concurrent_logins);
@@ -1741,8 +1885,8 @@ boole settings__save_server_settings_to_file(void)
     cJSON_AddItemToObject(json_root, "is_logging_client_joins_enabled", cJSON_CreateBool(g_server_settings.is_logging_client_joins_enabled == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_logging_username_changes_enabled");
     cJSON_AddItemToObject(json_root, "is_logging_username_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_username_changes_enabled == TRUE));
-    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_logging_tag_changes_enabled");
-    cJSON_AddItemToObject(json_root, "is_logging_tag_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_tag_changes_enabled == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_logging_group_changes_enabled");
+    cJSON_AddItemToObject(json_root, "is_logging_group_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_group_changes_enabled == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_logging_server_settings_updates_enabled");
     cJSON_AddItemToObject(json_root, "is_logging_server_settings_updates_enabled", cJSON_CreateBool(g_server_settings.is_logging_server_settings_updates_enabled == TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_logging_kicks_and_bans_enabled");
@@ -1786,6 +1930,7 @@ boole settings__save_server_settings_to_file(void)
         cJSON_AddNumberToObject(json_channel, "channel_id", channel_in_loop->channel_id);
         cJSON_AddNumberToObject(json_channel, "parent_channel_id", (int64)channel_in_loop->parent_channel_id);
         cJSON_AddNumberToObject(json_channel, "type", channel_in_loop->type);
+        channel__write_required_powers(json_channel, channel_in_loop);
         cJSON_AddItemToObject(json_channel, "is_root_channel", cJSON_CreateBool(channel_in_loop->is_root_channel == TRUE));
         cJSON_AddItemToObject(json_channel, "is_using_password", cJSON_CreateBool(channel_in_loop->is_using_password == TRUE));
         cJSON_AddItemToObject(json_channel, "is_audio_enabled", cJSON_CreateBool(channel_in_loop->is_audio_enabled == TRUE));
@@ -1798,6 +1943,20 @@ boole settings__save_server_settings_to_file(void)
         cJSON_AddStringToObject(json_channel, "password", &channel_in_loop->password[0]);
         cJSON_AddStringToObject(json_channel, "description", &channel_in_loop->description[0]);
         cJSON_AddItemToArray(json_channels, json_channel);
+    }
+
+    json_emojis = emojis__write();
+    if (json_emojis == NULL_POINTER)
+    {
+        cJSON_Delete(json_root);
+        return FALSE;
+    }
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "emojis");
+    if (!cJSON_AddItemToObject(json_root, "emojis", json_emojis))
+    {
+        cJSON_Delete(json_emojis);
+        cJSON_Delete(json_root);
+        return FALSE;
     }
 
     // rebuild icons (skip the admin icon id 0, which is re-seeded on every start)
@@ -1818,33 +1977,36 @@ boole settings__save_server_settings_to_file(void)
         cJSON_AddItemToArray(json_icons, json_icon);
     }
 
-    // rebuild tags (skip the admin tag id 0, re-seeded on every start)
-    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "tags");
-    json_tags = cJSON_CreateArray();
-    cJSON_AddItemToObject(json_root, "tags", json_tags);
-    for (i = 0; i < MAX_TAGS; i++)
+    // rebuild groups (skip the admin group id 0, re-seeded on every start)
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "groups");
+    json_groups = cJSON_CreateArray();
+    cJSON_AddItemToObject(json_root, "groups", json_groups);
+    for (i = 0; i < MAX_GROUPS; i++)
     {
-        tag_in_loop = &g_tags_array[i];
-        if (tag_in_loop->is_existing == FALSE || tag_in_loop->id == ADMIN_TAG_ID)
+        group_in_loop = &g_groups_array[i];
+        if (group_in_loop->is_existing == FALSE || group_in_loop->id == ADMIN_GROUP_ID)
         {
             continue;
         }
 
-        json_tag = cJSON_CreateObject();
-        cJSON_AddNumberToObject(json_tag, "id", tag_in_loop->id);
-        cJSON_AddNumberToObject(json_tag, "icon_id", tag_in_loop->icon_id);
-        cJSON_AddItemToObject(json_tag, "has_icon", cJSON_CreateBool(tag_in_loop->has_icon == TRUE));
-        cJSON_AddStringToObject(json_tag, "name", &tag_in_loop->name[0]);
-        cJSON_AddItemToArray(json_tags, json_tag);
+        json_group = cJSON_CreateObject();
+        cJSON_AddNumberToObject(json_group, "id", group_in_loop->id);
+        cJSON_AddNumberToObject(json_group, "icon_id", group_in_loop->icon_id);
+        cJSON_AddItemToObject(json_group, "has_icon", cJSON_CreateBool(group_in_loop->has_icon == TRUE));
+        cJSON_AddStringToObject(json_group, "name", &group_in_loop->name[0]);
+        cJSON_AddStringToObject(json_group, "group_type", permissions__group_type_name(group_in_loop->group_type));
+        cJSON_AddBoolToObject(json_group, "is_default_guest", group_in_loop->is_default_guest);
+        cJSON_AddItemToObject(json_group, "permissions", permissions__write(&group_in_loop->permissions));
+        cJSON_AddItemToArray(json_groups, json_group);
     }
 
-    // the admin tag (id 0) itself is re-seeded on every start and skipped by the tags loop above, but its
+    // the admin group (id 0) itself is re-seeded on every start and skipped by the groups loop above, but its
     // icon IS runtime-editable, so persist just that link (icon id + has_icon) here and re-apply it after
     // the seed on load. without this the admin's chosen icon reverts to the default on every restart
-    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_tag_icon_id");
-    cJSON_AddNumberToObject(json_root, "admin_tag_icon_id", (double)g_tags_array[ADMIN_TAG_ID].icon_id);
-    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_tag_has_icon");
-    cJSON_AddItemToObject(json_root, "admin_tag_has_icon", cJSON_CreateBool(g_tags_array[ADMIN_TAG_ID].has_icon == TRUE));
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_group_icon_id");
+    cJSON_AddNumberToObject(json_root, "admin_group_icon_id", (double)g_groups_array[ADMIN_GROUP_ID].icon_id);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "admin_group_has_icon");
+    cJSON_AddItemToObject(json_root, "admin_group_has_icon", cJSON_CreateBool(g_groups_array[ADMIN_GROUP_ID].has_icon == TRUE));
 
     // rebuild the ban list (matching is by ip at socket open and by identity at join; country/extra data are recorded for the admin)
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "bans");
@@ -1867,7 +2029,7 @@ boole settings__save_server_settings_to_file(void)
         cJSON_AddItemToArray(json_bans, json_ban);
     }
 
-    // rebuild the identity store (public-key hash -> tag ids); left untouched when identities are disabled
+    // rebuild the identity store (public-key hash -> group ids); left untouched when identities are disabled
     _settings_internal__serialize_identities(json_root);
 
     json_text = cJSON_Print(json_root);
@@ -1880,7 +2042,7 @@ boole settings__save_server_settings_to_file(void)
     write_succeeded = settings__write_file_atomically("server_settings.json", json_text);
     if (write_succeeded == TRUE)
     {
-        log_info("%s", "server settings saved to server_settings.json (general settings, channels, tags)");
+        log_info("%s", "server settings saved to server_settings.json (general settings, channels, groups)");
     }
     else
     {
@@ -1958,6 +2120,7 @@ void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
     cJSON_AddBoolToObject(json_root, "is_channel_key_reuse_on_leave_allowed", g_server_settings.is_channel_key_reuse_on_leave_allowed);
     cJSON_AddNumberToObject(json_root, "channel_key_reuse_join_min_clients", (double)g_server_settings.channel_key_reuse_join_min_clients);
     cJSON_AddNumberToObject(json_root, "channel_key_reuse_leave_min_clients", (double)g_server_settings.channel_key_reuse_leave_min_clients);
+    cJSON_AddBoolToObject(json_root, "is_permission_system_enabled", g_server_settings.is_permission_system_enabled == TRUE);
     cJSON_AddBoolToObject(json_root, "is_connection_check_enforced", g_server_settings.is_connection_check_enforced == TRUE);
     cJSON_AddNumberToObject(json_root, "max_concurrent_logins", (double)g_server_settings.max_concurrent_logins);
     cJSON_AddBoolToObject(json_root, "is_blocking_direct_chat_pictures_active", g_server_settings.is_blocking_direct_chat_pictures_active);
@@ -1970,6 +2133,7 @@ void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
 
     cJSON_AddItemToObject(json_root, "is_stunnel_enabled", cJSON_CreateBool(g_server_settings.is_stunnel_enabled == TRUE));
     cJSON_AddBoolToObject(json_root, "is_external_wss_enabled", g_server_settings.is_external_wss_enabled == TRUE);
+    cJSON_AddBoolToObject(json_root, "is_tailscale_funnel_enabled", g_server_settings.is_tailscale_funnel_enabled == TRUE);
     cJSON_AddNumberToObject(json_root, "wss_port", g_server_settings.wss_port);
     cJSON_AddStringToObject(json_root, "stunnel_domain", &g_server_settings.stunnel_domain[0]);
     cJSON_AddStringToObject(json_root, "stunnel_cert_fullchain", &g_server_settings.stunnel_cert_fullchain[0]);
@@ -1988,7 +2152,6 @@ void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
     cJSON_AddItemToObject(json_root, "is_avatar_upload_allowed", cJSON_CreateBool(g_server_settings.is_avatar_upload_allowed == TRUE));
     cJSON_AddNumberToObject(json_root, "avatar_max_size_bytes", (double)g_server_settings.avatar_max_size_bytes);
     cJSON_AddNumberToObject(json_root, "icon_max_size_bytes", (double)g_server_settings.icon_max_size_bytes);
-    cJSON_AddItemToObject(json_root, "is_alias_registration_allowed", cJSON_CreateBool(g_server_settings.is_alias_registration_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "is_stored_client_list_allowed", cJSON_CreateBool(g_server_settings.is_stored_client_list_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "is_last_seen_enabled", cJSON_CreateBool(g_server_settings.is_last_seen_enabled == TRUE));
     cJSON_AddItemToObject(json_root, "is_offline_messaging_allowed", cJSON_CreateBool(g_server_settings.is_offline_messaging_allowed == TRUE));
@@ -2008,7 +2171,7 @@ void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
     // the admin log toggles are not setup questions either; all off until the admin turns them on
     cJSON_AddItemToObject(json_root, "is_logging_client_joins_enabled", cJSON_CreateBool(g_server_settings.is_logging_client_joins_enabled == TRUE));
     cJSON_AddItemToObject(json_root, "is_logging_username_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_username_changes_enabled == TRUE));
-    cJSON_AddItemToObject(json_root, "is_logging_tag_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_tag_changes_enabled == TRUE));
+    cJSON_AddItemToObject(json_root, "is_logging_group_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_group_changes_enabled == TRUE));
     cJSON_AddItemToObject(json_root, "is_logging_server_settings_updates_enabled", cJSON_CreateBool(g_server_settings.is_logging_server_settings_updates_enabled == TRUE));
     cJSON_AddItemToObject(json_root, "is_logging_kicks_and_bans_enabled", cJSON_CreateBool(g_server_settings.is_logging_kicks_and_bans_enabled == TRUE));
     cJSON_AddItemToObject(json_root, "is_logging_client_disconnects_enabled", cJSON_CreateBool(g_server_settings.is_logging_client_disconnects_enabled == TRUE));

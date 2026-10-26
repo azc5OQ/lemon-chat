@@ -94,7 +94,10 @@ add_executable(chat-server
         core/attachments.c
         core/identity_store.c
         core/administration.c
+        core/emojis.c
+        core/permissions.c
         stunnel.c
+        tailscale.c
         core/audio_channel.c
         audio_webrtc.c
         audio_websocket.c
@@ -118,6 +121,7 @@ add_executable(chat-server
         msg/client/client_msg_profile.c
         msg/client/client_msg_server_settings.c
         msg/client/client_msg_administration.c
+        msg/client/client_msg_emojis.c
         msg/client/client_msg_audio.c
         msg/client/client_msg_video.c
         msg/client/client_msg_musicbot.c
@@ -130,6 +134,7 @@ add_executable(chat-server
         msg/server/server_msg_profile.c
         msg/server/server_msg_server_settings.c
         msg/server/server_msg_administration.c
+        msg/server/server_msg_emojis.c
         msg/server/server_msg_audio.c
         msg/server/server_msg_video.c
         msg/server/server_msg_musicbot.c

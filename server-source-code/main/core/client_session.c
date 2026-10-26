@@ -254,7 +254,7 @@ uint64 client_session__disconnect_other_clients_with_same_public_key(uint64 clie
 
 /**
  * @brief fast reconnect: hands the new socket to this identity's still-open session, so the session keeps
- *        its id, channel, name, tags and roles. the old socket is closed without any broadcast
+ *        its id, channel, name, groups and roles. the old socket is closed without any broadcast
  *
  * @param uint64 new_client_index -> the entry the new socket got at _chat_websocket_internal__onopen; emptied on success
  * @param cstring public_key -> the key the new socket just proved it owns
@@ -302,7 +302,7 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
     old_ws_connection = old_session->p_ws_connection;
     timestamp_now = util__get_timestamp_ms();
 
-    // the per-socket half moves over; the session half (id, channel, name, tags, roles, avatar) stays
+    // the per-socket half moves over; the session half (id, channel, name, groups, roles, avatar) stays
     old_session->p_ws_connection = new_entry->p_ws_connection;
     old_session->is_dh_shared_secret_agreed_upon = new_entry->is_dh_shared_secret_agreed_upon;
     old_session->is_public_key_challenge_sent = new_entry->is_public_key_challenge_sent;
@@ -329,9 +329,9 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
 
     // the throwaway entry owns nothing on the heap this early in the handshake; mirrored from the
     // disconnect path anyway, so a later change there cannot turn this into a leak
-    if (new_entry->tag_ids != NULL_POINTER)
+    if (new_entry->group_ids != NULL_POINTER)
     {
-        cvector_free(new_entry->tag_ids);
+        cvector_free(new_entry->group_ids);
     }
     if (new_entry->base64_avatar != NULL_POINTER)
     {
@@ -536,12 +536,12 @@ void client_session__process_client_disconnect(uint64 client_index)
 
         DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "client_session__process_client_disconnect setting client struct to null ", client_index, "\n");
 
-        if (client->tag_ids != NULL_POINTER)
+        if (client->group_ids != NULL_POINTER)
         {
-            cvector_free(client->tag_ids);
+            cvector_free(client->group_ids);
         }
 
-        // tag_ids are the only thing stored in vector
+        // group_ids are the only thing stored in vector
         // if vector is NULL, that's okay
 
         // clear out file upload buffer
@@ -579,43 +579,4 @@ void client_session__process_client_disconnect(uint64 client_index)
     }
 }
 
-/**
- * @brief tells whether a username is currently worn by some OTHER connected client. usernames are
- *        the one name a person is shown under, so every path that writes one has to ask this first.
- *
- * @param char* username -> the name to look for (exact compare, like the rename path)
- * @param uint64 client_id_to_skip -> the client the name is meant for, skipped in the scan
- *
- * @attention the caller must already hold a lock on clients_global_rwlock_guard
- *
- * @return boole TRUE when another connected client already uses this username
- */
-boole client_session__is_username_taken_by_another_client(char* username, uint64 client_id_to_skip)
-{
-    uint64 i = 0;
 
-    if (username == NULL_POINTER || username[0] == 0)
-    {
-        return FALSE;
-    }
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        if (i == client_id_to_skip)
-        {
-            continue;
-        }
-
-        if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
-        {
-            continue;
-        }
-
-        if (clib__is_string_equal(g_clients_array[i].username, username) == TRUE)
-        {
-            return TRUE;
-        }
-    }
-
-    return FALSE;
-}

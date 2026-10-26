@@ -1,0 +1,812 @@
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+{
+    width: min(1110px, calc(100vw - 24px));
+    max-width: none;
+    max-height: calc(100dvh - 24px);
+    padding: 0;
+    margin: auto;
+    color: var(--set-text, #e8e8e8);
+    background: var(--groups-background, var(--groups-panel, var(--set-panel, #36393f)));
+    border: var(--groups-frame, 1px solid var(--set-line, rgba(255, 255, 255, 0.14)));
+    border-radius: var(--groups-radius, var(--set-radius, 8px));
+    box-shadow: var(--groups-shadow, 0 8px 30px #0005);
+    backdrop-filter: var(--groups-blur, none);
+    font: 12px/1.35 var(--set-font, 'Raleway', sans-serif);
+    overflow: auto;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)::backdrop
+{
+    background: var(--groups-backdrop, #0006);
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) *,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) *::before,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) *::after
+{
+    box-sizing: border-box;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) [hidden]
+{
+    display: none !important;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) button:where(:not(.close-button)),
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) input,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) select
+{
+    position: static;
+    float: none;
+    margin: 0;
+    font: inherit;
+    color: var(--set-field-text, inherit);
+    border: var(--set-field-border, 1px solid var(--set-line, rgba(255, 255, 255, 0.14)));
+    border-radius: var(--set-radius, 4px);
+    background: var(--set-field, rgba(255, 255, 255, 0.06));
+    padding: 3px 7px;
+    min-height: 27px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) input[type="search"],
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) input[type="text"]
+{
+    width: 100%;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) button:where(:not(.close-button))
+{
+    cursor: default;
+    font-size: 12px;
+    padding: 6px 13px;
+    color: var(--set-button-text, var(--set-accent-text, #ffffff));
+    background: var(--set-button-bg, var(--set-accent, #5a8cff));
+    border: var(--set-button-border, 1px solid transparent);
+    box-shadow: none;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) button:where(:not(.close-button)):active:not(:disabled)
+{
+    filter: brightness(0.92);
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) button:where(:not(.close-button)):hover:not(:disabled)
+{
+    filter: var(--set-button-hover-filter, brightness(1.14));
+    background: var(--set-button-hover-bg, var(--set-button-bg, var(--set-accent, #5a8cff)));
+    color: var(--set-button-hover-text, var(--set-button-text, var(--set-accent-text, #ffffff)));
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) :focus-visible
+{
+    outline: 2px solid var(--set-accent, #6ab2f2);
+    outline-offset: -2px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) :disabled
+{
+    opacity: .55;
+    cursor: default;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-titlebar,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-detail-heading,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-footer,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-toolbar
+{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-titlebar
+{
+    justify-content: space-between;
+    padding: 5px 8px 5px 12px;
+    border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    background: var(--groups-title-background, var(--groups-panel, var(--set-panel, #36393f)));
+    color: var(--groups-title-text, var(--set-text, #e8e8e8));
+}
+
+/* Let the theme replace the browser's button background. */
+:where(#groups-dialog, #groups-log-dialog, #groups-icon-picker) :where(.close-button)
+{
+    background: transparent;
+}
+
+/* Use each theme's close button. Only its position belongs to this window. */
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button
+{
+    position: relative;
+    inset: auto;
+    flex: 0 0 auto;
+    float: none;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    min-height: 0;
+    box-shadow: none;
+    cursor: default;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-columns
+{
+    display: grid;
+    grid-template-columns: minmax(170px, 21%) minmax(0, 1fr) minmax(190px, 24%);
+    gap: 10px;
+    padding: 10px;
+    height: min(550px, calc(100dvh - 135px));
+    min-height: 360px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-sidebar,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-details,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-members-panel
+{
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-details,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-members-panel
+{
+    border-left: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    padding-left: 10px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) h2,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) p
+{
+    position: static;
+    display: block;
+    margin: 0;
+    padding: 0;
+    width: auto;
+    height: auto;
+    font: inherit;
+    color: inherit;
+    overflow-wrap: anywhere;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) h2
+{
+    font-weight: 600;
+    flex: 1;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-mode-label,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-filter,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-filter label,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-assignment-options
+{
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-mode-label,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-filter label
+{
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) input[type="checkbox"]
+{
+    width: 14px;
+    height: 14px;
+    min-height: 14px;
+    flex: 0 0 14px;
+    padding: 0;
+    accent-color: var(--set-accent, #6ab2f2);
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-list,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-members,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-table-scroll
+{
+    flex: 1;
+    overflow: auto;
+    min-height: 80px;
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    background: var(--groups-list-background, var(--set-field, rgba(255, 255, 255, 0.06)));
+    color: var(--set-field-text, inherit);
+    scrollbar-width: thin;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member
+{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-align: left;
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    box-shadow: none;
+    min-height: 27px;
+    padding: 3px 5px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry > span,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member-name
+{
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry small,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member small
+{
+    font-size: 11px;
+    opacity: .7;
+    flex: 0 0 auto;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-icon
+{
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    object-fit: contain;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-create,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-icon-setting
+{
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-icon-setting
+{
+    border-top: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    padding-top: 7px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-preset-description
+{
+    margin: 0;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-button,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-preview
+{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-preview span
+{
+    display: none;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-options
+{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 48px);
+    align-content: start;
+    justify-content: start;
+    gap: 6px;
+    height: min(340px, 42dvh);
+    min-height: 54px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding: 3px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-options button
+{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    padding: 4px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    box-shadow: none;
+    filter: none;
+}
+
+#groups-icon-picker #groups-icon-options button:is(:hover, :focus-visible)
+{
+    background: var(--set-row-hover, rgba(255, 255, 255, 0.05));
+    color: inherit;
+    filter: none;
+}
+
+#groups-icon-picker #groups-icon-options button[aria-pressed="true"]
+{
+    background: var(--set-selected, #2b5278);
+    color: var(--set-selected-text, var(--set-text, #e8e8e8));
+}
+
+#groups-icon-picker #groups-icon-options .groups-icon
+{
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+}
+
+#groups-icon-picker .groups-icon-choice
+{
+    width: 48px;
+    height: 48px;
+    padding: 0;
+}
+
+#groups-icon-picker #groups-icon-options .groups-empty
+{
+    grid-column: 1 / -1;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-permission-form
+{
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-table
+{
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;
+    font: inherit;
+    color: inherit;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-table th
+{
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    text-align: left;
+    font-weight: 400;
+    background: var(--groups-panel, var(--set-panel, #36393f));
+    border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    padding: 5px 8px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-table th:last-child
+{
+    width: 112px;
+    border-left: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-table td
+{
+    padding: 0;
+    border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    vertical-align: middle;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-row > td:last-child
+{
+    padding: 2px 4px;
+    border-left: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-row input,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-row select
+{
+    width: 100%;
+    padding: 2px 4px;
+    min-height: 24px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-name,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button
+{
+    display: block;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    box-shadow: none;
+    width: 100%;
+    text-align: left;
+    padding: 5px 8px 5px 24px;
+    overflow-wrap: anywhere;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-name small
+{
+    display: block;
+    font-size: 11px;
+    opacity: .7;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button
+{
+    background: var(--groups-panel, var(--set-panel, #36393f));
+    font-weight: 600;
+    padding-left: 7px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button::before
+{
+    content: "▾";
+    display: inline-block;
+    width: 16px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button[aria-expanded="false"]::before
+{
+    content: "▸";
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-row[aria-selected="true"]
+{
+    background: var(--set-selected, #2b5278);
+    color: var(--set-selected-text, var(--set-text, #e8e8e8));
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-help
+{
+    min-height: 82px;
+    padding: 7px 8px;
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    background: var(--set-field, rgba(255, 255, 255, 0.06));
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-description,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-preset-description,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-member-note,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-note,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-status,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-edit-status,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-save-note
+{
+    font-size: 12px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-no-permissions,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-empty
+{
+    padding: 12px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-save-note
+{
+    flex: 1;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-footer
+{
+    border-top: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    padding: 8px 10px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-toolbar,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-footer
+{
+    flex-wrap: wrap;
+}
+
+.groups-settings-link
+{
+    padding: 16px;
+    color: inherit;
+    font: inherit;
+}
+
+.groups-settings-link p,
+.groups-settings-link button
+{
+    font: inherit !important;
+}
+
+@media (max-width: 800px)
+{
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-columns
+    {
+        height: auto;
+        grid-template-columns: minmax(150px, 30%) minmax(0, 1fr);
+    }
+
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-sidebar,
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-details
+    {
+        height: 500px;
+    }
+
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-members-panel
+    {
+        grid-column: 1 / -1;
+        height: 270px;
+        border-left: 0;
+        border-top: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+        padding: 8px 0 0;
+    }
+}
+
+@media (max-width: 540px)
+{
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-columns
+    {
+        display: flex;
+        flex-direction: column;
+    }
+
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-sidebar
+    {
+        height: auto;
+        min-height: 300px;
+    }
+
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-columns > *
+    {
+        flex-shrink: 0;
+    }
+
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-details
+    {
+        height: 510px;
+        border-left: 0;
+        padding-left: 0;
+    }
+
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-save-note
+    {
+        flex-basis: 100%;
+    }
+}
+
+body.server-groups-admin-only [data-server-groups-shortcut],
+body.server-groups-disabled [data-server-groups],
+body.server-groups-disabled .single-group,
+body.server-groups-disabled .single-channel-icon,
+body.server-groups-disabled #current-client-description-groups,
+body.server-groups-disabled .identity-manage-groups,
+body.server-groups-disabled .identity-entry-groups
+{
+    display: none !important;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker),
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) *
+{
+    font-family: var(--set-font, 'Raleway', sans-serif);
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) label
+{
+    font-size: 12px;
+    font-weight: 400;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) input,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) select
+{
+    padding: 4px 7px;
+    font-size: 11px;
+    border-radius: var(--groups-field-radius, var(--set-radius, 4px));
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-name,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button
+{
+    font-size: 12px;
+    filter: none;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry:hover,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member:hover,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-name:hover,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button:hover
+{
+    background: var(--set-row-hover, rgba(255, 255, 255, 0.05));
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry[aria-pressed="true"],
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member[aria-pressed="true"]
+{
+    background: var(--set-selected, #2b5278);
+    color: var(--set-selected-text, var(--set-text, #e8e8e8));
+    border-color: transparent;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) select option
+{
+    color: var(--set-field-text, inherit);
+    background: var(--groups-option-background, var(--set-panel, #36393f));
+}
+
+#groups-log-dialog
+{
+    width: min(760px, calc(100vw - 32px));
+}
+
+#groups-log-dialog #groups-log-text
+{
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: min(55vh, 480px);
+    padding: 10px;
+    resize: vertical;
+    font-size: 12px;
+    color: var(--set-text, #e8e8e8);
+    background: var(--set-panel, #36393f);
+    border: 1px solid var(--set-border, #59616c);
+}
+
+#groups-icon-picker
+{
+    width: min(520px, calc(100vw - 24px));
+    overflow: hidden;
+}
+
+#groups-icon-picker[open]
+{
+    display: flex;
+    flex-direction: column;
+}
+
+#groups-icon-picker .groups-icon-body
+{
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    min-height: 0;
+    overflow: auto;
+}
+
+#groups-icon-picker :is(.groups-titlebar, .groups-footer)
+{
+    flex: 0 0 auto;
+}
+
+#groups-icon-picker :is(.groups-icon-search, .groups-icon-pages, .groups-icon-confirm, #groups-icon-selection)
+{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+#groups-icon-picker .groups-icon-search
+{
+    flex-wrap: wrap;
+}
+
+#groups-icon-picker .groups-icon-search input
+{
+    flex: 1 1 160px;
+    width: auto;
+}
+
+#groups-icon-picker .groups-icon-pages
+{
+    justify-content: space-between;
+}
+
+#groups-icon-picker #groups-icon-page
+{
+    text-align: center;
+}
+
+#groups-icon-picker #groups-icon-selected-preview
+{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 32px;
+    height: 32px;
+}
+
+#groups-icon-picker #groups-icon-selected-label
+{
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+#groups-icon-picker #groups-icon-delete-selected
+{
+    flex: 0 0 auto;
+}
+
+#groups-icon-picker .groups-footer
+{
+    justify-content: space-between;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-actions button
+{
+    padding: 6px 7px;
+}
+
+#groups-dialog
+{
+    box-sizing: border-box;
+    min-width: min(780px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    min-height: min(420px, calc(100dvh - 24px));
+    height: min(640px, calc(100dvh - 24px));
+    resize: both;
+}
+
+#groups-dialog[open]
+{
+    display: flex;
+    flex-direction: column;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-titlebar
+{
+    cursor: move;
+    user-select: none;
+}
+
+#groups-dialog > :is(.groups-titlebar, .groups-footer)
+{
+    flex: 0 0 auto;
+}
+
+:root #groups-dialog .groups-columns
+{
+    flex: 1;
+    height: auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+@media (max-width: 800px)
+{
+    #groups-dialog
+    {
+        min-width: 0;
+    }
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) :is(button, select, input[type="checkbox"])
+{
+    cursor: default;
+}
+
+:is(#groups-dialog, #groups-icon-picker) .groups-question
+{
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--set-line, #888);
+    background: var(--set-panel, #36393f);
+}
+
+:is(#groups-dialog, #groups-icon-picker) .groups-question p
+{
+    margin: 0;
+}
+
+:is(#groups-dialog, #groups-icon-picker) .groups-question-actions
+{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}

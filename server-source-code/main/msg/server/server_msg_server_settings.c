@@ -1,6 +1,7 @@
 // This file sends server settings, public server information, banners and changes to server rules.
 
 #include "server_msg.h"
+#include "../../core/permissions.h"
 #include "../../base.h"
 #include "../../util.h"
 #include "../../core/audio_channel.h"
@@ -98,6 +99,8 @@ void server_msg__server_settings__send_to_single_client(client_t* receiver, bool
     cJSON_AddItemToObject(message, "is_fast_reconnect_allowed", cJSON_CreateBool(g_server_settings.is_fast_reconnect_allowed == TRUE));
     cJSON_AddItemToObject(message, "is_identity_takeover_allowed", cJSON_CreateBool(g_server_settings.is_identity_takeover_allowed == TRUE));
     cJSON_AddItemToObject(message, "is_websocket_ping_active", cJSON_CreateBool(g_server_settings.is_websocket_ping_active == TRUE));
+    cJSON_AddBoolToObject(message, "is_permission_system_enabled", g_server_settings.is_permission_system_enabled);
+    cJSON_AddBoolToObject(message, "is_stored_client_list_allowed", g_server_settings.is_identity_storage_enabled && g_server_settings.is_stored_client_list_allowed);
     cJSON_AddBoolToObject(message, "is_connection_check_enforced", g_server_settings.is_connection_check_enforced);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_enabled", g_server_settings.is_channel_key_reuse_enabled);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_on_join_allowed", g_server_settings.is_channel_key_reuse_on_join_allowed);
@@ -124,7 +127,7 @@ void server_msg__server_settings__send_to_single_client(client_t* receiver, bool
     }
     cJSON_AddItemToObject(message, "is_logging_client_joins_enabled", cJSON_CreateBool(g_server_settings.is_logging_client_joins_enabled == TRUE));
     cJSON_AddItemToObject(message, "is_logging_username_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_username_changes_enabled == TRUE));
-    cJSON_AddItemToObject(message, "is_logging_tag_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_tag_changes_enabled == TRUE));
+    cJSON_AddItemToObject(message, "is_logging_group_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_group_changes_enabled == TRUE));
     cJSON_AddItemToObject(message, "is_logging_server_settings_updates_enabled", cJSON_CreateBool(g_server_settings.is_logging_server_settings_updates_enabled == TRUE));
     cJSON_AddItemToObject(message, "is_logging_kicks_and_bans_enabled", cJSON_CreateBool(g_server_settings.is_logging_kicks_and_bans_enabled == TRUE));
     cJSON_AddItemToObject(message, "is_logging_client_disconnects_enabled", cJSON_CreateBool(g_server_settings.is_logging_client_disconnects_enabled == TRUE));
@@ -225,9 +228,8 @@ static void _server_msg_server_settings_internal__add_server_info(cJSON* message
     cJSON_AddBoolToObject(features, "is_private_messaging_allowed", g_server_settings.is_private_messaging_allowed);
     cJSON_AddBoolToObject(features, "is_file_upload_allowed", g_server_settings.is_file_upload_allowed);
     cJSON_AddBoolToObject(features, "is_chat_picture_allowed", g_server_settings.is_chat_picture_allowed);
-    cJSON_AddBoolToObject(features, "is_temp_channel_creation_allowed", g_server_settings.is_temp_channel_creation_allowed);
+    cJSON_AddBoolToObject(features, "is_temp_channel_creation_allowed", g_server_settings.is_permission_system_enabled || g_server_settings.is_temp_channel_creation_allowed);
     cJSON_AddBoolToObject(features, "is_identity_storage_enabled", g_server_settings.is_identity_storage_enabled);
-    cJSON_AddBoolToObject(features, "is_alias_registration_allowed", g_server_settings.is_identity_storage_enabled && g_server_settings.is_alias_registration_allowed);
     cJSON_AddBoolToObject(features, "is_stored_client_list_allowed", g_server_settings.is_identity_storage_enabled && g_server_settings.is_stored_client_list_allowed);
     cJSON_AddBoolToObject(features, "is_last_seen_enabled", g_server_settings.is_identity_storage_enabled && g_server_settings.is_last_seen_enabled);
     cJSON_AddBoolToObject(features, "is_offline_messaging_allowed", g_server_settings.is_identity_storage_enabled && g_server_settings.is_stored_client_list_allowed && g_server_settings.is_offline_messaging_allowed);
@@ -251,7 +253,14 @@ void server_msg__server_settings__send_info_to_single_client(client_t* receiver,
     cJSON* message = NULL_POINTER;
 
     root = server_msg__delivery__new_message("server_info", &message);
-    _server_msg_server_settings_internal__add_server_info(message, include_banner, banner_changed);
+    if (permissions__is_allowed(receiver, PERMISSION_VIEW_SERVER_INFO) == TRUE)
+    {
+        _server_msg_server_settings_internal__add_server_info(message, include_banner, banner_changed);
+    }
+    else
+    {
+        cJSON_AddItemToObject(message, "visibility", cJSON_CreateObject());
+    }
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -266,10 +275,17 @@ void server_msg__server_settings__send_info_to_all_clients(boole banner_changed)
 {
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
+    uint64 i = 0;
 
     root = server_msg__delivery__new_message("server_info", &message);
     _server_msg_server_settings_internal__add_server_info(message, FALSE, banner_changed);
-    server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
+    for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
+    {
+        if (permissions__is_allowed(&g_clients_array[i], PERMISSION_VIEW_SERVER_INFO) == TRUE)
+        {
+            server_msg__delivery__send_json_to_client(&g_clients_array[i], root);
+        }
+    }
     cJSON_Delete(root);
 }
 
@@ -308,7 +324,7 @@ void server_msg__server_settings__send_banner_result_to_single_client(client_t* 
 
 /**
  * @brief broadcasts the client-relevant policy values (file/picture limits, avatars, typing,
- *        aliases) to every connected client, so a settings change applies without a reconnect
+ *        saved users) to every connected client, so a settings change applies without a reconnect
  *
  * @note the caller must hold the clients read lock
  *
@@ -332,8 +348,9 @@ void server_msg__server_settings__send_policy_update_to_all_clients(void)
     cJSON_AddBoolToObject(message, "is_avatar_upload_allowed", g_server_settings.is_avatar_upload_allowed);
     cJSON_AddNumberToObject(message, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes);
     cJSON_AddNumberToObject(message, "icon_max_size", (double)g_server_settings.icon_max_size_bytes);
-    cJSON_AddBoolToObject(message, "is_alias_registration_allowed", g_server_settings.is_alias_registration_allowed);
     cJSON_AddBoolToObject(message, "is_fast_reconnect_allowed", g_server_settings.is_fast_reconnect_allowed);
+    cJSON_AddBoolToObject(message, "is_permission_system_enabled", g_server_settings.is_permission_system_enabled);
+    cJSON_AddBoolToObject(message, "is_stored_client_list_allowed", g_server_settings.is_identity_storage_enabled && g_server_settings.is_stored_client_list_allowed);
     cJSON_AddBoolToObject(message, "is_connection_check_enforced", g_server_settings.is_connection_check_enforced);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_enabled", g_server_settings.is_channel_key_reuse_enabled);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_on_join_allowed", g_server_settings.is_channel_key_reuse_on_join_allowed);
@@ -349,5 +366,20 @@ void server_msg__server_settings__send_policy_update_to_all_clients(void)
     cJSON_AddBoolToObject(message, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
 
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
+    cJSON_Delete(root);
+}
+
+/**
+ * @brief Confirms whether the server settings were written to disk.
+ * @param receiver Administrator who requested the save.
+ * @param success TRUE when the settings file was saved.
+ */
+void server_msg__server_settings__send_saved(client_t* receiver, boole success)
+{
+    cJSON* message = NULL_POINTER;
+    cJSON* root = server_msg__delivery__new_message("server_settings_saved", &message);
+
+    cJSON_AddBoolToObject(message, "success", success);
+    server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }

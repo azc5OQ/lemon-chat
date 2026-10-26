@@ -1,5 +1,6 @@
 // This file checks incoming chat messages, edits, typing notifications, pokes and URL preview requests.
 #include "client_msg.h"
+#include "../../core/permissions.h"
 #include <string.h>
 #include "../../core/identity_store.h"
 #include "../server/server_msg.h"
@@ -146,7 +147,13 @@ void client_msg__chat__process_direct_chat_message(cJSON* json_root, uint64 send
     is_receiver_idle = g_clients_array[json_receiver_id->valueint].is_idle;
     is_receiver_music_bot = g_clients_array[json_receiver_id->valueint].is_music_bot;
 
-    // an idle client keeps its websocket open, so text can still reach it; the admin may allow that by config
+    if (is_receiver_idle == TRUE && (g_server_settings.is_sending_text_to_idle_clients_allowed == FALSE
+        || permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_MESSAGE_IDLE_CLIENTS) == FALSE))
+    {
+        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     if (is_receiver_existing == TRUE && (is_receiver_idle == FALSE || g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE) && is_receiver_music_bot == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %d %s", "client_msg__chat__process_direct_chat_message receiver is_existing: ", json_receiver_id->valueint, "\n");
@@ -208,10 +215,15 @@ void client_msg__chat__process_channel_chat_message(cJSON* json_root, uint64 sen
     clib__read_lock(&g_channels_global_rwlock_guard);
 
     channel_id = g_clients_array[sender_client_id].channel_id;
-    is_channel_existing = g_channel_array[channel_id].is_existing;
+    is_channel_existing = channel_id < g_server_settings.max_channel_count && g_channel_array[channel_id].is_existing;
 
     if (is_channel_existing == TRUE)
     {
+        if (permissions__can_use_channel(&g_clients_array[sender_client_id], &g_channel_array[channel_id], PERMISSION_CHANNEL_MESSAGE_POWER) == FALSE)
+        {
+            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+            goto channel_message_done;
+        }
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "receiving channel exists: ", channel_id, "\n");
 
         server_chat_message_id = base__get_chat_message_id();
@@ -224,6 +236,7 @@ void client_msg__chat__process_channel_chat_message(cJSON* json_root, uint64 sen
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "receiving channel does not exist: ", channel_id, "\n");
     }
 
+channel_message_done:
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -329,7 +342,17 @@ static void _client_msg_chat_internal__process_chat_message_action(cJSON* json_r
     {
         clib__read_lock(&g_channels_global_rwlock_guard);
         channel_id = g_clients_array[sender_client_id].channel_id;
-        server_msg__chat__send_message_action_to_clients_in_same_channel(channel_id, outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
+        if (channel_id < g_server_settings.max_channel_count && g_channel_array[channel_id].is_existing == TRUE)
+        {
+            if (is_edit == TRUE && permissions__can_use_channel(&g_clients_array[sender_client_id], &g_channel_array[channel_id], PERMISSION_CHANNEL_MESSAGE_POWER) == FALSE)
+            {
+                server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+            }
+            else
+            {
+                server_msg__chat__send_message_action_to_clients_in_same_channel(channel_id, outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
+            }
+        }
         clib__unlock(&g_channels_global_rwlock_guard);
     }
 
@@ -538,17 +561,13 @@ label_client_msg__process_typing_indicator_request_end:
 }
 
 /**
- * @brief validates an offline chat message request: a registered recipient alias and a non-empty
- *        ciphertext within the queue's per-message cap.
- *
- * @param cJSON* json_root -> the parsed client request
- *
- * @return boole
+ * @brief Checks the saved recipient identity and encrypted offline message.
+ * @param json_root Parsed request.
  */
 static boole _client_msg_chat_internal__is_offline_chat_message_valid(cJSON* json_root)
 {
     cJSON* json_message_object = 0;
-    cJSON* json_recipient_alias = 0;
+    cJSON* json_recipient_identity_hash = 0;
     cJSON* json_value = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -557,16 +576,16 @@ static boole _client_msg_chat_internal__is_offline_chat_message_valid(cJSON* jso
         return FALSE;
     }
 
-    json_recipient_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "recipient_alias");
-    if (cJSON_IsString(json_recipient_alias) == FALSE || json_recipient_alias->valuestring == NULL_POINTER)
+    json_recipient_identity_hash = cJSON_GetObjectItemCaseSensitive(json_message_object, "recipient_identity_hash");
+    if (cJSON_IsString(json_recipient_identity_hash) == FALSE || json_recipient_identity_hash->valuestring == NULL_POINTER)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_chat_internal__is_offline_chat_message_valid recipient_alias \n");
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_chat_internal__is_offline_chat_message_valid recipient_identity_hash \n");
         return FALSE;
     }
 
-    if (clib__utf8_string_length(json_recipient_alias->valuestring) == 0 || clib__utf8_string_length(json_recipient_alias->valuestring) >= USERNAME_MAX_LENGTH)
+    if (clib__utf8_string_length(json_recipient_identity_hash->valuestring) == 0 || clib__utf8_string_length(json_recipient_identity_hash->valuestring) >= IDENTITY_HASH_MAX_LENGTH)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_chat_internal__is_offline_chat_message_valid recipient_alias length \n");
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_chat_internal__is_offline_chat_message_valid recipient_identity_hash length \n");
         return FALSE;
     }
 
@@ -587,125 +606,53 @@ static boole _client_msg_chat_internal__is_offline_chat_message_valid(cJSON* jso
 }
 
 /**
- * @brief stores a text message addressed to a registered identity that is not connected, and delivers
- *        it when that identity connects again
- *
- *        the payload arrives already encrypted, so the server never sees plaintext: the sender
- *        encrypted it with the recipient's public key, which it took from the stored-clients list.
- *        the message is stored in ram, keyed by identity hash rather than by alias.
- *
- *        the request is refused unless the feature is on, identities and the stored-clients list
- *        are on, the SENDER is registered, the recipient alias belongs to a registered identity,
- *        and that identity is not connected right now (if it is, the client should send a normal
- *        direct message instead).
- *
- * @param cJSON* json_root -> the parsed client request
- * @param uint64 sender_client_id -> id of the client that sent the request
- *
- * @return void
+ * @brief Stores an encrypted message when the sender and saved recipient have the required permissions.
+ * @param json_root Request containing the recipient identity and encrypted message.
+ * @param sender_client_id Client sending the message.
  */
 void client_msg__chat__process_offline_chat_message(cJSON* json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
-    boole queued = FALSE;
-    boole is_recipient_connected = FALSE;
-    client_t* sender = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_recipient_alias = 0;
-    cJSON* json_value = 0;
-    char sender_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
-    char recipient_identity_hash[IDENTITY_HASH_MAX_LENGTH];
-    char sender_alias[USERNAME_MAX_LENGTH];
-    char* message_value = 0;
+    client_t* sender = NULL_POINTER;
+    cJSON* message = NULL_POINTER;
+    const char* recipient = NULL_POINTER;
+    char sender_hash[IDENTITY_HASH_MAX_LENGTH];
+    char connected_hash[IDENTITY_HASH_MAX_LENGTH];
     uint64 i = 0;
 
-    if (g_server_settings.is_identity_storage_enabled == FALSE || g_server_settings.is_stored_client_list_allowed == FALSE || g_server_settings.is_offline_messaging_allowed == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__chat__process_offline_chat_message offline messages are not enabled \n");
-        return;
-    }
-
-    status = _client_msg_chat_internal__is_offline_chat_message_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_chat_internal__is_offline_chat_message_valid(json_root) == FALSE)
     {
         return;
     }
-
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    json_recipient_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "recipient_alias");
-    json_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
-
-    clib__null_memory(&sender_identity_hash[0], sizeof(sender_identity_hash));
-    clib__null_memory(&recipient_identity_hash[0], sizeof(recipient_identity_hash));
-    clib__null_memory(&sender_alias[0], sizeof(sender_alias));
-
-    // read the sender out of the clients array, then release: queueing takes its own leaf lock
+    message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    recipient = cJSON_GetObjectItemCaseSensitive(message, "recipient_identity_hash")->valuestring;
     clib__read_lock(&g_clients_global_rwlock_guard);
-
     sender = &g_clients_array[sender_client_id];
-
-    if (sender->is_existing == FALSE || sender->is_authenticated == FALSE || sender->is_music_bot == TRUE || sender->public_key[0] == 0)
+    if (g_server_settings.is_identity_storage_enabled == FALSE || g_server_settings.is_offline_messaging_allowed == FALSE
+        || permissions__is_allowed(sender, PERMISSION_SEND_OFFLINE_MESSAGES) == FALSE
+        || permissions__is_identity_allowed(recipient, PERMISSION_RECEIVE_OFFLINE_MESSAGES) == FALSE)
     {
-        clib__unlock(&g_clients_global_rwlock_guard);
-        return;
+        server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
+        goto label_offline_message_end;
     }
-
-    // only a registered user may leave messages, so an anonymous guest cannot spam the queue
-    if (sender->is_registered == FALSE || sender->alias[0] == 0)
+    for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
-        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__chat__process_offline_chat_message sender", sender_client_id, "is not registered \n");
-        clib__unlock(&g_clients_global_rwlock_guard);
-        return;
-    }
-
-    util__hash_password_to_base64(sender->public_key, sender_identity_hash, sizeof(sender_identity_hash));
-    clib__copy_memory(&sender->alias[0], &sender_alias[0], clib__utf8_string_length(&sender->alias[0]), USERNAME_MAX_LENGTH - 1);
-
-    // if the recipient is connected right now there is nothing to queue - the sender should have
-    // used a normal direct message. checked while the clients lock is held
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE
+            || g_clients_array[i].public_key[0] == 0)
         {
             continue;
         }
-
-        if (g_clients_array[i].alias[0] == 0)
+        util__hash_password_to_base64(g_clients_array[i].public_key, connected_hash, sizeof(connected_hash));
+        if (clib__is_string_equal(connected_hash, recipient) == TRUE)
         {
-            continue;
-        }
-
-        if (clib__is_string_equal(&g_clients_array[i].alias[0], json_recipient_alias->valuestring) == TRUE)
-        {
-            is_recipient_connected = TRUE;
-            break;
+            goto label_offline_message_end;
         }
     }
+    util__hash_password_to_base64(sender->public_key, sender_hash, sizeof(sender_hash));
+    identity_store__queue_offline_message((char*)recipient, sender_hash, sender->username,
+        cJSON_GetObjectItemCaseSensitive(message, "value")->valuestring);
 
+label_offline_message_end:
     clib__unlock(&g_clients_global_rwlock_guard);
-
-    if (is_recipient_connected == TRUE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__chat__process_offline_chat_message recipient is online, not queueing \n");
-        return;
-    }
-
-    // resolve the alias to the identity that owns it: the queue is keyed by identity, so moving an
-    // alias to somebody else later cannot hand them messages meant for the original owner
-    if (identity_store__get_identity_hash_by_alias(json_recipient_alias->valuestring, &recipient_identity_hash[0], sizeof(recipient_identity_hash)) == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__chat__process_offline_chat_message no identity carries that alias \n");
-        return;
-    }
-
-    message_value = json_value->valuestring;
-
-    queued = identity_store__queue_offline_message(&recipient_identity_hash[0], &sender_identity_hash[0], &sender_alias[0], message_value);
-
-    if (queued == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__chat__process_offline_chat_message could not queue the message \n");
-    }
 }
 
 /**
@@ -777,10 +724,15 @@ void client_msg__chat__process_call_idle_client_message(cJSON* json_root, uint64
         goto label_client_msg__process_call_idle_client_message_end;
     }
 
-    // check if the client is idle too later
+    if (g_server_settings.is_idle_mode_allowed == FALSE
+        || permissions__is_allowed(caller, PERMISSION_CALL_IDLE_CLIENTS) == FALSE)
+    {
+        server_msg__administration__send_access_denied_to_single_client(caller, NULL_POINTER);
+        goto label_client_msg__process_call_idle_client_message_end;
+    }
     callee = &g_clients_array[json_callee_client_id->valueint];
 
-    if (callee->is_authenticated == FALSE || callee->is_existing == FALSE)
+    if (callee->is_authenticated == FALSE || callee->is_existing == FALSE || callee->is_idle == FALSE || callee->is_music_bot == TRUE)
     {
         goto label_client_msg__process_call_idle_client_message_end;
     }

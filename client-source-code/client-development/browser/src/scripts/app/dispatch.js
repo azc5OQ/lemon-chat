@@ -81,6 +81,19 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "minimp3_worker__decode_result")
     {
+        if (!groups__can_send_to_channel("talk", g_current_channel_id))
+        {
+            groups__notify_channel_power_denied("talk");
+            is_playing_music = false;
+            g_is_microphone_active = false;
+            g_last_sent_value_microphone_usage = 2;
+            if (G_HAS_DOM)
+            {
+                document.getElementById("custom-file-upload-button-song").style.display = "inline-block";
+                document.getElementById("stop-song").style.display = "none";
+            }
+            return;
+        }
         let data_chunks = voice__chunk_buffers(e.data.value, 4096);
 
         let message_object1 = {
@@ -294,10 +307,9 @@ function dispatch__mainthread_onmessage(e)
                 g_session.last_ping_ms = -1;
             }
 
-            // ask for the offline-people roster on every connect, from every device and theme.
-            // the server decides: it answers only if it offers the list AND this user is
-            // registered on it. a refusal is simply silence, so nothing here needs to know.
-            client_msg.send_request_stored_clients();
+            // Wait for the client and group lists before checking access to stored users.
+            groups_window.stored_users_allowed = null;
+            groups_window.access = null;
 
             // the idle panel gets its handler once; a resume still has it (a second listener would cancel the first)
             if (e.data.is_idle_mode_allowed && g_fast_reconnect.resumed == false)
@@ -308,6 +320,8 @@ function dispatch__mainthread_onmessage(e)
             }
 
             g_is_authenticated = true;
+            groups__apply_server_mode();
+            server_emojis__connected();
             chat_files__refresh_receive_preferences_controls();
             chat_files__send_receive_preferences();
             // the audio connection mode was picked above, with the policy; the socket of a previous session is dropped here
@@ -576,11 +590,15 @@ function dispatch__mainthread_onmessage(e)
             channel_tree__apply_server_update(server_msg.process_channel_list_from_server, e.data.value);
         }
     }
-    else if (e.data.type == "data_processing_worker__tag_list_from_server")
+    else if (e.data.type == "data_processing_worker__server_emoji")
     {
-        if (connection__fast_reconnect_buffer_list("tag", e.data.value) == false)
+        server_emojis__receive(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__group_list_from_server")
+    {
+        if (connection__fast_reconnect_buffer_list("group", e.data.value) == false)
         {
-            server_msg.process_tag_list_from_server(e.data.value);
+            server_msg.process_group_list_from_server(e.data.value);
         }
     }
     else if (e.data.type == "data_processing_worker__identity_list_from_server")
@@ -598,13 +616,9 @@ function dispatch__mainthread_onmessage(e)
     {
         server_msg.process_icon_add_from_server(e.data.value);
     }
-    else if (e.data.type == "data_processing_worker__tag_add_to_client_from_server")
+    else if (e.data.type == "data_processing_worker__group_add_to_client_from_server")
     {
-        server_msg.process_add_tag_to_client_from_server(e.data.value);
-    }
-    else if (e.data.type == "data_processing_worker__client_alias_changed_from_server")
-    {
-        server_msg.process_client_alias_changed_from_server(e.data.value);
+        server_msg.process_add_group_to_client_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_country_code_changed_from_server")
     {
@@ -618,25 +632,29 @@ function dispatch__mainthread_onmessage(e)
     {
         server_msg.process_stored_clients_list_from_server(e.data.value);
     }
-    else if (e.data.type == "data_processing_worker__remove_tag_from_client_from_server")
+    else if (e.data.type == "data_processing_worker__remove_group_from_client_from_server")
     {
-        server_msg.process_remove_tag_from_client_from_server(e.data.value);
+        server_msg.process_remove_group_from_client_from_server(e.data.value);
     }
-    else if (e.data.type == "data_processing_worker__tag_add_from_server")
+    else if (e.data.type == "data_processing_worker__group_permissions_changed")
     {
-        server_msg.process_tag_add_from_server(e.data.value);
+        server_msg.process_group_permissions_changed(e.data.value);
     }
-    else if (e.data.type == "data_processing_worker__tag_delete_from_server")
+    else if (e.data.type == "data_processing_worker__group_add_from_server")
     {
-        server_msg.process_tag_delete_from_server(e.data.value);
+        server_msg.process_group_add_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__group_delete_from_server")
+    {
+        server_msg.process_group_delete_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__icon_delete_from_server")
     {
         server_msg.process_icon_delete_from_server(e.data.value);
     }
-    else if (e.data.type == "data_processing_worker__tag_icon_changed_from_server")
+    else if (e.data.type == "data_processing_worker__group_icon_changed_from_server")
     {
-        server_msg.process_tag_icon_changed_from_server(e.data.value);
+        server_msg.process_group_icon_changed_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_icon_changed_from_server")
     {
@@ -858,6 +876,11 @@ function dispatch__mainthread_onmessage(e)
     else if (e.data.type == "data_processing_worker__url_resolved")
     {
         link_previews__resolved(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__admin_status")
+    {
+        groups__apply_admin_status(e.data.value.is_admin);
+        server_emojis__render_admin();
     }
     else if (e.data.type == "data_processing_worker__server_policy_from_server")
     {

@@ -33,15 +33,14 @@ var SERVER_INFO_FEATURES =
     ["is_avatar_upload_allowed", "Avatars", "Allows users to upload a picture to represent their identity."],
     ["is_typing_indicator_allowed", "Typing indicators", "Shows when someone is typing a message, without sharing what they are writing."],
     ["is_client_rename_allowed", "Name changes", "Allows users to change their display name after connecting. Admins can still rename users when this is disabled."],
-    ["is_temp_channel_creation_allowed", "Temporary channels", "Allows non-admin users to create one temporary channel. It is removed when its creator changes channels or disconnects."],
+    ["is_temp_channel_creation_allowed", "Temporary channels", "Shows whether temporary channels are available. When server groups are enabled, group permissions decide who can create them. Each user can own one. It is removed when its creator changes channels or disconnects."],
     ["is_idle_mode_allowed", "Idle mode", "Lets users stay signed in while away, without receiving channel messages or audio/video."],
     ["is_fast_reconnect_allowed", "Fast reconnect", "Lets a client resume its previous session after a brief connection loss."],
     ["is_connection_check_enforced", "Disconnect on missed keep-alive messages", "Disconnects clients that stop sending Lemon Chat's keep-alive messages over their chat WebSocket."],
-    ["is_alias_registration_allowed", "Username registration", "Allows admins to register a display name for a saved identity."],
-    ["is_identity_storage_enabled", "Saved identities", "Lets the server remember identities between visits and restore their saved tags and registered names."],
+    ["is_identity_storage_enabled", "Saved identities", "Lets the server remember identities between visits and restore their saved groups ."],
     ["is_stored_client_list_allowed", "Offline user list", "Allows users to see saved identities even when those people are offline."],
     ["is_last_seen_enabled", "Last seen times", "Shows when a saved identity was last connected to this server."],
-    ["is_offline_messaging_allowed", "Offline messages", "Holds private messages for registered users who are offline and delivers them when they return. Waiting messages are lost if the server restarts."],
+    ["is_offline_messaging_allowed", "Offline messages", "Holds private messages for users with permission who are offline and delivers them when they return. Waiting messages are lost if the server restarts."],
     ["is_display_country_flags_active", "Country flags", "Shows country flags based on users' connection addresses."],
     ["is_hide_clients_in_password_protected_channels_active", "Hide users in password-protected channels", "Hides which password-protected channel a user is in from people outside that channel."],
     ["is_sending_text_to_idle_clients_allowed", "Messages to idle users", "Allows private text messages to reach users who are connected in idle mode."],
@@ -99,7 +98,7 @@ function server_info__is_visible()
  */
 function server_info__request(include_banner = false)
 {
-    if (!g_is_authenticated)
+    if (!g_is_authenticated || !groups__has_permission("view_server_info"))
     {
         return;
     }
@@ -237,7 +236,6 @@ function server_info__apply(data)
     }
     if (g_server_info.features.is_identity_storage_enabled === false)
     {
-        g_server_info.features.is_alias_registration_allowed = false;
     }
     if (!g_server_info.visibility.uptime)
     {

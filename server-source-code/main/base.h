@@ -27,14 +27,14 @@ extern uint64 g_chat_message_id;
 extern client_t* g_clients_array;
 extern channel_t* g_channel_array;
 extern icon_t* g_icons_array;
-extern tag_t* g_tags_array;
+extern group_t* g_groups_array;
 extern ban_entry_t* g_ban_array;
 extern server_settings_t g_server_settings;
 extern custom_rwlock_t g_clients_global_rwlock_guard;
 extern custom_rwlock_t g_webrtc_peers_rwlock_guard;
 extern custom_rwlock_t g_channels_global_rwlock_guard;
 extern custom_rwlock_t g_icons_global_rwlock_guard;
-extern custom_rwlock_t g_tags_global_rwlock_guard;
+extern custom_rwlock_t g_groups_global_rwlock_guard;
 extern custom_rwlock_t g_bans_global_rwlock_guard;
 extern pthread_mutex_t g_chat_message_id_mutex;
 

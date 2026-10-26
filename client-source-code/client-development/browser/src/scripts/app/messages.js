@@ -6,88 +6,85 @@
 // state private to this file
 var received_files = []; // in chunks
 
-var is_pressing = null;  // for touch devices
-
 var is_long_press = null;
 
 var server_msg = {
     /**
-     * @brief the tag list: fills g_tags from the server snapshot, renders the settings tag table, and paints tag labels onto every visible client row (clients in hidden channels are skipped)
-     *        the complete list arrives at every login, so the previous session's rows go first
+     * @brief Applies the permission values announced by the server.
+     * @param msg -> changed group and its permissions
+     */
+    process_group_permissions_changed: function(msg)
+    {
+        let group = channel_tree__get_group_by_group_id(msg.message.group_id);
+        if (group)
+        {
+            group.permissions = msg.message.permissions;
+        }
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
+    },
+    /**
+     * @brief Updates the group list and the groups beside connected users.
      *
-     * @param object msg -> the server message, msg.message.tags holds the tags
+     * @param object msg -> the server message, msg.message.groups holds the groups
      *
      * @return void
      */
-    process_tag_list_from_server: function(msg)
+    process_group_list_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         UI.wire_settings_delete_delegation();
 
-        // the complete list arrives at every login, and the reconnect reset empties only g_tags,
-        // so the rows of the previous session have to go before the new ones are appended
-        document.getElementById("server-settings-tab-tags-container").innerHTML = "";
-
-        for (let i = 0; i < msg.message.tags.length; i++)
+        g_groups = msg.message.groups.slice();
+        if (msg.message.access)
         {
-            let tag = msg.message.tags[i];
-            g_tags.push(tag);
-
-            let icon = tag.has_icon ? channel_tree__get_icon_by_icon_id(tag.tag_linked_icon_id) : null;
-
-            let base64_icon = "";
-
-            if (icon != null)
+            groups__apply_access(msg.message.access);
+        }
+        for (let client of g_client_list)
+        {
+            let holder = document.getElementById("client-groups-" + client.client_id);
+            if (holder)
             {
-                base64_icon = icon.base64_icon;
+                holder.replaceChildren();
             }
-
-            // the admin tag cannot be deleted, but its row still needs the column or the
-            // cells above it shift out of line with the header
-            let tag_delete_button_html = (tag.tag_id != 0)
-                ? "<button class=\"settings-entry-delete-button\" title=\"delete tag\">✕</button>"
-                : "<span class=\"settings-entry-delete-spacer\"></span>";
-            let html_to_append = "<div class=\"server-settings-tag-entry\" data-tag-id=\""+tag.tag_id+"\">\n\
-                                    <p class=\"tag-settings-entry-p\">"+tag.tag_id+"</p>\n\
-                                    <p class=\"tag-settings-entry-p\">"+tag.tag_name+"</p>\n\
-                                    <p class=\"tag-settings-entry-p\">"+tag.tag_linked_icon_id+"</p>\n\
-                                    <div class=\"tag-settings-entry-img\" style=\"background-image: url("+base64_icon+");\"></div>\n\
-                                    "+tag_delete_button_html+"\n\
-                                </div>";
-
-            document.getElementById("server-settings-tab-tags-container").insertAdjacentHTML("beforeend", html_to_append);
         }
 
-        // add tags for clients in UI
+        // add groups for clients in UI
 
         for (let i = 0; i < g_client_list.length; i++)
         {
-            console.log("process_tag_list_from_server | processing client: " + g_client_list[i].username);
-            for (let y = 0; y < g_client_list[i].tag_ids.length; y++)
+            console.log("process_group_list_from_server | processing client: " + g_client_list[i].username);
+            for (let y = 0; y < g_client_list[i].group_ids.length; y++)
             {
-                console.log("process_tag_list_from_server | processing tag id : " + g_client_list[i].tag_ids[y]);
+                console.log("process_group_list_from_server | processing group id : " + g_client_list[i].group_ids[y]);
 
-                let tag = channel_tree__get_tag_by_tag_id(g_client_list[i].tag_ids[y]);
+                let group = channel_tree__get_group_by_group_id(g_client_list[i].group_ids[y]);
 
-                if (tag == null)
+                if (group == null)
                 {
-                    console.log("tag is null");
+                    console.log("group is null");
                     continue;
                 }
 
-                let target_element = document.getElementById("client-tags-" + g_client_list[i].client_id);
+                let target_element = document.getElementById("client-groups-" + g_client_list[i].client_id);
 
                 // clients in a hidden channel have no row, and throwing here aborted the loop
-                // so every client after them lost their tags too
+                // so every client after them lost their groups too
                 if (target_element == null)
                 {
                     continue;
                 }
 
                 const node = document.createElement("div");
-                node.className = "single-tag";
-                node.setAttribute("tag-id", tag.tag_id);
+                node.className = "single-group";
+                node.setAttribute("group-id", group.group_id);
 
-                let icon = tag.has_icon ? channel_tree__get_icon_by_icon_id(tag.tag_linked_icon_id) : null;
+                let icon = group.has_icon ? channel_tree__get_icon_by_icon_id(group.group_linked_icon_id) : null;
 
                 if (icon != null)
                 {
@@ -99,95 +96,20 @@ var server_msg = {
         }
     },
     /**
-     * @brief the admin identity-management list: one row per stored identity
-     *        abbreviated hash (full hash in title and on the controls' data-hash), last-seen username,
-     *        online dot, its tags as labels each with a remove cross, an "add tag" dropdown, and a delete-identity cross
-     *
-     * @param object msg -> the server message, msg.message.identities holds the identities
-     *
-     * @return void
+     * @brief Updates the saved users shown beside the selected server group.
+     * @param msg -> identities sent by the server
      */
     process_identity_list_from_server: function(msg)
     {
-        let list = document.getElementById("server-settings-identities-list");
-        if (list == null) { return; }
-
-        let identities = (msg && msg.message && msg.message.identities) ? msg.message.identities : [];
-
-        let tag_display_name = function(tag_id)
+        if (!g_is_authenticated || !groups__has_permission("view_group_members"))
         {
-            if (tag_id == 0) { return "admin"; }
-            let tag = channel_tree__get_tag_by_tag_id(tag_id);
-            return (tag != null && tag.tag_name) ? tag.tag_name : ("#" + tag_id);
-        };
-
-        let html = "";
-        for (let i = 0; i < identities.length; i++)
-        {
-            let identity = identities[i];
-            let hash = identity.public_key_hash != null ? identity.public_key_hash : "";
-            let hash_attr = chat__sanitize_string(hash);
-            let short_hash = hash.length > 18 ? (hash.substring(0, 18) + "…") : hash;
-            let username = (identity.username != null && identity.username.length > 0) ? identity.username : "—";
-            let tag_ids = identity.tag_ids != null ? identity.tag_ids : [];
-
-            // tags as removable labels
-            let chips = "";
-            for (let t = 0; t < tag_ids.length; t++)
-            {
-                chips += "<span class=\"identity-tag-label\">" + chat__sanitize_string(tag_display_name(tag_ids[t]))
-                        + "<span class=\"identity-tag-remove\" data-identity-hash=\"" + hash_attr + "\" data-tag-id=\"" + tag_ids[t] + "\" title=\"remove this tag from the identity\">✕</span></span>";
-            }
-
-            // "add tag" dropdown: server tags this identity does not already hold (admin tag excluded)
-            let add_options = "<option value=\"\">+ tag</option>";
-            for (let t = 0; t < g_tags.length; t++)
-            {
-                if (g_tags[t].tag_id == 0) { continue; }
-                if (tag_ids.indexOf(g_tags[t].tag_id) != -1) { continue; }
-                add_options += "<option value=\"" + g_tags[t].tag_id + "\">" + chat__sanitize_string(g_tags[t].tag_name) + "</option>";
-            }
-            let add_select = "<select class=\"identity-tag-add\" data-identity-hash=\"" + hash_attr + "\" title=\"give this identity a tag\">" + add_options + "</select>";
-
-            let online_dot = identity.is_online == true
-                ? "<span title='online' style='color:#4caf50;'>●</span>"
-                : "<span title='offline' style='color:#888;'>○</span>";
-
-            // an identity is REGISTERED exactly when an admin gave it an alias - that is what
-            // unlocks the offline people list and offline messages, so it is worth stating
-            // plainly rather than leaving the admin to infer it from an empty cell
-            let alias = (identity.alias != null) ? identity.alias : "";
-            let is_registered = (alias.length > 0);
-
-            let registered_cell = is_registered
-                ? "<span title='has an alias: may list offline people and receive offline messages' style='color:#4caf50;'>yes</span>"
-                : "<span title='no alias: not registered on this server' style='opacity:0.6;'>no</span>";
-
-            // edit in place: type a name and press enter (or the ✓) to register, ✕ clears it
-            let alias_cell = "<input class=\"identity-alias-input\" data-identity-hash=\"" + hash_attr + "\" value=\"" + chat__sanitize_string(alias) + "\" placeholder=\"no alias\" title=\"admin-registered display name; empty means not registered\">"
-                            + "<button class=\"identity-alias-set-button\" data-identity-hash=\"" + hash_attr + "\" title=\"save this alias\">✓</button>"
-                            + (is_registered ? "<button class=\"identity-alias-clear-button\" data-identity-hash=\"" + hash_attr + "\" title=\"clear the alias (unregisters this identity)\">✕</button>" : "");
-
-            html += "<div class=\"identity-entry\">"
-                    + "<p class=\"identity-entry-p\" title=\"" + hash_attr + "\">" + chat__sanitize_string(short_hash) + "</p>"
-                    + "<p class=\"identity-entry-p\" title=\"" + chat__sanitize_string(username) + "\">" + chat__sanitize_string(username) + "</p>"
-                    + "<p class=\"identity-entry-p identity-entry-p-online\">" + online_dot + "</p>"
-                    + "<p class=\"identity-entry-p identity-entry-p-registered\">" + registered_cell + "</p>"
-                    + "<div class=\"identity-entry-alias\">" + alias_cell + "</div>"
-                    + "<div class=\"identity-entry-tags\">" + chips + add_select + "</div>"
-                    + "<button class=\"identity-delete-button\" data-identity-hash=\"" + hash_attr + "\" title=\"delete this identity and strip all its tags\">✕</button>"
-                    + "</div>";
+            return;
         }
-
-        if (identities.length == 0)
-        {
-            html = "<p style=\"font-size:11px; opacity:0.6;\">no stored identities yet</p>";
-        }
-
-        list.innerHTML = html;
+        groups_window.identities = Array.isArray(msg.message.identities) ? msg.message.identities : [];
+        groups__schedule_refresh();
     },
     /**
-     * @brief the icon list: pushes each icon into g_icons, appends its settings entry, then repaints the channel icons that were rendered empty before the icons arrived
+     * @brief Replaces the server icon list and refreshes icons shown in channels and groups.
      *
      * @param object msg -> the server message, msg.message.icons holds the icons
      *
@@ -195,10 +117,13 @@ var server_msg = {
      */
     process_icon_list_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         UI.wire_settings_delete_delegation();
 
-        // same as the tag list: the previous session's rows would otherwise stack up on every reconnect
-        document.getElementById("server-settings-tab-icons-container").innerHTML = "";
+        g_icons.length = 0;
 
         for (let i = 0; i < msg.message.icons.length; i++)
         {
@@ -209,9 +134,7 @@ var server_msg = {
 
             g_icons.push(icon);
 
-            let html_to_append = "<div class='server-settings-icon-entry' data-icon-id="+icon.id+"><img class='img-uploaded-icon' src="+icon.base64_icon+"></img><button class='settings-entry-delete-button' title='delete icon'>✕</button></div>";
 
-            document.getElementById("server-settings-tab-icons-container").insertAdjacentHTML("beforeend", html_to_append);
         }
 
         // g_channel_list arrives BEFORE this icon_list, so channel rows were rendered with empty icon
@@ -366,45 +289,12 @@ var server_msg = {
         {
             for (let i = 0; i < elements.length; i++)
             {
-                let local_touch_press_timer = null;
-
                 if (elements[i].classList.contains("idle-channel"))
                 {
                     continue;
                 }
 
-                elements[i].addEventListener("touchstart", (event) => {
-
-                    // in most modern browsers, event.currentTarget is null after handler exits, especially after longer delay
-                    // by the time setTimeout runs, event object (or at least part of it) is lost,
-                    // things from event object must be imediatelly stored in temp variable in this case, for later use
-
-                    const currentTarget = event.currentTarget;
-                    const clientY = event.touches[0].clientY;
-                    const clientX = event.touches[0].clientX;
-
-                    is_pressing = true;
-
-                    local_touch_press_timer = window.setTimeout( () => {
-                        if (is_pressing)
-                        {
-                            UI.single_channel_onmousedown(event, true, clientX, clientY, currentTarget);
-                            is_pressing = false;
-                        }
-                    },
-                    600, event);
-
-                });
-
-                elements[i].addEventListener("touchend", (event) => {
-                    is_pressing = false;
-                    clearTimeout(local_touch_press_timer);
-                });
-
-                elements[i].addEventListener("touchcancel", (event) => {
-                    is_pressing = false;
-                    clearTimeout(local_touch_press_timer);
-                });
+                UI.setup_channel_touch_events(elements[i]);
 
                 elements[i].getElementsByClassName("single-channel-collapse-button")[0].addEventListener("mousedown", UI.collapse_expand_channel);
             }
@@ -538,6 +428,10 @@ var server_msg = {
      */
     process_client_connect_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         let local_client = channel_tree__get_client_by_client_id(g_local_client_id);
         if (!g_is_authenticated || local_client == null)
         {
@@ -556,11 +450,11 @@ var server_msg = {
         let single_client = {
             client_id: null,
             username: null,
-            alias: null,
+            identity_hash: null,
             public_key: null,
             channel_id: null,
             audio_state: null,
-            tag_ids: null,
+            group_ids: null,
             is_clients_channel_hidden: null,
             country_iso_code: null,
             is_idle: null,
@@ -572,10 +466,10 @@ var server_msg = {
 
         single_client.client_id = parseInt(client_id);
         single_client.username = username;
-        single_client.alias = (msg.message.alias != null) ? msg.message.alias : "";
+        single_client.identity_hash = (msg.message.identity_hash != null) ? msg.message.identity_hash : "";
         single_client.public_key = msg.message.public_key;
         single_client.channel_id = msg.message.channel_id;
-        single_client.tag_ids = (msg.message.tag_ids != null) ? msg.message.tag_ids : [];
+        single_client.group_ids = (msg.message.group_ids != null) ? msg.message.group_ids : [];
         single_client.audio_state = msg.message.audio_state;
         single_client.is_clients_channel_hidden = false;
         single_client.country_iso_code = msg.message.country_iso_code;
@@ -660,30 +554,30 @@ var server_msg = {
 
         { let rename_input = document.getElementById('connected-local-client-input'); if (rename_input != null) { rename_input.addEventListener("focusout", UI.connected_local_user_input_on_focusout); } }
 
-        // add tag ids
+        // add group ids
 
-        console.log("process_tag_list_from_server | processing client: " +  single_client.username);
-        for (let y = 0; y < single_client.tag_ids.length; y++)
+        console.log("process_group_list_from_server | processing client: " +  single_client.username);
+        for (let y = 0; y < single_client.group_ids.length; y++)
         {
-            console.log("process_tag_list_from_server | processing tag id : " + single_client.tag_ids[y]);
+            console.log("process_group_list_from_server | processing group id : " + single_client.group_ids[y]);
 
-            let tag = channel_tree__get_tag_by_tag_id(single_client.tag_ids[y]);
+            let group = channel_tree__get_group_by_group_id(single_client.group_ids[y]);
 
-            if (tag == null)
+            if (group == null)
             {
-                console.log("tag is null");
+                console.log("group is null");
                 continue;
             }
 
-            let target_element = document.getElementById("client-tags-" + single_client.client_id);
+            let target_element = document.getElementById("client-groups-" + single_client.client_id);
 
             const node = document.createElement("div");
-            node.className = "single-tag";
-            node.setAttribute("tag-id", tag.tag_id);
+            node.className = "single-group";
+            node.setAttribute("group-id", group.group_id);
 
             // has_icon is the only thing saying an icon was assigned, and id 0 resolves to a real
-            // icon, so an unguarded lookup paints one on tags that have none
-            let icon = (tag.has_icon == true) ? channel_tree__get_icon_by_icon_id(tag.tag_linked_icon_id) : null;
+            // icon, so an unguarded lookup paints one on groups that have none
+            let icon = (group.has_icon == true) ? channel_tree__get_icon_by_icon_id(group.group_linked_icon_id) : null;
 
             if (icon != null)
             {
@@ -706,14 +600,15 @@ var server_msg = {
         }
     },
     /**
-     * @brief somebody disconnected: removes them from the dom, g_client_list and the id map (swap-with-last), keeps an aliased client in g_offline_client_list, and drops their private chat context if open
-     *
-     * @param object msg -> the server message, msg.message.client_id names the client
-     *
-     * @return void
+     * @brief Removes a disconnected client and refreshes the saved contact list.
+     * @param msg Server message naming the disconnected client.
      */
     process_client_disconnect_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         let disconnecting_client = channel_tree__get_client_by_client_id(msg.message.client_id);
         let local_client = channel_tree__get_client_by_client_id(g_local_client_id);
 
@@ -734,30 +629,7 @@ var server_msg = {
             }
         }
 
-        // an aliased client is registered with the server, so he lingers as an offline contact;
-        // the stored-clients snapshot only arrives on connect, so the local copy is kept fresh here
-        if (disconnecting_client != null && typeof disconnecting_client.alias === "string" && disconnecting_client.alias.length > 0)
-        {
-            let already_stored = false;
-            for (let i = 0; i < g_offline_client_list.length; i++)
-            {
-                if (g_offline_client_list[i].alias.toLowerCase() == disconnecting_client.alias.toLowerCase())
-                {
-                    already_stored = true;
-                    break;
-                }
-            }
-
-            if (already_stored == false)
-            {
-                g_offline_client_list.push({
-                    alias: disconnecting_client.alias,
-                    base64_avatar: (typeof disconnecting_client.base64_avatar === "string") ? disconnecting_client.base64_avatar : "",
-                    tag_ids: (disconnecting_client.tag_ids != null) ? disconnecting_client.tag_ids : [],
-                    last_seen: Math.floor(new Date().valueOf() / 1000) // we watched them leave: that IS their last-seen
-                });
-            }
-        }
+        groups__schedule_stored_users_refresh();
 
         if (document.querySelector('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]') != null)
         {
@@ -781,10 +653,11 @@ var server_msg = {
         {
             console.log("switching to main channel? ");
             g_current_chat_context_id = "chat-context-channel-" + g_current_channel_id;
+            chat_replies__refresh();
         chat__clear_channel_unread_count(g_current_channel_id); // opened it, so it is read
             document.getElementById("chat-context-channel-" + g_current_channel_id).style.display = "block";
             g_chat_message_receiver_type = "channel";
-            g_offline_chat_recipient_alias = ""; // back on a channel: no offline target
+            g_offline_chat_recipient_identity_hash = ""; // back on a channel: no offline target
             UI.schedule_member_list_sync(); // active ring moves back to the channel circle
         }
 
@@ -840,6 +713,7 @@ var server_msg = {
         if (msg.message.client_id == g_local_client_id)
         {
             g_current_channel_id = msg.message.channel_id;
+            groups__refresh_channel_controls();
             video__on_local_channel_changed();
             keys__set_current_channel_keys(null);
 
@@ -1043,7 +917,7 @@ var server_msg = {
         chat__scroll_chat_to_end(false);
     },
     /**
-     * @brief pairs our just-sent message or picture with its server id (stored as an attribute, which enables the right-click menu) and records our own public key as that message's author
+     * @brief Records the delivered message identifier and enables its available actions.
      *
      * @param object msg -> the server message, msg.message holds local_message_id and server_chat_message_id
      *
@@ -1063,7 +937,11 @@ var server_msg = {
         if (element != null)
         {
             element.setAttribute("data-single-chat-message-server-message-id", msg.message.server_chat_message_id);
-            element.addEventListener("mousedown", UI.single_chat_message_onrightclick);
+            let state = chat_reactions.entries.get(element);
+            if (state)
+            {
+                chat_reactions__update_message_access(state);
+            }
         }
         else
         {
@@ -1072,7 +950,7 @@ var server_msg = {
             if (element != null)
             {
                 element.setAttribute("data-single-chat-message-server-message-id", msg.message.server_chat_message_id);
-                element.addEventListener("mousedown", UI.single_chat_message_onrightclick);
+                chat_reactions__register_attachment(element);
             }
             else
             {
@@ -1081,7 +959,7 @@ var server_msg = {
                 if (file_card != null)
                 {
                     file_card.setAttribute("data-single-chat-message-server-message-id", msg.message.server_chat_message_id);
-                    file_card.addEventListener("mousedown", chat_files__chat_file_card_onrightclick);
+                    chat_reactions__register_attachment(file_card);
                 }
             }
         }
@@ -1115,6 +993,11 @@ var server_msg = {
         video__refresh_controls();
         g_channel_list[index].is_client_limit_active = msg.message.is_client_limit_active;
         g_channel_list[index].max_client_count = msg.message.max_client_count;
+        g_channel_list[index].required_talk_power = Number(msg.message.required_talk_power) || 0;
+        g_channel_list[index].required_message_power = Number(msg.message.required_message_power) || 0;
+        g_channel_list[index].required_picture_power = Number(msg.message.required_picture_power) || 0;
+        g_channel_list[index].required_stream_power = Number(msg.message.required_stream_power) || 0;
+        groups__refresh_channel_controls();
         UI.refresh_all_channel_fullness();
 
         if (msg.message.is_using_password == true)
@@ -1169,7 +1052,11 @@ var server_msg = {
      */
     process_client_info_from_server: function(msg)
     {
-        // admin-only client info popup (the server only replies to admins)
+        if (!groups__has_permission("view_client_details"))
+        {
+            return;
+        }
+        // The server sends these details only to users with permission to view them.
         let client = channel_tree__get_client_by_client_id(msg.message.client_id);
         let username = (client != null && client.username != null) ? client.username : ("client " + msg.message.client_id);
 
@@ -1225,6 +1112,10 @@ var server_msg = {
             is_temp_channel: msg.message.is_temp_channel,
             is_client_limit_active: msg.message.is_client_limit_active,
             max_client_count: msg.message.max_client_count,
+            required_talk_power: Number(msg.message.required_talk_power) || 0,
+            required_message_power: Number(msg.message.required_message_power) || 0,
+            required_picture_power: Number(msg.message.required_picture_power) || 0,
+            required_stream_power: Number(msg.message.required_stream_power) || 0,
             has_channel_icon: msg.message.has_channel_icon,
             channel_icon_id: msg.message.channel_icon_id,
             is_channel_directly_collapsed: false,
@@ -1292,40 +1183,7 @@ var server_msg = {
                     continue;
                 }
 
-                let local_touch_press_timer = null;
-
-                elements[i].addEventListener("touchstart", (event) => {
-
-                    // in most modern browsers, event.currentTarget is null after handler exits, especially after longer delay
-                    // by the time setTimeout runs, event object (or at least part of it) is lost,
-                    // things from event object must be imediatelly stored in temp variable in this case, for later use
-
-                    const currentTarget = event.currentTarget;
-                    const clientY = event.touches[0].clientY;
-                    const clientX = event.touches[0].clientX;
-
-                    is_pressing = true;
-
-                    local_touch_press_timer = window.setTimeout( () => {
-                        if (is_pressing)
-                        {
-                            UI.single_channel_onmousedown(event, true, clientX, clientY, currentTarget);
-                            is_pressing = false;
-                        }
-                    },
-                    600, event);
-
-                });
-
-                elements[i].addEventListener("touchend", (event) => {
-                    is_pressing = false;
-                    clearTimeout(local_touch_press_timer);
-                });
-
-                elements[i].addEventListener("touchcancel", (event) => {
-                    is_pressing = false;
-                    clearTimeout(local_touch_press_timer);
-                });
+                UI.setup_channel_touch_events(elements[i]);
 
                 elements[i].getElementsByClassName("single-channel-collapse-button")[0].addEventListener("mousedown", UI.collapse_expand_channel);
             }
@@ -1756,7 +1614,7 @@ var server_msg = {
         }
     },
     /**
-     * @brief a channel chat message: rendered with the font size clamped to 12-30 and grouped under the previous sender; our own echo and ignored senders are skipped, the received sound plays
+     * @brief Displays a channel message in its own block with the author and time.
      *
      * @param object msg -> the server message, msg.message holds sender_id, server_chat_message_id and the decrypted payload
      *
@@ -1764,6 +1622,11 @@ var server_msg = {
      */
     process_channel_chat_message_from_server: function(msg)
     {
+        let received_channel_chat_message_object = JSON.parse(msg.message.decrypted_value);
+        if (chat_reactions__receive(received_channel_chat_message_object, msg.message, false))
+        {
+            return;
+        }
         chat__clear_typing_from_client(msg.message.sender_id);  // the message arrived, he is done
 
         if (msg.message.sender_id == g_local_client_id)
@@ -1790,7 +1653,6 @@ var server_msg = {
         // badge the channel unless it is the one on screen
         chat__increment_channel_unread_count(msg.message.channel_id);
 
-        let received_channel_chat_message_object = JSON.parse(msg.message.decrypted_value);
         received_channel_chat_message_object.value = chat__sanitize_string(received_channel_chat_message_object.value);
         let font_size1 = received_channel_chat_message_object.font_size;
 
@@ -1813,40 +1675,29 @@ var server_msg = {
 
         font_size1 = font_size1 + "px";
 
-        if (g_chat_context_array[chat_context_index].last_known_message_sender_username == chat_message_username)
-        {
-            let chat_message = "<p class='single-chat-message-content-p "+chat__sanitize_string(received_channel_chat_message_object.font)+"' data-single-chat-message-server-message-id='" + msg.message.server_chat_message_id + "' style='color: "+chat__sanitize_string(received_channel_chat_message_object.font_color)+"; font-size: "+font_size1+";'>" + received_channel_chat_message_object.value + "</p>";
-            let last_child_index = document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
-            document.getElementById(receiving_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].insertAdjacentHTML("beforeend", chat_message);
-        }
-        else
-        {
-            let html_to_append = "<div class=\"single-chat-message\">\n\
-                                            <div class=\"single-message-content\">\n\
-                                                <div class=\"single-chat-message-sender-username-container\">\n\
-                                                    " + android_host__generate_message_sender_html(msg.message.sender_id, chat_message_username) + "\n\
-                                                </div>\n\
-                                                <div class=\"single-chat-message-sender-time\">\n\
-                                                    <p>" + new Date().toLocaleTimeString() + "</p>\n\
-                                                </div>\n\
-                                                <div class=\"single-chat-message-content\">\n\
-                                                    <p class='single-chat-message-content-p "+chat__sanitize_string(received_channel_chat_message_object.font)+"' data-single-chat-message-server-message-id='"+ msg.message.server_chat_message_id + "' style='color: "+chat__sanitize_string(received_channel_chat_message_object.font_color)+"; font-size: "+font_size1+";'>" + received_channel_chat_message_object.value + "</p>\n\
-                                                </div>\n\
+        let html_to_append = "<div class=\"single-chat-message\">\n\
+                                        <div class=\"single-message-content\">\n\
+                                            <div class=\"single-chat-message-sender-username-container\">\n\
+                                                " + android_host__generate_message_sender_html(msg.message.sender_id, chat_message_username) + "\n\
                                             </div>\n\
-                                        </div>";
+                                            <div class=\"single-chat-message-sender-time\">\n\
+                                                <p>" + new Date().toLocaleTimeString() + "</p>\n\
+                                            </div>\n\
+                                            <div class=\"single-chat-message-content\">\n\
+                                                <p class='single-chat-message-content-p "+chat__sanitize_string(received_channel_chat_message_object.font)+"' data-single-chat-message-server-message-id='"+ msg.message.server_chat_message_id + "' style='color: "+chat__sanitize_string(received_channel_chat_message_object.font_color)+"; font-size: "+font_size1+";'>" + received_channel_chat_message_object.value + "</p>\n\
+                                            </div>\n\
+                                        </div>\n\
+                                    </div>";
 
-            let elements_count = document.getElementById(receiving_chat_context_id).getElementsByClassName("chat-spacer").length;
+        let elements_count = document.getElementById(receiving_chat_context_id).getElementsByClassName("chat-spacer").length;
 
-            for (let i = 0; i < elements_count; i++)
-            {
-                document.getElementById(receiving_chat_context_id).getElementsByClassName("chat-spacer")[0].remove();
-            }
-
-            document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
-            document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", "<div class=\"chat-spacer\"></div>");
-            chat__scroll_chat_to_end(false);
+        for (let i = 0; i < elements_count; i++)
+        {
+            document.getElementById(receiving_chat_context_id).getElementsByClassName("chat-spacer")[0].remove();
         }
 
+        document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
+        document.getElementById(receiving_chat_context_id).insertAdjacentHTML("beforeend", "<div class=\"chat-spacer\"></div>");
         chat__scroll_chat_to_end(false);
 
         if (g_local_username == chat_message_username)
@@ -1854,20 +1705,25 @@ var server_msg = {
             document.getElementById("chat-input-container-text-input").value = "";
         }
 
+        if (G_HAS_DOM)
+        {
+            let context = document.getElementById(receiving_chat_context_id);
+            chat_reactions__register(context.querySelector('[data-single-chat-message-server-message-id="' + msg.message.server_chat_message_id + '"]'), received_channel_chat_message_object.reaction_id, channel_tree__get_public_key_by_client_id(msg.message.sender_id), msg.message.sender_username, received_channel_chat_message_object.reply_to);
+        }
         g_chat_context_array[chat_context_index].last_known_message_sender_username = chat_message_username;
     },
     /**
-     * @brief a message somebody left for us while we were offline, handed over on connect
-     *        the sender may or may not be connected now, so it is addressed by their ALIAS: the chat
-     *        context is keyed by alias too, and merges with the live one if they are here
-     *
-     * @param object msg -> the server message, msg.message holds sender_alias, some_json and queued_unix_seconds
-     *
-     * @return void
+     * @brief Displays a queued message in the conversation belonging to the sender identity.
+     * @param msg Decrypted message and sender details.
      */
     process_offline_chat_message_from_server: function(msg)
     {
-        let sender_alias = (typeof msg.message.sender_alias === "string") ? msg.message.sender_alias : "";
+        let sender_name = (typeof msg.message.sender_name === "string") ? msg.message.sender_name : "";
+        let sender_identity_hash = msg.message.sender_identity_hash;
+        if (typeof sender_identity_hash !== "string" || !/^[A-Za-z0-9+/=]+$/.test(sender_identity_hash))
+        {
+            return;
+        }
         let received_object = null;
 
         try { received_object = JSON.parse(msg.message.some_json.value); }
@@ -1878,21 +1734,17 @@ var server_msg = {
             ? UI.format_time_ago(msg.message.queued_unix_seconds)
             : "while you were away";
 
-        // if that person is connected right now, their live private chat is the natural
-        // home for this; otherwise it goes into an alias-keyed context of its own
         let sender_client = null;
         for (let i = 0; i < g_client_list.length; i++)
         {
-            if (g_client_list[i] != null && g_client_list[i].alias == sender_alias && sender_alias.length > 0)
+            if (g_client_list[i] != null && g_client_list[i].identity_hash === sender_identity_hash)
             {
                 sender_client = g_client_list[i];
                 break;
             }
         }
 
-        // raw alias in the id so it matches what open_offline_chat_context builds; the
-        // alias only ever reaches the DOM as text through chat__sanitize_string below
-        let context_id = (sender_client != null) ? ("chat-context-pm-" + sender_client.client_id) : ("chat-context-offline-" + sender_alias);
+        let context_id = (sender_client != null) ? ("chat-context-pm-" + sender_client.client_id) : ("chat-context-offline-" + sender_identity_hash);
 
         // g_chat_context_array is the source of truth, not the dom. asking the dom whether the
         // context exists ties state creation to rendering, which breaks with no dom present
@@ -1910,7 +1762,7 @@ var server_msg = {
         if (is_chat_context_existing == false)
         {
             let html_to_append = "<div class=\"chat-context\" id=\"" + context_id + "\" style=\"display: none;\">\n\
-                                    <div class=\"single-server-message\">now talking to user: " + chat__sanitize_string(sender_alias) + "</div>\n\
+                                    <div class=\"single-server-message\">now talking to user: " + chat__sanitize_string(sender_name) + "</div>\n\
                                 </div>";
             document.getElementById('chat-context-container').insertAdjacentHTML("beforeend", html_to_append);
 
@@ -1921,12 +1773,11 @@ var server_msg = {
             });
 
             // a conversation tab so the message is reachable (the member list themes show it through the member list);
-            // the raw alias goes into the id, matching the context id the promotion looks up
-            let selector_id = (sender_client != null) ? ("user-" + sender_client.client_id) : ("offline-" + sender_alias);
+            let selector_id = (sender_client != null) ? ("user-" + sender_client.client_id) : ("offline-" + sender_identity_hash);
             if (document.querySelector('[data-chat-context-selector-id="' + selector_id + '"]') == null)
             {
                 let selector_html = "<div class=\"chat-context-selector\" data-chat-context-selector-type=\"user\" data-chat-context-selector-id=\"" + selector_id + "\">\n\
-                                        <div class=\"p-container\"><p>" + chat__sanitize_string(sender_alias) + "</p></div>\n\
+                                        <div class=\"p-container\"><p>" + chat__sanitize_string(sender_name) + "</p></div>\n\
                                         <div class=\"remove-chat-context-selector\" data-chat-context-remove-selector-type=\"user\" data-chat-context-remove-selector-id=\"" + selector_id + "\"></div>\n\
                                     </div>";
                 document.getElementById("chat-context-selectors-container").insertAdjacentHTML("beforeend", selector_html);
@@ -1947,7 +1798,7 @@ var server_msg = {
         let html_to_append = "<div class=\"single-chat-message\">\n\
                                 <div class=\"single-message-content\">\n\
                                     <div class=\"single-chat-message-sender-username-container\">\n\
-                                        " + android_host__generate_message_sender_html((sender_client != null) ? sender_client.client_id : null, chat__sanitize_string(sender_alias)) + "\n\
+                                        " + android_host__generate_message_sender_html((sender_client != null) ? sender_client.client_id : null, chat__sanitize_string(sender_name)) + "\n\
                                     </div>\n\
                                     <div class=\"single-chat-message-sender-time\">\n\
                                         <p>" + when_text + "</p>\n\
@@ -1959,6 +1810,15 @@ var server_msg = {
                             </div>";
 
         document.getElementById(context_id).insertAdjacentHTML("beforeend", html_to_append);
+        if (G_HAS_DOM)
+        {
+            let contact = sender_client || g_offline_client_list.find(function(client)
+            {
+                return client.identity_hash === sender_identity_hash;
+            });
+            let element = document.getElementById(context_id).querySelector(".single-chat-message:last-child .single-chat-message-content-p");
+            chat_reactions__register(element, received_object.reaction_id, contact && contact.public_key, sender_name, received_object.reply_to);
+        }
 
         if (g_current_chat_context_id == context_id)
         {
@@ -1984,6 +1844,12 @@ var server_msg = {
      */
     process_direct_chat_message_from_server: function(msg)
     {
+        let received_direct_message_object = msg.message.some_json.type === "direct_chat_message"
+            ? JSON.parse(msg.message.some_json.value) : null;
+        if (chat_reactions__receive(received_direct_message_object, msg.message, true))
+        {
+            return;
+        }
         chat__clear_typing_from_client(msg.message.sender_id);  // the message arrived, he is done
 
         g_chat_message_author_public_keys[msg.message.server_chat_message_id] = channel_tree__get_public_key_by_client_id(msg.message.sender_id);
@@ -1996,9 +1862,6 @@ var server_msg = {
                 return;
             }
 
-            let decrypted_text = msg.message.some_json.value;
-
-            let received_direct_message_object = JSON.parse(decrypted_text);
             received_direct_message_object.value = chat__sanitize_string(received_direct_message_object.value);
 
             let font_size1 = received_direct_message_object.font_size;
@@ -2063,46 +1926,34 @@ var server_msg = {
 
             let chat_context_index = chat__get_chat_context_index_by_chat_context_id(received_direct_message_chat_context_id);
 
-            if (g_chat_context_array[chat_context_index].last_known_message_sender_username == msg.message.sender_username)
-            {
-                let chat_message = "<p class='single-chat-message-content-p "+chat__sanitize_string(received_direct_message_object.font)+"' data-single-chat-message-server-message-id='" + msg.message.server_chat_message_id + "' style='color: "+chat__sanitize_string(received_direct_message_object.font_color)+"; font-size: "+font_size1+";'>" + received_direct_message_object.value + "</p>";
-                let last_child_index = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message").length - 1;
-                let exists = document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message") != "undefined";
-                document.getElementById(received_direct_message_chat_context_id).getElementsByClassName("single-chat-message")[last_child_index].getElementsByClassName("single-chat-message-content")[0].insertAdjacentHTML("beforeend", chat_message);
-                // hides the badge without clearing the count, which is what this did before
-                chat__render_unread_badge(msg.message.sender_id, false);
-            }
-            else
-            {
-                let html_to_append = "<div class=\"single-chat-message\">\n\
-                                        <div class=\"single-message-content\">\n\
-                                            <div class=\"single-chat-message-sender-username-container\">\n\
-                                                " + android_host__generate_message_sender_html(msg.message.sender_id, chat__sanitize_string(msg.message.sender_username)) + "\n\
-                                            </div>\n\
-                                            <div class=\"single-chat-message-sender-time\">\n\
-                                                <p>" + new Date().toLocaleTimeString() + "</p>\n\
-                                            </div>\n\
-                                            <div class=\"single-chat-message-content\">\n\
-                                                <p class='single-chat-message-content-p "+chat__sanitize_string(received_direct_message_object.font)+"' data-single-chat-message-server-message-id='"+ msg.message.server_chat_message_id + "' style='color: "+chat__sanitize_string(received_direct_message_object.font_color)+"; font-size: "+font_size1+";'>" + received_direct_message_object.value + "</p>\n\
-                                            </div>\n\
+            let html_to_append = "<div class=\"single-chat-message\">\n\
+                                    <div class=\"single-message-content\">\n\
+                                        <div class=\"single-chat-message-sender-username-container\">\n\
+                                            " + android_host__generate_message_sender_html(msg.message.sender_id, chat__sanitize_string(msg.message.sender_username)) + "\n\
                                         </div>\n\
-                                    </div>";
+                                        <div class=\"single-chat-message-sender-time\">\n\
+                                            <p>" + new Date().toLocaleTimeString() + "</p>\n\
+                                        </div>\n\
+                                        <div class=\"single-chat-message-content\">\n\
+                                            <p class='single-chat-message-content-p "+chat__sanitize_string(received_direct_message_object.font)+"' data-single-chat-message-server-message-id='"+ msg.message.server_chat_message_id + "' style='color: "+chat__sanitize_string(received_direct_message_object.font_color)+"; font-size: "+font_size1+";'>" + received_direct_message_object.value + "</p>\n\
+                                        </div>\n\
+                                    </div>\n\
+                                </div>";
 
-                document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
-                let elements_count = document.getElementsByClassName("chat-spacer").length;
+            document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", html_to_append);
+            let elements_count = document.getElementsByClassName("chat-spacer").length;
 
-                for (let i = 0; i < elements_count; i++)
-                {
-                    document.getElementsByClassName("chat-spacer")[0].remove();
-                }
+            for (let i = 0; i < elements_count; i++)
+            {
+                document.getElementsByClassName("chat-spacer")[0].remove();
+            }
 
-                let html_to_append1 = "<div class=\"chat-spacer\"></div>";
-                document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", html_to_append1);
+            let html_to_append1 = "<div class=\"chat-spacer\"></div>";
+            document.getElementById(received_direct_message_chat_context_id).insertAdjacentHTML("beforeend", html_to_append1);
 
-                if (g_current_chat_context_id == received_direct_message_chat_context_id)
-                {
-                    chat__scroll_chat_to_end(false);
-                }
+            if (g_current_chat_context_id == received_direct_message_chat_context_id)
+            {
+                chat__scroll_chat_to_end(false);
             }
             if (g_current_chat_context_id != received_direct_message_chat_context_id)
             {
@@ -2121,6 +1972,11 @@ var server_msg = {
                 {
                     chat__remember_message_awaiting_receipt(msg.message.sender_id, msg.message.server_chat_message_id);
                 }
+            }
+            if (G_HAS_DOM)
+            {
+                let context = document.getElementById(received_direct_message_chat_context_id);
+                chat_reactions__register(context.querySelector('[data-single-chat-message-server-message-id="' + msg.message.server_chat_message_id + '"]'), received_direct_message_object.reaction_id, channel_tree__get_public_key_by_client_id(msg.message.sender_id), msg.message.sender_username, received_direct_message_object.reply_to);
             }
             g_chat_context_array[chat_context_index].last_known_message_sender_username = msg.message.sender_username;
         }
@@ -2388,6 +2244,10 @@ var server_msg = {
      */
     process_client_rename_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         let client_index = channel_tree__get_client_index_in_array_by_client_id(parseInt(msg.message.client_id));
         if (client_index == -1)
         {
@@ -2416,8 +2276,6 @@ var server_msg = {
         let is_found = document.querySelector('[data-chat-context-selector-id="user-' + msg.message.client_id + '"]');
         if (is_found != null)
         {
-            // the conversation tab is labelled with the alias when there is one, so a rename must not
-            // paint the username over it
             is_found.getElementsByClassName("p-container")[0].textContent = channel_tree__get_display_name_by_client_id(msg.message.client_id, msg.message.new_username);
         }
 
@@ -2458,6 +2316,10 @@ var server_msg = {
      */
     process_client_list_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         if (G_HAS_DOM == false)
         {
             return;
@@ -2484,11 +2346,11 @@ var server_msg = {
                 let single_client = {
                     client_id: null,
                     username: null,
-                    alias: null,
+                    identity_hash: null,
                     public_key: null,
                     channel_id: null,
                     audio_state: null,
-                    tag_ids: null,
+                    group_ids: null,
                     is_clients_channel_hidden: null,
                     country_iso_code: null,
                     is_idle: null,
@@ -2500,11 +2362,11 @@ var server_msg = {
 
                 single_client.client_id = parseInt(client_id);
                 single_client.username = username;
-                single_client.alias = (msg.message.clients[i].alias != null) ? msg.message.clients[i].alias : "";
+                single_client.identity_hash = (msg.message.clients[i].identity_hash != null) ? msg.message.clients[i].identity_hash : "";
                 single_client.public_key = msg.message.clients[i].public_key;
                 single_client.channel_id = msg.message.clients[i].channel_id;
                 single_client.audio_state = msg.message.clients[i].audio_state;
-                single_client.tag_ids = msg.message.clients[i].tag_ids;
+                single_client.group_ids = msg.message.clients[i].group_ids;
                 single_client.is_clients_channel_hidden = msg.message.clients[i].is_clients_channel_hidden;
                 single_client.country_iso_code = msg.message.clients[i].country_iso_code;
                 single_client.is_idle = msg.message.clients[i].is_idle;
@@ -2524,11 +2386,11 @@ var server_msg = {
                 let single_client = {
                     client_id: null,
                     username: null,
-                    alias: null,
+                    identity_hash: null,
                     public_key: null,
                     channel_id: null,
                     audio_state: null,
-                    tag_ids: null,
+                    group_ids: null,
                     is_clients_channel_hidden: null,
                     country_iso_code: null,
                     is_idle: null,
@@ -2540,11 +2402,11 @@ var server_msg = {
 
                 single_client.client_id = parseInt(client_id);
                 single_client.username = username;
-                single_client.alias = (msg.message.clients[i].alias != null) ? msg.message.clients[i].alias : "";
+                single_client.identity_hash = (msg.message.clients[i].identity_hash != null) ? msg.message.clients[i].identity_hash : "";
                 single_client.public_key = msg.message.clients[i].public_key;
                 single_client.channel_id = msg.message.clients[i].channel_id;
                 single_client.audio_state = msg.message.clients[i].audio_state;
-                single_client.tag_ids = msg.message.clients[i].tag_ids;
+                single_client.group_ids = msg.message.clients[i].group_ids;
                 single_client.is_clients_channel_hidden = msg.message.clients[i].is_clients_channel_hidden;
                 single_client.country_iso_code = msg.message.clients[i].country_iso_code;
                 single_client.is_idle = msg.message.clients[i].is_idle;
@@ -2594,11 +2456,11 @@ var server_msg = {
                 let single_client = {
                     client_id: null,
                     username: null,
-                    alias: null,
+                    identity_hash: null,
                     public_key: null,
                     channel_id: null,
                     audio_state: null,
-                    tag_ids: null,
+                    group_ids: null,
                     is_clients_channel_hidden: null,
                     country_iso_code: null,
                     is_idle: null,
@@ -2609,11 +2471,11 @@ var server_msg = {
                 };
 
                 single_client.audio_state = msg.message.clients[i].audio_state;
-                single_client.tag_ids = msg.message.clients[i].tag_ids;
+                single_client.group_ids = msg.message.clients[i].group_ids;
                 single_client.is_clients_channel_hidden = false;
                 single_client.client_id = parseInt(client_id);
                 single_client.username = username;
-                single_client.alias = (msg.message.clients[i].alias != null) ? msg.message.clients[i].alias : "";
+                single_client.identity_hash = (msg.message.clients[i].identity_hash != null) ? msg.message.clients[i].identity_hash : "";
                 single_client.public_key = msg.message.clients[i].public_key;
                 single_client.channel_id = msg.message.clients[i].channel_id;
                 single_client.country_iso_code = msg.message.clients[i].country_iso_code;
@@ -2767,6 +2629,11 @@ var server_msg = {
      */
     process_admin_log_from_server: function(msg)
     {
+        if (!groups__has_permission("view_server_logs"))
+        {
+            return;
+        }
+        document.getElementById("groups-log-text").value = Array.isArray(msg.message.lines) ? msg.message.lines.join("\n") : "";
         let textarea = document.getElementById("server-settings-log-textarea");
         let lines = Array.isArray(msg.message.lines) ? msg.message.lines : [];
 
@@ -2774,7 +2641,7 @@ var server_msg = {
         textarea.scrollTop = textarea.scrollHeight;
     },
     /**
-     * @brief somebody switched channel: moves their row, replays their tag labels, plays the join, leave or switch sound; for the local client also swaps the chat context and nulls the channel keys
+     * @brief somebody switched channel: moves their row, replays their group labels, plays the join, leave or switch sound; for the local client also swaps the chat context and nulls the channel keys
      *
      * @param object msg -> the server message, msg.message holds client_id and channel_id (-1 for a hidden channel)
      *
@@ -2852,6 +2719,7 @@ var server_msg = {
 
                 keys__cancel_channel_key_creation();
                 g_current_channel_id = msg.message.channel_id;
+                groups__refresh_channel_controls();
             video__on_local_channel_changed();
                 keys__set_current_channel_keys(null);
 
@@ -2955,9 +2823,10 @@ var server_msg = {
                 document.getElementById("chat-context-channel-" + msg.message.channel_id).style.display = "block";
 
                 g_current_chat_context_id = "chat-context-channel-" + msg.message.channel_id;
+                chat_replies__refresh();
         chat__clear_channel_unread_count(msg.message.channel_id); // opened it, so it is read
                 g_chat_message_receiver_type = "channel";
-            g_offline_chat_recipient_alias = ""; // back on a channel: no offline target
+            g_offline_chat_recipient_identity_hash = ""; // back on a channel: no offline target
                 console.log("joined new channel, nulling out current_channel_keys");
                 keys__set_current_channel_keys(null);
 
@@ -3006,24 +2875,24 @@ var server_msg = {
             }
 
             // html element that represents client is now appended to newly joined channel at this point
-            // now append client tags to client again
+            // now append client groups to client again
 
-            for (let y = 0; y < client_that_joined.tag_ids.length; y++)
+            for (let y = 0; y < client_that_joined.group_ids.length; y++)
             {
-                let tag = channel_tree__get_tag_by_tag_id(client_that_joined.tag_ids[y]);
-                if (tag == null)
+                let group = channel_tree__get_group_by_group_id(client_that_joined.group_ids[y]);
+                if (group == null)
                 {
-                    console.log("tag is null");
+                    console.log("group is null");
                     continue;
                 }
-                let target_element = document.getElementById("client-tags-" + client_that_joined.client_id);
+                let target_element = document.getElementById("client-groups-" + client_that_joined.client_id);
                 const node = document.createElement("div");
-                node.className = "single-tag";
-                node.setAttribute("tag-id", tag.tag_id);
+                node.className = "single-group";
+                node.setAttribute("group-id", group.group_id);
 
                 // same guard as everywhere else: this is the path that runs when somebody switches
                 // channel, which is why an unassigned icon used to appear only after a channel change
-                let icon = (tag.has_icon == true) ? channel_tree__get_icon_by_icon_id(tag.tag_linked_icon_id) : null;
+                let icon = (group.has_icon == true) ? channel_tree__get_icon_by_icon_id(group.group_linked_icon_id) : null;
                 if (icon != null)
                 {
                     node.style.backgroundImage = "url("+icon.base64_icon+")";
@@ -3121,7 +2990,9 @@ var server_msg = {
         if (element != null)
         {
             element.removeEventListener("mousedown", UI.single_chat_message_onrightclick);
+            chat_reactions__forget(element, true);
             element.innerHTML = "deleted";
+            element.classList.remove("chat-message-edited");
             element.style.fontStyle = "italic";
             element.style.fontSize = "10px";
 
@@ -3136,6 +3007,7 @@ var server_msg = {
             if (element != null)
             {
                 element.removeEventListener("mousedown", UI.single_chat_message_onrightclick);
+                chat_reactions__forget(element, true);
                 element.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDI0IDI0Ij48ZyBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMuNSIgeT0iMy41IiB3aWR0aD0iMTciIGhlaWdodD0iMTciIHJ4PSIyIiBmaWxsPSIjMjIzMTNhIiBzdHJva2U9IiNhZWJiYzUiIHN0cm9rZS13aWR0aD0iMS40Ii8+PGNpcmNsZSBjeD0iOCIgY3k9IjgiIHI9IjEuNCIgZmlsbD0iI2FlYmJjNSIvPjxwYXRoIGQ9Im00IDE3IDUtNSA0IDQgMy0zIDQgNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYWViYmM1IiBzdHJva2Utd2lkdGg9IjEuNCIvPjxwYXRoIGQ9Im0zIDMgMTggMTgiIHN0cm9rZT0iI2MzY2RkNCIgc3Ryb2tlLXdpZHRoPSIyIi8+PC9nPjwvc3ZnPg==";
                 element.classList.add("chat-picture-img-default", "chat-picture-deleted");
                 element.classList.remove("local-client-chat-picture-img", "imgnotsentyet");
@@ -3148,6 +3020,7 @@ var server_msg = {
 
                 if (file_card != null)
                 {
+                    chat_reactions__forget(file_card, true);
                     chat_files__mark_chat_file_card_deleted(file_card);
                 }
                 else
@@ -3193,11 +3066,8 @@ var server_msg = {
         }
     },
     /**
-     * @brief a chat message was edited: the text is replaced in place (shown pink) if the requester is the recorded author or an admin
-     *
-     * @param object msg -> the server message, msg.message holds chat_message_id, new_message_value, requester_public_key and requester_is_admin
-     *
-     * @return void
+     * @brief Replaces an authorized edit and marks the message as edited.
+     * @param msg Message identifier, changed text and requester information.
      */
     process_chat_message_edit_from_server: function(msg)
     {
@@ -3210,12 +3080,12 @@ var server_msg = {
         let element = document.querySelector('.single-chat-message-content-p[data-single-chat-message-server-message-id="' + msg.message.chat_message_id + '"]');
         if (element != null)
         {
-            element.innerHTML = chat__sanitize_string(msg.message.new_message_value);
-            element.style.color = "pink";
+            element.textContent = msg.message.new_message_value;
+            element.classList.add("chat-message-edited");
         }
     },
     /**
-     * @brief a new icon: pushed into g_icons with its settings entry; if this reply is our in-flight upload, the next queued icon upload goes out
+     * @brief Stores an uploaded icon and continues any remaining uploads.
      *
      * @param object msg -> the server message, msg.message holds icon_id and base64_icon
      *
@@ -3223,6 +3093,10 @@ var server_msg = {
      */
     process_icon_add_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         let icon = {
             id: msg.message.icon_id,
             base64_icon: msg.message.base64_icon
@@ -3230,26 +3104,31 @@ var server_msg = {
 
         g_icons.push(icon);
 
-        let html_to_append = "<div class='server-settings-icon-entry' data-icon-id="+icon.id+"><img class='img-uploaded-icon' src="+icon.base64_icon+"></img><button class='settings-entry-delete-button' title='delete icon'>✕</button></div>";
-
-        document.getElementById("server-settings-tab-icons-container").insertAdjacentHTML("beforeend", html_to_append);
 
         // batch upload: if this reply is the icon we just sent, send the next queued one
         if (g_icon_upload_in_flight_base64 != null && msg.message.base64_icon == g_icon_upload_in_flight_base64)
         {
             g_icon_upload_in_flight_base64 = null;
             server_settings_tab__send_next_queued_icon_upload();
+            if (typeof groups__icon_uploaded === "function")
+            {
+                groups__icon_uploaded();
+            }
         }
     },
     /**
-     * @brief a tag was taken off a client: drops the id from their tag_ids and removes its label from their row
+     * @brief a group was taken off a client: drops the id from their group_ids and removes its label from their row
      *
-     * @param object msg -> the server message, msg.message holds client_id and tag_id
+     * @param object msg -> the server message, msg.message holds client_id and group_id
      *
      * @return void
      */
-    process_remove_tag_from_client_from_server: function(msg)
+    process_remove_group_from_client_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         console.log(msg);
         let client = channel_tree__get_client_by_client_id(msg.message.client_id);
 
@@ -3258,37 +3137,38 @@ var server_msg = {
             return;
         }
 
-        // do not add duplicate tag ids to client object
+        // do not add duplicate group ids to client object
 
-        if (client.tag_ids.includes(msg.message.tag_id))
+        if (client.group_ids.includes(msg.message.group_id))
         {
-            client.tag_ids.splice(client.tag_ids.indexOf(msg.message.tag_id), 1);  // deleting
+            client.group_ids.splice(client.group_ids.indexOf(msg.message.group_id), 1);  // deleting
         }
 
-        // double selector..first find client tags element
-        let client_tags = document.getElementById("client-tags-"+msg.message.client_id);
-        let target_element = client_tags.querySelector('.single-tag[tag-id="'+msg.message.tag_id+'"]');
+        // double selector..first find client groups element
+        let client_groups = document.getElementById("client-groups-"+msg.message.client_id);
+        let target_element = client_groups ? client_groups.querySelector('.single-group[group-id="'+msg.message.group_id+'"]') : null;
         if (target_element != null)
         {
             target_element.remove();
         }
         else
         {
-            console.log("process_remove_tag_from_client_from_server failed to find tag-id:" + msg.message.tag_id);
+            console.log("process_remove_group_from_client_from_server failed to find group-id:" + msg.message.group_id);
         }
     },
     /**
-     * @brief the identities the server stores, once: [{ alias, base64_avatar, tag_ids }]
-     *        it carries no ids or keys; the alias is the handle, and the server keeps aliases unique,
-     *        so an entry whose alias matches a connected client IS that client and is not listed again
-     *
-     * @param object msg -> the server message, msg.message.stored_clients holds the entries
-     *
-     * @return void
+     * @brief Updates saved contacts using their identity hashes, names and permitted public keys.
+     * @param msg Saved contact list from the server.
      */
     process_stored_clients_list_from_server: function(msg)
     {
         g_offline_client_list = [];
+        if (G_HAS_DOM && (!g_server_policy.is_stored_client_list_allowed
+            || !groups__is_allowed(channel_tree__get_client_by_client_id(g_local_client_id), "view_stored_users")))
+        {
+            UI.schedule_member_list_sync();
+            return;
+        }
 
         if (msg.message.stored_clients == null)
         {
@@ -3299,20 +3179,19 @@ var server_msg = {
         {
             let entry = msg.message.stored_clients[i];
 
-            if (entry == null || typeof entry.alias !== "string" || entry.alias.length == 0)
+            if (entry == null || typeof entry.identity_hash !== "string" || !/^[A-Za-z0-9+/=]+$/.test(entry.identity_hash))
             {
                 continue; // nothing to name or pair it by
             }
 
             g_offline_client_list.push({
-                alias: entry.alias,
+                identity_hash: entry.identity_hash,
+                username: typeof entry.username === "string" ? entry.username : "Saved user",
                 base64_avatar: (typeof entry.base64_avatar === "string") ? entry.base64_avatar : "",
-                tag_ids: (entry.tag_ids != null) ? entry.tag_ids : [],
+                group_ids: (entry.group_ids != null) ? entry.group_ids : [],
                 // unix seconds; only sent when the server has last-seen enabled
                 last_seen: (typeof entry.last_seen === "number") ? entry.last_seen : 0,
-                // only sent when the server has offline messages enabled. having it IS the
-                // permission to write to this person while they are away - without their
-                // public key there is no way to encrypt anything for them
+                // The server includes the key only when both users have the required offline messaging permissions.
                 public_key: (typeof entry.public_key === "string") ? entry.public_key : ""
             });
         }
@@ -3321,58 +3200,6 @@ var server_msg = {
         UI.schedule_member_list_sync();
     },
 
-    /**
-     * @brief a client's alias changed: updated in g_client_list, on their rows (text and has-alias class), on old messages and an open conversation tab, then the member list is synced
-     *
-     * @param object msg -> the server message, msg.message holds client_id and alias
-     *
-     * @return void
-     */
-    process_client_alias_changed_from_server: function(msg)
-    {
-        let client_object = channel_tree__get_client_by_client_id(msg.message.client_id);
-        if (client_object == null)
-        {
-            return;
-        }
-
-        client_object.alias = (msg.message.alias != null) ? msg.message.alias : "";
-
-        // an alias change changes the display name on old messages too
-        android_host__retag_rendered_messages_of_sender(msg.message.client_id, channel_tree__get_display_name_by_client_id(msg.message.client_id, client_object.username));
-
-        // update the live rows in place; the member list mirror re-clones them right after
-        let rows = document.querySelectorAll('.connected-client[data-connected-client-id="' + msg.message.client_id + '"]');
-        for (let i = 0; i < rows.length; i++)
-        {
-            let alias_p = rows[i].querySelector(".client-alias");
-            if (alias_p == null)
-            {
-                continue;
-            }
-
-            alias_p.textContent = client_object.alias;
-
-            if (client_object.alias.length > 0)
-            {
-                rows[i].classList.add("has-alias");
-            }
-            else
-            {
-                rows[i].classList.remove("has-alias");
-            }
-        }
-
-        // an open chat with this person is labelled by name too - relabel it now instead
-        // of leaving the old username sitting there until the chat is reopened
-        let open_tab = document.querySelector('[data-chat-context-selector-id="user-' + msg.message.client_id + '"]');
-        if (open_tab != null)
-        {
-            open_tab.getElementsByClassName("p-container")[0].textContent = channel_tree__get_display_name_by_client_id(msg.message.client_id, client_object.username);
-        }
-
-        UI.schedule_member_list_sync();
-    },
 
     /**
      * @brief the country code a client's row shows from now on; the server withholds an admin's, so it arrives as "" when they become admin and comes back when they stop being one
@@ -3406,14 +3233,18 @@ var server_msg = {
     },
 
     /**
-     * @brief a tag was given to a client: recorded on the client (no duplicates) and painted as a label; also reveals the server-settings button when the local client just received the admin tag
+     * @brief a group was given to a client: recorded on the client (no duplicates) and painted as a label; also reveals the server-settings button when the local client just received the admin group
      *
-     * @param object msg -> the server message, msg.message holds client_id and tag_id
+     * @param object msg -> the server message, msg.message holds client_id and group_id
      *
      * @return void
      */
-    process_add_tag_to_client_from_server: function(msg)
+    process_add_group_to_client_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         let client = channel_tree__get_client_by_client_id(msg.message.client_id);
 
         if (client == null)
@@ -3421,34 +3252,34 @@ var server_msg = {
             return;
         }
 
-        // do not add duplicate tag ids to client object
+        // do not add duplicate group ids to client object
 
-        let tag = channel_tree__get_tag_by_tag_id(msg.message.tag_id);
+        let group = channel_tree__get_group_by_group_id(msg.message.group_id);
 
-        // resolve the tag BEFORE recording it - an unknown id used to be pushed onto the
+        // resolve the group BEFORE recording it - an unknown id used to be pushed onto the
         // client and only then bailed on, leaving an id no later render could resolve
-        if (tag == null)
+        if (group == null)
         {
-            console.log("tag is null");
+            console.log("group is null");
             return;
         }
 
-        if (!client.tag_ids.includes(msg.message.tag_id))
+        if (!client.group_ids.includes(msg.message.group_id))
         {
-            client.tag_ids.push(msg.message.tag_id);
+            client.group_ids.push(msg.message.group_id);
         }
 
-        let target_element = document.getElementById("client-tags-" + msg.message.client_id);
+        let target_element = document.getElementById("client-groups-" + msg.message.client_id);
 
         // a client in a hidden channel has no row to paint on. this used to throw here and
         // skip everything below it, including revealing the local admin's settings button
         if (target_element != null)
         {
             const node = document.createElement("div");
-            node.className = "single-tag";
-            node.setAttribute("tag-id", tag.tag_id);
+            node.className = "single-group";
+            node.setAttribute("group-id", group.group_id);
 
-            let icon = tag.has_icon ? channel_tree__get_icon_by_icon_id(tag.tag_linked_icon_id) : null;
+            let icon = group.has_icon ? channel_tree__get_icon_by_icon_id(group.group_linked_icon_id) : null;
 
             if (icon != null)
             {
@@ -3458,84 +3289,54 @@ var server_msg = {
             target_element.appendChild(node);
         }
 
-        if (msg.message.client_id == g_local_client_id && msg.message.tag_id == 0) // admin tag id
-        {
-            document.getElementById("enter-server-settings").style.display = "block";
-            document.getElementById("enter-server-settings").onclick = UI.enter_server_settings_onclick;
 
-            // an admin may rename even when renames are off for users, so the input un-greys
-            g_is_local_client_admin = true;
-            server_settings_tab__apply_rename_policy_to_ui();
-            // Resume readings if the settings panel stayed open through a reconnect.
-            if (G_HAS_DOM && document.querySelector("[data-admin-server-ram]").getClientRects().length > 0)
-            {
-                server_info__request_admin_settings();
-            }
-        }
     },
     /**
-     * @brief a new tag: pushed into g_tags and appended to the settings tag table
+     * @brief Adds a group received from the server.
      *
-     * @param object msg -> the server message, msg.message holds the tag's fields
+     * @param object msg -> the server message, msg.message holds the group's fields
      *
      * @return void
      */
-    process_tag_add_from_server: function(msg)
+    process_group_add_from_server: function(msg)
     {
-        let tag = msg.message;
-
-        g_tags.push(tag);
-
-        let icon = tag.has_icon ? channel_tree__get_icon_by_icon_id(tag.tag_linked_icon_id) : null;
-
-        let base64_icon = "";
-
-        if (icon != null)
+        if (typeof groups__schedule_refresh === "function")
         {
-            base64_icon = icon.base64_icon;
+            groups__schedule_refresh();
         }
-
-        let tag_delete_button_html = (tag.tag_id != 0) ? "<button class=\"settings-entry-delete-button\" title=\"delete tag\">✕</button>" : "";
-        let html_to_append = "<div class=\"server-settings-tag-entry\" data-tag-id=\""+tag.tag_id+"\">\n\
-                                <p class=\"tag-settings-entry-p\">"+tag.tag_id+"</p>\n\
-                                <p class=\"tag-settings-entry-p\">"+tag.tag_name+"</p>\n\
-                                <p class=\"tag-settings-entry-p\">"+tag.tag_linked_icon_id+"</p>\n\
-                                <div class=\"tag-settings-entry-img\" style=\"background-image: url("+base64_icon+");\"></div>\n\
-                                "+tag_delete_button_html+"\n\
-                            </div>";
-
-        document.getElementById("server-settings-tab-tags-container").insertAdjacentHTML("beforeend", html_to_append);
+        g_groups.push(msg.message);
     },
     /**
-     * @brief a tag was deleted: removed from g_tags, its settings row, every displayed label and every client's tag_ids
+     * @brief Removes a deleted group from the list and from connected users.
      *
-     * @param object msg -> the server message, msg.message.tag_id names the tag
+     * @param object msg -> the server message, msg.message.group_id names the group
      *
      * @return void
      */
-    process_tag_delete_from_server: function(msg)
+    process_group_delete_from_server: function(msg)
     {
-        let tag_id = msg.message.tag_id;
-
-        for (let i = g_tags.length - 1; i >= 0; i--)
+        if (typeof groups__schedule_refresh === "function")
         {
-            if (g_tags[i].tag_id == tag_id) { g_tags.splice(i, 1); }
+            groups__schedule_refresh();
+        }
+        let group_id = msg.message.group_id;
+
+        for (let i = g_groups.length - 1; i >= 0; i--)
+        {
+            if (g_groups[i].group_id == group_id) { g_groups.splice(i, 1); }
         }
 
-        let entry = document.querySelector('.server-settings-tag-entry[data-tag-id="' + tag_id + '"]');
-        if (entry != null) { entry.remove(); }
-
-        let displayed_tags = document.querySelectorAll('.single-tag[tag-id="' + tag_id + '"]');
-        for (let i = 0; i < displayed_tags.length; i++) { displayed_tags[i].remove(); }
+        let displayed_groups = document.querySelectorAll('.single-group[group-id="' + group_id + '"]');
+        for (let i = 0; i < displayed_groups.length; i++) { displayed_groups[i].remove(); }
 
         for (let i = 0; i < g_client_list.length; i++)
         {
-            let index_of_tag = g_client_list[i].tag_ids.indexOf(tag_id);
-            if (index_of_tag != -1) { g_client_list[i].tag_ids.splice(index_of_tag, 1); }
+            let index_of_group = g_client_list[i].group_ids.indexOf(group_id);
+            if (index_of_group != -1) { g_client_list[i].group_ids.splice(index_of_group, 1); }
         }
     },
     /**
-     * @brief an icon was deleted: removed from g_icons and from the settings icon list
+     * @brief Removes a deleted server icon and updates the places that displayed it.
      *
      * @param object msg -> the server message, msg.message.icon_id names the icon
      *
@@ -3543,15 +3344,22 @@ var server_msg = {
      */
     process_icon_delete_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         let icon_id = msg.message.icon_id;
 
         for (let i = g_icons.length - 1; i >= 0; i--)
         {
-            if (g_icons[i].id == icon_id) { g_icons.splice(i, 1); }
+            if (g_icons[i].id == icon_id)
+            {
+                g_icons.splice(i, 1);
+            }
         }
 
-        let entry = document.querySelector('.server-settings-icon-entry[data-icon-id="' + icon_id + '"]');
-        if (entry != null) { entry.remove(); }
+        UI.refresh_all_channel_icons();
+        UI.schedule_member_list_sync();
     },
     /**
      * @brief a channel's icon changed: the new icon fields are stored and its row repainted (and the icon box of the channel edit form if it is open for that channel)
@@ -3562,6 +3370,10 @@ var server_msg = {
      */
     process_channel_icon_changed_from_server: function(msg)
     {
+        if (typeof groups__schedule_refresh === "function")
+        {
+            groups__schedule_refresh();
+        }
         let channel = channel_tree__get_channel_by_id(g_channel_list, msg.message.channel_id);
         if (channel != null)
         {
@@ -3577,24 +3389,28 @@ var server_msg = {
         }
     },
     /**
-     * @brief a tag's icon changed: the icon fields are updated in g_tags, its settings row and every displayed label repainted
+     * @brief Updates the icon shown beside users with this group.
      *
-     * @param object msg -> the server message, msg.message holds tag_id, has_icon and tag_linked_icon_id
+     * @param object msg -> the server message, msg.message holds group_id, has_icon and group_linked_icon_id
      *
      * @return void
      */
-    process_tag_icon_changed_from_server: function(msg)
+    process_group_icon_changed_from_server: function(msg)
     {
-        let tag_id = msg.message.tag_id;
-        let has_icon = msg.message.has_icon;
-        let icon_id = msg.message.tag_linked_icon_id;
-
-        for (let i = 0; i < g_tags.length; i++)
+        if (typeof groups__schedule_refresh === "function")
         {
-            if (g_tags[i].tag_id == tag_id)
+            groups__schedule_refresh();
+        }
+        let group_id = msg.message.group_id;
+        let has_icon = msg.message.has_icon;
+        let icon_id = msg.message.group_linked_icon_id;
+
+        for (let i = 0; i < g_groups.length; i++)
+        {
+            if (g_groups[i].group_id == group_id)
             {
-                g_tags[i].has_icon = has_icon;
-                g_tags[i].tag_linked_icon_id = icon_id;
+                g_groups[i].has_icon = has_icon;
+                g_groups[i].group_linked_icon_id = icon_id;
                 break;
             }
         }
@@ -3602,17 +3418,10 @@ var server_msg = {
         let icon = has_icon ? channel_tree__get_icon_by_icon_id(icon_id) : null;
         let background = (icon != null) ? ("url(" + icon.base64_icon + ")") : "";
 
-        let entry = document.querySelector('.server-settings-tag-entry[data-tag-id="' + tag_id + '"]');
-        if (entry != null)
+        let displayed_groups = document.querySelectorAll('.single-group[group-id="' + group_id + '"]');
+        for (let i = 0; i < displayed_groups.length; i++)
         {
-            let img_box = entry.querySelector('.tag-settings-entry-img');
-            if (img_box != null) { img_box.style.backgroundImage = background; }
-        }
-
-        let displayed_tags = document.querySelectorAll('.single-tag[tag-id="' + tag_id + '"]');
-        for (let i = 0; i < displayed_tags.length; i++)
-        {
-            displayed_tags[i].style.backgroundImage = background;
+            displayed_groups[i].style.backgroundImage = background;
         }
     },
     /**
@@ -3859,12 +3668,19 @@ var client_msg = {
     },
 
     /**
-     * @brief asks for the identities the server has stored (alias, avatar, tags), so people registered here can be shown while offline; the server ignores it unless it allows the list
+     * @brief Requests stored users only when the server enables the list and this client may view it.
      *
      * @return void
      */
     send_request_stored_clients: function()
     {
+        let client = channel_tree__get_client_by_client_id(g_local_client_id);
+        if (!g_is_client_list_retrieved || g_fast_reconnect.resumed
+            || !g_server_policy.is_stored_client_list_allowed || !groups__is_allowed(client, "view_stored_users"))
+        {
+            return;
+        }
+
         let message_object = {
             message:
             {

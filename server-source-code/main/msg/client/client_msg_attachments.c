@@ -1,6 +1,7 @@
 // This file checks uploaded file pieces, requests to deliver completed uploads and attachment receive preferences.
 #include "client_msg.h"
 #include "../../core/attachments.h"
+#include "../../core/permissions.h"
 #include "../server/server_msg.h"
 #include "../../core/musicbot.h"
 #include "../../base.h"
@@ -529,6 +530,7 @@ void client_msg__attachments__process_file_send_completed_request(cJSON* json_ro
 
         if (sender_client->is_admin == FALSE)
         {
+            server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
             DBG_CLIENT_MESSAGE log_info("%s", "sender_client->is_admin == FALSE");
             goto label_client_msg__process_file_send_completed_request_end;
         }
@@ -569,7 +571,18 @@ void client_msg__attachments__process_file_send_completed_request(cJSON* json_ro
     {
         json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "receiver_id");
         json_local_message_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "local_message_id");
-        file_transfer__process_channel_chat_picture(sender_client_id, json_local_message_id->valueint, sender_client->file_upload_extension.file_upload_buffer);
+        clib__read_lock(&g_channels_global_rwlock_guard);
+        if (sender_client->channel_id < g_server_settings.max_channel_count
+            && permissions__can_use_channel(sender_client, &g_channel_array[sender_client->channel_id], PERMISSION_CHANNEL_PICTURE_POWER) == TRUE)
+        {
+            file_transfer__process_channel_chat_picture(sender_client_id, json_local_message_id->valueint, sender_client->file_upload_extension.file_upload_buffer);
+        }
+        else
+        {
+            server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
+            server_msg__attachments__send_file_send_error_to_single_client(sender_client, "insufficient_permissions", json_local_message_id->valueint);
+        }
+        clib__unlock(&g_channels_global_rwlock_guard);
     }
     else
     {

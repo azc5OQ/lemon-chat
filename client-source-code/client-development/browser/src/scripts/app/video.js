@@ -15,11 +15,14 @@ var VIDEO_PACKET_MAX_BYTES = 15000;
 // ten to twenty times the size of a normal frame, so a long interval keeps those bursts rare
 var VIDEO_KEYFRAME_INTERVAL_MS = 8000;
 
-// above this much queued on the datachannel the streamer skips frames: two frames of bytes at the
-// current bitrate, at least the minimum below (video__send_buffer_limit). a run of skips halves the
-// bitrate, stepped back up slowly once the queue drains
+// Wait before encoding another picture if the connection still holds two frames of data.
+// Repeated delays lower the bitrate and picture size when automatic quality is enabled.
 var VIDEO_SEND_BUFFER_MIN_BYTES = 32 * 1024;
 var VIDEO_FRAME_DEADLINE_MS = 250;
+// A complete replacement picture needs more time to arrive after playback falls behind.
+var VIDEO_KEYFRAME_DEADLINE_MS = 1500;
+// Allow a short initial burst before spacing the remaining keyframe packets.
+var VIDEO_PACKET_PACING_MARGIN_MS = 100;
 
 // a viewer asks for a keyframe at most this often, the server rate limits per streamer on top
 var VIDEO_KEYFRAME_REQUEST_MIN_INTERVAL_MS = 1000;
@@ -71,8 +74,12 @@ var video_last_keyframe_ms = 0;
 var video_force_keyframe = false;
 var video_last_encoded_ms = 0;
 var video_last_source_time = null;
-var video_quality_window = {started: 0, frames: 0, skipped: 0, slow: 0, clean_since: 0};
+var video_quality_window = {started: 0, frames: 0, skipped: 0, slow: 0, recovery_requests: 0, clean_since: 0};
+var video_last_recovery_request_ms = -Infinity;
 var video_pending_encryption = false;
+var video_pending_picture = null;
+var video_packet_send_timer = null;
+var video_next_packet_send_ms = 0;
 var video_sender_generation = 0;
 var video_sender_needs_keyframe = true;
 var video_current_bitrate = 0;
@@ -180,10 +187,11 @@ function video__refresh_controls()
     let is_allowed = (g_server_policy.is_video_streaming_allowed == true);
     let channel = video__get_current_channel();
     let is_channel_enabled = (channel != null && channel.is_video_stream_enabled != false);
+    let has_stream_power = groups__can_send_to_channel("stream", g_current_channel_id);
     let button_container = document.getElementById("upload-video-stream-container");
     let button = document.getElementById("video-stream-button");
-    let properties_label = document.getElementById("channel-properties-disable-video-label");
-    let properties_field = document.getElementById("channel-properties-disable-video-field");
+    let properties_label = document.getElementById("channel-properties-enable-video-label");
+    let properties_field = document.getElementById("channel-properties-enable-video-field");
 
     // the channel properties row exists only while the server allows streaming at all
     if (properties_label != null) { properties_label.style.display = is_allowed ? "" : "none"; }
@@ -195,6 +203,7 @@ function video__refresh_controls()
         let show = is_allowed && is_channel_enabled && is_someone_else_streaming == false;
 
         button_container.style.display = show ? "" : "none";
+        button.setAttribute("aria-disabled", String(!has_stream_power && g_video_stream.role != "streamer"));
 
         if (video__is_supported() == false)
         {
@@ -205,6 +214,11 @@ function video__refresh_controls()
         {
             button.classList.remove("chat-file-uploads-off");
             button.title = "you are streaming - open the stream window";
+        }
+        else if (!has_stream_power)
+        {
+            button.classList.add("chat-file-uploads-off");
+            button.title = groups__channel_power_message("stream");
         }
         else
         {
@@ -354,6 +368,12 @@ function video__stream_button_onclick()
         return;
     }
 
+    if (!groups__can_send_to_channel("stream", g_current_channel_id))
+    {
+        groups__notify_channel_power_denied("stream");
+        return;
+    }
+
     if (g_video_stream.is_active == true)
     {
         utils__custom_alert(video__get_username(g_video_stream.streamer_client_id) + " is already streaming in this channel");
@@ -466,6 +486,12 @@ function video__is_sound_available()
  */
 function video__start_screen_share(is_sound_included)
 {
+    if (!groups__can_send_to_channel("stream", g_current_channel_id))
+    {
+        groups__notify_channel_power_denied("stream");
+        return;
+    }
+
     if (navigator.mediaDevices == null || typeof navigator.mediaDevices.getDisplayMedia != "function")
     {
         utils__custom_alert("screen sharing needs a secure connection: open the client over HTTPS, from localhost, or as a local file");
@@ -521,6 +547,13 @@ function video__start_screen_share(is_sound_included)
  */
 function video__file_input_onchange(event)
 {
+    if (!groups__can_send_to_channel("stream", g_current_channel_id))
+    {
+        event.target.value = "";
+        groups__notify_channel_power_denied("stream");
+        return;
+    }
+
     let files = event.target.files;
 
     if (files == null || files.length == 0)
@@ -550,6 +583,13 @@ function video__file_input_onchange(event)
  */
 function video__begin_stream(source, media_stream, object_url)
 {
+    if (!groups__can_send_to_channel("stream", g_current_channel_id))
+    {
+        video__release_source();
+        groups__notify_channel_power_denied("stream");
+        return;
+    }
+
     let preview = document.getElementById("video-stream-preview");
     let preset = Object.assign({}, VIDEO_PRESETS[source], video_settings);
 
@@ -610,6 +650,13 @@ function video__begin_stream(source, media_stream, object_url)
             if (g_video_stream.is_start_pending != true)
             {
                 return; // cancelled while probing
+            }
+
+            if (!groups__can_send_to_channel("stream", g_current_channel_id))
+            {
+                video__stop_stream(false, "insufficient permissions");
+                groups__notify_channel_power_denied("stream");
+                return;
             }
 
             video_encoder_config = config;
@@ -678,6 +725,7 @@ function video__pick_codec(width, height, preset)
             width: width,
             height: height,
             bitrate: preset.bitrate,
+            bitrateMode: "constant",
             framerate: preset.fps,
             latencyMode: "realtime"
         };
@@ -726,8 +774,13 @@ function video__on_stream_confirmed()
     video_last_source_time = null;
     video_last_keyframe_ms = 0;
     video_force_keyframe = true;
-    video_quality_window = {started: performance.now(), frames: 0, skipped: 0, slow: 0, clean_since: performance.now()};
+    video_quality_window = {started: performance.now(), frames: 0, skipped: 0, slow: 0, recovery_requests: 0, clean_since: performance.now()};
+    video_last_recovery_request_ms = -Infinity;
     video_pending_encryption = false;
+    video_pending_picture = null;
+    clearTimeout(video_packet_send_timer);
+    video_packet_send_timer = null;
+    video_next_packet_send_ms = 0;
     video_sender_needs_keyframe = true;
     video_current_bitrate = video_encoder_config.bitrate;
     video_quality_scale = 1;
@@ -841,9 +894,10 @@ function video__pump_frame(now, metadata)
     }
 
     is_busy = video_transport__buffered_amount() > video__send_buffer_limit()
-        || video_pending_encryption || video_encoder.encodeQueueSize >= 2;
-    video__update_adaptive_quality(is_busy);
-    if (is_busy)
+        || video_encoder.encodeQueueSize >= 2;
+    // Waiting between packets of a large keyframe does not mean the connection is too slow.
+    video__update_adaptive_quality(is_busy || (video_pending_encryption && video_pending_picture === null));
+    if (is_busy || video_pending_encryption)
     {
         video__schedule_next_frame();
         return;
@@ -921,13 +975,14 @@ function video__update_adaptive_quality(is_skipped)
         return;
     }
     pressured = Math.max(samples.skipped, samples.slow);
-    if (video_adaptive_quality && samples.frames >= 10 && pressured >= 3 && pressured / samples.frames > 0.1)
+    if (video_adaptive_quality && (samples.recovery_requests >= 2
+        || (samples.frames >= 10 && pressured >= 3 && pressured / samples.frames > 0.1)))
     {
         video_current_bitrate = Math.max(200000, Math.floor(bitrate * 0.75));
-        video_quality_scale = Math.max(0.375, scale * 0.75);
+        video_quality_scale = Math.max(0.25, scale * 0.75);
         samples.clean_since = now;
     }
-    else if (pressured > 0 || !video_adaptive_quality)
+    else if (pressured > 0 || samples.recovery_requests > 0 || !video_adaptive_quality)
     {
         samples.clean_since = now;
     }
@@ -941,6 +996,7 @@ function video__update_adaptive_quality(is_skipped)
     samples.frames = 0;
     samples.skipped = 0;
     samples.slow = 0;
+    samples.recovery_requests = 0;
     if (bitrate !== video_current_bitrate || scale !== video_quality_scale)
     {
         video__reconfigure_bitrate(video_current_bitrate);
@@ -1043,7 +1099,7 @@ function video__apply_quality_controls()
     g_video_stream.fps = fps;
     video_current_bitrate = bitrate;
     video_quality_scale = 1;
-    video_quality_window = {started: performance.now(), frames: 0, skipped: 0, slow: 0, clean_since: performance.now()};
+    video_quality_window = {started: performance.now(), frames: 0, skipped: 0, slow: 0, recovery_requests: 0, clean_since: performance.now()};
     video__reconfigure_bitrate(bitrate);
 }
 
@@ -1081,6 +1137,7 @@ function video__on_encoded_chunk(chunk, metadata)
 {
     let data = null;
     let captured_at = performance.timeOrigin + chunk.timestamp / 1000;
+    let deadline = chunk.type === "key" ? VIDEO_KEYFRAME_DEADLINE_MS : VIDEO_FRAME_DEADLINE_MS;
 
     if (g_video_stream.role != "streamer" || g_video_worker == null)
     {
@@ -1093,9 +1150,10 @@ function video__on_encoded_chunk(chunk, metadata)
     }
 
     video_frame_number = (video_frame_number + 1) & 0xffff;
-    if (performance.now() - chunk.timestamp / 1000 > VIDEO_FRAME_DEADLINE_MS
+    if (performance.now() - chunk.timestamp / 1000 > deadline
         || video_pending_encryption || (video_sender_needs_keyframe && chunk.type !== "key"))
     {
+        video_quality_window.slow++;
         video_sender_needs_keyframe = true;
         video_force_keyframe = true;
         return;
@@ -1109,7 +1167,7 @@ function video__on_encoded_chunk(chunk, metadata)
         type: "mainthread__video_worker_packetize",
         epoch: g_video_stream.epoch,
         generation: video_sender_generation,
-        expires_at: captured_at + VIDEO_FRAME_DEADLINE_MS,
+        expires_at: captured_at + deadline,
         frame_number: video_frame_number,
         is_keyframe: (chunk.type == "key"),
         timestamp: chunk.timestamp,
@@ -1155,6 +1213,81 @@ function video__send_packets(packets)
 }
 
 /**
+ * @brief Spreads a large keyframe across several sends so it does not delay sound or overflow a viewer's connection.
+ * @return void
+ */
+function video__send_next_picture_packet()
+{
+    let picture = video_pending_picture;
+    let now = performance.now();
+    let wait = 0;
+    let packet = null;
+
+    video_packet_send_timer = null;
+    if (picture === null)
+    {
+        return;
+    }
+    if (picture.generation !== video_sender_generation || picture.epoch !== g_video_stream.epoch
+        || g_video_stream.role !== "streamer")
+    {
+        video_pending_picture = null;
+        video_pending_encryption = false;
+        return;
+    }
+    if (performance.timeOrigin + now > picture.expires_at || video_transport__active() === null)
+    {
+        video__finish_picture_send(false);
+        return;
+    }
+    wait = video_next_packet_send_ms - now - VIDEO_PACKET_PACING_MARGIN_MS;
+    if (wait > 1 || video_transport__buffered_amount() > video__send_buffer_limit())
+    {
+        video_packet_send_timer = setTimeout(video__send_next_picture_packet, Math.max(2, Math.min(20, wait)));
+        return;
+    }
+    packet = picture.packets[picture.index];
+    if (!video__send_packets([packet]))
+    {
+        video__finish_picture_send(false);
+        return;
+    }
+    video_next_packet_send_ms = Math.max(now, video_next_packet_send_ms)
+        + packet.byteLength * 8000 / Math.max(200000, video_current_bitrate);
+    picture.index++;
+    if (picture.index === picture.packets.length)
+    {
+        video__finish_picture_send(true);
+        return;
+    }
+    video_packet_send_timer = setTimeout(video__send_next_picture_packet,
+        Math.max(2, Math.min(20, video_next_packet_send_ms - now - VIDEO_PACKET_PACING_MARGIN_MS)));
+}
+
+/**
+ * @brief Releases a sent or discarded picture so the next source picture can be encoded.
+ * @param boolean sent Whether every packet was sent.
+ * @return void
+ */
+function video__finish_picture_send(sent)
+{
+    clearTimeout(video_packet_send_timer);
+    video_packet_send_timer = null;
+    video_pending_picture = null;
+    video_pending_encryption = false;
+    if (sent)
+    {
+        video_throughput_frames++;
+    }
+    else
+    {
+        video_quality_window.slow++;
+        video_sender_needs_keyframe = true;
+        video_force_keyframe = true;
+    }
+}
+
+/**
  * @brief ends this client's stream: the pump, the encoder and the source are released, the server is told when asked, the popup says so
  *
  * @param boolean tell_server -> send video_stream_stop
@@ -1169,6 +1302,10 @@ function video__stop_stream(tell_server, reason)
     video_is_pumping = false;
     video_sender_generation++;
     video_pending_encryption = false;
+    video_pending_picture = null;
+    clearTimeout(video_packet_send_timer);
+    video_packet_send_timer = null;
+    video_next_packet_send_ms = 0;
     video_sender_needs_keyframe = true;
     clearInterval(video_throughput_timer);
     video_throughput_timer = null;
@@ -1685,23 +1822,28 @@ function video__on_worker_message(data)
         {
             return;
         }
-        if (!data.is_sound)
-        {
-            video_pending_encryption = false;
-        }
         if (data.type === "video_worker__frame_dropped"
-            || performance.timeOrigin + performance.now() > data.expires_at
-            || !video__send_packets(data.packets))
+            || performance.timeOrigin + performance.now() > data.expires_at)
         {
             if (!data.is_sound)
             {
-                video_sender_needs_keyframe = true;
-                video_force_keyframe = true;
+                video__finish_picture_send(false);
             }
         }
-        else if (!data.is_sound)
+        else if (data.is_sound)
         {
-            video_throughput_frames++;
+            video__send_packets(data.packets);
+        }
+        else if (!data.is_keyframe)
+        {
+            video__finish_picture_send(video__send_packets(data.packets));
+        }
+        else
+        {
+            data.index = 0;
+            video_pending_picture = data;
+            video_next_packet_send_ms = performance.now();
+            video__send_next_picture_packet();
         }
     }
     else if (data.type == "video_worker__sound_packet")
@@ -2074,8 +2216,16 @@ function video__on_viewer_state(msg)
  */
 function video__on_keyframe_request()
 {
+    let now = performance.now();
+
     if (g_video_stream.role == "streamer")
     {
+        // Repeated requests mean viewers cannot keep up even if our own upload queue is empty.
+        if (now - video_last_recovery_request_ms >= VIDEO_KEYFRAME_REQUEST_MIN_INTERVAL_MS)
+        {
+            video_quality_window.recovery_requests++;
+            video_last_recovery_request_ms = now;
+        }
         video_force_keyframe = true;
     }
 }
@@ -2100,7 +2250,8 @@ function video__on_refused(msg)
         busy: "somebody else is already streaming in this channel",
         not_allowed: "the streamer has not allowed you to watch",
         no_stream: "there is no stream in this channel",
-        revoked: "the streamer stopped your access to the stream"
+        revoked: "the streamer stopped your access to the stream",
+        insufficient_permissions: "you do not have enough video streaming power for this channel"
     };
     let text = (texts[msg.message.reason] != null) ? texts[msg.message.reason] : ("refused: " + msg.message.reason);
 
@@ -2109,7 +2260,7 @@ function video__on_refused(msg)
         video__stop_stream(false, text);
     }
 
-    if (g_video_stream.is_watching == true && msg.message.reason != "busy")
+    if (g_video_stream.is_watching == true && msg.message.reason != "busy" && msg.message.reason != "insufficient_permissions")
     {
         video__disconnect(false);
     }
@@ -2124,7 +2275,7 @@ function video__on_refused(msg)
     {
         video__set_popup_status(text);
     }
-    else
+    else if (msg.message.reason != "insufficient_permissions")
     {
         utils__custom_alert(text);
     }

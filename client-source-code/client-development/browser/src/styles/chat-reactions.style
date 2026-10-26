@@ -1,0 +1,436 @@
+:root .single-chat-message .single-chat-message-content-p
+{
+    white-space: pre-wrap;
+}
+
+:root .single-chat-message :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container)
+{
+    box-sizing: border-box;
+    max-width: 100%;
+    padding-inline-end: 0.5em;
+    color: var(--chat-author-color, var(--reaction-accent));
+    font-family: var(--reaction-font, sans-serif) !important;
+    font-size: var(--chat-author-size, 13px) !important;
+    font-weight: 600;
+    font-style: normal;
+    line-height: 1.45;
+    letter-spacing: normal;
+    vertical-align: baseline;
+    overflow-wrap: anywhere;
+    text-shadow: none;
+}
+
+:root .single-chat-message .single-chat-message-sender-local-username-container
+{
+    color: var(--chat-local-author-color, var(--chat-author-color));
+}
+
+:root .single-chat-message :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container) > p
+{
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+}
+
+:root .single-chat-message .single-chat-message-sender-time
+{
+    max-width: 100%;
+    margin: 0;
+    color: var(--chat-meta-color, var(--reaction-text));
+    font: 400 11px/1.45 var(--reaction-font, sans-serif);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: normal;
+    vertical-align: baseline;
+    white-space: nowrap;
+    text-shadow: none;
+}
+
+:root .single-chat-message .single-chat-message-sender-time > p
+{
+    display: inline;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    font-variant-numeric: inherit;
+}
+
+:root .single-chat-message .single-chat-message-sender-time > p::before
+{
+    content: var(--chat-time-prefix, none);
+}
+
+:root .single-chat-message .single-chat-message-sender-time > p::after
+{
+    content: var(--chat-time-suffix, none);
+}
+
+.single-chat-message:has(.single-chat-message-content > .chat-message-edited) > .single-message-content > .single-chat-message-sender-time > p::after
+{
+    content: var(--chat-time-suffix, "") " (edited)";
+    color: inherit;
+    font: inherit;
+    white-space: pre;
+}
+
+.chat-reactions
+{
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 4px 0 8px;
+    color: var(--reaction-text);
+    font: 12px/1.3 var(--reaction-font, sans-serif);
+    min-width: 0;
+    max-width: 100%;
+}
+
+.chat-reaction-list
+{
+    display: contents;
+}
+
+.chat-reactions-disabled .chat-reaction-list,
+.chat-reactions-disabled .chat-reaction-add,
+.chat-reactions-disabled .chat-reaction-picker,
+.chat-reaction-picker [hidden]
+{
+    display: none !important;
+}
+
+.chat-reactions button,
+.chat-message-tools button,
+.chat-message-menu button,
+.chat-reaction-picker button,
+.chat-reaction-picker input
+{
+    position: static;
+    box-sizing: border-box;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    text-shadow: none;
+}
+
+.chat-reactions .chat-reaction,
+.chat-message-tools .chat-reaction-add,
+.chat-reaction-choices button
+{
+    cursor: pointer;
+}
+
+.chat-reactions .chat-reaction
+{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 48px;
+    min-height: 28px;
+    height: auto;
+    max-width: 100%;
+    padding: 3px 8px;
+    border: 1px solid var(--reaction-border);
+    border-radius: var(--reaction-radius, 6px);
+    background: var(--reaction-background);
+    box-shadow: var(--reaction-shadow, none);
+    transition: background-color 100ms, border-color 100ms;
+}
+
+.chat-reaction-emoji
+{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    min-height: 20px;
+    max-width: min(160px, 50vw);
+    overflow-wrap: anywhere;
+    white-space: normal;
+    font: 17px/1 "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+}
+
+.chat-reaction-emoji:not(.server-emoji-unicode):not(:has(img))
+{
+    font: 11px/1.3 var(--reaction-font, sans-serif);
+}
+
+.chat-reaction-count
+{
+    flex: 0 0 auto;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.chat-reactions .chat-reaction:hover
+{
+    border-color: var(--reaction-border);
+    background: var(--reaction-panel);
+}
+
+.chat-reactions .chat-reaction[aria-pressed="true"]
+{
+    background: var(--reaction-selected);
+    border-color: var(--reaction-accent);
+}
+
+.chat-message-tools
+{
+    position: fixed;
+    z-index: 2147483645;
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    max-width: calc(100vw - 16px);
+    box-sizing: border-box;
+    padding: 2px;
+    border: 1px solid var(--reaction-border);
+    border-radius: var(--reaction-radius, 6px);
+    background: var(--reaction-panel);
+    color: var(--reaction-text);
+    box-shadow: var(--reaction-shadow, 0 2px 5px #0002);
+}
+
+.chat-message-tools[hidden],
+.chat-message-tools [hidden],
+.chat-message-menu [hidden]
+{
+    display: none !important;
+}
+
+.chat-message-tools > button,
+.chat-message-menu > button
+{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 30px;
+    height: 30px;
+    padding: 5px 7px;
+    border: 1px solid transparent;
+    border-radius: var(--reaction-radius, 4px);
+    background: transparent;
+    color: var(--reaction-text);
+    font: 12px/1 var(--reaction-font, sans-serif);
+    box-shadow: none;
+    transform: none;
+}
+
+.chat-message-tools svg,
+.chat-message-menu svg
+{
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex: 0 0 17px;
+}
+
+.chat-message-tools .chat-reply-button span,
+.chat-message-menu .chat-reply-button span
+{
+    display: none;
+}
+
+:root .chat-reactions-disabled .chat-reactions,
+:root .chat-reactions.chat-reactions-empty
+{
+    height: 0;
+    margin: 0;
+}
+
+.chat-message-tools button:not(:disabled):hover,
+.chat-message-menu button:not(:disabled):hover
+{
+    background: var(--reaction-selected);
+}
+
+.chat-message-tools button:not(:disabled):active,
+.chat-message-menu button:not(:disabled):active,
+.chat-message-tools button[aria-expanded="true"]
+{
+    background: var(--reaction-selected);
+    border-color: var(--reaction-accent);
+}
+
+.chat-message-tools button:disabled,
+.chat-message-menu button:disabled
+{
+    opacity: 0.45;
+    cursor: default;
+}
+
+.chat-message-menu
+{
+    position: fixed;
+    z-index: 2147483646;
+    box-sizing: border-box;
+    min-width: 170px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    overflow: auto;
+    padding: 4px;
+    border: 1px solid var(--reaction-border);
+    border-radius: var(--reaction-radius, 6px);
+    background: var(--reaction-panel);
+    color: var(--reaction-text);
+    box-shadow: var(--reaction-shadow, 0 3px 10px #0003);
+}
+
+.chat-message-menu > button
+{
+    display: flex;
+    justify-content: flex-start;
+    gap: 9px;
+    width: 100%;
+    text-align: start;
+    white-space: nowrap;
+}
+
+.chat-message-menu .chat-message-delete:not(:disabled):hover
+{
+    background: #b52c3b;
+    color: #fff;
+}
+
+.chat-message-actions-visible
+{
+    background-color: color-mix(in srgb, var(--reaction-selected) 35%, transparent);
+}
+
+.chat-reactions button:focus-visible,
+.chat-message-tools button:focus-visible,
+.chat-message-menu button:focus-visible,
+.single-chat-message[tabindex]:focus-visible,
+.chat-reaction-message:focus-visible,
+.chat-reaction-picker :focus-visible
+{
+    outline: 2px solid var(--reaction-accent);
+    outline-offset: 1px;
+}
+
+@media (pointer: coarse)
+{
+    .chat-reactions .chat-reaction,
+    .chat-message-tools > button,
+    .chat-message-menu > button
+    {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+.chat-reaction-picker
+{
+    position: fixed;
+    z-index: 2147483646;
+    box-sizing: border-box;
+    width: min(286px, calc(100vw - 16px));
+    max-height: calc(100dvh - 16px);
+    padding: 10px;
+    overflow: auto;
+    border: 1px solid var(--reaction-border);
+    border-radius: var(--reaction-radius, 6px);
+    background: var(--reaction-panel);
+    color: var(--reaction-text);
+    font: 13px/1.4 var(--reaction-font, sans-serif);
+    box-shadow: var(--reaction-shadow, 0 8px 26px #0005);
+    text-shadow: none;
+}
+
+.chat-reaction-picker-header
+{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.chat-reaction-picker .chat-reaction-picker-close
+{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    font-size: 20px;
+    background: transparent;
+    border: 0;
+    border-radius: var(--reaction-radius, 4px);
+}
+
+.chat-reaction-picker input
+{
+    width: 100%;
+    height: 31px;
+    padding: 5px 8px;
+    border: 1px solid var(--reaction-border);
+    border-radius: var(--reaction-radius, 4px);
+    background: var(--reaction-background);
+    cursor: text;
+}
+
+.chat-reaction-choices
+{
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 3px;
+    margin-top: 8px;
+}
+
+.chat-reaction-choices button
+{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    height: 36px;
+    padding: 3px;
+    font: 24px/1 "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--reaction-radius, 4px);
+}
+
+@media (pointer: coarse)
+{
+    .chat-reaction-choices
+    {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .chat-reaction-choices button,
+    .chat-reaction-picker .chat-reaction-picker-close
+    {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+.chat-reaction-picker button:hover
+{
+    border-color: var(--reaction-accent);
+    background: var(--reaction-selected);
+}
+
+.chat-reaction-picker .chat-reaction-empty
+{
+    margin: 8px 0 0;
+    color: inherit;
+    font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce)
+{
+    .chat-reactions button
+    {
+        transition: none;
+    }
+}

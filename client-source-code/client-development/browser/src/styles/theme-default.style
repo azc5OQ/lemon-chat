@@ -101,7 +101,6 @@ a-toast {
     font-family: var(--set-font, 'Raleway', sans-serif);
     font-size: 13px;
     min-height: 20px;
-    cursor: pointer;
 }
 
 a-toast:hover {
@@ -183,7 +182,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     background-repeat: no-repeat;
     background-position: center center;
     background-color: #000000;
@@ -201,7 +199,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     background-repeat: no-repeat;
     background-position: center center;
     background-color: #000000;
@@ -253,7 +250,6 @@ a-toast:hover {
     border-radius: 3px;
     color: white;
     vertical-align: baseline;
-    cursor: pointer;
     background: #7d8799;
 }
 
@@ -261,11 +257,11 @@ a-toast:hover {
     background-color: #36393f;
 }
 
-.tag-head-p-container {
+.group-head-p-container {
     white-space: nowrap;
 }
 
-.tag-settings-entry-p {
+.group-settings-entry-p {
     display: inline-block;
     vertical-align: top;
     padding-top: 6px;
@@ -275,7 +271,7 @@ a-toast:hover {
     width: 100px;
 }
 
-.tag-settings-entry-img {
+.group-settings-entry-img {
     display: inline-block;
     vertical-align: top;
     padding-top: 6px;
@@ -424,15 +420,10 @@ a-toast:hover {
     background-position-y: center;
     background-color: #05a3ff;
     transition: 0.3s ease;
-    cursor: pointer;
 }
 
 #stop-song:hover {
     background-color: #7d8799;
-}
-
-.server-settings-tab-li {
-    cursor: pointer;
 }
 
 #server-settings-tab-icons {
@@ -440,7 +431,7 @@ a-toast:hover {
     display: block;
 }
 
-.client-description-tag-entry-icon {
+.client-description-group-entry-icon {
     width: 18px;
     height: 18px;
     vertical-align: top;
@@ -478,7 +469,7 @@ a-toast:hover {
     opacity: 0.7;
 }
 
-.client-description-tag-entry-name {
+.client-description-group-entry-name {
     width: calc(100% - 30px);
     display: inline-block;
     vertical-align: top;
@@ -487,7 +478,7 @@ a-toast:hover {
     font-size: 14px;
 }
 
-#server-settings-tab-upload-icon-file-input-container, #server-settings-tab-add-tag-details-container {
+#server-settings-tab-upload-icon-file-input-container, #server-settings-tab-add-group-details-container {
     height: 46px;
     background-color: #414f53;
     text-align: left;
@@ -519,7 +510,6 @@ a-toast:hover {
     font-family: 'Raleway', sans-serif;
     font-size: 14px;
     color: white;
-    cursor: pointer;
 }
 
 .server-settings-general-row input[type="checkbox"] {
@@ -528,7 +518,6 @@ a-toast:hover {
     height: 16px;
     margin: 0;
     accent-color: #05a3ff;
-    cursor: pointer;
 }
 
 #server-settings-bans-header {
@@ -582,7 +571,6 @@ a-toast:hover {
     color: white;
     border-radius: 5px;
     font-size: 12px;
-    cursor: pointer;
     user-select: none;
 }
 
@@ -605,7 +593,6 @@ a-toast:hover {
     font-family: 'Raleway', sans-serif;
     font-size: 13px;
     color: white;
-    cursor: pointer;
     transition: 0.3s ease;
     background: #7d8799;
 }
@@ -614,7 +601,7 @@ a-toast:hover {
     background-color: #36393f;
 }
 
-#server-settings-tab-tags {
+#server-settings-tab-groups {
     display: none;
     height: 100%;
 }
@@ -638,7 +625,7 @@ a-toast:hover {
     overflow-y: auto;
 }
 
-#add-new-tag-to-server-button {
+#add-new-group-to-server-button {
     display: inline-block;
     padding: 2px 5px 9px 5px;
     text-align: center;
@@ -651,11 +638,10 @@ a-toast:hover {
     border-radius: 3px;
     color: white;
     vertical-align: baseline;
-    cursor: pointer;
     background: #7d8799;
 }
 
-#add-new-tag-to-server-button:hover {
+#add-new-group-to-server-button:hover {
     background-color: #36393f;
 }
 
@@ -692,7 +678,7 @@ a-toast:hover {
     background-size: 16px 16px;
 }
 
-.client-tags {
+.client-groups {
 
     float: right;
 }
@@ -800,7 +786,7 @@ a-toast:hover {
     resize: none;
 }
 
-.single-tag {
+.single-group {
     width: 20px;
     height: 20px;
     background-repeat: no-repeat;
@@ -846,7 +832,7 @@ a-toast:hover {
     position: absolute;
 }
 
-.add-tag-context-menu {
+.add-group-context-menu {
     display: none;
     position: absolute;
     max-height: 285px;
@@ -867,7 +853,7 @@ a-toast:hover {
     background: linear-gradient(180deg,#003d75 0,#232b56 100%);
 }
 
-.add-tag-context-menu-background {
+.add-group-context-menu-background {
     background: linear-gradient(180deg,#003d75 0,#232b56 100%);
     width: 130px;
     height: 100%;
@@ -908,7 +894,6 @@ a-toast:hover {
     font-size: 1em;
     font-family: sans-serif;
     padding: 5px;
-    cursor: pointer;
     display: block;
 }
 
@@ -924,11 +909,11 @@ a-toast:hover {
     font-style: normal;
 }
 
-#channel-properties-disable-audio-checkbox {
+#channel-properties-enable-audio-checkbox {
     height: 25px;
 }
 
-.add-tag-context-menu-items {
+.add-group-context-menu-items {
     width: 136px;
     border-top-left-radius: 10px;
     border-top-right-radius: 10px;
@@ -938,7 +923,7 @@ a-toast:hover {
     border-radius: 10px;
 }
 
-.add-tag-context-menu-items p {
+.add-group-context-menu-items p {
     color: white;
     display: block;
     background-repeat: no-repeat;
@@ -949,25 +934,23 @@ a-toast:hover {
     font-family: sans-serif;
     padding-top: 5px;
     padding-bottom: 5px;
-    cursor: pointer;
     white-space: nowrap;
 }
 
-.add-tag-context-menu-items p:hover {
+.add-group-context-menu-items p:hover {
     background-color: #b9d436;
 }
 
-.add-tag-context-menu-item {
+.add-group-context-menu-item {
     color: white;
     top: 0px;
     width: 130px;
     font-size: 1em;
     font-family: sans-serif;
     padding: 5px;
-    cursor: pointer;
 }
 
-.add-tag-context-menu-item:hover {
+.add-group-context-menu-item:hover {
     background-color: #b9d436;
 }
 
@@ -984,7 +967,6 @@ a-toast:hover {
     margin: 10px;
     vertical-align: top;
     display: inline-block;
-    cursor: pointer;
     transition: 0.3s ease;
     border-radius: 5px;
 }
@@ -1008,7 +990,6 @@ a-toast:hover {
     font-size: 0.7em;
     font-family: sans-serif;
     padding: 5px;
-    cursor: pointer;
     overflow: hidden;
 }
 
@@ -1021,7 +1002,6 @@ a-toast:hover {
 }
 
 .single-channel {
-    cursor: pointer;
     padding-left: 15px;
     padding-top: 5px;
     padding-bottom: 5px;
@@ -1049,7 +1029,6 @@ a-toast:hover {
 }
 
 .single-channel-collapse-button:hover {
-    cursor: pointer;
     background-image: url(data:image/png;base64,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);
 }
 
@@ -1069,7 +1048,7 @@ a-toast:hover {
     display: inline-block;
 }
 
-#current-client-description-tags {
+#current-client-description-groups {
     padding-top: 5px;
 }
 
@@ -1123,7 +1102,7 @@ a-toast:hover {
     margin: 0px;
 }
 
-.add-tag-context-menu-items::-webkit-scrollbar-track, .chat-input-container-context-menu-items::-webkit-scrollbar-track, #space-devider1:-webkit-scrollbar-track, #channel-list-container::-webkit-scrollbar-track, #chat-context-container::-webkit-scrollbar-track, #chat-input-container-text-input::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
+.add-group-context-menu-items::-webkit-scrollbar-track, .chat-input-container-context-menu-items::-webkit-scrollbar-track, #space-devider1:-webkit-scrollbar-track, #channel-list-container::-webkit-scrollbar-track, #chat-context-container::-webkit-scrollbar-track, #chat-input-container-text-input::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
     background: black;
 }
 
@@ -1149,7 +1128,6 @@ a-toast:hover {
     transition: 0.3s ease;
     border-radius: 3px;
     color: white;
-    cursor: pointer;
     background: #7d8799;
     vertical-align: top;
 }
@@ -1244,13 +1222,13 @@ a-toast:hover {
     white-space: normal;
 }
 
-#server-settings-tab-icons-container, #server-settings-tab-tags-container {
+#server-settings-tab-icons-container, #server-settings-tab-groups-container {
     height: calc(100% - 46px);
     background-color: #414f53;
     overflow: scroll;
 }
 
-#server-settings-tab-tags-container {
+#server-settings-tab-groups-container {
     overflow-x: hidden;
 }
 
@@ -1275,7 +1253,6 @@ a-toast:hover {
     padding-top: 2px;
     padding-bottom: 2px;
     min-width: max-content;
-    cursor: pointer;
 }
 
 .custom-font-usage-Yellowtail {
@@ -1338,10 +1315,6 @@ a-toast:hover {
     font-family: Just Me Again Down Here !important;
 }
 
-.connected-local-client {
-    cursor: pointer;
-}
-
 .connected-local-client:hover {
     background-color: #333030;
 }
@@ -1384,7 +1357,7 @@ a-toast:hover {
     --set-danger-soft: rgba(224, 96, 96, 0.16);
     --set-danger-strong: #ff7b7b;
 
-    --set-button-bg: #0e69a8;
+    --set-button-bg: #7d8799;
 }
 
 #server-settings-tab {
@@ -1434,7 +1407,6 @@ a-toast:hover {
     padding: 15px 1px 15px 15px;
     text-align: center;
     width: 15px;
-    cursor: pointer;
     border-radius: 7px;
     transition: 0.3s ease;
     vertical-align: top;
@@ -1450,7 +1422,6 @@ a-toast:hover {
     transition: 0.3s ease;
     border-radius: 3px;
     color: white;
-    cursor: pointer;
     background: #7d8799;
     vertical-align: top;
 }
@@ -1628,7 +1599,6 @@ a-toast:hover {
     transition: 0.3s ease;
     border-radius: 3px;
     color: white;
-    cursor: pointer;
     background: #7d8799;
 }
 
@@ -1642,7 +1612,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2RpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDo5MkQ4RDIzRUYzOEUxMUUwOTZDOEQ1RTU1NDQ3N0RBMSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDo5MkQ4RDIzREYzOEUxMUUwOTZDOEQ1RTU1NDQ3N0RBMSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IFdpbmRvd3MiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDo5N0U1MkY5MjhFRjNFMDExQTE2NUI2RjQzNUVGQkUzNyIgc3RSZWY6ZG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIvPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PuSt+6UAAASASURBVHja7FddSFtXHD/xxu9oNBq5Or1Svy0G5joLwsbGoEVxT6W1sD2VwQp9LKwMCn0rfZCWCWMwYaxQkIqZb4JMJx2DjRUigWikLihGo9H4gRqNRqP7/e7OtWmWalc2wqAHfjn3fPw/zv/rnJiOjo5EKpvpjQKpVsA8MjKSUgXSRIqb+Z8SZGZmivT0dL3PyMjQ56LRqNjb2xP7+/t6/68qkJaWJgoLC4XNZtP7rKysM5i2AW8BqtwWBALA2u7u7sz6+rpYW1sT7A8PD19PAbPZLDRNE6qqWvD9EabagA5AO4khFPSXlpYOAkMHBwejwWAwPDc3p1snaRYMDw//bbKiooLC7YqifInhZ4D1ZQKXlpbE5uamKC4u1i2U0DaA72KxWJff7w9SkRMVoF8bGhoUq9X6BYa3AYuxRlPSHfFtenpazM/PP8Tnb8DlxsbGC3a7PdneMHAXinZNTk7G4uPkeJfFYhHNzc0ahD/B8J4hnL4cHx8XqBeRRO1DodAtdNeAHuDi8vJyH+exN0oa0hrsyTM/P/8XysjLy3uuAAsRT+5wOM4hun/H+D3OwWwC2gqPxzMEV3yME8U4Hw/QORPGveyxN0oa0k5MTOj+l3taKaOpqek8Zep7+VNTU6OB4Cd8qxzv7OyIsbGxCPz7KcbtCCwrekuiAtXV1VpOTo7+Dcsxds7INYukaYeVrrhcrg00g06FrB+rqqo0js38yc3N/RZ+0wON/gGBDxa4hKFHWqo+WTplZ2d/A5NewacXYKbcidtXL8u8MxKJuNxu9+OWlhb95AxquPwrrF8ykwCB1MqUk+kXgAnfhdk2DE5gkPGSfD4LTCRbSKCZgeAPwfsPzLF+iEAg8IEerNRydna2OxwO69FLE1VWVr5g7tXV1RnGBNdfBdxLmnge4Gkjb65TFmR+rceAJLg7NTXllQyUoqKi+wUFBccMcZqhxcXF2KsqwL2kMcbkRZ7kzTFkeSjz2AJMGwTJdQSMweQqAqyDqSnX/T6fr2dra+tU4dzDvaQhLXmQF3lynYULsm5QJteVzs7OYyGo3e9A23qWYZPJ1AatnyAWAtI9o8jzDkS3CojEjCBWVlaE1+t143RX4eaDkpISUVtbex4x9QPWs7e3t5naj7DebdCYBgYG4mPHimD5ta6u7qwsFqxgt0DYQ7OisFhQ379H6l2GcvqtyMY8h8+Zvk4ofw0XV7isrEzBvs+xfJ8Jw9SGch7cnO/LEv1XKXY6nYkBrOH0j8vLy1sBWoJzbqAbGASjEMzsYOmFn1WZjrwNnVDaA6F2eWndBByyYrJs0+/t8tZ8fhf09/cnyyKFOQ3/3UZxURhEcc0jaz/bMyPnZd9qCGXjdbywsMDLqhfD69KiL15GfX19J92uZHgHD4823nY0O4PqpMZ4YSwQcM0gprqAn1/3QcKTtsNvKk7yCYHxOVRO/b0gq5pePREbgkGG9hTolQid+iI67cUS9+J5IKEgBt6Wb4Qaue6TgcVYif2nb0IpwCW/R//3r+KUK/Dmr1nKFfhTgAEA1AVXSbHzbjUAAAAASUVORK5CYII=);
     background-size: 21px 19px;
     background-repeat: no-repeat;
@@ -1660,7 +1629,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADn0lEQVR4nL1Uz28bVRCet+tfcbCTqolipDahHNpDlVTFakM54ASQihR8iBLS/4ByglulcoAIoTathBSJG0WySLkgOQrHOhGhiJSLG8QJKY2dEJRGamwfUse73n1vZjisvfGPNQEJGGmk2Xmj+Wa+970F+I9N/N3Cq1ffFj6frhOxUEriysoK/SsAn8zOnr148ZXrsVjsjWg0epqIoFQq7W5t5R8+zmbv5XK53zKZDP9jgJlr18TMzMzNK1de+5iYg4TISCQIkRERiFkoKa3l5cydnx89urW4uGh59dE7Ady6ffvTRCIxa1m2jkoJRISqaUopJQpN04lICE3Tz5x5OWHbdncoFFzd2Nhoo83n1Xxubu7y2NjYRwcHz0EpBY+z2fXV1e+/KBaLWQCQ/f395xOJsQ/PDw8nfD4dXk8kPshtPlkBgAedBm6yn9bWvt0vFDi3tc0L979Zm56eHmytmZyc7P564f53W9u/c3b9F/7y3lcPkslkoLVOa028k0z6z50991alYoBVrarl5cxn6XT6j9a6paWlyo8Pf7hh2xL9fj8MDg6NBoPBvmMBeqI9feFw1wlbStjb29s3DePXTpvu7Ozki8XCtiY0CHV19fh8vhePBQDgEDMIRATTNE1ErHYCeF4uk5TykIgAEYWu6y8cC8DMwMyMCoGIgLmjxIFr5zUAZg/ZtwFomgbMDIgIiARCdH6LgUDgCEApAI9hmmQ6Pz9/IRwOjyMqEQwGoK/vZPf4+Pi7ExMTRuOGdVNKiUgkciIQDEAkGhHxePzNU6dOl+/evbPuOVEmk/mciAgRCRFZKUVKKZJSsi0l2bbNlmVRtWqRWa2yaZpkGAZVKgYfHlaoXD6kVCqVisfj7tptD42ZRX1SZhAA7MalUgmEANHb2wvMTi275yxqdRo4d8FtAPULZudDNMZPNjc5lVoQUtr8/vX3YOilIeEUu82ZGYCh+R6aLpnrIOROBUwMxAxPd58CogIlJezu7jr5Nm9XXbOK3GlIUEPMRDD66qhgQvD7feLS5UuCmICYRM2dmEi0AnhT5DYHJwYWRsXg/WfPBCrFVtWCUFdIcBtF3CbVZooYnFXZcWZynAjy+RzEYgMwEBuAfD7nSY8XRc0bAAMz1dXQoAyGkZELYnh45ChHBNRwXqPzrwHK5XKlUCgc1OiBBglCA6jr4G565IZpGjW9AEDLv2NqaqobAE4CAAgh3GnqsVfOI66k0+kS/F/2J5fr+O69IwAMAAAAAElFTkSuQmCC);
     background-repeat: no-repeat;
     background-position: center center;
@@ -1678,7 +1646,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAsTAAALEwEAmpwYAAABMklEQVR4nO3WPy9DURjH8epYErqREIlEIk0oMZGYbSRGqdVgsGJikNjE2ndgt2FRYqDdjN6Dxf6RxhmaOkX/3Xa4v+TJzX2ec+7zvefc59wnk0mValiECexhv89WzzEeA6jgOAGAEzzEAGoJLXY8F6oJAvzMJQXQ/RZgBde4xwGyiW0B5vGCxVDSlzjtCgCFSBnttHjoGbYa7rOtKutPACyF61MEoH5eFCLzL7DdBPDWNoDvNyn/siplrEb8C/XxKCKPK5wnCZDHHT7wjk9stA3QyRZgDM/YbfDN4RGbjWP78hHiCIcR/xReMdIRwH+FW0y2iN1gtsmXHsXV4fwbYibYOkZDTS8jF3y9ikcBaiE4jbUwqRgsF3y9ikcbkkpolwbWko2jlABAKdqUpkqVGZC+AFCLxWUHjpzIAAAAAElFTkSuQmCC);
     background-repeat: no-repeat;
     background-position: center center;
@@ -1697,7 +1664,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAeCAYAAAA7MK6iAAAACXBIWXMAAAsTAAALEwEAmpwYAAABUklEQVR4nO2WzUoDMRSFg7uWtlKFWvBBfIUWN4VS9+rTdcSXcHAl1DqtP+tWV9VX8JPAUa5jOzM4k4XYA4Hh5iQnObm5Gee2+HcAjoFnqsMS6BcR9sSqsSgiHARuK5wGEAdw+uqH0BbAdQCr41xnCQQXUPgduAHugFOgoXbmY6GEX4CjUonK79DT2AOgru8LINJ3HehUeY/9Y9IDdjQ2AR6BqeFMFUtKOZKx4ENglbHIledUKdgFZsCbBBbAEGiqDYAn9b3KlW6Zezw35/dgRPfWzNlWn8f9Zx6kSUVxbsbcKjbMcGYkzmQToSga4l+aWDPl3FfFAlqGF1UhPN4gHNtXCdg1vHGZXx9r9USxQYbVJ3lW9wuKz8SvmeTy2dteM+e+mdMnV82VhapVoquCsnekM21pp8vc6/RnCoj7Lu5344tJumTOg5VMCXfMIxFlPRIf+muKYJ88+2QAAAAASUVORK5CYII=);
     background-repeat: no-repeat;
     background-position: center center;
@@ -1715,7 +1681,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     font-size: 0;
     background-color: #000000;
     background-repeat: no-repeat;
@@ -1734,7 +1699,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     font-size: 0;
     background-color: #000000;
     background-repeat: no-repeat;
@@ -1753,7 +1717,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     font-size: 0;
     background-color: #000000;
     background-repeat: no-repeat;
@@ -1790,7 +1753,6 @@ a-toast:hover {
     right: 116px;
     font: 16px sans-serif;
     font-family: 'Raleway';
-    cursor: pointer;
 }
 
 #hide-chat-button:hover, #chat-input-container-send-chat-input:hover, #show-secret-identity-string:hover, #show-admin-password-entry:hover, #hide-show-flags-button:hover, #show-hide-log-button:hover, #clear-chat-button:hover, #enter-server-settings:hover, #microphone-always-broadcasting-audio-button:hover, #sound-effects-button:hover {
@@ -1807,7 +1769,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADF0lEQVRIx71VsU5cRxQ9d98s1UoUISYFJUIgpUDySiloUIqUTmeUwo27lPmCOHWadEhUFBRQOK7sD9hNEcWhoDG4iGQs2ayNFBuZArN7z0lx580+bC/QxCPtvpl5896599xz7gP+52HXObS1tbU2Pz//A0mQhLtrfX39x+3t7cFVz6brAHQ6na+Xl5e/H7nDR47z4ZAkfwEwuFYGm5ubt6anpxcllRv1nCTm5ua+W1xc/NadcLr5yPXw0cPfOp3OwPJZCRAESKCEfq93f2Nj458EAEtLS3e73e4tAKYYUJ5DgiSTJMYcorB2e+0nibFHGSVJhChQsr8fP34NIABUPxiL8fqDXxMg1uWFUHNOQpmdBAC7u7t/npycfLWwsPBNRAsAJXIogrAxOPK+TBTUOPv27cnp88PDv07fnb4oADs7O7+urKz0V1dX/wDqRGTjUsiCYqGmsXENwEDH3t7e8wcPfr99fHz8BgBaANDr9TylNEwpIaWEKiVUVYXhcIiUKqSUkKqE0WgEM4szVYK1WhgOR6hShVRVqKqEqqp0fn7+vt/vswA0R6bCXr16jSdP9s3dCx37+wf28uio0DE4GtjBwYGJrPesIcSPfZD5VkiNBkAkYWYmIERFZqXBSCoX31BUqssBMrehiHhZDWzh5LqgAEXziD48VXvhUwAKjyAHConmdBXVQPJoFcZANFGiO0QZLGc4OQMVJ0oAKdDZ8IhA99B7jqbuTbFGLdcrKJIsdE+Q3qBIRnr9Qqvr5O4Xqb0MIBtJAkDK3KMVtESTIHeClCk4MpIivQhCQs3zJSqqG1dkcGGvkUFuGYR7tAjYuOlNKHL0EdQKIUF3EwW2BAhGJyhGxHEmaIsalFZyVQ2Ui2zurJVhkuT0D3wgRQ1o4+Z7GQBrJQFTU220qhbMrOynlNBuT5V1u91GSiloEUNpkwBUnBxtYGbmS3wxM2NN6m52uyjOlTA7O2s3Zm+gkeXkDBp9P2CUrVNAiwMtT8cfJ8nGBp0AcPjs2dN7936+I6CdG/ZH31dd/PvkvbOzs39JvsfnGv8B0U6eGZr+co0AAAAASUVORK5CYII=);
     background-size: 21px 19px;
     background-repeat: no-repeat;
@@ -1824,7 +1785,6 @@ a-toast:hover {
     border-radius: 3px;
     margin-left: 1px;
     margin-right: 1px;
-    cursor: pointer;
 }
 
 .chat-context-selector:hover {
@@ -1865,7 +1825,6 @@ a-toast:hover {
     height: 14px;
     width: 14px;
     display: inline-block;
-    cursor: pointer;
     visibility: hidden;
 }
 
@@ -2012,28 +1971,26 @@ a-toast:hover {
     float: right;
     border-bottom-left-radius: 16px;
     border-top-right-radius: 16px;
-    cursor: pointer;
 }
 
 .close-button:hover {
     border-color: #d8d22b;
 }
-
 /* the signature lemon close button on every dialog; the doubled class is needed because
    layout.style's plain cross loads after the themes and would win a specificity tie */
-#server-settings-tab .close-button.close-button,
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button.close-button,
 #channel-properties-edit .close-button.close-button,
 #channel-password-enter .close-button.close-button,
 #musicbot-management-dialog .close-button.close-button,
 #admin-password-enter .close-button.close-button,
 #poke-client-enter .close-button.close-button,
-#set-alias-enter .close-button.close-button,
 #adjust-volume-card .close-button.close-button,
 #set-new-username-enter .close-button.close-button,
 #client-info-enter .close-button.close-button,
 #identity-string-use-container-enter .close-button.close-button,
 #secret-identity-string-container-enter .close-button.close-button,
-#android-settings-warning .close-button.close-button {
+#android-settings-warning .close-button.close-button
+{
     /* no float here, because layout.style places the button absolutely and a float would drop it below the title row */
     width: 29px;
     height: 25px;
@@ -2043,34 +2000,36 @@ a-toast:hover {
     border-top-right-radius: 16px;
     background: transparent;
 }
-#server-settings-tab .close-button.close-button::before,
+
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button.close-button::before,
 #channel-properties-edit .close-button.close-button::before,
 #channel-password-enter .close-button.close-button::before,
 #musicbot-management-dialog .close-button.close-button::before,
 #admin-password-enter .close-button.close-button::before,
 #poke-client-enter .close-button.close-button::before,
-#set-alias-enter .close-button.close-button::before,
 #adjust-volume-card .close-button.close-button::before,
 #set-new-username-enter .close-button.close-button::before,
 #client-info-enter .close-button.close-button::before,
 #identity-string-use-container-enter .close-button.close-button::before,
 #secret-identity-string-container-enter .close-button.close-button::before,
-#android-settings-warning .close-button.close-button::before {
+#android-settings-warning .close-button.close-button::before
+{
     content: none;
 }
-#server-settings-tab .close-button.close-button:hover,
+
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button.close-button:hover,
 #channel-properties-edit .close-button.close-button:hover,
 #channel-password-enter .close-button.close-button:hover,
 #musicbot-management-dialog .close-button.close-button:hover,
 #admin-password-enter .close-button.close-button:hover,
 #poke-client-enter .close-button.close-button:hover,
-#set-alias-enter .close-button.close-button:hover,
 #adjust-volume-card .close-button.close-button:hover,
 #set-new-username-enter .close-button.close-button:hover,
 #client-info-enter .close-button.close-button:hover,
 #identity-string-use-container-enter .close-button.close-button:hover,
 #secret-identity-string-container-enter .close-button.close-button:hover,
-#android-settings-warning .close-button.close-button:hover {
+#android-settings-warning .close-button.close-button:hover
+{
     background: transparent;
     border-color: #d8d22b;
 }
@@ -2133,7 +2092,6 @@ a-toast:hover {
     border: 0px;
     transition: 0.3s ease;
     border-radius: 3px;
-    cursor: pointer;
     background-repeat: no-repeat;
     background-position: center center;
     background-color: #000000;
@@ -2239,7 +2197,6 @@ a-toast:hover {
     color: #ffffff;
     font-size: 13px;
     font-weight: 400;
-    cursor: pointer;
     transition: background-color 0.12s ease;
 }
 
@@ -2268,4 +2225,73 @@ a-toast:hover {
 #chat-input-file-input-container #color-picker-selector-div:hover,
 #chat-input-file-input-container #chat-input-font-size-range:hover {
     opacity: 1;
+}
+
+:root
+{
+    --reaction-background: #414955;
+    --reaction-selected: #506078;
+    --reaction-border: #657285;
+    --reaction-accent: #bed6f2;
+    --reaction-text: #edf1f6;
+    --reaction-panel: #36393f;
+    --reaction-radius: 5px;
+    --reaction-shadow: none;
+    --reaction-font: var(--set-font, "Raleway", sans-serif);
+    --chat-author-size: 13px;
+    --chat-author-color: #adc5e4;
+    --chat-local-author-color: #c4d6ec;
+    --chat-meta-color: #a3abb7;
+}
+
+:root :is(.chat-message-tools, .chat-message-menu, .chat-reaction-picker)
+{
+    border-color: #596372;
+    background: var(--reaction-panel);
+    font-family: var(--reaction-font);
+}
+
+:root .chat-reactions .chat-reaction
+{
+    border-color: #596372;
+    font-weight: 400;
+}
+
+:root :is(.chat-message-tools, .chat-message-menu) > button:not(:disabled):not(.chat-message-delete):hover
+{
+    border-color: #7d8fa5;
+    background: #48566a;
+}
+
+:root .chat-reaction-picker input
+{
+    border-color: #657285;
+    background: #272b32;
+    color: #edf1f6;
+}
+
+:root .chat-reply-quote
+{
+    padding: 5px 8px;
+    border-left: 2px solid #7d8fa5;
+    background: #303740;
+}
+
+:root .chat-reply-content
+{
+    border-bottom: 0;
+}
+
+:root #chat-reply-preview
+{
+    border-color: #657285;
+    background: #36393f;
+    font-family: var(--reaction-font);
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+{
+    --groups-radius: 8px;
+    --groups-title-background: #36393f;
+    --groups-title-text: #e6e8ea;
 }

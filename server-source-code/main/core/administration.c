@@ -1,4 +1,4 @@
-// This file manages bans, tags and icons, checks banner images and limits attempts to guess the admin password.
+// This file manages bans, groups and icons, checks banner images and limits attempts to guess the admin password.
 #include "identity_store.h"
 #include "administration.h"
 #include "../definitions.h"
@@ -233,27 +233,27 @@ boole server_admin__remove_ban_by_ip(char* ip_address)
 }
 
 /**
- * @brief returns TRUE if a tag with the given id exists
+ * @brief returns TRUE if a group with the given id exists
  *
- * @param uint64 tag_id -> id of the tag to check
+ * @param uint64 group_id -> id of the group to check
  *
  * @return boole
  */
-boole server_admin__is_tag_id_real(uint64 tag_id)
+boole server_admin__is_group_id_real(uint64 group_id)
 {
     boole result = FALSE;
     uint64 i = 0;
 
     result = FALSE;
 
-    for (i = 0; i < MAX_TAGS; i++)
+    for (i = 0; i < MAX_GROUPS; i++)
     {
-        if (g_tags_array[i].is_existing == FALSE)
+        if (g_groups_array[i].is_existing == FALSE)
         {
             continue;
         }
 
-        if (g_tags_array[i].id == tag_id)
+        if (g_groups_array[i].id == group_id)
         {
             result = TRUE;
             break;
@@ -264,69 +264,69 @@ boole server_admin__is_tag_id_real(uint64 tag_id)
 }
 
 /**
- * @brief returns TRUE if the client already has the given tag id
+ * @brief returns TRUE if the client already has the given group id
  *
  * @param uint64 client_id -> id of the client
- * @param uint64 this_tag_id -> id of the tag
+ * @param uint64 this_group_id -> id of the group
  *
  * @return boole
  *
- * @attention this function assumes that client_id is correct and that this_tag_id is also correct
+ * @attention this function assumes that client_id is correct and that this_group_id is also correct
  */
-boole server_admin__is_client_already_assigned_this_tag_id(uint64 client_id, uint64 this_tag_id)
+boole server_admin__is_client_already_assigned_this_group_id(uint64 client_id, uint64 this_group_id)
 {
     uint64 cvector_loop_index = 0;
     client_t* client = NULL_POINTER;
-    boole is_tag_found = FALSE;
+    boole is_group_found = FALSE;
 
     client = &g_clients_array[client_id];
 
-    if (client->tag_ids != NULL_POINTER)
+    if (client->group_ids != NULL_POINTER)
     {
-        for (cvector_loop_index = 0; cvector_loop_index < cvector_size(client->tag_ids); ++cvector_loop_index)
+        for (cvector_loop_index = 0; cvector_loop_index < cvector_size(client->group_ids); ++cvector_loop_index)
         {
-            if (client->tag_ids[cvector_loop_index] == this_tag_id)
+            if (client->group_ids[cvector_loop_index] == this_group_id)
             {
-                is_tag_found = TRUE;
+                is_group_found = TRUE;
                 break;
             }
         }
     }
 
-    return is_tag_found;
+    return is_group_found;
 }
 
 /**
- * @brief returns the index of the given tag id within the client's tag vector, or -1 if not found
+ * @brief returns the index of the given group id within the client's group vector, or -1 if not found
  *
  * @param uint64 client_id -> id of the client
- * @param uint64 this_tag_id -> id of the tag
+ * @param uint64 this_group_id -> id of the group
  *
- * @return int64 index of the tag id, or -1 if the client does not have it
+ * @return int64 index of the group id, or -1 if the client does not have it
  *
- * @attention this function assumes that client_id is correct and that this_tag_id is also correct
+ * @attention this function assumes that client_id is correct and that this_group_id is also correct
  */
-int64 server_admin__get_index_of_tag_id_of_client(uint64 client_id, uint64 this_tag_id)
+int64 server_admin__get_index_of_group_id_of_client(uint64 client_id, uint64 this_group_id)
 {
     uint64 cvector_loop_index = 0;
     client_t* client = NULL_POINTER;
-    int64 tag_index = -1;
+    int64 group_index = -1;
 
     client = &g_clients_array[client_id];
 
-    if (client->tag_ids != NULL_POINTER)
+    if (client->group_ids != NULL_POINTER)
     {
-        for (cvector_loop_index = 0; cvector_loop_index < cvector_size(client->tag_ids); ++cvector_loop_index)
+        for (cvector_loop_index = 0; cvector_loop_index < cvector_size(client->group_ids); ++cvector_loop_index)
         {
-            if (client->tag_ids[cvector_loop_index] == this_tag_id)
+            if (client->group_ids[cvector_loop_index] == this_group_id)
             {
-                tag_index = cvector_loop_index;
+                group_index = cvector_loop_index;
                 break;
             }
         }
     }
 
-    return tag_index;
+    return group_index;
 }
 
 /**

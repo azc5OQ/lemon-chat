@@ -71,7 +71,7 @@ var SERVER_SETTINGS_FIELDS = [
     { key: "is_country_blocking_active", id: "server-settings-general-country-blocking-checkbox", kind: "bool", tab: "general" },
     { key: "is_logging_client_joins_enabled", id: "server-settings-log-joins-checkbox", kind: "bool", tab: "log" },
     { key: "is_logging_username_changes_enabled", id: "server-settings-log-renames-checkbox", kind: "bool", tab: "log" },
-    { key: "is_logging_tag_changes_enabled", id: "server-settings-log-tags-checkbox", kind: "bool", tab: "log" },
+    { key: "is_logging_group_changes_enabled", id: "server-settings-log-groups-checkbox", kind: "bool", tab: "log" },
     { key: "is_logging_server_settings_updates_enabled", id: "server-settings-log-settings-checkbox", kind: "bool", tab: "log" },
     { key: "is_logging_kicks_and_bans_enabled", id: "server-settings-log-kicks-bans-checkbox", kind: "bool", tab: "log" },
     { key: "is_logging_client_disconnects_enabled", id: "server-settings-log-disconnects-checkbox", kind: "bool", tab: "log" },
@@ -255,6 +255,7 @@ function server_settings_tab__apply_server_policy_fields(data)
         }
     }
 
+    groups__apply_server_mode();
     server_settings_tab__apply_rename_policy_to_ui();
     link_previews__apply_policy();
     chat_files__apply_file_upload_policy_to_ui();
@@ -291,6 +292,10 @@ function server_settings_tab__apply_rename_policy_to_ui()
  */
 function server_settings_tab__send_next_queued_icon_upload()
 {
+    if (!groups__has_permission("manage_icons"))
+    {
+        return;
+    }
     if (g_icon_upload_in_flight_base64 != null) // still waiting for the previous upload's reply
     {
         return;

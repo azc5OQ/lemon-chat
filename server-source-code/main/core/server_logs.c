@@ -270,24 +270,24 @@ void server_logs__username_changed(char* old_username, char* new_username)
 }
 
 /**
- * @brief records a tag being added to a client
+ * @brief records a group being added to a client
  *
- * @param int tag_id -> id of the added tag
- * @param char* target_username -> who received the tag
+ * @param int group_id -> id of the added group
+ * @param char* target_username -> who received the group
  * @param char* admin_username -> who added it
  *
  * @return void
  */
-void server_logs__tag_added(int tag_id, char* target_username, char* admin_username)
+void server_logs__group_added(int group_id, char* target_username, char* admin_username)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH];
 
-    if (g_server_settings.is_logging_tag_changes_enabled == FALSE)
+    if (g_server_settings.is_logging_group_changes_enabled == FALSE)
     {
         return;
     }
 
-    snprintf(text, sizeof(text), "tag %d added to %s by %s", tag_id, target_username, admin_username);
+    snprintf(text, sizeof(text), "group %d added to %s by %s", group_id, target_username, admin_username);
     _server_logs_internal__append(text);
 }
 

@@ -1,5 +1,6 @@
-// This file checks requests to change usernames, avatars and aliases or to view stored identities.
+// This file checks requests to change usernames and avatars or to view stored identities.
 #include "client_msg.h"
+#include "../../core/permissions.h"
 #include "../../core/client_session.h"
 #include "../../core/identity_store.h"
 #include "../server/server_msg.h"
@@ -14,8 +15,6 @@
 
 // declarations
 static boole _client_msg_profile_internal__is_change_client_username_message_valid(cJSON* json_root, uint64 client_id);
-static boole _client_msg_profile_internal__is_set_identity_alias_request_valid(cJSON* json_root);
-static boole _client_msg_profile_internal__is_set_alias_request_valid(cJSON* json_root);
 
 /**
  * @brief This function checks if clients username change request json message has all nessecary fields
@@ -130,20 +129,9 @@ void client_msg__profile__process_change_client_username(cJSON* json_root, uint6
     // check if client has permission to change the username
     client_to_alter = &g_clients_array[json_client_id->valueint];
 
-    // a client that is requesting a change of its own username: allow it - UNLESS the client is registered.
-    // a registered user's name is admin-controlled (set through the register-username action), so
-    // the client cannot rename itself out of it; an admin still can, via that action
     if (json_client_id->valueint == sender_client_id)
     {
-        if (client_to_alter->is_registered == TRUE)
-        {
-            DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_id", sender_client_id, "is registered - self username change denied \n");
-            does_client_have_permission_to_change_username = FALSE;
-        }
-        else
-        {
-            does_client_have_permission_to_change_username = TRUE;
-        }
+        does_client_have_permission_to_change_username = TRUE;
     }
     else
     {
@@ -156,13 +144,14 @@ void client_msg__profile__process_change_client_username(cJSON* json_root, uint6
 
     if (does_client_have_permission_to_change_username == FALSE)
     {
+        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         goto label_client_msg__process_change_client_username_end;
     }
 
-    // renames can be switched off server-wide; the request is then silently ignored, because the
-    // switch is meant against name games by users - an admin still renames freely
+    // The server can disable renaming for ordinary users. Admins can still rename clients.
     if (g_server_settings.is_client_rename_allowed == FALSE && g_clients_array[sender_client_id].is_admin == FALSE)
     {
+        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_id", sender_client_id, "rename ignored - renames are off for users \n");
         goto label_client_msg__process_change_client_username_end;
     }
@@ -187,21 +176,6 @@ void client_msg__profile__process_change_client_username(cJSON* json_root, uint6
             // username used by some of the clients, start another loop, with incremented numeric part of client's username
             DBG_CLIENT_MESSAGE log_info("%s %d %s", "username ", is_username_taken, " already taken \n");
             break;
-        }
-    }
-
-    // registered names are RESERVED: without this a guest could take the name of a registered user
-    // while that user is offline, and the moment the user came back there would be two of them. refusing
-    // the registration of a name in use (see the register handler) only holds if this holds too
-    if (is_username_taken == FALSE && client_to_alter->public_key[0] != 0)
-    {
-        char requester_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
-        util__hash_password_to_base64(client_to_alter->public_key, requester_identity_hash, sizeof(requester_identity_hash));
-
-        if (identity_store__is_alias_taken_by_another_identity(json_message_value->valuestring, requester_identity_hash) == TRUE)
-        {
-            DBG_CLIENT_MESSAGE log_info("%s %s %s", "username ", json_message_value->valuestring, " is a registered name of another identity \n");
-            is_username_taken = TRUE;
         }
     }
 
@@ -236,365 +210,17 @@ label_client_msg__process_change_client_username_end:
         DBG_CLIENT_MESSAGE log_info("%s", "calling server_msg__profile__send_client_rename_message_to_all_clients \n");
 
         clib__read_lock(&g_clients_global_rwlock_guard);
+        identity_store__sync_client_identity_in_store(client_to_alter);
         server_msg__profile__send_client_rename_message_to_all_clients(client_to_alter, client_to_alter->username);
         clib__unlock(&g_clients_global_rwlock_guard);
     }
 }
 
-/**
- * @brief validates an admin's set-identity-alias request: a stored identity hash and an alias string
- *
- *        the public_key_hash must be a non-empty string shorter than MAX_PUBLIC_KEY_LENGTH. the
- *        alias must be a string shorter than USERNAME_MAX_LENGTH, and an empty one is allowed -
- *        that is how an alias is cleared, unregistering the identity.
- *
- * @param cJSON* json_root -> the parsed client request
- *
- * @return boole -> TRUE when the request is valid, FALSE otherwise
- */
-static boole _client_msg_profile_internal__is_set_identity_alias_request_valid(cJSON* json_root)
-{
-    cJSON* json_message_object = 0;
-    cJSON* json_public_key_hash = 0;
-    cJSON* json_alias = 0;
-
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    if (json_message_object == NULL_POINTER)
-    {
-        return FALSE;
-    }
-
-    json_public_key_hash = cJSON_GetObjectItemCaseSensitive(json_message_object, "public_key_hash");
-    if (cJSON_IsString(json_public_key_hash) == FALSE || json_public_key_hash->valuestring == NULL_POINTER)
-    {
-        return FALSE;
-    }
-
-    if (clib__utf8_string_length(json_public_key_hash->valuestring) == 0 || clib__utf8_string_length(json_public_key_hash->valuestring) >= MAX_PUBLIC_KEY_LENGTH)
-    {
-        return FALSE;
-    }
-
-    json_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "alias");
-    if (cJSON_IsString(json_alias) == FALSE || json_alias->valuestring == NULL_POINTER)
-    {
-        return FALSE;
-    }
-
-    if (clib__utf8_string_length(json_alias->valuestring) >= USERNAME_MAX_LENGTH)
-    {
-        return FALSE;
-    }
-
-    return TRUE;
-}
 
 /**
- * @brief admin registers (or clears) an alias on a STORED identity, addressed by its hash rather
- *        than by a connected client id
- *
- *        that is the difference from client_msg__profile__process_set_alias_request: this one works while
- *        the owner is offline, which is what the identity list in server settings needs. the
- *        request is refused unless identities and alias registrations are enabled, the sender is a
- *        valid admin, and the alias is not already taken by another identity. if the owner happens
- *        to be connected, their live client row is updated, the change is broadcast to everyone,
- *        and a newly registered owner is handed the stored-clients roster without reconnecting.
- *
- * @param cJSON* json_root -> the parsed client request
- * @param uint64 sender_client_id -> id of the client that sent the request
- *
- * @note takes the clients read lock for the admin check, then the clients write lock while the
- *       live client row is updated
- *
- * @return void
- */
-void client_msg__profile__process_set_identity_alias_request(cJSON* json_root, uint64 sender_client_id)
-{
-    boole status = FALSE;
-    boole is_sender_admin = FALSE;
-    client_t* client = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_public_key_hash = 0;
-    cJSON* json_alias = 0;
-    char connected_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
-    uint64 i = 0;
-
-    if (g_server_settings.is_identity_storage_enabled == FALSE || g_server_settings.is_alias_registration_allowed == FALSE)
-    {
-        return;
-    }
-
-    status = _client_msg_profile_internal__is_set_identity_alias_request_valid(json_root);
-    if (status == FALSE)
-    {
-        return;
-    }
-
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    json_public_key_hash = cJSON_GetObjectItemCaseSensitive(json_message_object, "public_key_hash");
-    json_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "alias");
-
-    clib__read_lock(&g_clients_global_rwlock_guard);
-    is_sender_admin = base__is_client_valid_admin(sender_client_id);
-    clib__unlock(&g_clients_global_rwlock_guard);
-
-    if (is_sender_admin == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__profile__process_set_identity_alias_request sender is not an admin \n");
-        return;
-    }
-
-    // aliases are the handle offline entries are paired by, so two identities must never share one
-    if (json_alias->valuestring[0] != 0 && identity_store__is_alias_taken_by_another_identity(json_alias->valuestring, json_public_key_hash->valuestring) == TRUE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__profile__process_set_identity_alias_request alias is already taken \n");
-        return;
-    }
-
-    identity_store__set_identity_alias_by_hash(json_public_key_hash->valuestring, json_alias->valuestring);
-
-    // the owner may be connected right now: keep their live row and everyone else's view in step
-    clib__write_lock(&g_clients_global_rwlock_guard);
-
-    for (i = 0; i < g_server_settings.max_client_count; i++)
-    {
-        client = &g_clients_array[i];
-
-        if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE || client->public_key[0] == 0)
-        {
-            continue;
-        }
-
-        util__hash_password_to_base64(client->public_key, connected_identity_hash, sizeof(connected_identity_hash));
-
-        if (clib__is_string_equal(connected_identity_hash, json_public_key_hash->valuestring) == FALSE)
-        {
-            continue;
-        }
-
-        clib__null_memory(&client->alias[0], USERNAME_MAX_LENGTH);
-        clib__copy_memory(json_alias->valuestring, &client->alias[0], clib__utf8_string_length(json_alias->valuestring), USERNAME_MAX_LENGTH - 1);
-        client->is_registered = (boole)(client->alias[0] != 0);
-
-        server_msg__profile__send_client_alias_changed_to_all_clients(client, &client->alias[0]);
-
-        // just became registered: hand over the offline roster without making them reconnect
-        if (client->is_registered == TRUE && g_server_settings.is_stored_client_list_allowed == TRUE)
-        {
-            server_msg__profile__send_stored_clients_to_single_client(client);
-        }
-        break;
-    }
-
-    clib__unlock(&g_clients_global_rwlock_guard);
-}
-
-/**
- * @brief validates a set-alias request: client id present and within range, alias present as a string
- *        and short enough. an empty alias is valid - it clears the registration.
- *
- * @param cJSON* json_root -> the parsed client request
- *
- * @return boole TRUE when the request is well-formed
- */
-static boole _client_msg_profile_internal__is_set_alias_request_valid(cJSON* json_root)
-{
-    cJSON* json_client_id = 0;
-    cJSON* json_alias = 0;
-    cJSON* json_message_object = 0;
-
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-
-    json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
-
-    if (cJSON_IsNumber(json_client_id) == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_profile_internal__is_set_alias_request_valid cJSON_IsNumber(client_id) \n");
-        return FALSE;
-    }
-
-    if (json_client_id->valueint < 0 || json_client_id->valueint >= g_server_settings.max_client_count)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s %d %s", "_client_msg_profile_internal__is_set_alias_request_valid json_client_id->valueint is not valid ", json_client_id->valueint, "\n");
-        return FALSE;
-    }
-
-    json_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "alias");
-    if (cJSON_IsString(json_alias) == FALSE || json_alias->valuestring == NULL_POINTER)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_profile_internal__is_set_alias_request_valid cJSON_IsString(alias) \n");
-        return FALSE;
-    }
-
-    if (clib__utf8_string_length(json_alias->valuestring) >= USERNAME_MAX_LENGTH)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_profile_internal__is_set_alias_request_valid alias too long \n");
-        return FALSE;
-    }
-
-    return TRUE;
-}
-
-/**
- * @brief admin registers (or clears, with an empty string) an alias - a display name - on another
- *        connected client's identity
- *
- *        the alias is set on the live client and in the identity store, so it survives reconnects
- *        within the run; disk persistence follows on the next settings save. the change is then
- *        broadcast to everyone. requires identities and alias registrations to be enabled.
- *
- * @param cJSON* json_root -> the parsed client request
- * @param uint64 sender_client_id -> id of the client that sent the request
- *
- * @return void
- */
-void client_msg__profile__process_set_alias_request(cJSON* json_root, uint64 sender_client_id)
-{
-    boole status = FALSE;
-    client_t* client = 0;
-    client_t* client_to_alias = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_client_id = 0;
-    cJSON* json_alias = 0;
-    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
-
-    if (g_server_settings.is_identity_storage_enabled == FALSE || g_server_settings.is_alias_registration_allowed == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__profile__process_set_alias_request alias registrations are not enabled \n");
-        return;
-    }
-
-    status = _client_msg_profile_internal__is_set_alias_request_valid(json_root);
-    if (status == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__profile__process_set_alias_request _client_msg_profile_internal__is_set_alias_request_valid == FALSE \n");
-        return;
-    }
-
-    clib__write_lock(&g_clients_global_rwlock_guard);
-
-    client = &g_clients_array[sender_client_id];
-
-    if (client->is_authenticated == FALSE || client->is_existing == FALSE)
-    {
-        goto label_client_msg__process_set_alias_request_end;
-    }
-
-    if (client->is_admin == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "sender with sender_client_id", sender_client_id, "does not have permission to set alias \n");
-        goto label_client_msg__process_set_alias_request_end;
-    }
-
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
-    json_alias = cJSON_GetObjectItemCaseSensitive(json_message_object, "alias");
-
-    client_to_alias = &g_clients_array[json_client_id->valueint];
-
-    if (client_to_alias->is_authenticated == FALSE || client_to_alias->is_existing == FALSE || client_to_alias->is_music_bot == TRUE)
-    {
-        goto label_client_msg__process_set_alias_request_end;
-    }
-
-    if (client_to_alias->public_key[0] == 0)
-    {
-        goto label_client_msg__process_set_alias_request_end; // no identity to attach the alias to
-    }
-
-    util__hash_password_to_base64(client_to_alias->public_key, identity_hash, sizeof(identity_hash));
-
-    // aliases are the handle the stored-clients list is keyed by and what clients pair offline
-    // entries against, so two identities must never share one (compared ignoring ascii case)
-    if (identity_store__is_alias_taken_by_another_identity(json_alias->valuestring, identity_hash) == TRUE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__profile__process_set_alias_request alias [", json_alias->valuestring, "] is already taken by another identity \n");
-        goto label_client_msg__process_set_alias_request_end;
-    }
-
-    // a registered name BECOMES the username, so it must be free among the people connected right
-    // now too - the check above only sees stored identities and would happily hand out a name a
-    // guest is wearing, leaving two people on screen under one name. refuse instead
-    if (client_session__is_username_taken_by_another_client(json_alias->valuestring, client_to_alias->client_id) == TRUE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__profile__process_set_alias_request username [", json_alias->valuestring, "] is in use by a connected client \n");
-        goto label_client_msg__process_set_alias_request_end;
-    }
-
-    // the registered name is a username as well, so hold it to the same length limit the rename
-    // path enforces - it used to accept anything up to the buffer size
-    if (clib__utf8_string_length_check_max_length(json_alias->valuestring, 50) == -1)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__profile__process_set_alias_request alias [", json_alias->valuestring, "] length is not acceptable \n");
-        goto label_client_msg__process_set_alias_request_end;
-    }
-
-    // live client
-    clib__null_memory(&client_to_alias->alias[0], USERNAME_MAX_LENGTH);
-    clib__copy_memory(json_alias->valuestring, &client_to_alias->alias[0], clib__utf8_string_length(json_alias->valuestring), USERNAME_MAX_LENGTH - 1);
-
-    // identity store, keyed by the identity hash, so the name survives reconnects
-    identity_store__set_identity_alias_by_hash(identity_hash, json_alias->valuestring);
-
-    // holding a registered name IS being registered - keep it live so the user does not have to
-    // reconnect (and loses the right again the moment the admin clears it)
-    client_to_alias->is_registered = (boole)(client_to_alias->alias[0] != 0);
-
-    // the registered name IS the username now: mirror it into the live username and tell everyone,
-    // so there is ONE name on screen instead of a username plus a separate alias. on unregister the
-    // name stays put (the person keeps it) but self-rename unlocks again
-    if (client_to_alias->is_registered == TRUE)
-    {
-        clib__null_memory(&client_to_alias->username[0], USERNAME_MAX_LENGTH);
-        clib__copy_memory(client_to_alias->alias, &client_to_alias->username[0], clib__utf8_string_length(client_to_alias->alias), USERNAME_MAX_LENGTH - 1);
-        server_msg__profile__send_client_rename_message_to_all_clients(client_to_alias, client_to_alias->username);
-    }
-
-    // this is the moment an identity BECOMES registered, so it is also the moment its raw public key
-    // has to be kept - offline messages are encrypted with it while the person is away. it used to be
-    // collected only at authentication (skipped here: the client was still unregistered when it connected) and
-    // at an admin settings save (only sweeps who is connected at that instant). a user aliased mid
-    // session and then leaving was therefore listed as an offline contact WITHOUT a key, and everyone
-    // trying to write to the client got "this server does not keep messages for people who are offline"
-    // until the client reconnected once. same guards as the authentication path
-    if (g_server_settings.is_offline_messaging_allowed == TRUE && client_to_alias->is_registered == TRUE && client_to_alias->public_key[0] != 0 && client_to_alias->is_music_bot == FALSE)
-    {
-        identity_store__store_identity_raw_public_key(identity_hash, client_to_alias->public_key);
-    }
-
-    // alias taken away: the client is not registered anymore, so nobody may write to it while it is away -
-    // drop the key that would allow it instead of leaving it lying in the identity store
-    if (client_to_alias->is_registered == FALSE)
-    {
-        identity_store__clear_identity_raw_public_key(identity_hash);
-    }
-
-    server_msg__profile__send_client_alias_changed_to_all_clients(client_to_alias, &client_to_alias->alias[0]);
-
-    // just became registered: send the client the roster now instead of making it reconnect for it
-    if (client_to_alias->is_registered == TRUE && g_server_settings.is_stored_client_list_allowed == TRUE)
-    {
-        server_msg__profile__send_stored_clients_to_single_client(client_to_alias);
-    }
-
-label_client_msg__process_set_alias_request_end:
-    clib__unlock(&g_clients_global_rwlock_guard);
-}
-
-/**
- * @brief sends the requester the identities this server has stored, so it can show people that are
- *        registered here even while they are offline
- *
- *        the response carries only alias, avatar and tags - never public keys, identity hashes or
- *        usernames. it is gated by identities + is_stored_client_list_allowed, and the requester must
- *        itself be REGISTERED (carry an admin-granted alias), so a random guest cannot join and
- *        harvest everyone's name and face. every client sends this request on connect and a denial
- *        is simply silence. the request itself has no payload.
- *
- * @param cJSON* json_root -> the parsed client request (unused, the request carries no fields)
- * @param uint64 sender_client_id -> id of the client that sent the request
- *
- * @return void
+ * @brief Sends stored names and avatars when the server settings and the client's groups allow it.
+ * @param json_root -> request with no additional fields
+ * @param sender_client_id -> client requesting the list
  */
 void client_msg__profile__process_request_stored_clients(cJSON* json_root, uint64 sender_client_id)
 {
@@ -604,6 +230,9 @@ void client_msg__profile__process_request_stored_clients(cJSON* json_root, uint6
 
     if (g_server_settings.is_identity_storage_enabled == FALSE || g_server_settings.is_stored_client_list_allowed == FALSE)
     {
+        clib__read_lock(&g_clients_global_rwlock_guard);
+        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        clib__unlock(&g_clients_global_rwlock_guard);
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__profile__process_request_stored_clients stored clients list is not enabled \n");
         return;
     }
@@ -617,10 +246,11 @@ void client_msg__profile__process_request_stored_clients(cJSON* json_root, uint6
         goto label_client_msg__process_request_stored_clients_end;
     }
 
-    // only people the admin registered may see the roster of registered people
-    if (client->is_registered == FALSE)
+    // Groups can change who may view the stored names and avatars.
+    if (permissions__is_allowed(client, PERMISSION_VIEW_STORED_USERS) == FALSE)
     {
-        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__profile__process_request_stored_clients client_id", sender_client_id, "is not registered, denying \n");
+        server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
+        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__profile__process_request_stored_clients client_id", sender_client_id, "cannot view stored users \n");
         goto label_client_msg__process_request_stored_clients_end;
     }
 
@@ -657,6 +287,9 @@ void client_msg__profile__process_avatar_upload(cJSON* json_root, uint64 sender_
 
     if (g_server_settings.is_avatar_upload_allowed == FALSE)
     {
+        clib__read_lock(&g_clients_global_rwlock_guard);
+        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
@@ -743,6 +376,9 @@ void client_msg__profile__process_delete_avatar(cJSON* json_root, uint64 sender_
 
     if (g_server_settings.is_avatar_upload_allowed == FALSE)
     {
+        clib__read_lock(&g_clients_global_rwlock_guard);
+        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 

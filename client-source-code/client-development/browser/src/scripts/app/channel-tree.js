@@ -1,5 +1,5 @@
 // channel-tree.js is embedded in template.html along with the other client files, and in the node bundle
-// it holds the lookups over g_channel_list, g_client_list, g_icons and g_tags, the html of a client row,
+// it holds the lookups over g_channel_list, g_client_list, g_icons and g_groups, the html of a client row,
 // and the avatars on those rows (the cache, the lazy loading queue and the prefetch after joining)
 // messages.js and ui.js call it while rendering the tree
 
@@ -107,19 +107,19 @@ function channel_tree__get_icon_by_icon_id(icon_id)
 }
 
 /**
- * @brief tag object from g_tags by id
+ * @brief group object from g_groups by id
  *
- * @param number tag_id -> the tag id
+ * @param number group_id -> the group id
  *
- * @return object|null the tag, null when not found
+ * @return object|null the group, null when not found
  */
-function channel_tree__get_tag_by_tag_id(tag_id)
+function channel_tree__get_group_by_group_id(group_id)
 {
-    for (var i = 0; i < g_tags.length; i++)
+    for (var i = 0; i < g_groups.length; i++)
     {
-        if (g_tags[i].tag_id == tag_id)
+        if (g_groups[i].group_id == group_id)
         {
-            return g_tags[i];
+            return g_groups[i];
         }
     }
     return null;
@@ -262,19 +262,13 @@ function channel_tree__get_indentation_level(channel_id, channels)
 }
 
 /**
- * @brief whether the local client carries the admin tag (tag id 0)
+ * @brief Checks the admin status sent by the server.
  *
  * @return boolean true for an admin
  */
 function channel_tree__is_local_client_admin()
 {
-    let result = false;
-    let client = channel_tree__get_client_by_client_id(g_local_client_id);
-    if (client.tag_ids.includes(0))
-    {
-        result = true;
-    }
-    return result;
+    return g_is_authenticated && g_is_local_client_admin;
 }
 
 /**
@@ -353,29 +347,14 @@ function channel_tree__get_username_by_client_id(client_id)
 }
 
 /**
- * @brief the name a person is labelled with: the admin-granted alias when there is one, else the username
- *        for anything the user reads, while channel_tree__get_username_by_client_id serves the protocol
- *
- * @param number client_id -> the client id
- * @param string fallback_username -> used when the client is not in the list
- *
- * @return string the alias, the username, the fallback, else ""
+ * @brief Returns the client's current name or the supplied name when the client is absent.
+ * @param client_id Client to find.
+ * @param fallback_username Name to use when the client is absent.
  */
 function channel_tree__get_display_name_by_client_id(client_id, fallback_username)
 {
-    let client_object = channel_tree__get_client_by_client_id(client_id);
-
-    if (client_object != null && typeof client_object.alias === "string" && client_object.alias.length > 0)
-    {
-        return client_object.alias;
-    }
-
-    if (client_object != null && typeof client_object.username === "string" && client_object.username.length > 0)
-    {
-        return client_object.username;
-    }
-
-    return (typeof fallback_username === "string") ? fallback_username : "";
+    let client = channel_tree__get_client_by_client_id(client_id);
+    return client != null ? client.username : (typeof fallback_username === "string" ? fallback_username : "");
 }
 
 /**
@@ -399,49 +378,35 @@ function channel_tree__get_public_key_by_client_id(client_id)
 }
 
 /**
- * @brief a CONNECTED client carrying this alias
- *        aliases are unique per identity, so this is how an offline conversation finds its owner
- *        once they come back
- *
- * @param string alias -> the alias, compared case-insensitively
- *
- * @return object|null the client, null when nobody connected carries it
+ * @brief Finds a user by saved identity, regardless of their current name.
+ * @param identity_hash Identity to find.
  */
-function channel_tree__get_client_by_alias(alias)
+function channel_tree__get_client_by_identity_hash(identity_hash)
 {
-    if (typeof alias !== "string" || alias.length == 0) { return null; }
-
-    for (let i = 0; i < g_client_list.length; i++)
+    if (typeof identity_hash !== "string" || identity_hash.length === 0)
     {
-        if (g_client_list[i] != null && typeof g_client_list[i].alias === "string" && g_client_list[i].alias.toLowerCase() == alias.toLowerCase())
-        {
-            return g_client_list[i];
-        }
+        return null;
     }
-
-    return null;
+    return g_client_list.find(function(client)
+    {
+        return client != null && client.identity_hash === identity_hash;
+    }) || null;
 }
 
 /**
- * @brief offline contact from g_offline_client_list by alias
- *
- * @param string alias -> the alias, compared case-insensitively
- *
- * @return object|null the stored client, null when not found
+ * @brief Finds a user by saved identity, regardless of their current name.
+ * @param identity_hash Identity to find.
  */
-function channel_tree__get_stored_client_by_alias(alias)
+function channel_tree__get_stored_client_by_identity_hash(identity_hash)
 {
-    if (typeof alias !== "string" || alias.length == 0) { return null; }
-
-    for (let i = 0; i < g_offline_client_list.length; i++)
+    if (typeof identity_hash !== "string" || identity_hash.length === 0)
     {
-        if (g_offline_client_list[i].alias.toLowerCase() == alias.toLowerCase())
-        {
-            return g_offline_client_list[i];
-        }
+        return null;
     }
-
-    return null;
+    return g_offline_client_list.find(function(client)
+    {
+        return client != null && client.identity_hash === identity_hash;
+    }) || null;
 }
 
 // tree ordering helpers: the channel list is a flat pre-order list (a channel header, its client rows,
@@ -559,7 +524,7 @@ function channel_tree__get_channel_own_clients_last_element(channel_id)
 }
 
 /**
- * @brief the channel-tree row of one client: mic-state circle, name (an editable input for the local client), alias, flag, song marquee and tags, indented by channel depth
+ * @brief the channel-tree row of one client: mic-state circle, name (an editable input for the local client), flag, song marquee and groups, indented by channel depth
  *
  * @param object client -> the client from g_client_list
  * @param boolean is_local_client -> true for the local user, whose name is editable
@@ -572,8 +537,6 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
     let client_id = client.client_id;
     let channel_id_of_client = client.channel_id;
     let username = chat__sanitize_string(client.username);
-    let alias_text = chat__sanitize_string((client.alias != null) ? client.alias : "");
-    let has_alias_html_class = (alias_text.length > 0) ? " has-alias" : "";
     let audio_state = client.audio_state;
     let country_iso_code = client.country_iso_code;
     let is_music_bot = client.is_music_bot;
@@ -631,13 +594,12 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
 
     if (is_local_client)
     {
-        result = "<div class=\"connected-local-client connected-client " + is_channel_collapsed + has_alias_html_class + "\" data-connected-client-id=\"" + client_id + "\">\n\
+        result = "<div class=\"connected-local-client connected-client " + is_channel_collapsed + "\" data-connected-client-id=\"" + client_id + "\">\n\
                     <div style=\"width: " + indentation_level * 20 + "px; height: 1px; vertical-align:top; display: inline-block;\">\n\
                     </div>\n\
                     <div class='client-audio-state "+ client_audio_state_html_class + "' id=\"client-audio-state-" + client_id + "\"" + avatar_inline_style + "><div class=\"client-audio-availability\"></div>\n\
                     </div>\n\
                     <input maxlength=\"40\" id=\"connected-local-client-input\" value=\"" + username + "\">\n\
-                    <p class=\"client-alias\">" + alias_text + "</p>\n\
                     <div class=\"connected-client-country-flag country-flag-"+(country_iso_code ? (""+country_iso_code).toLowerCase() : "")+"\"></div>\n\
                     <div class=\"marquee-music-playing-container\" data-marquee-music-playing-container-id='"+ client_id + "'\>\n\
                         <p class='p-marquee-song-icon'>[</p>\n\
@@ -648,7 +610,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                     </div>\n\
                     <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
                     <span class=\"client-video-watching-icon\" data-client-id=\"" + client_id + "\" title=\"watching the stream\" style=\"display: none;\"></span>\n\
-                    <div class='client-tags' id =\"client-tags-" + client_id + "\">\n\
+                    <div class='client-groups' id =\"client-groups-" + client_id + "\">\n\
                     </div>\n\
                 </div>";
     }
@@ -660,14 +622,13 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
         let is_idle_client_html = client.is_idle == true ? " idle-client" : "";
         let music_bot_client_html = client.is_music_bot == true ? " music-bot-client" : "";
 
-        result = "<div class=\"connected-client " + is_channel_collapsed + " " + music_bot_client_html + " " + is_idle_client_html + has_alias_html_class + "\" data-connected-client-id=\"" + client_id + "\">\n\
+        result = "<div class=\"connected-client " + is_channel_collapsed + " " + music_bot_client_html + " " + is_idle_client_html + "\" data-connected-client-id=\"" + client_id + "\">\n\
                     <div style=\"width: " + indentation_level * 20 + "px; height: 1px; vertical-align:top; display: inline-block;\">\n\
                         <div class=\"client-mute-state\" style=\"display: "+client_mute_state_display+";\"></div>\n\
                     </div>\n\
                     <div class='client-audio-state "+ client_audio_state_html_class + "' id=\"client-audio-state-" + client_id + "\"" + avatar_inline_style + "><div class=\"client-audio-availability\"></div>\n\
                     </div>\n\
                     <p class=\"connected-client-p "+additional_client_type_html_class+"\">" + username + "</p>\n\
-                    <p class=\"client-alias\">" + alias_text + "</p>\n\
                     <div class=\"connected-client-country-flag country-flag-"+(country_iso_code ? (""+country_iso_code).toLowerCase() : "")+"\"></div>\n\
                     <p class=\"connected-client-p-received-messages-number\" style=\"display: "+((unread_count > 0) ? "inline-block" : "none")+";\">"+unread_count+"</p>\n\
                     <div class=\"marquee-music-playing-container\" data-marquee-music-playing-container-id='"+ client_id + "'\>\n\
@@ -679,7 +640,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                     </div>\n\
                     <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
                     <span class=\"client-video-watching-icon\" data-client-id=\"" + client_id + "\" title=\"watching the stream\" style=\"display: none;\"></span>\n\
-                    <div class='client-tags' id=\"client-tags-" + client_id + "\">\n\
+                    <div class='client-groups' id=\"client-groups-" + client_id + "\">\n\
                     </div>\n\
                     <svg class=\"client-ignore-state\" style=\"margin-left: "+indentation_level * 20+"px; display: "+client_ignore_state_display+";\"  viewBox=\"0 0 100 20\">\n\
                         <line x1=\"0\" y1=\"0\" x2=\"100\" y2=\"20\"></line>\n\
@@ -882,7 +843,7 @@ function channel_tree__set_profile_avatar_monogram(username)
 }
 
 /**
- * @brief the profile line under the name, built only from things the client list actually knows: you, music bot, channel, idle, alias, country, muted, ignored
+ * @brief the profile line under the name, built only from things the client list actually knows: you, music bot, channel, idle, country, muted, ignored
  *
  * @param object client -> the client from g_client_list
  *
@@ -900,7 +861,6 @@ function channel_tree__describe_client_for_profile(client)
     if (channel != null) { parts.push("in " + channel.name); }
 
     if (client.is_idle == true) { parts.push("idle"); }
-    if (client.alias != null && client.alias.length > 0) { parts.push("known as " + client.alias); }
     if (client.country_iso_code != null && client.country_iso_code.length > 0) { parts.push(client.country_iso_code.toUpperCase()); }
     if (client.is_muted_by_local_client == true) { parts.push("muted by you"); }
     if (client.is_ignored_by_local_client == true) { parts.push("ignored by you"); }
@@ -1035,4 +995,23 @@ function channel_tree__pump_avatar_load_queue(chunk_size)
     {
         g_avatar.load_scheduled = false;
     }
+}
+
+/**
+ * @brief Restores the local choice to hide server icons and connects its checkbox.
+ */
+function channel_tree__setup_icon_preference()
+{
+    if (!G_HAS_DOM)
+    {
+        return;
+    }
+    let checkbox = document.getElementById("local-settings-hide-server-icons");
+    checkbox.checked = utils__storage_get("lemon_hide_server_icons") === "1";
+    document.body.classList.toggle("hide-server-icons-in-channel-list", checkbox.checked);
+    checkbox.onchange = function()
+    {
+        utils__storage_set("lemon_hide_server_icons", checkbox.checked ? "1" : "0");
+        document.body.classList.toggle("hide-server-icons-in-channel-list", checkbox.checked);
+    };
 }

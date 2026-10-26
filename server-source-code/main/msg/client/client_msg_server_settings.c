@@ -1,5 +1,6 @@
 // This file checks requests to view or change server settings, server information and the server banner.
 #include "client_msg.h"
+#include "../../core/permissions.h"
 #include <string.h>
 #include "../../core/channel.h"
 #include "../../core/identity_store.h"
@@ -42,7 +43,7 @@ static boole _client_msg_server_settings_internal__is_save_server_settings_reque
  *        the general-settings toggles the admin sent (country flags, server-wide audio, music bot
  *        audio, hide-in-password-channels, temp channels) are applied to g_server_settings, each
  *        only when present and boolean. then everything persistable - those toggles plus the
- *        channel layout, the tags/icons and the identity snapshot - is written into
+ *        channel layout, the groups/icons and the identity snapshot - is written into
  *        server_settings.json. music bots and channel maintainers are runtime state and are never
  *        written. if the file cannot be written the toggles are rolled back to their previous
  *        values, so the running state stays consistent with what is on disk.
@@ -110,6 +111,7 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
 
     if (does_sender_have_permission_to_save_settings == FALSE)
     {
+        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         clib__unlock(&g_clients_global_rwlock_guard);
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__server_settings__process_save_request sender with sender_client_id", sender_client_id, "does not have permission to save server settings");
         return;
@@ -474,10 +476,10 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
         g_server_settings.is_logging_username_changes_enabled = cJSON_IsTrue(json_field);
     }
 
-    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_logging_tag_changes_enabled");
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_logging_group_changes_enabled");
     if (cJSON_IsBool(json_field))
     {
-        g_server_settings.is_logging_tag_changes_enabled = cJSON_IsTrue(json_field);
+        g_server_settings.is_logging_group_changes_enabled = cJSON_IsTrue(json_field);
     }
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_logging_server_settings_updates_enabled");
@@ -549,20 +551,20 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
         clib__unlock(&g_clients_global_rwlock_guard);
     }
 
-    // persist everything into server_settings.json. the save reads channels, icons, tags and bans, so take
+    // persist everything into server_settings.json. the save reads channels, icons, groups and bans, so take
     // those read locks in lock order (bans is always last). the clients read lock is taken first (clients
-    // before channels, matching the auth path) so the identity snapshot can read each client's tag list
+    // before channels, matching the auth path) so the identity snapshot can read each client's group list
     clib__read_lock(&g_clients_global_rwlock_guard);
     clib__read_lock(&g_channels_global_rwlock_guard);
     clib__read_lock(&g_icons_global_rwlock_guard);
-    clib__read_lock(&g_tags_global_rwlock_guard);
+    clib__read_lock(&g_groups_global_rwlock_guard);
     clib__read_lock(&g_bans_global_rwlock_guard);
 
     identity_store__snapshot_connected_clients_into_identity_store();
     save_succeeded = settings__save_server_settings_to_file();
 
     clib__unlock(&g_bans_global_rwlock_guard);
-    clib__unlock(&g_tags_global_rwlock_guard);
+    clib__unlock(&g_groups_global_rwlock_guard);
     clib__unlock(&g_icons_global_rwlock_guard);
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -636,6 +638,7 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
         clib__unlock(&g_clients_global_rwlock_guard);
     }
 
+    server_msg__server_settings__send_saved(&g_clients_array[sender_client_id], save_succeeded);
     server_logs__server_settings_updated(sender_username, save_succeeded);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -678,7 +681,14 @@ void client_msg__server_settings__process_info_request(cJSON* json_root, uint64 
     clib__read_lock(&g_clients_global_rwlock_guard);
     if (_client_msg_server_settings_internal__is_server_info_requester(sender_client_id, socket) == TRUE)
     {
-        server_msg__server_settings__send_info_to_single_client(&g_clients_array[sender_client_id], include_banner, FALSE);
+        if (permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_VIEW_SERVER_INFO) == TRUE)
+        {
+            server_msg__server_settings__send_info_to_single_client(&g_clients_array[sender_client_id], include_banner, FALSE);
+        }
+        else
+        {
+            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        }
     }
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -709,6 +719,7 @@ void client_msg__server_settings__process_set_banner_request(cJSON* json_root, u
         allowed = g_clients_array[sender_client_id].is_admin;
         if (allowed == FALSE)
         {
+            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
             server_msg__server_settings__send_banner_result_to_single_client(&g_clients_array[sender_client_id], FALSE, "not_admin");
         }
         else if (cJSON_IsString(banner) && banner->valuestring[0] != 0 && base__is_server_ram_budget_reached())
@@ -747,6 +758,7 @@ void client_msg__server_settings__process_set_banner_request(cJSON* json_root, u
         if (g_clients_array[sender_client_id].is_admin == FALSE)
         {
             error = "not_admin";
+            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         }
         if (error[0] == 0)
         {
@@ -754,11 +766,11 @@ void client_msg__server_settings__process_set_banner_request(cJSON* json_root, u
             g_server_settings.server_banner = replacement;
             clib__read_lock(&g_channels_global_rwlock_guard);
             clib__read_lock(&g_icons_global_rwlock_guard);
-            clib__read_lock(&g_tags_global_rwlock_guard);
+            clib__read_lock(&g_groups_global_rwlock_guard);
             clib__read_lock(&g_bans_global_rwlock_guard);
             saved = settings__save_server_settings_to_file();
             clib__unlock(&g_bans_global_rwlock_guard);
-            clib__unlock(&g_tags_global_rwlock_guard);
+            clib__unlock(&g_groups_global_rwlock_guard);
             clib__unlock(&g_icons_global_rwlock_guard);
             clib__unlock(&g_channels_global_rwlock_guard);
             if (saved == TRUE)
@@ -816,6 +828,7 @@ void client_msg__server_settings__process_load_request(cJSON* json_root, uint64 
     }
     else
     {
+        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__server_settings__process_load_request sender with sender_client_id", sender_client_id, "does not have permission to read server settings");
     }
 

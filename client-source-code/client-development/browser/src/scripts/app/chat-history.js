@@ -70,6 +70,7 @@ function chat_history__trim(context)
         {
             link_previews__forget(entry);
         }
+        chat_reactions__forget(entry);
         entry.remove();
         if (block != null && chat_history__entries(block).length === 0)
         {

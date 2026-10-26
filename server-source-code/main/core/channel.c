@@ -18,6 +18,65 @@
 // declarations
 
 /**
+ * @brief Checks channel power requirements and applies them only when all are valid.
+ * @param object Request or saved channel containing optional requirements.
+ * @param channel Channel to update, or NULL when only checking the values.
+ */
+boole channel__read_required_powers(cJSON* object, channel_t* channel)
+{
+    const char* names[] =
+    {
+        "required_talk_power", "required_message_power", "required_picture_power", "required_stream_power"
+    };
+    cJSON* values[4];
+    uint i = 0;
+
+    for (i = 0; i < 4; i++)
+    {
+        values[i] = cJSON_GetObjectItemCaseSensitive(object, names[i]);
+        if (values[i] != NULL_POINTER && (cJSON_IsNumber(values[i]) == FALSE
+            || !(values[i]->valuedouble >= 0 && values[i]->valuedouble <= PERMISSION_POWER_MAX)
+            || values[i]->valuedouble != (double)values[i]->valueint))
+        {
+            return FALSE;
+        }
+    }
+    if (channel != NULL_POINTER)
+    {
+        if (values[0] != NULL_POINTER)
+        {
+            channel->required_talk_power = (uint)values[0]->valueint;
+        }
+        if (values[1] != NULL_POINTER)
+        {
+            channel->required_message_power = (uint)values[1]->valueint;
+        }
+        if (values[2] != NULL_POINTER)
+        {
+            channel->required_picture_power = (uint)values[2]->valueint;
+        }
+        if (values[3] != NULL_POINTER)
+        {
+            channel->required_stream_power = (uint)values[3]->valueint;
+        }
+    }
+    return TRUE;
+}
+
+/**
+ * @brief Adds channel power requirements to saved settings or a client message.
+ * @param object JSON object receiving the channel requirements.
+ * @param channel Channel whose requirements are copied.
+ */
+void channel__write_required_powers(cJSON* object, const channel_t* channel)
+{
+    cJSON_AddNumberToObject(object, "required_talk_power", channel->required_talk_power);
+    cJSON_AddNumberToObject(object, "required_message_power", channel->required_message_power);
+    cJSON_AddNumberToObject(object, "required_picture_power", channel->required_picture_power);
+    cJSON_AddNumberToObject(object, "required_stream_power", channel->required_stream_power);
+}
+
+/**
  * @brief counts the authenticated, non-music-bot clients in the given channel
  *
  * @param uint64 channel_id -> id of the channel

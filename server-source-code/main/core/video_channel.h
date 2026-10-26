@@ -3,6 +3,7 @@
 
 boole video_channel__start(client_t* streamer, cstring source, cstring codec, int64 width, int64 height, int64 fps, boole is_sound_included, cstring* out_refusal_reason);
 void video_channel__stop(uint64 channel_id, cstring reason);
+void video_channel__apply_permission_changes(void);
 void video_channel__stop_all(cstring reason);
 void video_channel__process_channel_toggle_changed(uint64 channel_id);
 void video_channel__process_client_leaving_channel(client_t* client, uint64 old_channel_id);

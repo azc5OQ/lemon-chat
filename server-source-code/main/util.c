@@ -1,4 +1,4 @@
-// This file provides general helpers for clocks, threads, memory usage, random data, hashing and JSON.
+// This file provides helpers for clocks, threads, memory usage, executable lookup, random data, hashing and JSON.
 #include "definitions.h"
 #include "clib/clib_string.h"
 #include "clib/clib_memory.h"
@@ -14,11 +14,220 @@
 #include <psapi.h>
 #else
 #include <unistd.h>
+#include <sys/stat.h>
 #ifdef __APPLE__
 #include <mach/mach.h>
 #include <mach-o/dyld.h>
 #endif
 #endif
+
+// declarations
+static boole _util_internal__check_executable(cstring candidate, char* path, uint64 capacity);
+
+/**
+ * @brief Checks one executable file and returns its absolute path.
+ * @param cstring candidate File to check
+ * @param char* path Buffer receiving the absolute path
+ * @param uint64 capacity Buffer size in bytes
+ * @return boole Whether a usable executable was found
+ */
+static boole _util_internal__check_executable(cstring candidate, char* path, uint64 capacity)
+{
+    uint64 length = 0;
+#ifdef _WIN32
+    DWORD attributes = 0;
+    DWORD binary_type = 0;
+    DWORD required = 0;
+    DWORD written = 0;
+#else
+    struct stat information;
+    char* absolute = NULL_POINTER;
+#endif
+
+#ifdef _WIN32
+    length = strlen(candidate);
+    if (length < 4 || _stricmp(candidate + length - 4, ".exe") != 0)
+    {
+        return FALSE;
+    }
+    attributes = GetFileAttributesA(candidate);
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
+        !GetBinaryTypeA(candidate, &binary_type))
+    {
+        return FALSE;
+    }
+    if (binary_type != SCS_32BIT_BINARY && binary_type != SCS_64BIT_BINARY)
+    {
+        return FALSE;
+    }
+    required = GetFullPathNameA(candidate, 0, NULL_POINTER, NULL_POINTER);
+    if (required == 0 || (uint64)required > capacity)
+    {
+        return FALSE;
+    }
+    written = GetFullPathNameA(candidate, required, path, NULL_POINTER);
+    if (written == 0 || written >= required)
+    {
+        path[0] = 0;
+        return FALSE;
+    }
+#else
+    (void)length;
+    if (stat(candidate, &information) != 0 || !S_ISREG(information.st_mode) || access(candidate, X_OK) != 0)
+    {
+        return FALSE;
+    }
+    absolute = realpath(candidate, NULL_POINTER);
+    if (absolute == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    length = strlen(absolute);
+    if (length >= capacity)
+    {
+        free(absolute);
+        return FALSE;
+    }
+    memcpy(path, absolute, length + 1);
+    free(absolute);
+#endif
+    return TRUE;
+}
+
+/**
+ * @brief Resolves an explicit executable path or searches the PATH directories.
+ * @param cstring command Executable name or path without shell arguments
+ * @param char* path Buffer receiving the absolute path
+ * @param uint64 capacity Buffer size in bytes
+ * @return boole Whether an executable was found and fit in the buffer
+ */
+boole util__find_executable(cstring command, char* path, uint64 capacity)
+{
+    const char* environment = NULL_POINTER;
+    const char* start = NULL_POINTER;
+    const char* cursor = NULL_POINTER;
+    const char* end = NULL_POINTER;
+    const char* basename = NULL_POINTER;
+    const char* suffix = "";
+    char* candidate = NULL_POINTER;
+    uint64 command_length = 0;
+    uint64 directory_length = 0;
+    uint64 candidate_capacity = 0;
+    uint64 suffix_length = 0;
+    boole explicit_path = FALSE;
+    boole found = FALSE;
+    boole quoted = FALSE;
+    char separator = ':';
+    char slash = '/';
+
+    if (path == NULL_POINTER || capacity == 0)
+    {
+        return FALSE;
+    }
+    path[0] = 0;
+    if (command == NULL_POINTER || command[0] == 0)
+    {
+        return FALSE;
+    }
+    command_length = strlen(command);
+    explicit_path = strchr(command, '/') != NULL_POINTER;
+#ifdef _WIN32
+    separator = ';';
+    slash = '\\';
+    explicit_path = explicit_path || strchr(command, '\\') != NULL_POINTER || strchr(command, ':') != NULL_POINTER;
+    basename = command;
+    for (cursor = command; *cursor != 0; cursor++)
+    {
+        if (*cursor == '/' || *cursor == '\\')
+        {
+            basename = cursor + 1;
+        }
+    }
+    if (strchr(basename, '.') == NULL_POINTER)
+    {
+        suffix = ".exe";
+    }
+#else
+    (void)basename;
+#endif
+    suffix_length = strlen(suffix);
+    if (command_length > SIZE_MAX - suffix_length - 2)
+    {
+        return FALSE;
+    }
+    if (explicit_path == TRUE)
+    {
+        candidate = malloc((size_t)(command_length + suffix_length + 1));
+        if (candidate == NULL_POINTER)
+        {
+            return FALSE;
+        }
+        memcpy(candidate, command, command_length);
+        memcpy(candidate + command_length, suffix, suffix_length + 1);
+        found = _util_internal__check_executable(candidate, path, capacity);
+        free(candidate);
+        return found;
+    }
+    environment = getenv("PATH");
+    if (environment == NULL_POINTER || environment[0] == 0)
+    {
+        return FALSE;
+    }
+    start = environment;
+    while (*start != 0)
+    {
+        cursor = start;
+        quoted = FALSE;
+        while (*cursor != 0)
+        {
+#ifdef _WIN32
+            if (*cursor == '"')
+            {
+                quoted = !quoted;
+            }
+#endif
+            if (*cursor == separator && quoted == FALSE)
+            {
+                break;
+            }
+            cursor++;
+        }
+        end = cursor;
+#ifdef _WIN32
+        if (end > start + 1 && *start == '"' && end[-1] == '"')
+        {
+            start++;
+            end--;
+        }
+#endif
+        directory_length = (uint64)(end - start);
+        if (directory_length != 0 && directory_length <= SIZE_MAX - command_length - suffix_length - 2)
+        {
+            candidate_capacity = directory_length + command_length + suffix_length + 2;
+            candidate = malloc((size_t)candidate_capacity);
+            if (candidate == NULL_POINTER)
+            {
+                return FALSE;
+            }
+            memcpy(candidate, start, directory_length);
+            candidate[directory_length] = slash;
+            memcpy(candidate + directory_length + 1, command, command_length);
+            memcpy(candidate + directory_length + 1 + command_length, suffix, suffix_length + 1);
+            found = _util_internal__check_executable(candidate, path, capacity);
+            free(candidate);
+            if (found == TRUE)
+            {
+                return TRUE;
+            }
+        }
+        if (*cursor == 0)
+        {
+            break;
+        }
+        start = cursor + 1;
+    }
+    return FALSE;
+}
 
 /**
  * @brief Reads the RAM currently occupied by this server process, including shared pages.

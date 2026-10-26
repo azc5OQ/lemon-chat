@@ -22,6 +22,7 @@
 #include "../util.h"
 
 #include "video_channel.h"
+#include "permissions.h"
 #include "../video_websocket.h"
 #include "../media_auth.h"
 
@@ -149,6 +150,12 @@ boole video_channel__start(client_t* streamer, cstring source, cstring codec, in
         return FALSE;
     }
 
+    if (permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER) == FALSE)
+    {
+        *out_refusal_reason = "insufficient_permissions";
+        return FALSE;
+    }
+
     // a restart by the same streamer (a new source, a reconnect) replaces its own stream; anybody
     // else has to wait, one stream per channel
     if (channel->is_video_stream_active == TRUE)
@@ -250,6 +257,8 @@ void video_channel__stop(uint64 channel_id, cstring reason)
             continue;
         }
 
+        video_websocket__clear_queue(member);
+
         // no viewer-state message to the streamer here: it learns everything from the state broadcast
         member->is_video_viewer_allowed = FALSE;
         member->is_video_viewer_watching = FALSE;
@@ -270,6 +279,45 @@ void video_channel__stop(uint64 channel_id, cstring reason)
     channel->video_streamer_client_id = 0;
 
     server_msg__video__send_state_to_clients_in_same_channel(channel_id, FALSE, streamer_client_id, reason);
+}
+
+/**
+ * @brief Stops streams whose sender no longer meets the channel's required stream power.
+ * @attention The caller holds only the clients write lock.
+ */
+void video_channel__apply_permission_changes(void)
+{
+    uint64 i = 0;
+    channel_t* channel = NULL_POINTER;
+    client_t* streamer = NULL_POINTER;
+
+    if (g_server_settings.is_permission_system_enabled == FALSE)
+    {
+        return;
+    }
+    clib__write_lock(&g_channels_global_rwlock_guard);
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        streamer = &g_clients_array[i];
+        if (streamer->is_existing == FALSE || streamer->is_authenticated == FALSE
+            || streamer->is_streaming_video == FALSE || streamer->channel_id >= g_server_settings.max_channel_count)
+        {
+            continue;
+        }
+        channel = &g_channel_array[streamer->channel_id];
+        if (channel->is_existing == FALSE || channel->is_video_stream_active == FALSE
+            || channel->video_streamer_client_id != streamer->client_id)
+        {
+            continue;
+        }
+        if (permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER) == TRUE)
+        {
+            continue;
+        }
+        server_msg__administration__send_access_denied_to_single_client(streamer, NULL_POINTER);
+        video_channel__stop(channel->channel_id, "insufficient_permissions");
+    }
+    clib__unlock(&g_channels_global_rwlock_guard);
 }
 
 /**
@@ -627,6 +675,10 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int da
     // the server-wide switch and the channel toggle are checked live, exactly like the audio relay
     if (g_server_settings.is_video_streaming_active == FALSE || channel->is_existing == FALSE || channel->is_video_stream_enabled == FALSE
         || channel->is_video_stream_active == FALSE || channel->video_streamer_client_id != sender_id)
+    {
+        goto done;
+    }
+    if (permissions__can_use_channel(sender, channel, PERMISSION_STREAM_POWER) == FALSE)
     {
         goto done;
     }

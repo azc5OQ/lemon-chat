@@ -5,6 +5,7 @@
 #include "../../core/client_session.h"
 #include "../../core/client_login.h"
 #include "../../core/identity_store.h"
+#include "../../core/permissions.h"
 #include "../../core/administration.h"
 #include "../../core/login_admission.h"
 #include "../../metadata_crypto.h"
@@ -701,7 +702,7 @@ static char* _client_msg_connection_internal__get_challenge_string(cJSON* json_r
  * @param cstring candidate_username -> the name being tried
  * @param uint64 client_index -> the client that wants it
  *
- * @return boole -> TRUE when nobody else connected uses it and no other identity has it registered
+ * @return boole -> TRUE when nobody else connected uses it
  *
  * @note sessions carrying the SAME public key are skipped: those are this client's own earlier sessions,
  *       already closed by the identity takeover, so the name they still hold counts as free
@@ -728,18 +729,6 @@ static boole _client_msg_connection_internal__is_username_free_at_login(cstring 
         }
 
         if (clib__is_string_equal(g_clients_array[i].username, candidate_username) == TRUE)
-        {
-            return FALSE;
-        }
-    }
-
-    // registered names are reserved for their identity, same rule the rename path enforces
-    if (g_clients_array[client_index].public_key[0] != 0)
-    {
-        char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
-        util__hash_password_to_base64(g_clients_array[client_index].public_key, identity_hash, sizeof(identity_hash));
-
-        if (identity_store__is_alias_taken_by_another_identity((char*)candidate_username, identity_hash) == TRUE)
         {
             return FALSE;
         }
@@ -967,9 +956,7 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
                 }
             }
 
-            // a connect-time chosen username is used instead of the assigned default_nameN when the
-            // client sent one and it is free; a registered identity's admin-set name still wins,
-            // because it takes precedence over the session name right below
+            // Use the requested name when it is available.
             if (_client_msg_connection_internal__try_apply_chosen_username(json_root, sender_client_id) == FALSE)
             {
                 status = client_session__assign_username_for_newly_joined_client(sender_client_id, g_server_settings.default_client_name);
@@ -985,70 +972,42 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
 
         // it's better when readlock is placed here instead of it being placed directly in server_msg__channel__send_list_to_single_client function
         clib__write_lock(&g_channels_global_rwlock_guard);
-        clib__read_lock(&g_tags_global_rwlock_guard);
+        clib__read_lock(&g_groups_global_rwlock_guard);
         clib__read_lock(&g_icons_global_rwlock_guard);
 
         status = base__is_client_valid(current_client->client_id);
 
         if (status == TRUE)
         {
-            // a resumed session already carries its tags, avatar, alias and stored key: nothing to restore
+            // a resumed session already carries its groups, avatar and stored key: nothing to restore
             if (is_resumed_session == FALSE)
             {
-                // restore this client's saved tags from the identity store (matched by public-key hash); the
-                // admin tag re-grants admin. runs before the connect broadcast so every client sees the tags.
-                // the tags read lock (held above) and clients write lock (held for this handler) cover it
+                // restore this client's saved groups from the identity store (matched by public-key hash); the
+                // admin group re-grants admin. runs before the connect broadcast so every client sees the groups.
+                // the groups read lock (held above) and clients write lock (held for this handler) cover it
                 if (g_server_settings.is_identity_storage_enabled == TRUE)
                 {
-                    DBG_IDENTITIES log_info("%s %llu %s", "identities: enabled -> restoring tags for authenticated client_id", current_client->client_id, "\n");
-                    identity_store__restore_identity_tags(current_client);
+                    DBG_IDENTITIES log_info("%s %llu %s", "identities: enabled -> restoring groups for authenticated client_id", current_client->client_id, "\n");
+                    identity_store__restore_identity_groups(current_client);
                 }
                 else
                 {
-                    DBG_IDENTITIES log_info("%s", "identities: DISABLED on this server (is_identity_storage_enabled=false) -> no tags will be restored on connect \n");
+                    DBG_IDENTITIES log_info("%s", "identities: DISABLED on this server (is_identity_storage_enabled=false) -> no groups will be restored on connect \n");
                 }
 
                 // restore this identity's persisted avatar into the live client so others can load it. gated on
-                // is_avatar_upload_allowed only (avatars may be enabled without tag-identities)
+                // is_avatar_upload_allowed only (avatars may be enabled without group-identities)
                 if (g_server_settings.is_avatar_upload_allowed == TRUE)
                 {
                     identity_store__restore_identity_avatar(current_client);
                 }
 
-                // restore the admin-registered alias (display name) for this identity
-                if (g_server_settings.is_identity_storage_enabled == TRUE && g_server_settings.is_alias_registration_allowed == TRUE)
-                {
-                    identity_store__restore_identity_alias(current_client);
-                }
 
-                // an identity the admin gave a registered name to is a REGISTERED user of this server. only
-                // those may list the stored clients - otherwise any guest could join and harvest everyone's
-                // name and avatar. avatars are self-service so they prove nothing; a registered name is
-                // admin-granted
-                current_client->is_registered = (boole)(current_client->alias[0] != 0);
-
-                // the registered name IS the username: apply it over whatever this session connected with,
-                // so a registered person always appears under their one admin-set name (and cannot keep an
-                // old self-chosen username after being registered)
-                // registered names are reserved (the rename path refuses them and registration refuses a
-                // name in use), so this is normally free - but never overwrite into a duplicate if some
-                // older state left the name occupied: the client keeps the deduplicated name assigned on join instead
-                if (current_client->is_registered == TRUE && client_session__is_username_taken_by_another_client(current_client->alias, current_client->client_id) == FALSE)
-                {
-                    clib__null_memory(&current_client->username[0], USERNAME_MAX_LENGTH);
-                    clib__copy_memory(current_client->alias, &current_client->username[0], clib__utf8_string_length(current_client->alias), USERNAME_MAX_LENGTH - 1);
-                }
-
-                // offline messages need peers to be able to encrypt to this identity while it is away,
-                // which means the server must keep its RAW public key (only ever while the feature is on,
-                // and only for REGISTERED identities - unregistered ones cannot be messaged offline)
-                if (g_server_settings.is_offline_messaging_allowed == TRUE && current_client->is_registered == TRUE && current_client->public_key[0] != 0 && current_client->is_music_bot == FALSE)
-                {
-                    char offline_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
-                    util__hash_password_to_base64(current_client->public_key, offline_identity_hash, sizeof(offline_identity_hash));
-                    identity_store__store_identity_raw_public_key(offline_identity_hash, current_client->public_key);
-                }
             }
+
+            permissions__refresh_guest_membership(current_client);
+            identity_store__sync_client_identity_in_store(current_client);
+            identity_store__update_offline_public_key(current_client);
 
             if (is_resumed_session == TRUE)
             {
@@ -1058,16 +1017,18 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
             }
             else
             {
-                // the join is complete and the username is final (deduplicated / replaced by the alias) here
+                // The join is complete and the username has been checked for duplicates.
                 server_logs__client_joined(current_client);
             }
 
             server_msg__connection__send_authentication_status_to_single_client(current_client);
             server_msg__channel__send_list_to_single_client(current_client);
+            server_msg__administration__send_admin_status_to_single_client(current_client);
             server_msg__connection__send_client_list_to_single_client(current_client);
             server_msg__administration__send_icon_list_to_single_client(current_client);
-            server_msg__administration__send_tag_list_to_single_client(current_client);
+            server_msg__administration__send_group_list_to_single_client(current_client);
             server_msg__audio__send_active_microphone_usage_for_current_channel_to_single_client(current_client, current_client->channel_id);
+            server_msg__emojis__send_list(current_client);
             // a resumed session never left, so the others get no connect broadcast
             if (is_resumed_session == FALSE)
             {
@@ -1080,7 +1041,7 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
 
             // hand over anything that was said to this identity while it was away, then forget it.
             // after the client list, so the receiving client already knows who everybody is
-            if (g_server_settings.is_offline_messaging_allowed == TRUE && current_client->is_registered == TRUE && current_client->public_key[0] != 0)
+            if (g_server_settings.is_offline_messaging_allowed == TRUE && permissions__is_allowed_in_groups(current_client, PERMISSION_RECEIVE_OFFLINE_MESSAGES) == TRUE && current_client->public_key[0] != 0)
             {
                 server_msg__chat__send_queued_offline_messages_to_single_client(current_client);
             }
@@ -1099,8 +1060,9 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
             }
 
             clib__unlock(&g_icons_global_rwlock_guard);
-            clib__unlock(&g_tags_global_rwlock_guard);
+            clib__unlock(&g_groups_global_rwlock_guard);
             clib__unlock(&g_channels_global_rwlock_guard);
+            server_msg__server_settings__send_info_to_single_client(current_client, FALSE, (boole)(g_server_settings.server_banner != NULL_POINTER));
         }
     }
     else

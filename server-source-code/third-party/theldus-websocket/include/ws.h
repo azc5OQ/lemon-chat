@@ -259,9 +259,14 @@ extern "C" {
 	/* Internal usage. */
 	extern int get_handshake_accept(char *wsKey, unsigned char **dest);
 	extern int get_handshake_response(char *hsrequest, char **hsresponse);
-    extern char* get_forwarded_ip_address(char *hsrequest);
+    extern int get_forwarded_ip_address(const char* request, size_t request_length,
+        const char* header_name, char* address, size_t address_size);
 
 	/* External usage. */
+    #define WS_FORWARDED_IP_NONE 0
+    #define WS_FORWARDED_IP_STUNNEL 1
+    #define WS_FORWARDED_IP_FUNNEL 2
+    extern void ws_set_forwarded_ip_mode(int mode);
 	extern char *ws_getaddress(ws_cli_conn_t *client);
 	extern int ws_sendframe(ws_cli_conn_t *cli, const char *msg, uint64_t size, int type);
 	extern int ws_sendframe_txt(ws_cli_conn_t *cli, const char *msg);

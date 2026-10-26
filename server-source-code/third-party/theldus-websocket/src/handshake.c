@@ -26,6 +26,13 @@
 
 #include <ctype.h>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
+
 /**
  * @dir src/
  * @brief Handshake routines directory
@@ -174,82 +181,145 @@ int get_handshake_response(char *hsrequest, char **hsresponse)
 	return (0);
 }
 
-int is_valid_ipv4_char(char c)
+/**
+ * @brief Reads one IP address from the selected proxy header.
+ * @param request Received HTTP request bytes.
+ * @param request_length Number of available request bytes.
+ * @param header_name Proxy header to read without regard to letter case.
+ * @param address Receives the normalized address.
+ * @param address_size Available bytes in the output buffer.
+ * @return One if found, zero if absent, or negative one if invalid.
+ */
+int get_forwarded_ip_address(const char* request, size_t request_length,
+    const char* header_name, char* address, size_t address_size)
 {
-	return (isdigit((unsigned char)c) || c == '.');
-}
+    const char* position;
+    const char* end;
+    const char* line_end;
+    const char* colon;
+    const char* value_start;
+    const char* value_end;
+    size_t name_length;
+    size_t index;
+    size_t value_length;
+    unsigned char actual;
+    unsigned char expected;
+    char value[INET6_ADDRSTRLEN];
+    char normalized[INET6_ADDRSTRLEN];
+    struct in6_addr binary_address;
+    int family;
+    bool is_found = false;
+    bool is_complete = false;
 
-char *find_header_value(char *http_response_headers, char *header_name)
-{
-	char *position = http_response_headers;
-	size_t header_name_length = strlen(header_name);
-
-	while (*position != '\0')
-	{
-		if (strncmp(position, header_name, header_name_length) == 0 && position[header_name_length] == ':')
-		{
-			char *value_start = position + header_name_length + 1;
-
-			// Skip leading spaces or tabs
-			while (*value_start == ' ' || *value_start == '\t')
-			{
-				value_start++;
-			}
-
-			// Find end of line or string
-			char *line_end = strchr(value_start, '\n');
-			if (line_end == NULL)
-			{
-				line_end = value_start + strlen(value_start);
-			}
-
-			// Trim trailing whitespace (space, tab, \r, \n)
-			char *value_end = line_end;
-			while (value_end > value_start && (*(value_end - 1) == ' ' || *(value_end - 1) == '\t' || *(value_end - 1) == '\r' || *(value_end - 1) == '\n'))
-			{
-				value_end--;
-			}
-
-			size_t value_length = value_end - value_start;
-
-			// Allocate buffer and copy value
-			char *value_copy = (char *)calloc(value_length + 1, 1);
-			if (value_copy == NULL)
-			{
-				return NULL;
-			}
-
-			memcpy(value_copy, value_start, value_length);
-			value_copy[value_length] = '\0';
-
-			return value_copy;
-		}
-
-		char *next_line = strchr(position, '\n');
-		if (next_line == NULL)
-		{
-			break;
-		}
-
-		position = next_line + 1;
-	}
-
-	return NULL;
-}
-
-char *get_forwarded_ip_address(char *hsrequest)
-{
-	char *ip_str = find_header_value(hsrequest, "X-Stunnel-Client-IP");
-	if (ip_str == NULL)
-	{
-		DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] failed to find header \n");
-		return NULL;
-	}
-	else
-	{
-		DEBUG_THELDUS_WEBSOCKET printf("%s %d %s", "[theldus-websocket] ip_str length is -> ", strlen(ip_str), "\n");
-		DEBUG_THELDUS_WEBSOCKET printf("%s %s %s", "[theldus-websocket] header found[", ip_str, "] \n");
-	}
-
-	return ip_str;
+    if (request == NULL || header_name == NULL || address == NULL || address_size == 0)
+    {
+        return -1;
+    }
+    address[0] = '\0';
+    name_length = strlen(header_name);
+    if (name_length == 0)
+    {
+        return -1;
+    }
+    end = request + request_length;
+    line_end = memchr(request, '\n', request_length);
+    if (line_end == NULL || line_end == request || line_end[-1] != '\r'
+        || memchr(request, '\0', (size_t)(line_end - request)) != NULL)
+    {
+        return -1;
+    }
+    position = line_end + 1;
+    while (position < end)
+    {
+        line_end = memchr(position, '\n', (size_t)(end - position));
+        if (line_end == NULL || line_end == position || line_end[-1] != '\r'
+            || memchr(position, '\0', (size_t)(line_end - position)) != NULL)
+        {
+            return -1;
+        }
+        if (line_end == position + 1)
+        {
+            is_complete = true;
+            break;
+        }
+        if (*position == ' ' || *position == '\t')
+        {
+            return -1;
+        }
+        colon = memchr(position, ':', (size_t)(line_end - position));
+        if (colon != NULL && (size_t)(colon - position) == name_length)
+        {
+            for (index = 0; index < name_length; index++)
+            {
+                actual = (unsigned char)position[index];
+                expected = (unsigned char)header_name[index];
+                if (actual >= 'A' && actual <= 'Z')
+                {
+                    actual += 'a' - 'A';
+                }
+                if (expected >= 'A' && expected <= 'Z')
+                {
+                    expected += 'a' - 'A';
+                }
+                if (actual != expected)
+                {
+                    break;
+                }
+            }
+            if (index == name_length)
+            {
+                if (is_found)
+                {
+                    return -1;
+                }
+                value_start = colon + 1;
+                value_end = line_end - 1;
+                while (value_start < value_end && (*value_start == ' ' || *value_start == '\t'))
+                {
+                    value_start++;
+                }
+                while (value_end > value_start && (value_end[-1] == ' ' || value_end[-1] == '\t'))
+                {
+                    value_end--;
+                }
+                value_length = (size_t)(value_end - value_start);
+                if (value_length == 0 || value_length >= sizeof(value))
+                {
+                    return -1;
+                }
+                memcpy(value, value_start, value_length);
+                value[value_length] = '\0';
+                is_found = true;
+            }
+        }
+        position = line_end + 1;
+    }
+    if (!is_complete)
+    {
+        return -1;
+    }
+    if (!is_found)
+    {
+        return 0;
+    }
+    family = AF_INET;
+    if (inet_pton(family, value, &binary_address) != 1)
+    {
+        family = AF_INET6;
+        if (inet_pton(family, value, &binary_address) != 1)
+        {
+            return -1;
+        }
+    }
+    if (inet_ntop(family, &binary_address, normalized, sizeof(normalized)) == NULL)
+    {
+        return -1;
+    }
+    value_length = strlen(normalized);
+    if (value_length >= address_size)
+    {
+        return -1;
+    }
+    memcpy(address, normalized, value_length + 1);
+    return 1;
 }

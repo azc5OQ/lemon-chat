@@ -31,7 +31,7 @@ static void _android_main_internal__print_memory_information(void)
     fixed_bytes = sizeof(channel_t) * MAX_CHANNELS
         + sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA
         + sizeof(icon_t) * MAX_ICONS
-        + sizeof(tag_t) * MAX_TAGS
+        + sizeof(group_t) * MAX_GROUPS
         + sizeof(ban_entry_t) * MAX_BANS;
 
     printf("{\"slot_bytes\":%llu,\"fixed_bytes\":%llu}\n", bytes_per_slot, fixed_bytes);

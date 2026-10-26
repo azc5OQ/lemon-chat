@@ -26,7 +26,6 @@
     background: #c0392b;
     color: #ffffff;
     font-size: 11px;
-    cursor: pointer;
     z-index: 5;
 }
 .server-settings-tag-entry:hover .settings-entry-delete-button,
@@ -51,7 +50,6 @@
     color: #ffffff;
     background: #8a8f98;
     border-radius: 4px;
-    cursor: pointer;
     user-select: none;
     z-index: 5;
 }
@@ -67,7 +65,6 @@
 }
 
 .tag-settings-entry-img {
-    cursor: pointer;
     min-width: 16px;
     min-height: 16px;
     background-size: cover;
@@ -97,7 +94,6 @@
     width: 32px;
     height: 32px;
     object-fit: contain;
-    cursor: pointer;
     border: 1px solid transparent;
     box-sizing: border-box;
 }

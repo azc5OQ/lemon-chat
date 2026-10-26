@@ -50,7 +50,6 @@
 {
     width: 28px;
     flex: 0 0 28px;
-    cursor: pointer;
     background: var(--set-button-bg, #28333f);
     color: var(--set-button-text, #e8e8e8);
     border: var(--set-button-border, 1px solid #647084);
@@ -188,7 +187,6 @@
     border-radius: var(--set-radius, 4px);
     /* transparent border on the unselected tab row, so selecting (which colours it) cannot change the row's width */
     border-left: 2px solid transparent;
-    cursor: pointer;
     transition: background-color 0.12s ease, color 0.12s ease;
 }
 #server-settings-tab .server-settings-tab-li:hover {
@@ -205,7 +203,7 @@
     background: var(--set-panel, #36393f);
 }
 #server-settings-tab-icons-container,
-#server-settings-tab-tags-container,
+#server-settings-tab-groups-container,
 #server-settings-general-settings-container,
 #server-settings-bans-container,
 #server-settings-identities-container,
@@ -219,7 +217,7 @@
 }
 
 #server-settings-tab-upload-icon-file-input-container,
-#server-settings-tab-add-tag-details-container {
+#server-settings-tab-add-group-details-container {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -250,13 +248,13 @@
     color: var(--set-text, #e8e8e8);
 }
 
-#server-settings-tab .tag-head-p-container,
+#server-settings-tab .group-head-p-container,
 #server-settings-tab .identity-head-p-container {
     border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.09));
     padding: 0 4px 6px 4px;
     margin-bottom: 2px;
 }
-#server-settings-tab .tag-head-p,
+#server-settings-tab .group-head-p,
 #server-settings-tab .identity-head-p {
     font-size: 10px;
     font-weight: 600;
@@ -266,28 +264,27 @@
     color: var(--set-muted, rgba(255, 255, 255, 0.45));
     opacity: 1;
 }
-#server-settings-tab .server-settings-tag-entry,
+#server-settings-tab .server-settings-group-entry,
 #server-settings-tab .identity-entry,
 #server-settings-tab .ban-entry {
     border-bottom: 1px solid var(--set-line-soft, rgba(255, 255, 255, 0.05));
     border-radius: var(--set-radius, 4px);
     transition: background-color 0.12s ease;
 }
-#server-settings-tab .server-settings-tag-entry:hover,
+#server-settings-tab .server-settings-group-entry:hover,
 #server-settings-tab .identity-entry:hover,
 #server-settings-tab .ban-entry:hover {
     background-color: var(--set-row-hover, rgba(255, 255, 255, 0.05));
 }
 #server-settings-tab .identity-entry-p,
-#server-settings-tab .tag-settings-entry-p {
+#server-settings-tab .group-settings-entry-p {
     color: var(--set-text, #e8e8e8);
 }
-
 /* identity-table cells: header and row cells get identical horizontal padding, because with flex-basis 0 a padding difference shifts the columns apart */
 #server-settings-tab .identity-head-p,
 #server-settings-tab .identity-entry-p,
-#server-settings-tab .identity-entry-alias,
-#server-settings-tab .identity-entry-tags {
+#server-settings-tab .identity-entry-groups
+{
     padding-left: 4px;
     padding-right: 4px;
     box-sizing: border-box;
@@ -297,22 +294,19 @@
 #server-settings-tab .identity-entry-p-online {
     flex: 0 0 56px;
 }
-#server-settings-tab .identity-head-p-registered,
-#server-settings-tab .identity-entry-p-registered {
-    flex: 0 0 82px;
-}
 
-#server-settings-tab .tag-head-p-container,
-#server-settings-tab .server-settings-tag-entry {
+
+#server-settings-tab .group-head-p-container,
+#server-settings-tab .server-settings-group-entry {
     display: flex;
     align-items: center;
     gap: 8px;
 }
-#server-settings-tab .server-settings-tag-entry {
+#server-settings-tab .server-settings-group-entry {
     padding: 4px 4px;
 }
-#server-settings-tab .tag-head-p,
-#server-settings-tab .tag-settings-entry-p {
+#server-settings-tab .group-head-p,
+#server-settings-tab .group-settings-entry-p {
     flex: 1;
     min-width: 0;
     width: auto;
@@ -323,23 +317,23 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-#server-settings-tab .tag-head-p-icon,
-#server-settings-tab .tag-settings-entry-img {
+#server-settings-tab .group-head-p-icon,
+#server-settings-tab .group-settings-entry-img {
     flex: 0 0 58px;
     text-align: center;
 }
-#server-settings-tab .tag-settings-entry-img {
+#server-settings-tab .group-settings-entry-img {
     position: relative;
     height: 22px;
-    /* margin removed on the tag icon cell, because a theme margin here steals width from every column before it (the flex gap owns the spacing) */
+    /* margin removed on the group icon cell, because a theme margin here steals width from every column before it (the flex gap owns the spacing) */
     margin: 0;
     padding: 0;
     background-size: 22px 22px;
     background-repeat: no-repeat;
     background-position: center;
 }
-/* dashed placeholder for a tag with no icon; matched on "url(data" because the cell carries an empty url() even without an icon */
-#server-settings-tab .tag-settings-entry-img::after {
+/* dashed placeholder for a group with no icon; matched on "url(data" because the cell carries an empty url() even without an icon */
+#server-settings-tab .group-settings-entry-img::after {
     content: "";
     position: absolute;
     left: 50%;
@@ -351,10 +345,10 @@
     border: 1px dashed var(--set-line, rgba(255, 255, 255, 0.09));
     border-radius: 3px;
 }
-#server-settings-tab .tag-settings-entry-img[style*="url(data"]::after {
+#server-settings-tab .group-settings-entry-img[style*="url(data"]::after {
     display: none;
 }
-#server-settings-tab .tag-head-p-delete,
+#server-settings-tab .group-head-p-delete,
 #server-settings-tab .settings-entry-delete-spacer {
     flex: 0 0 auto;
     width: 24px;
@@ -387,7 +381,6 @@
     font-size: 13px;
     line-height: 1;
     border-radius: var(--set-radius, 4px);
-    cursor: pointer;
 }
 #server-settings-tab .identity-delete-button:hover,
 #server-settings-tab .settings-entry-delete-button:hover,
@@ -400,8 +393,8 @@
 #server-settings-tab input[type="password"],
 #server-settings-tab input[type="number"],
 #server-settings-tab select,
-#server-settings-tab .identity-alias-input,
-#server-settings-tab .identity-tag-add {
+#server-settings-tab .identity-group-add
+{
     box-sizing: border-box;
     padding: 4px 7px;
     color: var(--set-field-text, inherit);
@@ -414,10 +407,11 @@
     outline: none;
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
+
 #server-settings-tab input[type="text"]:focus,
 #server-settings-tab input[type="number"]:focus,
-#server-settings-tab select:focus,
-#server-settings-tab .identity-alias-input:focus {
+#server-settings-tab select:focus
+{
     border-color: var(--set-accent, #5a8cff);
     box-shadow: 0 0 0 2px var(--set-accent-soft, rgba(90, 140, 255, 0.25));
 }
@@ -434,12 +428,14 @@
     border-radius: var(--set-radius, 4px);
     font-family: inherit;
     font-size: 12px;
-    cursor: pointer;
     transition: filter 0.12s ease;
 }
 #server-settings-tab input[type="button"]:hover,
 #server-settings-tab .custom-file-upload-button:hover {
     filter: var(--set-button-hover-filter, brightness(1.14));
+    background: var(--set-button-hover-bg, var(--set-button-bg, var(--set-accent, #5a8cff)));
+    color: var(--set-button-hover-text, var(--set-button-text, var(--set-accent-text, #ffffff)));
+    border: var(--set-button-hover-border, var(--set-button-border, 1px solid transparent));
 }
 #server-settings-tab input[type="button"]:active,
 #server-settings-tab .custom-file-upload-button:active {
@@ -455,7 +451,6 @@
     border-radius: var(--set-radius, 4px);
     font-size: 12px;
     color: var(--set-text, #e8e8e8);
-    cursor: pointer;
 }
 #server-settings-tab .server-settings-general-row:hover {
     background: var(--set-row-hover, rgba(255, 255, 255, 0.05));
@@ -466,31 +461,29 @@
     height: 15px;
     margin: 0;
     accent-color: var(--set-accent, #5a8cff);
-    cursor: pointer;
 }
 #server-settings-tab #save-server-settings-button {
     margin-top: 14px;
 }
 
-#server-settings-tab .identity-tag-label {
+#server-settings-tab .identity-group-label {
     background: var(--set-chip, rgba(120, 140, 180, 0.22));
     color: var(--set-text, #e8e8e8);
 }
 
-/* title bars of the other dialogs (poke, passwords, aliases, ...): same chrome as the settings dialog, painted from the same --set-* vars, because they share the bar markup */
 #channel-properties-edit > #menu-bar-container,
 #channel-password-enter > #menu-bar-container,
 #musicbot-management-dialog > #menu-bar-container,
 #admin-password-enter > #menu-bar-container,
 #poke-client-enter > #menu-bar-container,
-#set-alias-enter > #menu-bar-container,
 #adjust-volume-card > #menu-bar-container,
 #set-new-username-enter > #menu-bar-container,
 #client-info-enter > #menu-bar-container,
 #identity-string-use-container-enter > #menu-bar-container,
 #secret-identity-string-container-enter > #menu-bar-container,
 #android-settings-warning > #menu-bar-container,
-#container-2 > #menu-bar-container {
+#container-2 > #menu-bar-container
+{
     position: relative;
     box-sizing: border-box;
     min-height: 30px;
@@ -503,14 +496,14 @@
 #musicbot-management-dialog > #menu-bar-container > .dialog-title,
 #admin-password-enter > #menu-bar-container > .dialog-title,
 #poke-client-enter > #menu-bar-container > .dialog-title,
-#set-alias-enter > #menu-bar-container > .dialog-title,
 #adjust-volume-card > #menu-bar-container > .dialog-title,
 #set-new-username-enter > #menu-bar-container > .dialog-title,
 #client-info-enter > #menu-bar-container > .dialog-title,
 #identity-string-use-container-enter > #menu-bar-container > .dialog-title,
 #secret-identity-string-container-enter > #menu-bar-container > .dialog-title,
 #android-settings-warning > #menu-bar-container > .dialog-title,
-#container-2 > #menu-bar-container > .dialog-title {
+#container-2 > #menu-bar-container > .dialog-title
+{
     display: block;
     margin: 0;
     padding-right: 30px;
@@ -528,14 +521,14 @@
 #musicbot-management-dialog .close-button,
 #admin-password-enter .close-button,
 #poke-client-enter .close-button,
-#set-alias-enter .close-button,
 #adjust-volume-card .close-button,
 #set-new-username-enter .close-button,
 #client-info-enter .close-button,
 #identity-string-use-container-enter .close-button,
 #secret-identity-string-container-enter .close-button,
 #android-settings-warning .close-button,
-#container-2 .close-button {
+#container-2 .close-button
+{
     position: absolute;
     right: 0;
     top: 50%;
@@ -550,34 +543,36 @@
     line-height: 22px;
     text-align: center;
 }
+
 #channel-properties-edit .close-button::before,
 #channel-password-enter .close-button::before,
 #musicbot-management-dialog .close-button::before,
 #admin-password-enter .close-button::before,
 #poke-client-enter .close-button::before,
-#set-alias-enter .close-button::before,
 #adjust-volume-card .close-button::before,
 #set-new-username-enter .close-button::before,
 #client-info-enter .close-button::before,
 #identity-string-use-container-enter .close-button::before,
 #secret-identity-string-container-enter .close-button::before,
 #android-settings-warning .close-button::before,
-#container-2 .close-button::before {
+#container-2 .close-button::before
+{
     content: "\2715";
 }
+
 #channel-properties-edit .close-button:hover,
 #channel-password-enter .close-button:hover,
 #musicbot-management-dialog .close-button:hover,
 #admin-password-enter .close-button:hover,
 #poke-client-enter .close-button:hover,
-#set-alias-enter .close-button:hover,
 #adjust-volume-card .close-button:hover,
 #set-new-username-enter .close-button:hover,
 #client-info-enter .close-button:hover,
 #identity-string-use-container-enter .close-button:hover,
 #secret-identity-string-container-enter .close-button:hover,
 #android-settings-warning .close-button:hover,
-#container-2 .close-button:hover {
+#container-2 .close-button:hover
+{
     background: var(--set-danger-soft, rgba(208, 80, 80, 0.16));
     color: var(--set-danger-strong, #ff6b6b);
 }
@@ -608,7 +603,6 @@
     font-size: 12px;
     color: var(--set-muted, rgba(255, 255, 255, 0.55));
     white-space: nowrap;
-    cursor: pointer;
 }
 #channel-properties-input-container .dialog-form-field,
 #admin-password-input-container .dialog-form-field {
@@ -631,7 +625,6 @@
     height: 15px;
     margin: 0;
     accent-color: var(--set-accent, #5a8cff);
-    cursor: pointer;
 }
 #channel-properties-input-container .dialog-form-actions,
 #admin-password-input-container .dialog-form-actions {
@@ -643,32 +636,224 @@
     width: auto;
     min-width: 74px;
 }
-#channel-properties-icon-box {
-    flex: 0 0 auto;
-    width: 22px;
-    height: 22px;
+#channel-properties-edit
+{
     box-sizing: border-box;
-    background-size: contain;
+    width: 430px;
+    height: auto;
+    min-height: 0;
+}
+#channel-properties-edit #channel-properties-input-container
+{
+    box-sizing: border-box;
+    width: 100%;
+    padding: 12px 14px 14px !important;
+}
+#channel-properties-input-container #channel-properties-input-container-enter
+{
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px 10px;
+}
+#channel-properties-input-channel-description
+{
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 64px;
+    height: 64px;
+    padding: 5px;
+    resize: vertical;
+    line-height: 1.4;
+}
+#channel-properties-input-container .channel-properties-description-label
+{
+    align-self: start;
+    padding-top: 5px;
+}
+#channel-properties-input-container #channel-properties-tabs
+{
+    display: flex;
+    gap: 4px;
+    width: auto;
+    margin: 12px 0 0;
+    padding: 0 0 5px;
+    border-bottom: 1px solid var(--set-border, rgba(127, 127, 127, 0.4));
+}
+#channel-properties-tabs > .button-1
+{
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 0;
+    height: auto;
+    margin: 0;
+    padding: 5px 9px;
+}
+#channel-properties-tabs > [aria-selected="true"]
+{
+    box-shadow: inset 0 -2px 0 var(--set-accent, currentColor);
+}
+#channel-properties-input-container #channel-properties-panels
+{
+    display: grid;
+    width: auto;
+    min-width: 0;
+    margin-top: 10px;
+}
+#channel-properties-panels > [role="tabpanel"]
+{
+    grid-area: 1 / 1;
+    min-width: 0;
+    align-self: start;
+}
+#channel-properties-panels > [aria-hidden="true"]
+{
+    visibility: hidden;
+    pointer-events: none;
+}
+#channel-properties-panels .channel-properties-section
+{
+    box-sizing: border-box;
+    min-width: 0;
+    margin: 0 0 9px;
+    padding: 8px 10px 10px;
+    border: 1px solid var(--set-border, rgba(127, 127, 127, 0.4));
+    border-radius: 0;
+    text-align: left;
+}
+#channel-properties-panels .channel-properties-section:last-child
+{
+    margin-bottom: 0;
+}
+#channel-properties-panels .channel-properties-section legend,
+#channel-properties-panels p,
+#channel-properties-remove-password-label
+{
+    font-family: var(--set-font, 'Raleway', sans-serif);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--set-muted, inherit);
+}
+#channel-properties-panels .channel-properties-section legend
+{
+    padding: 0 4px;
+}
+#channel-properties-panels p
+{
+    margin: 0 0 6px;
+}
+#channel-properties-panels p:last-child
+{
+    margin-bottom: 0;
+}
+#channel-properties-panels .dialog-form-grid
+{
+    grid-template-columns: minmax(0, 1fr) 84px;
+    gap: 7px 14px;
+}
+#channel-properties-panels .channel-properties-option-row,
+#channel-properties-panels .channel-properties-option-row > label
+{
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+#channel-properties-panels .channel-properties-option-row
+{
+    justify-content: space-between;
+    min-height: 25px;
+}
+#channel-properties-input-max-clients
+{
+    box-sizing: border-box;
+    width: 84px;
+    min-width: 0;
+}
+#channel-properties-limit-clients-checkbox,
+#channel-properties-remove-password
+{
+    flex: 0 0 auto;
+    margin: 0;
+}
+#channel-properties-remove-password-label
+{
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+#channel-properties-remove-password-label[hidden]
+{
+    display: none;
+}
+#channel-properties-input-container .dialog-form-label
+{
+    cursor: default;
+    white-space: normal;
+}
+#channel-properties-icon-row
+{
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 3px;
+}
+#channel-properties-icon-row > .button-1
+{
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: 23px;
+    min-width: 23px;
+    height: 23px;
+    margin: 0;
+    padding: 0;
+    font-size: 14px;
+    line-height: 1;
+    background-size: 16px 16px;
     background-repeat: no-repeat;
     background-position: center;
-    /* dashed border in the muted colour, because a 22px dashed box in --set-line is invisible */
-    border: 1px dashed var(--set-muted, rgba(255, 255, 255, 0.45));
-    border-radius: 3px;
-    cursor: pointer;
-}
-#channel-properties-icon-box[style*="url(data"] {
-    border-style: solid;
-    border-color: transparent;
-}
-#channel-properties-icon-remove-button {
-    font-family: var(--set-font, 'Raleway', sans-serif);
-    font-size: 11px;
-    color: var(--set-danger, #d05050);
     text-decoration: none;
-    cursor: pointer;
+    cursor: default;
 }
-#channel-properties-icon-remove-button:hover {
-    text-decoration: underline;
+#channel-properties-input-container .dialog-form-actions
+{
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 12px;
+}
+#channel-properties-input-container .dialog-form-actions > .button-1
+{
+    margin: 0;
+}
+@media (max-width: 600px)
+{
+    #channel-properties-edit-container
+    {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100dvh;
+    }
+    #channel-properties-edit
+    {
+        top: 10px;
+        max-width: calc(100vw - 20px);
+        max-height: calc(100dvh - 20px);
+        overflow-y: auto;
+    }
+    #channel-properties-edit #channel-properties-input-container
+    {
+        padding: 10px !important;
+    }
+    #channel-properties-tabs > .button-1
+    {
+        padding: 5px 7px;
+    }
+    #channel-properties-input-container .channel-properties-name-field
+    {
+        gap: 5px;
+    }
 }
 
 #adjust-volume-card {
@@ -765,7 +950,6 @@
     color: var(--set-button-text, #e8e8e8);
     font-family: inherit;
     font-size: 12px;
-    cursor: pointer;
 }
 #musicbot-management-upload-container .button-1 {
     width: auto;
@@ -839,7 +1023,6 @@
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
     font-family: var(--set-font, 'Raleway', sans-serif);
     font-size: 13px;
-    cursor: pointer;
 }
 
 /* the three pane-resize handles are absolute, because drag-resize-chat in inline flow pushed the
@@ -861,6 +1044,13 @@
 #drag-resize-channels:hover {
     border-left: 2px solid #696555;
 }
+
+/* Context menus cover the resize handles and stay below the dialog windows. */
+#contextmenus-container
+{
+    z-index: 4;
+}
+
 /* Mark the layout button and movable panels using the selected theme's colors. */
 body[data-layout-edit="1"] #layout-edit-button
 {
@@ -971,6 +1161,84 @@ body[data-layout-edit="1"] #communication-system-container > .layout-dragging
     overflow: hidden;
 }
 
+/* Keep client indicators on one line and hide anything beyond the row. */
+#channel-list-container .connected-client
+{
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+#channel-list-container .connected-client > div:first-child,
+#channel-list-container .connected-client .client-audio-state,
+#channel-list-container .connected-client .client-video-stream-icon,
+#channel-list-container .connected-client .client-video-watching-icon,
+#channel-list-container .connected-client .connected-client-p-received-messages-number
+{
+    flex: 0 0 auto;
+}
+
+#channel-list-container .connected-client .connected-client-p,
+#channel-list-container .connected-client #connected-local-client-input
+{
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#channel-list-container .connected-client .marquee-music-playing-container
+{
+    flex: 0 1 auto;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+#channel-list-container .connected-client .client-groups
+{
+    display: block;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+    white-space: nowrap;
+    float: none;
+    order: 10;
+    margin-left: 0;
+}
+
+#channel-list-container .connected-client .client-groups:not(:empty)
+{
+    min-width: 1em;
+}
+
+/* Keep the dots visible even when no complete group icon fits. */
+#channel-list-container .connected-client .client-groups::before
+{
+    content: "\200b";
+}
+
+#channel-list-container .connected-client .single-group
+{
+    flex-shrink: 0;
+}
+
+#channel-list-container .connected-client .connected-client-country-flag
+{
+    flex: 0 0 auto;
+    float: none;
+    order: 20;
+    margin-left: 4px;
+}
+
 /* tree rows must survive a long press, because the browser's own hold behaviours (text
    selection, the ios link callout) interrupted the 600ms context-menu timer on phones */
 .single-channel,
@@ -1043,7 +1311,6 @@ p.identity-dialog-hint {
     font-size: 11px;
     color: var(--set-accent, #21bccb);
     text-decoration: underline;
-    cursor: pointer;
     padding: 6px 8px;
     margin: 0;
     user-select: none;
@@ -1074,7 +1341,6 @@ p.identity-dialog-hint {
     text-overflow: ellipsis;
     white-space: nowrap;
     vertical-align: bottom;
-    cursor: pointer;
 }
 .server-message-key-expanded {
     max-width: none;
@@ -1142,7 +1408,6 @@ p.identity-dialog-hint {
 }
 .identity-delete-button {
     flex: 0 0 auto;
-    cursor: pointer;
     border: 0;
     background: transparent;
     color: #d05050;
@@ -1156,49 +1421,15 @@ p.identity-dialog-hint {
 .identity-delete-button:hover {
     color: #ff6b6b;
 }
-.identity-entry-alias {
-    flex: 1.4;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 3px;
-}
-.identity-alias-input {
-    flex: 1;
-    min-width: 0;
-    font-size: 11px;
-    padding: 2px 4px;
-    color: inherit;
-    background: transparent;
-    border: 1px solid rgba(120, 140, 180, 0.4);
-    border-radius: 4px;
-}
-.identity-alias-set-button,
-.identity-alias-clear-button {
-    flex: 0 0 auto;
-    cursor: pointer;
-    border: 0;
-    background: transparent;
-    font-size: 12px;
-    line-height: 1;
-}
-/* identity-table header cells: sized exactly like the entry cells below (alias flex 1.4, delete 24px),
-   because the header is a separate flex row and any size difference drifts the labels off their columns */
-.identity-head-p-alias {
-    flex: 1.4;
-}
+
+
 .identity-head-p-delete {
     flex: 0 0 auto;
     width: 24px;
 }
-.identity-alias-set-button {
-    color: #4caf50;
-}
-.identity-alias-clear-button {
-    color: #d05050;
-}
 
-.identity-entry-tags {
+
+.identity-entry-groups {
     flex: 1;
     min-width: 0;
     display: flex;
@@ -1206,7 +1437,7 @@ p.identity-dialog-hint {
     align-items: center;
     gap: 4px;
 }
-.identity-tag-label {
+.identity-group-label {
     display: inline-flex;
     align-items: center;
     gap: 3px;
@@ -1217,18 +1448,16 @@ p.identity-dialog-hint {
     background: rgba(120, 140, 180, 0.22);
     white-space: nowrap;
 }
-.identity-tag-remove {
-    cursor: pointer;
+.identity-group-remove {
     color: #d05050;
     font-size: 10px;
 }
-.identity-tag-remove:hover {
+.identity-group-remove:hover {
     color: #ff6b6b;
 }
-.identity-tag-add {
+.identity-group-add {
     font-size: 10px;
     max-width: 90px;
-    cursor: pointer;
     background: transparent;
     border: 1px solid rgba(120, 140, 180, 0.4);
     border-radius: 4px;
@@ -1243,6 +1472,17 @@ p.identity-dialog-hint {
 #member-list-container {
     display: none;
 }
+
+.member-list-presence
+{
+    display: none;
+}
+
+#pocket-speakers[hidden]
+{
+    display: none !important;
+}
+
 /* member-list channel captions + current-channel circle hidden by default, because these
    strip decorations only make sense in the strip themes (simpledark/bluebell), which unhide them */
 .member-list-client-channel,
@@ -1278,73 +1518,10 @@ p.identity-dialog-hint {
     vertical-align: middle;
 }
 
-/* alias display in user rows: on .has-alias the alias span shows and the raw username hides,
-   because an admin-registered alias has priority over the username everywhere */
-.client-alias {
-    display: none;
-}
-
-.has-alias .connected-client-p,
-.has-alias #connected-local-client-input {
-    display: none;
-}
-
-.has-alias .client-alias {
-    display: inline-block;
-    font-family: sans-serif;
-    font-size: inherit;
-    color: #ffd059;
-    vertical-align: top;
-}
-
-/* set-alias dialog: the container is a bare fullscreen layer and the card look sits on the inner
-   #set-alias-enter, because the recenter code pins the element holding #menu-bar-container */
-#set-alias-enter-container {
-    display: none;
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 40;
-}
-
-#set-alias-enter {
-    position: fixed;
-    left: 50%;
-    top: 40%;
-    transform: translate(-50%, -50%);
-    width: 300px;
-    max-width: 94vw;
-    background: var(--set-panel, rgba(38, 48, 62, 0.97));
-    color: var(--set-text, #f0f0f0);
-    border: 1px solid var(--set-line, transparent);
-    border-radius: 10px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
-    padding: 10px 14px 14px 14px;
-    box-sizing: border-box;
-}
 
 /* transform cancelled once js pins the card with inline left/top, because the translate above
    would shift it half its size off; the js only ever adds inline position:fixed, so key off that */
-#set-alias-enter[style*="position: fixed"] {
-    transform: none;
-}
 
-#set-alias-enter #menu-bar-container {
-    min-height: 26px;
-}
-
-#set-alias-enter .close-button {
-    float: right;
-    cursor: pointer;
-}
-
-#set-alias-enter #input-set-alias {
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
-}
 
 #android-settings-warning-container {
     display: none;
@@ -1372,9 +1549,8 @@ p.identity-dialog-hint {
     box-sizing: border-box;
 }
 
-/* same transform cancel as #set-alias-enter, because the recenter code pins this card with
-   inline left/top too and the translate would double-shift it off-screen */
-#android-settings-warning[style*="position: fixed"] {
+#android-settings-warning[style*="position: fixed"]
+{
     transform: none;
 }
 
@@ -1475,6 +1651,15 @@ p.identity-dialog-hint {
     vertical-align: middle;
 }
 
+.single-chat-message-sender-username-container,
+.single-chat-message-sender-local-username-container
+{
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
 #local-settings-container
 {
     position: absolute;
@@ -1529,7 +1714,6 @@ p.identity-dialog-hint {
     gap: 14px;
     margin: 0 16px 12px 16px;
     padding: 4px 0;
-    cursor: pointer;
     text-align: left;
     font-family: var(--set-font, 'Raleway', sans-serif);
     color: var(--set-text, #e8e8e8);
@@ -1547,7 +1731,6 @@ p.identity-dialog-hint {
     height: 15px;
     margin: 0;
     accent-color: var(--set-accent, #5a8cff);
-    cursor: pointer;
 }
 
 /* local-settings buttons, excluding the segment halves by name, because this file loads after
@@ -1563,12 +1746,14 @@ p.identity-dialog-hint {
     border-radius: var(--set-radius, 4px);
     font-family: inherit;
     font-size: 12px;
-    cursor: pointer;
     transition: filter 0.12s ease;
 }
 
 #local-settings-container input[type="button"]:not(.local-settings-segment):hover {
     filter: var(--set-button-hover-filter, brightness(1.14));
+    background: var(--set-button-hover-bg, var(--set-button-bg, var(--set-accent, #5a8cff)));
+    color: var(--set-button-hover-text, var(--set-button-text, var(--set-accent-text, #ffffff)));
+    border: var(--set-button-hover-border, var(--set-button-border, 1px solid transparent));
 }
 
 #local-settings-container input[type="button"]:not(.local-settings-segment):active {
@@ -1586,7 +1771,6 @@ p.identity-dialog-hint {
     font-family: inherit;
     font-size: 11px;
     outline: none;
-    cursor: pointer;
 }
 
 /* the microphone picker can carry long device names, so it is capped and ellipsised
@@ -1676,7 +1860,6 @@ p.identity-dialog-hint {
     color: var(--set-muted, #aeb5c0);
     font: 13px/1.3 var(--set-font, 'Raleway', sans-serif);
     text-align: left;
-    cursor: pointer;
 }
 
 #local-settings-container .local-settings-tab:hover
@@ -1773,7 +1956,7 @@ p.identity-dialog-hint {
     display: none;
 }
 
-#local-settings-container .close-button {
+:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button {
     width: 22px;
     height: 22px;
     border: 0;
@@ -1784,11 +1967,11 @@ p.identity-dialog-hint {
     text-align: center;
 }
 
-#local-settings-container .close-button::before {
+:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button::before {
     content: "\2715";
 }
 
-#local-settings-container .close-button:hover {
+:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button:hover {
     background: var(--set-danger-soft, rgba(208, 80, 80, 0.16));
     color: var(--set-danger-strong, #ff6b6b);
 }
@@ -1825,7 +2008,6 @@ p.identity-dialog-hint {
 
 #server-bookmark-select {
     max-width: 190px;
-    cursor: pointer;
 }
 
 #server-bookmark-name {
@@ -1838,7 +2020,6 @@ p.identity-dialog-hint {
     width: auto;
     min-width: 0;
     font-size: 12px;
-    cursor: pointer;
 }
 
 /* mic button pressed state: the transform repeats the theme's --mic-center-shift, because a bare
@@ -2000,7 +2181,6 @@ div#local-settings-container.closing {
 
 #file-upload-preview .file-upload-preview-remove {
     flex: 0 0 auto;
-    cursor: pointer;
     padding: 2px 5px;
     border-radius: 4px;
     opacity: 0.7;
@@ -2051,7 +2231,6 @@ div#local-settings-container.closing {
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.55);
     color: #ffffff;
-    cursor: pointer;
     user-select: none;
 }
 
@@ -2145,7 +2324,6 @@ div#local-settings-container.closing {
     height: 34px;
     border: 0;
     border-radius: 50%;
-    cursor: pointer;
     background-color: transparent;
     background-repeat: no-repeat;
     background-position: center;
@@ -2425,7 +2603,6 @@ div#local-settings-container.closing {
 
 .blocked-country-remove {
     flex: 0 0 auto;
-    cursor: pointer;
     padding: 1px 5px;
     border-radius: 3px;
     opacity: 0.7;
@@ -2471,7 +2648,6 @@ div#local-settings-container.closing {
     height: 12px;
     margin-left: 4px;
     vertical-align: middle;
-    cursor: pointer;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='14' rx='2'/%3E%3Cpath d='M10 7l5 3-5 3z' fill='%23ffffff'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: center;
@@ -2499,9 +2675,9 @@ div#local-settings-container.closing {
     background-size: contain;
 }
 
-/* the "screen or a video file" choice and the "stream the sound too?" question after it, cards like the set-alias dialog */
 #video-stream-choice-container,
-#video-stream-sound-choice-container {
+#video-stream-sound-choice-container
+{
     position: fixed;
     left: 0;
     top: 0;
@@ -2540,7 +2716,6 @@ div#local-settings-container.closing {
     width: 100%;
     margin: 6px 0;
     padding: 8px;
-    cursor: pointer;
 }
 
 /* the stream window: fixed, dragged by its header, resized by its corner */
@@ -2586,7 +2761,6 @@ div#local-settings-container.closing {
 }
 
 #video-stream-popup-close {
-    cursor: pointer;
     padding: 0 4px;
 }
 
@@ -2649,17 +2823,12 @@ div#local-settings-container.closing {
     border-top: 1px solid var(--set-line-soft, rgba(255, 255, 255, 0.08));
 }
 
-#video-stream-popup-footer input[type="button"] {
-    cursor: pointer;
-}
-
 /* the sound controls in the footer: a viewer's volume, the streamer's "hear my stream" */
 #video-stream-sound-volume-label,
 #video-stream-monitor-label {
     display: flex;
     align-items: center;
     gap: 4px;
-    cursor: pointer;
     white-space: nowrap;
 }
 
@@ -2696,7 +2865,6 @@ div#local-settings-container.closing {
     color: inherit;
     font-family: var(--set-font, 'Raleway', sans-serif);
     font-size: 13px;
-    cursor: pointer;
 }
 
 .head-menu-dropdown-button:hover,
@@ -2729,7 +2897,6 @@ div#local-settings-container.closing {
     margin: 0;
     padding: 6px 12px;
     white-space: nowrap;
-    cursor: pointer;
 }
 
 .head-menu-dropdown-item:hover {
@@ -2759,7 +2926,6 @@ div#local-settings-container.closing {
     padding: 2px 10px;
     border-radius: var(--set-radius, 4px);
     background: var(--set-row-hover, rgba(255, 255, 255, 0.1));
-    cursor: pointer;
 }
 
 .head-menu-answer:hover {
@@ -2810,7 +2976,6 @@ div#local-settings-container.closing {
     background: var(--set-button-bg, #0e69a8);
     color: var(--set-accent-text, #ffffff);
     font: inherit;
-    cursor: pointer;
 }
 
 /* the connect window's form (connection.js, head-menu.js): rows of label and field in one grid, the key rows ui.js adds, and
@@ -3070,8 +3235,8 @@ body.chat-use-theme-formatting #chat-context-container .single-chat-message-cont
     background-repeat: no-repeat;
 }
 
-/* Keep the tag submenu beside the wider main menu. */
-.channel-list-context-menu + .add-tag-context-menu
+/* Keep the group submenu beside the wider main menu. */
+.channel-list-context-menu + .add-group-context-menu
 {
     margin-left: 68px;
 }
@@ -3125,7 +3290,6 @@ body.chat-use-theme-formatting #chat-context-container .single-chat-message-cont
     box-shadow: none;
     color: var(--chat-tab-close-color, currentColor);
     opacity: 0.8;
-    cursor: pointer;
     transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
 }
 
@@ -3159,10 +3323,10 @@ body.chat-use-theme-formatting #chat-context-container .single-chat-message-cont
     --context-menu-icon: var(--menu-icon-mute, none);
 }
 
-/* Add tag. */
+/* Add group. */
 .channel-list-context-menu-items .context-menu-item[data-action="6"]
 {
-    --context-menu-icon: var(--menu-icon-tag, none);
+    --context-menu-icon: var(--menu-icon-group, none);
 }
 
 /* Client information. */
@@ -3253,10 +3417,6 @@ body.chat-use-theme-formatting #chat-context-container .single-chat-message-cont
 {
     display: none !important;
 }
-#video-stream-settings summary
-{
-    cursor: pointer;
-}
 .video-stream-settings-controls
 {
     display: flex;
@@ -3287,4 +3447,126 @@ body.chat-use-theme-formatting #chat-context-container .single-chat-message-cont
     display: block;
     font-size: 0.85em;
     margin: 8px 0 0;
+}
+
+body.server-voice-disabled #toggle-microphone-label,
+body.server-voice-disabled #toggle-microphone,
+body.server-voice-disabled #microphone-push-to-talk-button-touch-device,
+body.server-voice-disabled #microphone-always-broadcasting-audio-button,
+body.server-voice-disabled .local-settings-row:has(#local-settings-mic-mode, #local-settings-ptt-key, #local-settings-ptt-disable-while-typing, #local-settings-mic-device, #local-settings-hide-mic),
+body.server-voice-disabled .context-menu-item[data-action="11"],
+body.server-audio-disabled .client-audio-state:not([data-has-avatar="1"]),
+body.server-audio-disabled .client-audio-availability,
+body.server-audio-disabled .client-audio-state::before,
+body.server-audio-disabled .client-audio-state::after,
+body.server-audio-disabled .client-mute-state,
+body.server-audio-disabled .marquee-music-playing-container,
+body.server-audio-disabled #adjust-volume-container,
+body.server-audio-disabled .context-menu-item[data-action="5"],
+body.server-audio-disabled .context-menu-item[data-action="18"],
+body.server-audio-disabled .local-settings-row:has(#local-settings-audio-availability),
+body.server-audio-video-disabled #local-settings-audio-connection-row
+{
+    display: none !important;
+}
+
+body.server-audio-disabled .client-audio-state[data-has-avatar="1"]
+{
+    background-image: var(--client-avatar) !important;
+    box-shadow: none !important;
+    animation: none !important;
+}
+
+:root body.hide-mp3-button #play-pause-song-container,
+:root body.server-audio-disabled #play-pause-song-container,
+:root body.server-voice-disabled #play-pause-song-container
+{
+    display: none !important;
+}
+
+body.hide-server-icons-in-channel-list #channel-list-container .client-groups,
+body.hide-server-icons-in-channel-list #channel-list-container .single-channel-icon
+{
+    display: none !important;
+}
+
+body.hide-server-icons-in-channel-list #channel-list-container .connected-client-country-flag
+{
+    margin-left: auto;
+}
+
+/* The channel icon picker must stay above the channel window in every theme. */
+#group-icon-picker-popup
+{
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    width: min(380px, calc(100vw - 20px));
+    max-height: min(60dvh, 460px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+    padding: 12px;
+    background: var(--set-panel, #242f3d);
+    color: var(--set-text, #f5f5f5);
+    border: 1px solid var(--set-line, #56616d);
+    border-radius: var(--set-radius, 4px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+    font: 13px var(--set-font, sans-serif);
+}
+#group-icon-picker-popup .channel-icon-picker-heading
+{
+    display: flex;
+    flex: 0 0 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+#group-icon-picker-popup .channel-icon-picker-heading > button
+{
+    width: auto;
+    margin: 0;
+    padding: 5px 9px;
+    font: inherit;
+}
+#group-icon-picker-popup .group-icon-picker-option
+{
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    padding: 4px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: default;
+}
+#group-icon-picker-popup .group-icon-picker-option img
+{
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+#group-icon-picker-popup .group-icon-picker-option:hover,
+#group-icon-picker-popup .group-icon-picker-option:focus-visible
+{
+    border-color: var(--set-accent, #6ab2f2);
+    background: var(--set-row-hover, rgba(127, 127, 127, 0.15));
+}
+@media (pointer: coarse)
+{
+    #group-icon-picker-popup .group-icon-picker-option
+    {
+        flex-basis: 44px;
+        width: 44px;
+        height: 44px;
+    }
 }

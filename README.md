@@ -9,6 +9,7 @@
 - channel management! (create, delete, and edit channels)
 - direct messages (text and pictures)
 - channel messages (text and pictures)
+- permission system
 - sending files
 - voice chat in channels
 - end-to-end encryption
@@ -23,8 +24,9 @@
 - choose a theme
 - rearrange the interface
 - change the font size and color of messages for both you and the people receiving them
-- add groups/tags to other users
+- add groups to other users
 - create music bots
+
 
 ## Live demo -> https://fruitybackendtesting.com/client.html
 <br>
@@ -152,7 +154,7 @@ log.c -> https://github.com/rxi/log
 <br>
 SHA-256 by ITH -> [source](server-source-code/third-party/ITH-sha/sha256.c)
 <br>
-Base64 by zhicheng -> [source](server-source-code/third-party/zhicheng/base64.c)
+Base64 by zhicheng -> https://github.com/zhicheng/base64
 
 ### Optional HTTPS/WSS:
 stunnel -> https://www.stunnel.org/

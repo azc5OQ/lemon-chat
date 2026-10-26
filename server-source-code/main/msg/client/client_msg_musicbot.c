@@ -1,5 +1,6 @@
 // This file checks requests to create or remove music bots and to manage or play their songs.
 #include "client_msg.h"
+#include "../../core/permissions.h"
 #include "../../core/client_session.h"
 #include "../server/server_msg.h"
 #include "../../core/musicbot.h"
@@ -83,6 +84,16 @@ void client_msg__musicbot__process_start_song_stream_message(cJSON* json_root, u
 
     if (client->is_authenticated == FALSE)
     {
+        goto label_client_msg__process_start_song_stream_end;
+    }
+
+    clib__read_lock(&g_channels_global_rwlock_guard);
+    status = client->channel_id < g_server_settings.max_channel_count
+        && permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER);
+    clib__unlock(&g_channels_global_rwlock_guard);
+    if (status == FALSE)
+    {
+        server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
         goto label_client_msg__process_start_song_stream_end;
     }
 

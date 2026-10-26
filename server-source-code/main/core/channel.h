@@ -4,6 +4,9 @@
 #include "../definitions.h"
 #include "../../third-party/dave-g-json/cJSON.h"
 
+boole channel__read_required_powers(cJSON* object, channel_t* channel);
+void channel__write_required_powers(cJSON* object, const channel_t* channel);
+
 uint64 channel__get_client_count_for_channel(uint64 channel_id);
 void channel__mark_channels_for_deletion(uint64 channel_id, uint64* out_current_index, uint64* out_channel_indices);
 client_t* channel__find_music_bot_in_channel(uint64 channel_id);

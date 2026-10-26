@@ -74,7 +74,7 @@ function chat__apply_theme_formatting()
 /**
  * @brief index of a chat context in g_chat_context_array
  *
- * @param string id -> the context id, "chat-context-channel-N", "chat-context-pm-N" or "chat-context-offline-<alias>"
+ * @param string id -> the context id, "chat-context-channel-N", "chat-context-pm-N" or "chat-context-offline-<identity hash>"
  *
  * @return number the index, -1 when not found
  */
@@ -91,14 +91,8 @@ function chat__get_chat_context_index_by_chat_context_id(id)
 }
 
 /**
- * @brief the state half of promoting an offline conversation into the live one, when its owner connects
- *        every decision (anything to promote, a live thread already there, were we reading it) is
- *        asked of g_chat_context_array, never of the dom; UI.promote_offline_chat_context_render
- *        then only moves the markup
- *
- * @param object client -> the connected client, whose alias names the offline context
- *
- * @return object { did_promote, had_live_context, was_open, offline_context_id, live_context_id }
+ * @brief Matches an offline conversation to the same identity after it reconnects.
+ * @param client Connected client whose identity is matched.
  */
 function chat__promote_offline_chat_context_state(client)
 {
@@ -110,12 +104,12 @@ function chat__promote_offline_chat_context_state(client)
         live_context_id: ""
     };
 
-    if (client == null || typeof client.alias !== "string" || client.alias.length == 0)
+    if (client == null || typeof client.identity_hash !== "string" || client.identity_hash.length == 0)
     {
         return promotion;
     }
 
-    let offline_context_id = "chat-context-offline-" + client.alias;
+    let offline_context_id = "chat-context-offline-" + client.identity_hash;
     let live_context_id = "chat-context-pm-" + client.client_id;
 
     let offline_index = -1;
@@ -160,9 +154,10 @@ function chat__promote_offline_chat_context_state(client)
     if (promotion.was_open == true)
     {
         g_current_chat_context_id = live_context_id;
+        chat_replies__refresh();
         g_chat_message_receiver_type = "user";
         g_chat_message_receiver_id = client.client_id;
-        g_offline_chat_recipient_alias = "";
+        g_offline_chat_recipient_identity_hash = "";
     }
 
     return promotion;
@@ -471,6 +466,16 @@ function chat__send_composed_chat_message(target)
         return;
     }
 
+    if (target === "channel")
+    {
+        let action = g_base64_picture_string_to_send.length > 0 ? "picture" : "message";
+        if (!groups__can_send_to_channel(action, g_current_channel_id))
+        {
+            groups__notify_channel_power_denied(action);
+            return;
+        }
+    }
+
     let text_input = document.getElementById("chat-input-container-text-input");
     let chat_message_to_send_value = text_input.value;
     text_input.value = "";
@@ -550,7 +555,11 @@ function chat__send_composed_chat_message(target)
     else
     {
         // the server never sees the font or color, they travel inside the encrypted body
+        let reaction_id = chat_reactions__new_id();
+        let reply_to = chat_replies__take(chat_context);
         let actual_chat_message_to_send_value = JSON.stringify({
+            reaction_id: reaction_id,
+            reply_to: reply_to,
             font: g_selected_font,
             font_size: g_selected_font_size,
             font_color: g_selected_font_color,
@@ -559,16 +568,9 @@ function chat__send_composed_chat_message(target)
 
         let text_html = "<p class='single-chat-message-content-p local-single-chat-message-content-p " + g_selected_font + "' data-single-chat-message-local-message-id='" + g_local_message_id + "' data-single-chat-message-server-message-id='unspecified' style='color: " + g_selected_font_color + "; font-size: " + g_selected_font_size + "px;'>" + chat__sanitize_string(chat_message_to_send_value) + "</p>";
 
-        if (g_chat_context_array[chat_context_index].last_known_message_sender_username == g_local_username)
-        {
-            // a follow-up line by the same sender joins their last block
-            let blocks = chat_context.getElementsByClassName("single-chat-message");
-            blocks[blocks.length - 1].getElementsByClassName("single-chat-message-content")[0].insertAdjacentHTML("beforeend", text_html);
-        }
-        else
-        {
-            chat__append_local_chat_message_block(chat_context, sender_html, time_html, text_html);
-        }
+        chat__append_local_chat_message_block(chat_context, sender_html, time_html, text_html);
+
+        chat_reactions__register(chat_context.querySelector('[data-single-chat-message-local-message-id="' + g_local_message_id + '"]'), reaction_id, g_rsa_public_key_string, g_local_username, reply_to);
 
         if (target == "user")
         {
@@ -734,19 +736,26 @@ function chat__send_channel_chat_message()
  */
 function chat__send_direct_chat_message()
 {
+    let receiver = channel_tree__get_client_by_client_id(g_chat_message_receiver_id);
+    if (receiver != null && receiver.is_idle && !groups__is_allowed(channel_tree__get_client_by_client_id(g_local_client_id), "message_idle_clients"))
+    {
+        utils__custom_alert("insufficient permissions");
+        return;
+    }
     chat__send_composed_chat_message("user");
 }
 
 /**
- * @brief text to somebody who is not connected: the same encryption as a direct message (their public key came with the offline roster), addressed by alias
- *        the server stores it and delivers it when they connect again
- *
- * @param object offline_contact -> the entry of g_offline_client_list
- *
- * @return void
+ * @brief Encrypts a message for a saved identity and asks the server to hold it until that user returns.
+ * @param offline_contact Saved recipient and their public key.
  */
 function chat__send_offline_chat_message(offline_contact)
 {
+    if (!groups__is_allowed(channel_tree__get_client_by_client_id(g_local_client_id), "send_offline_messages"))
+    {
+        utils__custom_alert("insufficient permissions");
+        return;
+    }
     let chat_message_to_send_value = document.getElementById('chat-input-container-text-input').value;
     document.getElementById('chat-input-container-text-input').value = "";
 
@@ -755,9 +764,11 @@ function chat__send_offline_chat_message(offline_contact)
         return;
     }
 
-    let context_id = "chat-context-offline-" + offline_contact.alias;
+    let context_id = "chat-context-offline-" + offline_contact.identity_hash;
 
     let actual_data_to_send = {
+        reaction_id: chat_reactions__new_id(),
+        reply_to: chat_replies__take(document.getElementById(context_id)),
         font: g_selected_font,
         font_size: g_selected_font_size,
         font_color: g_selected_font_color,
@@ -781,6 +792,11 @@ function chat__send_offline_chat_message(offline_contact)
                             </div>";
 
         document.getElementById(context_id).insertAdjacentHTML("beforeend", html_to_append);
+        if (G_HAS_DOM)
+        {
+            let element = document.getElementById(context_id).querySelector(".single-chat-message:last-child .single-chat-message-content-p");
+            chat_reactions__register(element, actual_data_to_send.reaction_id, g_rsa_public_key_string, g_local_username, actual_data_to_send.reply_to);
+        }
         chat__scroll_chat_to_end(true);
     }
 
@@ -788,7 +804,7 @@ function chat__send_offline_chat_message(offline_contact)
         type: "mainthread__create_offline_chat_message",
         chat_message_value: JSON.stringify(actual_data_to_send),
         receiver_public_key: offline_contact.public_key,
-        recipient_alias: offline_contact.alias
+        recipient_identity_hash: offline_contact.identity_hash
     });
 }
 
@@ -829,10 +845,10 @@ function chat__send_chat_message()
             }
 
             utils__custom_log("[send] receiver not in client list, trying the offline paths"
-                + " (alias='" + g_offline_chat_recipient_alias + "')");
+                + " (identity='" + g_offline_chat_recipient_identity_hash + "')");
             // they may have come online since this context was opened: then send it live instead
             // of queueing (the server refuses to queue for a connected client)
-            let live_client = channel_tree__get_client_by_alias(g_offline_chat_recipient_alias);
+            let live_client = channel_tree__get_client_by_identity_hash(g_offline_chat_recipient_identity_hash);
 
             if (live_client != null)
             {
@@ -846,7 +862,7 @@ function chat__send_chat_message()
                 return;
             }
 
-            let offline_contact = channel_tree__get_stored_client_by_alias(g_offline_chat_recipient_alias);
+            let offline_contact = channel_tree__get_stored_client_by_identity_hash(g_offline_chat_recipient_identity_hash);
 
             if (offline_contact != null && typeof offline_contact.public_key === "string" && offline_contact.public_key.length > 0)
             {
@@ -875,28 +891,88 @@ function chat__send_chat_message()
 }
 
 /**
- * @brief finishing an inline chat-message edit: locks the element again and sends the edit_chat_message_request with the new content to the server
- *
- * @param object event -> the blur event of the edited element
- *
- * @return void
+ * @brief Reads edited text without the final line break used to position the caret.
+ * @param element Message being edited.
+ * @return Text with the line breaks entered by the user.
+ */
+function chat__get_edited_text(element)
+{
+    let text = element.innerText.replace(/\r\n?/g, "\n");
+    let last = element.lastChild;
+    while (last && last.lastChild)
+    {
+        last = last.lastChild;
+    }
+    if (last && (last.nodeName === "BR" || (last.nodeType === Node.TEXT_NODE && last.nodeValue === "\n"))
+        && text.endsWith("\n"))
+    {
+        text = text.slice(0, -1);
+    }
+    return text;
+}
+
+/**
+ * @brief Saves or cancels an edit in its original conversation.
+ * @param element Message being edited.
+ * @param save Whether to send changed text.
+ */
+function chat__finish_message_edit(element, save)
+{
+    let edit = chat_reactions.edits.get(element);
+    if (!edit)
+    {
+        return;
+    }
+    let text = chat__get_edited_text(element);
+    element.removeEventListener("blur", chat__local_chat_message_onblur);
+    element.removeEventListener("keydown", chat__local_chat_message_onkeydown);
+    chat_reactions.edits.delete(element);
+    element.removeAttribute("contenteditable");
+    if (!save || !chat_reactions__can_modify(edit.state) || !text.trim() || text === edit.original_text)
+    {
+        element.innerHTML = edit.original;
+        return;
+    }
+    element.textContent = text;
+    connection__send_message_object(
+    {
+        message:
+        {
+            type: "edit_chat_message_request",
+            message_id: edit.message_id,
+            new_message_value: text,
+            receiver_type: edit.receiver_type,
+            receiver_id: edit.receiver_id
+        }
+    });
+}
+
+/**
+ * @brief Saves an edit when focus moves elsewhere.
+ * @param event Focus leaving the edited message.
  */
 function chat__local_chat_message_onblur(event)
 {
-    event.target.setAttribute("contenteditable", "false");
-    event.target.removeEventListener('blur', chat__local_chat_message_onblur);
+    chat__finish_message_edit(event.currentTarget, true);
+}
 
-    let message_object = {
-        message: {
-            type: "edit_chat_message_request",
-            message_id: g_selected_server_chat_message_id,
-            new_message_value: event.target.innerHTML,
-            receiver_type: g_chat_message_receiver_type,
-            receiver_id: parseInt(g_chat_message_receiver_id)
-        }
-    };
-
-    connection__send_message_object(message_object);
+/**
+ * @brief Saves with Enter, keeps Shift and Enter for new lines, and cancels with Escape.
+ * @param event Key pressed while editing a message.
+ */
+function chat__local_chat_message_onkeydown(event)
+{
+    if (event.isComposing || event.keyCode === 229)
+    {
+        return;
+    }
+    if ((event.key === "Enter" && !event.shiftKey) || event.key === "Escape")
+    {
+        event.preventDefault();
+        event.stopPropagation();
+        chat__finish_message_edit(event.currentTarget, event.key === "Enter");
+        event.currentTarget.blur();
+    }
 }
 
 /**
@@ -1031,7 +1107,7 @@ function chat__send_typing_indicator()
     }
 
     // an offline conversation has nobody to tell
-    if (g_offline_chat_recipient_alias != null && g_offline_chat_recipient_alias.length > 0)
+    if (g_offline_chat_recipient_identity_hash != null && g_offline_chat_recipient_identity_hash.length > 0)
     {
         return;
     }

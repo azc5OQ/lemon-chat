@@ -3,6 +3,7 @@
 // timeouts. client_session.c manages the client's record, which can stay in use
 // when a reconnect replaces the WebSocket connection.
 #include "chat_websocket.h"
+#include "tailscale.h"
 
 #include "core/client_session.h"
 #include "core/administration.h"
@@ -342,6 +343,19 @@ void* chat_websocket__listen_thread(void* argument)
     struct ws_events evs;
 
     (void)argument;
+
+    if (g_server_settings.is_tailscale_funnel_enabled == TRUE && tailscale__is_ready() == TRUE)
+    {
+        ws_set_forwarded_ip_mode(WS_FORWARDED_IP_FUNNEL);
+    }
+    else if (g_server_settings.is_stunnel_enabled == TRUE)
+    {
+        ws_set_forwarded_ip_mode(WS_FORWARDED_IP_STUNNEL);
+    }
+    else
+    {
+        ws_set_forwarded_ip_mode(WS_FORWARDED_IP_NONE);
+    }
 
     evs.onopen = &_chat_websocket_internal__onopen;
     evs.onclose = &_chat_websocket_internal__onclose;

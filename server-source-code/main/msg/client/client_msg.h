@@ -32,8 +32,6 @@ void client_msg__attachments__process_file_send_request(cJSON* json_root, uint64
 void client_msg__attachments__process_file_send_completed_request(cJSON* json_root, uint64 sender_client_id);
 
 void client_msg__profile__process_change_client_username(cJSON* json_root, uint64 sender_client_id);
-void client_msg__profile__process_set_identity_alias_request(cJSON* json_root, uint64 sender_client_id);
-void client_msg__profile__process_set_alias_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__profile__process_request_stored_clients(cJSON* json_root, uint64 sender_client_id);
 void client_msg__profile__process_avatar_upload(cJSON* json_root, uint64 sender_client_id);
 void client_msg__profile__process_delete_avatar(cJSON* json_root, uint64 sender_client_id);
@@ -47,16 +45,19 @@ void client_msg__server_settings__process_load_request(cJSON* json_root, uint64 
 
 void client_msg__administration__process_admin_password_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__administration__process_change_admin_password_message(cJSON* json_root, uint64 sender_client_id);
-void client_msg__administration__process_add_tag_to_client_message(cJSON* json_root, uint64 sender_client_id);
-void client_msg__administration__process_remove_tag_from_client_message(cJSON* json_root, uint64 sender_client_id);
+void client_msg__administration__process_add_group_to_client_message(cJSON* json_root, uint64 sender_client_id);
+void client_msg__administration__process_remove_group_from_client_message(cJSON* json_root, uint64 sender_client_id);
 void client_msg__administration__process_icon_upload(cJSON* json_root, uint64 sender_client_id);
-void client_msg__administration__process_add_tag(cJSON* json_root, uint64 sender_client_id);
-void client_msg__administration__process_delete_tag(cJSON* json_root, uint64 sender_client_id);
+void client_msg__administration__process_add_group(cJSON* json_root, uint64 sender_client_id);
+void client_msg__administration__process_delete_group(cJSON* json_root, uint64 sender_client_id);
 void client_msg__administration__process_request_identity_list(cJSON* json_root, uint64 sender_client_id);
 void client_msg__administration__process_delete_identity(cJSON* json_root, uint64 sender_client_id);
-void client_msg__administration__process_modify_identity_tag(cJSON* json_root, uint64 sender_client_id);
+void client_msg__administration__process_modify_identity_group(cJSON* json_root, uint64 sender_client_id);
 void client_msg__administration__process_delete_icon(cJSON* json_root, uint64 sender_client_id);
-void client_msg__administration__process_set_tag_icon(cJSON* json_root, uint64 sender_client_id);
+void client_msg__administration__process_rename_group(cJSON* json_root, uint64 sender_client_id);
+void client_msg__administration__process_save_groups(cJSON* json_root, uint64 sender_client_id);
+void client_msg__administration__process_set_group_permissions(cJSON* json_root, uint64 sender_client_id);
+void client_msg__administration__process_set_group_icon(cJSON* json_root, uint64 sender_client_id);
 void client_msg__administration__process_admin_log_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__administration__process_admin_log_clear(cJSON* json_root, uint64 sender_client_id);
 void client_msg__administration__process_kick_request(cJSON* json_root, uint64 sender_client_id);
@@ -81,5 +82,10 @@ void client_msg__musicbot__process_create_request(cJSON* json_root, uint64 sende
 void client_msg__musicbot__process_delete_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__musicbot__process_get_song_list_request(cJSON* json_root, uint64 sender_client_id);
 void client_msg__musicbot__process_remove_song_request(cJSON* json_root, uint64 sender_client_id);
+
+void client_msg__emojis__process_list(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket);
+void client_msg__emojis__process_image(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket);
+void client_msg__emojis__process_upload(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket);
+void client_msg__emojis__process_delete(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket);
 
 #endif

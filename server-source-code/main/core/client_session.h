@@ -14,6 +14,5 @@ boole client_session__is_there_an_unfinished_handshake_from_same_ip_address(cstr
 boole client_session__is_there_another_authenticated_client_with_same_ip_address(uint64 client_index, cstring ip_address, cstring public_key);
 void client_session__process_client_disconnect(uint64 client_index);
 
-boole client_session__is_username_taken_by_another_client(char* username, uint64 client_id_to_skip);
 
 #endif

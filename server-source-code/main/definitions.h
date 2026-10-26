@@ -121,7 +121,10 @@ typedef const char* cstring;
 #define WEBSOCKET_CONNECTIONS_PER_CLIENT 3 // chat, audio and video may each have their own socket
 #define MAX_CLIENT_STORED_DATA 100
 #define MAX_ICONS 1000
-#define MAX_TAGS 1000
+#define MAX_SERVER_EMOJIS 256
+#define SERVER_EMOJI_MAX_BYTES 30000
+#define SERVER_EMOJI_GIF_MAX_BYTES (256 * 1024)
+#define MAX_GROUPS 1000
 #define MAX_BANS 1024
 #define BAN_IP_MAX_LENGTH 46
 #define IPV4_ADDRESS_STRING_LENGTH 16
@@ -136,12 +139,11 @@ typedef const char* cstring;
 #define PUBLIC_KEY_STRING_MAX_LENGTH 1368  // base64 of an 8192-bit modulus, the largest a client can generate
 #define CHANNEL_NAME_MAX_LENGTH 128
 #define SONG_NAME_MAX_LENGTH 512
-#define TAG_MAX_NAME_LENGTH 32
+#define GROUP_MAX_NAME_LENGTH 32
 #define ICON_MAX_LENGTH 40960 // base64 of a 30000-byte icon with its data-url prefix; the ceiling behind icon_max_size_bytes
 #define SHARED_SECRET_LENGTH 3000 // a DH value (shared secret or public mix) is < the modulus; an 8192-bit modulus is 2467 decimal digits, so this must exceed ~2468
 #define UNAUTH_HANDSHAKE_MAX_LENGTH (SHARED_SECRET_LENGTH + MAX_PUBLIC_KEY_LENGTH + 256)  // public_key_info = DH public mix (< SHARED_SECRET_LENGTH) + RSA public key (< MAX_PUBLIC_KEY_LENGTH) + JSON scaffolding
-#define MAX_TAGS_PER_USER 32
-#define ADMIN_TAG_ID 0
+#define ADMIN_GROUP_ID 0
 // datachannel attempts a client gets before the server stops building peers for it for a while
 #define WEBRTC_DATACHANNEL_ATTEMPTS_BEFORE_COOLDOWN 10
 // how far ahead of playback a music bot streams: sent as a burst at song start, then paced. the
@@ -150,7 +152,7 @@ typedef const char* cstring;
 #define CHALLENGE_STRING_LENGTH 128
 #define ADMIN_PASSWORD_MAX_LENGTH 50
 #define COUNTRY_ISO_CODE_LENGTH 3
-#define MAX_TAGS_FOR_SINGLE_CLIENT 30
+#define MAX_GROUPS_FOR_SINGLE_CLIENT MAX_GROUPS
 
 // offline messages: text sent to a REGISTERED identity that is not connected right now. the server
 // holds them in ram only (never in server_settings.json) and hands them over when that identity
@@ -271,7 +273,8 @@ typedef struct server_settings
     boole is_temp_channel_creation_allowed;
     boole is_display_country_flags_active;
     boole is_admin_country_flag_hidden;     // admins are listed without a flag while flags are on (a comfort setting)
-    boole is_display_admin_tag_active;
+    boole is_permission_system_enabled;
+    boole is_display_admin_group_active;
     boole is_idle_mode_allowed;
     boole is_fast_reconnect_allowed;   // a returning identity may adopt its still-open session instead of replacing it
     boole is_identity_takeover_allowed; // a new login with an identity already online replaces that session (off: refused)
@@ -296,15 +299,14 @@ typedef struct server_settings
     boole is_identity_storage_enabled;
     boole is_identity_localstorage_enabled;  // bake a flag into the served client so it saves/restores the identity passphrase in localStorage; default off
     boole is_avatar_upload_allowed;  // let each user set an image avatar persisted with their identity; default off
-    boole is_alias_registration_allowed;  // admins may register an alias (display name) on a user's identity; needs identities; default off
-    boole is_stored_client_list_allowed;  // users may fetch the stored identities (alias/avatar/tags only) to list offline people; needs identities; default off
+    boole is_stored_client_list_allowed;
     boole is_last_seen_enabled;  // record and serve when an identity was last connected, so clients can show "last seen"; needs identities; default off
-    boole is_offline_messaging_allowed;  // queue text messages for registered identities that are offline and deliver them on reconnect. asked ONCE at first-time setup and never editable afterwards, because switching it on makes the server retain each identity's RAW public key (peers need it to encrypt while the owner is away). needs identities + is_stored_client_list_allowed; default off
+    boole is_offline_messaging_allowed;
     boole is_typing_indicator_allowed;  // clients may tell the people they are writing to that they are typing ("x is typing ..."). carries no message content, only who is typing and where; editable in the server settings tab; default off
     boole is_client_rename_allowed;  // users may rename themselves after connecting; when off a rename request is silently ignored, because the switch is meant against name games - an admin still renames freely; default on
     boole is_link_preview_allowed;
     int64 avatar_max_size_bytes;  // largest accepted raw image size (bytes) for an avatar; larger uploads are silently dropped
-    int64 icon_max_size_bytes;  // largest accepted raw image size (bytes) for a tag/channel icon, 1000-30000; editable in the server settings tab
+    int64 icon_max_size_bytes;  // largest accepted raw image size (bytes) for a group/channel icon, 1000-30000; editable in the server settings tab
     uint64 chat_cooldown_milliseconds;
     uint64 join_channel_request_cooldown_milliseconds;
     uint64 delete_channel_request_cooldown_milliseconds;
@@ -336,6 +338,7 @@ typedef struct server_settings
 
     boole is_stunnel_enabled;
     boole is_external_wss_enabled;
+    boole is_tailscale_funnel_enabled;
     int64 wss_port;
     char stunnel_domain[256];
     char stunnel_cert_fullchain[512];
@@ -367,7 +370,7 @@ typedef struct server_settings
     uint64 blocked_countries_count;
     boole is_logging_client_joins_enabled;  // admin log: record each completed join with username and ip; default off
     boole is_logging_username_changes_enabled;  // admin log: record renames (old -> new); default off
-    boole is_logging_tag_changes_enabled;  // admin log: record tags being added to clients; default off
+    boole is_logging_group_changes_enabled;  // admin log: record groups being added to clients; default off
     boole is_logging_server_settings_updates_enabled;  // admin log: record who saved the server settings; default off
     boole is_logging_kicks_and_bans_enabled;  // admin log: record kicks and bans (who did it, to whom); default off
     boole is_logging_client_disconnects_enabled;  // admin log: record authenticated clients disconnecting; default off
@@ -459,6 +462,10 @@ typedef struct client_t
     uint64 temp_channel_id; // if is_temp_admin_channel, the id of the temp channel this client owns
     uint64 idle_return_channel_id;
     char idle_return_channel_password[CHANNEL_PASSWORD_MAX_LENGTH]; // authorization snapshot, never sent to clients
+    uint talk_power;
+    uint channel_message_power;
+    uint channel_picture_power;
+    uint stream_power;
     int64 audio_state; // 1 -> active, 2 -> not active but enabled, 3 -> disabled but audio still active, 4 -> audio disabled
     uint64 timestamp_connected;
     uint64 timestamp_last_action;
@@ -468,8 +475,6 @@ typedef struct client_t
     uint64 maintainer_reset_vote_channel_id;
     uint64 maintainer_reset_vote_generation;
     char username[USERNAME_MAX_LENGTH];
-    char alias[USERNAME_MAX_LENGTH];  // admin-registered display name restored from the identity store; empty = none
-    boole is_registered;  // the admin has registered this identity (it carries an alias); only such users may list the stored clients
     char public_key[MAX_PUBLIC_KEY_LENGTH];
     char dh_shared_secret[SHARED_SECRET_LENGTH];
     // These keys are made from the shared secret when the client connects.
@@ -498,8 +503,8 @@ typedef struct client_t
     // retry and cleared when the transport closes, and neither should forget the consent
     boole is_video_viewer_allowed;
     boole is_video_viewer_watching;
-    int* tag_ids; // must be int because a function of another library depends on this being int
-    // int tag_ids_count;
+    int* group_ids; // must be int because a function of another library depends on this being int
+    // int group_ids_count;
     music_bot_client_extension_t music_bot_client_extension;
     client_file_upload_extension_t file_upload_extension;
 } client_t;
@@ -512,6 +517,10 @@ typedef struct channel
     boole is_channel_maintainer_present;
     boole is_using_password;
     boole is_audio_enabled;
+    uint required_talk_power;
+    uint required_message_power;
+    uint required_picture_power;
+    uint required_stream_power;
     boole is_video_stream_enabled;  // the per-channel video streaming toggle, persisted; only meaningful while the server-wide switch is on. default on, so switching the server on lights every channel up and admins / temp channel owners switch single channels off
     boole is_video_stream_active;   // somebody streams in here right now (one stream per channel at a time)
     uint64 video_streamer_client_id;
@@ -547,14 +556,81 @@ typedef struct chat_message_entry_t
     uint64 receiver_id;
 } chat_message_entry_t;
 
-typedef struct tag_t
+typedef enum permission_t
+{
+    PERMISSION_CREATE_CHANNEL,
+    PERMISSION_CREATE_TEMP_CHANNEL,
+    PERMISSION_KICK,
+    PERMISSION_BAN,
+    PERMISSION_VIEW_STORED_USERS,
+    PERMISSION_VIEW_GROUP_PERMISSIONS,
+    PERMISSION_VIEW_GROUP_MEMBERS,
+    PERMISSION_CREATE_GROUPS,
+    PERMISSION_EDIT_GROUPS,
+    PERMISSION_DELETE_GROUPS,
+    PERMISSION_ASSIGN_GROUPS,
+    PERMISSION_REMOVE_GROUPS,
+    PERMISSION_EDIT_GROUP_PERMISSIONS,
+    PERMISSION_MANAGE_ICONS,
+    PERMISSION_VIEW_CLIENT_DETAILS,
+    PERMISSION_VIEW_SERVER_LOGS,
+    PERMISSION_VIEW_SERVER_INFO,
+    PERMISSION_SEND_OFFLINE_MESSAGES,
+    PERMISSION_RECEIVE_OFFLINE_MESSAGES,
+    PERMISSION_MESSAGE_IDLE_CLIENTS,
+    PERMISSION_CALL_IDLE_CLIENTS,
+    PERMISSION_COUNT
+} permission_t;
+
+enum
+{
+    PERMISSION_DEFAULT,
+    PERMISSION_DENY,
+    PERMISSION_GRANT
+};
+
+#define PERMISSION_POWER_MAX 1000U
+
+typedef enum permission_power_t
+{
+    PERMISSION_KICK_POWER,
+    PERMISSION_KICK_PROTECTION,
+    PERMISSION_BAN_POWER,
+    PERMISSION_BAN_PROTECTION,
+    PERMISSION_GROUP_MANAGEMENT_POWER,
+    PERMISSION_GROUP_PROTECTION,
+    PERMISSION_TALK_POWER,
+    PERMISSION_CHANNEL_MESSAGE_POWER,
+    PERMISSION_CHANNEL_PICTURE_POWER,
+    PERMISSION_STREAM_POWER,
+    PERMISSION_POWER_COUNT
+} permission_power_t;
+
+typedef struct group_permissions_t
+{
+    uint values[PERMISSION_COUNT];
+    uint powers[PERMISSION_POWER_COUNT];
+} group_permissions_t;
+
+typedef enum group_type_t
+{
+    GROUP_TYPE_NORMAL,
+    GROUP_TYPE_GUEST,
+    GROUP_TYPE_MODERATOR,
+    GROUP_TYPE_ADMIN
+} group_type_t;
+
+typedef struct group_t
 {
     boole is_existing;
     uint64 id;
     uint64 icon_id;
-    boole has_icon; // a tag may exist without a linked icon; icon_id is only meaningful when this is TRUE
-    char name[TAG_MAX_NAME_LENGTH];
-} tag_t;
+    group_type_t group_type;
+    boole is_default_guest;
+    boole has_icon; // a group may exist without a linked icon; icon_id is only meaningful when this is TRUE
+    char name[GROUP_MAX_NAME_LENGTH];
+    group_permissions_t permissions;
+} group_t;
 
 // one persisted ban. matching is by ip address; the rest (country/identity/extra data) is recorded for the admin
 typedef struct ban_entry_t
@@ -574,31 +650,30 @@ typedef struct icon_t
     char* base64; // heap (MEMALLOC_ICON), NUL-terminated data url; NULL while the slot is free
 } icon_t;
 
-// if someone wishes to use just chat without tags, make it possible to disable it
+// if someone wishes to use just chat without groups, make it possible to disable it
 
 // data of clients are linked to public keys.
 // just some metadata of clients, but this struct is not used right now
 typedef struct client_stored_data_t
 {
     char public_key[MAX_PUBLIC_KEY_LENGTH];
-    uint64 tag_ids[MAX_TAGS_FOR_SINGLE_CLIENT];
-    uint64 tag_id_count;
+    uint64 group_ids[MAX_GROUPS_FOR_SINGLE_CLIENT];
+    uint64 group_id_count;
     char username[USERNAME_MAX_LENGTH];
     char base64_avatar[MAX_CLIENT_AVATAR_LENGTH];
-    char alias[USERNAME_MAX_LENGTH];  // admin-registered display name for this identity; empty = none
     int64 last_seen_unix_seconds;  // when this identity was last connected; 0 = never recorded. only filled/served when is_last_seen_enabled is on
     char raw_public_key[MAX_PUBLIC_KEY_LENGTH];  // the ACTUAL rsa public key, not the hash in public_key above. only collected, persisted and served while is_offline_messaging_allowed is on - it is what lets a peer encrypt a message to this identity while it is offline. empty = not known (yet)
 } client_stored_data_t;
 
-// one text message waiting for a registered identity to come back. the payload is opaque to the
+// one text message waiting for a saved identity to come back. the payload is opaque to the
 // server: the sender encrypted it with the RECIPIENT's public key exactly like a normal direct
 // message, so queueing never gives the server anything readable
 typedef struct offline_chat_message_t
 {
     boole is_used;
-    char recipient_identity_hash[IDENTITY_HASH_MAX_LENGTH];  // routing key is the IDENTITY, never the alias - an admin may move an alias to another identity while this message waits
+    char recipient_identity_hash[IDENTITY_HASH_MAX_LENGTH];
     char sender_identity_hash[IDENTITY_HASH_MAX_LENGTH];
-    char sender_alias[USERNAME_MAX_LENGTH];  // what the recipient sees it came from
+    char sender_name[USERNAME_MAX_LENGTH];  // what the recipient sees it came from
     char* base64_encrypted_message;  // heap, MEMALLOC_OFFLINE_MESSAGE
     uint64 message_length;
     int64 queued_unix_seconds;

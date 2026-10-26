@@ -784,7 +784,7 @@ function workers__data_processing_worker_onmessage(e)
     else if (e.data.type == "mainthread__create_offline_chat_message")
     {
         // identical crypto to a direct message - the recipient is simply not connected,
-        // so it is addressed by their registered alias and the server stores the result
+        // so the request names their saved identity and the server stores the result
         // until they come back. the server sees the same opaque blob either way.
         let current_message_keys = [];
 
@@ -829,7 +829,7 @@ function workers__data_processing_worker_onmessage(e)
             message: {
                 type: "offline_chat_message",
                 value: JSON.stringify(message_data),
-                recipient_alias: e.data.recipient_alias
+                recipient_identity_hash: e.data.recipient_identity_hash
             }
         };
 
@@ -1354,6 +1354,14 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         {
             workers__post_to_main({ type: "data_processing_worker__" + msg.message.type, value: msg.message });
         }
+        else if (["server_emoji_list", "server_emoji_image", "server_emoji_added", "server_emoji_deleted", "server_emoji_error", "server_settings_saved"].includes(msg.message.type))
+        {
+            workers__post_to_main(
+            {
+                type: "data_processing_worker__server_emoji",
+                value: msg.message
+            });
+        }
         else if (msg.message.type == "admin_log")
         {
             workers__post_to_main({
@@ -1364,6 +1372,13 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         else if (msg.message.type == "url_resolved")
         {
             workers__post_to_main({ type: "data_processing_worker__url_resolved", value: msg.message });
+        }
+        else if (msg.message.type == "admin_status")
+        {
+            workers__post_to_main({
+                type: "data_processing_worker__admin_status",
+                value: msg.message
+            });
         }
         else if (msg.message.type == "server_policy")
         {
@@ -1402,10 +1417,18 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
-        else if (msg.message.type == "tag_list")
+        else if (msg.message.type == "group_permissions_changed")
+        {
+            workers__post_to_main(
+            {
+                type: "data_processing_worker__group_permissions_changed",
+                value: msg
+            });
+        }
+        else if (msg.message.type == "group_list")
         {
             workers__post_to_main({
-                type: "data_processing_worker__tag_list_from_server",
+                type: "data_processing_worker__group_list_from_server",
                 value: msg
             });
         }
@@ -1423,24 +1446,17 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
-        else if (msg.message.type == "tag_add_to_client")
+        else if (msg.message.type == "group_add_to_client")
         {
             workers__post_to_main({
-                type: "data_processing_worker__tag_add_to_client_from_server",
+                type: "data_processing_worker__group_add_to_client_from_server",
                 value: msg
             });
         }
-        else if (msg.message.type == "remove_tag_from_client")
+        else if (msg.message.type == "remove_group_from_client")
         {
             workers__post_to_main({
-                type: "data_processing_worker__remove_tag_from_client_from_server",
-                value: msg
-            });
-        }
-        else if (msg.message.type == "client_alias_changed")
-        {
-            workers__post_to_main({
-                type: "data_processing_worker__client_alias_changed_from_server",
+                type: "data_processing_worker__remove_group_from_client_from_server",
                 value: msg
             });
         }
@@ -1465,17 +1481,17 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
-        else if (msg.message.type == "tag_add")
+        else if (msg.message.type == "group_add")
         {
             workers__post_to_main({
-                type: "data_processing_worker__tag_add_from_server",
+                type: "data_processing_worker__group_add_from_server",
                 value: msg
             });
         }
-        else if (msg.message.type == "tag_delete")
+        else if (msg.message.type == "group_delete")
         {
             workers__post_to_main({
-                type: "data_processing_worker__tag_delete_from_server",
+                type: "data_processing_worker__group_delete_from_server",
                 value: msg
             });
         }
@@ -1486,10 +1502,10 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
-        else if (msg.message.type == "tag_icon_changed")
+        else if (msg.message.type == "group_icon_changed")
         {
             workers__post_to_main({
-                type: "data_processing_worker__tag_icon_changed_from_server",
+                type: "data_processing_worker__group_icon_changed_from_server",
                 value: msg
             });
         }

@@ -1,5 +1,6 @@
 // This file checks requests to create, edit, join or leave channels and to choose a new channel maintainer.
 #include "client_msg.h"
+#include "../../core/permissions.h"
 #include "../../core/channel.h"
 #include "../server/server_msg.h"
 #include "../../core/audio_channel.h"
@@ -11,6 +12,7 @@
 #include "../../clib/clib_string.h"
 #include "../../clib/clib_memory.h"
 #include "../../../third-party/rxi-log/log.h"
+#include "../../../third-party/eteran-cvector/cvector.h"
 
 // declarations
 static boole _client_msg_channel_internal__is_json_create_channel_request_valid(cJSON* json_root, uint64 client_id);
@@ -63,6 +65,13 @@ void client_msg__channel__process_set_icon(cJSON* json_root, uint64 sender_clien
 
     // lock order: clients -> channels -> icons
     clib__write_lock(&g_clients_global_rwlock_guard);
+    if (g_server_settings.is_permission_system_enabled == FALSE)
+    {
+        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "Server groups and icons are disabled.");
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
+
     clib__write_lock(&g_channels_global_rwlock_guard);
     clib__read_lock(&g_icons_global_rwlock_guard);
 
@@ -70,6 +79,7 @@ void client_msg__channel__process_set_icon(cJSON* json_root, uint64 sender_clien
 
     if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE || sender_client->is_admin == FALSE)
     {
+        server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
         goto label_client_msg__process_set_channel_icon_end;
     }
 
@@ -127,6 +137,10 @@ static boole _client_msg_channel_internal__is_json_create_channel_request_valid(
 
     // existence of "message" already checked before
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (channel__read_required_powers(json_message_object, NULL_POINTER) == FALSE)
+    {
+        return FALSE;
+    }
 
     // json_message_object exists, continue validating received json
     json_parent_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "parent_channel_id");
@@ -267,27 +281,23 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
         return;
     }
 
-    // decide whether this is a normal channel or a guest temp channel:
-    // - an admin always creates a normal channel
-    // - a non-admin creates a temp channel, but only when temp channels are enabled server-wide and the
-    // non-admin does not already own one (a temp channel is destroyed when its creator leaves it - see
-    // the join / disconnect / delete paths)
-    // - otherwise the request is refused: creating a normal channel is admin-only
+    // Keep the clients lock until creation finishes so group changes cannot alter this decision.
     is_channel_create_allowed = FALSE;
-    clib__read_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_clients_global_rwlock_guard);
     if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
     {
-        if (g_clients_array[sender_client_id].is_admin == TRUE)
+        if (permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_CREATE_CHANNEL) == TRUE)
         {
             is_channel_create_allowed = TRUE;
         }
-        else if (g_server_settings.is_temp_channel_creation_allowed == TRUE && g_clients_array[sender_client_id].is_temp_admin_channel == FALSE)
+        else if ((g_server_settings.is_permission_system_enabled == TRUE || g_server_settings.is_temp_channel_creation_allowed == TRUE)
+            && g_clients_array[sender_client_id].is_temp_admin_channel == FALSE
+            && permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_CREATE_TEMP_CHANNEL) == TRUE)
         {
             is_channel_create_allowed = TRUE;
             creating_temp_channel = TRUE;
         }
     }
-    clib__unlock(&g_clients_global_rwlock_guard);
 
     if (is_channel_create_allowed == TRUE)
     {
@@ -355,6 +365,11 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
                     is_password_used = (boole)(clib__utf8_string_length(json_channel_password->valuestring) > 0);
                     channel->is_using_password = is_password_used;
                     channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
+                    channel->required_talk_power = 0;
+                    channel->required_message_power = 0;
+                    channel->required_picture_power = 0;
+                    channel->required_stream_power = 0;
+                    channel__read_required_powers(json_message_object, channel);
                     // optional in the message (older clients never send it): a new channel streams unless told otherwise
                     json_is_video_stream_enabled = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_video_stream_enabled");
                     channel->is_video_stream_enabled = (boole)(cJSON_IsBool(json_is_video_stream_enabled) ? cJSON_IsTrue(json_is_video_stream_enabled) : TRUE);
@@ -391,20 +406,17 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
         {
             // announce the new channel to everyone first, so it exists in every client's UI before the
             // temp creator is moved into it below
-            clib__read_lock(&g_clients_global_rwlock_guard);
             clib__read_lock(&g_channels_global_rwlock_guard);
 
             server_msg__channel__send_create_message_to_all_clients(&g_channel_array[created_channel_index], &g_clients_array[channel_creator_client_id]);
 
             clib__unlock(&g_channels_global_rwlock_guard);
-            clib__unlock(&g_clients_global_rwlock_guard);
 
             // a temp channel: mark the creator as its admin/owner (so a second temp channel is refused, and
             // so the join / disconnect / delete paths know whose departure destroys it) and move them into
             // it right away, the same server-side way the delete path moves clients to root
             if (creating_temp_channel == TRUE)
             {
-                clib__write_lock(&g_clients_global_rwlock_guard);
                 clib__write_lock(&g_channels_global_rwlock_guard);
 
                 g_clients_array[channel_creator_client_id].is_temp_admin_channel = TRUE;
@@ -412,19 +424,18 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
                 channel__move_client_into_channel(channel_creator_client_id, created_channel_index);
 
                 clib__unlock(&g_channels_global_rwlock_guard);
-                clib__unlock(&g_clients_global_rwlock_guard);
+                server_msg__administration__send_permission_update_to_single_client(&g_clients_array[channel_creator_client_id]);
             }
         }
     }
     else
     {
-        clib__read_lock(&g_clients_global_rwlock_guard);
         if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
         {
             server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         }
-        clib__unlock(&g_clients_global_rwlock_guard);
     }
+    clib__unlock(&g_clients_global_rwlock_guard);
 }
 
 /**
@@ -450,6 +461,10 @@ static boole _client_msg_channel_internal__is_json_edit_channel_request_valid(cJ
 
     // existence of "message" already checked before
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    if (channel__read_required_powers(json_message_object, NULL_POINTER) == FALSE)
+    {
+        return FALSE;
+    }
 
     // json_message_object exists, continue validating received json
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
@@ -500,13 +515,13 @@ static boole _client_msg_channel_internal__is_json_edit_channel_request_valid(cJ
     }
 
     json_channel_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_password");
-    if (cJSON_IsString(json_channel_password) == FALSE)
+    if (json_channel_password != NULL_POINTER && cJSON_IsString(json_channel_password) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " cJSON_IsString(json_channel_password) \n");
         return FALSE;
     }
 
-    if (json_channel_password->valuestring == NULL_POINTER)
+    if (json_channel_password != NULL_POINTER && json_channel_password->valuestring == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_channel_password->valuestring == NULL \n");
         return FALSE;
@@ -535,12 +550,13 @@ static boole _client_msg_channel_internal__is_json_edit_channel_request_valid(cJ
         return FALSE;
     }
 
-    status = clib__utf8_string_length_check_max_length(json_channel_password->valuestring, 30);
-
-    if (status == -1)
+    if (json_channel_password != NULL_POINTER)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "clib__utf8_string_length_check_max_length(json_channel_password->valuestring, 30); \n");
-        return FALSE;
+        status = clib__utf8_string_length_check_max_length(json_channel_password->valuestring, 30);
+        if (status == -1)
+        {
+            return FALSE;
+        }
     }
 
     return TRUE;
@@ -594,7 +610,7 @@ void client_msg__channel__process_edit_request(cJSON* json_root, uint64 sender_c
     is_channel_edit_allowed = FALSE;
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
-    clib__read_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_clients_global_rwlock_guard);
     if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
     {
         if (g_clients_array[sender_client_id].is_admin == TRUE)
@@ -606,7 +622,6 @@ void client_msg__channel__process_edit_request(cJSON* json_root, uint64 sender_c
             is_channel_edit_allowed = TRUE;
         }
     }
-    clib__unlock(&g_clients_global_rwlock_guard);
 
     if (is_channel_edit_allowed == TRUE)
     {
@@ -629,22 +644,25 @@ void client_msg__channel__process_edit_request(cJSON* json_root, uint64 sender_c
         if (channel->is_existing == TRUE)
         {
             clib__null_memory(channel->name, CHANNEL_NAME_MAX_LENGTH);
-            clib__null_memory(channel->password, CHANNEL_PASSWORD_MAX_LENGTH);
             clib__null_memory(channel->description, CHANNEL_DESCRIPTION_MAX_LENGTH);
 
             clib__copy_memory(json_channel_name->valuestring, channel->name, clib__utf8_string_length(json_channel_name->valuestring), CHANNEL_NAME_MAX_LENGTH);
 
-            // the root channel must never carry a password: every client starts there on login,
-            // so one would lock the whole server out. its other properties are editable
-            if (channel->is_root_channel == FALSE && clib__utf8_string_length(json_channel_password->valuestring) > 0)
+            // Keep the password when the edit request does not include a replacement.
+            if (json_channel_password != NULL_POINTER || channel->is_root_channel == TRUE)
             {
-                util__hash_password_to_base64(json_channel_password->valuestring, channel->password, CHANNEL_PASSWORD_MAX_LENGTH);
+                clib__null_memory(channel->password, CHANNEL_PASSWORD_MAX_LENGTH);
+                is_password_used = (boole)(channel->is_root_channel == FALSE && json_channel_password != NULL_POINTER && clib__utf8_string_length(json_channel_password->valuestring) > 0);
+                if (is_password_used == TRUE)
+                {
+                    util__hash_password_to_base64(json_channel_password->valuestring, channel->password, CHANNEL_PASSWORD_MAX_LENGTH);
+                }
+                channel->is_using_password = is_password_used;
             }
             clib__copy_memory(json_channel_description->valuestring, channel->description, clib__utf8_string_length(json_channel_description->valuestring), CHANNEL_DESCRIPTION_MAX_LENGTH);
 
-            is_password_used = (boole)(channel->is_root_channel == FALSE && clib__utf8_string_length(json_channel_password->valuestring) > 0);
-            channel->is_using_password = is_password_used;
             channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
+            channel__read_required_powers(json_message_object, channel);
 
             // the video toggle is optional in the message (older clients never send it) and then keeps its
             // value. switching it off under a running stream ends that stream, after the locks below
@@ -680,38 +698,35 @@ void client_msg__channel__process_edit_request(cJSON* json_root, uint64 sender_c
         }
 
         clib__unlock(&g_channels_global_rwlock_guard);
+        audio_channel__apply_permission_changes();
+        video_channel__apply_permission_changes();
 
         // the toggle went off under a running stream: end it, with the write locks in lock order
         if (should_stop_video_stream == TRUE)
         {
-            clib__write_lock(&g_clients_global_rwlock_guard);
             clib__write_lock(&g_channels_global_rwlock_guard);
             video_channel__process_channel_toggle_changed(channel_index_to_edit);
             clib__unlock(&g_channels_global_rwlock_guard);
-            clib__unlock(&g_clients_global_rwlock_guard);
         }
 
         // channel edited successfully, acquire read lock for channels and clients
         if (is_channel_edited_successfully == TRUE)
         {
-            clib__read_lock(&g_clients_global_rwlock_guard);
             clib__read_lock(&g_channels_global_rwlock_guard);
 
             server_msg__channel__send_edit_message_to_all_clients(&g_channel_array[channel_index_to_edit], &g_clients_array[sender_client_id]);
 
             clib__unlock(&g_channels_global_rwlock_guard);
-            clib__unlock(&g_clients_global_rwlock_guard);
         }
     }
     else
     {
-        clib__read_lock(&g_clients_global_rwlock_guard);
         if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
         {
             server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         }
-        clib__unlock(&g_clients_global_rwlock_guard);
     }
+    clib__unlock(&g_clients_global_rwlock_guard);
 }
 
 /**
@@ -782,6 +797,7 @@ void client_msg__channel__process_join_request(cJSON* json_root, uint64 sender_c
     boole is_authenticated = FALSE;
     boole is_existing = FALSE;
     boole channel_join_announced = FALSE;
+    boole ownership_changed = FALSE;
 
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     if (status == FALSE)
@@ -855,6 +871,7 @@ void client_msg__channel__process_join_request(cJSON* json_root, uint64 sender_c
     {
         client_that_is_joining_channel->is_temp_admin_channel = FALSE;
         client_that_is_joining_channel->temp_channel_id = 0;
+        ownership_changed = TRUE;
         // This client may become root's maintainer when the temporary channel closes.
         server_msg__channel__send_join_message_to_all_clients(client_that_is_joining_channel, new_channel);
         channel_join_announced = TRUE;
@@ -884,6 +901,12 @@ void client_msg__channel__process_join_request(cJSON* json_root, uint64 sender_c
 
 client_msg__process_join_channel_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
+    audio_channel__apply_permission_changes();
+    video_channel__apply_permission_changes();
+    if (ownership_changed == TRUE)
+    {
+        server_msg__administration__send_permission_update_to_single_client(client_that_is_joining_channel);
+    }
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -952,6 +975,8 @@ void client_msg__channel__process_delete_request(cJSON* json_root, uint64 sender
     boole is_channel_delete_allowed = FALSE;
     uint64 marked_channel_index = 0;
     uint64 client_id = 0;
+    uint64* owners_to_update = NULL_POINTER;
+    uint64 owner_index = 0;
 
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     if (status == FALSE)
@@ -1041,6 +1066,7 @@ void client_msg__channel__process_delete_request(cJSON* json_root, uint64 sender
                 {
                     client_to_move_maybe->is_temp_admin_channel = FALSE;
                     client_to_move_maybe->temp_channel_id = 0;
+                    cvector_push_back(owners_to_update, client_id);
                 }
                 if (client_to_move_maybe->channel_id != channel_id_to_delete)
                 {
@@ -1104,6 +1130,13 @@ label_client_msg__process_delete_channel_request_end:
     memorymanager__free((nuint)channel_ids_to_delete);
 
     clib__unlock(&g_channels_global_rwlock_guard);
+    audio_channel__apply_permission_changes();
+    video_channel__apply_permission_changes();
+    for (owner_index = 0; owner_index < cvector_size(owners_to_update); owner_index++)
+    {
+        server_msg__administration__send_permission_update_to_single_client(&g_clients_array[owners_to_update[owner_index]]);
+    }
+    cvector_free(owners_to_update);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -1478,5 +1511,7 @@ void client_msg__channel__process_come_back_from_idle_mode_request(cJSON* json_r
 
 label_client_msg__process_come_back_from_idle_mode_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
+    audio_channel__apply_permission_changes();
+    video_channel__apply_permission_changes();
     clib__unlock(&g_clients_global_rwlock_guard);
 }

@@ -1,4 +1,5 @@
-// This file sends usernames, aliases, avatars, visible country codes and stored client information.
+// This file sends usernames, avatars, visible country codes and stored client information.
+#include "../../core/permissions.h"
 
 #include "server_msg.h"
 #include "../../base.h"
@@ -56,32 +57,6 @@ void server_msg__profile__send_client_rename_message_to_all_clients(client_t* su
     cJSON_Delete(root);
 }
 
-/**
- * @brief broadcasts "this client's alias changed" (with the alias text; empty = cleared) to all
- *        authenticated non-bot clients. must be called with the clients lock already held
- *        (like the tag-event broadcasts).
- *
- * @param client_t* subject -> the client whose identity just got the alias
- * @param char* alias -> the new alias text, empty or NULL when cleared
- *
- * @return void
- */
-void server_msg__profile__send_client_alias_changed_to_all_clients(client_t* subject, char* alias)
-{
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-
-    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
-
-    root = server_msg__delivery__new_message("client_alias_changed", &message);
-
-    cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
-    cJSON_AddStringToObject(message, "alias", (alias == NULL_POINTER) ? "" : alias);
-
-    server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
-
-    cJSON_Delete(root);
-}
 
 /**
  * @brief broadcasts the country code a client's row shows from now on, to all authenticated non-bot
@@ -91,7 +66,7 @@ void server_msg__profile__send_client_alias_changed_to_all_clients(client_t* sub
  *
  * @param client_t* subject -> the client whose shown code changed
  *
- * @note must be called with the clients lock already held (like the tag-event broadcasts)
+ * @note must be called with the clients lock already held (like the group-event broadcasts)
  *
  * @return void
  */
@@ -144,7 +119,7 @@ void server_msg__profile__send_admin_country_codes_to_all_clients(void)
  *
  * @param client_t* subject -> the client whose avatar was set or deleted
  *
- * @note must be called with the clients lock already held (like the tag-event broadcasts)
+ * @note must be called with the clients lock already held (like the group-event broadcasts)
  *
  * @return void
  */
@@ -194,24 +169,9 @@ void server_msg__profile__send_client_avatar_to_single_client(client_t* receiver
 }
 
 /**
- * @brief sends the stored-identity list to one client, so it can show the people registered on this
- *        server even while they are offline.
- *
- *        every entry carries the alias, the avatar and the tag ids. no identity hash and no username
- *        is sent: the alias is the only handle, and it is what the client pairs against a live client
- *        of the same alias. the raw public key is added on top only while is_offline_messaging_allowed is
- *        enabled, since that is what lets a peer encrypt to somebody who is not connected - it is
- *        public by definition, but it still only goes to registered requesters (the caller checked
- *        that). last_seen (unix seconds) is added only while is_last_seen_enabled is enabled, so nothing
- *        leaks while the setting is off. slots with no public key or no alias are skipped - they are
- *        free, or they have no name to show and nothing to pair on.
- *
- * @param client_t* receiver -> the client that receives the list
- *
- * @note the store is guarded by g_client_stored_data_mutex, taken here (a leaf lock), exactly like
- *       the identity serializer in base.c.
- *
- * @return void
+ * @brief Sends saved users' names, avatars and active group badges to a client with access to the list.
+ *        Public keys and last seen times are included only when their server settings are enabled.
+ * @param receiver -> client receiving the list while the caller holds the clients lock
  */
 void server_msg__profile__send_stored_clients_to_single_client(client_t* receiver)
 {
@@ -221,9 +181,17 @@ void server_msg__profile__send_stored_clients_to_single_client(client_t* receive
     cJSON* message = NULL_POINTER;
     cJSON* json_stored_clients = 0;
     cJSON* json_stored_client = 0;
-    cJSON* json_tag_ids = 0;
+    cJSON* json_group_ids = 0;
+    uint64 group_id = 0;
+    boole has_assigned_group = FALSE;
 
     if (receiver == NULL_POINTER)
+    {
+        return;
+    }
+
+    if (g_server_settings.is_identity_storage_enabled == FALSE || g_server_settings.is_stored_client_list_allowed == FALSE
+        || permissions__is_allowed(receiver, PERMISSION_VIEW_STORED_USERS) == FALSE)
     {
         return;
     }
@@ -231,24 +199,24 @@ void server_msg__profile__send_stored_clients_to_single_client(client_t* receive
     root = server_msg__delivery__new_message("stored_clients_list", &message);
     json_stored_clients = cJSON_CreateArray();
 
+    clib__read_lock(&g_groups_global_rwlock_guard);
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
-        if (g_client_stored_data[i].public_key[0] == 0 || g_client_stored_data[i].alias[0] == 0)
+        if (g_client_stored_data[i].public_key[0] == 0)
         {
-            continue; // free slot, or nothing to name and pair it by
+            continue;
         }
 
         json_stored_client = cJSON_CreateObject();
-        cJSON_AddStringToObject(json_stored_client, "alias", &g_client_stored_data[i].alias[0]);
+        cJSON_AddStringToObject(json_stored_client, "identity_hash", g_client_stored_data[i].public_key);
+        cJSON_AddStringToObject(json_stored_client, "username", g_client_stored_data[i].username);
         cJSON_AddStringToObject(json_stored_client, "base64_avatar", &g_client_stored_data[i].base64_avatar[0]);
 
-        // with offline messages on, registered peers also get this identity's public key: it is what
-        // lets them encrypt a message to somebody who is not connected. a public key is public by
-        // definition, but it is still only handed to REGISTERED requesters (the caller checked) and
-        // only while the feature is enabled
-        if (g_server_settings.is_offline_messaging_allowed == TRUE && g_client_stored_data[i].raw_public_key[0] != 0)
+        if (g_server_settings.is_offline_messaging_allowed == TRUE && g_client_stored_data[i].raw_public_key[0] != 0
+            && permissions__is_allowed_in_groups(receiver, PERMISSION_SEND_OFFLINE_MESSAGES) == TRUE
+            && permissions__is_stored_client_allowed(&g_client_stored_data[i], PERMISSION_RECEIVE_OFFLINE_MESSAGES) == TRUE)
         {
             cJSON_AddStringToObject(json_stored_client, "public_key", &g_client_stored_data[i].raw_public_key[0]);
         }
@@ -260,17 +228,30 @@ void server_msg__profile__send_stored_clients_to_single_client(client_t* receive
             cJSON_AddNumberToObject(json_stored_client, "last_seen", (double)g_client_stored_data[i].last_seen_unix_seconds);
         }
 
-        json_tag_ids = cJSON_CreateArray();
-        for (t = 0; t < g_client_stored_data[i].tag_id_count; t++)
+        json_group_ids = cJSON_CreateArray();
+        has_assigned_group = FALSE;
+        for (t = 0; g_server_settings.is_permission_system_enabled == TRUE && t < g_client_stored_data[i].group_id_count; t++)
         {
-            cJSON_AddItemToArray(json_tag_ids, cJSON_CreateNumber((double)g_client_stored_data[i].tag_ids[t]));
+            group_id = g_client_stored_data[i].group_ids[t];
+            if (group_id == g_guest_group_id || group_id >= MAX_GROUPS || g_groups_array[group_id].is_existing == FALSE)
+            {
+                continue;
+            }
+            cJSON_AddItemToArray(json_group_ids, cJSON_CreateNumber((double)group_id));
+            has_assigned_group = TRUE;
         }
-        cJSON_AddItemToObject(json_stored_client, "tag_ids", json_tag_ids);
+        if (g_server_settings.is_permission_system_enabled == TRUE && has_assigned_group == FALSE
+            && g_guest_group_id < MAX_GROUPS)
+        {
+            cJSON_AddItemToArray(json_group_ids, cJSON_CreateNumber((double)g_guest_group_id));
+        }
+        cJSON_AddItemToObject(json_stored_client, "group_ids", json_group_ids);
 
         cJSON_AddItemToArray(json_stored_clients, json_stored_client);
     }
 
     pthread_mutex_unlock(&g_client_stored_data_mutex);
+    clib__unlock(&g_groups_global_rwlock_guard);
 
     cJSON_AddItemToObject(message, "stored_clients", json_stored_clients);
 

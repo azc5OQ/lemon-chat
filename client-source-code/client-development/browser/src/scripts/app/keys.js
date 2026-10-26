@@ -255,7 +255,12 @@ function keys__decrypt_channel_contents(encrypted, picture)
             try
             {
                 parsed = JSON.parse(text);
-                if (parsed != null && typeof parsed.value === "string")
+                if (parsed != null && (typeof parsed.value === "string"
+                    || (parsed.type === "chat_reaction"
+                        && typeof parsed.message_id === "string"
+                        && /^[a-f0-9]{32}$/.test(parsed.message_id)
+                        && typeof parsed.emoji === "string"
+                        && typeof parsed.active === "boolean")))
                 {
                     return text;
                 }

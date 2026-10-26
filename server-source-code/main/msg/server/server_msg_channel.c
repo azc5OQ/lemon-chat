@@ -2,6 +2,7 @@
 
 #include "server_msg.h"
 #include "../../base.h"
+#include "../../core/channel.h"
 #include "../../util.h"
 #include "../../../third-party/rxi-log/log.h"
 
@@ -60,6 +61,7 @@ void server_msg__channel__send_list_to_single_client(client_t* receiver)
         cJSON_AddStringToObject(single_channel, "description", g_channel_array[i].description);
         cJSON_AddBoolToObject(single_channel, "is_using_password", g_channel_array[i].is_using_password);
         cJSON_AddBoolToObject(single_channel, "is_audio_enabled", g_channel_array[i].is_audio_enabled);
+        channel__write_required_powers(single_channel, &g_channel_array[i]);
         cJSON_AddBoolToObject(single_channel, "is_video_stream_enabled", g_channel_array[i].is_video_stream_enabled);
         cJSON_AddBoolToObject(single_channel, "is_root_channel", g_channel_array[i].is_root_channel);
         cJSON_AddBoolToObject(single_channel, "has_maintainer", g_channel_array[i].is_channel_maintainer_present);
@@ -132,6 +134,7 @@ void server_msg__channel__send_create_message_to_all_clients(channel_t* channel,
     cJSON_AddNumberToObject(message, "maintainer_id", channel->maintainer_id);
     cJSON_AddBoolToObject(message, "is_using_password", channel->is_using_password);
     cJSON_AddBoolToObject(message, "is_audio_enabled", channel->is_audio_enabled);
+    channel__write_required_powers(message, channel);
     cJSON_AddBoolToObject(message, "is_video_stream_enabled", channel->is_video_stream_enabled);
     cJSON_AddBoolToObject(message, "is_root_channel", channel->is_root_channel);
     cJSON_AddBoolToObject(message, "has_maintainer", channel->is_channel_maintainer_present);
@@ -171,6 +174,7 @@ void server_msg__channel__send_edit_message_to_all_clients(channel_t* channel, c
     cJSON_AddStringToObject(message, "channel_description", channel->description);
     cJSON_AddBoolToObject(message, "is_using_password", (cJSON_bool)channel->is_using_password);
     cJSON_AddBoolToObject(message, "is_audio_enabled", (cJSON_bool)channel->is_audio_enabled);
+    channel__write_required_powers(message, channel);
     cJSON_AddBoolToObject(message, "is_video_stream_enabled", (cJSON_bool)channel->is_video_stream_enabled);
     cJSON_AddBoolToObject(message, "is_client_limit_active", (cJSON_bool)channel->is_client_limit_active);
     cJSON_AddNumberToObject(message, "max_client_count", (double)channel->max_client_count);

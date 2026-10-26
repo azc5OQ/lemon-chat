@@ -158,7 +158,6 @@
     box-shadow: none;
     color: var(--set-muted, #bbb);
     font: 13px/1 sans-serif;
-    cursor: pointer;
 }
 
 #server-info-header .close-button::before
@@ -229,7 +228,6 @@
     background: var(--set-button-bg, #555);
     border: var(--set-button-border, 1px solid #888);
     padding: 5px 10px;
-    cursor: pointer;
 }
 
 .server-banner-actions

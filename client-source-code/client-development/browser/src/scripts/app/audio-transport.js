@@ -314,6 +314,7 @@ function audio_transport__restart_datachannel(reason)
  */
 function audio_transport__select_mode()
 {
+    audio_transport__apply_policy_to_ui();
     let previous = g_audio_transport.mode;
     let is_websocket_allowed = (g_server_policy.is_audio_over_websocket_allowed === true);
     let is_webrtc_allowed = (g_server_policy.is_audio_over_webrtc_allowed === true);
@@ -945,4 +946,18 @@ function audio_transport__decrypt_music_bot(bot, sender_id, counter_bytes, inner
         return { key_bytes: key, iv_bytes: null };
     });
     return keys__media_apply_inner_layers(layers, sender_id, counter_bytes, inner, false);
+}
+
+/**
+ * @brief Hides audio controls when the server disables audio without changing local preferences.
+ */
+function audio_transport__apply_policy_to_ui()
+{
+    if (!G_HAS_DOM || !document.body)
+    {
+        return;
+    }
+    document.body.classList.toggle("server-audio-disabled", !audio_transport__is_audio_on());
+    document.body.classList.toggle("server-voice-disabled", !g_server_policy.is_voice_chat_active);
+    document.body.classList.toggle("server-audio-video-disabled", !audio_transport__is_audio_on() && !g_server_policy.is_video_streaming_allowed);
 }

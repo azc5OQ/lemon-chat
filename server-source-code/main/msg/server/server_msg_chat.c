@@ -329,7 +329,8 @@ void server_msg__chat__send_queued_offline_messages_to_single_client(client_t* r
         root = server_msg__delivery__new_message("offline_chat_message", &message);
 
         cJSON_AddStringToObject(message, "value", g_offline_messages[next_slot].base64_encrypted_message);
-        cJSON_AddStringToObject(message, "sender_alias", &g_offline_messages[next_slot].sender_alias[0]);
+        cJSON_AddStringToObject(message, "sender_identity_hash", g_offline_messages[next_slot].sender_identity_hash);
+        cJSON_AddStringToObject(message, "sender_name", &g_offline_messages[next_slot].sender_name[0]);
         cJSON_AddNumberToObject(message, "queued_unix_seconds", (double)g_offline_messages[next_slot].queued_unix_seconds);
         cJSON_AddNumberToObject(message, "sequence_number", (double)g_offline_messages[next_slot].sequence_number);
 

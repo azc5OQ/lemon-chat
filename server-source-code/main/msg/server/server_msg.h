@@ -52,7 +52,6 @@ void server_msg__attachments__send_file_receive_completed_to_single_client(clien
 
 cstring server_msg__profile__country_code_to_send(client_t* client);
 void server_msg__profile__send_client_rename_message_to_all_clients(client_t* subject, char* new_username);
-void server_msg__profile__send_client_alias_changed_to_all_clients(client_t* subject, char* alias);
 void server_msg__profile__send_client_country_code_changed_to_all_clients(client_t* subject);
 void server_msg__profile__send_admin_country_codes_to_all_clients(void);
 void server_msg__profile__send_avatar_changed_event_to_all_clients(client_t* subject);
@@ -69,18 +68,22 @@ void server_msg__server_settings__send_policy_update_to_all_clients(void);
 
 void server_msg__administration__send_client_info_to_single_client(client_t* receiver, client_t* subject);
 void server_msg__administration__send_icon_list_to_single_client(client_t* receiver);
-void server_msg__administration__send_tag_list_to_single_client(client_t* receiver);
+void server_msg__administration__send_permission_update_to_single_client(client_t* receiver);
+void server_msg__administration__send_permission_updates_to_all_clients(void);
+void server_msg__administration__send_group_permissions_changed(uint64 group_id);
+void server_msg__administration__send_group_list_to_single_client(client_t* receiver);
+void server_msg__administration__send_admin_status_to_single_client(client_t* receiver);
 void server_msg__administration__send_identity_list_to_single_client(client_t* receiver);
 void server_msg__administration__send_force_admin_password_change_to_single_client(client_t* receiver);
 void server_msg__administration__send_access_denied_to_single_client(client_t* receiver, char* reason);
 void server_msg__administration__send_admin_log_to_single_client(client_t* receiver);
-void server_msg__administration__send_add_tag_to_client_event_to_all_clients(client_t* subject, uint64 tag_id);
-void server_msg__administration__send_remove_tag_from_client_event_to_all_clients(client_t* subject, uint64 tag_id);
+void server_msg__administration__send_add_group_to_client_event_to_all_clients(client_t* subject, uint64 group_id);
+void server_msg__administration__send_remove_group_from_client_event_to_all_clients(client_t* subject, uint64 group_id);
 void server_msg__administration__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char* icon_base64_value);
-void server_msg__administration__send_remove_tag_event_to_all_clients(uint64 tag_id);
+void server_msg__administration__send_remove_group_event_to_all_clients(uint64 group_id);
 void server_msg__administration__send_remove_icon_event_to_all_clients(uint64 icon_id);
-void server_msg__administration__send_tag_icon_changed_event_to_all_clients(uint64 tag_id, boole has_icon, uint64 icon_id);
-void server_msg__administration__send_create_new_tag_event_to_all_clients(uint64 tag_id, char* tag_name, uint64 tag_linked_icon_id, boole has_icon);
+void server_msg__administration__send_group_icon_changed_event_to_all_clients(uint64 group_id, boole has_icon, uint64 icon_id);
+void server_msg__administration__send_create_new_group_event_to_all_clients(uint64 group_id, char* group_name, uint64 group_linked_icon_id, boole has_icon);
 
 void server_msg__audio__send_active_microphone_usage_for_current_channel_to_single_client(client_t* receiver, uint64 channel_id);
 void server_msg__audio__send_datachannel_cooldown_to_single_client(client_t* receiver, uint64 seconds_left);
@@ -110,5 +113,12 @@ void server_msg__delivery__send_json_to_client(client_t* client, cJSON* json_roo
 void server_msg__delivery__send_json_to_all_clients(cJSON* json_root, client_t* except);
 void server_msg__delivery__send_text_to_channel(char* plaintext, uint64 channel_id, client_t* except, cstring receive_type);
 void server_msg__delivery__send_json_to_channel(cJSON* json_root, uint64 channel_id, client_t* except);
+
+void server_msg__emojis__send_list(client_t* receiver);
+void server_msg__emojis__send_image(client_t* receiver, cstring id);
+void server_msg__emojis__send_added(cstring id, cstring name);
+void server_msg__emojis__send_deleted(cstring id);
+void server_msg__emojis__send_error(client_t* receiver, cstring operation, cstring reason, cstring id);
+void server_msg__server_settings__send_saved(client_t* receiver, boole success);
 
 #endif

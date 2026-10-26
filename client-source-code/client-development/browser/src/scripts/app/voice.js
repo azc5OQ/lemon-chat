@@ -72,6 +72,12 @@ function voice__datachannel_retry_sleep(ms)
  */
 function voice__process_start_sending_audio()
 {
+    if (!groups__can_send_to_channel("talk", g_current_channel_id))
+    {
+        groups__notify_channel_power_denied("talk");
+        return;
+    }
+
     // a re-press inside the release hangover cancels the pending stop: the mic never
     // went down, so the early-outs below just keep the running capture untouched
     if (ptt_pending_stop_timer != null)

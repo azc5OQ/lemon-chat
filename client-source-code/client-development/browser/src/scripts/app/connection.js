@@ -761,6 +761,11 @@ function connection__try_start_fast_reconnect(reason)
 
     // the connect loop reads this flag; the page itself is left exactly as it is
     g_is_authenticated = false;
+    groups__apply_server_mode();
+    if (typeof server_emojis__reset === "function")
+    {
+        server_emojis__reset();
+    }
     g_should_connection_check_be_running = false;
     g_connection_check.last_response_timestamp = 0;
     g_worker_connection_ended = true;
@@ -830,9 +835,9 @@ function connection__fast_reconnect_succeeded()
 }
 
 /**
- * @brief holds back one of the four lists (channel, client, icon, tag) a resume refreshes, so they are applied together in one repaint and nothing on screen flickers
+ * @brief holds back one of the four lists (channel, client, icon, group) a resume refreshes, so they are applied together in one repaint and nothing on screen flickers
  *
- * @param string kind -> "channel", "client", "icon" or "tag"
+ * @param string kind -> "channel", "client", "icon" or "group"
  * @param object value -> the list message
  *
  * @return boolean true when the list was buffered, false when no resume is in progress
@@ -852,7 +857,8 @@ function connection__fast_reconnect_buffer_list(kind, value)
     g_fast_reconnect.pending_lists[kind] = value;
 
     if (g_fast_reconnect.pending_lists.channel != null && g_fast_reconnect.pending_lists.client != null
-        && g_fast_reconnect.pending_lists.icon != null && g_fast_reconnect.pending_lists.tag != null)
+        && (!g_server_policy.is_permission_system_enabled
+            || (g_fast_reconnect.pending_lists.icon != null && g_fast_reconnect.pending_lists.group != null)))
     {
         connection__fast_reconnect_apply_lists();
     }
@@ -861,7 +867,7 @@ function connection__fast_reconnect_buffer_list(kind, value)
 }
 
 /**
- * @brief applies the four refreshed lists in one task: the old lists go in the same task the new ones are built, one repaint, already complete
+ * @brief Replaces the saved lists after the server has sent every list enabled for this connection.
  *
  * @return void
  */
@@ -878,8 +884,10 @@ function connection__fast_reconnect_apply_lists()
     g_map_client_id_to_array_index.clear();
     g_client_list.length = 0;
     g_channel_list.length = 0;
-    g_tags.length = 0;
+    g_groups.length = 0;
     g_icons.length = 0;
+    g_icon_upload_queue.length = 0;
+    g_icon_upload_in_flight_base64 = null;
     g_is_client_list_retrieved = false;
     g_is_channel_list_retrieved = false;
 
@@ -891,8 +899,11 @@ function connection__fast_reconnect_apply_lists()
 
     server_msg.process_channel_list_from_server(lists.channel);
     server_msg.process_client_list_from_server(lists.client);
-    server_msg.process_icon_list_from_server(lists.icon);
-    server_msg.process_tag_list_from_server(lists.tag);
+    if (g_server_policy.is_permission_system_enabled)
+    {
+        server_msg.process_icon_list_from_server(lists.icon);
+        server_msg.process_group_list_from_server(lists.group);
+    }
 
     console.log("%cFAST RECONNECT HAPPENED - session resumed, lists refreshed, nothing was lost", "color: #00e000; font-weight: bold; font-size: 20px;");
     utils__custom_log("fast reconnect happened");
@@ -913,6 +924,11 @@ function connection__reset_chat_app_keep_identity()
         server_info__reset();
     }
     link_previews__reset();
+    g_is_local_client_admin = false;
+    g_server_policy.is_permission_system_enabled = true;
+    g_server_policy.is_stored_client_list_allowed = false;
+    groups_window.stored_users_allowed = null;
+    groups_window.access = null;
     g_server_policy.is_link_preview_allowed = false;
     g_server_policy.is_connection_check_enforced = true;
     // no connection, nobody is typing - drop the notices and the ticker with them
@@ -989,6 +1005,11 @@ function connection__reset_chat_app_keep_identity()
     g_stop_song_stream_message_received = false;
     g_selected_server_chat_message_id = null;
     g_is_authenticated = false;
+    groups__apply_server_mode();
+    if (typeof server_emojis__reset === "function")
+    {
+        server_emojis__reset();
+    }
     g_should_connection_check_be_running = false;
 
     // the avatar prefetch timer must not outlive the session - its client ids are meaningless
@@ -1002,6 +1023,7 @@ function connection__reset_chat_app_keep_identity()
     g_connection_check.lost_threshold_ms = 35 * 1000; // keep in sync with the startup value
     g_current_channel_id = 0;
     g_current_chat_context_id = "chat-context-channel-0";
+    chat_replies__refresh();
     g_chat_message_receiver_type = "channel";
     g_chat_message_receiver_id = "main";
     g_is_client_list_retrieved = false;
@@ -1015,7 +1037,9 @@ function connection__reset_chat_app_keep_identity()
     // emptied in place, not reassigned: a fresh array would leave anything still
     // holding the old one reading stale clients. the client list is already cleared above
     g_icons.length = 0;
-    g_tags.length = 0;
+    g_icon_upload_queue.length = 0;
+    g_icon_upload_in_flight_base64 = null;
+    g_groups.length = 0;
     g_channel_list.length = 0;
 
     g_offline_client_list = [];

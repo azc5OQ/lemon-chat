@@ -20,11 +20,11 @@
 #include <string.h>
 
 // When several locks are needed, take them in this order:
-// clients, WebRTC peers, channels, icons, tags, then bans.
+// clients, WebRTC peers, channels, icons, groups, then bans.
 custom_rwlock_t g_clients_global_rwlock_guard;
 custom_rwlock_t g_channels_global_rwlock_guard;
 custom_rwlock_t g_icons_global_rwlock_guard;
-custom_rwlock_t g_tags_global_rwlock_guard;
+custom_rwlock_t g_groups_global_rwlock_guard;
 custom_rwlock_t g_webrtc_peers_rwlock_guard;
 custom_rwlock_t g_bans_global_rwlock_guard;
 
@@ -34,7 +34,7 @@ uint64 g_chat_message_id;
 client_t* g_clients_array;
 channel_t* g_channel_array;
 icon_t* g_icons_array;
-tag_t* g_tags_array;
+group_t* g_groups_array;
 ban_entry_t* g_ban_array;
 server_settings_t g_server_settings;
 
@@ -507,6 +507,22 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     {
         client_msg__server_settings__process_info_request(json_root, client_index, websocket);
     }
+    else if (clib__is_string_equal(message_type, "load_server_emojis"))
+    {
+        client_msg__emojis__process_list(json_root, client_index, websocket);
+    }
+    else if (clib__is_string_equal(message_type, "load_server_emoji"))
+    {
+        client_msg__emojis__process_image(json_root, client_index, websocket);
+    }
+    else if (clib__is_string_equal(message_type, "upload_server_emoji"))
+    {
+        client_msg__emojis__process_upload(json_root, client_index, websocket);
+    }
+    else if (clib__is_string_equal(message_type, "delete_server_emoji"))
+    {
+        client_msg__emojis__process_delete(json_root, client_index, websocket);
+    }
     else if (clib__is_string_equal(message_type, "set_attachment_receive_preferences"))
     {
         client_msg__attachments__process_attachment_receive_preferences(json_root, client_index, websocket);
@@ -668,21 +684,13 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             {
                 client_msg__administration__process_change_admin_password_message(json_root, client_index);
             }
-            else if (clib__is_string_equal(message_type, "add_tag_to_client"))
+            else if (clib__is_string_equal(message_type, "add_group_to_client"))
             {
-                client_msg__administration__process_add_tag_to_client_message(json_root, client_index);
+                client_msg__administration__process_add_group_to_client_message(json_root, client_index);
             }
-            else if (clib__is_string_equal(message_type, "remove_tag_from_client"))
+            else if (clib__is_string_equal(message_type, "remove_group_from_client"))
             {
-                client_msg__administration__process_remove_tag_from_client_message(json_root, client_index);
-            }
-            else if (clib__is_string_equal(message_type, "set_alias_request"))
-            {
-                client_msg__profile__process_set_alias_request(json_root, client_index);
-            }
-            else if (clib__is_string_equal(message_type, "set_identity_alias_request"))
-            {
-                client_msg__profile__process_set_identity_alias_request(json_root, client_index);
+                client_msg__administration__process_remove_group_from_client_message(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "request_stored_clients"))
             {
@@ -692,13 +700,13 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             {
                 client_msg__administration__process_icon_upload(json_root, client_index);
             }
-            else if (clib__is_string_equal(message_type, "server_settings_add_new_tag"))
+            else if (clib__is_string_equal(message_type, "server_settings_add_new_group"))
             {
-                client_msg__administration__process_add_tag(json_root, client_index);
+                client_msg__administration__process_add_group(json_root, client_index);
             }
-            else if (clib__is_string_equal(message_type, "server_settings_delete_tag"))
+            else if (clib__is_string_equal(message_type, "server_settings_delete_group"))
             {
-                client_msg__administration__process_delete_tag(json_root, client_index);
+                client_msg__administration__process_delete_group(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "request_identity_list"))
             {
@@ -708,17 +716,29 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             {
                 client_msg__administration__process_delete_identity(json_root, client_index);
             }
-            else if (clib__is_string_equal(message_type, "modify_identity_tag"))
+            else if (clib__is_string_equal(message_type, "modify_identity_group"))
             {
-                client_msg__administration__process_modify_identity_tag(json_root, client_index);
+                client_msg__administration__process_modify_identity_group(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "server_settings_delete_icon"))
             {
                 client_msg__administration__process_delete_icon(json_root, client_index);
             }
-            else if (clib__is_string_equal(message_type, "server_settings_set_tag_icon"))
+            else if (clib__is_string_equal(message_type, "rename_group"))
             {
-                client_msg__administration__process_set_tag_icon(json_root, client_index);
+                client_msg__administration__process_rename_group(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "save_groups"))
+            {
+                client_msg__administration__process_save_groups(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "set_group_permissions"))
+            {
+                client_msg__administration__process_set_group_permissions(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "server_settings_set_group_icon"))
+            {
+                client_msg__administration__process_set_group_icon(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "set_channel_icon"))
             {

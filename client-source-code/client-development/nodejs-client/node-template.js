@@ -29,6 +29,9 @@
 // opus classes around it are only constructed from the worker entry points, which never run here
 /* @@INCLUDE: scripts/app/audio-opus-glue.js @@ */
 
+/* @@INCLUDE: scripts/app/image-upload.js @@ */
+/* @@INCLUDE: scripts/app/groups.js @@ */
+/* @@INCLUDE: scripts/app/server-emojis.js @@ */
 /* @@INCLUDE: scripts/app/messages.js @@ */
 // the chat file handlers in messages.js call into this (card markup, header/body crypto), and
 // node decrypts direct chat files itself, so it is part of the headless bundle too
@@ -40,6 +43,8 @@
 /* @@INCLUDE: scripts/app/keys.js @@ */
 /* @@INCLUDE: scripts/app/channel-tree.js @@ */
 /* @@INCLUDE: scripts/app/chat.js @@ */
+/* @@INCLUDE: scripts/app/chat-reactions.js @@ */
+/* @@INCLUDE: scripts/app/chat-replies.js @@ */
 /* @@INCLUDE: scripts/app/link-previews.js @@ */
 /* @@INCLUDE: scripts/app/layout.js @@ */
 /* @@INCLUDE: scripts/app/voice.js @@ */
