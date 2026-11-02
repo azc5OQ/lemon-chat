@@ -1,59 +1,48 @@
-# Desktop dependencies
+# Desktop client libraries
 
-Meek UI's library sources were updated from the upstream project on 2026-11-01. The copy
-contains `src`, `backends`, `cmake`, the upstream CMake file, README, and the
-Space Grotesk font with its license. Library sources are unchanged. Examples,
-test fixtures, build directories and caches are excluded. Upstream shader build
-helpers required by its CMake configuration are retained.
+The desktop client keeps the libraries it needs in this directory. This makes the
+build reproducible and avoids requiring a separately installed copy of each
+library. Keep every library's license when distributing the client.
 
-This revision adds owned text buffers, validated text replacement, measurement
-scroll preservation and stable style handles. Its
-[migration notes](meek-ui/docs/integration-updates.md) are included. Rebuild the
-desktop executable, `meek_ui.dll` and `lemon-overlay-d3d11.dll` together; the new
-node layout is incompatible with binaries built against the old headers.
+## Included libraries
 
-MinHook comes from that checkout's `examples/embedded_game_overlay/third_party`
-directory. Its source and license are retained unchanged. The Lemon overlay
-uses its D3D11 Present/ResizeBuffers hooks with Meek UI's embedded renderer;
-the example application's menus and input hooks are not included.
+- `meek-ui` draws the desktop interface and the game overlay. The bundled fonts
+  and their license are included with it.
+- `minhook` installs the Direct3D 11 hooks used by the optional Windows overlay.
+- `dave-g-json` provides cJSON for reading and writing protocol data.
+- `kokke-tiny-aes-c` provides the existing AES-256 CTR implementation.
+- `libopus-1.5.2` encodes and decodes voice audio.
+- `mbedtls-3.6.6` provides the cryptographic operations used by identities and
+  encrypted sessions.
+- `identity-keygen` contains the same public-key identity calculation used by the
+  browser client.
+- `miniaudio-0.11.26` opens microphones and speakers.
+- `libfvad` detects speech for voice activation. It does not provide WebRTC
+  networking.
 
-cJSON, tiny-AES-c, Opus 1.5.2 and Mbed TLS 3.6.6 are included here. Their sources
-were copied from `server-source-code/third-party` on 2026-11-01,
-including Lemon Chat's existing tiny-AES changes. The desktop builds its own
-shared libraries from these local copies; it does not require the server source
-directory. Keep these copies in sync when updating the server libraries.
+Some libraries are also used by the Lemon Chat server. Their local copies should
+be updated together when a shared implementation changes.
 
-- `dave-g-json/`: cJSON source and header; license in `cJSON-LICENSE.txt`.
-  Two unused includes of server-only headers were removed from `cJSON.c`;
-  its parser and allocation functions are unchanged.
-- `kokke-tiny-aes-c/`: the server's AES-256 CTR source and header.
-- `libopus-1.5.2/`: codec sources, headers, CMake support and licenses.
-- `mbedtls-3.6.6/`: library sources, headers and license. The desktop CMake target
-  selects the crypto primitives needed for identity and session encryption.
-- `identity-keygen/rsa_keygen.c`: the browser's existing deterministic identity
-  calculation, copied unchanged from `browser/client-webassemblies/rsa-keygen/src`.
-  The wrapper removes only WebAssembly export attributes for native compilation.
-  The identity passphrase, key size and resulting public key keep their existing
-  meaning; this is not a new identity format.
-- `miniaudio-0.11.26/`: the upstream single-header device library and license,
-  from <https://github.com/mackron/miniaudio/tree/0.11.26>. Its sources are
-  unchanged. The small `miniaudio.c` translation unit builds `lemon-audio` as
-  a shared library with file decoding, encoding, resource management and the
-  high-level engine disabled; Opus remains the chat codec. The SHA-256 of
-  `miniaudio.h` is `6b376c7fbb1352ba1e0e432ab66069b335ea9405e45cb6c30b97ef0f3c9c3e0e`.
+## Build and distribution
 
-Build output and caches are excluded. Upstream support files inside the copied
-codec source directories are retained; the desktop build does not run their tools.
-Application clib is not injected into these dependencies. WinHTTP on Windows
-and libcurl on Linux/macOS provide the platform WebSocket transport; libcurl
-development files must be installed on those platforms.
+CMake builds the required libraries with the desktop client. Build output and
+caches do not belong in this directory.
 
-`libfvad/` contains the unchanged WebRTC speech detector fork, including its BSD
-license, patent grant and upstream PCM fixtures. The exact revision and archive
-checksum are recorded in `libfvad-source.txt`. It builds as `lemon-vad`, a shared
-library used by the desktop audio worker. It does not add WebRTC networking.
+The packaged Windows client uses these shared libraries:
 
-The desktop window uses `meek_ui.dll`. The game module includes a private Meek UI
-embedded renderer inside `lemon-overlay-d3d11.dll`, so the game does not need to
-locate the desktop's UI DLL or load its window backend. Networking, Opus and AES
-remain outside the game process.
+- `meek_ui.dll` for the desktop window
+- `opus.dll` for voice encoding and decoding
+- `lemon-audio.dll` for microphone and speaker access
+- `lemon-vad.dll` for voice activation
+- `lemon-aes.dll`, `lemon-json.dll` and `lemon-crypto.dll` for encryption and
+  protocol data
+- `lemon-overlay-d3d11.dll` for the optional game overlay
+
+The overlay DLL contains its own small Meek UI renderer. Networking, encryption
+keys and audio processing stay in the desktop application.
+
+Windows uses WinHTTP for WebSocket connections. Linux and macOS use the system's
+libcurl development files with WebSocket support.
+
+Third-party source keeps its original coding style. Lemon Chat's application
+style rules apply only to code outside this directory.
