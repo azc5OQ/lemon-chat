@@ -143,6 +143,7 @@ void server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_cha
 void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_channel(client_t* subject)
 {
     uint64 i = 0;
+    char discard_counter[32] = {0};
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     client_t* client = 0;
@@ -152,6 +153,12 @@ void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_chan
     root = server_msg__delivery__new_message("stop_song_stream", &message);
 
     cJSON_AddNumberToObject(message, "client_id", subject->client_id);
+    if (subject->is_music_bot && subject->music_bot_client_extension.audio_keys != NULL_POINTER)
+    {
+        snprintf(discard_counter, sizeof(discard_counter), "%llu",
+            (unsigned long long)subject->music_bot_client_extension.audio_keys->packet_counter);
+        cJSON_AddStringToObject(message, "discard_audio_through_counter", discard_counter);
+    }
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {

@@ -16,6 +16,7 @@ typedef struct desktop_transport_status_t
 {
     desktop_transport_state_t state;
     boole finished;
+    boole certificate_rejected;
     uint64 messages_received;
     char detail[256];
     char last_type[64];

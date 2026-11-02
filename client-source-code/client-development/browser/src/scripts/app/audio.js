@@ -255,6 +255,11 @@ function audio__lemon_audio_worklet_scope()
                 {
                     event.data.port.onmessage = (pipe_event) =>
                     {
+                        if (pipe_event.data.type === "clear_sender")
+                        {
+                            this.playback_buffers.delete(pipe_event.data.sender_id);
+                            return;
+                        }
                         this.playback_buffer_write(pipe_event.data.id, pipe_event.data.pcm);
                     };
                     return;

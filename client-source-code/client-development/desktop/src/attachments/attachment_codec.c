@@ -1,6 +1,7 @@
 #include "attachments/attachments_internal.h"
 #include "attachments/attachment_file.h"
 #include "cJSON.h"
+#include "network/protocol.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/platform_util.h"
 #include <stdlib.h>
@@ -76,7 +77,7 @@ static cJSON* _attachment_codec_internal__parse(const char* text)
             return NULL;
         }
     }
-    return !quoted && !depth ? cJSON_ParseWithLengthOpts(text, index + 1, NULL, TRUE) : NULL;
+    return !quoted && !depth ? desktop_protocol__parse_json(text, index, DESKTOP_ATTACHMENT_WIRE_LIMIT, 4) : NULL;
 }
 
 /**
@@ -117,14 +118,19 @@ static char* _attachment_codec_internal__seal(desktop_attachment_record_t* recor
     cJSON* envelope = NULL;
     if (record->view.peer < 0)
     {
-        return desktop_crypto__attachment_encrypt(&record->keys, text, padding);
+        return record->view.picture ? desktop_crypto__picture_encrypt(crypto, &record->keys, text, padding)
+            : desktop_crypto__attachment_encrypt(&record->keys, text, padding);
     }
     if (desktop_crypto__content_keys(crypto, &keys))
     {
         keys_json = desktop_crypto__keys_json(&keys);
     }
     encrypted_keys = keys_json ? desktop_crypto__hybrid_encrypt(crypto, record->public_key, keys_json) : NULL;
-    encrypted_body = encrypted_keys ? desktop_crypto__attachment_encrypt(&keys, text, padding) : NULL;
+    if (encrypted_keys)
+    {
+        encrypted_body = record->view.picture ? desktop_crypto__picture_encrypt(crypto, &keys, text, padding)
+            : desktop_crypto__attachment_encrypt(&keys, text, padding);
+    }
     envelope = cJSON_CreateObject();
     if (envelope && encrypted_keys && encrypted_body && cJSON_AddStringToObject(envelope, "message_keys", encrypted_keys)
         && cJSON_AddStringToObject(envelope, "message_value", encrypted_body))

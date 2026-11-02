@@ -195,6 +195,14 @@ window
     gap: 12;
     background-color: #242a33;
 }
+#transport-warning
+{
+    size: 0x48;
+    pad: 6 10;
+    font-size: 12;
+    font-color: #ffe0a0;
+    background-color: #493c23;
+}
 #connection-status
 {
     size: 0x20;
@@ -758,6 +766,29 @@ checkbox:hover
     overflow-y: auto;
     background-color: #202630;
     border: 1px solid #9eabb8;
+}
+#identity-file-panel
+{
+    width: 620;
+    height: 570;
+    left: 295;
+    top: 70;
+}
+#identity-file-picker
+{
+    width: 100%;
+    height: 310;
+    overflow-y: auto;
+    background-color: #202630;
+    border: 1px solid #9eabb8;
+}
+.identity-actions, #identity-file-actions
+{
+    gap: 8;
+}
+.identity-actions button, #identity-file-actions button
+{
+    width: 120;
 }
 #chat-settings-panel
 {

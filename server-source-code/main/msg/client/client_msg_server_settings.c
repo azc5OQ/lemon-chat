@@ -23,15 +23,192 @@ static boole _client_msg_server_settings_internal__is_save_server_settings_reque
 static boole _client_msg_server_settings_internal__is_server_info_requester(uint64 sender_client_id, ws_cli_conn_t* socket);
 
 /**
- * @brief validates a save-server-settings request: it carries no payload beyond message.type,
- *        which the upstream envelope/type check already verified
+ * @brief Validates every supplied setting before any live policy is changed.
+ *        Omitted optional fields keep their existing values; malformed updates are rejected as a whole.
  *
  * @param cJSON* json_root -> the parsed client request
  *
- * @return boole -> always TRUE
+ * @return boole -> TRUE when every supplied setting has a supported type and value
  */
 static boole _client_msg_server_settings_internal__is_save_server_settings_request_valid(cJSON* json_root)
 {
+    boole status = FALSE;
+    boole status0 = FALSE;
+    static const char* boolean_fields[] =
+    {
+        "is_server_uptime_published",
+        "is_server_slots_published",
+        "is_server_banner_published",
+        "is_server_features_published",
+        "is_display_country_flags_active",
+        "is_voice_chat_active",
+        "is_music_bot_audio_active",
+        "is_video_streaming_active",
+        "is_hide_clients_in_password_protected_channels_active",
+        "is_typing_indicator_allowed",
+        "is_client_rename_allowed",
+        "is_link_preview_allowed",
+        "is_sending_text_to_idle_clients_allowed",
+        "is_private_messaging_allowed",
+        "is_temp_channel_creation_allowed",
+        "is_file_upload_allowed",
+        "is_chat_picture_allowed",
+        "is_same_ip_address_allowed",
+        "is_admin_country_flag_hidden",
+        "is_fast_reconnect_allowed",
+        "is_identity_takeover_allowed",
+        "is_websocket_ping_active",
+        "is_channel_key_reuse_enabled",
+        "is_channel_key_reuse_on_join_allowed",
+        "is_channel_key_reuse_on_leave_allowed",
+        "is_connection_check_enforced",
+        "is_music_bot_marquee_visible_to_everyone",
+        "is_minimum_rsa_key_bits_announced",
+        "is_country_blocking_active",
+        "is_logging_client_joins_enabled",
+        "is_logging_username_changes_enabled",
+        "is_logging_group_changes_enabled",
+        "is_logging_server_settings_updates_enabled",
+        "is_logging_kicks_and_bans_enabled",
+        "is_logging_client_disconnects_enabled",
+        "is_logging_socket_opens_and_closes_enabled",
+        "is_logging_failed_attempts_enabled",
+        "is_blocking_direct_chat_pictures_active",
+        "is_blocking_direct_chat_files_active",
+        "is_blocking_channel_chat_pictures_active",
+        "is_blocking_channel_chat_files_active",
+    };
+    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON* value = NULL_POINTER;
+    cJSON* country = NULL_POINTER;
+    int64 number = 0;
+    uint64 index = 0;
+    uint64 reserved_slots = 0;
+    char country_code[COUNTRY_ISO_CODE_LENGTH];
+
+    if (cJSON_IsObject(message) == FALSE)
+    {
+        return FALSE;
+    }
+    for (index = 0; index < sizeof(boolean_fields) / sizeof(boolean_fields[0]); index++)
+    {
+        value = cJSON_GetObjectItemCaseSensitive(message, boolean_fields[index]);
+        if (value != NULL_POINTER && cJSON_IsBool(value) == FALSE)
+        {
+            return FALSE;
+        }
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "avatar_max_size_kb");
+    if (value != NULL_POINTER && util__json_read_int64(value, 1, 90, &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "file_upload_max_size_mb");
+    if (value != NULL_POINTER && util__json_read_int64(value, 1, FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024), &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "chat_picture_max_size_mb");
+    if (value != NULL_POINTER && util__json_read_int64(value, 1, PICTURE_MAX_SIZE_BYTES / (1024 * 1024), &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "channel_key_reuse_join_min_clients");
+    if (value != NULL_POINTER && util__json_read_int64(value, 30, 1000000, &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "channel_key_reuse_leave_min_clients");
+    if (value != NULL_POINTER && util__json_read_int64(value, 30, 1000000, &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "max_concurrent_logins");
+    if (value != NULL_POINTER && util__json_read_int64(value, 1, 64, &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "webrtc_datachannel_cooldown_seconds");
+    if (value != NULL_POINTER && util__json_read_int64(value, 0, 86400, &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "icon_max_size_bytes");
+    if (value != NULL_POINTER && util__json_read_int64(value, 1000, 30000, &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "minimum_rsa_key_bits");
+    if (value != NULL_POINTER && util__json_read_int64(value, 2048, 8192, &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "admin_log_max_size_mb");
+    if (value != NULL_POINTER && util__json_read_int64(value, 1, ADMIN_LOG_MAX_SIZE_BYTES / (1024 * 1024), &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "admin_log_retention_days");
+    if (value != NULL_POINTER && util__json_read_int64(value, 1, ADMIN_LOG_MAX_RETENTION_DAYS, &number) == FALSE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "reserved_slots");
+    status0 = value != NULL_POINTER;
+    if (status0 == TRUE)
+    {
+        status0 = g_server_settings.max_client_count == 0;
+        if (status0 == FALSE)
+        {
+            status0 = util__json_read_uint64(value, g_server_settings.max_client_count - 1, &reserved_slots) == FALSE;
+        }
+    }
+    if (status0 == TRUE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "audio_connections");
+    status0 = value != NULL_POINTER;
+    if (status0 == TRUE)
+    {
+        status0 = cJSON_IsString(value) == FALSE;
+        if (status0 == FALSE)
+        {
+            status0 = value->valuestring == NULL_POINTER;
+        }
+        if (status0 == FALSE)
+        {
+            status0 = strcmp(value->valuestring, "both") != 0;
+            if (status0 == TRUE)
+            {
+                status0 = strcmp(value->valuestring, "websocket") != 0;
+            }
+            if (status0 == TRUE)
+            {
+                status0 = strcmp(value->valuestring, "webrtc") != 0;
+            }
+        }
+    }
+    if (status0 == TRUE)
+    {
+        return FALSE;
+    }
+    value = cJSON_GetObjectItemCaseSensitive(message, "blocked_countries");
+    if (value != NULL_POINTER)
+    {
+        if (cJSON_IsArray(value) == FALSE || cJSON_GetArraySize(value) > MAX_BLOCKED_COUNTRIES)
+        {
+            return FALSE;
+        }
+        cJSON_ArrayForEach(country, value)
+        {
+            status = util__normalize_country_code(country, country_code);
+            if (status == FALSE)
+            {
+                return FALSE;
+            }
+        }
+    }
     return TRUE;
 }
 
@@ -54,12 +231,28 @@ static boole _client_msg_server_settings_internal__is_save_server_settings_reque
  */
 void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status14 = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    boole status4 = FALSE;
+    boole status5 = FALSE;
+    boole status6 = FALSE;
+    boole status7 = FALSE;
+    boole status8 = FALSE;
+    boole status9 = FALSE;
+    boole status10 = FALSE;
+    boole status11 = FALSE;
+    boole status12 = FALSE;
+    boole status13 = FALSE;
     uint64 now;
     uint64 previous_reserved_slots = 0;
     uint64 i;
     boole status = FALSE;
     boole does_sender_have_permission_to_save_settings = FALSE;
     boole save_succeeded = FALSE;
+    server_settings_t previous_general_settings;
     boole previous_is_display_country_flags_active = FALSE;
     boole previous_voice_chat_active = FALSE;
     boole previous_is_audio_over_websocket_allowed = FALSE;
@@ -94,15 +287,15 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
     sender_username[0] = 0;
 
     status = _client_msg_server_settings_internal__is_save_server_settings_request_valid(json_root);
-    if (status == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__server_settings__process_save_request is not valid");
-        return;
-    }
-
     // Serialize permission checks, settings changes and persistence with other
     // admin saves and ban updates. Nested snapshot locks follow the normal order.
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status14 = base__is_current_client_request(sender_client_id);
+    if (status14 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     does_sender_have_permission_to_save_settings = base__is_client_valid_admin(sender_client_id);
     if (does_sender_have_permission_to_save_settings == TRUE)
     {
@@ -116,6 +309,16 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__server_settings__process_save_request sender with sender_client_id", sender_client_id, "does not have permission to save server settings");
         return;
     }
+
+    if (status == FALSE)
+    {
+        server_msg__server_settings__send_saved(&g_clients_array[sender_client_id], FALSE);
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
+
+    // Keep the complete old policy available for fields omitted by the legacy rollback below.
+    previous_general_settings = g_server_settings;
 
     // snapshot the current toggles so they can be rolled back if the persist fails
     previous_is_display_country_flags_active = g_server_settings.is_display_country_flags_active;
@@ -142,9 +345,15 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
     previous_reserved_slots = g_server_settings.reserved_slots;
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "reserved_slots");
-    if (cJSON_IsNumber(json_field) && json_field->valuedouble >= 0
-        && json_field->valuedouble < g_server_settings.max_client_count
-        && json_field->valuedouble == (double)(uint64)json_field->valuedouble)
+    status0 = (cJSON_IsNumber(json_field)) != FALSE;
+    if (status0 == TRUE)
+    {
+        status1 = json_field->valuedouble >= 0;
+        status2 = json_field->valuedouble < g_server_settings.max_client_count;
+        status3 = json_field->valuedouble == (double)(uint64)json_field->valuedouble;
+        status0 = status1 == TRUE && status2 == TRUE && status3 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         g_server_settings.reserved_slots = (uint64)json_field->valuedouble;
     }
@@ -274,7 +483,14 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
     }
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "avatar_max_size_kb");
-    if (cJSON_IsNumber(json_field) && json_field->valueint >= 1 && json_field->valueint <= 90)
+    status0 = (cJSON_IsNumber(json_field)) != FALSE;
+    if (status0 == TRUE)
+    {
+        status4 = json_field->valueint >= 1;
+        status5 = json_field->valueint <= 90;
+        status0 = status4 == TRUE && status5 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         g_server_settings.avatar_max_size_bytes = (int64)json_field->valueint * 1024;
     }
@@ -363,12 +579,26 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
         g_server_settings.is_channel_key_reuse_on_leave_allowed = cJSON_IsTrue(json_field);
     }
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_key_reuse_join_min_clients");
-    if (cJSON_IsNumber(json_field) && json_field->valuedouble >= 30 && json_field->valuedouble <= 1000000)
+    status0 = (cJSON_IsNumber(json_field)) != FALSE;
+    if (status0 == TRUE)
+    {
+        status6 = json_field->valuedouble >= 30;
+        status7 = json_field->valuedouble <= 1000000;
+        status0 = status6 == TRUE && status7 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         g_server_settings.channel_key_reuse_join_min_clients = (int64)json_field->valuedouble;
     }
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_key_reuse_leave_min_clients");
-    if (cJSON_IsNumber(json_field) && json_field->valuedouble >= 30 && json_field->valuedouble <= 1000000)
+    status0 = (cJSON_IsNumber(json_field)) != FALSE;
+    if (status0 == TRUE)
+    {
+        status8 = json_field->valuedouble >= 30;
+        status9 = json_field->valuedouble <= 1000000;
+        status0 = status8 == TRUE && status9 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         g_server_settings.channel_key_reuse_leave_min_clients = (int64)json_field->valuedouble;
     }
@@ -466,7 +696,8 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
                 break;
             }
 
-            if (util__normalize_country_code(json_country_entry, &g_server_settings.blocked_countries[g_server_settings.blocked_countries_count][0]) == TRUE)
+            status14 = util__normalize_country_code(json_country_entry, &g_server_settings.blocked_countries[g_server_settings.blocked_countries_count][0]);
+            if (status14 == TRUE)
             {
                 g_server_settings.blocked_countries_count++;
             }
@@ -607,11 +838,52 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
         g_server_settings.is_server_slots_published = previous_is_server_slots_published;
         g_server_settings.is_server_banner_published = previous_is_server_banner_published;
         g_server_settings.is_server_features_published = previous_is_server_features_published;
+        g_server_settings.is_typing_indicator_allowed = previous_general_settings.is_typing_indicator_allowed;
+        g_server_settings.is_client_rename_allowed = previous_general_settings.is_client_rename_allowed;
+        g_server_settings.is_link_preview_allowed = previous_general_settings.is_link_preview_allowed;
+        g_server_settings.is_sending_text_to_idle_clients_allowed = previous_general_settings.is_sending_text_to_idle_clients_allowed;
+        g_server_settings.is_private_messaging_allowed = previous_general_settings.is_private_messaging_allowed;
+        g_server_settings.is_file_upload_allowed = previous_general_settings.is_file_upload_allowed;
+        g_server_settings.file_upload_max_size_bytes = previous_general_settings.file_upload_max_size_bytes;
+        g_server_settings.is_chat_picture_allowed = previous_general_settings.is_chat_picture_allowed;
+        g_server_settings.chat_picture_max_size_bytes = previous_general_settings.chat_picture_max_size_bytes;
+        g_server_settings.is_same_ip_address_allowed = previous_general_settings.is_same_ip_address_allowed;
+        g_server_settings.is_admin_country_flag_hidden = previous_general_settings.is_admin_country_flag_hidden;
+        g_server_settings.is_fast_reconnect_allowed = previous_general_settings.is_fast_reconnect_allowed;
+        g_server_settings.is_identity_takeover_allowed = previous_general_settings.is_identity_takeover_allowed;
+        g_server_settings.is_websocket_ping_active = previous_general_settings.is_websocket_ping_active;
+        g_server_settings.webrtc_datachannel_cooldown_seconds = previous_general_settings.webrtc_datachannel_cooldown_seconds;
+        g_server_settings.icon_max_size_bytes = previous_general_settings.icon_max_size_bytes;
+        g_server_settings.is_music_bot_marquee_visible_to_everyone = previous_general_settings.is_music_bot_marquee_visible_to_everyone;
+        g_server_settings.minimum_rsa_key_bits = previous_general_settings.minimum_rsa_key_bits;
+        g_server_settings.is_minimum_rsa_key_bits_announced = previous_general_settings.is_minimum_rsa_key_bits_announced;
+        g_server_settings.is_country_blocking_active = previous_general_settings.is_country_blocking_active;
+        g_server_settings.blocked_countries_count = previous_general_settings.blocked_countries_count;
+        g_server_settings.is_logging_client_joins_enabled = previous_general_settings.is_logging_client_joins_enabled;
+        g_server_settings.is_logging_username_changes_enabled = previous_general_settings.is_logging_username_changes_enabled;
+        g_server_settings.is_logging_group_changes_enabled = previous_general_settings.is_logging_group_changes_enabled;
+        g_server_settings.is_logging_server_settings_updates_enabled = previous_general_settings.is_logging_server_settings_updates_enabled;
+        g_server_settings.is_logging_kicks_and_bans_enabled = previous_general_settings.is_logging_kicks_and_bans_enabled;
+        g_server_settings.is_logging_client_disconnects_enabled = previous_general_settings.is_logging_client_disconnects_enabled;
+        g_server_settings.is_logging_socket_opens_and_closes_enabled = previous_general_settings.is_logging_socket_opens_and_closes_enabled;
+        g_server_settings.is_logging_failed_attempts_enabled = previous_general_settings.is_logging_failed_attempts_enabled;
+        g_server_settings.admin_log_max_size_bytes = previous_general_settings.admin_log_max_size_bytes;
+        g_server_settings.admin_log_retention_days = previous_general_settings.admin_log_retention_days;
+        memcpy(g_server_settings.blocked_countries, previous_general_settings.blocked_countries, sizeof(g_server_settings.blocked_countries));
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__server_settings__process_save_request: save failed, rolled back the general-settings toggles");
     }
 
     // a connection switched off, or audio switched off, is ended for the clients that use it, before they learn the new policy
-    if (save_succeeded == TRUE && (previous_is_audio_over_websocket_allowed != g_server_settings.is_audio_over_websocket_allowed || previous_is_audio_over_webrtc_allowed != g_server_settings.is_audio_over_webrtc_allowed || previous_voice_chat_active != g_server_settings.is_voice_chat_active || previous_music_bot_audio_active != g_server_settings.is_music_bot_audio_active))
+    status0 = save_succeeded == TRUE;
+    if (status0 == TRUE)
+    {
+        status10 = previous_is_audio_over_websocket_allowed != g_server_settings.is_audio_over_websocket_allowed;
+        status11 = previous_is_audio_over_webrtc_allowed != g_server_settings.is_audio_over_webrtc_allowed;
+        status12 = previous_voice_chat_active != g_server_settings.is_voice_chat_active;
+        status13 = previous_music_bot_audio_active != g_server_settings.is_music_bot_audio_active;
+        status0 = status10 == TRUE || status11 == TRUE || status12 == TRUE || status13 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         audio_channel__apply_policy_change();
     }
@@ -662,7 +934,26 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
  */
 static boole _client_msg_server_settings_internal__is_server_info_requester(uint64 sender_client_id, ws_cli_conn_t* socket)
 {
-    return (boole)(sender_client_id < (uint64)g_server_settings.max_client_count && g_clients_array[sender_client_id].is_existing == TRUE && g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_music_bot == FALSE && g_clients_array[sender_client_id].p_ws_connection == socket);
+    boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+
+    status = base__is_current_client_request(sender_client_id) == TRUE;
+    if (status == TRUE)
+    {
+        status = sender_client_id < (uint64)g_server_settings.max_client_count;
+    }
+    if (status == TRUE)
+    {
+        status0 = g_clients_array[sender_client_id].is_existing == TRUE;
+        status1 = g_clients_array[sender_client_id].is_authenticated == TRUE;
+        status2 = g_clients_array[sender_client_id].is_music_bot == FALSE;
+        status3 = g_clients_array[sender_client_id].p_ws_connection == socket;
+        status = status0 == TRUE && status1 == TRUE && status2 == TRUE && status3 == TRUE;
+    }
+    return status;
 }
 
 /**
@@ -674,6 +965,7 @@ static boole _client_msg_server_settings_internal__is_server_info_requester(uint
  */
 void client_msg__server_settings__process_info_request(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket)
 {
+    boole status = FALSE;
     cJSON* message = NULL_POINTER;
     cJSON* json_include_banner = NULL_POINTER;
     boole include_banner = TRUE;
@@ -689,9 +981,11 @@ void client_msg__server_settings__process_info_request(cJSON* json_root, uint64 
         include_banner = (boole)cJSON_IsTrue(json_include_banner);
     }
     clib__read_lock(&g_clients_global_rwlock_guard);
-    if (_client_msg_server_settings_internal__is_server_info_requester(sender_client_id, socket) == TRUE)
+    status = _client_msg_server_settings_internal__is_server_info_requester(sender_client_id, socket);
+    if (status == TRUE)
     {
-        if (permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_VIEW_SERVER_INFO) == TRUE)
+        status = permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_VIEW_SERVER_INFO);
+        if (status == TRUE)
         {
             server_msg__server_settings__send_info_to_single_client(&g_clients_array[sender_client_id], include_banner, FALSE);
         }
@@ -712,6 +1006,7 @@ void client_msg__server_settings__process_info_request(cJSON* json_root, uint64 
  */
 void client_msg__server_settings__process_set_banner_request(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket)
 {
+    boole status = FALSE;
     cJSON* message = NULL_POINTER;
     cJSON* banner = NULL_POINTER;
     cstring error = "";
@@ -724,7 +1019,8 @@ void client_msg__server_settings__process_set_banner_request(cJSON* json_root, u
     message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     banner = cJSON_GetObjectItemCaseSensitive(message, "banner");
     clib__read_lock(&g_clients_global_rwlock_guard);
-    if (_client_msg_server_settings_internal__is_server_info_requester(sender_client_id, socket) == TRUE)
+    status = _client_msg_server_settings_internal__is_server_info_requester(sender_client_id, socket);
+    if (status == TRUE)
     {
         allowed = g_clients_array[sender_client_id].is_admin;
         if (allowed == FALSE)
@@ -763,7 +1059,8 @@ void client_msg__server_settings__process_set_banner_request(cJSON* json_root, u
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    if (_client_msg_server_settings_internal__is_server_info_requester(sender_client_id, socket) == TRUE)
+    status = _client_msg_server_settings_internal__is_server_info_requester(sender_client_id, socket);
+    if (status == TRUE)
     {
         if (g_clients_array[sender_client_id].is_admin == FALSE)
         {
@@ -818,6 +1115,7 @@ void client_msg__server_settings__process_set_banner_request(cJSON* json_root, u
  */
 void client_msg__server_settings__process_load_request(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
     boole status = FALSE;
     boole does_sender_have_permission_to_read_settings = FALSE;
 
@@ -830,6 +1128,12 @@ void client_msg__server_settings__process_load_request(cJSON* json_root, uint64 
 
     // the reply is sent under the clients read lock, which also covers reading the sender's slot
     clib__read_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(sender_client_id);
+    if (status0 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
 
     does_sender_have_permission_to_read_settings = base__is_client_valid_admin(sender_client_id);
     if (does_sender_have_permission_to_read_settings == TRUE)

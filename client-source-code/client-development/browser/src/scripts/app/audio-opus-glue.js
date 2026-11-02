@@ -1114,6 +1114,27 @@ function audio_opus_glue__opus_decoder_worker_interval_function()
 function audio_opus_glue__opus_decoder_worker_onmessage(event)
 {
     // voice frame: [4B sender client id][encrypted(2B sequence + opus)]
+    if (event.data.type === "discard_sender_audio")
+    {
+        const sender_id = event.data.sender_id;
+        const mapping = opus_decoder_sender_map.get(sender_id);
+        if (mapping != null)
+        {
+            opus_decoder_pool_free_indices.push(mapping.pool_index);
+            opus_decoder_sender_map.delete(sender_id);
+        }
+        const queue_index = opus_decoder_worker_current_channel_opus_client_ids.indexOf(sender_id);
+        if (queue_index >= 0)
+        {
+            opus_decoder_worker_clients_opus_data[queue_index] = [];
+        }
+        if (opus_decoder_direct_worklet_port != null)
+        {
+            // The reset shares the PCM pipe, so earlier decoded frames cannot arrive after it.
+            opus_decoder_direct_worklet_port.postMessage({ type: "clear_sender", sender_id: sender_id });
+        }
+        return;
+    }
     if (event.data.type == "mainthread__add_decrypted_data_to_opus_decoder")
     {
         // the main thread removed every encryption layer already (audio_transport__receive), for a member

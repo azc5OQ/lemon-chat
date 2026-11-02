@@ -241,24 +241,7 @@ void init_string_buffer(StringBuffer* sb)
 }
 
 /**
- * @brief resolves an IP address to its 2-character ISO country code through the local GeoIP database.
- *
- *        opens the dbip-country-lite-2025-06.mmdb file, looks the address up, dumps the matched entry
- *        data list into a StringBuffer as JSON, parses it with cJSON and copies the "country" object's
- *        "iso_code" string into the caller's buffer. every failure step - null address, open failure,
- *        lookup error, no entry found, missing or non-string iso_code - logs through DBG_IP_TOOLS and
- *        jumps to the common exit label, which closes the database and leaves the output buffer as the
- *        caller supplied it. when DEBUG_ASSIGN_RANDOM_COUNTRY_CODE is defined the lookup is skipped
- *        entirely and a random real ISO code from a fixed 20-entry table is written instead, so country
- *        flags still render during offline or LAN testing. see definitions.h.
- *
- * @param char* ip_address_to_resolve -> the IP address string to look up in the MMDB
- * @param char* out_memory_to_write_country_code_to -> buffer that receives the 2-character ISO country code
- *
- * @note the normal path copies exactly 2 bytes and does not null-terminate, the debug path writes 2
- *       characters plus a terminator, so the buffer must hold at least 3 bytes.
- *
- * @return void
+ * @brief Resolves an IP address to its country code. The output buffer needs 3 bytes.
  */
 void ip_tools_load_iso_country_code(char* ip_address_to_resolve, char* out_memory_to_write_country_code_to)
 {
@@ -295,17 +278,18 @@ void ip_tools_load_iso_country_code(char* ip_address_to_resolve, char* out_memor
     cJSON* json_message_object = 0;
     cJSON* json_country_iso_code = 0;
     char mmdb_file[] = "dbip-country-lite-2025-06.mmdb";
-    MMDB_s mmdb;
+    MMDB_s mmdb = {0};
     int status = 0;
     int gai_error = 0;
     int mmdb_error = 0;
     MMDB_lookup_result_s gresult;
     MMDB_entry_data_list_s* gdata = NULL_POINTER;
     int gstatus = 0;
-    StringBuffer sb;
+    boole is_database_open = FALSE;
+    StringBuffer sb = {0};
     char* json_mmdb_entry_data_list = 0;
 
-    if (ip_address_to_resolve == NULL_POINTER)
+    if (ip_address_to_resolve == NULL_POINTER || out_memory_to_write_country_code_to == NULL_POINTER)
     {
         DBG_IP_TOOLS log_info("%s", "ip_tools_load_iso_country_code char* ip_address_to_resolve is null pointer \n");
 
@@ -321,6 +305,8 @@ void ip_tools_load_iso_country_code(char* ip_address_to_resolve, char* out_memor
         DBG_IP_TOOLS log_info("%s", "_ip_tools__open_or_die__internal failed \n");
         goto label_ip_tools_load_iso_country_code_end;
     }
+
+    is_database_open = TRUE;
 
     // Perform the lookup in the MMDB
 
@@ -352,7 +338,7 @@ void ip_tools_load_iso_country_code(char* ip_address_to_resolve, char* out_memor
     if (gstatus != MMDB_SUCCESS)
     {
         DBG_IP_TOOLS log_info("%s", "gstatus != MMDB_SUCCESS \n");
-        MMDB_free_entry_data_list(gdata); // Clean up if getting the data fails
+        // The common exit releases any partial entry list.
         goto label_ip_tools_load_iso_country_code_end;
     }
 
@@ -368,6 +354,7 @@ void ip_tools_load_iso_country_code(char* ip_address_to_resolve, char* out_memor
 
     // Clean up the entry data list
     MMDB_free_entry_data_list(gdata);
+    gdata = NULL_POINTER;
 
     // Define the function that processes the entry data
 
@@ -413,14 +400,21 @@ void ip_tools_load_iso_country_code(char* ip_address_to_resolve, char* out_memor
 
     DBG_IP_TOOLS log_info("%s %s %s", "json_country_iso_code->valuestring ", json_country_iso_code->valuestring, "\n");
 
-    clib__copy_memory((void*)&json_country_iso_code->valuestring[0], (void*)out_memory_to_write_country_code_to, 2, 2);
-
-    cJSON_Delete(json_root_object1);
-    free_string_buffer(&sb);
+    if (clib__strlen(json_country_iso_code->valuestring) == 2)
+    {
+        clib__string_copy(out_memory_to_write_country_code_to, 3, json_country_iso_code->valuestring);
+    }
 
 label_ip_tools_load_iso_country_code_end:
-
-    MMDB_close(&mmdb);
-
+    cJSON_Delete(json_root_object1);
+    free_string_buffer(&sb);
+    if (gdata != NULL_POINTER)
+    {
+        MMDB_free_entry_data_list(gdata);
+    }
+    if (is_database_open == TRUE)
+    {
+        MMDB_close(&mmdb);
+    }
     return;
 }

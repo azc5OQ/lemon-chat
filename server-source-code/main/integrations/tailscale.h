@@ -1,7 +1,7 @@
 #ifndef TAILSCALE_H
 #define TAILSCALE_H
 
-#include "definitions.h"
+#include "../definitions.h"
 
 boole tailscale__configure(void);
 boole tailscale__is_available(void);

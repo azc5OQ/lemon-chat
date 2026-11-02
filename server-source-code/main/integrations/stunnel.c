@@ -1,11 +1,11 @@
 // This file starts the bundled stunnel program and renews its certificate when configured.
 #include "stunnel.h"
 #include <string.h>
-#include "util.h"
-#include "definitions.h"
-#include "base.h"
-#include "first_time_setup.h"
-#include "clib/clib.h"
+#include "../util.h"
+#include "../definitions.h"
+#include "../base.h"
+#include "../first_time_setup.h"
+#include "../clib/clib.h"
 #ifdef WIN32
 #include <windows.h>
 static HANDLE g_stunnel_job = NULL_POINTER;
@@ -14,6 +14,10 @@ static HANDLE g_stunnel_job = NULL_POINTER;
 #include <unistd.h> // fork, execl, access, readlink, _exit
 #include <dirent.h> // opendir / readdir (Let's Encrypt cert detection)
 #include <signal.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <time.h>
 #include <sys/wait.h> // waitpid (certbot)
 #include <sys/stat.h> // stat (certificate age for the days-of-validity-left estimate)
 #ifdef __linux__
@@ -22,6 +26,265 @@ static HANDLE g_stunnel_job = NULL_POINTER;
 #endif
 
 static int g_stunnel_pid = 0;
+
+#ifndef WIN32
+static int g_stunnel_owner_fd = -1;
+static pthread_mutex_t g_stunnel_owner_mutex = PTHREAD_MUTEX_INITIALIZER;
+static boole g_stunnel_exit_registered = FALSE;
+
+// Closing this pipe also works on non-Linux Unix: the supervisor sees EOF even
+// after a hard server exit and remains alive long enough to stop and reap stunnel.
+static void _stunnel_internal__release_owner(void)
+{
+    pthread_mutex_lock(&g_stunnel_owner_mutex);
+    if (g_stunnel_owner_fd >= 0)
+    {
+        close(g_stunnel_owner_fd);
+        g_stunnel_owner_fd = -1;
+    }
+    pthread_mutex_unlock(&g_stunnel_owner_mutex);
+}
+
+static pid_t _stunnel_internal__wait(pid_t child, int options)
+{
+    pid_t result;
+    do
+    {
+        result = waitpid(child, NULL_POINTER, options);
+    }
+    while (result < 0 && errno == EINTR);
+    return result;
+}
+
+static void* _stunnel_internal__reap_supervisor(void* argument)
+{
+    pid_t child = (pid_t)(intptr_t)argument;
+
+    _stunnel_internal__wait(child, 0);
+    pthread_mutex_lock(&g_stunnel_owner_mutex);
+    if (g_stunnel_pid == (int)child)
+    {
+        if (g_stunnel_owner_fd >= 0)
+        {
+            close(g_stunnel_owner_fd);
+            g_stunnel_owner_fd = -1;
+        }
+        g_stunnel_pid = 0;
+    }
+    pthread_mutex_unlock(&g_stunnel_owner_mutex);
+    return NULL_POINTER;
+}
+
+static boole _stunnel_internal__make_pipe(int descriptors[2])
+{
+    if (pipe(descriptors) != 0)
+    {
+        return FALSE;
+    }
+    if (fcntl(descriptors[0], F_SETFD, FD_CLOEXEC) < 0 || fcntl(descriptors[1], F_SETFD, FD_CLOEXEC) < 0)
+    {
+        close(descriptors[0]);
+        close(descriptors[1]);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static ssize_t _stunnel_internal__read_status(int descriptor, int* status)
+{
+    ssize_t result;
+    do
+    {
+        result = read(descriptor, status, sizeof(*status));
+    }
+    while (result < 0 && errno == EINTR);
+    return result;
+}
+
+// Runs only in the supervisor process. No application locks are used after fork.
+static void _stunnel_internal__supervise(const char* executable, const char* configuration, int owner, int started)
+{
+    int executed[2];
+    int error = 0;
+    pid_t child = -1;
+    pid_t supervisor = getpid();
+    ssize_t received;
+    struct pollfd owner_poll;
+    struct timespec pause = { 0, 25000000 };
+    int attempt;
+    int ready;
+    boole success = FALSE;
+
+    // A dead parent must not kill the supervisor while it reports startup.
+    signal(SIGPIPE, SIG_IGN);
+    success = _stunnel_internal__make_pipe(executed);
+    if (success == FALSE)
+    {
+        error = errno;
+        (void)write(started, &error, sizeof(error));
+        _exit(1);
+    }
+    child = fork();
+    if (child == 0)
+    {
+        close(executed[0]);
+        close(owner);
+        close(started);
+#ifdef __linux__
+        // Also stop the foreground child if its supervisor itself disappears.
+        if (prctl(PR_SET_PDEATHSIG, SIGTERM) < 0 || getppid() != supervisor)
+        {
+            error = ECHILD;
+            (void)write(executed[1], &error, sizeof(error));
+            _exit(127);
+        }
+#else
+        (void)supervisor;
+#endif
+        execl(executable, executable, configuration, (char*)NULL_POINTER);
+        error = errno;
+        (void)write(executed[1], &error, sizeof(error));
+        _exit(127);
+    }
+    close(executed[1]);
+    if (child < 0)
+    {
+        error = errno;
+        close(executed[0]);
+        (void)write(started, &error, sizeof(error));
+        _exit(1);
+    }
+    received = _stunnel_internal__read_status(executed[0], &error);
+    close(executed[0]);
+    if (received != 0)
+    {
+        error = error != 0 ? error : ECHILD;
+        (void)write(started, &error, sizeof(error));
+        kill(child, SIGKILL);
+        _stunnel_internal__wait(child, 0);
+        _exit(1);
+    }
+    if (_stunnel_internal__wait(child, WNOHANG) != 0)
+    {
+        error = ECHILD;
+        (void)write(started, &error, sizeof(error));
+        _exit(1);
+    }
+    error = 0;
+    (void)write(started, &error, sizeof(error));
+    close(started);
+    owner_poll.fd = owner;
+    owner_poll.events = POLLIN;
+    owner_poll.revents = 0;
+    for (;;)
+    {
+        if (_stunnel_internal__wait(child, WNOHANG) != 0)
+        {
+            close(owner);
+            _exit(0);
+        }
+        ready = poll(&owner_poll, 1, 250);
+        if (ready > 0 || (ready < 0 && errno != EINTR))
+        {
+            break;
+        }
+    }
+    close(owner);
+    kill(child, SIGTERM);
+    for (attempt = 0; attempt < 20; attempt++)
+    {
+        if (_stunnel_internal__wait(child, WNOHANG) != 0)
+        {
+            _exit(0);
+        }
+        nanosleep(&pause, NULL_POINTER);
+    }
+    kill(child, SIGKILL);
+    _stunnel_internal__wait(child, 0);
+    _exit(0);
+}
+
+static boole _stunnel_internal__launch_owned(const char* executable, const char* configuration)
+{
+    boole success = FALSE;
+    int owner[2];
+    int started[2];
+    int status = 0;
+    pid_t supervisor;
+    ssize_t received;
+
+    pthread_mutex_lock(&g_stunnel_owner_mutex);
+    if (g_stunnel_pid > 0)
+    {
+        pthread_mutex_unlock(&g_stunnel_owner_mutex);
+        return TRUE;
+    }
+    if (g_stunnel_exit_registered == FALSE)
+    {
+        if (atexit(_stunnel_internal__release_owner) != 0)
+        {
+            pthread_mutex_unlock(&g_stunnel_owner_mutex);
+            return FALSE;
+        }
+        g_stunnel_exit_registered = TRUE;
+    }
+    success = _stunnel_internal__make_pipe(owner);
+    if (success == FALSE)
+    {
+        pthread_mutex_unlock(&g_stunnel_owner_mutex);
+        return FALSE;
+    }
+    success = _stunnel_internal__make_pipe(started);
+    if (success == FALSE)
+    {
+        close(owner[0]);
+        close(owner[1]);
+        pthread_mutex_unlock(&g_stunnel_owner_mutex);
+        return FALSE;
+    }
+    supervisor = fork();
+    if (supervisor == 0)
+    {
+        close(owner[1]);
+        close(started[0]);
+        _stunnel_internal__supervise(executable, configuration, owner[0], started[1]);
+        _exit(1);
+    }
+    close(owner[0]);
+    close(started[1]);
+    if (supervisor < 0)
+    {
+        close(owner[1]);
+        close(started[0]);
+        pthread_mutex_unlock(&g_stunnel_owner_mutex);
+        return FALSE;
+    }
+    received = _stunnel_internal__read_status(started[0], &status);
+    close(started[0]);
+    if (received != sizeof(status) || status != 0)
+    {
+        close(owner[1]);
+        _stunnel_internal__wait(supervisor, 0);
+        pthread_mutex_unlock(&g_stunnel_owner_mutex);
+        return FALSE;
+    }
+    g_stunnel_pid = (int)supervisor;
+    g_stunnel_owner_fd = owner[1];
+    success = util__start_detached_thread(_stunnel_internal__reap_supervisor, (void*)(intptr_t)supervisor);
+    if (success == FALSE)
+    {
+        close(g_stunnel_owner_fd);
+        g_stunnel_owner_fd = -1;
+        _stunnel_internal__wait(supervisor, 0);
+        g_stunnel_pid = 0;
+        pthread_mutex_unlock(&g_stunnel_owner_mutex);
+        return FALSE;
+    }
+    pthread_mutex_unlock(&g_stunnel_owner_mutex);
+    return TRUE;
+}
+#endif
+
 
 // declarations
 #ifdef WIN32
@@ -157,10 +420,10 @@ static void _stunnel_internal__terminate_stale_stunnel(const char* pid_path)
 #endif
 
 /**
- * @brief runs "certbot renew" for the configured domain before anything binds port 80, so the same
- *        standalone challenge that issued the certificate can also renew it. certbot checks the
- *        expiry itself and only acts when the certificate has under 30 days of validity left, so on
- *        most startups this returns in about a second without contacting Let's Encrypt at all.
+ * @brief Runs Certbot renewal for the configured domain before the listeners start.
+ *
+ * Certbot decides whether renewal is needed. Running it before the listeners start
+ * leaves port 80 available for certificate validation.
  *
  * @attention failure is never fatal - the server keeps running with the existing certificate
  *
@@ -208,13 +471,15 @@ void stunnel__renew_certificate_if_due(void)
     char command_line[MAX_PATH + 600];
     DWORD found_length = 0;
     DWORD exit_code = 0;
+    boole success = FALSE;
 
     if (g_server_settings.is_stunnel_enabled == FALSE || g_server_settings.stunnel_domain[0] == 0 || (clib__strstr(g_server_settings.stunnel_cert_fullchain, "\\live\\") == NULL_POINTER && clib__strstr(g_server_settings.stunnel_cert_fullchain, "/live/") == NULL_POINTER))
     {
         return;
     }
 
-    if (_stunnel_internal__is_plain_domain(g_server_settings.stunnel_domain) == FALSE)
+    success = _stunnel_internal__is_plain_domain(g_server_settings.stunnel_domain);
+    if (success == FALSE)
     {
         printf("%s %s\n", g_mark_warn, "stunnel_domain holds characters other than letters, digits, dots and dashes - skipping the renewal check");
         return;
@@ -233,7 +498,8 @@ void stunnel__renew_certificate_if_due(void)
     clib__null_memory(command_line, sizeof(command_line));
     clib__string_format(command_line, sizeof(command_line), "\"%s\" renew --cert-name %s --non-interactive", certbot_path, g_server_settings.stunnel_domain);
 
-    if (_stunnel_internal__run_and_wait(command_line, 180000, &exit_code) == FALSE)
+    success = _stunnel_internal__run_and_wait(command_line, 180000, &exit_code);
+    if (success == FALSE)
     {
         printf("%s %s\n", g_mark_warn, "certbot could not be started - skipping the renewal check");
     }
@@ -248,7 +514,7 @@ void stunnel__renew_certificate_if_due(void)
  * @brief if wss is enabled, writes stunnel.conf next to the executable and launches
  *        the bundled stunnel so the server is reachable over wss as well as ws
  *
- * @attention the launched child is set to end with this server (PR_SET_PDEATHSIG)
+ * @attention On Unix a supervisor owns the foreground child and watches this server's lifetime.
  *
  * @return void
  */
@@ -258,14 +524,12 @@ void stunnel__launch(void)
     char exe_dir[600];
     char conf_path[700];
     char stunnel_path[700];
-    char kill_old_stunnel_command[800];
     FILE* conf_file = 0;
-    pid_t stunnel_pid = 0;
+    boole success = FALSE;
 
     clib__null_memory(exe_dir, sizeof(exe_dir));
     clib__null_memory(conf_path, sizeof(conf_path));
     clib__null_memory(stunnel_path, sizeof(stunnel_path));
-    clib__null_memory(kill_old_stunnel_command, sizeof(kill_old_stunnel_command));
 
     if (g_server_settings.is_stunnel_enabled != TRUE)
     {
@@ -286,6 +550,8 @@ void stunnel__launch(void)
         printf("%s%s%s", "could not write ", conf_path, "; stunnel not started\n");
         return;
     }
+    // Keep the process under its supervisor instead of daemonizing into a new PID.
+    fprintf(conf_file, "foreground = quiet\n\n");
     fprintf(conf_file, "[chatserver]\n");
     fprintf(conf_file, "accept = 0.0.0.0:%lld\n", g_server_settings.wss_port);
     fprintf(conf_file, "connect = 127.0.0.1:%lld\n", g_server_settings.websocket_port);
@@ -321,32 +587,16 @@ void stunnel__launch(void)
         return;
     }
 
-    // a previous run's stunnel may still hold the wss/https ports (e.g. the server was SIGKILLed so
-    // PR_SET_PDEATHSIG never fired); kill the one launched with this same conf, then let the ports free
-    clib__string_format(kill_old_stunnel_command, sizeof(kill_old_stunnel_command), "pkill -f '%s' 2>/dev/null", conf_path);
-    system(kill_old_stunnel_command);
-    usleep(300000);
-
-    stunnel_pid = fork();
-    if (stunnel_pid == 0)
+    success = _stunnel_internal__launch_owned(stunnel_path, conf_path);
+    if (success == TRUE)
     {
-#ifdef __linux__
-        // end with the parent server; Linux-only. on macOS/BSD the stale-stunnel pkill above
-        // handles a leftover from a hard kill
-        prctl(PR_SET_PDEATHSIG, SIGTERM);
-#endif
-        execl(stunnel_path, stunnel_path, conf_path, (char*)NULL_POINTER);
-        _exit(127); // exec failed
-    }
-    else if (stunnel_pid > 0)
-    {
-        g_stunnel_pid = (int)stunnel_pid;
-        printf("%s%d%s%lld%s%lld%s%s%s", "launched stunnel (pid ", g_stunnel_pid, "): wss 0.0.0.0:", g_server_settings.wss_port, " -> ws 127.0.0.1:", g_server_settings.websocket_port, " [domain ", g_server_settings.stunnel_domain, "]\n");
+        printf("%s%lld%s%lld%s%s%s", "launched supervised stunnel: wss 0.0.0.0:", g_server_settings.wss_port, " -> ws 127.0.0.1:", g_server_settings.websocket_port, " [domain ", g_server_settings.stunnel_domain, "]\n");
     }
     else
     {
-        printf("%s", "fork() failed; stunnel not started\n");
+        printf("%s", "stunnel process could not be started and supervised\n");
     }
+
 #else
     // windows: the console build tstunnel.exe is preferred (no tray icon, no window), the gui build
     // stunnel.exe otherwise. the child is placed in a job object that kills it when this process
@@ -489,5 +739,13 @@ void stunnel__launch(void)
  */
 boole stunnel__was_started(void)
 {
-    return g_stunnel_pid > 0;
+    boole started;
+#ifndef WIN32
+    pthread_mutex_lock(&g_stunnel_owner_mutex);
+#endif
+    started = g_stunnel_pid > 0;
+#ifndef WIN32
+    pthread_mutex_unlock(&g_stunnel_owner_mutex);
+#endif
+    return started;
 }

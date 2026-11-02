@@ -15,6 +15,7 @@ typedef struct transport_operation_t
     HANDLE written;
     HANDLE closed;
     volatile LONG error;
+    volatile LONG certificate_rejected;
     WINHTTP_WEB_SOCKET_STATUS received;
     boole registered;
 } transport_operation_t;
@@ -87,6 +88,16 @@ static void CALLBACK _transport_internal__callback(HINTERNET handle, DWORD_PTR c
         SetEvent(operation->ready);
         SetEvent(operation->written);
     }
+    else if (status == WINHTTP_CALLBACK_STATUS_SECURE_FAILURE && information && size == sizeof(DWORD))
+    {
+        if (*(const DWORD*)information & (WINHTTP_CALLBACK_STATUS_FLAG_CERT_REV_FAILED
+            | WINHTTP_CALLBACK_STATUS_FLAG_INVALID_CERT | WINHTTP_CALLBACK_STATUS_FLAG_CERT_REVOKED
+            | WINHTTP_CALLBACK_STATUS_FLAG_INVALID_CA | WINHTTP_CALLBACK_STATUS_FLAG_CERT_CN_INVALID
+            | WINHTTP_CALLBACK_STATUS_FLAG_CERT_DATE_INVALID | WINHTTP_CALLBACK_STATUS_FLAG_CERT_WRONG_USAGE))
+        {
+            InterlockedExchange(&operation->certificate_rejected, 1);
+        }
+    }
     else if (status == WINHTTP_CALLBACK_STATUS_READ_COMPLETE)
     {
         if (information && size == sizeof(operation->received))
@@ -136,7 +147,7 @@ static boole _transport_internal__register(HINTERNET handle, transport_operation
         return FALSE;
     }
     operation->registered = WinHttpSetStatusCallback(handle, _transport_internal__callback,
-        WINHTTP_CALLBACK_FLAG_ALL_COMPLETIONS | WINHTTP_CALLBACK_FLAG_HANDLES, 0) != WINHTTP_INVALID_STATUS_CALLBACK;
+        WINHTTP_CALLBACK_FLAG_ALL_COMPLETIONS | WINHTTP_CALLBACK_FLAG_HANDLES | WINHTTP_CALLBACK_FLAG_SECURE_FAILURE, 0) != WINHTTP_INVALID_STATUS_CALLBACK;
     return operation->registered;
 }
 
@@ -445,6 +456,13 @@ label_finished:
     }
     else
     {
+        EnterCriticalSection(&transport->lock);
+        transport->status.certificate_rejected = request_io.certificate_rejected != 0
+            || error == ERROR_WINHTTP_SECURE_INVALID_CA || error == ERROR_WINHTTP_SECURE_CERT_CN_INVALID
+            || error == ERROR_WINHTTP_SECURE_CERT_DATE_INVALID || error == ERROR_WINHTTP_SECURE_CERT_REV_FAILED
+            || error == ERROR_WINHTTP_SECURE_INVALID_CERT || error == ERROR_WINHTTP_SECURE_CERT_REVOKED
+            || error == ERROR_WINHTTP_SECURE_CERT_WRONG_USAGE;
+        LeaveCriticalSection(&transport->lock);
         clib__string_format(detail, sizeof(detail), "Connection failed (Windows error %lu).", (unsigned long)error);
         _transport_internal__status(transport, DESKTOP_TRANSPORT_FAILED, detail);
     }

@@ -50,6 +50,7 @@ static const desktop_client_t* _ui_window_internal__member(void);
 static void _ui_window_internal__member_controls(void);
 static void _ui_window_internal__show_member(void);
 static void _ui_window_internal__join_channel(int64 id);
+static void _ui_window_internal__transport_warning(void);
 
 // Selected clients and private conversations
 
@@ -379,6 +380,11 @@ static void _ui_window_internal__on_connect(gui_event_t* event)
         _ui_window_internal__set_text("login-result", "Enter a domain name or IP address and a port from 1 to 65535.");
         goto label_finished;
     }
+    if (connection.identity[0] && !desktop_ui_connection__identity_valid(connection.identity))
+    {
+        _ui_window_internal__set_text("login-result", "An identity must contain 199 to 512 printable characters. Leave it empty to create one.");
+        goto label_finished;
+    }
     connection.automatic_transport = TRUE;
     connection.key_bits = key_bits;
     if (!connection.identity[0] && !desktop_crypto__new_identity(connection.identity, sizeof(connection.identity)))
@@ -417,8 +423,8 @@ static void _ui_window_internal__on_connect(gui_event_t* event)
         _ui_window_internal__panel("connection-panel", 0);
     }
 label_finished:
-    clib__null_memory(&connection, sizeof(connection));
-    clib__null_memory(&settings, sizeof(settings));
+    desktop_memory__erase(&connection, sizeof(connection));
+    desktop_memory__erase(&settings, sizeof(settings));
 }
 
 /**
@@ -764,6 +770,7 @@ void desktop_ui_window__update(boole changed)
     // A local click can request a refresh even when no server message has arrived.
     if (changed || g_refresh)
     {
+        _ui_window_internal__transport_warning();
         desktop_ui_images__refresh(&g_view->attachments);
         _ui_window_internal__set_text("connection-status", g_view->detail);
         _ui_window_internal__set_text("login-result", g_view->detail);
@@ -791,6 +798,24 @@ void desktop_ui_window__update(boole changed)
     if (desktop_ui_tree__tick(!g_preview))
     {
         _ui_window_internal__request_render();
+    }
+}
+
+/**
+ * @brief keeps loss of TLS verification visible for the whole fallback connection.
+ * @return void
+ */
+static void _ui_window_internal__transport_warning(void)
+{
+    gui_node_t* warning = scene__find_by_id("transport-warning");
+    boole visible = g_view->connected && g_view->ws_fallback;
+    const char* text = g_view->tls_certificate_rejected
+        ? "Warning: TLS certificate verification failed; connected using WS.\nLemon Chat encryption remains active, but TLS does not verify this server's identity."
+        : "Warning: secure connection failed; connected using WS.\nLemon Chat encryption remains active, but this connection has no TLS protection.";
+    if (warning)
+    {
+        clib__string_copy(warning->klass, sizeof(warning->klass), visible ? "" : "hidden");
+        scene__set_text(warning, visible ? text : "", visible ? clib__strlen(text) : 0);
     }
 }
 

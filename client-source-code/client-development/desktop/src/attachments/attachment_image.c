@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include "mbedtls/platform_util.h"
 
-// Private instances of the unchanged decoders already vendored with Meek UI.
+// Private instances of the decoders already vendored with Meek UI.
 #define nuint meek_ui_nuint
 #define nint meek_ui_nint
 #define STB_IMAGE_STATIC
@@ -96,6 +96,10 @@ unsigned char* desktop_attachment_image__decode_bounded(const unsigned char* byt
     int64 y = 0;
     int64 source_x = 0;
     int64 source_y = 0;
+    if (!width || !height)
+    {
+        return NULL;
+    }
     *width = 0;
     *height = 0;
     if (!mime || size > DESKTOP_ATTACHMENT_IMAGE_LIMIT || maximum <= 0 || maximum > 8192 || preview_limit <= 0 || preview_limit > 1024)

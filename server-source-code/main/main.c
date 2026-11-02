@@ -1,7 +1,7 @@
 #include "chat_websocket.h"
 #include "core/identity_store.h"
-#include "stunnel.h"
-#include "tailscale.h"
+#include "integrations/stunnel.h"
+#include "integrations/tailscale.h"
 #include "util.h"
 #include "ip_tools.h"
 #include "definitions.h"
@@ -456,13 +456,11 @@ int lemon_server_main(void)
 int main(void)
 #endif
 {
+    boole status = FALSE;
     char input[50];
     char http_webroot_resolved[512];
     char client_html_path[640];
     FILE* client_html_file = 0;
-    pthread_t chat_listener_thread;
-    pthread_t connection_check_thread;
-    pthread_t stun_listener_thread;
 
     base__start_server_uptime();
 
@@ -493,11 +491,7 @@ int main(void)
     clib__rwlock_init(&g_icons_global_rwlock_guard);
     clib__rwlock_init(&g_bans_global_rwlock_guard);
 
-    if (pthread_mutex_init(&g_chat_message_id_mutex, NULL_POINTER))
-    {
-        log_info("%s", "pthread_rwlock_init chat_message_id_mutex init failed", 100, "\n");
-        exit(0);
-    }
+    // g_chat_message_id_mutex already uses PTHREAD_MUTEX_INITIALIZER in base.c.
 
     memorymanager__init();
 
@@ -597,7 +591,8 @@ int main(void)
     // launch stunnel (on the main thread) and print the startup summary BEFORE
     // any worker thread is started, so they cannot interleave on the console with thread log output
     stunnel__launch();
-    if (tailscale__configure() == FALSE && g_server_settings.is_tailscale_funnel_enabled == TRUE)
+    status = tailscale__configure();
+    if (status == FALSE && g_server_settings.is_tailscale_funnel_enabled == TRUE)
     {
         printf("%s Funnel is not verified. Forwarded client IP headers will be ignored.\n", g_mark_warn);
     }
@@ -610,8 +605,16 @@ int main(void)
     log_set_quiet(true);
 #endif
 
-    pthread_create(&chat_listener_thread, 0, chat_websocket__listen_thread, 0);
-    pthread_create(&connection_check_thread, 0, chat_websocket__check_connections_thread, 0);
+    status = util__start_detached_thread(chat_websocket__listen_thread, NULL_POINTER);
+    if (status == TRUE)
+    {
+        status = util__start_detached_thread(chat_websocket__check_connections_thread, NULL_POINTER);
+    }
+    if (status == FALSE)
+    {
+        fprintf(stderr, "Unable to start required chat workers.\n");
+        return EXIT_FAILURE;
+    }
 
     // http_server__start spawns its own thread and returns immediately (webroot already resolved above)
     if (g_server_settings.is_client_http_enabled == TRUE)
@@ -625,7 +628,12 @@ int main(void)
 
     // the STUN/TURN + webrtc datachannel listener is always started and kept up; is_voice_chat_active
     // only controls whether the server re-transmits audio between clients (gated in audio_channel.c)
-    pthread_create(&stun_listener_thread, 0, _main_internal__start_stun_turn_listener_for_webrtc_datachannel, 0);
+    status = util__start_detached_thread(_main_internal__start_stun_turn_listener_for_webrtc_datachannel, NULL_POINTER);
+    if (status == FALSE)
+    {
+        fprintf(stderr, "Unable to start the WebRTC setup worker.\n");
+        return EXIT_FAILURE;
+    }
 
     for (;;)
     {

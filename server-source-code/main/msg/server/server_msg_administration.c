@@ -24,6 +24,7 @@
  */
 void server_msg__administration__send_client_info_to_single_client(client_t* receiver, client_t* subject, cJSON* request)
 {
+    boole status = FALSE;
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     cJSON* request_id = cJSON_GetObjectItemCaseSensitive(request, "request_id");
@@ -48,14 +49,17 @@ void server_msg__administration__send_client_info_to_single_client(client_t* rec
     {
         cJSON_AddNumberToObject(message, "request_id", request_id->valuedouble);
     }
-    if (permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_CONNECTION_TIME) == TRUE)
+    status = permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_CONNECTION_TIME);
+    if (status == TRUE)
     {
         cJSON_AddNumberToObject(message, "connected_seconds", (double)connected_seconds);
     }
-    if (permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_DETAILS) == TRUE)
+    status = permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_DETAILS);
+    if (status == TRUE)
     {
         cJSON_AddNumberToObject(message, "last_action_seconds_ago", (double)last_action_seconds_ago);
-        if (permissions__is_allowed(receiver, PERMISSION_VIEW_IP_ADDRESSES) == TRUE)
+        status = permissions__is_allowed(receiver, PERMISSION_VIEW_IP_ADDRESSES);
+        if (status == TRUE)
         {
             cJSON_AddStringToObject(message, "ip_address", &subject->ip_address[0]);
         }
@@ -126,6 +130,7 @@ void server_msg__administration__send_icon_list_to_single_client(client_t* recei
  */
 void server_msg__administration__send_group_list_to_single_client(client_t* receiver)
 {
+    boole status = FALSE;
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     cJSON* json_groups_array = 0;
@@ -157,7 +162,8 @@ void server_msg__administration__send_group_list_to_single_client(client_t* rece
         cJSON_AddBoolToObject(single_group_id_object, "is_default_guest", g_groups_array[x].is_default_guest == TRUE);
         cJSON_AddNumberToObject(single_group_id_object, "group_linked_icon_id", (double)g_groups_array[x].icon_id);
         cJSON_AddItemToObject(single_group_id_object, "has_icon", cJSON_CreateBool(g_groups_array[x].has_icon == TRUE));
-        if (permissions__is_allowed_in_groups(receiver, PERMISSION_VIEW_GROUP_PERMISSIONS) == TRUE)
+        status = permissions__is_allowed_in_groups(receiver, PERMISSION_VIEW_GROUP_PERMISSIONS);
+        if (status == TRUE)
         {
             cJSON_AddItemToObject(single_group_id_object, "permissions", permissions__write(&g_groups_array[x].permissions));
         }
@@ -188,6 +194,7 @@ void server_msg__administration__send_group_list_to_single_client(client_t* rece
  */
 void server_msg__administration__send_identity_list_to_single_client(client_t* receiver)
 {
+    boole status = FALSE;
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     cJSON* json_identities_array = 0;
@@ -202,7 +209,8 @@ void server_msg__administration__send_identity_list_to_single_client(client_t* r
     uint64 t = 0;
     uint64 c = 0;
 
-    if (permissions__is_allowed(receiver, PERMISSION_VIEW_GROUP_MEMBERS) == FALSE)
+    status = permissions__is_allowed(receiver, PERMISSION_VIEW_GROUP_MEMBERS);
+    if (status == FALSE)
     {
         return;
     }
@@ -554,6 +562,7 @@ void server_msg__administration__send_create_new_group_event_to_all_clients(uint
  */
 void server_msg__administration__send_group_permissions_changed(uint64 group_id)
 {
+    boole status = FALSE;
     cJSON* message = NULL_POINTER;
     cJSON* root = server_msg__delivery__new_message("group_permissions_changed", &message);
 
@@ -563,7 +572,8 @@ void server_msg__administration__send_group_permissions_changed(uint64 group_id)
     cJSON_AddItemToObject(message, "permissions", permissions__write(&g_groups_array[group_id].permissions));
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
-        if (permissions__is_allowed_in_groups(&g_clients_array[i], PERMISSION_VIEW_GROUP_PERMISSIONS) == TRUE)
+        status = permissions__is_allowed_in_groups(&g_clients_array[i], PERMISSION_VIEW_GROUP_PERMISSIONS);
+        if (status == TRUE)
         {
             server_msg__delivery__send_json_to_client(&g_clients_array[i], root);
         }

@@ -34,6 +34,7 @@ void server_msg__server_settings__add_attachment_receive_policy(cJSON* message)
  */
 void server_msg__server_settings__send_to_single_client(client_t* receiver, boole memory_only)
 {
+    boole status = FALSE;
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     cJSON* json_bans = 0;
@@ -52,7 +53,8 @@ void server_msg__server_settings__send_to_single_client(client_t* receiver, bool
     cJSON_AddNumberToObject(message, "websocket_sent_bytes", (double)ws_get_sent_bytes());
     cJSON_AddNumberToObject(message, "webrtc_received_bytes", (double)webrtc_received);
     cJSON_AddNumberToObject(message, "webrtc_sent_bytes", (double)webrtc_sent);
-    if (util__get_process_ram_usage(&ram_bytes))
+    status = util__get_process_ram_usage(&ram_bytes);
+    if (status != FALSE)
     {
         cJSON_AddNumberToObject(message, "ram_bytes", (double)ram_bytes);
     }
@@ -251,11 +253,13 @@ static void _server_msg_server_settings_internal__add_server_info(cJSON* message
  */
 void server_msg__server_settings__send_info_to_single_client(client_t* receiver, boole include_banner, boole banner_changed)
 {
+    boole status = FALSE;
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
 
     root = server_msg__delivery__new_message("server_info", &message);
-    if (permissions__is_allowed(receiver, PERMISSION_VIEW_SERVER_INFO) == TRUE)
+    status = permissions__is_allowed(receiver, PERMISSION_VIEW_SERVER_INFO);
+    if (status == TRUE)
     {
         _server_msg_server_settings_internal__add_server_info(message, include_banner, banner_changed);
     }
@@ -275,6 +279,7 @@ void server_msg__server_settings__send_info_to_single_client(client_t* receiver,
  */
 void server_msg__server_settings__send_info_to_all_clients(boole banner_changed)
 {
+    boole status = FALSE;
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     uint64 i = 0;
@@ -283,7 +288,8 @@ void server_msg__server_settings__send_info_to_all_clients(boole banner_changed)
     _server_msg_server_settings_internal__add_server_info(message, FALSE, banner_changed);
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
-        if (permissions__is_allowed(&g_clients_array[i], PERMISSION_VIEW_SERVER_INFO) == TRUE)
+        status = permissions__is_allowed(&g_clients_array[i], PERMISSION_VIEW_SERVER_INFO);
+        if (status == TRUE)
         {
             server_msg__delivery__send_json_to_client(&g_clients_array[i], root);
         }

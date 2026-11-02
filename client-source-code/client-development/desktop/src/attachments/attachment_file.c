@@ -37,6 +37,10 @@ unsigned char* desktop_attachment_file__read(const char* path, uint64 limit, uin
     struct stat measured = {0};
     ssize_t received = 0;
 #endif
+    if (!size)
+    {
+        return NULL;
+    }
     *size = 0;
     if (!path || !path[0] || !limit)
     {
@@ -61,7 +65,7 @@ unsigned char* desktop_attachment_file__read(const char* path, uint64 limit, uin
     }
     length = (uint64)measured.st_size;
 #endif
-    if (length > limit)
+    if (length > limit || length > SIZE_MAX || length > INT64_MAX)
     {
         goto label_finished;
     }

@@ -530,9 +530,17 @@ int64 clib__divmod64(int64 numerator, int64 denominator, int64* remainder)
  */
 void clib__null_memory(void* dst, int64 count)
 {
-    if (dst)
+    volatile ubyte* bytes = (volatile ubyte*)dst;
+
+    if (bytes == NULL_POINTER || count <= 0)
     {
-        clib__memset(dst, 0, count);
+        return;
+    }
+    // Volatile stores keep clearing observable even when the allocation is freed next.
+    while (count > 0)
+    {
+        *bytes++ = 0;
+        count--;
     }
 }
 
@@ -800,10 +808,10 @@ const char* clib__strchr(const char* s, int ch)
 }
 
 /**
- * @brief copy at most `dst_cap` bytes from `src` into `dst`. Always null-terminates `dst` (provided dst_cap >= 1). Truncates if `src`
- * doesn't fit. Returns the number of source bytes that WOULD have been copied (not including the terminator), so callers can detect
- * truncation: `if (written >= dst_cap) { ... }`. This is the strlcpy contract -- safer than strncpy (which doesn't always terminate) and
- * safer than strcpy (no cap).
+ * @brief Copies a string into a bounded buffer and returns the source length.
+ *
+ * Copies at most dst_cap - 1 bytes and terminates a non-null destination when dst_cap > 0.
+ * A source length of at least dst_cap indicates truncation.
  *
  * @param char* dst
  * @param int64 dst_cap -> total bytes in dst (including terminator room).

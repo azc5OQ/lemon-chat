@@ -27,7 +27,7 @@ uint channel_groups__power(uint group_id, permission_power_t power);
 cstring channel_groups__power_name(permission_power_t power);
 boole channel_groups__can_assign(const client_t* actor, const client_t* target, const channel_t* channel, uint group_id);
 boole channel_groups__can_edit_definition(const client_t* actor, permission_t permission, const channel_group_t* previous, const channel_group_t* proposed);
-void channel_groups__load_catalog(cJSON* catalog);
+boole channel_groups__load_catalog(cJSON* catalog);
 cJSON* channel_groups__write_catalog(boole include_permissions);
 
 uint channel_groups__role(const client_t* client, const channel_t* channel);

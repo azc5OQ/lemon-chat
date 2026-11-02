@@ -52,7 +52,8 @@ void client_msg__connection__process_connection_check(cJSON* json_root, uint64 s
 {
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    if (g_clients_array[sender_client_id].is_authenticated == TRUE)
+    if (base__is_current_client_request(sender_client_id) == TRUE
+        && g_clients_array[sender_client_id].is_authenticated == TRUE)
     {
         g_clients_array[sender_client_id].timestamp_last_maintain_connection_message_received = util__get_timestamp_ms();
         server_msg__connection__send_connection_check_response_to_single_client(&g_clients_array[sender_client_id]);
@@ -257,13 +258,37 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
  */
 static int _client_msg_connection_internal__login_connection_is_valid(void* argument)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     pending_login_t* pending = argument;
-    int valid;
+    boole status = FALSE;
 
     clib__read_lock(&g_clients_global_rwlock_guard);
-    valid = pending->client_id < (uint64)g_server_settings.max_client_count && g_clients_array[pending->client_id].is_existing == TRUE && g_clients_array[pending->client_id].p_ws_connection == pending->socket && g_clients_array[pending->client_id].is_authenticated == FALSE && g_clients_array[pending->client_id].is_public_key_challenge_sent == FALSE && ws_get_state(pending->socket) == WS_STATE_OPEN && !base__is_server_ram_budget_reached();
+    status = base__is_current_client_request(pending->client_id) == TRUE;
+    if (status == TRUE)
+    {
+        status = pending->client_id < (uint64)g_server_settings.max_client_count;
+    }
+    if (status == TRUE)
+    {
+        status0 = g_clients_array[pending->client_id].is_existing == TRUE;
+        status1 = g_clients_array[pending->client_id].p_ws_connection == pending->socket;
+        status2 = g_clients_array[pending->client_id].is_authenticated == FALSE;
+        status3 = g_clients_array[pending->client_id].is_public_key_challenge_sent == FALSE;
+        status = status0 == TRUE && status1 == TRUE && status2 == TRUE && status3 == TRUE;
+    }
+    if (status == TRUE)
+    {
+        status = ws_get_state(pending->socket) == WS_STATE_OPEN;
+    }
+    if (status == TRUE)
+    {
+        status = base__is_server_ram_budget_reached() == FALSE;
+    }
     clib__unlock(&g_clients_global_rwlock_guard);
-    return valid;
+    return status;
 }
 
 /**
@@ -285,6 +310,24 @@ static int _client_msg_connection_internal__login_connection_is_valid(void* argu
  */
 void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket)
 {
+    boole status17 = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    boole status4 = FALSE;
+    boole status5 = FALSE;
+    boole status6 = FALSE;
+    boole status7 = FALSE;
+    boole status8 = FALSE;
+    boole status9 = FALSE;
+    boole status10 = FALSE;
+    boole status11 = FALSE;
+    boole status12 = FALSE;
+    boole status13 = FALSE;
+    boole status14 = FALSE;
+    boole status15 = FALSE;
+    boole status16 = FALSE;
     uint64 started_ms = util__get_timestamp_ms();
     uint64 crypto_started_ms = 0;
     uint64 crypto_finished_ms = 0;
@@ -323,8 +366,8 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     char* challenge_string = 0;
     char* challenge_value_for_client = 0;
 
-    char exponent_bits[DH_EXPONENT_BITS + 1];
-    unsigned char exponent_random_bytes[DH_EXPONENT_BITS / 8];
+    char exponent_bits[DH_EXPONENT_BITS + 1] = {0};
+    unsigned char exponent_random_bytes[DH_EXPONENT_BITS / 8] = {0};
     uint64 i = 0;
 
     // ──────────────────────────────────────────────────────────────────
@@ -347,7 +390,20 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     // Its queue wait has a separate deadline from the time allowed for login.
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    if (sender_client_id >= (uint64)g_server_settings.max_client_count || g_clients_array[sender_client_id].is_existing == FALSE || g_clients_array[sender_client_id].p_ws_connection != socket || g_clients_array[sender_client_id].is_authenticated == TRUE || g_clients_array[sender_client_id].is_public_key_challenge_sent == TRUE)
+    status0 = base__is_current_client_request(sender_client_id) == FALSE;
+    if (status0 == FALSE)
+    {
+        status0 = sender_client_id >= (uint64)g_server_settings.max_client_count;
+    }
+    if (status0 == FALSE)
+    {
+        status3 = g_clients_array[sender_client_id].is_existing == FALSE;
+        status4 = g_clients_array[sender_client_id].p_ws_connection != socket;
+        status5 = g_clients_array[sender_client_id].is_authenticated == TRUE;
+        status6 = g_clients_array[sender_client_id].is_public_key_challenge_sent == TRUE;
+        status0 = status3 == TRUE || status4 == TRUE || status5 == TRUE || status6 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -370,7 +426,20 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    if (g_clients_array[sender_client_id].is_existing == FALSE || g_clients_array[sender_client_id].p_ws_connection != socket || g_clients_array[sender_client_id].is_authenticated == TRUE || g_clients_array[sender_client_id].is_public_key_challenge_sent == TRUE || ws_get_state(socket) != WS_STATE_OPEN)
+    status0 = base__is_current_client_request(sender_client_id) == FALSE;
+    if (status0 == FALSE)
+    {
+        status7 = g_clients_array[sender_client_id].is_existing == FALSE;
+        status8 = g_clients_array[sender_client_id].p_ws_connection != socket;
+        status9 = g_clients_array[sender_client_id].is_authenticated == TRUE;
+        status10 = g_clients_array[sender_client_id].is_public_key_challenge_sent == TRUE;
+        status0 = status7 == TRUE || status8 == TRUE || status9 == TRUE || status10 == TRUE;
+    }
+    if (status0 == FALSE)
+    {
+        status0 = ws_get_state(socket) != WS_STATE_OPEN;
+    }
+    if (status0 == TRUE)
     {
         is_slot_changed = TRUE;
         clib__unlock(&g_clients_global_rwlock_guard);
@@ -402,7 +471,14 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
             if (is_too_weak == TRUE && is_unusable == FALSE && is_minimum_rsa_key_bits_announced == TRUE)
             {
                 clib__read_lock(&g_clients_global_rwlock_guard);
-                if (g_clients_array[sender_client_id].is_existing == TRUE && g_clients_array[sender_client_id].p_ws_connection == socket)
+                status0 = base__is_current_client_request(sender_client_id) == TRUE;
+                if (status0 == TRUE)
+                {
+                    status1 = g_clients_array[sender_client_id].is_existing == TRUE;
+                    status2 = g_clients_array[sender_client_id].p_ws_connection == socket;
+                    status0 = status1 == TRUE && status2 == TRUE;
+                }
+                if (status0 == TRUE)
                 {
                     server_msg__connection__send_rsa_key_too_weak_to_single_client(&g_clients_array[sender_client_id]);
                 }
@@ -448,7 +524,8 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     // first bit forced to 1 to guarantee the full length, the rest from a cryptographically secure
     // RNG. rand() must never be used here: it is a predictable PRNG seeded from the clock, so an
     // exponent built from it could be reconstructed by an attacker, breaking the key exchange.
-    if (util__fill_secure_random_bytes(exponent_random_bytes, sizeof(exponent_random_bytes)) == FALSE)
+    status17 = util__fill_secure_random_bytes(exponent_random_bytes, sizeof(exponent_random_bytes));
+    if (status17 == FALSE)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: failed to generate DH exponent randomness", sender_client_id);
         goto _label_client_msg__process_public_key_info_end;
@@ -556,7 +633,20 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     // ──────────────────────────────────────────────────────────────────
     crypto_finished_ms = util__get_timestamp_ms();
     clib__write_lock(&g_clients_global_rwlock_guard);
-    if (g_clients_array[sender_client_id].is_existing == FALSE || g_clients_array[sender_client_id].p_ws_connection != socket || g_clients_array[sender_client_id].is_authenticated == TRUE || g_clients_array[sender_client_id].is_public_key_challenge_sent == TRUE || ws_get_state(socket) != WS_STATE_OPEN)
+    status0 = base__is_current_client_request(sender_client_id) == FALSE;
+    if (status0 == FALSE)
+    {
+        status11 = g_clients_array[sender_client_id].is_existing == FALSE;
+        status12 = g_clients_array[sender_client_id].p_ws_connection != socket;
+        status13 = g_clients_array[sender_client_id].is_authenticated == TRUE;
+        status14 = g_clients_array[sender_client_id].is_public_key_challenge_sent == TRUE;
+        status0 = status11 == TRUE || status12 == TRUE || status13 == TRUE || status14 == TRUE;
+    }
+    if (status0 == FALSE)
+    {
+        status0 = ws_get_state(socket) != WS_STATE_OPEN;
+    }
+    if (status0 == TRUE)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: the slot changed hands during the key exchange, nothing stored", sender_client_id);
         is_slot_changed = TRUE;
@@ -589,13 +679,27 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     DBG_AUTHENTICATION log_info("[auth] client %llu: challenge stored, waiting for response", sender_client_id);
 
 _label_client_msg__process_public_key_info_end:
+    clib__null_memory(exponent_bits, sizeof(exponent_bits));
+    clib__null_memory(exponent_random_bytes, sizeof(exponent_random_bytes));
+    clib__null_memory(&media_send_counter, sizeof(media_send_counter));
     if (crypto_finished_ms == 0)
     {
         crypto_finished_ms = util__get_timestamp_ms();
     }
     DBG_CONNECTION_PROGRESS log_info("[connection] key exchange client=%llu ready=%d total_ms=%llu crypto_ms=%llu", (unsigned long long)sender_client_id, (int)!is_failed, (unsigned long long)(util__get_timestamp_ms() - started_ms), (unsigned long long)(crypto_started_ms == 0 ? 0 : crypto_finished_ms - crypto_started_ms));
     clib__write_lock(&g_clients_global_rwlock_guard);
-    if (sender_client_id < (uint64)g_server_settings.max_client_count && g_clients_array[sender_client_id].is_existing == TRUE && g_clients_array[sender_client_id].p_ws_connection == socket)
+    status0 = base__is_current_client_request(sender_client_id) == TRUE;
+    if (status0 == TRUE)
+    {
+        status0 = sender_client_id < (uint64)g_server_settings.max_client_count;
+    }
+    if (status0 == TRUE)
+    {
+        status15 = g_clients_array[sender_client_id].is_existing == TRUE;
+        status16 = g_clients_array[sender_client_id].p_ws_connection == socket;
+        status0 = status15 == TRUE && status16 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         g_clients_array[sender_client_id].is_waiting_for_login_slot = FALSE;
         if (is_failed == TRUE && is_slot_changed == FALSE)
@@ -623,6 +727,8 @@ _label_client_msg__process_public_key_info_end:
     }
     if (is_bignums_initialized == TRUE)
     {
+        clib__null_memory(bignum_server_exponent.dp, (int64)bignum_server_exponent.alloc * sizeof(mp_digit));
+        clib__null_memory(bignum_shared_secret.dp, (int64)bignum_shared_secret.alloc * sizeof(mp_digit));
         mp_clear_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int*)NULL_POINTER);
     }
     if (has_login_slot == TRUE)
@@ -747,6 +853,7 @@ static boole _client_msg_connection_internal__is_username_free_at_login(cstring 
  */
 static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON* json_root, uint64 client_index)
 {
+    boole status = FALSE;
     cJSON* json_message_object = 0;
     cJSON* json_chosen_username = 0;
     char candidate_username[USERNAME_MAX_LENGTH];
@@ -796,7 +903,8 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON* j
             }
         }
 
-        if (_client_msg_connection_internal__is_username_free_at_login(candidate_username, client_index) == TRUE)
+        status = _client_msg_connection_internal__is_username_free_at_login(candidate_username, client_index);
+        if (status == TRUE)
         {
             clib__null_memory(g_clients_array[client_index].username, USERNAME_MAX_LENGTH);
             clib__string_copy(g_clients_array[client_index].username, sizeof(g_clients_array[client_index].username), candidate_username);
@@ -819,7 +927,11 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON* j
  */
 void client_msg__connection__process_public_key_challenge_response(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status3 = FALSE;
     boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     char* received_challenge_string = 0;
     channel_t* resumed_channel = NULL_POINTER;
     client_t* current_client = NULL_POINTER;
@@ -840,12 +952,25 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
     status = _client_msg_connection_internal__is_public_key_challenge_response_valid(json_root, sender_client_id);
     if (status == FALSE)
     {
-        client_session__close_websocket_connection(sender_client_id, TRUE);
+        clib__write_lock(&g_clients_global_rwlock_guard);
+        status3 = base__is_current_client_request(sender_client_id);
+        if (status3 == TRUE)
+        {
+            client_session__close_websocket_connection(sender_client_id, FALSE);
+        }
+        clib__unlock(&g_clients_global_rwlock_guard);
         DBG_AUTHENTICATION log_info("%s %llu %s", "client_msg__connection__process_public_key_challenge_response deleting client because challenge response not valid: client index ", sender_client_id, " \n");
         return;
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    status3 = base__is_current_client_request(sender_client_id);
+    if (status3 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
 
     // client sends public key to server at the time of authentication
     // server generates random string, encrypts that string with the client's public key
@@ -877,7 +1002,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
 
         // identity ban: the ip check at socket open cannot see the key yet, so a banned identity
         // arriving from a new ip is caught here - the challenge just proved the client really holds it
-        if (server_admin__is_identity_banned(current_client->public_key) == TRUE)
+        status3 = server_admin__is_identity_banned(current_client->public_key);
+        if (status3 == TRUE)
         {
             log_info("%s %s %s", "join refused: banned identity (ip", current_client->ip_address, ") \n");
             server_logs__join_refused("banned identity", current_client->ip_address);
@@ -900,7 +1026,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
                 ip_tools_load_iso_country_code(current_client->ip_address, current_client->country_iso_code);
             }
 
-            if (server_admin__is_country_blocked(current_client->country_iso_code) == TRUE)
+            status3 = server_admin__is_country_blocked(current_client->country_iso_code);
+            if (status3 == TRUE)
             {
                 // an abrupt close with no explanation, by design - exactly what a wrong key gets
                 log_info("%s %s %s %s %s", "join refused: country", current_client->country_iso_code, "is blocked (ip", current_client->ip_address, ") \n");
@@ -952,7 +1079,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
             // the session already on this ip was this very identity (its earlier session, dropped just above)
             if (g_server_settings.is_same_ip_address_allowed == FALSE)
             {
-                if (client_session__is_there_another_authenticated_client_with_same_ip_address(sender_client_id, current_client->ip_address, current_client->public_key) == TRUE)
+                status3 = client_session__is_there_another_authenticated_client_with_same_ip_address(sender_client_id, current_client->ip_address, current_client->public_key);
+                if (status3 == TRUE)
                 {
                     log_info("%s %s %s", "join refused: another identity is already connected from ip", current_client->ip_address, "\n");
                     server_logs__join_refused("same ip already connected", current_client->ip_address);
@@ -962,7 +1090,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
             }
 
             // Use the requested name when it is available.
-            if (_client_msg_connection_internal__try_apply_chosen_username(json_root, sender_client_id) == FALSE)
+            status3 = _client_msg_connection_internal__try_apply_chosen_username(json_root, sender_client_id);
+            if (status3 == FALSE)
             {
                 status = client_session__assign_username_for_newly_joined_client(sender_client_id, g_server_settings.default_client_name);
 
@@ -1012,9 +1141,18 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
 
             permissions__refresh_guest_membership(current_client);
             channel_groups__refresh_locked(current_client);
-            if (!is_resumed_session && g_server_settings.is_permission_system_enabled
-                && g_server_settings.reserved_slots > 0
-                && !permissions__is_allowed_in_groups(current_client, PERMISSION_USE_RESERVED_SLOTS))
+            status0 = !is_resumed_session;
+            if (status0 == TRUE)
+            {
+                status1 = (g_server_settings.is_permission_system_enabled) != FALSE;
+                status2 = g_server_settings.reserved_slots > 0;
+                status0 = status1 == TRUE && status2 == TRUE;
+            }
+            if (status0 == TRUE)
+            {
+                status0 = !permissions__is_allowed_in_groups(current_client, PERMISSION_USE_RESERVED_SLOTS);
+            }
+            if (status0 == TRUE)
             {
                 for (slot = 0; slot < g_server_settings.max_client_count; slot++)
                 {
@@ -1068,7 +1206,16 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
 
             // hand over anything that was said to this identity while it was away, then forget it.
             // after the client list, so the receiving client already knows who everybody is
-            if (g_server_settings.is_offline_messaging_allowed == TRUE && permissions__is_allowed_in_groups(current_client, PERMISSION_RECEIVE_OFFLINE_MESSAGES) == TRUE && current_client->public_key[0] != 0)
+            status0 = g_server_settings.is_offline_messaging_allowed == TRUE;
+            if (status0 == TRUE)
+            {
+                status0 = permissions__is_allowed_in_groups(current_client, PERMISSION_RECEIVE_OFFLINE_MESSAGES) == TRUE;
+            }
+            if (status0 == TRUE)
+            {
+                status0 = current_client->public_key[0] != 0;
+            }
+            if (status0 == TRUE)
             {
                 server_msg__chat__send_queued_offline_messages_to_single_client(current_client);
             }

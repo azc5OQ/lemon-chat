@@ -4,6 +4,7 @@
 #include "platform/memory.h"
 #include "mbedtls/base64.h"
 #include <stdlib.h>
+#include <setjmp.h>
 
 typedef struct desktop_svg_allocation_t
 {
@@ -20,8 +21,11 @@ typedef struct desktop_svg_allocation_t
 static DESKTOP_TREE_LOCAL desktop_svg_allocation_t g_svg_allocations[2048];
 static DESKTOP_TREE_LOCAL uint64 g_svg_bytes;
 static DESKTOP_TREE_LOCAL boole g_svg_failed;
+static DESKTOP_TREE_LOCAL boole g_svg_active;
+static DESKTOP_TREE_LOCAL jmp_buf g_svg_abort;
 
 // declarations
+static void _tree_icons_internal__abort(void);
 static void* _tree_icons_internal__allocate(uint64 capacity);
 static void _tree_icons_internal__release(void* pointer);
 static void* _tree_icons_internal__resize(void* pointer, uint64 capacity);
@@ -47,6 +51,19 @@ static boole _tree_icons_internal__svg(char* source, unsigned char* pixels);
 #undef nuint
 
 /**
+ * @brief stops the private decoder before it can use a failed allocation.
+ * @return void
+ */
+static void _tree_icons_internal__abort(void)
+{
+    g_svg_failed = TRUE;
+    if (g_svg_active)
+    {
+        longjmp(g_svg_abort, 1);
+    }
+}
+
+/**
  * @brief bounds temporary SVG allocations and records their complete capacity for erasure.
  * @param uint64 capacity -> requested bytes from the vendor decoder
  * @return void* -> cleared allocation, or NULL when the 8 MiB budget is exhausted
@@ -57,7 +74,7 @@ static void* _tree_icons_internal__allocate(uint64 capacity)
     void* pointer = NULL;
     if (!capacity || capacity > 8 * 1024 * 1024 - g_svg_bytes)
     {
-        g_svg_failed = TRUE;
+        _tree_icons_internal__abort();
         return NULL;
     }
     for (index = 0; index < 2048; index++)
@@ -75,7 +92,7 @@ static void* _tree_icons_internal__allocate(uint64 capacity)
             break;
         }
     }
-    g_svg_failed = TRUE;
+    _tree_icons_internal__abort();
     return NULL;
 }
 
@@ -131,7 +148,7 @@ static void* _tree_icons_internal__resize(void* pointer, uint64 capacity)
             return replacement;
         }
     }
-    g_svg_failed = TRUE;
+    _tree_icons_internal__abort();
     return NULL;
 }
 
@@ -152,6 +169,12 @@ static boole _tree_icons_internal__svg(char* source, unsigned char* pixels)
     float scale = 0;
     boole valid = FALSE;
     g_svg_failed = FALSE;
+    g_svg_active = TRUE;
+    if (setjmp(g_svg_abort) != 0)
+    {
+        valid = FALSE;
+        goto label_finished;
+    }
     svg = nsvgParse(source, "px", 96);
     if (!svg || !(svg->width >= 1 && svg->width <= 4096 && svg->height >= 1 && svg->height <= 4096) || g_svg_failed)
     {
@@ -188,9 +211,8 @@ static boole _tree_icons_internal__svg(char* source, unsigned char* pixels)
         valid = !g_svg_failed;
     }
 label_finished:
-    nsvgDeleteRasterizer(raster);
-    nsvgDelete(svg);
-    // Includes allocations left behind by a vendor early return after an allocation failure.
+    g_svg_active = FALSE;
+    // Every decoder allocation is in this ledger, including incomplete objects after an abort.
     for (index = 0; index < 2048; index++)
     {
         _tree_icons_internal__release(g_svg_allocations[index].pointer);

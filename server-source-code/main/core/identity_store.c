@@ -55,10 +55,10 @@ boole identity_store__is_public_key_present_in_client_stored_data(char* public_k
 }
 
 /**
- * @brief restores a re-authenticated client's groups from the persisted identity store. the store is keyed by
- *        base64(SHA256(public_key)) so the settings file never holds the raw public key. the admin group
- *        (id 0) is restored like any other group and re-grants admin. only meaningful when identities are
- *        enabled; the caller checks that.
+ * @brief Restores a client's saved groups using the hash of its public key.
+ *        Restoring the admin group also restores admin access.
+ *
+ * @attention The caller must check that identity storage is enabled.
  *
  * @param client_t* client -> the freshly authenticated client whose groups should be restored
  *
@@ -213,14 +213,11 @@ void identity_store__snapshot_connected_clients_into_identity_store(void)
 }
 
 /**
- * @brief immediately mirrors ONE client's current groups into the in-memory identity store, so a
- *        reconnecting client gets its groups back within the same server run WITHOUT waiting for an
- *        admin "save server settings" (that save only adds disk persistence on top).
+ * @brief Copies a client's current groups to the identity store for later reconnects.
+ *        Saving settings separately persists the changes to disk.
  *
- *        called right after any group change on a client. if the client has groups they overwrite (or
- *        create) its store entry; if it now has zero groups its entry is cleared, so a fully-untagged
- *        identity is forgotten - unless the slot still holds an avatar or an offline messaging key, in which case only
- *        the groups are cleared. does nothing when identities are disabled.
+ * @details Does nothing when identity storage is disabled. Removing all groups keeps
+ *          an entry only when it still has an avatar or offline messaging key.
  *
  * @param client_t* client -> the client whose groups just changed
  *
@@ -231,6 +228,9 @@ void identity_store__snapshot_connected_clients_into_identity_store(void)
  */
 void identity_store__sync_client_identity_in_store(client_t* client)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
     uint64 group_count = 0;
     uint64 t = 0;
@@ -242,7 +242,15 @@ void identity_store__sync_client_identity_in_store(client_t* client)
         return;
     }
 
-    if (client == NULL_POINTER || client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
+    if (client == NULL_POINTER)
+    {
+        return;
+    }
+
+    status0 = client->is_existing;
+    status1 = client->is_authenticated;
+    status2 = (boole)(client->is_music_bot != TRUE);
+    if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
     {
         return;
     }
@@ -371,10 +379,11 @@ boole identity_store__delete_identity_from_store_by_hash(char* identity_hash)
 }
 
 /**
- * @brief stores (or replaces) an identity's avatar in the in-memory store, keyed by its
- *        base64(SHA256(public_key)) hash. creates an avatar-only slot if the identity has no entry
- *        yet. pass an empty/NULL base64_avatar to clear it (and drop the slot if it then holds
- *        neither groups nor an offline messaging key). the on-disk copy follows on the next settings save.
+ * @brief Stores or clears an identity's avatar by public-key hash.
+ *        Creates an entry when needed; changes reach disk on the next settings save.
+ *
+ * @details A null or empty avatar clears it and removes the entry if no groups or
+ *          offline messaging key remain.
  *
  * @param char* identity_hash -> base64(SHA256(public_key)) of the identity, the store's key
  * @param char* base64_avatar -> the base64 avatar to store, or NULL/empty to clear it
@@ -452,11 +461,9 @@ void identity_store__set_identity_avatar_by_hash(char* identity_hash, char* base
 
 
 /**
- * @brief stamps "this identity was connected just now" onto its stored entry, as a unix-seconds
- *        timestamp.
- *
- *        admin to have switched is_last_seen_enabled on; with either off no timestamp is ever recorded or
- *        served. like every stored-data write, the value reaches disk on the next settings save.
+ * @brief Updates a stored identity's last-seen time in Unix seconds.
+ *        Requires identity storage and last-seen recording to be enabled.
+ *        The timestamp reaches disk on the next settings save.
  *
  * @param char* identity_hash -> base64 hash of the client's public key
  *
@@ -491,10 +498,9 @@ void identity_store__touch_identity_last_seen_by_hash(char* identity_hash)
 }
 
 /**
- * @brief remembers an identity's RAW rsa public key, so peers can encrypt to it while its owner is
- *        offline. only does anything while is_offline_messaging_allowed is on - with the feature off the
- *        server keeps nothing but the hash, exactly as before. creates the slot if the identity has
- *        none yet (a first-time visitor with no groups or an avatar).
+ * @brief Stores an identity's RSA public key so peers can send it offline messages.
+ *        Requires identity storage and offline messaging to be enabled.
+ *        Creates an entry if the identity has none.
  *
  * @param char* identity_hash -> base64 hash of the public key (the store's key)
  * @param char* raw_public_key -> the public key itself
@@ -503,6 +509,8 @@ void identity_store__touch_identity_last_seen_by_hash(char* identity_hash)
  */
 void identity_store__store_identity_raw_public_key(char* identity_hash, char* raw_public_key)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
     uint64 i = 0;
     int64 slot = -1;
 
@@ -511,7 +519,9 @@ void identity_store__store_identity_raw_public_key(char* identity_hash, char* ra
         return;
     }
 
-    if (identity_hash == NULL_POINTER || identity_hash[0] == 0 || raw_public_key == NULL_POINTER || raw_public_key[0] == 0)
+    status0 = (boole)(identity_hash != NULL_POINTER && identity_hash[0] != 0);
+    status1 = (boole)(raw_public_key != NULL_POINTER && raw_public_key[0] != 0);
+    if (status0 == FALSE || status1 == FALSE)
     {
         return;
     }
@@ -757,10 +767,14 @@ void identity_store__free_offline_messages_for_identity(char* identity_hash)
  */
 boole identity_store__get_identity_avatar_by_hash(char* identity_hash, char* out_buffer, uint64 out_buffer_size)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
     uint64 i = 0;
     boole found = FALSE;
 
-    if (identity_hash == NULL_POINTER || identity_hash[0] == 0 || out_buffer == NULL_POINTER || out_buffer_size == 0)
+    status0 = (boole)(identity_hash != NULL_POINTER && identity_hash[0] != 0);
+    status1 = (boole)(out_buffer != NULL_POINTER && out_buffer_size != 0);
+    if (status0 == FALSE || status1 == FALSE)
     {
         return FALSE;
     }
@@ -787,12 +801,11 @@ boole identity_store__get_identity_avatar_by_hash(char* identity_hash, char* out
 }
 
 /**
- * @brief adds or removes one group id on a stored identity (by hash), for admin group management of
- *        identities that may be offline.
+ * @brief Adds or removes a group on a stored identity, including an offline identity.
+ *        Changes reach disk on the next settings save.
  *
- *        removing an identity's last group clears the whole entry, matching how the store never holds
- *        tagless identities. disk persistence still waits for the next "save server settings".
- *        stripping/adding the group on a currently-connected holder is the caller's job.
+ * @details An entry without groups, an avatar or an offline key is removed.
+ *          The caller must separately update any connected client with this identity.
  *
  * @param char* identity_hash -> base64 hash of the identity to modify
  * @param uint64 group_id -> the group id to add or remove

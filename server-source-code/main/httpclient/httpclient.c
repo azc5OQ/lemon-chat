@@ -320,6 +320,7 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t* parser, h
     boole has_length = 0;
     boole chunked = 0;
     boole no_body = 0;
+    boole status0 = FALSE;
 
     if (size > HTTP_HEADER_LIMIT - parser->metadata_bytes)
     {
@@ -393,7 +394,8 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t* parser, h
         }
         else if (_httpclient_internal__equal(text + position, colon, "Content-Encoding"))
         {
-            if (!_httpclient_internal__equal(text + start, end - start, "identity"))
+            status0 = _httpclient_internal__equal(text + start, end - start, "identity");
+            if (status0 == FALSE)
             {
                 return HTTPCLIENT_UNSUPPORTED;
             }
@@ -452,6 +454,7 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t* parser, httpclient
     int line = 0;
     ubyte value = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
+    boole status = FALSE;
 
     for (;;)
     {
@@ -530,7 +533,8 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t* parser, httpclient
                 {
                     digits++;
                 }
-                if (!_httpclient_internal__number((const char*)parser->pending.data, digits, 16, &parser->remaining))
+                status = _httpclient_internal__number((const char*)parser->pending.data, digits, 16, &parser->remaining);
+                if (status == FALSE)
                 {
                     return HTTPCLIENT_HTTP;
                 }

@@ -220,8 +220,17 @@ uint64 media_auth__decrypt_from_client(client_t* sender, int stream, const unsig
     unsigned char block[16];
     uint64 body_size = 0;
     uint64 sender_id_in_body = 0;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
 
-    if (sender->session_keys.is_ready == FALSE || size <= MEDIA_FRAME_OVERHEAD || frame[0] != MEDIA_FRAME_VERSION)
+    status0 = sender->session_keys.is_ready == FALSE;
+    status1 = size <= MEDIA_FRAME_OVERHEAD;
+    if (status0 == FALSE && status1 == FALSE)
+    {
+        status2 = frame[0] != MEDIA_FRAME_VERSION;
+    }
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE)
     {
         DBG_MEDIA_AUTH log_info("%s %llu %s", "frame of client", sender->client_id, "refused: the client has no keys yet, or the frame is too short, or its version byte is wrong");
         return 0;
@@ -232,8 +241,12 @@ uint64 media_auth__decrypt_from_client(client_t* sender, int stream, const unsig
         return 0;
     }
     // the authentication code is checked first: a frame that fails the check is not decrypted at all
-    if (metadata_crypto__hmac_sha256(&sender->session_keys.authentication, frame, size - MEDIA_FRAME_CODE, NULL_POINTER, 0, code) == FALSE
-        || metadata_crypto__equal(code, frame + size - MEDIA_FRAME_CODE, MEDIA_FRAME_CODE) == FALSE)
+    status0 = metadata_crypto__hmac_sha256(&sender->session_keys.authentication, frame, size - MEDIA_FRAME_CODE, NULL_POINTER, 0, code) == FALSE;
+    if (status0 == FALSE)
+    {
+        status0 = metadata_crypto__equal(code, frame + size - MEDIA_FRAME_CODE, MEDIA_FRAME_CODE) == FALSE;
+    }
+    if (status0 == TRUE)
     {
         DBG_MEDIA_AUTH log_info("%s %llu %s", "frame of client", sender->client_id, "refused: the authentication code does not match, the frame was changed or made up");
         return 0;
@@ -278,8 +291,14 @@ uint64 media_auth__encrypt_for_client(client_t* receiver, int stream, const unsi
     unsigned char block[16];
     uint64 frame_counter = 0;
     uint64 frame_size = MEDIA_FRAME_HEADER + body_size + MEDIA_FRAME_CODE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
 
-    if (receiver->session_keys.is_ready == FALSE || body_size < MEDIA_BODY_HEADER || frame_size > out_capacity)
+    status0 = receiver->session_keys.is_ready == FALSE;
+    status1 = body_size < MEDIA_BODY_HEADER;
+    status2 = frame_size > out_capacity;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE)
     {
         return 0;
     }

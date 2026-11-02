@@ -3,16 +3,20 @@
 #include "clib/memory_manager.h"
 #include "clib/stdlib.h"
 
+static void scene_text__clear(char* text, int64 length)
+{
+    volatile char* bytes = text;
+    int64 index = 0;
+    for (index = 0; index < length; index++)
+    {
+        bytes[index] = 0;
+    }
+}
+
 static void scene_text__wipe(gui_node_t* node)
 {
-    if (node->input_password)
-    {
-        volatile char* bytes = node->text;
-        for (int64 i = 0; i < node->text_capacity; i++)
-        {
-            bytes[i] = 0;
-        }
-    }
+    // Revealing a password changes its appearance, not its storage lifetime.
+    scene_text__clear(node->text, node->text_capacity);
 }
 
 boole scene__reserve_text(gui_node_t* node, int64 length)
@@ -30,7 +34,7 @@ boole scene__reserve_text(gui_node_t* node, int64 length)
     {
         capacity = capacity > (node->text_limit + 1) / 2 ? node->text_limit + 1 : capacity * 2;
     }
-    char* grown = GUI_MALLOC((size_t)capacity);
+    char* grown = GUI_CALLOC((size_t)capacity, 1);
     if (grown == NULL_POINTER)
     {
         return FALSE;
@@ -65,6 +69,7 @@ void scene_text__release(gui_node_t* node)
     {
         GUI_FREE(node->text);
     }
+    scene_text__clear(node->text_inline, sizeof(node->text_inline));
     node->text = node->text_inline;
     node->text_capacity = sizeof(node->text_inline);
     node->text[0] = 0;
@@ -86,6 +91,7 @@ void scene_text__move(gui_node_t* destination, gui_node_t* source)
         destination->text = source->text;
         destination->text_capacity = source->text_capacity;
     }
+    scene_text__clear(source->text_inline, sizeof(source->text_inline));
     source->text = source->text_inline;
     source->text_capacity = sizeof(source->text_inline);
     source->text_len = 0;
@@ -207,7 +213,7 @@ boole scene__set_text(gui_node_t* n, const char* text, int64 length)
     {
         stdlib__memmove(n->text, text, (size_t)length);
     }
-    n->text[length] = 0;
+    scene_text__clear(n->text + length, n->text_capacity - length);
     n->text_len = length;
     n->layout_memo_frame = ~(uint64)0;
     if (state != NULL_POINTER)
@@ -275,6 +281,7 @@ void scene_text__replace(gui_node_t* n, scene_text_state_t* state, const char* b
         stdlib__memcpy(n->text + start, bytes, (size_t)length);
     }
     n->text_len += length - (end - start);
+    scene_text__clear(n->text + n->text_len, n->text_capacity - n->text_len);
     state->caret = start + length;
     state->anchor = state->caret;
     scene_text__changed(n, state);
@@ -335,7 +342,7 @@ static void scene_text__paste(gui_node_t* n, scene_text_state_t* state)
             }
             cp = n->type == GUI_NODE_TYPE__TEXTAREA ? (cp == '\t' ? '\t' : '\n') : ' ';
         }
-        char encoded[4];
+        char encoded[4] = {0};
         if (n->type == GUI_NODE_TYPE__TEXTAREA && (cp == '\n' || cp == '\t'))
         {
             encoded[0] = (char)cp;
@@ -347,9 +354,11 @@ static void scene_text__paste(gui_node_t* n, scene_text_state_t* state)
         }
         if (used + bytes > capacity)
         {
+            scene_text__clear(encoded, sizeof(encoded));
             break;
         }
         stdlib__memcpy(filtered + used, encoded, (size_t)bytes);
+        scene_text__clear(encoded, sizeof(encoded));
         used += bytes;
     }
     if (used)
@@ -370,7 +379,7 @@ cleanup:
 void scene_text__on_char(gui_node_t* n, uint codepoint)
 {
     scene_text_state_t* state = scene_text__state(n);
-    char encoded[4];
+    char encoded[4] = {0};
     int bytes = scene_text__encode(codepoint, encoded);
     uint modifiers = scene__get_active_modifiers();
     // AltGr uses Ctrl+Alt and must still be able to enter printable characters.
@@ -378,6 +387,7 @@ void scene_text__on_char(gui_node_t* n, uint codepoint)
     {
         scene_text__replace(n, state, encoded, bytes);
     }
+    scene_text__clear(encoded, sizeof(encoded));
 }
 
 void scene_text__on_key(gui_node_t* n, int64 vk, boole down)

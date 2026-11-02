@@ -9,8 +9,8 @@
 #include "../../../third-party/rxi-log/log.h"
 
 // declarations
-static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON* json_root, uint64 client_id);
-static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON* json_root, uint64 client_id, cJSON** checked_value);
+static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON* json_root, uint64 client_id, cJSON** checked_value);
 static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(cJSON* json_root);
 
 /**
@@ -21,7 +21,7 @@ static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(
  *
  * @return boole
  */
-static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON* json_root, uint64 client_id)
+static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON* json_root, uint64 client_id, cJSON** checked_value)
 {
     cJSON* json_sdp_message_value = 0;
     cJSON* json_value_object = 0;
@@ -75,6 +75,7 @@ static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON* 
         return FALSE;
     }
 
+    *checked_value = json_value_object;
     return TRUE;
 }
 
@@ -88,24 +89,27 @@ static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON* 
  */
 void client_msg__audio__process_sdp_answer(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
     boole status = FALSE;
-    cJSON* json_message_object = 0;
     cJSON* json_message_value = 0;
 
     DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_sdp_answer");
 
-    status = _client_msg_audio_internal__is_json_sdp_answer_format_valid(json_root, sender_client_id);
+    status = _client_msg_audio_internal__is_json_sdp_answer_format_valid(json_root, sender_client_id, &json_message_value);
     if (status == FALSE)
     {
         DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_sdp_answer client_msg__is_json_sdp_answer_format_valid == FALSE \n");
         return;
     }
 
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-
-    json_message_value = cJSON_GetObjectItem(json_message_object, "value");
-
+    // Keep the exact object validated above; differently cased keys cannot replace it.
     clib__read_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(sender_client_id);
+    if (status0 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
 
     if (g_clients_array[sender_client_id].is_authenticated == TRUE)
     {
@@ -127,8 +131,11 @@ void client_msg__audio__process_sdp_answer(cJSON* json_root, uint64 sender_clien
  *
  * @return boole
  */
-static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON* json_root, uint64 client_id)
+static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON* json_root, uint64 client_id, cJSON** checked_value)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     cJSON* json_candidate = 0;
     cJSON* json_value_object = 0;
     cJSON* json_sdpMid = 0;
@@ -181,12 +188,20 @@ static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON* js
     // return FALSE;
     // }
     json_sdpMLineIndex = cJSON_GetObjectItemCaseSensitive(json_value_object, "sdpMLineIndex");
-    if (cJSON_IsNumber(json_sdpMLineIndex) == FALSE)
+    status0 = cJSON_IsNumber(json_sdpMLineIndex) == FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = json_sdpMLineIndex->valueint < 0;
+        status2 = json_sdpMLineIndex->valuedouble != (double)json_sdpMLineIndex->valueint;
+        status0 = status1 == TRUE || status2 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " cJSON_IsNumber(json_sdpMLineIndex) \n");
         return FALSE;
     }
 
+    *checked_value = json_value_object;
     return TRUE;
 }
 
@@ -200,24 +215,27 @@ static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON* js
  */
 void client_msg__audio__process_ice_candidate(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
     boole status = FALSE;
-    cJSON* json_message_object = 0;
     cJSON* json_message_value = 0;
 
     DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_ice_candidate");
 
-    status = _client_msg_audio_internal__is_ice_candidate_format_valid(json_root, sender_client_id);
+    status = _client_msg_audio_internal__is_ice_candidate_format_valid(json_root, sender_client_id, &json_message_value);
     if (status == FALSE)
     {
         DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_ice_candidate client_msg__is_ice_candidate_format_valid == FALSE \n");
         return;
     }
 
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-
-    json_message_value = cJSON_GetObjectItem(json_message_object, "value");
-
+    // Keep the exact object validated above; differently cased keys cannot replace it.
     clib__read_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(sender_client_id);
+    if (status0 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
 
     if (g_clients_array[sender_client_id].is_authenticated == TRUE)
     {
@@ -251,7 +269,8 @@ static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(
         return FALSE;
     }
 
-    if (json_value->valueint < 1 || json_value->valueint > 3)
+    if (json_value->valueint < 1 || json_value->valueint > 3
+        || json_value->valuedouble != (double)json_value->valueint)
     {
         DBG_AUDIO_WEBRTC log_info("%s", "_client_msg_audio_internal__is_json_process_microphone_usage_valid json_value->valueint < 1 || json_value->valueint > 3 \n");
         return FALSE;
@@ -270,6 +289,8 @@ static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(
  */
 void client_msg__audio__process_microphone_usage(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status1 = FALSE;
+    boole status0 = FALSE;
     cJSON* json_value = 0;
     cJSON* json_message_object = 0;
     boole status = FALSE;
@@ -285,6 +306,12 @@ void client_msg__audio__process_microphone_usage(cJSON* json_root, uint64 sender
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status1 = base__is_current_client_request(sender_client_id);
+    if (status1 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
 
     client = &g_clients_array[sender_client_id];
 
@@ -302,7 +329,24 @@ void client_msg__audio__process_microphone_usage(cJSON* json_root, uint64 sender
     // dropped connection set "audio disabled", an attach resets it to listening, and the client then
     // reports its state again (talking, microphone ready, or listening only)
     clib__read_lock(&g_webrtc_peers_rwlock_guard);
-    is_served = (g_server_settings.is_voice_chat_active == TRUE || g_server_settings.is_music_bot_audio_active == TRUE) && (client->is_audio_websocket_authenticated == TRUE || (g_server_settings.is_audio_over_webrtc_allowed == TRUE && audio_webrtc__is_connected(client->client_id) == TRUE));
+    status0 = g_server_settings.is_voice_chat_active == TRUE;
+    if (status0 == FALSE)
+    {
+        status0 = g_server_settings.is_music_bot_audio_active == TRUE;
+    }
+    if (status0 == TRUE)
+    {
+        status0 = client->is_audio_websocket_authenticated == TRUE;
+        if (status0 == FALSE)
+        {
+            status0 = g_server_settings.is_audio_over_webrtc_allowed == TRUE;
+            if (status0 == TRUE)
+            {
+                status0 = audio_webrtc__is_connected(client->client_id) == TRUE;
+            }
+        }
+    }
+    is_served = status0;
     clib__unlock(&g_webrtc_peers_rwlock_guard);
 
     if (is_served == TRUE)
@@ -366,64 +410,72 @@ label_client_msg__process_microphone_usage_end:
  */
 void client_msg__audio__process_create_new_webrtc_datachannel_connection(cJSON* json_root, uint64 sender_client_id)
 {
-    client_t* client = 0;
-    webrtc_peer_t* peer = 0;
+    boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    boole status4 = FALSE;
+    client_t* client = NULL_POINTER;
+    webrtc_peer_t* peer = NULL_POINTER;
     uint64 timestamp_now = 0;
+    uint64 cooldown_seconds = 0;
+    boole initialize = FALSE;
 
+    (void)json_root;
     clib__write_lock(&g_clients_global_rwlock_guard);
-    clib__write_lock(&g_channels_global_rwlock_guard);
-
-    // check if the client that sent the message is valid: connected and existing.
-    // this was checked before but not within write lock like here
-
-    // log_info("%s", "client_msg__audio__process_create_new_webrtc_datachannel_connection");
+    status = base__is_current_client_request(sender_client_id);
+    if (status == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     client = &g_clients_array[sender_client_id];
-
-    if (client->is_authenticated == FALSE || client->is_existing == FALSE)
+    status0 = client->is_authenticated == FALSE;
+    status1 = client->is_existing == FALSE;
+    status2 = g_server_settings.is_voice_chat_active == FALSE;
+    status3 = g_server_settings.is_music_bot_audio_active == FALSE;
+    status4 = g_server_settings.is_video_streaming_active == FALSE;
+    if (status0 == TRUE || status1 == TRUE
+        || (status2 == TRUE && status3 == TRUE && status4 == TRUE))
     {
-        goto label_process_create_new_webrtc_datachannel_connection_end;
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
     }
 
-    // nothing would travel on the datachannel: no voice, no music bot audio and no video streaming
-    if (g_server_settings.is_voice_chat_active == FALSE && g_server_settings.is_music_bot_audio_active == FALSE && g_server_settings.is_video_streaming_active == FALSE)
-    {
-        goto label_process_create_new_webrtc_datachannel_connection_end;
-    }
-
-    // server will ignore the request only if these 3 are off
+    timestamp_now = util__get_timestamp_ms();
+    clib__write_lock(&g_webrtc_peers_rwlock_guard);
     peer = &g_webrtc_peers_array[sender_client_id];
-
     if (peer->is_existing == TRUE && peer->connected == TRUE && client->audio_state != AUDIO_STATE__AUDIO_COMPLETELY_DISABLED)
     {
-        goto label_process_create_new_webrtc_datachannel_connection_end;
+        initialize = FALSE;
     }
-
-    // a client whose transport never comes up (blocked udp) asks every 10 s forever, and every ask
-    // is a new peer plus a teardown thread. after N attempts without RTC_CONNECTED it waits the
-    // configured cooldown; a fresh session starts from zero, a connected transport resets the count
-    timestamp_now = util__get_timestamp_ms();
-
-    if (peer->cooldown_until_ms > timestamp_now)
+    else if (peer->cooldown_until_ms > timestamp_now)
     {
-        server_msg__audio__send_datachannel_cooldown_to_single_client(client, (peer->cooldown_until_ms - timestamp_now + 999) / 1000);
-        goto label_process_create_new_webrtc_datachannel_connection_end;
+        cooldown_seconds = (peer->cooldown_until_ms - timestamp_now + 999) / 1000;
     }
-
-    if (peer->attempts_since_connected >= WEBRTC_DATACHANNEL_ATTEMPTS_BEFORE_COOLDOWN && g_server_settings.webrtc_datachannel_cooldown_seconds > 0)
+    else if (peer->attempts_since_connected >= WEBRTC_DATACHANNEL_ATTEMPTS_BEFORE_COOLDOWN
+        && g_server_settings.webrtc_datachannel_cooldown_seconds > 0)
     {
-        peer->cooldown_until_ms = timestamp_now + (uint64)g_server_settings.webrtc_datachannel_cooldown_seconds * 1000;
+        cooldown_seconds = (uint64)g_server_settings.webrtc_datachannel_cooldown_seconds;
+        peer->cooldown_until_ms = timestamp_now + cooldown_seconds * 1000;
         peer->attempts_since_connected = 0;
-        log_info("%s %s %s %s %s %lld %s", "datachannel cooldown:", client->username, "(ip", client->ip_address, ") never connected, no new peers for", g_server_settings.webrtc_datachannel_cooldown_seconds, "s \n");
-        server_msg__audio__send_datachannel_cooldown_to_single_client(client, (uint64)g_server_settings.webrtc_datachannel_cooldown_seconds);
-        goto label_process_create_new_webrtc_datachannel_connection_end;
     }
+    else
+    {
+        peer->attempts_since_connected++;
+        initialize = TRUE;
+    }
+    clib__unlock(&g_webrtc_peers_rwlock_guard);
 
-    peer->attempts_since_connected++;
-
-    // log_info("%s", "attempting reconnect");
-    audio_webrtc__initialize_datachannel_connection(client);
-
-label_process_create_new_webrtc_datachannel_connection_end:
-    clib__unlock(&g_channels_global_rwlock_guard);
+    if (cooldown_seconds != 0)
+    {
+        server_msg__audio__send_datachannel_cooldown_to_single_client(client, cooldown_seconds);
+    }
+    if (initialize == TRUE)
+    {
+        // Initialization takes the peers lock itself, after the snapshot above.
+        audio_webrtc__initialize_datachannel_connection(client);
+    }
     clib__unlock(&g_clients_global_rwlock_guard);
 }

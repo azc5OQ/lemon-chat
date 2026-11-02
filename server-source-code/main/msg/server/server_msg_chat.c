@@ -263,10 +263,9 @@ void server_msg__chat__send_typing_indicator(client_t* subject, char* receiver_t
 }
 
 /**
- * @brief delivers everything that was said to this client's identity while it was offline, oldest
- *        first, then drops the queue for that identity. each message goes out as its own
- *        offline_chat_message so the client can render them like any other direct message; the
- *        payload is the sender's ciphertext, untouched (the server never could read it).
+ * @brief Removes queued offline messages in time order and sends their encrypted payloads.
+ *
+ * Each queued message is sent as a separate offline_chat_message with its original ciphertext.
  *
  * @param client_t* receiver -> the freshly authenticated client
  *

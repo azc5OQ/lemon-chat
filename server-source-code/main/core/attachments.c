@@ -19,7 +19,6 @@ static void* _file_transfer_internal__add_song_thread(void* argument);
 static void _file_transfer_internal__start_file_download(data_for_file_send_thread_t* arg);
 static boole _file_transfer_internal__file_client_is_current(uint64 client_id, const crypto_key_t* authentication_key);
 static int _file_transfer_internal__queue_file_chunk(data_for_file_send_thread_t* arg, uint64 receiver_id, const crypto_key_t* receiver_key, const char* plaintext);
-static uint64 _file_transfer_internal__get_max_chat_picture_encrypted_length(void);
 static void* _file_transfer_internal__file_download_thread(void* argument);
 
 /**
@@ -30,11 +29,26 @@ static void* _file_transfer_internal__file_download_thread(void* argument);
  */
 static boole _file_transfer_internal__file_client_is_current(uint64 client_id, const crypto_key_t* authentication_key)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+
     if (client_id >= g_server_settings.max_client_count || base__is_client_valid_and_not_music_bot(client_id) == FALSE)
     {
         return FALSE;
     }
-    return g_clients_array[client_id].session_keys.is_ready && g_clients_array[client_id].session_keys.authentication.type == authentication_key->type && clib__memcmp(&g_clients_array[client_id].session_keys.authentication.material, &authentication_key->material, sizeof(authentication_key->material)) == 0;
+    status0 = g_clients_array[client_id].session_keys.is_ready != FALSE;
+    if (status0 == FALSE)
+    {
+        return FALSE;
+    }
+    status1 = g_clients_array[client_id].session_keys.authentication.type == authentication_key->type;
+    if (status1 == FALSE)
+    {
+        return FALSE;
+    }
+    status2 = clib__memcmp(&g_clients_array[client_id].session_keys.authentication.material, &authentication_key->material, sizeof(authentication_key->material)) == 0;
+    return status2;
 }
 
 /**
@@ -185,7 +199,8 @@ static void* _file_transfer_internal__file_download_thread(void* argument)
         // (the local card stayed dimmed) and a full one acked once per receiver
         clib__read_lock(&g_clients_global_rwlock_guard);
 
-        if (_file_transfer_internal__file_client_is_current(arg->client_sender_id, &arg->sender_authentication_key) == TRUE)
+        is_sender_valid = _file_transfer_internal__file_client_is_current(arg->client_sender_id, &arg->sender_authentication_key);
+        if (is_sender_valid == TRUE)
         {
             server_msg__attachments__send_image_status_to_single_client(&g_clients_array[arg->client_sender_id], "success");
             server_msg__chat__send_server_chat_message_id_for_local_chat_message_id_to_single_client(&g_clients_array[arg->client_sender_id], arg->server_chat_message_id, arg->local_chat_message_id);
@@ -212,6 +227,7 @@ file_download_end:
  */
 static void _file_transfer_internal__start_file_download(data_for_file_send_thread_t* arg)
 {
+    boole status = FALSE;
     uint64 count = arg->send_type == FILE_SEND_TYPE_TO_CHANNEL ? arg->receiving_clients_count : 1;
     uint64 i = 0;
     uint64 receiver_id = 0;
@@ -224,7 +240,8 @@ static void _file_transfer_internal__start_file_download(data_for_file_send_thre
         for (i = 0; i < arg->receiving_clients_count; i++)
         {
             receiver_id = arg->receiving_client_ids[i];
-            if (base__is_attachment_blocked(&g_clients_array[receiver_id], arg->receive_type) == FALSE)
+            status = base__is_attachment_blocked(&g_clients_array[receiver_id], arg->receive_type);
+            if (status == FALSE)
             {
                 arg->receiving_client_ids[count++] = receiver_id;
             }
@@ -269,11 +286,44 @@ static void _file_transfer_internal__start_file_download(data_for_file_send_thre
  */
 void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64 local_message_id, char* message_value)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     boole is_channel_existing = FALSE;
     uint64 channel_id = 0;
     uint64 server_chat_message_id = 0;
     data_for_file_send_thread_t* arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
+    if (client_sender_id >= g_server_settings.max_client_count || message_value == NULL_POINTER)
+    {
+        return;
+    }
+    status0 = g_clients_array[client_sender_id].is_existing == FALSE;
+    status1 = g_clients_array[client_sender_id].is_authenticated == FALSE;
+    status2 = g_clients_array[client_sender_id].is_idle == TRUE;
+    status3 = message_value != (char*)g_clients_array[client_sender_id].file_upload_extension.file_upload_buffer;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
+    {
+        return;
+    }
+    if (g_server_settings.is_chat_picture_allowed == FALSE)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[client_sender_id], "chat_pictures_disabled", local_message_id);
+        return;
+    }
+    status0 = g_clients_array[client_sender_id].file_upload_extension.expected_file_length == 0;
+    status1 = FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = g_clients_array[client_sender_id].file_upload_extension.expected_file_length > file_transfer__get_max_chat_picture_encrypted_length();
+    }
+    status2 = g_clients_array[client_sender_id].file_upload_extension.buffer_cursor != g_clients_array[client_sender_id].file_upload_extension.expected_file_length;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[client_sender_id], "file_too_large", local_message_id);
+        return;
+    }
 
     DBG_CLIENT_MESSAGE log_info("%s", "file_transfer__process_channel_chat_picture got here \n");
 
@@ -331,9 +381,52 @@ void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64
  */
 void file_transfer__process_direct_chat_picture(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char* message_value)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     uint64 server_chat_message_id = 0;
     data_for_file_send_thread_t* arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
+    if (sender_client_id >= g_server_settings.max_client_count || message_value == NULL_POINTER)
+    {
+        return;
+    }
+    status0 = g_clients_array[sender_client_id].is_existing == FALSE;
+    status1 = g_clients_array[sender_client_id].is_authenticated == FALSE;
+    status2 = g_clients_array[sender_client_id].is_idle == TRUE;
+    status3 = message_value != (char*)g_clients_array[sender_client_id].file_upload_extension.file_upload_buffer;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
+    {
+        return;
+    }
+    if (g_server_settings.is_chat_picture_allowed == FALSE)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "chat_pictures_disabled", local_message_id);
+        return;
+    }
+    status0 = g_clients_array[sender_client_id].file_upload_extension.expected_file_length == 0;
+    status1 = FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = g_clients_array[sender_client_id].file_upload_extension.expected_file_length > file_transfer__get_max_chat_picture_encrypted_length();
+    }
+    status2 = g_clients_array[sender_client_id].file_upload_extension.buffer_cursor != g_clients_array[sender_client_id].file_upload_extension.expected_file_length;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "file_too_large", local_message_id);
+        return;
+    }
+    if (receiver_id >= g_server_settings.max_client_count)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "receiver_unavailable", local_message_id);
+        return;
+    }
+    if (g_server_settings.is_private_messaging_allowed == FALSE)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "private_messages_disabled", local_message_id);
+        return;
+    }
 
     // status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     // if (status == FALSE)
@@ -343,13 +436,18 @@ void file_transfer__process_direct_chat_picture(uint64 sender_client_id, uint64 
     // }
     DBG_CLIENT_MESSAGE log_info("%s", "file_transfer__process_direct_chat_picture got here \n");
 
-    if (base__is_attachment_blocked(&g_clients_array[receiver_id], "direct_chat_picture"))
+    status0 = base__is_attachment_blocked(&g_clients_array[receiver_id], "direct_chat_picture");
+    if (status0 != FALSE)
     {
         server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "receiver_blocked_attachment", local_message_id);
         return;
     }
 
-    if (g_clients_array[receiver_id].is_authenticated == TRUE && g_clients_array[receiver_id].is_idle == FALSE && g_clients_array[receiver_id].is_music_bot == FALSE)
+    status0 = g_clients_array[receiver_id].is_existing == TRUE;
+    status1 = g_clients_array[receiver_id].is_authenticated == TRUE;
+    status2 = g_clients_array[receiver_id].is_idle == FALSE;
+    status3 = g_clients_array[receiver_id].is_music_bot == FALSE;
+    if (status0 == TRUE && status1 == TRUE && status2 == TRUE && status3 == TRUE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "receiver is_existing: ", receiver_id, "\n");
 
@@ -393,11 +491,48 @@ void file_transfer__process_direct_chat_picture(uint64 sender_client_id, uint64 
  */
 void file_transfer__process_channel_chat_file(uint64 client_sender_id, uint64 local_message_id, char* message_value, char* file_header)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     boole is_channel_existing = FALSE;
     uint64 channel_id = 0;
     uint64 server_chat_message_id = 0;
     data_for_file_send_thread_t* arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
+    if (client_sender_id >= g_server_settings.max_client_count || message_value == NULL_POINTER)
+    {
+        return;
+    }
+    status0 = g_clients_array[client_sender_id].is_existing == FALSE;
+    status1 = g_clients_array[client_sender_id].is_authenticated == FALSE;
+    status2 = g_clients_array[client_sender_id].is_idle == TRUE;
+    status3 = message_value != (char*)g_clients_array[client_sender_id].file_upload_extension.file_upload_buffer;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
+    {
+        return;
+    }
+    if (g_server_settings.is_file_upload_allowed == FALSE)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[client_sender_id], "file_uploads_disabled", local_message_id);
+        return;
+    }
+    status0 = g_clients_array[client_sender_id].file_upload_extension.expected_file_length == 0;
+    status1 = FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = g_clients_array[client_sender_id].file_upload_extension.expected_file_length > file_transfer__get_max_chat_file_encrypted_length();
+    }
+    status2 = g_clients_array[client_sender_id].file_upload_extension.buffer_cursor != g_clients_array[client_sender_id].file_upload_extension.expected_file_length;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[client_sender_id], "file_too_large", local_message_id);
+        return;
+    }
+    if (file_header == NULL_POINTER)
+    {
+        return;
+    }
 
     channel_id = g_clients_array[client_sender_id].channel_id;
     is_channel_existing = (channel_id < g_server_settings.max_channel_count) && g_channel_array[channel_id].is_existing;
@@ -450,9 +585,52 @@ void file_transfer__process_channel_chat_file(uint64 client_sender_id, uint64 lo
  */
 void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char* message_value, char* file_header)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    boole status4 = FALSE;
     uint64 server_chat_message_id = 0;
     data_for_file_send_thread_t* arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
+    if (sender_client_id >= g_server_settings.max_client_count || message_value == NULL_POINTER)
+    {
+        return;
+    }
+    status0 = g_clients_array[sender_client_id].is_existing == FALSE;
+    status1 = g_clients_array[sender_client_id].is_authenticated == FALSE;
+    status2 = g_clients_array[sender_client_id].is_idle == TRUE;
+    status3 = message_value != (char*)g_clients_array[sender_client_id].file_upload_extension.file_upload_buffer;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
+    {
+        return;
+    }
+    if (g_server_settings.is_file_upload_allowed == FALSE)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "file_uploads_disabled", local_message_id);
+        return;
+    }
+    status0 = g_clients_array[sender_client_id].file_upload_extension.expected_file_length == 0;
+    status1 = FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = g_clients_array[sender_client_id].file_upload_extension.expected_file_length > file_transfer__get_max_chat_file_encrypted_length();
+    }
+    status2 = g_clients_array[sender_client_id].file_upload_extension.buffer_cursor != g_clients_array[sender_client_id].file_upload_extension.expected_file_length;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "file_too_large", local_message_id);
+        return;
+    }
+    if (file_header == NULL_POINTER)
+    {
+        return;
+    }
+    if (receiver_id >= g_server_settings.max_client_count)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "receiver_unavailable", local_message_id);
+        return;
+    }
 
     if (g_server_settings.is_private_messaging_allowed == FALSE)
     {
@@ -460,13 +638,19 @@ void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 rec
         return;
     }
 
-    if (base__is_attachment_blocked(&g_clients_array[receiver_id], "direct_chat_file"))
+    status0 = base__is_attachment_blocked(&g_clients_array[receiver_id], "direct_chat_file");
+    if (status0 != FALSE)
     {
         server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "receiver_blocked_attachment", local_message_id);
         return;
     }
 
-    if (g_clients_array[receiver_id].is_authenticated == FALSE || g_clients_array[receiver_id].is_idle == TRUE || g_clients_array[receiver_id].is_music_bot == TRUE || receiver_id == sender_client_id)
+    status0 = g_clients_array[receiver_id].is_existing == FALSE;
+    status1 = g_clients_array[receiver_id].is_authenticated == FALSE;
+    status2 = g_clients_array[receiver_id].is_idle == TRUE;
+    status3 = g_clients_array[receiver_id].is_music_bot == TRUE;
+    status4 = receiver_id == sender_client_id;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE || status4 == TRUE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "file_transfer__process_direct_chat_file receiver unavailable: ", receiver_id, "\n");
         server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "receiver_unavailable", local_message_id);
@@ -518,7 +702,7 @@ uint64 file_transfer__get_max_chat_file_encrypted_length(void)
  *
  * @return uint64 -> length in base64 chars
  */
-static uint64 _file_transfer_internal__get_max_chat_picture_encrypted_length(void)
+uint64 file_transfer__get_max_chat_picture_encrypted_length(void)
 {
     return (((uint64)g_server_settings.chat_picture_max_size_bytes * 16) / 9) + 16384;
 }
@@ -546,7 +730,7 @@ uint64 file_transfer__get_max_file_upload_length(void)
 
     if (g_server_settings.is_chat_picture_allowed == TRUE)
     {
-        candidate = _file_transfer_internal__get_max_chat_picture_encrypted_length();
+        candidate = file_transfer__get_max_chat_picture_encrypted_length();
 
         if (candidate > longest)
         {
@@ -597,8 +781,11 @@ static void* _file_transfer_internal__add_song_thread(void* argument)
  */
 void file_transfer__add_uploaded_song(musicbot_add_song_arg_struct_t* arguments)
 {
+    boole status = FALSE;
+
     arguments->music_bot->music_bot_client_extension.pending_song_uploads++;
-    if (util__start_detached_thread(_file_transfer_internal__add_song_thread, arguments) == FALSE)
+    status = util__start_detached_thread(_file_transfer_internal__add_song_thread, arguments);
+    if (status == FALSE)
     {
         memorymanager__free((nuint)arguments->mp3_data_buffer);
         arguments->music_bot->music_bot_client_extension.pending_song_uploads--;

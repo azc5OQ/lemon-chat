@@ -3,6 +3,7 @@
 #include "../server/server_msg.h"
 #include "../../core/video_channel.h"
 #include "../../base.h"
+#include "../../util.h"
 #include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 
@@ -18,6 +19,7 @@ static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON*
  */
 static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON* json_root)
 {
+    boole status = FALSE;
     cJSON* json_message_object = 0;
     cJSON* json_source = 0;
     cJSON* json_codec = 0;
@@ -26,6 +28,7 @@ static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON*
     cJSON* json_fps = 0;
     cJSON* json_is_sound_included = 0;
     uint64 codec_length = 0;
+    int64 validated_dimension = 0;
     uint64 i = 0;
     char c = 0;
 
@@ -72,15 +75,18 @@ static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON*
     json_height = cJSON_GetObjectItemCaseSensitive(json_message_object, "height");
     json_fps = cJSON_GetObjectItemCaseSensitive(json_message_object, "fps");
 
-    if (cJSON_IsNumber(json_width) == FALSE || json_width->valuedouble < 16 || json_width->valuedouble > VIDEO_STREAM_MAX_DIMENSION)
+    status = util__json_read_int64(json_width, 16, VIDEO_STREAM_MAX_DIMENSION, &validated_dimension);
+    if (status == FALSE)
     {
         return FALSE;
     }
-    if (cJSON_IsNumber(json_height) == FALSE || json_height->valuedouble < 16 || json_height->valuedouble > VIDEO_STREAM_MAX_DIMENSION)
+    status = util__json_read_int64(json_height, 16, VIDEO_STREAM_MAX_DIMENSION, &validated_dimension);
+    if (status == FALSE)
     {
         return FALSE;
     }
-    if (cJSON_IsNumber(json_fps) == FALSE || json_fps->valuedouble < 1 || json_fps->valuedouble > VIDEO_STREAM_MAX_FPS)
+    status = util__json_read_int64(json_fps, 1, VIDEO_STREAM_MAX_FPS, &validated_dimension);
+    if (status == FALSE)
     {
         return FALSE;
     }
@@ -106,6 +112,9 @@ static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON*
 void client_msg__video__process_start(cJSON* json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     client_t* client = 0;
     cJSON* json_message_object = 0;
     cJSON* json_is_sound_included = 0;
@@ -131,7 +140,14 @@ void client_msg__video__process_start(cJSON* json_root, uint64 sender_client_id)
 
     client = &g_clients_array[sender_client_id];
 
-    if (client->is_existing == TRUE && client->is_authenticated == TRUE)
+    status0 = base__is_current_client_request(sender_client_id) == TRUE;
+    if (status0 == TRUE)
+    {
+        status1 = client->is_existing == TRUE;
+        status2 = client->is_authenticated == TRUE;
+        status0 = status1 == TRUE && status2 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         json_is_sound_included = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_sound_included");
 
@@ -161,6 +177,11 @@ void client_msg__video__process_start(cJSON* json_root, uint64 sender_client_id)
  */
 void client_msg__video__process_stop(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    boole status4 = FALSE;
     client_t* client = 0;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
@@ -168,7 +189,20 @@ void client_msg__video__process_stop(cJSON* json_root, uint64 sender_client_id)
 
     client = &g_clients_array[sender_client_id];
 
-    if (client->is_existing == TRUE && client->is_authenticated == TRUE && client->is_streaming_video == TRUE && client->channel_id < g_server_settings.max_channel_count && g_channel_array[client->channel_id].video_streamer_client_id == sender_client_id)
+    status0 = base__is_current_client_request(sender_client_id) == TRUE;
+    if (status0 == TRUE)
+    {
+        status1 = client->is_existing == TRUE;
+        status2 = client->is_authenticated == TRUE;
+        status3 = client->is_streaming_video == TRUE;
+        status4 = client->channel_id < g_server_settings.max_channel_count;
+        status0 = status1 == TRUE && status2 == TRUE && status3 == TRUE && status4 == TRUE;
+    }
+    if (status0 == TRUE)
+    {
+        status0 = g_channel_array[client->channel_id].video_streamer_client_id == sender_client_id;
+    }
+    if (status0 == TRUE)
     {
         video_channel__stop(client->channel_id, "stopped");
     }
@@ -188,6 +222,9 @@ void client_msg__video__process_stop(cJSON* json_root, uint64 sender_client_id)
 void client_msg__video__process_watch(cJSON* json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     client_t* client = 0;
     cJSON* json_message_object = 0;
     cJSON* json_is_watching = 0;
@@ -210,7 +247,14 @@ void client_msg__video__process_watch(cJSON* json_root, uint64 sender_client_id)
 
     client = &g_clients_array[sender_client_id];
 
-    if (client->is_existing == TRUE && client->is_authenticated == TRUE)
+    status0 = base__is_current_client_request(sender_client_id) == TRUE;
+    if (status0 == TRUE)
+    {
+        status1 = client->is_existing == TRUE;
+        status2 = client->is_authenticated == TRUE;
+        status0 = status1 == TRUE && status2 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         status = video_channel__set_viewer_watching(client, (boole)cJSON_IsTrue(json_is_watching), &refusal_reason);
 
@@ -235,10 +279,14 @@ void client_msg__video__process_watch(cJSON* json_root, uint64 sender_client_id)
 void client_msg__video__process_allow_viewer(cJSON* json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     client_t* client = 0;
     cJSON* json_message_object = 0;
     cJSON* json_client_id = 0;
     cJSON* json_is_allowed = 0;
+    uint64 viewer_client_id = 0;
 
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     if (status == FALSE)
@@ -255,7 +303,8 @@ void client_msg__video__process_allow_viewer(cJSON* json_root, uint64 sender_cli
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
     json_is_allowed = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_allowed");
 
-    if (cJSON_IsNumber(json_client_id) == FALSE || json_client_id->valuedouble < 0 || json_client_id->valuedouble >= (double)g_server_settings.max_client_count)
+    if (g_server_settings.max_client_count == 0
+        || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &viewer_client_id) == FALSE)
     {
         return;
     }
@@ -269,9 +318,16 @@ void client_msg__video__process_allow_viewer(cJSON* json_root, uint64 sender_cli
 
     client = &g_clients_array[sender_client_id];
 
-    if (client->is_existing == TRUE && client->is_authenticated == TRUE)
+    status0 = base__is_current_client_request(sender_client_id) == TRUE;
+    if (status0 == TRUE)
     {
-        video_channel__allow_viewer(client, (uint64)json_client_id->valuedouble, (boole)cJSON_IsTrue(json_is_allowed));
+        status1 = client->is_existing == TRUE;
+        status2 = client->is_authenticated == TRUE;
+        status0 = status1 == TRUE && status2 == TRUE;
+    }
+    if (status0 == TRUE)
+    {
+        video_channel__allow_viewer(client, viewer_client_id, (boole)cJSON_IsTrue(json_is_allowed));
     }
 
     clib__unlock(&g_channels_global_rwlock_guard);
@@ -288,6 +344,9 @@ void client_msg__video__process_allow_viewer(cJSON* json_root, uint64 sender_cli
  */
 void client_msg__video__process_keyframe_request(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     client_t* client = 0;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
@@ -295,7 +354,14 @@ void client_msg__video__process_keyframe_request(cJSON* json_root, uint64 sender
 
     client = &g_clients_array[sender_client_id];
 
-    if (client->is_existing == TRUE && client->is_authenticated == TRUE)
+    status0 = base__is_current_client_request(sender_client_id) == TRUE;
+    if (status0 == TRUE)
+    {
+        status1 = client->is_existing == TRUE;
+        status2 = client->is_authenticated == TRUE;
+        status0 = status1 == TRUE && status2 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         video_channel__forward_keyframe_request(client);
     }

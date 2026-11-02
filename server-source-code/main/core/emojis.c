@@ -546,11 +546,13 @@ static boole _emojis_internal__unicode_valid(cstring unicode)
  */
 static boole _emojis_internal__new_id(char* id)
 {
+    boole status = FALSE;
     static const char hex[] = "0123456789abcdef";
     ubyte random[16];
     uint i = 0;
 
-    if (!util__fill_secure_random_bytes(random, sizeof(random)))
+    status = util__fill_secure_random_bytes(random, sizeof(random));
+    if (status == FALSE)
     {
         return FALSE;
     }
@@ -649,7 +651,10 @@ static cstring _emojis_internal__store(cstring name, cstring base64, cstring uni
  */
 cstring emojis__add(cstring name, cstring base64, char* id)
 {
-    if (!_emojis_internal__new_id(id))
+    boole status = FALSE;
+
+    status = _emojis_internal__new_id(id);
+    if (status == FALSE)
     {
         return "Could not create an emoji identifier.";
     }

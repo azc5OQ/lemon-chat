@@ -7,6 +7,7 @@
 #include "msg/server/server_msg.h"
 #include "crypto/crypto.h"
 #include "network/transport.h"
+#include "network/protocol.h"
 #include "platform/thread.h"
 #include "platform/system.h"
 #include "platform/hotkey.h"
@@ -208,12 +209,16 @@ static void _session_internal__worker(void* context)
                     continue;
                 }
                 fallback = FALSE;
+                session->model.tls_certificate_rejected = status.certificate_rejected;
                 if (clib__string_format(fallback_address, sizeof(fallback_address), "ws://%s", session->connection.address + 6)
                     && !desktop_session__stopping(session)
                     && desktop_transport__connect(session->transport, fallback_address))
                 {
+                    session->model.ws_fallback = TRUE;
                     clib__string_copy(session->connection.address, sizeof(session->connection.address), fallback_address);
-                    desktop_session__detail(session, "Secure connection unavailable; trying WS...", 0);
+                    desktop_session__detail(session, status.certificate_rejected
+                        ? "TLS certificate verification failed; trying WS without TLS server verification..."
+                        : "Secure connection failed; trying WS without TLS protection...", 0);
                     deadline = desktop_system__milliseconds() + 30000;
                     clib__null_memory(fallback_address, sizeof(fallback_address));
                     continue;
@@ -240,7 +245,7 @@ static void _session_internal__worker(void* context)
                 continue;
             }
             plaintext = desktop_crypto__decrypt(session->crypto, frame.data, frame.size);
-            root = plaintext ? cJSON_Parse(plaintext) : NULL;
+                root = plaintext ? desktop_protocol__parse_json(plaintext, clib__strlen(plaintext), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT) : NULL;
             incoming = cJSON_GetObjectItemCaseSensitive(root, "message");
             type = server_msg__read_string(incoming, "type");
             if (phase == 1 && clib__strcmp(type, "public_key_challenge") == 0)

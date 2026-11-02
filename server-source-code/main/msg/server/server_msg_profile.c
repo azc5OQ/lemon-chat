@@ -60,10 +60,10 @@ void server_msg__profile__send_client_rename_message_to_all_clients(client_t* su
 
 
 /**
- * @brief broadcasts the country code a client's row shows from now on, to all authenticated non-bot
- *        clients. the clients only ever see the code, never the setting that withholds it, so this
- *        is sent whenever the code the server is willing to show changed: the client became or
- *        stopped being an admin, or the admin toggled is_admin_country_flag_hidden
+ * @brief Broadcasts a client's visible country code to authenticated human clients.
+ *
+ * Call this when admin status or is_admin_country_flag_hidden changes the visible code.
+ * Messages contain only the visible country code.
  *
  * @param client_t* subject -> the client whose shown code changed
  *

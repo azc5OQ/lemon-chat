@@ -1,5 +1,6 @@
 #include "crypto/crypto.h"
 #include "clib.h"
+#include "network/protocol.h"
 #include "session/session_internal.h"
 #include "msg/client/client_msg.h"
 #include "msg/server/server_msg.h"
@@ -81,7 +82,7 @@ void server_msg__chat__append_direct(desktop_session_t* session, int64 slot, con
  */
 void server_msg__chat__receive_text(desktop_session_t* session, int64 channel, int64 slot, const char* sender, const char* payload, int64 author_slot, int64 server_id)
 {
-    cJSON* wrapper = payload ? cJSON_Parse(payload) : NULL;
+    cJSON* wrapper = payload ? desktop_protocol__parse_json(payload, clib__strlen(payload), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT) : NULL;
     const cJSON* value = cJSON_GetObjectItemCaseSensitive(wrapper, "value");
     const char* text = cJSON_IsString(value) ? value->valuestring : payload;
     const char* id = server_msg__read_string(wrapper, "reaction_id");
@@ -234,12 +235,13 @@ void server_msg__chat__process_direct(desktop_session_t* session, const cJSON* m
     {
         return;
     }
-    envelope = cJSON_Parse(server_msg__read_string(message, "value"));
+    envelope = desktop_protocol__parse_json(server_msg__read_string(message, "value"),
+        clib__strlen(server_msg__read_string(message, "value")), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT);
     keys_json = desktop_crypto__hybrid_decrypt(session->crypto, server_msg__read_string(envelope, "message_keys"));
     if (keys_json && desktop_crypto__read_keys(keys_json, &direct_keys))
     {
         plaintext = desktop_crypto__content_decrypt(&direct_keys, server_msg__read_string(envelope, "message_value"));
-        body = plaintext ? cJSON_Parse(plaintext) : NULL;
+        body = plaintext ? desktop_protocol__parse_json(plaintext, clib__strlen(plaintext), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT) : NULL;
         complete = sender == session->maintainer && session->maintainer >= 0
             && clib__strcmp(server_msg__read_string(body, "type"), "channel_keys_from_maintainer") == 0
             && server_msg__read_number(body, "channel_id") == session->model.channel

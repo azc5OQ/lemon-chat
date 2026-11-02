@@ -13,6 +13,7 @@ void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 rec
 uint64 file_transfer__get_max_file_upload_length(void);
 
 uint64 file_transfer__get_max_chat_file_encrypted_length(void);
+uint64 file_transfer__get_max_chat_picture_encrypted_length(void);
 
 void file_transfer__add_uploaded_song(musicbot_add_song_arg_struct_t* arguments);
 

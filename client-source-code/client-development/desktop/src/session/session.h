@@ -176,6 +176,8 @@ typedef struct desktop_session_view_t
     uint64 revision;
     uint64 connection_serial;
     boole connected;
+    boole ws_fallback;
+    boole tls_certificate_rejected;
     boole keys_ready;
     boole audio_ready;
     boole microphone_ready;

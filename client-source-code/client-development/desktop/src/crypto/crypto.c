@@ -78,7 +78,7 @@ static boole _crypto_internal__mac(desktop_crypto_t* crypto, const char* iv, con
 static void _crypto_internal__layer(const unsigned char key[32], const unsigned char iv[16], unsigned char* bytes, uint64 length);
 static char* _crypto_internal__content(desktop_crypto_t* crypto, const desktop_content_keys_t* keys, const char* text, boole encrypt);
 static boole _crypto_internal__content_envelope(const char* text, uint64 length, cJSON** root, unsigned char iv[16], const char** encoded);
-static char* _crypto_internal__attachment(const desktop_content_keys_t* keys, const char* text, boole encrypt, uint64 padding);
+static char* _crypto_internal__attachment(desktop_crypto_t* crypto, const desktop_content_keys_t* keys, const char* text, boole encrypt, boole picture, uint64 padding);
 
 /**
  * @brief encodes bytes into a capacity-carrying string buffer.
@@ -532,7 +532,6 @@ char* desktop_crypto__decrypt(desktop_crypto_t* crypto, const char* envelope, ui
     const cJSON* iv_value = NULL;
     const cJSON* data_value = NULL;
     const cJSON* tag_value = NULL;
-    const char* end = NULL;
     unsigned char iv[16] = {0};
     unsigned char checksum[32] = {0};
     unsigned char received_tag[32] = {0};
@@ -548,8 +547,8 @@ char* desktop_crypto__decrypt(desktop_crypto_t* crypto, const char* envelope, ui
     {
         return NULL;
     }
-    root = cJSON_ParseWithLengthOpts(envelope, length, &end, 0);
-    if (!root || end != envelope + length)
+    root = desktop_protocol__parse_json(envelope, length, DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT);
+    if (!root)
     {
         goto label_finished;
     }
@@ -726,7 +725,7 @@ boole desktop_crypto__read_keys(const char* json, desktop_content_keys_t* keys)
     unsigned char* output = NULL;
 
     clib__null_memory(keys, sizeof(*keys));
-    root = json ? cJSON_Parse(json) : NULL;
+    root = json ? desktop_protocol__parse_json(json, clib__strlen(json), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT) : NULL;
     complete = cJSON_IsArray(root) && cJSON_GetArraySize(root) == 4;
     for (index = 0; index < 4 && complete; index++)
     {
@@ -828,7 +827,7 @@ static boole _crypto_internal__content_envelope(const char* text, uint64 length,
     {
         return FALSE;
     }
-    *root = cJSON_ParseWithLengthOpts(text, length + 1, NULL, TRUE);
+    *root = desktop_protocol__parse_json(text, length, 40ULL * 1024 * 1024, 1);
     iv_value = cJSON_GetObjectItemCaseSensitive(*root, "iv");
     data_value = cJSON_GetObjectItemCaseSensitive(*root, "data");
     if (!cJSON_IsObject(*root) || cJSON_GetArraySize(*root) != 2 || !cJSON_IsString(iv_value)
@@ -983,14 +982,16 @@ char* desktop_crypto__content_decrypt(const desktop_content_keys_t* keys, const 
 }
 
 /**
- * @brief reproduces the browser attachment wire format with a separate bounded payload limit.
+ * @brief follows the browser's separate picture and file encryption formats within the attachment size limit.
+ * @param desktop_crypto_t* crypto -> random source for picture encryption; unused for files and decoding
  * @param const desktop_content_keys_t* keys -> captured channel keys or fresh direct attachment keys
  * @param const char* text -> terminated plaintext, current IV envelope or legacy base64 ciphertext
  * @param boole encrypt -> TRUE to encrypt, FALSE to decrypt
+ * @param boole picture -> TRUE to emit the browser's picture IV envelope; files use bare base64
  * @param uint64 padding -> minimum plaintext bytes, at most 4096
  * @return char* -> owned terminated result; free with desktop_crypto__free_text
  */
-static char* _crypto_internal__attachment(const desktop_content_keys_t* keys, const char* text, boole encrypt, uint64 padding)
+static char* _crypto_internal__attachment(desktop_crypto_t* crypto, const desktop_content_keys_t* keys, const char* text, boole encrypt, boole picture, uint64 padding)
 {
     const uint64 limit = 40ULL * 1024 * 1024;
     cJSON* root = NULL;
@@ -1007,6 +1008,8 @@ static char* _crypto_internal__attachment(const desktop_content_keys_t* keys, co
     size_t written = 0;
     unsigned char* bytes = NULL;
     char* result = NULL;
+    char* encoded = NULL;
+    char iv_text[25] = {0};
     if (!keys || !length || length > limit || padding > 4096)
     {
         return NULL;
@@ -1029,6 +1032,10 @@ static char* _crypto_internal__attachment(const desktop_content_keys_t* keys, co
     clib__null_memory(bytes, size + 1);
     if (encrypt)
     {
+        if (picture && !desktop_crypto__random(crypto, iv, sizeof(iv)))
+        {
+            goto label_finished;
+        }
         clib__memcpy(bytes, text, length);
     }
     else if (mbedtls_base64_decode(bytes, size, &written, (const unsigned char*)encoded_data, length) != 0 || !written)
@@ -1054,15 +1061,34 @@ static char* _crypto_internal__attachment(const desktop_content_keys_t* keys, co
         {
             goto label_finished;
         }
-        result = cJSON_malloc(capacity);
-        if (result)
+        if (picture)
         {
-            clib__null_memory(result, capacity);
-            if (!_crypto_internal__base64(result, capacity, bytes, size))
+            root = cJSON_CreateObject();
+            encoded = calloc(1, capacity);
+            if (root && encoded && _crypto_internal__base64(encoded, capacity, bytes, size)
+                && _crypto_internal__base64(iv_text, sizeof(iv_text), iv, sizeof(iv))
+                && cJSON_AddStringToObject(root, "iv", iv_text) && cJSON_AddStringToObject(root, "data", encoded))
             {
-                mbedtls_platform_zeroize(result, capacity);
-                cJSON_free(result);
-                result = NULL;
+                result = cJSON_PrintUnformatted(root);
+                if (result && (uint64)clib__strlen(result) > limit)
+                {
+                    desktop_crypto__free_text(result);
+                    result = NULL;
+                }
+            }
+        }
+        else
+        {
+            result = cJSON_malloc(capacity);
+            if (result)
+            {
+                clib__null_memory(result, capacity);
+                if (!_crypto_internal__base64(result, capacity, bytes, size))
+                {
+                    mbedtls_platform_zeroize(result, capacity);
+                    cJSON_free(result);
+                    result = NULL;
+                }
             }
         }
     }
@@ -1091,13 +1117,19 @@ label_finished:
         mbedtls_platform_zeroize(bytes, bytes_capacity);
         cJSON_free(bytes);
     }
+    if (encoded)
+    {
+        mbedtls_platform_zeroize(encoded, capacity);
+        free(encoded);
+    }
+    mbedtls_platform_zeroize(iv_text, sizeof(iv_text));
     mbedtls_platform_zeroize(counter, sizeof(counter));
     mbedtls_platform_zeroize(iv, sizeof(iv));
     return result;
 }
 
 /**
- * @brief encrypts the existing bare-base64 attachment format understood by browser clients.
+ * @brief encrypts file headers and bodies in the bare-base64 format read by existing browser clients.
  * @param const desktop_content_keys_t* keys -> worker-owned content keys
  * @param const char* text -> attachment plaintext
  * @param uint64 padding -> protocol padding floor: 1024 for headers, 4096 for bodies
@@ -1105,7 +1137,20 @@ label_finished:
  */
 char* desktop_crypto__attachment_encrypt(const desktop_content_keys_t* keys, const char* text, uint64 padding)
 {
-    return _crypto_internal__attachment(keys, text, TRUE, padding);
+    return _crypto_internal__attachment(NULL, keys, text, TRUE, FALSE, padding);
+}
+
+/**
+ * @brief encrypts a picture using the fresh-IV envelope already supported by the browser.
+ * @param desktop_crypto_t* crypto -> attachment worker's random source
+ * @param const desktop_content_keys_t* keys -> captured channel keys or fresh direct keys
+ * @param const char* text -> picture data URL
+ * @param uint64 padding -> minimum plaintext size
+ * @return char* -> owned picture envelope or NULL
+ */
+char* desktop_crypto__picture_encrypt(desktop_crypto_t* crypto, const desktop_content_keys_t* keys, const char* text, uint64 padding)
+{
+    return _crypto_internal__attachment(crypto, keys, text, TRUE, TRUE, padding);
 }
 
 /**
@@ -1116,7 +1161,7 @@ char* desktop_crypto__attachment_encrypt(const desktop_content_keys_t* keys, con
  */
 char* desktop_crypto__attachment_decrypt(const desktop_content_keys_t* keys, const char* text)
 {
-    return _crypto_internal__attachment(keys, text, FALSE, 0);
+    return _crypto_internal__attachment(NULL, keys, text, FALSE, FALSE, 0);
 }
 
 /**

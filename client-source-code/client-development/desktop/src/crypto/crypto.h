@@ -37,6 +37,7 @@ boole desktop_crypto__read_keys(const char* json, desktop_content_keys_t* keys);
 char* desktop_crypto__content_encrypt(desktop_crypto_t* crypto, const desktop_content_keys_t* keys, const char* text);
 char* desktop_crypto__content_decrypt(const desktop_content_keys_t* keys, const char* text);
 char* desktop_crypto__attachment_encrypt(const desktop_content_keys_t* keys, const char* text, uint64 padding);
+char* desktop_crypto__picture_encrypt(desktop_crypto_t* crypto, const desktop_content_keys_t* keys, const char* text, uint64 padding);
 char* desktop_crypto__attachment_decrypt(const desktop_content_keys_t* keys, const char* text);
 char* desktop_crypto__hybrid_encrypt(desktop_crypto_t* crypto, const char* public_key, const char* text);
 char* desktop_crypto__hybrid_decrypt(desktop_crypto_t* crypto, const char* text);

@@ -145,6 +145,7 @@ void server_msg__moderation__send_channel_group_changed(client_t* subject)
  */
 void server_msg__moderation__send_bans(client_t* receiver, boole show_addresses)
 {
+    boole status = FALSE;
     cJSON* message = NULL_POINTER;
     cJSON* root = server_msg__delivery__new_message("ban_list", &message);
     cJSON* entries = cJSON_CreateArray();
@@ -163,7 +164,8 @@ void server_msg__moderation__send_bans(client_t* receiver, boole show_addresses)
         }
         if (!ban->removal_token[0])
         {
-            if (!util__fill_secure_random_bytes(token, sizeof(token)))
+            status = util__fill_secure_random_bytes(token, sizeof(token));
+            if (status == FALSE)
             {
                 continue;
             }

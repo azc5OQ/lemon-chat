@@ -103,6 +103,9 @@ int metadata_crypto__key_from_password(crypto_key_t* key, crypto_key_type_t type
     unsigned char digest[32] = {0};
     const mbedtls_md_info_t* md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     int result = 0;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
 
     if (key == NULL)
     {
@@ -113,21 +116,27 @@ int metadata_crypto__key_from_password(crypto_key_t* key, crypto_key_type_t type
     // password into the 32 bytes used by its AES key, just as the client does.
     // If another key type is added, this function must also say how to turn a
     // password into the bytes that the new encryption method needs.
-    if (type == CRYPTO_KEY_AES_256_CTR && password != NULL && md != NULL
-        && mbedtls_md(md, (const unsigned char*)password, clib__strlen(password), digest) == 0)
+    status0 = type == CRYPTO_KEY_AES_256_CTR;
+    status1 = password != NULL;
+    status2 = md != NULL;
+    if (status0 == TRUE && status1 == TRUE && status2 == TRUE)
     {
-        result = metadata_crypto__key_init(key, type, digest, sizeof(digest));
+        status0 = mbedtls_md(md, (const unsigned char*)password, clib__strlen(password), digest) == 0;
+        if (status0 == TRUE)
+        {
+            result = metadata_crypto__key_init(key, type, digest, sizeof(digest));
+        }
     }
     mbedtls_platform_zeroize(digest, sizeof(digest));
     return result;
 }
 
 /**
- * @brief Overwrites the memory containing an AES key and an HMAC key with
- * zeroes. This is used for temporary keys after they are no longer needed and
- * when creating connection keys fails, so the old key bytes do not remain in
- * memory until that memory is reused. mbedtls_platform_zeroize is used because
- * the compiler is not allowed to remove this memory clearing as unnecessary.
+ * @brief Overwrites the session's AES and HMAC keys with zeroes.
+ *
+ * This clears temporary keys after use and connection keys when their creation
+ * fails, so the old key bytes do not remain until the memory is reused.
+ * mbedtls_platform_zeroize prevents the compiler from removing the wipe.
  *
  * @param crypto_session_keys_t* keys -> structure containing the key bytes to clear; NULL is allowed
  *
@@ -158,6 +167,7 @@ int metadata_crypto__derive_session_keys(const char* shared_secret, crypto_sessi
     unsigned char material[64] = {0};
     const mbedtls_md_info_t* md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     int result = 0;
+    boole status = FALSE;
 
     if (keys == NULL)
     {
@@ -168,12 +178,30 @@ int metadata_crypto__derive_session_keys(const char* shared_secret, crypto_sessi
     // secret as decimal text too. Both ends must do this exactly the same way
     // to get the same keys: the first 32 bytes are the encryption key, and the
     // next 32 bytes are the key used to check whether a message was changed.
-    if (shared_secret != NULL && shared_secret[0] != '\0' && md != NULL
-        && mbedtls_hkdf(md, salt, sizeof(salt) - 1,
+    status = shared_secret != NULL;
+    if (status == TRUE)
+    {
+        status = shared_secret[0] != '\0';
+    }
+    if (status == TRUE)
+    {
+        status = md != NULL;
+    }
+    if (status == TRUE)
+    {
+        status = mbedtls_hkdf(md, salt, sizeof(salt) - 1,
             (const unsigned char*)shared_secret, clib__strlen(shared_secret),
-            info, sizeof(info) - 1, material, sizeof(material)) == 0
-        && metadata_crypto__key_init(&keys->encryption, CRYPTO_KEY_AES_256_CTR, material, 32)
-        && metadata_crypto__key_init(&keys->authentication, CRYPTO_KEY_HMAC_SHA256, material + 32, 32))
+            info, sizeof(info) - 1, material, sizeof(material)) == 0;
+    }
+    if (status == TRUE)
+    {
+        status = metadata_crypto__key_init(&keys->encryption, CRYPTO_KEY_AES_256_CTR, material, 32) != 0;
+    }
+    if (status == TRUE)
+    {
+        status = metadata_crypto__key_init(&keys->authentication, CRYPTO_KEY_HMAC_SHA256, material + 32, 32) != 0;
+    }
+    if (status == TRUE)
     {
         keys->is_ready = 1;
         result = 1;
@@ -201,8 +229,16 @@ int metadata_crypto__derive_session_keys(const char* shared_secret, crypto_sessi
 int metadata_crypto__crypt(const crypto_key_t* key, const unsigned char* nonce, size_t nonce_size,
     unsigned char* data, size_t size, crypto_direction_t direction)
 {
-    if (key == NULL || nonce == NULL || data == NULL
-        || (direction != CRYPTO_ENCRYPT && direction != CRYPTO_DECRYPT))
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+
+    status0 = key == NULL;
+    status1 = nonce == NULL;
+    status2 = data == NULL;
+    status3 = direction != CRYPTO_ENCRYPT && direction != CRYPTO_DECRYPT;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
     {
         return 0;
     }
@@ -252,9 +288,16 @@ int metadata_crypto__crypt_layers(const crypto_key_t* keys, size_t count, const 
 {
     size_t i = 0;
     size_t index = 0;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
 
-    if ((count != 0 && keys == NULL) || nonce == NULL || data == NULL
-        || (direction != CRYPTO_ENCRYPT && direction != CRYPTO_DECRYPT))
+    status0 = count != 0 && keys == NULL;
+    status1 = nonce == NULL;
+    status2 = data == NULL;
+    status3 = direction != CRYPTO_ENCRYPT && direction != CRYPTO_DECRYPT;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
     {
         return 0;
     }
@@ -291,9 +334,22 @@ int metadata_crypto__hmac_sha256(const crypto_key_t* key, const unsigned char* f
     const mbedtls_md_info_t* md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     mbedtls_md_context_t context;
     int result = 0;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    boole status4 = FALSE;
 
-    if (key == NULL || key->type != CRYPTO_KEY_HMAC_SHA256 || out_tag == NULL || md == NULL
-        || (first == NULL && first_size != 0) || (second == NULL && second_size != 0))
+    if (key == NULL)
+    {
+        return 0;
+    }
+    status0 = key->type != CRYPTO_KEY_HMAC_SHA256;
+    status1 = out_tag == NULL;
+    status2 = md == NULL;
+    status3 = first == NULL && first_size != 0;
+    status4 = second == NULL && second_size != 0;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE || status4 == TRUE)
     {
         return 0;
     }
@@ -303,11 +359,15 @@ int metadata_crypto__hmac_sha256(const crypto_key_t* key, const unsigned char* f
     {
         result = mbedtls_md_hmac_starts(&context, key->material.hmac_sha256, sizeof(key->material.hmac_sha256));
     }
-    if (result == 0 && first_size != 0)
+    status0 = result == 0;
+    status1 = first_size != 0;
+    if (status0 == TRUE && status1 == TRUE)
     {
         result = mbedtls_md_hmac_update(&context, first, first_size);
     }
-    if (result == 0 && second_size != 0)
+    status0 = result == 0;
+    status1 = second_size != 0;
+    if (status0 == TRUE && status1 == TRUE)
     {
         result = mbedtls_md_hmac_update(&context, second, second_size);
     }
@@ -383,26 +443,45 @@ char* metadata_crypto__encrypt(const char* plaintext, int64* out_size, const cry
     unsigned char* buffer = NULL_POINTER;
     unsigned char* encoded = NULL_POINTER;
     char* envelope = NULL_POINTER;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
 
     if (out_size == NULL_POINTER)
     {
         return NULL_POINTER;
     }
     *out_size = 0;
-    if (plaintext == NULL_POINTER || (session != NULL_POINTER && !session->is_ready)
-        || g_server_settings.websocket_message_max_length <= 0)
+    status0 = plaintext == NULL_POINTER;
+    if (status0 == TRUE)
+    {
+        return NULL_POINTER;
+    }
+    if (session != NULL_POINTER)
+    {
+        status0 = session->is_ready == FALSE;
+    }
+    status1 = g_server_settings.websocket_message_max_length <= 0;
+    if (status0 == TRUE || status1 == TRUE)
     {
         return NULL_POINTER;
     }
     text_size = clib__strlen(plaintext);
     buffer_size = text_size < METADATA_PADDED_SIZE ? METADATA_PADDED_SIZE : text_size;
-    if (buffer_size > (uint64)g_server_settings.websocket_message_max_length || buffer_size > (SIZE_MAX - 2) / 4)
+    status0 = buffer_size > (uint64)g_server_settings.websocket_message_max_length;
+    status1 = buffer_size > (SIZE_MAX - 2) / 4;
+    if (status0 == TRUE || status1 == TRUE)
     {
         return NULL_POINTER;
     }
     encoded_capacity = 4 * ((buffer_size + 2) / 3) + 1;
-    if (encoded_capacity > (uint64)g_server_settings.websocket_message_max_length
-        || !util__fill_secure_random_bytes(iv, sizeof(iv)))
+    status0 = encoded_capacity > (uint64)g_server_settings.websocket_message_max_length;
+    if (status0 == TRUE)
+    {
+        return NULL_POINTER;
+    }
+    status0 = util__fill_secure_random_bytes(iv, sizeof(iv)) == FALSE;
+    if (status0 == TRUE)
     {
         return NULL_POINTER;
     }
@@ -411,7 +490,9 @@ char* metadata_crypto__encrypt(const char* plaintext, int64* out_size, const cry
     // bytes. This keeps the same minimum encrypted message size as before.
     buffer = (unsigned char*)memorymanager__allocate(buffer_size, MEMALLOC_TYPE_ENCRYPT);
     encoded = (unsigned char*)memorymanager__allocate(encoded_capacity, MEMALLOC_TYPE_ENCRYPT);
-    if (buffer == NULL_POINTER || encoded == NULL_POINTER)
+    status0 = buffer == NULL_POINTER;
+    status1 = encoded == NULL_POINTER;
+    if (status0 == TRUE || status1 == TRUE)
     {
         goto done;
     }
@@ -424,13 +505,22 @@ char* metadata_crypto__encrypt(const char* plaintext, int64* out_size, const cry
     {
         goto done;
     }
-    if (session != NULL_POINTER && !metadata_crypto__crypt(&session->encryption,
-        iv, sizeof(iv), buffer, buffer_size, CRYPTO_ENCRYPT))
+    if (session != NULL_POINTER)
+    {
+        status0 = metadata_crypto__crypt(&session->encryption,
+            iv, sizeof(iv), buffer, buffer_size, CRYPTO_ENCRYPT) != 0;
+        if (status0 == FALSE)
+        {
+            goto done;
+        }
+    }
+    status0 = mbedtls_base64_encode(encoded, encoded_capacity, &written, buffer, buffer_size) == 0;
+    if (status0 == FALSE)
     {
         goto done;
     }
-    if (mbedtls_base64_encode(encoded, encoded_capacity, &written, buffer, buffer_size) != 0
-        || mbedtls_base64_encode(iv_base64, sizeof(iv_base64), &written, iv, sizeof(iv)) != 0)
+    status0 = mbedtls_base64_encode(iv_base64, sizeof(iv_base64), &written, iv, sizeof(iv)) == 0;
+    if (status0 == FALSE)
     {
         goto done;
     }
@@ -440,8 +530,13 @@ char* metadata_crypto__encrypt(const char* plaintext, int64* out_size, const cry
     // Both ends calculate this over the base64 text sent in the JSON fields.
     if (session != NULL_POINTER)
     {
-        if (!_metadata_crypto_internal__tag(session, (char*)iv_base64, (char*)encoded, tag)
-            || mbedtls_base64_encode(tag_base64, sizeof(tag_base64), &written, tag, sizeof(tag)) != 0)
+        status0 = _metadata_crypto_internal__tag(session, (char*)iv_base64, (char*)encoded, tag) != 0;
+        if (status0 == FALSE)
+        {
+            goto done;
+        }
+        status0 = mbedtls_base64_encode(tag_base64, sizeof(tag_base64), &written, tag, sizeof(tag)) == 0;
+        if (status0 == FALSE)
         {
             goto done;
         }
@@ -463,8 +558,10 @@ char* metadata_crypto__encrypt(const char* plaintext, int64* out_size, const cry
     {
         envelope_size = clib__string_format(envelope, envelope_capacity, "{\"iv\":\"%s\",\"data\":\"%s\"}", iv_base64, encoded);
     }
-    if (envelope_size <= 0 || (size_t)envelope_size >= envelope_capacity
-        || envelope_size > g_server_settings.websocket_message_max_length)
+    status0 = envelope_size <= 0;
+    status1 = (size_t)envelope_size >= envelope_capacity;
+    status2 = envelope_size > g_server_settings.websocket_message_max_length;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE)
     {
         memorymanager__free((nuint)envelope);
         envelope = NULL_POINTER;
@@ -541,24 +638,49 @@ boole metadata_crypto__decrypt_from_client(const client_t* client, const char* e
     const crypto_session_keys_t* session = NULL_POINTER;
     crypto_session_keys_t temporary_session = {0};
     boole result = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
 
-    if (out == NULL_POINTER || capacity == 0)
+    status0 = out == NULL_POINTER;
+    status1 = capacity == 0;
+    if (status0 == TRUE || status1 == TRUE)
     {
         return FALSE;
     }
     clib__memset(out, 0, capacity);
-    if (envelope_text == NULL_POINTER || client == NULL_POINTER || !client->is_existing)
+    status0 = envelope_text == NULL_POINTER;
+    status1 = client == NULL_POINTER;
+    if (status0 == TRUE || status1 == TRUE)
+    {
+        return FALSE;
+    }
+    status0 = client->is_existing == FALSE;
+    if (status0 == TRUE)
     {
         return FALSE;
     }
     envelope = cJSON_Parse(envelope_text);
     iv_item = cJSON_GetObjectItemCaseSensitive(envelope, "iv");
     data_item = cJSON_GetObjectItemCaseSensitive(envelope, "data");
-    if (!cJSON_IsString(iv_item) || !cJSON_IsString(data_item)
-        || clib__strlen(iv_item->valuestring) != 24
-        || mbedtls_base64_decode(iv, sizeof(iv), &written,
-            (const unsigned char*)iv_item->valuestring, clib__strlen(iv_item->valuestring)) != 0
-        || written != sizeof(iv))
+    status0 = cJSON_IsString(iv_item) != 0;
+    status1 = cJSON_IsString(data_item) != 0;
+    if (status0 == FALSE || status1 == FALSE)
+    {
+        goto done;
+    }
+    status0 = clib__strlen(iv_item->valuestring) == 24;
+    if (status0 == FALSE)
+    {
+        goto done;
+    }
+    status0 = mbedtls_base64_decode(iv, sizeof(iv), &written,
+        (const unsigned char*)iv_item->valuestring, clib__strlen(iv_item->valuestring)) == 0;
+    if (status0 == FALSE)
+    {
+        goto done;
+    }
+    status0 = written == sizeof(iv);
+    if (status0 == FALSE)
     {
         goto done;
     }
@@ -578,11 +700,29 @@ boole metadata_crypto__decrypt_from_client(const client_t* client, const char* e
         // must include this check value, called the tag. Reject a message that
         // leaves it out; otherwise someone could remove the tag to skip the
         // check that the message has not been changed.
-        if (!cJSON_IsString(tag_item) || clib__strlen(tag_item->valuestring) != 44
-            || !_metadata_crypto_internal__tag(session, iv_item->valuestring, data_item->valuestring, expected_tag)
-            || mbedtls_base64_encode(expected_tag_base64, sizeof(expected_tag_base64), &written,
-                expected_tag, sizeof(expected_tag)) != 0
-            || !metadata_crypto__equal(expected_tag_base64, (const unsigned char*)tag_item->valuestring, 44))
+        status0 = cJSON_IsString(tag_item) != 0;
+        if (status0 == FALSE)
+        {
+            goto done;
+        }
+        status0 = clib__strlen(tag_item->valuestring) == 44;
+        if (status0 == FALSE)
+        {
+            goto done;
+        }
+        status0 = _metadata_crypto_internal__tag(session, iv_item->valuestring, data_item->valuestring, expected_tag) != 0;
+        if (status0 == FALSE)
+        {
+            goto done;
+        }
+        status0 = mbedtls_base64_encode(expected_tag_base64, sizeof(expected_tag_base64), &written,
+            expected_tag, sizeof(expected_tag)) == 0;
+        if (status0 == FALSE)
+        {
+            goto done;
+        }
+        status0 = metadata_crypto__equal(expected_tag_base64, (const unsigned char*)tag_item->valuestring, 44) != 0;
+        if (status0 == FALSE)
         {
             goto done;
         }
@@ -604,10 +744,14 @@ boole metadata_crypto__decrypt_from_client(const client_t* client, const char* e
     {
         goto done;
     }
-    if (session != NULL_POINTER && !metadata_crypto__crypt(&session->encryption,
-        iv, sizeof(iv), out, decoded_size, CRYPTO_DECRYPT))
+    if (session != NULL_POINTER)
     {
-        goto done;
+        status0 = metadata_crypto__crypt(&session->encryption,
+            iv, sizeof(iv), out, decoded_size, CRYPTO_DECRYPT) != 0;
+        if (status0 == FALSE)
+        {
+            goto done;
+        }
     }
     out[decoded_size] = '\0';
     result = TRUE;

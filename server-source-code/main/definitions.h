@@ -393,12 +393,14 @@ typedef enum microphone_usage_e
 
 typedef struct music_bot_single_song_data_t
 {
+    uint64 generation;
     boole is_existing;
     boole is_being_uploaded;
     uint64 length_seconds;
     char song_name[SONG_NAME_MAX_LENGTH];
     boole is_this_song_scheduled_for_deletion;
     boole is_currently_playing;
+    uint64 playback_buffered_until_ms;
     ubyte* mp3_data_buffer;
     uint64 mp3_data_buffer_length;
 } music_bot_single_song_data_t;
@@ -413,7 +415,8 @@ typedef struct music_bot_client_extension_t
 {
     music_bot_audio_keys_t* audio_keys;
     uint64 music_bot_pthread_handle;
-    boole is_music_bot_running;
+    _Atomic(boole) is_music_bot_running;
+    uint64 next_song_generation;
     _Atomic(boole) is_playback_paused;
     _Atomic(boole) is_skip_requested;
     uint64 music_bot_songs_count;
@@ -770,6 +773,7 @@ typedef enum memory_manager_allocation_type_e
 
 typedef struct webrtc_peer_t
 {
+    struct webrtc_teardown_arg_t* teardown;
     int peer_connection_handle;
     int data_channel_handle;
     int video_data_channel_handle;    // the second, reliable channel of this peer (VIDEO_DATACHANNEL_LABEL); 0 while not created

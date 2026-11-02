@@ -1,11 +1,19 @@
 #include "ui/ui_connection.h"
 #include "ui/ui_headers.h"
+#include "ui/ui_layout.h"
 #include "network/endpoint.h"
 #include "session/session.h"
 #include "crypto/crypto.h"
+#include "attachments/attachments.h"
+#include "attachments/attachment_file.h"
 #include "platform/memory.h"
+#include "widgets/widget_filepicker.h"
+#include "mbedtls/platform_util.h"
+#include <stdlib.h>
 
 static int64 g_connection_key_count;
+static boole g_identity_export;
+static char g_identity_selected_path[DESKTOP_ATTACHMENT_PATH];
 
 // declarations
 static gui_node_t* _ui_connection_internal__node(const char* prefix, int64 index);
@@ -13,6 +21,47 @@ static void _ui_connection_internal__result(const char* text);
 static void _ui_connection_internal__add(gui_event_t* event);
 static void _ui_connection_internal__remove(gui_event_t* event);
 static void _ui_connection_internal__reveal(gui_event_t* event);
+static void _ui_connection_internal__text(const char* id, const char* text);
+static void _ui_connection_internal__panel(const char* id, boole visible);
+static void _ui_connection_internal__identity_open(gui_event_t* event);
+static void _ui_connection_internal__identity_close(gui_event_t* event);
+static void _ui_connection_internal__identity_pick(gui_event_t* event);
+static void _ui_connection_internal__identity_submit(gui_event_t* event);
+static boole _ui_connection_internal__identity_file_valid(const char* identity);
+
+/**
+ * @brief copies plain text into a connection control.
+ * @param const char* id -> existing control ID
+ * @param const char* text -> copied text
+ * @return void
+ */
+static void _ui_connection_internal__text(const char* id, const char* text)
+{
+    gui_node_t* node = scene__find_by_id((char*)id);
+    if (node)
+    {
+        scene__set_text(node, text, clib__strlen(text));
+    }
+}
+
+/**
+ * @brief shows or hides the identity file window without blocking the chat.
+ * @param const char* id -> panel ID
+ * @param boole visible -> desired visibility
+ * @return void
+ */
+static void _ui_connection_internal__panel(const char* id, boole visible)
+{
+    gui_node_t* node = scene__find_by_id((char*)id);
+    if (node)
+    {
+        clib__string_copy(node->klass, sizeof(node->klass), visible ? "column panel" : "column panel hidden");
+        if (visible)
+        {
+            desktop_ui_layout__raise(node);
+        }
+    }
+}
 
 /**
  * @brief finds one scene-owned key control without retaining pointers across hot reload.
@@ -42,6 +91,80 @@ static void _ui_connection_internal__result(const char* text)
 }
 
 /**
+ * @brief checks the identity string format shared by browser and desktop clients.
+ * @param const char* identity -> terminated identity string
+ * @return boole -> TRUE for a browser-compatible printable ASCII identity that fits desktop storage
+ */
+boole desktop_ui_connection__identity_valid(const char* identity)
+{
+    int64 length = clib__string_length(identity, sizeof(((desktop_connection_t*)0)->identity));
+    int64 index = 0;
+    if (length < 199)
+    {
+        return FALSE;
+    }
+    for (index = 0; index < length; index++)
+    {
+        if ((unsigned char)identity[index] < 33 || (unsigned char)identity[index] > 126)
+        {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+/**
+ * @brief checks the stricter length accepted by the browser .lmn file importer.
+ * @param const char* identity -> already decoded identity string
+ * @return boole -> TRUE for a portable 199 or 200 byte identity file
+ */
+static boole _ui_connection_internal__identity_file_valid(const char* identity)
+{
+    int64 length = clib__string_length(identity, 201);
+    return (length == 199 || length == 200) && desktop_ui_connection__identity_valid(identity);
+}
+
+/**
+ * @brief decodes the browser .lmn format without changing the selected identity on failure.
+ * @param const unsigned char* bytes -> exact file bytes
+ * @param uint64 size -> file size
+ * @param char* identity -> cleared destination
+ * @param uint64 capacity -> destination capacity including NUL
+ * @return boole -> TRUE when the trimmed raw identity is compatible with both clients
+ */
+boole desktop_ui_connection__identity_decode(const unsigned char* bytes, uint64 size, char* identity, uint64 capacity)
+{
+    uint64 start = 0;
+    uint64 end = size;
+    if (!bytes || !identity || !capacity || capacity > SIZE_MAX || capacity > INT64_MAX || size > 4096)
+    {
+        return FALSE;
+    }
+    desktop_memory__erase(identity, capacity);
+    if (size >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf)
+    {
+        start = 3;
+    }
+    while (start < end && clib__isspace(bytes[start]))
+    {
+        start++;
+    }
+    while (end > start && clib__isspace(bytes[end - 1]))
+    {
+        end--;
+    }
+    if ((end - start != 199 && end - start != 200)
+        || clib__memchr(bytes + start, 0, (int64)(end - start))
+        || !clib__string_copy_n(identity, capacity, (const char*)bytes + start, end - start)
+        || !_ui_connection_internal__identity_file_valid(identity))
+    {
+        desktop_memory__erase(identity, capacity);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/**
  * @brief restores row visibility and byte limits after loading the editable layout.
  * @return boole -> TRUE when all controls exist and accept their limits
  */
@@ -53,7 +176,9 @@ boole desktop_ui_connection__refresh(void)
     gui_node_t* identity = scene__find_by_id("identity-string");
     gui_node_t* reveal = scene__find_by_id("identity-reveal");
     int64 index = 0;
-    boole complete = add != NULL;
+    boole complete = add != NULL && identity != NULL
+        && scene__set_text_limit(identity, sizeof(((desktop_connection_t*)0)->identity) - 1)
+        && scene__reserve_text(identity, sizeof(((desktop_connection_t*)0)->identity) - 1);
     if (identity && reveal)
     {
         identity->input_password = reveal->value == 0;
@@ -321,6 +446,169 @@ static void _ui_connection_internal__reveal(gui_event_t* event)
 }
 
 /**
+ * @brief opens import or export controls for the browser-compatible raw .lmn file.
+ * @param gui_event_t* event -> Import or Export button event
+ * @return void
+ */
+static void _ui_connection_internal__identity_open(gui_event_t* event)
+{
+    gui_node_t* picker = scene__find_by_id("identity-file-picker");
+    gui_node_t* filename = scene__find_by_id("identity-file-name");
+    gui_node_t* username = scene__find_by_id("username");
+    char path[DESKTOP_ATTACHMENT_PATH] = {0};
+    char name[256] = {0};
+    const char* source = username && username->text[0] ? username->text : "identity";
+    g_identity_export = event && event->sender && clib__strcmp(event->sender->id, "identity-export") == 0;
+    desktop_memory__erase(g_identity_selected_path, sizeof(g_identity_selected_path));
+    if (picker && desktop_attachment_file__home(path, sizeof(path)))
+    {
+        widget_filepicker__set_path(picker, path);
+    }
+    desktop_attachment_file__name(name, sizeof(name), source);
+    if (g_identity_export)
+    {
+        clib__string_append(name, sizeof(name), ".lmn");
+    }
+    if (filename)
+    {
+        filename->state = g_identity_export ? GUI_NODE_STATE__DEFAULT : GUI_NODE_STATE__DISABLED;
+    }
+    _ui_connection_internal__text("identity-file-title", g_identity_export ? "Export identity" : "Import identity");
+    _ui_connection_internal__text("identity-file-name", g_identity_export ? name : "");
+    _ui_connection_internal__text("identity-file-submit", g_identity_export ? "Export" : "Import");
+    _ui_connection_internal__text("identity-file-result", g_identity_export
+        ? "Choose a folder and filename. Existing files are not overwritten."
+        : "Choose a .lmn identity file exported by the browser or desktop client.");
+    _ui_connection_internal__panel("identity-file-panel", TRUE);
+    desktop_memory__erase(path, sizeof(path));
+    desktop_memory__erase(name, sizeof(name));
+}
+
+/**
+ * @brief closes the identity file controls and clears the selected path.
+ * @param gui_event_t* event -> unused close event
+ * @return void
+ */
+static void _ui_connection_internal__identity_close(gui_event_t* event)
+{
+    (void)event;
+    _ui_connection_internal__panel("identity-file-panel", FALSE);
+    desktop_memory__erase(g_identity_selected_path, sizeof(g_identity_selected_path));
+    _ui_connection_internal__text("identity-file-name", "");
+}
+
+/**
+ * @brief retains the selected import path only while the identity window is open.
+ * @param gui_event_t* event -> file-picker selection event
+ * @return void
+ */
+static void _ui_connection_internal__identity_pick(gui_event_t* event)
+{
+    char name[256] = {0};
+    if (!g_identity_export && event && !event->file.is_dir && event->file.path)
+    {
+        desktop_attachment_file__name(name, sizeof(name), event->file.path);
+        if (clib__string_copy(g_identity_selected_path, sizeof(g_identity_selected_path), event->file.path))
+        {
+            _ui_connection_internal__text("identity-file-name", name);
+            _ui_connection_internal__text("identity-file-result", "Ready to import the selected identity.");
+        }
+        else
+        {
+            desktop_memory__erase(g_identity_selected_path, sizeof(g_identity_selected_path));
+            _ui_connection_internal__text("identity-file-result", "The selected path is too long.");
+        }
+    }
+    else if (!g_identity_export && (!event || event->file.is_dir))
+    {
+        desktop_memory__erase(g_identity_selected_path, sizeof(g_identity_selected_path));
+        _ui_connection_internal__text("identity-file-name", "");
+    }
+    desktop_memory__erase(name, sizeof(name));
+}
+
+/**
+ * @brief imports or exports the same raw identity bytes used by browser .lmn files.
+ * @param gui_event_t* event -> unused submit event
+ * @return void
+ */
+static void _ui_connection_internal__identity_submit(gui_event_t* event)
+{
+    gui_node_t* identity = scene__find_by_id("identity-string");
+    gui_node_t* filename = scene__find_by_id("identity-file-name");
+    gui_node_t* picker = scene__find_by_id("identity-file-picker");
+    const char* directory = picker ? widget_filepicker__path(picker) : NULL;
+    unsigned char* bytes = NULL;
+    uint64 size = 0;
+    int64 name_length = 0;
+    char imported[sizeof(((desktop_connection_t*)0)->identity)] = {0};
+    char name[256] = {0};
+    char path[DESKTOP_ATTACHMENT_PATH] = {0};
+    boole complete = FALSE;
+    (void)event;
+    if (g_identity_export)
+    {
+        if (!identity || !_ui_connection_internal__identity_file_valid(identity->text))
+        {
+            _ui_connection_internal__text("identity-file-result", "The identity must contain 199 or 200 printable characters before it can be exported.");
+            goto label_finished;
+        }
+        desktop_attachment_file__name(name, sizeof(name), filename ? filename->text : "");
+        if (!filename || !filename->text[0] || clib__strcmp(name, filename->text) != 0)
+        {
+            _ui_connection_internal__text("identity-file-result", "Enter a valid filename.");
+            goto label_finished;
+        }
+        name_length = clib__string_length(name, sizeof(name));
+        if (name_length < 4 || clib__strcmp(name + name_length - 4, ".lmn") != 0)
+        {
+            if (!clib__string_append(name, sizeof(name), ".lmn"))
+            {
+                _ui_connection_internal__text("identity-file-result", "The filename is too long.");
+                goto label_finished;
+            }
+        }
+        if (!directory || clib__strlen(directory) + clib__strlen(name) + 2 > sizeof(path)
+            || clib__string_format(path, sizeof(path), "%s/%s", directory, name) < 0)
+        {
+            _ui_connection_internal__text("identity-file-result", "The selected path is too long.");
+            goto label_finished;
+        }
+        complete = desktop_attachment_file__save(path, (const unsigned char*)identity->text, identity->text_len);
+        _ui_connection_internal__text("identity-file-result", complete
+            ? "Identity exported. Import this file with the same RSA key size in the other client."
+            : "Could not create the file. Choose a new name; existing files are not overwritten.");
+    }
+    else
+    {
+        bytes = desktop_attachment_file__read(g_identity_selected_path, 4096, &size);
+        if (!bytes || !desktop_ui_connection__identity_decode(bytes, size, imported, sizeof(imported)))
+        {
+            _ui_connection_internal__text("identity-file-result", "This is not a browser-compatible .lmn identity file.");
+            goto label_finished;
+        }
+        if (!identity || !scene__reserve_text(identity, clib__strlen(imported))
+            || !scene__set_text(identity, imported, clib__strlen(imported)))
+        {
+            _ui_connection_internal__text("identity-file-result", "Could not place the identity in the connection form.");
+            goto label_finished;
+        }
+        _ui_connection_internal__panel("identity-file-panel", FALSE);
+        _ui_connection_internal__result("Identity imported. Use the same RSA key size as the browser, then choose Save or Connect.");
+        desktop_memory__erase(g_identity_selected_path, sizeof(g_identity_selected_path));
+    }
+label_finished:
+    if (bytes)
+    {
+        mbedtls_platform_zeroize(bytes, size);
+    }
+    free(bytes);
+    desktop_memory__erase(imported, sizeof(imported));
+    desktop_memory__erase(name, sizeof(name));
+    desktop_memory__erase(path, sizeof(path));
+}
+
+/**
  * @brief registers local connection editor handlers before parsing the scene.
  * @return void
  */
@@ -329,6 +617,10 @@ void desktop_ui_connection__initialize(void)
     scene__register_handler("on_server_key_add", _ui_connection_internal__add);
     scene__register_handler("on_server_key_remove", _ui_connection_internal__remove);
     scene__register_handler("on_identity_reveal", _ui_connection_internal__reveal);
+    scene__register_handler("on_identity_file_open", _ui_connection_internal__identity_open);
+    scene__register_handler("on_identity_file_close", _ui_connection_internal__identity_close);
+    scene__register_handler("on_identity_file_pick", _ui_connection_internal__identity_pick);
+    scene__register_handler("on_identity_file_submit", _ui_connection_internal__identity_submit);
 }
 
 /**
@@ -352,4 +644,6 @@ void desktop_ui_connection__shutdown(void)
         }
     }
     g_connection_key_count = 0;
+    g_identity_export = FALSE;
+    desktop_memory__erase(g_identity_selected_path, sizeof(g_identity_selected_path));
 }

@@ -9,7 +9,7 @@
 #include "../third-party/dave-g-json/cJSON.h"
 #include "base.h"
 #include "first_time_setup.h"
-#include "tailscale.h"
+#include "integrations/tailscale.h"
 #include "core/server_settings.h"
 #include "core/audio_channel.h"
 #include "../third-party/rxi-log/log.h"
@@ -397,6 +397,7 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
 {
     char input[600];
     int64 default_port = 1112;
+    boole status0 = FALSE;
 #ifndef WIN32
     char found_domains[32][256];
     char domain[256];
@@ -425,7 +426,8 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
     g_server_settings.is_external_wss_enabled = (hosting == HOSTING_FUNNEL || hosting == HOSTING_CLOUDFLARE || hosting == HOSTING_NGROK || hosting == HOSTING_OTHER_PROXY);
     if (g_server_settings.is_external_wss_enabled == FALSE)
     {
-        if (_first_time_setup_internal__ask_yes_no("Use stunnel to accept secure WebSocket (WSS) connections?", FALSE) == FALSE)
+        status0 = _first_time_setup_internal__ask_yes_no("Use stunnel to accept secure WebSocket (WSS) connections?", FALSE);
+        if (status0 == FALSE)
         {
             g_server_settings.wss_port = 0;
             return;
@@ -467,7 +469,8 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
         return;
     }
 
-    if (_first_time_setup_internal__ask_yes_no("Use certificate and private key files you already have?", TRUE) == TRUE)
+    status0 = _first_time_setup_internal__ask_yes_no("Use certificate and private key files you already have?", TRUE);
+    if (status0 == TRUE)
     {
         _first_time_setup_internal__ask_certificate_paths();
         return;
@@ -521,10 +524,11 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
     else
     {
         printf("%s %s\n", g_mark_info, "No certificate found under /etc/letsencrypt/live/.");
-        if (_first_time_setup_internal__ask_yes_no_with_note("Request a Let's Encrypt certificate using Certbot?",
-                                                             "    Your domain's DNS A record must point to this server's public IPv4 address.\n"
-                                                             "    TCP port 80 must be reachable from the internet and not used by another program.\n",
-                                                             FALSE) == FALSE)
+        status0 = _first_time_setup_internal__ask_yes_no_with_note("Request a Let's Encrypt certificate using Certbot?",
+            "    Your domain's DNS A record must point to this server's public IPv4 address.\n"
+            "    TCP port 80 must be reachable from the internet and not used by another program.\n",
+            FALSE);
+        if (status0 == FALSE)
         {
             printf("%s", "No certificate was selected. WSS remains disabled.\n");
             g_server_settings.is_stunnel_enabled = FALSE;
@@ -814,6 +818,7 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
     int64 theme_choice = 0;
     boole is_tunnel_setup_requested = FALSE;
     boole is_same_public_hostname = TRUE;
+    boole status0 = FALSE;
     boole is_http_tunnel = (hosting == HOSTING_FUNNEL || hosting == HOSTING_CLOUDFLARE || hosting == HOSTING_NGROK);
 
     printf("%s Hosting: %s\n", g_mark_ok, g_hosting_names[hosting - 1]);
@@ -860,7 +865,8 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
 
         if (g_server_settings.is_stunnel_enabled == TRUE)
         {
-            if (_first_time_setup_internal__ask_yes_no("Use stunnel to serve client.html over HTTPS?", FALSE) == TRUE)
+            status0 = _first_time_setup_internal__ask_yes_no("Use stunnel to serve client.html over HTTPS?", FALSE);
+            if (status0 == TRUE)
             {
                 g_server_settings.is_https_enabled = TRUE;
                 while (TRUE)
@@ -930,9 +936,10 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
             printf("%s %s\n", g_mark_info, "No themes found in client.html. Clients will use their own default theme.");
         }
 
-        if (_first_time_setup_internal__ask_yes_no_with_note("Save each user's identity in their browser?",
-                                                             "    The browser reuses the same identity after the page is reloaded or reopened.\n",
-                                                             FALSE) == TRUE)
+        status0 = _first_time_setup_internal__ask_yes_no_with_note("Save each user's identity in their browser?",
+            "    The browser reuses the same identity after the page is reloaded or reopened.\n",
+            FALSE);
+        if (status0 == TRUE)
         {
             g_server_settings.is_identity_localstorage_enabled = TRUE;
             printf("%s %s\n", g_mark_ok, "Saving browser identities: enabled.");
@@ -980,7 +987,8 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
         printf("%s %s%s\n", g_mark_ok, "audio/video connections: ", audio_channel__policy_value());
         clib__null_memory(input, sizeof(input));
 
-        if (_first_time_setup_internal__ask_yes_no_with_note("Limit connections to one client per IP address?", "    For localhost testing with multiple clients, answer no.\n", FALSE) == TRUE)
+        status0 = _first_time_setup_internal__ask_yes_no_with_note("Limit connections to one client per IP address?", "    For localhost testing with multiple clients, answer no.\n", FALSE);
+        if (status0 == TRUE)
         {
             g_server_settings.is_same_ip_address_allowed = FALSE;
             printf("%s %s\n", g_mark_ok, "Multiple clients from the same IP address: blocked.");
@@ -991,7 +999,8 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
     {
         // the tunnel setup asks for the router itself and writes the address and the range, so
         // the two detail questions are asked only when it does not run
-        if (_first_time_setup_internal__is_tunnel_setup_available() == TRUE)
+        status0 = _first_time_setup_internal__is_tunnel_setup_available();
+        if (status0 == TRUE)
         {
             printf("\n");
             is_tunnel_setup_requested = _first_time_setup_internal__ask_yes_no_with_note("Run the WireGuard setup script after saving these settings?",
@@ -1027,6 +1036,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     int64 requested_key_count = 0;
     boole is_tunnel_setup_requested = FALSE;
     first_time_setup_hosting_t hosting = HOSTING_DIRECT;
+    boole status0 = FALSE;
 
     printf("\n%s %s\n", g_mark_info, "First-time setup. Answers will be saved to server_settings.json.");
     printf("%s %s\n", "   ", "Press Enter to use the default: (Y/n) means yes; (y/N) means no.");
@@ -1042,9 +1052,10 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     printf("\n%s %s\n\n", g_mark_info, "2/4  Passwords and server slots.");
 
-    if (_first_time_setup_internal__ask_yes_no_with_note("Require connection passwords to join this server?",
-                                                         "    Clients need all configured passwords, entered in the same order.\n",
-                                                         FALSE) == TRUE)
+    status0 = _first_time_setup_internal__ask_yes_no_with_note("Require connection passwords to join this server?",
+        "    Clients need all configured passwords, entered in the same order.\n",
+        FALSE);
+    if (status0 == TRUE)
     {
         clib__null_memory(input, sizeof(input));
         printf("%s %s", g_mark_ask, "Number of connection passwords required (1-100): ");
@@ -1134,16 +1145,18 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     printf("\n%s %s\n\n", g_mark_info, "3/4  Voice and server behaviour.");
 
-    if (_first_time_setup_internal__ask_yes_no("Enable voice chat?", TRUE) == FALSE)
+    status0 = _first_time_setup_internal__ask_yes_no("Enable voice chat?", TRUE);
+    if (status0 == FALSE)
     {
         g_server_settings.is_voice_chat_active = FALSE;
         printf("%s %s\n", g_mark_off, "voice chat: off");
     }
 
 #ifndef WIN32
-    if (_first_time_setup_internal__ask_yes_no_with_note("Let start_server.sh restart the server after a crash?",
-                                                         "    Applies the next time you launch through start_server.sh. Failures are recorded in crashes.txt.\n",
-                                                         FALSE) == TRUE)
+    status0 = _first_time_setup_internal__ask_yes_no_with_note("Let start_server.sh restart the server after a crash?",
+        "    Applies the next time you launch through start_server.sh. Failures are recorded in crashes.txt.\n",
+        FALSE);
+    if (status0 == TRUE)
     {
         g_server_settings.is_restart_on_crash_enabled = TRUE;
         printf("%s %s\n", g_mark_ok, "Automatic restart through start_server.sh: enabled.");
@@ -1152,28 +1165,32 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     printf("\n%s %s\n\n", g_mark_info, "4/4  Client profiles and chat features.");
 
-    if (_first_time_setup_internal__ask_yes_no_with_note("Save client identities on the server?",
-                                                         "    Clients keep their assigned groups when they reconnect with the same identity.\n",
-                                                         TRUE) == FALSE)
+    status0 = _first_time_setup_internal__ask_yes_no_with_note("Save client identities on the server?",
+        "    Clients keep their assigned groups when they reconnect with the same identity.\n",
+        TRUE);
+    if (status0 == FALSE)
     {
         g_server_settings.is_identity_storage_enabled = FALSE;
         printf("%s %s\n", g_mark_off, "identities: off");
         printf("%s %s\n", "   ", "The saved user list, last seen times and offline messages require saved identities. These options will be skipped.");
     }
 
-    if (_first_time_setup_internal__ask_yes_no_with_note("Allow idle clients?", "    Useful for the Android app to wait for incoming calls in the background.\n", TRUE) == FALSE)
+    status0 = _first_time_setup_internal__ask_yes_no_with_note("Allow idle clients?", "    Useful for the Android app to wait for incoming calls in the background.\n", TRUE);
+    if (status0 == FALSE)
     {
         g_server_settings.is_idle_mode_allowed = FALSE;
         printf("%s %s\n", g_mark_off, "idle clients: off");
     }
 
-    if (_first_time_setup_internal__ask_yes_no("Show country flags next to clients?", FALSE) == TRUE)
+    status0 = _first_time_setup_internal__ask_yes_no("Show country flags next to clients?", FALSE);
+    if (status0 == TRUE)
     {
         g_server_settings.is_display_country_flags_active = TRUE;
         printf("%s %s\n", g_mark_ok, "country flags: on");
     }
 
-    if (_first_time_setup_internal__ask_yes_no("Allow users to upload avatar images?", FALSE) == TRUE)
+    status0 = _first_time_setup_internal__ask_yes_no("Allow users to upload avatar images?", FALSE);
+    if (status0 == TRUE)
     {
         g_server_settings.is_avatar_upload_allowed = TRUE;
         printf("%s %s\n", g_mark_ok, "avatars: on");
@@ -1185,35 +1202,40 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     if (g_server_settings.is_identity_storage_enabled == TRUE)
     {
-        if (_first_time_setup_internal__ask_yes_no("Show saved users, including offline users, to clients with permission?", FALSE) == TRUE)
+        status0 = _first_time_setup_internal__ask_yes_no("Show saved users, including offline users, to clients with permission?", FALSE);
+        if (status0 == TRUE)
         {
             g_server_settings.is_stored_client_list_allowed = TRUE;
-            if (_first_time_setup_internal__ask_yes_no("Show when saved users were last online?", FALSE) == TRUE)
+            status0 = _first_time_setup_internal__ask_yes_no("Show when saved users were last online?", FALSE);
+            if (status0 == TRUE)
             {
                 g_server_settings.is_last_seen_enabled = TRUE;
             }
         }
-        if (_first_time_setup_internal__ask_yes_no_with_note("Allow offline messages for users whose groups have permission?",
+        status0 = _first_time_setup_internal__ask_yes_no_with_note("Allow offline messages for users whose groups have permission?",
             "    The server saves public keys so users can encrypt messages for offline recipients.\n"
             "    Encrypted messages wait in RAM until the recipient reconnects.\n"
-            "    Pending messages are lost when the server stops.\n", FALSE) == TRUE)
+            "    Pending messages are lost when the server stops.\n", FALSE);
+        if (status0 == TRUE)
         {
             g_server_settings.is_offline_messaging_allowed = TRUE;
         }
     }
 
-    if (_first_time_setup_internal__ask_yes_no_with_note("Show when a user is typing a chat message?",
-                                                         "    Shows a typing indicator. The unfinished message is not sent.\n",
-                                                         FALSE) == TRUE)
+    status0 = _first_time_setup_internal__ask_yes_no_with_note("Show when a user is typing a chat message?",
+        "    Shows a typing indicator. The unfinished message is not sent.\n",
+        FALSE);
+    if (status0 == TRUE)
     {
         g_server_settings.is_typing_indicator_allowed = TRUE;
         printf("%s %s\n", g_mark_ok, "typing indicator: on");
     }
 
-    if (_first_time_setup_internal__ask_yes_no_with_note("Allow users to send files in chat?",
-                                                         "    Controls file attachments, such as documents and archives. Pictures have a separate setting.\n"
-                                                         "    Files are encrypted by the clients and relayed through server RAM, without being saved to disk.\n",
-                                                         FALSE) == TRUE)
+    status0 = _first_time_setup_internal__ask_yes_no_with_note("Allow users to send files in chat?",
+        "    Controls file attachments, such as documents and archives. Pictures have a separate setting.\n"
+        "    Files are encrypted by the clients and relayed through server RAM, without being saved to disk.\n",
+        FALSE);
+    if (status0 == TRUE)
     {
         g_server_settings.is_file_upload_allowed = TRUE;
         printf("%s %s\n", g_mark_ok, "file uploads: on");

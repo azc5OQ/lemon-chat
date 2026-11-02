@@ -42,8 +42,8 @@
  */
 uint64 client_login__get_public_key_bit_length(char* public_key_modulus)
 {
-    unsigned char* modulus_binary = 0;
-    uint64 modulus_length = 0;
+    unsigned char modulus_binary[1024] = {0};
+    size_t modulus_length = 0;
     uint64 first_nonzero = 0;
     uint64 key_string_length = 0;
     uint64 bits = 0;
@@ -51,24 +51,19 @@ uint64 client_login__get_public_key_bit_length(char* public_key_modulus)
 
     if (public_key_modulus == NULL_POINTER)
     {
-        return 0;
+        goto cleanup;
     }
-
-    // an 8192-bit modulus is 1368 base64 chars; anything longer is not a valid key
     key_string_length = (uint64)clib__strlen(public_key_modulus);
-    if (key_string_length == 0 || key_string_length > 1372)
+    if (key_string_length == 0 || key_string_length > 1372
+        || mbedtls_base64_decode(modulus_binary, sizeof(modulus_binary), &modulus_length,
+            (const unsigned char*)public_key_modulus, (size_t)key_string_length) != 0)
     {
-        return 0;
+        goto cleanup;
     }
-
-    modulus_binary = (unsigned char*)memorymanager__allocate(2048, MEMALLOC_PUBLIC_KEY_ENCRYPT);
-    modulus_length = zchg_base64_decode(public_key_modulus, key_string_length, modulus_binary);
-
     while (first_nonzero < modulus_length && modulus_binary[first_nonzero] == 0)
     {
         first_nonzero++;
     }
-
     if (first_nonzero < modulus_length)
     {
         top_byte = modulus_binary[first_nonzero];
@@ -80,7 +75,8 @@ uint64 client_login__get_public_key_bit_length(char* public_key_modulus)
         }
     }
 
-    memorymanager__free((nuint)modulus_binary);
+cleanup:
+    clib__null_memory(modulus_binary, sizeof(modulus_binary));
     return bits;
 }
 
@@ -88,116 +84,91 @@ uint64 client_login__get_public_key_bit_length(char* public_key_modulus)
  * @brief Encrypts the login challenge with the client's RSA modulus and fixed exponent 3.
  * @param char* public_key_modulus -> RSA modulus encoded as base64
  * @param unsigned char* bytes -> challenge bytes to encrypt
- * @param uint64 buffer_length -> challenge length; the input copy supports up to 256 bytes
- * @return char* -> allocated base64 ciphertext, or an empty string for an oversized modulus
+ * @param uint64 buffer_length -> challenge length, at most 256 bytes and fitting the RSA padding
+ * @return char* -> allocated base64 ciphertext, or NULL_POINTER on invalid input or failure
  * @attention Release the returned string with memorymanager__free.
  */
 char* client_login__encrypt_string_with_public_key(char* public_key_modulus, unsigned char* bytes, uint64 buffer_length)
 {
-    int status = 0;
     mbedtls_rsa_context rsa;
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
-    mbedtls_mpi N;
-    mbedtls_mpi E;
-    const char* pers = "rsa_encrypt";
-    char* public_key_modulus_binary = NULL_POINTER;
-    uint64 buffer_modulus_bin_outsize = 0;
-    int ret = 0;
-    unsigned char* inputbuffer = NULL_POINTER;
-    unsigned char* outbuffer = NULL_POINTER;
-    uint64 base64_out_string_size = 0;
-    void* base64_out_buffer = NULL_POINTER;
-
-    DBG_ENCRYPTION log_info("%s %s %s", "public_key_modulus_base64 ", public_key_modulus, "\n");
-
-    // an 8192-bit modulus is 1368 base64 chars / 1024 bytes; longer input is not a valid key
-    if (clib__strlen(public_key_modulus) > 1372)
-    {
-        base64_out_buffer = (void*)memorymanager__allocate(1, MEMALLOC_PUBLIC_KEY_ENCRYPT);
-        ((char*)base64_out_buffer)[0] = 0;
-        return base64_out_buffer;
-    }
-
-    public_key_modulus_binary = (char*)memorymanager__allocate(2048, MEMALLOC_PUBLIC_KEY_ENCRYPT);
-
-    buffer_modulus_bin_outsize = zchg_base64_decode(public_key_modulus, clib__strlen(public_key_modulus), (unsigned char*)public_key_modulus_binary);
-
-    DBG_ENCRYPTION log_info("%s %llu %s", "buffer_modulus_bin_outsize ", buffer_modulus_bin_outsize, "\n");
+    mbedtls_mpi modulus;
+    mbedtls_mpi exponent;
+    const char* personalization = "rsa_encrypt";
+    unsigned char modulus_binary[1024] = {0};
+    unsigned char* ciphertext = NULL_POINTER;
+    char* encoded = NULL_POINTER;
+    char* result = NULL_POINTER;
+    uint64 key_string_length = 0;
+    size_t modulus_length = 0;
+    size_t ciphertext_length = 0;
+    size_t encoded_capacity = 0;
+    size_t written = 0;
 
     mbedtls_rsa_init(&rsa);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-
     mbedtls_entropy_init(&entropy);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+    mbedtls_mpi_init(&modulus);
+    mbedtls_mpi_init(&exponent);
 
-    ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char*)pers, clib__strlen(pers));
-    if (ret != 0)
+    if (public_key_modulus == NULL_POINTER || bytes == NULL_POINTER || buffer_length == 0 || buffer_length > 256)
     {
-        DBG_ENCRYPTION log_info("%s %d", "failed\n  ! mbedtls_ctr_drbg_seed returned ", ret);
+        goto cleanup;
     }
-
-    // modulus and exponent; others are not needed for successful import
-    mbedtls_mpi_init(&N);
-    mbedtls_mpi_read_binary(&N, public_key_modulus_binary, buffer_modulus_bin_outsize);
-    // status = mbedtls_mpi_read_string(&N, 64, public_key_modulus_base64);
-    // N -> modulus
-    if (status != 0)
+    key_string_length = (uint64)clib__strlen(public_key_modulus);
+    if (key_string_length == 0 || key_string_length > 1372
+        || mbedtls_base64_decode(modulus_binary, sizeof(modulus_binary), &modulus_length,
+            (const unsigned char*)public_key_modulus, (size_t)key_string_length) != 0
+        || modulus_length == 0)
     {
-        DBG_ENCRYPTION log_info("%s %d %s", " mbedtls_mpi_read_string N failed ", status, "\n");
+        goto cleanup;
     }
-
-    mbedtls_mpi_init(&E);
-    // E -> exponent
-
-    // load exponent from string (3)
-    status = mbedtls_mpi_read_string(&E, 10, "3");
-
-    if (status != 0)
+    if (mbedtls_mpi_read_binary(&modulus, modulus_binary, modulus_length) != 0
+        || mbedtls_mpi_lset(&exponent, 3) != 0
+        || mbedtls_rsa_import(&rsa, &modulus, NULL_POINTER, NULL_POINTER, NULL_POINTER, &exponent) != 0
+        || mbedtls_rsa_complete(&rsa) != 0
+        || mbedtls_rsa_check_pubkey(&rsa) != 0
+        || mbedtls_rsa_set_padding(&rsa, MBEDTLS_RSA_PKCS_V15, MBEDTLS_MD_NONE) != 0)
     {
-        DBG_ENCRYPTION log_info("%s %d %s", " mbedtls_mpi_read_string E failed ", status, "\n");
+        goto cleanup;
     }
-
-    status = mbedtls_rsa_import(&rsa, &N, NULL_POINTER, NULL_POINTER, NULL_POINTER, &E);
-
-    if (status != 0)
+    ciphertext_length = mbedtls_rsa_get_len(&rsa);
+    if (ciphertext_length < 11 || ciphertext_length > sizeof(modulus_binary)
+        || buffer_length > ciphertext_length - 11)
     {
-        DBG_ENCRYPTION log_info("%s %d %s", " [FAIL] status ", status, "\n");
+        goto cleanup;
     }
-
-    inputbuffer = (unsigned char*)memorymanager__allocate(1024, MEMALLOC_PUBLIC_KEY_ENCRYPT);
-
-    clib__copy_memory(bytes, inputbuffer, buffer_length, 256);
-
-    outbuffer = (unsigned char*)memorymanager__allocate(2048, MEMALLOC_PUBLIC_KEY_ENCRYPT);
-
-    status = mbedtls_rsa_pkcs1_encrypt(&rsa, mbedtls_ctr_drbg_random, &ctr_drbg, buffer_length, inputbuffer, outbuffer);
-
-    // status = mbedtls_rsa_public(&rsa, inputbuffer, outbuffer);
-    // mbedtls_rsa_pkcs1_encrypt()
-    if (status != 0)
+    if (mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
+            (const unsigned char*)personalization, (size_t)clib__strlen(personalization)) != 0)
     {
-        DBG_ENCRYPTION log_info("%s %X %s", "[!] client_login__encrypt_string_with_public_key failed ", status, " \n");
+        goto cleanup;
     }
-    else
+    ciphertext = (unsigned char*)memorymanager__allocate(ciphertext_length, MEMALLOC_PUBLIC_KEY_ENCRYPT);
+    if (ciphertext == NULL_POINTER
+        || mbedtls_rsa_pkcs1_encrypt(&rsa, mbedtls_ctr_drbg_random, &ctr_drbg,
+            (size_t)buffer_length, bytes, ciphertext) != 0)
     {
-        DBG_ENCRYPTION log_info("%s %d %s", "[!] client_login__encrypt_string_with_public_key succeeded ", status, " \n");
+        goto cleanup;
     }
+    encoded_capacity = 4 * ((ciphertext_length + 2) / 3) + 1;
+    encoded = (char*)memorymanager__allocate(encoded_capacity, MEMALLOC_PUBLIC_KEY_ENCRYPT);
+    if (encoded == NULL_POINTER || mbedtls_base64_encode((unsigned char*)encoded, encoded_capacity,
+            &written, ciphertext, ciphertext_length) != 0)
+    {
+        goto cleanup;
+    }
+    result = encoded;
+    encoded = NULL_POINTER;
 
-    // the pkcs1 ciphertext is exactly as long as the modulus, not fixed 256 bytes:
-    // the old hardcoded 256 silently truncated the challenge for every key over 2048 bits
-    base64_out_string_size = ((4 * buffer_modulus_bin_outsize / 3) + 3) & ~3;
-
-    DBG_ENCRYPTION log_info("%s %llu %s", "base64_out_string_size -> ", base64_out_string_size, "\n");
-
-    base64_out_buffer = (void*)memorymanager__allocate(base64_out_string_size * 2, MEMALLOC_PUBLIC_KEY_ENCRYPT);
-
-    zchg_base64_encode(outbuffer, buffer_modulus_bin_outsize, base64_out_buffer);
-
-    memorymanager__free((nuint)public_key_modulus_binary);
-    memorymanager__free((nuint)outbuffer);
-    memorymanager__free((nuint)inputbuffer);
-
-    return base64_out_buffer;
+cleanup:
+    memorymanager__free((nuint)encoded);
+    memorymanager__free((nuint)ciphertext);
+    mbedtls_mpi_free(&exponent);
+    mbedtls_mpi_free(&modulus);
+    mbedtls_rsa_free(&rsa);
+    mbedtls_ctr_drbg_free(&ctr_drbg);
+    mbedtls_entropy_free(&entropy);
+    clib__null_memory(modulus_binary, sizeof(modulus_binary));
+    return result;
 }
-
-

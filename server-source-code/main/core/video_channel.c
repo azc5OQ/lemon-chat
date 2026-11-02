@@ -30,11 +30,8 @@ static void _video_channel_internal__announce_viewer_state(channel_t* channel, u
 static void _video_channel_internal__clear_viewer(client_t* client, client_t* streamer);
 
 /**
- * @brief tells the streamer and every member the streamer allowed that a viewer started or stopped watching
- *
- *        only these clients learn who watches: a member the streamer refused, or has not answered yet,
- *        receives nothing, so it has nothing to show in its channel tree. the streamer counts its
- *        viewers from these messages, the allowed members mark the watching rows
+ * @brief Reports a viewer starting or stopping to the streamer and allowed members.
+ *        Other members receive no viewer-state message.
  *
  * @param channel_t* channel -> the channel of the stream
  * @param uint64 viewer_client_id -> the viewer that changed
@@ -111,6 +108,7 @@ static void _video_channel_internal__clear_viewer(client_t* client, client_t* st
  */
 boole video_channel__start(client_t* streamer, cstring source, cstring codec, int64 width, int64 height, int64 fps, boole is_sound_included, cstring* out_refusal_reason)
 {
+    boole status = FALSE;
     channel_t* channel = NULL_POINTER;
     client_t* member = NULL_POINTER;
     uint64 i = 0;
@@ -149,7 +147,8 @@ boole video_channel__start(client_t* streamer, cstring source, cstring codec, in
         return FALSE;
     }
 
-    if (permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER) == FALSE)
+    status = permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER);
+    if (status == FALSE)
     {
         *out_refusal_reason = "insufficient_permissions";
         return FALSE;
@@ -286,6 +285,7 @@ void video_channel__stop(uint64 channel_id, cstring reason)
  */
 void video_channel__apply_permission_changes(void)
 {
+    boole status = FALSE;
     uint64 i = 0;
     channel_t* channel = NULL_POINTER;
     client_t* streamer = NULL_POINTER;
@@ -309,7 +309,8 @@ void video_channel__apply_permission_changes(void)
         {
             continue;
         }
-        if (permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER) == TRUE)
+        status = permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER);
+        if (status == TRUE)
         {
             continue;
         }
@@ -625,14 +626,12 @@ void video_channel__process_transport_lost(uint64 client_id)
 }
 
 /**
- * @brief relays one video packet from the channel's streamer to every member that is allowed, watching and has a video connection up
+ * @brief Relays a video packet to allowed, watching members with a video connection.
  *
- *        the packet's authentication code is checked and the streamer's encryption is removed (media_auth.c
- *        explains both). what is left is still encrypted with the channel keys, which the server does not
- *        have. every viewer gets its own copy, encrypted with the viewer's keys, over its video websocket when
- *        one is attached, else over its video data channel. a data channel receiver with more than
- *        VIDEO_RELAY_MAX_BUFFERED_BYTES queued is skipped, a websocket receiver's queue drops its oldest
- *        packets itself; either way one slow viewer never stalls the others, and it asks for a keyframe
+ * @details Checks authentication and removes the streamer's encryption. The channel
+ *          encryption remains; each viewer gets a copy encrypted with the viewer's keys.
+ *          Uses the video websocket when attached, otherwise the data channel. Full data
+ *          channel queues are skipped; full websocket queues drop their oldest packets.
  *
  * @param uint64 sender_id -> slot of the sending client
  * @param ws_cli_conn_t* socket -> the video websocket the packet arrived on, or NULL_POINTER
@@ -646,6 +645,7 @@ void video_channel__process_transport_lost(uint64 client_id)
  */
 void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int data_channel, const unsigned char* data, uint64 size)
 {
+    boole status = FALSE;
     unsigned char body[WS_VIDEO_FRAME_MAX];
     unsigned char frame[WS_VIDEO_FRAME_MAX];
     uint64 body_size = 0;
@@ -677,7 +677,8 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int da
     {
         goto done;
     }
-    if (permissions__can_use_channel(sender, channel, PERMISSION_STREAM_POWER) == FALSE)
+    status = permissions__can_use_channel(sender, channel, PERMISSION_STREAM_POWER);
+    if (status == FALSE)
     {
         goto done;
     }
@@ -719,7 +720,8 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int da
             }
             continue;
         }
-        if (video_webrtc__can_send(i) == FALSE)
+        status = video_webrtc__can_send(i);
+        if (status == FALSE)
         {
             continue;
         }

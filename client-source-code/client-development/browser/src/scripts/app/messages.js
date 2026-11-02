@@ -334,6 +334,26 @@ var server_msg = {
      */
     process_stop_song_stream_from_server: function(msg)
     {
+        const client_index = channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id);
+        const boundary = msg.message.discard_audio_through_counter;
+        if (client_index >= 0 && g_client_list[client_index].is_music_bot
+            && typeof boundary === "string" && /^[0-9]{1,20}$/.test(boundary))
+        {
+            const discard_through = BigInt(boundary);
+            if (discard_through <= 18446744073709551615n)
+            {
+                const previous = g_client_list[client_index].discard_audio_through_counter;
+                if (previous == null || discard_through >= previous)
+                {
+                    g_client_list[client_index].discard_audio_through_counter = discard_through;
+                    g_opus_decoder_worker.postMessage({
+                        type: "discard_sender_audio",
+                        sender_id: msg.message.client_id,
+                        counter: boundary
+                    });
+                }
+            }
+        }
         // start / stop song stream messages server pupose of handling marquee animation where text moves
         // microphone changes in gui are handles elsewhere
 

@@ -160,6 +160,8 @@ static cJSON* _url_resolver_internal__result(const char* url)
  */
 static void* _url_resolver_internal__worker(void* unused)
 {
+    boole status = FALSE;
+
     (void)unused;
     for (;;)
     {
@@ -183,7 +185,8 @@ static void* _url_resolver_internal__worker(void* unused)
         cJSON* result = active ? _url_resolver_internal__result(job->url) : NULL_POINTER;
 
         clib__read_lock(&g_clients_global_rwlock_guard);
-        if (_url_resolver_internal__same_session(job))
+        status = _url_resolver_internal__same_session(job);
+        if (status != FALSE)
         {
             server_msg__chat__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url,
                 g_server_settings.is_link_preview_allowed ? result : NULL_POINTER);
@@ -238,6 +241,7 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
     client_t* client = NULL_POINTER;
     uint64 now = 0;
     url_resolver_job_t* job = NULL_POINTER;
+    boole status = FALSE;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
     if (client_id >= g_server_settings.max_client_count || !g_clients_array[client_id].is_existing
@@ -286,7 +290,8 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
     {
         pthread_mutex_unlock(&g_url_resolver_mutex);
         clib__read_lock(&g_clients_global_rwlock_guard);
-        if (_url_resolver_internal__same_session(job))
+        status = _url_resolver_internal__same_session(job);
+        if (status != FALSE)
         {
             server_msg__chat__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url, NULL_POINTER);
         }

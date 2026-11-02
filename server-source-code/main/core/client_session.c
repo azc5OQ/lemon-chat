@@ -263,6 +263,9 @@ uint64 client_session__disconnect_other_clients_with_same_public_key(uint64 clie
  */
 int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index, cstring public_key)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     uint64 i = 0;
     uint64 timestamp_now = 0;
     client_t* old_session = NULL_POINTER;
@@ -276,7 +279,10 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        if (i == new_client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        status0 = (boole)(i != new_client_index);
+        status1 = g_clients_array[i].is_existing;
+        status2 = g_clients_array[i].is_authenticated;
+        if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
         {
             continue;
         }
@@ -359,6 +365,9 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
  */
 boole client_session__is_there_another_authenticated_client_with_same_public_key(uint64 client_index, cstring public_key)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     uint64 i = 0;
 
     if (public_key == NULL_POINTER || public_key[0] == 0)
@@ -368,7 +377,10 @@ boole client_session__is_there_another_authenticated_client_with_same_public_key
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        if (i == client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        status0 = (boole)(i != client_index);
+        status1 = g_clients_array[i].is_existing;
+        status2 = g_clients_array[i].is_authenticated;
+        if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
         {
             continue;
         }
@@ -458,11 +470,17 @@ boole client_session__is_there_an_unfinished_handshake_from_same_ip_address(cstr
  */
 boole client_session__is_there_another_authenticated_client_with_same_ip_address(uint64 client_index, cstring ip_address, cstring public_key)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     uint64 i = 0;
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        if (i == client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
+        status0 = (boole)(i != client_index);
+        status1 = g_clients_array[i].is_existing;
+        status2 = g_clients_array[i].is_authenticated;
+        if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
         {
             continue;
         }
@@ -492,6 +510,7 @@ boole client_session__is_there_another_authenticated_client_with_same_ip_address
  */
 void client_session__process_client_disconnect(uint64 client_index)
 {
+    boole status = FALSE;
     uint64 channel_id = 0;
     boole is_client_also_channel_maintainer = FALSE;
     boole owns_temp_channel = FALSE;
@@ -568,7 +587,8 @@ void client_session__process_client_disconnect(uint64 client_index)
         {
             DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "client_session__process_client_disconnect client was maintainer of channel ", client_index, "\n");
 
-            if (channel__replace_departed_maintainer(&g_channel_array[channel_id], client_index) == TRUE)
+            status = channel__replace_departed_maintainer(&g_channel_array[channel_id], client_index);
+            if (status == TRUE)
             {
                 server_msg__channel__send_maintainer_id_to_clients_in_same_channel(&g_channel_array[channel_id], g_channel_array[channel_id].maintainer_id);
             }

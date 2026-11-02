@@ -1,9 +1,96 @@
-#include "platform/memory.h"
 // Validates received JSON envelopes before exposing their message type to the UI.
 #include "network/protocol.h"
 #include "clib.h"
 #include "cJSON.h"
-#include <stdlib.h>
+
+/**
+ * @brief parses one bounded JSON value without accepting hidden string suffixes or trailing data.
+ * @param const char* bytes -> exactly size readable bytes; no terminator is required
+ * @param uint64 size -> JSON byte count, excluding any terminator
+ * @param uint64 limit -> caller's existing message-size limit
+ * @param uint64 maximum_depth -> caller's existing nesting limit
+ * @return struct cJSON* -> owned tree, or NULL for invalid or excessive input
+ */
+struct cJSON* desktop_protocol__parse_json(const char* bytes, uint64 size, uint64 limit, uint64 maximum_depth)
+{
+    cJSON* root = NULL;
+    const char* end = NULL;
+    uint64 index = 0;
+    uint64 depth = 0;
+    boole quoted = FALSE;
+    boole escaped = FALSE;
+
+    if (!bytes || !size || size > limit || limit > 40ULL * 1024 * 1024
+        || !maximum_depth || maximum_depth > CJSON_NESTING_LIMIT)
+    {
+        return NULL;
+    }
+    for (index = 0; index < size; index++)
+    {
+        if (!bytes[index] || ((unsigned char)bytes[index] < 32
+            && (quoted || (bytes[index] != ' ' && bytes[index] != '\t' && bytes[index] != '\r' && bytes[index] != '\n'))))
+        {
+            return NULL;
+        }
+        if (quoted)
+        {
+            if (escaped)
+            {
+                if (size - index >= 5 && clib__strncmp(bytes + index, "u0000", 5) == 0)
+                {
+                    return NULL;
+                }
+                escaped = FALSE;
+            }
+            else if (bytes[index] == '\\')
+            {
+                escaped = TRUE;
+            }
+            else if (bytes[index] == '"')
+            {
+                quoted = FALSE;
+            }
+        }
+        else if (bytes[index] == '"')
+        {
+            quoted = TRUE;
+        }
+        else if (bytes[index] == '{' || bytes[index] == '[')
+        {
+            if (++depth > maximum_depth)
+            {
+                return NULL;
+            }
+        }
+        else if (bytes[index] == '}' || bytes[index] == ']')
+        {
+            if (!depth)
+            {
+                return NULL;
+            }
+            depth--;
+        }
+    }
+    if (quoted || depth)
+    {
+        return NULL;
+    }
+    root = cJSON_ParseWithLengthOpts(bytes, size, &end, FALSE);
+    if (!root)
+    {
+        return NULL;
+    }
+    while (end < bytes + size && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n'))
+    {
+        end++;
+    }
+    if (end != bytes + size)
+    {
+        cJSON_Delete(root);
+        return NULL;
+    }
+    return root;
+}
 
 /**
  * @brief extracts a bounded message type from a complete JSON envelope.
@@ -18,7 +105,6 @@
 boole desktop_protocol__message_type(const char* bytes, uint64 size, char* type, uint64 capacity)
 {
     boole valid = 0;
-    char* terminated = NULL;
     cJSON* root = NULL;
     cJSON* message = NULL;
     cJSON* field = NULL;
@@ -32,13 +118,7 @@ boole desktop_protocol__message_type(const char* bytes, uint64 size, char* type,
     {
         return 0;
     }
-    terminated = calloc(1, size + 1);
-    if (!terminated)
-    {
-        return 0;
-    }
-    clib__string_copy_n(terminated, size + 1, bytes, size);
-    root = cJSON_ParseWithLengthOpts(terminated, size + 1, NULL, 1);
+    root = desktop_protocol__parse_json(bytes, size, DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT);
     if (cJSON_IsObject(root))
     {
         message = cJSON_GetObjectItemCaseSensitive(root, "message");
@@ -49,7 +129,5 @@ boole desktop_protocol__message_type(const char* bytes, uint64 size, char* type,
         }
     }
     cJSON_Delete(root);
-    desktop_memory__erase(terminated, size + 1);
-    free(terminated);
     return valid;
 }

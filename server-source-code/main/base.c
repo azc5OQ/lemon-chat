@@ -38,6 +38,47 @@ group_t* g_groups_array;
 ban_entry_t* g_ban_array;
 server_settings_t g_server_settings;
 
+static _Thread_local client_request_context_t g_client_request_context;
+
+void base__begin_client_request(ws_cli_conn_t* socket, uint64 client_id, boole authenticated, client_request_context_t* previous)
+{
+    *previous = g_client_request_context;
+    g_client_request_context.socket = socket;
+    g_client_request_context.client_id = client_id;
+    g_client_request_context.authenticated = authenticated;
+    g_client_request_context.active = TRUE;
+}
+
+void base__end_client_request(const client_request_context_t* previous)
+{
+    g_client_request_context = *previous;
+}
+
+boole base__is_current_client_request(uint64 client_id)
+{
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    client_t* client = NULL_POINTER;
+    if (g_clients_array == NULL_POINTER || client_id >= (uint64)g_server_settings.max_client_count)
+    {
+        return FALSE;
+    }
+    client = &g_clients_array[client_id];
+    if (client->is_existing == FALSE)
+    {
+        return FALSE;
+    }
+    if (g_client_request_context.active == FALSE)
+    {
+        return TRUE;
+    }
+    status0 = (boole)(g_client_request_context.client_id == client_id);
+    status1 = (boole)(g_client_request_context.socket == client->p_ws_connection);
+    status2 = (boole)(g_client_request_context.authenticated == client->is_authenticated);
+    return (boole)(status0 == TRUE && status1 == TRUE && status2 == TRUE);
+}
+
 static boole g_server_uptime_started = FALSE;
 static uint64 g_server_started_monotonic_ms = 0;
 
@@ -53,6 +94,7 @@ static _Atomic(uint64) webrtc_sent_bytes;
 
 // declarations
 static boole _base_internal__is_message_correct_at_first_sight_and_get_message_type(cJSON* json_root, uint64 client_id, char** out_message_type);
+static void _base_internal__process_music_bot_key_request(cJSON* json_root, ws_cli_conn_t* websocket, uint64 client_index);
 
 /**
  * @brief enforces per-client spam protection: rejects an action made inside the cooldown window, otherwise records its time and allows it
@@ -67,8 +109,15 @@ boole base__is_request_allowed_based_on_spam_protection(uint64 client_index)
 {
     uint64 timestamp_now = 0;
     boole skip = FALSE;
+    boole status0 = FALSE;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(client_index);
+    if (status0 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return FALSE;
+    }
     timestamp_now = util__get_timestamp_ms();
     if (timestamp_now < (g_clients_array[client_index].timestamp_last_action + TIMESTAMP_LAST_ACTION_COOLDOWN_MS))
     {
@@ -135,11 +184,11 @@ boole base__is_client_valid(int client_id)
     boole status2 = FALSE;
     boole status3 = FALSE;
 
-    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count)
+    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
+    if (status0 == FALSE)
     {
         return FALSE;
     }
-    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
     status1 = g_clients_array[client_id].is_existing;
     status2 = g_clients_array[client_id].is_authenticated;
     status3 = g_clients_array[client_id].p_ws_connection != NULL_POINTER;
@@ -168,11 +217,11 @@ boole base__is_client_valid_and_not_music_bot(int client_id)
     boole status3 = FALSE;
     boole status4 = FALSE;
 
-    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count)
+    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
+    if (status0 == FALSE)
     {
         return FALSE;
     }
-    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
     status1 = g_clients_array[client_id].is_existing;
     status2 = g_clients_array[client_id].is_authenticated;
     status3 = g_clients_array[client_id].p_ws_connection != NULL_POINTER;
@@ -202,11 +251,11 @@ boole base__is_client_valid_admin(int client_id)
     boole status3 = FALSE;
     boole status4 = FALSE;
 
-    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count)
+    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
+    if (status0 == FALSE)
     {
         return FALSE;
     }
-    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
     status1 = g_clients_array[client_id].is_existing;
     status2 = g_clients_array[client_id].is_authenticated;
     status3 = g_clients_array[client_id].p_ws_connection != NULL_POINTER;
@@ -234,11 +283,11 @@ boole base__is_client_valid_musicbot(int client_id)
     boole status1 = FALSE;
     boole status2 = FALSE;
 
-    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count)
+    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
+    if (status0 == FALSE)
     {
         return FALSE;
     }
-    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
     status1 = g_clients_array[client_id].is_existing;
     status2 = g_clients_array[client_id].is_music_bot;
 
@@ -265,11 +314,11 @@ boole base__is_music_bot_and_song_slot_valid(int client_id)
     boole status2 = FALSE;
     boole status3 = FALSE;
 
-    if (client_id < 0 || (uint64)client_id >= g_server_settings.max_client_count)
+    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
+    if (status0 == FALSE)
     {
         return FALSE;
     }
-    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
     status1 = g_clients_array[client_id].is_existing;
     status2 = g_clients_array[client_id].is_music_bot;
     status3 = g_clients_array[client_id].music_bot_client_extension.music_bot_songs_count != MUSIC_BOT_MAX_FILE_COUNT;
@@ -320,8 +369,10 @@ boole base__is_server_ram_budget_reached(void)
 {
 #if SIZE_MAX <= UINT32_MAX
     uint64 bytes = 0;
+    boole status0 = FALSE;
 
-    if (!util__get_process_ram_usage(&bytes))
+    status0 = util__get_process_ram_usage(&bytes);
+    if (!status0)
     {
         return TRUE;
     }
@@ -446,6 +497,78 @@ static boole _base_internal__is_message_correct_at_first_sight_and_get_message_t
 }
 
 /**
+ * @brief Sends the requested bot key after checking the session, bot ID and channel.
+ * @attention Acquires the clients write lock and preserves the request cooldown.
+ */
+static void _base_internal__process_music_bot_key_request(cJSON* json_root, ws_cli_conn_t* websocket, uint64 client_index)
+{
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    cJSON* message = NULL_POINTER;
+    cJSON* bot_id = NULL_POINTER;
+    client_t* client = NULL_POINTER;
+    client_t* bot = NULL_POINTER;
+    uint64 now = 0;
+
+    message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    bot_id = cJSON_GetObjectItemCaseSensitive(message, "client_id");
+    now = util__get_timestamp_ms();
+
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(client_index);
+    if (status0 == FALSE)
+    {
+        goto end;
+    }
+
+    client = &g_clients_array[client_index];
+    status0 = (boole)(client->is_existing == TRUE);
+    status1 = (boole)(client->is_authenticated == TRUE);
+    status2 = (boole)(client->p_ws_connection == websocket);
+    if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
+    {
+        goto end;
+    }
+
+    status0 = (boole)cJSON_IsNumber(bot_id);
+    if (status0 == FALSE)
+    {
+        goto end;
+    }
+
+    status0 = (boole)(bot_id->valuedouble >= 0);
+    status1 = (boole)(bot_id->valuedouble < g_server_settings.max_client_count);
+    status2 = (boole)(bot_id->valuedouble == bot_id->valueint);
+    if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
+    {
+        goto end;
+    }
+
+    status0 = (boole)(now - client->timestamp_last_music_bot_key_request >= 250);
+    if (status0 == FALSE)
+    {
+        goto end;
+    }
+    client->timestamp_last_music_bot_key_request = now;
+
+    // The key goes only to a non-idle client in the bot's channel.
+    bot = &g_clients_array[bot_id->valueint];
+    status0 = bot->is_existing;
+    status1 = bot->is_music_bot;
+    status2 = (boole)(client->is_idle == FALSE);
+    status3 = (boole)(client->channel_id == bot->channel_id);
+    if (status0 == TRUE && status1 == TRUE && status2 == TRUE && status3 == TRUE)
+    {
+        server_msg__musicbot__send_key(client, bot);
+    }
+
+end:
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
  * @brief routes an authenticated client's decrypted message to the matching handler
  *
  * @param ws_cli_conn_t* websocket -> the client's websocket connection
@@ -457,13 +580,12 @@ static boole _base_internal__is_message_correct_at_first_sight_and_get_message_t
 void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64 client_index, char* decrypted_metadata_cstring)
 {
     cJSON* json_root = 0;
-    cJSON* message = NULL_POINTER;
-    cJSON* bot_id = NULL_POINTER;
     boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     char* message_type = 0;
     client_t* client = NULL_POINTER;
-    client_t* bot = NULL_POINTER;
-    uint64 now = 0;
     boole is_sender_idle = FALSE;
 
     // DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %s %s", "base__process_authenticated_client_message message : ", decrypted_metadata_cstring, "\n");
@@ -471,8 +593,8 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
 
     if (json_root == NULL_POINTER)
     {
-        // the frame is about to cost the client its socket, so its head goes to the log always
-        log_info("%s %llu %s %llu %s %.600s", "client : ", client_index, " unparseable frame, decrypted length ", (uint64)clib__strlen(decrypted_metadata_cstring), " text : ", decrypted_metadata_cstring);
+        // Record the rejection without copying decrypted passwords or keys into logs.
+        log_info("%s %llu %s %llu", "client : ", client_index, " unparseable frame, decrypted length ", (uint64)clib__strlen(decrypted_metadata_cstring));
         ws_close_client(websocket);
         // there is no json object to call cJSON_Delete on so just disconnect the client
         return;
@@ -482,16 +604,28 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
 
     if (status == FALSE)
     {
-        // same reason as above: the validator said why, this says what it looked at
-        log_info("%s %llu %s %llu %s %.600s", "client : ", client_index, " rejected frame, decrypted length ", (uint64)clib__strlen(decrypted_metadata_cstring), " text : ", decrypted_metadata_cstring);
+        // The validator identifies the malformed field; keep the payload private.
+        log_info("%s %llu %s %llu", "client : ", client_index, " rejected frame, decrypted length ", (uint64)clib__strlen(decrypted_metadata_cstring));
         ws_close_client(websocket);
-        cJSON_Delete(json_root);
+        util__json_delete_secure(json_root);
         return;
     }
 
     DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %llu %s %s %s", "client : ", client_index, " detected message type is ", message_type, "\n");
 
     clib__read_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(client_index);
+    if (status0 == TRUE)
+    {
+        status1 = (boole)(g_clients_array[client_index].p_ws_connection == websocket);
+        status2 = g_clients_array[client_index].is_authenticated;
+    }
+    if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        util__json_delete_secure(json_root);
+        return;
+    }
     is_sender_idle = g_clients_array[client_index].is_idle;
     clib__unlock(&g_clients_global_rwlock_guard);
 
@@ -538,8 +672,16 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     else if (clib__is_string_equal(message_type, "request_audio_websocket"))
     {
         clib__write_lock(&g_clients_global_rwlock_guard);
-        client = &g_clients_array[client_index];
-        if (client->is_existing == TRUE && client->p_ws_connection == websocket)
+        status0 = base__is_current_client_request(client_index);
+        status1 = FALSE;
+        status2 = FALSE;
+        if (status0 == TRUE)
+        {
+            client = &g_clients_array[client_index];
+            status1 = client->is_existing;
+            status2 = (boole)(client->p_ws_connection == websocket);
+        }
+        if (status0 == TRUE && status1 == TRUE && status2 == TRUE)
         {
             audio_websocket__request(client);
         }
@@ -548,8 +690,16 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     else if (clib__is_string_equal(message_type, "request_video_websocket"))
     {
         clib__write_lock(&g_clients_global_rwlock_guard);
-        client = &g_clients_array[client_index];
-        if (client->is_existing == TRUE && client->p_ws_connection == websocket)
+        status0 = base__is_current_client_request(client_index);
+        status1 = FALSE;
+        status2 = FALSE;
+        if (status0 == TRUE)
+        {
+            client = &g_clients_array[client_index];
+            status1 = client->is_existing;
+            status2 = (boole)(client->p_ws_connection == websocket);
+        }
+        if (status0 == TRUE && status1 == TRUE && status2 == TRUE)
         {
             video_websocket__request(client);
         }
@@ -557,23 +707,7 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     }
     else if (clib__is_string_equal(message_type, "request_music_bot_key"))
     {
-        message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-        bot_id = cJSON_GetObjectItemCaseSensitive(message, "client_id");
-        now = util__get_timestamp_ms();
-
-        clib__write_lock(&g_clients_global_rwlock_guard);
-        client = &g_clients_array[client_index];
-        if (client->is_existing == TRUE && client->is_authenticated == TRUE && client->p_ws_connection == websocket && cJSON_IsNumber(bot_id) && bot_id->valuedouble >= 0 && bot_id->valuedouble < g_server_settings.max_client_count && bot_id->valuedouble == bot_id->valueint && now - client->timestamp_last_music_bot_key_request >= 250)
-        {
-            client->timestamp_last_music_bot_key_request = now;
-            // the keys go only to a client that stands in the bot's channel and is not idle
-            bot = &g_clients_array[bot_id->valueint];
-            if (bot->is_existing == TRUE && bot->is_music_bot == TRUE && client->is_idle == FALSE && client->channel_id == bot->channel_id)
-            {
-                server_msg__musicbot__send_key(client, bot);
-            }
-        }
-        clib__unlock(&g_clients_global_rwlock_guard);
+        _base_internal__process_music_bot_key_request(json_root, websocket, client_index);
     }
     else if (clib__is_string_equal(message_type, "sdp_answer"))
     {
@@ -875,7 +1009,7 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
 
     DBG_DBG_MEMORY_ALLOCATIONS memorymanager__print_allocations_count();
 
-    cJSON_Delete(json_root);
+    util__json_delete_secure(json_root);
     json_root = 0;
 }
 
@@ -896,7 +1030,6 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
     char* message_type = 0;
 
     DBG_AUTHENTICATION log_info("%s %p %s", "[i] authenticating client ", websocket, "\n");
-    DBG_AUTHENTICATION log_info("%s %s %s", "decrypted client verification message : ", decrypted_metadata_cstring, "\n");
 
     // drop oversized unauth messages. the cap must hold public_key_info: the 8192-bit DH public mix
     // (< SHARED_SECRET_LENGTH digits) + the RSA public key (< MAX_PUBLIC_KEY_LENGTH) + JSON scaffolding,
@@ -905,8 +1038,8 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
 
     if (checked_message_length == -1)
     {
-        DBG_AUTHENTICATION log_info("%s %s %s", "base__process_not_authenticated_client_message message has more chars than allowed : ", decrypted_metadata_cstring, "\n");
-        server_logs__join_refused("wrong key or malformed handshake", g_clients_array[index].ip_address);
+        DBG_AUTHENTICATION log_info("%s %llu", "oversized unauthenticated message from client ", index);
+        server_logs__join_refused("wrong key or malformed handshake", ws_getaddress(websocket));
         ws_close_client(websocket);
         return;
     }
@@ -919,7 +1052,7 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
     {
         DBG_AUTHENTICATION log_info("%s %llu %s", "client : ", index, " json_root is null \n");
         // a wrong key decrypts the handshake into garbage, which is exactly what arrives here
-        server_logs__join_refused("wrong key or malformed handshake", g_clients_array[index].ip_address);
+        server_logs__join_refused("wrong key or malformed handshake", ws_getaddress(websocket));
         ws_close_client(websocket);
         // there is no json object to cJSON_Delete, since it's 0
         return;
@@ -930,9 +1063,9 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
     if (status == FALSE)
     {
         DBG_AUTHENTICATION log_info("%s%llu%s", "client : ", index, "_base_internal__is_message_correct_at_first_sight_and_get_message_type failed \n");
-        server_logs__join_refused("wrong key or malformed handshake", g_clients_array[index].ip_address);
+        server_logs__join_refused("wrong key or malformed handshake", ws_getaddress(websocket));
         ws_close_client(websocket);
-        cJSON_Delete(json_root);
+        util__json_delete_secure(json_root);
         return;
     }
 
@@ -947,6 +1080,6 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
         client_msg__connection__process_public_key_challenge_response(json_root, index);
     }
 
-    cJSON_Delete(json_root);
+    util__json_delete_secure(json_root);
     json_root = 0;
 }

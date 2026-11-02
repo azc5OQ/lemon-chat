@@ -24,6 +24,85 @@ static boole _client_msg_channel_internal__is_process_come_back_from_idle_mode_r
 static boole _client_msg_channel_internal__can_edit(client_t* sender, channel_t* channel, cJSON* message);
 
 /**
+ * @brief Rejects fractional and out-of-range channel identifiers before array indexing.
+ */
+static boole _client_msg_channel_internal__is_channel_id_valid(cJSON* value)
+{
+    uint64 channel_id = 0;
+
+    return (boole)(g_server_settings.max_channel_count > 0
+        && util__json_read_uint64(value, g_server_settings.max_channel_count - 1, &channel_id) == TRUE);
+}
+
+/**
+ * @brief Validates optional channel settings and preserves omitted capacity fields.
+ * @param channel NULL for validation only, otherwise the channel or permission-check candidate to update.
+ */
+static boole _client_msg_channel_internal__read_optional_options(cJSON* message, channel_t* channel)
+{
+    boole status0 = FALSE;
+    cJSON* limit = cJSON_GetObjectItemCaseSensitive(message, "is_client_limit_active");
+    cJSON* capacity = cJSON_GetObjectItemCaseSensitive(message, "max_client_count");
+    cJSON* video = cJSON_GetObjectItemCaseSensitive(message, "is_video_stream_enabled");
+    cJSON* temporary = cJSON_GetObjectItemCaseSensitive(message, "is_temp_channel");
+    uint64 maximum_clients = 0;
+
+    status0 = limit != NULL_POINTER;
+    if (status0 == TRUE)
+    {
+        status0 = cJSON_IsBool(limit) == FALSE;
+    }
+    if (status0 == FALSE)
+    {
+        status0 = video != NULL_POINTER;
+        if (status0 == TRUE)
+        {
+            status0 = cJSON_IsBool(video) == FALSE;
+        }
+    }
+    if (status0 == FALSE)
+    {
+        status0 = temporary != NULL_POINTER;
+        if (status0 == TRUE)
+        {
+            status0 = cJSON_IsBool(temporary) == FALSE;
+        }
+    }
+    if (status0 == FALSE)
+    {
+        status0 = capacity != NULL_POINTER;
+        if (status0 == TRUE)
+        {
+            status0 = util__json_read_uint64(capacity, g_server_settings.max_client_count, &maximum_clients) == FALSE;
+        }
+    }
+    if (status0 == TRUE)
+    {
+        return FALSE;
+    }
+    if (channel != NULL_POINTER)
+    {
+        if (channel->is_root_channel == TRUE)
+        {
+            channel->is_client_limit_active = FALSE;
+            channel->max_client_count = 0;
+        }
+        else
+        {
+            if (limit != NULL_POINTER)
+            {
+                channel->is_client_limit_active = (boole)cJSON_IsTrue(limit);
+            }
+            if (capacity != NULL_POINTER)
+            {
+                channel->max_client_count = maximum_clients;
+            }
+        }
+    }
+    return TRUE;
+}
+
+/**
  * @brief Checks every changed field before applying a channel edit.
  * @param sender Authenticated sender with the clients lock held.
  * @param channel Existing channel with the channels lock held.
@@ -31,6 +110,16 @@ static boole _client_msg_channel_internal__can_edit(client_t* sender, channel_t*
  */
 static boole _client_msg_channel_internal__can_edit(client_t* sender, channel_t* channel, cJSON* message)
 {
+    boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    boole status4 = FALSE;
+    boole status5 = FALSE;
+    boole status6 = FALSE;
+    boole status7 = FALSE;
+    boole status8 = FALSE;
     cJSON* value = NULL_POINTER;
     channel_t proposed = *channel;
 
@@ -45,14 +134,30 @@ static boole _client_msg_channel_internal__can_edit(client_t* sender, channel_t*
         return FALSE;
     }
     value = cJSON_GetObjectItemCaseSensitive(message, "channel_password");
-    if (value != NULL_POINTER && !channel->is_root_channel && !channel_groups__is_allowed(sender, channel, PERMISSION_EDIT_CHANNEL_PASSWORD))
+    status0 = value != NULL_POINTER;
+    if (status0 == TRUE)
+    {
+        status0 = !channel->is_root_channel;
+    }
+    if (status0 == TRUE)
+    {
+        status0 = !channel_groups__is_allowed(sender, channel, PERMISSION_EDIT_CHANNEL_PASSWORD);
+    }
+    if (status0 == TRUE)
     {
         return FALSE;
     }
     channel__read_required_powers(message, &proposed);
-    if ((proposed.required_talk_power != channel->required_talk_power || proposed.required_message_power != channel->required_message_power
-        || proposed.required_picture_power != channel->required_picture_power || proposed.required_stream_power != channel->required_stream_power)
-        && !channel_groups__is_allowed(sender, channel, PERMISSION_EDIT_CHANNEL_POWERS))
+    status1 = proposed.required_talk_power != channel->required_talk_power;
+    status2 = proposed.required_message_power != channel->required_message_power;
+    status3 = proposed.required_picture_power != channel->required_picture_power;
+    status4 = proposed.required_stream_power != channel->required_stream_power;
+    status0 = status1 == TRUE || status2 == TRUE || status3 == TRUE || status4 == TRUE;
+    if (status0 == TRUE)
+    {
+        status0 = !channel_groups__is_allowed(sender, channel, PERMISSION_EDIT_CHANNEL_POWERS);
+    }
+    if (status0 == TRUE)
     {
         return FALSE;
     }
@@ -63,18 +168,21 @@ static boole _client_msg_channel_internal__can_edit(client_t* sender, channel_t*
     {
         proposed.is_video_stream_enabled = (boole)cJSON_IsTrue(value);
     }
-    value = cJSON_GetObjectItemCaseSensitive(message, "is_client_limit_active");
-    proposed.is_client_limit_active = !channel->is_root_channel && cJSON_IsTrue(value);
-    value = cJSON_GetObjectItemCaseSensitive(message, "max_client_count");
-    proposed.max_client_count = 0;
-    if (!channel->is_root_channel && cJSON_IsNumber(value) && value->valuedouble >= 0
-        && value->valuedouble <= g_server_settings.max_client_count)
+    status = _client_msg_channel_internal__read_optional_options(message, &proposed);
+    if (status == FALSE)
     {
-        proposed.max_client_count = (uint64)value->valuedouble;
+        return FALSE;
     }
-    if ((proposed.is_audio_enabled != channel->is_audio_enabled || proposed.is_video_stream_enabled != channel->is_video_stream_enabled
-        || proposed.is_client_limit_active != channel->is_client_limit_active || proposed.max_client_count != channel->max_client_count)
-        && !channel_groups__is_allowed(sender, channel, PERMISSION_EDIT_CHANNEL_OPTIONS))
+    status5 = proposed.is_audio_enabled != channel->is_audio_enabled;
+    status6 = proposed.is_video_stream_enabled != channel->is_video_stream_enabled;
+    status7 = proposed.is_client_limit_active != channel->is_client_limit_active;
+    status8 = proposed.max_client_count != channel->max_client_count;
+    status0 = status5 == TRUE || status6 == TRUE || status7 == TRUE || status8 == TRUE;
+    if (status0 == TRUE)
+    {
+        status0 = !channel_groups__is_allowed(sender, channel, PERMISSION_EDIT_CHANNEL_OPTIONS);
+    }
+    if (status0 == TRUE)
     {
         return FALSE;
     }
@@ -93,6 +201,7 @@ static boole _client_msg_channel_internal__can_edit(client_t* sender, channel_t*
  */
 void client_msg__channel__process_set_icon(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status = FALSE;
     client_t* sender_client = 0;
     cJSON* json_message_object = 0;
     cJSON* json_channel_id = 0;
@@ -105,25 +214,27 @@ void client_msg__channel__process_set_icon(cJSON* json_root, uint64 sender_clien
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
     json_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "icon_id");
 
-    if (cJSON_IsNumber(json_channel_id) == FALSE)
+    if (g_server_settings.max_channel_count == 0
+        || util__json_read_uint64(json_channel_id, g_server_settings.max_channel_count - 1, &channel_id) == FALSE)
     {
         return;
     }
 
-    if (json_channel_id->valueint < 0 || json_channel_id->valueint >= g_server_settings.max_channel_count)
+    // Omission explicitly clears the icon; a malformed supplied value never does.
+    wants_icon = (boole)(json_icon_id != NULL_POINTER);
+    if (wants_icon == TRUE && util__json_read_uint64(json_icon_id, MAX_ICONS - 1, &icon_id) == FALSE)
     {
         return;
-    }
-
-    channel_id = (uint64)json_channel_id->valueint;
-    wants_icon = cJSON_IsNumber(json_icon_id);
-    if (wants_icon == TRUE)
-    {
-        icon_id = (uint64)json_icon_id->valueint;
     }
 
     // lock order: clients -> channels -> icons
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status = base__is_current_client_request(sender_client_id);
+    if (status == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "Server groups and icons are disabled.");
@@ -136,7 +247,8 @@ void client_msg__channel__process_set_icon(cJSON* json_root, uint64 sender_clien
 
     sender_client = &g_clients_array[sender_client_id];
 
-    if (!channel_groups__is_allowed(sender_client, &g_channel_array[channel_id], PERMISSION_EDIT_CHANNEL_OPTIONS))
+    status = channel_groups__is_allowed(sender_client, &g_channel_array[channel_id], PERMISSION_EDIT_CHANNEL_OPTIONS);
+    if (status == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
         goto label_client_msg__process_set_channel_icon_end;
@@ -185,6 +297,7 @@ label_client_msg__process_set_channel_icon_end:
  */
 static boole _client_msg_channel_internal__is_json_create_channel_request_valid(cJSON* json_root, uint64 client_id)
 {
+    boole status0 = FALSE;
     cJSON* json_parent_channel_id = 0;
     cJSON* json_channel_name = 0;
     cJSON* json_channel_description = 0;
@@ -196,14 +309,16 @@ static boole _client_msg_channel_internal__is_json_create_channel_request_valid(
 
     // existence of "message" already checked before
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    if (channel__read_required_powers(json_message_object, NULL_POINTER) == FALSE)
+    if (channel__read_required_powers(json_message_object, NULL_POINTER) == FALSE
+        || _client_msg_channel_internal__read_optional_options(json_message_object, NULL_POINTER) == FALSE)
     {
         return FALSE;
     }
 
     // json_message_object exists, continue validating received json
     json_parent_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "parent_channel_id");
-    if (cJSON_IsNumber(json_parent_channel_id) == FALSE)
+    status0 = _client_msg_channel_internal__is_channel_id_valid(json_parent_channel_id);
+    if (status0 == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " cJSON_IsNumber(json_parent_channel_id) \n");
         return FALSE;
@@ -300,6 +415,7 @@ static boole _client_msg_channel_internal__is_json_create_channel_request_valid(
  */
 void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
     boole is_channel_create_allowed = FALSE;
     boole is_parent_channel_id_existing = FALSE;
     boole creating_temp_channel = FALSE;
@@ -310,8 +426,6 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
     cJSON* json_channel_name = 0;
     cJSON* json_is_audio_enabled = 0;
     cJSON* json_is_video_stream_enabled = 0;
-    cJSON* json_is_client_limit_active = 0;
-    cJSON* json_max_client_count = 0;
     boole is_password_used = FALSE;
     boole is_channel_created_successfully = FALSE;
     cJSON* json_message_object = 0;
@@ -344,6 +458,12 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
     // Keep the clients lock until creation finishes so group changes cannot alter this decision.
     is_channel_create_allowed = FALSE;
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(sender_client_id);
+    if (status0 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
     {
         if (permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_CREATE_CHANNEL) == TRUE)
@@ -372,8 +492,6 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
         json_channel_description = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_description");
         json_channel_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_name");
         json_is_audio_enabled = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_audio_enabled");
-        json_is_client_limit_active = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_client_limit_active");
-        json_max_client_count = cJSON_GetObjectItemCaseSensitive(json_message_object, "max_client_count");
 
         for (i = 0; i < g_server_settings.max_channel_count; i++)
         {
@@ -436,15 +554,9 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
                     channel->is_video_stream_active = FALSE;
                     channel->video_streamer_client_id = 0;
                     channel->is_temp_channel = creating_temp_channel;
-                    channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
+                    channel->is_client_limit_active = FALSE;
                     channel->max_client_count = 0;
-                    // clamp the client-supplied capacity before the double->uint64 cast, which is undefined
-                    // for negative / NaN / huge values. NaN fails both comparisons, so the range check
-                    // rejects it too. a channel can never hold more clients than the server allows
-                    if (cJSON_IsNumber(json_max_client_count) && json_max_client_count->valuedouble >= 0 && json_max_client_count->valuedouble <= (double)g_server_settings.max_client_count)
-                    {
-                        channel->max_client_count = (uint64)json_max_client_count->valuedouble;
-                    }
+                    _client_msg_channel_internal__read_optional_options(json_message_object, channel);
 
                     DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__channel__process_create_request is_parent_channel_id_existing ", i, "\n");
                     is_channel_created_successfully = TRUE;
@@ -515,23 +627,26 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
  */
 static boole _client_msg_channel_internal__is_json_edit_channel_request_valid(cJSON* json_root, uint64 client_id)
 {
+    boole status0 = FALSE;
     cJSON* json_channel_id = 0;
     cJSON* json_channel_name = 0;
     cJSON* json_channel_description = 0;
     cJSON* json_channel_password = 0;
     cJSON* json_message_object = 0;
     cJSON* json_is_audio_enabled = 0;
+    cJSON* json_type = NULL_POINTER;
 
     int64 status = 0;
 
     // existence of "message" already checked before
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    if (channel__read_required_powers(json_message_object, NULL_POINTER) == FALSE)
+    if (channel__read_required_powers(json_message_object, NULL_POINTER) == FALSE
+        || _client_msg_channel_internal__read_optional_options(json_message_object, NULL_POINTER) == FALSE)
     {
         return FALSE;
     }
 
-    cJSON* json_type = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_temp_channel");
+    json_type = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_temp_channel");
     if (json_type != NULL_POINTER && !cJSON_IsBool(json_type))
     {
         return FALSE;
@@ -539,7 +654,8 @@ static boole _client_msg_channel_internal__is_json_edit_channel_request_valid(cJ
 
     // json_message_object exists, continue validating received json
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
-    if (cJSON_IsNumber(json_channel_id) == FALSE)
+    status0 = _client_msg_channel_internal__is_channel_id_valid(json_channel_id);
+    if (status0 == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " cJSON_IsNumber(channel_id) \n");
         return FALSE;
@@ -646,6 +762,7 @@ static boole _client_msg_channel_internal__is_json_edit_channel_request_valid(cJ
  */
 void client_msg__channel__process_edit_request(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
     boole is_channel_edit_allowed = FALSE;
     cJSON* json_channel_id = 0;
     cJSON* json_channel_description = 0;
@@ -657,8 +774,6 @@ void client_msg__channel__process_edit_request(cJSON* json_root, uint64 sender_c
     cJSON* json_is_audio_enabled = 0;
     cJSON* json_is_video_stream_enabled = 0;
     boole should_stop_video_stream = FALSE;
-    cJSON* json_is_client_limit_active = 0;
-    cJSON* json_max_client_count = 0;
     uint64 channel_index_to_edit = 0;
     channel_t* channel = 0;
     boole status = FALSE;
@@ -684,6 +799,12 @@ void client_msg__channel__process_edit_request(cJSON* json_root, uint64 sender_c
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(sender_client_id);
+    if (status0 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     clib__write_lock(&g_channels_global_rwlock_guard);
     channel = &g_channel_array[json_channel_id->valueint];
     is_channel_edit_allowed = (boole)(base__is_client_valid(sender_client_id) && channel->is_existing
@@ -704,8 +825,6 @@ void client_msg__channel__process_edit_request(cJSON* json_root, uint64 sender_c
         json_channel_description = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_description");
         json_channel_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_name");
         json_is_audio_enabled = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_audio_enabled");
-        json_is_client_limit_active = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_client_limit_active");
-        json_max_client_count = cJSON_GetObjectItemCaseSensitive(json_message_object, "max_client_count");
 
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__channel__process_edit_request got here \n");
 
@@ -759,15 +878,7 @@ void client_msg__channel__process_edit_request(cJSON* json_root, uint64 sender_c
             }
             else
             {
-                channel->is_client_limit_active = (boole)cJSON_IsTrue(json_is_client_limit_active);
-                channel->max_client_count = 0;
-                // clamp the client-supplied capacity before the double->uint64 cast, which is undefined
-                // for negative / NaN / huge values. NaN fails both comparisons, so the range check
-                // rejects it too. a channel can never hold more clients than the server allows
-                if (cJSON_IsNumber(json_max_client_count) && json_max_client_count->valuedouble >= 0 && json_max_client_count->valuedouble <= (double)g_server_settings.max_client_count)
-                {
-                    channel->max_client_count = (uint64)json_max_client_count->valuedouble;
-                }
+                _client_msg_channel_internal__read_optional_options(json_message_object, channel);
             }
 
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__channel__process_edit_request channel is_existing TRUE \n");
@@ -832,6 +943,7 @@ void client_msg__channel__process_edit_request(cJSON* json_root, uint64 sender_c
  */
 static boole _client_msg_channel_internal__is_json_join_channel_request_format_valid(cJSON* json_root, uint64 client_id)
 {
+    boole status = FALSE;
     cJSON* json_channel_id = 0;
     cJSON* json_channel_password = 0;
     cJSON* json_message_object = 0;
@@ -854,7 +966,8 @@ static boole _client_msg_channel_internal__is_json_join_channel_request_format_v
     }
 
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
-    if (cJSON_IsNumber(json_channel_id) == FALSE)
+    status = _client_msg_channel_internal__is_channel_id_valid(json_channel_id);
+    if (status == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " cJSON_IsNumber(json_channel_id) \n");
         return FALSE;
@@ -879,6 +992,7 @@ static boole _client_msg_channel_internal__is_json_join_channel_request_format_v
  */
 void client_msg__channel__process_join_request(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
     boole status = FALSE;
     cJSON* json_channel_password = 0;
     cJSON* json_channel_id = 0;
@@ -908,6 +1022,12 @@ void client_msg__channel__process_join_request(cJSON* json_root, uint64 sender_c
 
     // Keep membership changes and their announcements in the same order for every client.
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(sender_client_id);
+    if (status0 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     clib__write_lock(&g_channels_global_rwlock_guard);
 
     is_authenticated = g_clients_array[sender_client_id].is_authenticated;
@@ -943,7 +1063,8 @@ void client_msg__channel__process_join_request(cJSON* json_root, uint64 sender_c
         goto client_msg__process_join_channel_request_end;
     }
 
-    if (channel__check_channel_access(client_that_is_joining_channel, new_channel, json_channel_password->valuestring, FALSE) == FALSE)
+    status0 = channel__check_channel_access(client_that_is_joining_channel, new_channel, json_channel_password->valuestring, FALSE);
+    if (status0 == FALSE)
     {
         goto client_msg__process_join_channel_request_end;
     }
@@ -1013,6 +1134,7 @@ client_msg__process_join_channel_request_end:
  */
 static boole _client_msg_channel_internal__is_json_delete_request_format_valid(cJSON* json_root, uint64 client_id)
 {
+    boole status = FALSE;
     cJSON* json_channel_id = 0;
     cJSON* json_message_object = 0;
 
@@ -1021,7 +1143,8 @@ static boole _client_msg_channel_internal__is_json_delete_request_format_valid(c
 
     // json_message_object exists, continue validating received json
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
-    if (cJSON_IsNumber(json_channel_id) == FALSE)
+    status = _client_msg_channel_internal__is_channel_id_valid(json_channel_id);
+    if (status == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " cJSON_IsNumber(json_channel_id) \n");
         return FALSE;
@@ -1054,6 +1177,7 @@ static boole _client_msg_channel_internal__is_json_delete_request_format_valid(c
  */
 void client_msg__channel__process_delete_request(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
     boole status = FALSE;
     boole is_authenticated = FALSE;
     boole is_existing = FALSE;
@@ -1087,6 +1211,12 @@ void client_msg__channel__process_delete_request(cJSON* json_root, uint64 sender
 
     // add admin rights check later
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(sender_client_id);
+    if (status0 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     clib__write_lock(&g_channels_global_rwlock_guard);
 
     is_authenticated = g_clients_array[sender_client_id].is_authenticated;
@@ -1129,8 +1259,9 @@ void client_msg__channel__process_delete_request(cJSON* json_root, uint64 sender
         channel__mark_channels_for_deletion(json_channel_id->valueint, &channels_to_delete_count, channel_ids_to_delete);
         for (marked_channel_index = 0; marked_channel_index < channels_to_delete_count; marked_channel_index++)
         {
-            if (!channel_groups__is_allowed(&g_clients_array[sender_client_id],
-                &g_channel_array[channel_ids_to_delete[marked_channel_index]], PERMISSION_DELETE_CHANNEL))
+            status0 = channel_groups__is_allowed(&g_clients_array[sender_client_id],
+                &g_channel_array[channel_ids_to_delete[marked_channel_index]], PERMISSION_DELETE_CHANNEL);
+            if (status0 == FALSE)
             {
                 server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
                 goto label_client_msg__process_delete_channel_request_end;
@@ -1266,7 +1397,12 @@ label_client_msg__process_delete_channel_request_end:
  */
 void client_msg__channel__process_reset_maintainer_request(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status4 = FALSE;
     boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     uint64 channel_id = 0;
     channel_t* channel = 0;
     client_t* sender = 0;
@@ -1288,6 +1424,12 @@ void client_msg__channel__process_reset_maintainer_request(cJSON* json_root, uin
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status4 = base__is_current_client_request(sender_client_id);
+    if (status4 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     clib__write_lock(&g_channels_global_rwlock_guard);
 
     sender = &g_clients_array[sender_client_id];
@@ -1362,7 +1504,11 @@ void client_msg__channel__process_reset_maintainer_request(cJSON* json_root, uin
 
         channel_member_count++;
 
-        if (client_in_loop->has_pending_maintainer_reset_vote == TRUE && client_in_loop->maintainer_reset_vote_channel_id == channel_id && client_in_loop->maintainer_reset_vote_generation == channel->maintainer_generation)
+        status1 = client_in_loop->has_pending_maintainer_reset_vote == TRUE;
+        status2 = client_in_loop->maintainer_reset_vote_channel_id == channel_id;
+        status3 = client_in_loop->maintainer_reset_vote_generation == channel->maintainer_generation;
+        status0 = status1 == TRUE && status2 == TRUE && status3 == TRUE;
+        if (status0 == TRUE)
         {
             vote_count++;
         }
@@ -1434,6 +1580,7 @@ static boole _client_msg_channel_internal__is_go_to_idle_mode_request_valid(cJSO
  */
 void client_msg__channel__process_go_to_idle_mode_request(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
     boole status = FALSE;
     channel_t* old_channel = 0;
     client_t* client = 0;
@@ -1459,6 +1606,12 @@ void client_msg__channel__process_go_to_idle_mode_request(cJSON* json_root, uint
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(sender_client_id);
+    if (status0 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     clib__write_lock(&g_channels_global_rwlock_guard);
 
     client = &g_clients_array[sender_client_id];
@@ -1519,13 +1672,15 @@ label_go_to_idle_mode_request_end:
  */
 static boole _client_msg_channel_internal__is_process_come_back_from_idle_mode_request_valid(cJSON* json_root)
 {
+    boole status = FALSE;
     cJSON* json_message_object = 0;
     cJSON* json_channel_id = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
-    if (cJSON_IsNumber(json_channel_id) == FALSE)
+    status = _client_msg_channel_internal__is_channel_id_valid(json_channel_id);
+    if (status == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_channel_internal__is_process_come_back_from_idle_mode_request_valid cJSON_IsNumber(json_channel_id)");
         return FALSE;
@@ -1550,6 +1705,7 @@ static boole _client_msg_channel_internal__is_process_come_back_from_idle_mode_r
  */
 void client_msg__channel__process_come_back_from_idle_mode_request(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
     boole status = FALSE;
     cJSON* json_message_object = 0;
     cJSON* json_channel_id = 0;
@@ -1569,6 +1725,12 @@ void client_msg__channel__process_come_back_from_idle_mode_request(cJSON* json_r
     json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
 
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status0 = base__is_current_client_request(sender_client_id);
+    if (status0 == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     clib__write_lock(&g_channels_global_rwlock_guard);
 
     // check if the client that sent the message is valid: connected and existing.

@@ -53,12 +53,10 @@ const char* audio_channel__policy_value(void)
 }
 
 /**
- * @brief applies a changed "audio connections" setting to the connected clients
+ * @brief Applies the allowed audio connections setting to connected clients.
  *
- *        a switched-off websocket ends every attached audio socket. a client that no longer has an
- *        allowed audio connection is reported as audio disabled, so the others stop expecting voice
- *        from it. the clients learn the new policy from the broadcast that follows and reconnect
- *        over what is still allowed.
+ * @details Closes disabled websocket connections. Clients with no allowed connection
+ *          are marked as having audio disabled; the following policy broadcast lets them reconnect.
  *
  * @attention takes the clients write lock and the peers read lock
  *
@@ -151,13 +149,11 @@ static void _audio_channel_internal__relay(uint64 sender_id, uint64 channel_id, 
 }
 
 /**
- * @brief the shared voice route: a client's frame, from its websocket (socket set) or its data channel
- *        (data_channel set), has its authentication code checked and the sender's encryption removed, and is
- *        forwarded to the channel
+ * @brief Checks a voice frame's authentication, removes the sender's encryption,
+ *        and relays it to the channel.
  *
- *        the frame is relayed from either connection the server currently holds for the sender, so a
- *        handover between them loses nothing; a frame from a replaced socket or data channel of a reused
- *        slot is dropped
+ * @details Accepts either current audio connection. Frames from replaced sockets or
+ *          data channels are dropped, including when the client slot has been reused.
  *
  * @param uint64 sender_id -> slot of the sending client
  * @param ws_cli_conn_t* socket -> the audio websocket the frame arrived on, or NULL_POINTER
@@ -169,6 +165,7 @@ static void _audio_channel_internal__relay(uint64 sender_id, uint64 channel_id, 
  */
 void audio_channel__relay_voice(uint64 sender_id, ws_cli_conn_t* socket, int data_channel, const unsigned char* data, uint64 size)
 {
+    boole status = FALSE;
     unsigned char body[AUDIO_PACKET_MAX];
     uint64 body_size = 0;
     client_t* sender = NULL_POINTER;
@@ -206,7 +203,8 @@ void audio_channel__relay_voice(uint64 sender_id, ws_cli_conn_t* socket, int dat
         DBG_AUDIO_CHANNEL log_info("%s %llu %s", "relay: data channel frame of client", sender_id, "dropped: webrtc audio is not allowed, or the channel is not the client's current one");
         goto done;
     }
-    if (permissions__can_use_channel(sender, &g_channel_array[channel_id], PERMISSION_TALK_POWER) == FALSE)
+    status = permissions__can_use_channel(sender, &g_channel_array[channel_id], PERMISSION_TALK_POWER);
+    if (status == FALSE)
     {
         goto done;
     }
@@ -229,6 +227,7 @@ done:
  */
 void audio_channel__apply_permission_changes(void)
 {
+    boole status = FALSE;
     uint64 i = 0;
     client_t* client = NULL_POINTER;
     boole* muted_channels = NULL_POINTER;
@@ -243,7 +242,8 @@ void audio_channel__apply_permission_changes(void)
         {
             continue;
         }
-        if (permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER) == TRUE)
+        status = permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER);
+        if (status == TRUE)
         {
             continue;
         }
@@ -316,14 +316,12 @@ void audio_channel__process_client_disconnect(client_t* client)
 }
 
 /**
- * @brief relays one opus frame from a music bot to every client that is in the given channel.
+ * @brief Encrypts and relays a music bot Opus frame to clients in its channel.
+ *        The server music setting and channel audio setting must both allow it.
  *
- *        the frame body is [4B bot client id][8B packet counter][2B sequence, little endian][opus]. the last two
- *        parts are encrypted with the bot's four keys and then with the server keys; the counter block of
- *        each of those layers is built from the bot id and the packet counter (media_auth.c). every
- *        receiver then gets its own copy, encrypted with the receiver's keys. nothing is relayed when the
- *        server wide music bot audio switch is off, or when the channel does not exist or has its audio
- *        disabled.
+ * @details The body is [4B bot id][8B counter][2B sequence, little endian][Opus].
+ *          The sequence and Opus bytes use the bot and server key layers; their counter
+ *          blocks use the bot id and packet counter. Each receiver gets its own encrypted copy.
  *
  * @param uint64 sender_music_bot_client_id -> client id of the music bot the frame came from, written into the frame header so a receiver can feed each bot its own decoder
  * @param uint64 channel_id -> the channel whose peers receive the frame
@@ -335,8 +333,9 @@ void audio_channel__process_client_disconnect(client_t* client)
  *
  * @return void
  */
-void audio_channel__send_music_bot_data(uint64 sender_music_bot_client_id, uint64 channel_id, uint64 sequence_number, unsigned char* data, int data_length)
+void audio_channel__send_music_bot_data(uint64 sender_music_bot_client_id, uint64 channel_id, uint64 sequence_number, unsigned char* data, int data_length, uint64 song_index, uint64 song_generation)
 {
+    boole status = FALSE;
     unsigned char body[AUDIO_PACKET_MAX] = {0};
     music_bot_audio_keys_t* audio_keys = NULL_POINTER;
     crypto_key_t bot_key = {0};
@@ -356,6 +355,9 @@ void audio_channel__send_music_bot_data(uint64 sender_music_bot_client_id, uint6
         && g_channel_array[channel_id].is_existing == TRUE && g_channel_array[channel_id].is_audio_enabled == TRUE
         && g_clients_array[sender_music_bot_client_id].is_existing == TRUE
         && g_clients_array[sender_music_bot_client_id].is_music_bot == TRUE
+        && song_index < MUSIC_BOT_MAX_FILE_COUNT
+        && g_clients_array[sender_music_bot_client_id].music_bot_client_extension.songs[song_index].is_existing
+        && g_clients_array[sender_music_bot_client_id].music_bot_client_extension.songs[song_index].generation == song_generation
         && g_clients_array[sender_music_bot_client_id].channel_id == channel_id)
     {
         audio_keys = g_clients_array[sender_music_bot_client_id].music_bot_client_extension.audio_keys;
@@ -379,7 +381,8 @@ void audio_channel__send_music_bot_data(uint64 sender_music_bot_client_id, uint6
                 goto done;
             }
         }
-        if (!media_auth__apply_server_key_layers(sender_music_bot_client_id, counter, body + 12, data_length + 2))
+        status = media_auth__apply_server_key_layers(sender_music_bot_client_id, counter, body + 12, data_length + 2);
+        if (status == FALSE)
         {
             goto done;
         }

@@ -48,6 +48,7 @@
                 </div>
             </div>
         </div>
+        <label id="transport-warning" class="hidden" />
         <div class="row" id="status-bar">
             <label id="connection-status" text="Ready to connect" />
             <label id="toolbar-hint" class="muted" />
@@ -140,7 +141,11 @@
             <label text="Identity string" />
             <input id="identity-string" type="password" />
             <checkbox id="identity-reveal" text="Show identity (allows copying)" on_change="on_identity_reveal" />
-            <label class="muted" text="Leave empty to create an identity. Your identity and key size are saved locally." />
+            <div class="row identity-actions">
+                <button id="identity-import" text="Import .lmn" on_click="on_identity_file_open" />
+                <button id="identity-export" text="Export .lmn" on_click="on_identity_file_open" />
+            </div>
+            <label class="muted" text="Leave empty to create an identity. Browser and desktop .lmn files contain the same identity string." />
             <label text="RSA key size" />
             <input id="identity-bits" text="2048" />
             <div class="row connection-key-heading">
@@ -206,6 +211,24 @@
                 <button on_click="on_disconnect" text="Disconnect" />
             </div>
             <label class="muted" id="login-result" text="Use the same identity and key size as your browser to keep that identity." />
+        </div>
+    </div>
+    <div class="column panel hidden" id="identity-file-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" id="identity-file-title" text="Import identity" />
+            <button class="close-button" on_click="on_identity_file_close" text="×" />
+        </div>
+        <div class="column panel-body">
+            <label class="muted" text="An identity file contains the raw identity string. Use the same RSA key size in both clients to get the same public key." />
+            <label class="muted" text="Keep it private. Anyone who has the identity string and key size can connect as that identity." />
+            <filepicker id="identity-file-picker" on_change="on_identity_file_pick" />
+            <label text="Filename" />
+            <input id="identity-file-name" />
+            <div class="row" id="identity-file-actions">
+                <button id="identity-file-submit" text="Import" on_click="on_identity_file_submit" />
+                <button text="Cancel" on_click="on_identity_file_close" />
+            </div>
+            <label class="muted" id="identity-file-result" />
         </div>
     </div>
     <div class="column panel hidden" id="server-info-panel">

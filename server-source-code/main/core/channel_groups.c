@@ -9,6 +9,8 @@
 
 channel_group_t g_channel_groups[CHANNEL_GROUP_LIMIT];
 
+static boole _channel_groups_internal__append_member(channel_t* channel, const channel_group_member_t* member);
+
 static cstring g_channel_group_power_names[PERMISSION_POWER_COUNT] =
 {
     NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER,
@@ -58,11 +60,13 @@ void channel_groups__init(void)
  */
 boole channel_groups__can_edit_definition(const client_t* actor, permission_t permission, const channel_group_t* previous, const channel_group_t* proposed)
 {
+    boole status = FALSE;
     uint i = 0;
     uint management = 0;
     uint limit = 0;
 
-    if (!permissions__is_allowed(actor, permission))
+    status = permissions__is_allowed(actor, permission);
+    if (status == FALSE)
     {
         return FALSE;
     }
@@ -270,20 +274,32 @@ cJSON* channel_groups__write_permissions(const group_permissions_t* permissions)
     {
         if (channel_groups__supports((permission_t)i))
         {
-            cJSON_AddStringToObject(object, permissions__name((permission_t)i),
-                permissions->values[i] == PERMISSION_GRANT ? "grant" : "deny");
+            if (!cJSON_AddStringToObject(object, permissions__name((permission_t)i),
+                permissions->values[i] == PERMISSION_GRANT ? "grant" : "deny"))
+            {
+                goto json_failure;
+            }
         }
     }
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         if (g_channel_group_power_names[i] != NULL_POINTER)
         {
-            cJSON_AddNumberToObject(object, g_channel_group_power_names[i], permissions->powers[i]);
+            if (!cJSON_AddNumberToObject(object, g_channel_group_power_names[i], permissions->powers[i]))
+            {
+                goto json_failure;
+            }
         }
     }
-    permissions__write_flags(object, permissions, TRUE);
-    permissions__write_grants(object, permissions, TRUE);
+    if (!permissions__write_flags(object, permissions, TRUE) || !permissions__write_grants(object, permissions, TRUE))
+    {
+        goto json_failure;
+    }
     return object;
+
+json_failure:
+    util__json_delete_secure(object);
+    return NULL_POINTER;
 }
 
 /**
@@ -327,12 +343,28 @@ cstring channel_groups__power_name(permission_power_t power)
  */
 boole channel_groups__can_assign(const client_t* actor, const client_t* target, const channel_t* channel, uint group_id)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     uint target_group = channel_groups__role(target, channel);
     uint available = 0;
     uint i = 0;
 
-    if (group_id >= CHANNEL_GROUP_LIMIT || (group_id != 0 && !g_channel_groups[group_id].is_existing)
-        || !channel_groups__is_allowed(actor, channel, PERMISSION_ASSIGN_CHANNEL_GROUPS))
+    status0 = group_id >= CHANNEL_GROUP_LIMIT;
+    if (status0 == TRUE)
+    {
+        return FALSE;
+    }
+    if (group_id != 0)
+    {
+        status1 = g_channel_groups[group_id].is_existing == FALSE;
+        if (status1 == TRUE)
+        {
+            return FALSE;
+        }
+    }
+    status2 = channel_groups__is_allowed(actor, channel, PERMISSION_ASSIGN_CHANNEL_GROUPS);
+    if (status2 == FALSE)
     {
         return FALSE;
     }
@@ -392,8 +424,26 @@ boole channel_groups__is_allowed(const client_t* client, const channel_t* channe
  */
 boole channel_groups__can_moderate(const client_t* actor, const client_t* target, const channel_t* channel, permission_t permission)
 {
-    if (actor == NULL_POINTER || target == NULL_POINTER || !actor->is_authenticated || !target->is_authenticated
-        || !actor->is_existing || !target->is_existing || target->is_music_bot || actor == target)
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    boole status4 = FALSE;
+    boole status5 = FALSE;
+
+    status0 = actor == NULL_POINTER;
+    status1 = target == NULL_POINTER;
+    if (status0 == TRUE || status1 == TRUE)
+    {
+        return FALSE;
+    }
+    status0 = actor->is_authenticated == FALSE;
+    status1 = target->is_authenticated == FALSE;
+    status2 = actor->is_existing == FALSE;
+    status3 = target->is_existing == FALSE;
+    status4 = target->is_music_bot != FALSE;
+    status5 = actor == target;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE || status4 == TRUE || status5 == TRUE)
     {
         return FALSE;
     }
@@ -416,10 +466,26 @@ boole channel_groups__can_moderate(const client_t* actor, const client_t* target
  */
 boole channel_groups__set(channel_t* channel, cstring identity, uint role)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     uint64 i = 0;
     channel_group_member_t member;
 
-    if (role >= CHANNEL_GROUP_LIMIT || identity == NULL_POINTER || clib__strlen(identity) == 0 || clib__strlen(identity) >= sizeof(member.identity))
+    status0 = role >= CHANNEL_GROUP_LIMIT;
+    status1 = identity == NULL_POINTER;
+    if (status0 == TRUE || status1 == TRUE)
+    {
+        return FALSE;
+    }
+    status2 = clib__strlen(identity) == 0;
+    if (status2 == TRUE)
+    {
+        return FALSE;
+    }
+    status3 = clib__strlen(identity) >= sizeof(member.identity);
+    if (status3 == TRUE)
     {
         return FALSE;
     }
@@ -449,7 +515,13 @@ boole channel_groups__set(channel_t* channel, cstring identity, uint role)
     clib__memset(&member, 0, sizeof(member));
     clib__memcpy(member.identity, identity, clib__strlen(identity));
     member.role = role;
-    cvector_push_back(channel->group_members, member);
+    status0 = _channel_groups_internal__append_member(channel, &member);
+    if (status0 == FALSE)
+    {
+        clib__null_memory(&member, sizeof(member));
+        return FALSE;
+    }
+    clib__null_memory(&member, sizeof(member));
     return TRUE;
 }
 
@@ -508,10 +580,24 @@ void channel_groups__refresh_locked(client_t* client)
  */
 boole channel_groups__mute(channel_t* channel, cstring identity, uint64 until_ms)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     uint64 i = 0;
     channel_group_member_t member;
 
-    if (identity == NULL_POINTER || !identity[0] || clib__strlen(identity) >= sizeof(member.identity))
+    status0 = identity == NULL_POINTER;
+    if (status0 == TRUE)
+    {
+        return FALSE;
+    }
+    status1 = identity[0] == 0;
+    if (status1 == TRUE)
+    {
+        return FALSE;
+    }
+    status2 = clib__strlen(identity) >= sizeof(member.identity);
+    if (status2 == TRUE)
     {
         return FALSE;
     }
@@ -534,7 +620,13 @@ boole channel_groups__mute(channel_t* channel, cstring identity, uint64 until_ms
     clib__memset(&member, 0, sizeof(member));
     clib__memcpy(member.identity, identity, clib__strlen(identity));
     member.muted_until_ms = until_ms;
-    cvector_push_back(channel->group_members, member);
+    status0 = _channel_groups_internal__append_member(channel, &member);
+    if (status0 == FALSE)
+    {
+        clib__null_memory(&member, sizeof(member));
+        return FALSE;
+    }
+    clib__null_memory(&member, sizeof(member));
     return TRUE;
 }
 
@@ -593,18 +685,31 @@ cJSON* channel_groups__write(const channel_t* channel)
             continue;
         }
         member = cJSON_CreateObject();
-        cJSON_AddStringToObject(member, "identity", channel->group_members[i].identity);
-        cJSON_AddNumberToObject(member, "role", channel->group_members[i].role);
-        cJSON_AddItemToArray(members, member);
+        if (!util__json_add_owned_array(members, member))
+        {
+            goto json_failure;
+        }
+        if (!cJSON_AddStringToObject(member, "identity", channel->group_members[i].identity))
+        {
+            goto json_failure;
+        }
+        if (!cJSON_AddNumberToObject(member, "role", channel->group_members[i].role))
+        {
+            goto json_failure;
+        }
     }
     return members;
+
+json_failure:
+    util__json_delete_secure(members);
+    return NULL_POINTER;
 }
 
 /**
  * @brief Loads custom channel group definitions at startup.
  * @param catalog Saved definitions, separate from server groups.
  */
-void channel_groups__load_catalog(cJSON* catalog)
+boole channel_groups__load_catalog(cJSON* catalog)
 {
     cJSON* entry = NULL_POINTER;
     cJSON* id = NULL_POINTER;
@@ -613,9 +718,13 @@ void channel_groups__load_catalog(cJSON* catalog)
     group_permissions_t parsed;
     uint index = 0;
 
+    if (catalog == NULL_POINTER)
+    {
+        return TRUE;
+    }
     if (!cJSON_IsArray(catalog))
     {
-        return;
+        return FALSE;
     }
     cJSON_ArrayForEach(entry, catalog)
     {
@@ -626,14 +735,14 @@ void channel_groups__load_catalog(cJSON* catalog)
             || id->valuedouble != id->valueint || !cJSON_IsString(name) || !name->valuestring[0]
             || clib__strlen(name->valuestring) >= GROUP_MAX_NAME_LENGTH)
         {
-            continue;
+            return FALSE;
         }
         index = (uint)id->valueint;
-        if (cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(entry, "permissions")))
+        if (cJSON_GetObjectItemCaseSensitive(entry, "permissions") != NULL_POINTER)
         {
             if (!channel_groups__read_permissions(cJSON_GetObjectItemCaseSensitive(entry, "permissions"), &parsed))
             {
-                continue;
+                return FALSE;
             }
             if (index == CHANNEL_GROUP_ADMIN && !cJSON_GetObjectItemCaseSensitive(
                 cJSON_GetObjectItemCaseSensitive(entry, "permissions"), "bypass_channel_password"))
@@ -650,6 +759,7 @@ void channel_groups__load_catalog(cJSON* catalog)
             g_channel_groups[index].icon_id = icon->valueint;
         }
     }
+    return TRUE;
 }
 
 /**
@@ -669,14 +779,82 @@ cJSON* channel_groups__write_catalog(boole include_permissions)
             continue;
         }
         entry = cJSON_CreateObject();
-        cJSON_AddNumberToObject(entry, "group_id", i);
-        cJSON_AddStringToObject(entry, "name", g_channel_groups[i].name);
-        cJSON_AddNumberToObject(entry, "icon_id", (double)g_channel_groups[i].icon_id);
+        if (!util__json_add_owned_array(catalog, entry))
+        {
+            goto json_failure;
+        }
+        if (!cJSON_AddNumberToObject(entry, "group_id", i))
+        {
+            goto json_failure;
+        }
+        if (!cJSON_AddStringToObject(entry, "name", g_channel_groups[i].name))
+        {
+            goto json_failure;
+        }
+        if (!cJSON_AddNumberToObject(entry, "icon_id", (double)g_channel_groups[i].icon_id))
+        {
+            goto json_failure;
+        }
         if (include_permissions)
         {
-            cJSON_AddItemToObject(entry, "permissions", channel_groups__write_permissions(&g_channel_groups[i].permissions));
+            if (!util__json_add_owned_object(entry, "permissions", channel_groups__write_permissions(&g_channel_groups[i].permissions)))
+            {
+                goto json_failure;
+            }
         }
-        cJSON_AddItemToArray(catalog, entry);
     }
     return catalog;
+
+json_failure:
+    util__json_delete_secure(catalog);
+    return NULL_POINTER;
+}
+
+/**
+ * @brief Grows the vendored vector without its allocation-asserting append macro.
+ * @attention The old vector remains intact on failure; callers hold the channels write lock.
+ */
+static boole _channel_groups_internal__append_member(channel_t* channel, const channel_group_member_t* member)
+{
+    uint64 count = cvector_size(channel->group_members);
+    uint64 capacity = cvector_capacity(channel->group_members);
+    uint64 new_capacity = 0;
+    uint64 bytes = 0;
+    cvector_metadata_t* old_storage = NULL_POINTER;
+    cvector_metadata_t* new_storage = NULL_POINTER;
+
+    if (count >= MAX_SERVER_SLOTS)
+    {
+        return FALSE;
+    }
+    if (count == capacity)
+    {
+        new_capacity = capacity == 0 ? 8 : capacity * 2;
+        if (new_capacity > MAX_SERVER_SLOTS)
+        {
+            new_capacity = MAX_SERVER_SLOTS;
+        }
+        if (new_capacity > (SIZE_MAX - sizeof(cvector_metadata_t)) / sizeof(channel_group_member_t))
+        {
+            return FALSE;
+        }
+        bytes = sizeof(cvector_metadata_t) + new_capacity * sizeof(channel_group_member_t);
+        new_storage = (cvector_metadata_t*)calloc(1, bytes);
+        if (new_storage == NULL_POINTER)
+        {
+            return FALSE;
+        }
+        if (channel->group_members != NULL_POINTER)
+        {
+            old_storage = cvector_vec_to_base(channel->group_members);
+            memcpy(new_storage, old_storage, sizeof(cvector_metadata_t) + count * sizeof(channel_group_member_t));
+            clib__null_memory(old_storage, sizeof(cvector_metadata_t) + capacity * sizeof(channel_group_member_t));
+            free(old_storage);
+        }
+        new_storage->capacity = new_capacity;
+        channel->group_members = cvector_base_to_vec(new_storage);
+    }
+    channel->group_members[count] = *member;
+    cvector_set_size(channel->group_members, count + 1);
+    return TRUE;
 }

@@ -23,6 +23,8 @@ static boole _client_msg_moderation_internal__save(void);
  */
 void client_msg__moderation__process_channel_group(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status = FALSE;
+    boole status0 = FALSE;
     cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     cJSON* action = cJSON_GetObjectItemCaseSensitive(message, "action");
     cJSON* name = cJSON_GetObjectItemCaseSensitive(message, "name");
@@ -47,13 +49,49 @@ void client_msg__moderation__process_channel_group(cJSON* json_root, uint64 send
         : !clib__strcmp(action->valuestring, "create") ? PERMISSION_CREATE_CHANNEL_GROUPS : PERMISSION_EDIT_CHANNEL_GROUPS;
     if (!deleting)
     {
-        if ((!clib__strcmp(action->valuestring, "create") || !clib__strcmp(action->valuestring, "update")) == FALSE
-            || !cJSON_IsString(name) || !name->valuestring[0] || clib__strlen(name->valuestring) >= sizeof(proposed.name)
-            || !cJSON_IsNumber(icon) || !(icon->valuedouble >= -2 && icon->valuedouble < MAX_ICONS)
-            || icon->valuedouble != icon->valueint
-            || !channel_groups__read_permissions(cJSON_GetObjectItemCaseSensitive(message, "permissions"), &proposed.permissions))
+        status0 = (!clib__strcmp(action->valuestring, "create") || !clib__strcmp(action->valuestring, "update")) == FALSE;
+        if (status0 == FALSE)
+        {
+            status0 = !cJSON_IsString(name);
+        }
+        if (status0 == FALSE)
+        {
+            status0 = !name->valuestring[0];
+        }
+        if (status0 == FALSE)
+        {
+            status0 = clib__strlen(name->valuestring) >= sizeof(proposed.name);
+        }
+        if (status0 == FALSE)
+        {
+            status0 = !cJSON_IsNumber(icon);
+        }
+        if (status0 == FALSE)
+        {
+            status0 = icon->valuedouble >= -2;
+            if (status0 == TRUE)
+            {
+                status0 = icon->valuedouble < MAX_ICONS;
+            }
+            status0 = status0 == FALSE;
+        }
+        if (status0 == FALSE)
+        {
+            status0 = icon->valuedouble != icon->valueint;
+        }
+        if (status0 == FALSE)
+        {
+            status0 = !channel_groups__read_permissions(cJSON_GetObjectItemCaseSensitive(message, "permissions"), &proposed.permissions);
+        }
+        if (status0 == TRUE)
         {
             clib__read_lock(&g_clients_global_rwlock_guard);
+            status = base__is_current_client_request(sender_client_id);
+            if (status == FALSE)
+            {
+                clib__unlock(&g_clients_global_rwlock_guard);
+                return;
+            }
             server_msg__moderation__send_result(&g_clients_array[sender_client_id], "Invalid channel group settings.", FALSE);
             clib__unlock(&g_clients_global_rwlock_guard);
             return;
@@ -62,12 +100,34 @@ void client_msg__moderation__process_channel_group(cJSON* json_root, uint64 send
         proposed.icon_id = icon->valueint;
         clib__string_copy(proposed.name, sizeof(proposed.name), name->valuestring);
     }
-    if (clib__strcmp(action->valuestring, "create") && (!_client_msg_moderation_internal__read_index(message, "group_id", CHANNEL_GROUP_LIMIT, &id)
-        || id == 0 || (deleting && id == CHANNEL_GROUP_ADMIN)))
+    status0 = (clib__strcmp(action->valuestring, "create")) != FALSE;
+    if (status0 == TRUE)
+    {
+        status0 = !_client_msg_moderation_internal__read_index(message, "group_id", CHANNEL_GROUP_LIMIT, &id);
+        if (status0 == FALSE)
+        {
+            status0 = id == 0;
+        }
+        if (status0 == FALSE)
+        {
+            status0 = (deleting) != FALSE;
+            if (status0 == TRUE)
+            {
+                status0 = id == CHANNEL_GROUP_ADMIN;
+            }
+        }
+    }
+    if (status0 == TRUE)
     {
         return;
     }
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status = base__is_current_client_request(sender_client_id);
+    if (status == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     clib__write_lock(&g_channels_global_rwlock_guard);
     actor = &g_clients_array[sender_client_id];
     if (!base__is_client_valid(sender_client_id) || !g_server_settings.is_permission_system_enabled
@@ -94,8 +154,9 @@ void client_msg__moderation__process_channel_group(cJSON* json_root, uint64 send
     {
         goto end;
     }
-    if (!channel_groups__can_edit_definition(actor, permission, g_channel_groups[id].is_existing ? &g_channel_groups[id] : NULL_POINTER,
-        deleting ? NULL_POINTER : &proposed))
+    status = channel_groups__can_edit_definition(actor, permission, g_channel_groups[id].is_existing ? &g_channel_groups[id] : NULL_POINTER,
+        deleting ? NULL_POINTER : &proposed);
+    if (status == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(actor, NULL_POINTER);
         goto end;
@@ -166,11 +227,18 @@ end:
  */
 void client_msg__moderation__process_save_emojis(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status = FALSE;
     client_t* actor = NULL_POINTER;
     boole saved = FALSE;
 
     (void)json_root;
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status = base__is_current_client_request(sender_client_id);
+    if (status == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     actor = &g_clients_array[sender_client_id];
     if (permissions__is_allowed(actor, PERMISSION_UPLOAD_EMOJIS) || permissions__is_allowed(actor, PERMISSION_DELETE_EMOJIS))
     {
@@ -193,6 +261,7 @@ void client_msg__moderation__process_save_emojis(cJSON* json_root, uint64 sender
  */
 void client_msg__moderation__process_music_control(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status = FALSE;
     cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     cJSON* action = cJSON_GetObjectItemCaseSensitive(message, "action");
     uint64 bot_id = 0;
@@ -204,6 +273,12 @@ void client_msg__moderation__process_music_control(cJSON* json_root, uint64 send
         return;
     }
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status = base__is_current_client_request(sender_client_id);
+    if (status == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     actor = &g_clients_array[sender_client_id];
     bot = &g_clients_array[bot_id];
     if (!permissions__is_allowed(actor, PERMISSION_CONTROL_MUSIC_PLAYBACK))
@@ -238,10 +313,24 @@ void client_msg__moderation__process_music_control(cJSON* json_root, uint64 send
  */
 static boole _client_msg_moderation_internal__read_index(cJSON* object, cstring name, uint64 limit, uint64* result)
 {
+    boole status0 = FALSE;
     cJSON* value = cJSON_GetObjectItemCaseSensitive(object, name);
 
-    if (!cJSON_IsNumber(value) || !(value->valuedouble >= 0 && value->valuedouble < limit)
-        || value->valuedouble != (double)(uint64)value->valuedouble)
+    status0 = !cJSON_IsNumber(value);
+    if (status0 == FALSE)
+    {
+        status0 = value->valuedouble >= 0;
+        if (status0 == TRUE)
+        {
+            status0 = value->valuedouble < limit;
+        }
+        status0 = status0 == FALSE;
+    }
+    if (status0 == FALSE)
+    {
+        status0 = value->valuedouble != (double)(uint64)value->valuedouble;
+    }
+    if (status0 == TRUE)
     {
         return FALSE;
     }
@@ -273,24 +362,47 @@ static boole _client_msg_moderation_internal__save(void)
  */
 void client_msg__moderation__process_channel_access(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status = FALSE;
+    boole status0 = FALSE;
     cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     uint64 channel_id = 0;
 
-    if (!_client_msg_moderation_internal__read_index(message, "channel_id", g_server_settings.max_channel_count, &channel_id))
+    status = _client_msg_moderation_internal__read_index(message, "channel_id", g_server_settings.max_channel_count, &channel_id);
+    if (status == FALSE)
     {
         return;
     }
     clib__read_lock(&g_clients_global_rwlock_guard);
+    status = base__is_current_client_request(sender_client_id);
+    if (status == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     clib__read_lock(&g_channels_global_rwlock_guard);
     if (base__is_client_valid(sender_client_id) && g_channel_array[channel_id].is_existing)
     {
         server_msg__moderation__send_channel_access(&g_clients_array[sender_client_id], &g_channel_array[channel_id]);
         uint64 target_id = 0;
         cJSON* identity = cJSON_GetObjectItemCaseSensitive(message, "identity");
-        if (_client_msg_moderation_internal__read_index(message, "client_id", g_server_settings.max_client_count, &target_id)
-            && cJSON_IsString(identity) && base__is_client_valid(target_id)
-            && g_clients_array[target_id].channel_id == channel_id
-            && !clib__strcmp(g_clients_array[target_id].public_key, identity->valuestring))
+        status0 = (_client_msg_moderation_internal__read_index(message, "client_id", g_server_settings.max_client_count, &target_id)) != FALSE;
+        if (status0 == TRUE)
+        {
+            status0 = (cJSON_IsString(identity)) != FALSE;
+        }
+        if (status0 == TRUE)
+        {
+            status0 = (base__is_client_valid(target_id)) != FALSE;
+        }
+        if (status0 == TRUE)
+        {
+            status0 = g_clients_array[target_id].channel_id == channel_id;
+        }
+        if (status0 == TRUE)
+        {
+            status0 = !clib__strcmp(g_clients_array[target_id].public_key, identity->valuestring);
+        }
+        if (status0 == TRUE)
         {
             server_msg__moderation__send_client_access(&g_clients_array[sender_client_id], &g_clients_array[target_id], &g_channel_array[channel_id]);
         }
@@ -306,6 +418,14 @@ void client_msg__moderation__process_channel_access(cJSON* json_root, uint64 sen
  */
 void client_msg__moderation__process_client_action(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    boole status4 = FALSE;
+    boole status5 = FALSE;
+    boole status6 = FALSE;
     cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     cJSON* action = cJSON_GetObjectItemCaseSensitive(message, "action");
     cJSON* identity = cJSON_GetObjectItemCaseSensitive(message, "identity");
@@ -324,16 +444,28 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
     boole delete_temp = FALSE;
     char identity_hash[IDENTITY_HASH_MAX_LENGTH] = {0};
 
-    if (!cJSON_IsString(action) || !cJSON_IsString(identity)
-        || !_client_msg_moderation_internal__read_index(message, "client_id", g_server_settings.max_client_count, &target_id)
-        || !_client_msg_moderation_internal__read_index(message, "channel_id", g_server_settings.max_channel_count, &channel_id))
+    status0 = !cJSON_IsString(action);
+    if (status0 == FALSE)
+    {
+        status0 = !cJSON_IsString(identity);
+    }
+    if (status0 == FALSE)
+    {
+        status0 = !_client_msg_moderation_internal__read_index(message, "client_id", g_server_settings.max_client_count, &target_id);
+    }
+    if (status0 == FALSE)
+    {
+        status0 = !_client_msg_moderation_internal__read_index(message, "channel_id", g_server_settings.max_channel_count, &channel_id);
+    }
+    if (status0 == TRUE)
     {
         return;
     }
     if (!clib__strcmp(action->valuestring, "move"))
     {
         permission = PERMISSION_MOVE_CLIENTS;
-        if (!_client_msg_moderation_internal__read_index(message, "destination_channel_id", g_server_settings.max_channel_count, &destination_id))
+        status = _client_msg_moderation_internal__read_index(message, "destination_channel_id", g_server_settings.max_channel_count, &destination_id);
+        if (status == FALSE)
         {
             return;
         }
@@ -346,7 +478,8 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
     else if (!clib__strcmp(action->valuestring, "mute"))
     {
         permission = PERMISSION_MUTE_CLIENTS;
-        if (!_client_msg_moderation_internal__read_index(message, "duration_seconds", 86401, &duration))
+        status = _client_msg_moderation_internal__read_index(message, "duration_seconds", 86401, &duration);
+        if (status == FALSE)
         {
             return;
         }
@@ -358,7 +491,8 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
     else if (!clib__strcmp(action->valuestring, "channel_group"))
     {
         permission = PERMISSION_ASSIGN_CHANNEL_GROUPS;
-        if (!_client_msg_moderation_internal__read_index(message, "role", CHANNEL_GROUP_LIMIT, &role))
+        status = _client_msg_moderation_internal__read_index(message, "role", CHANNEL_GROUP_LIMIT, &role);
+        if (status == FALSE)
         {
             return;
         }
@@ -368,12 +502,33 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
         return;
     }
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status = base__is_current_client_request(sender_client_id);
+    if (status == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     clib__write_lock(&g_channels_global_rwlock_guard);
     actor = &g_clients_array[sender_client_id];
     target = &g_clients_array[target_id];
     channel = &g_channel_array[channel_id];
-    if (!base__is_client_valid(sender_client_id) || !base__is_client_valid(target_id) || !channel->is_existing
-        || target->is_music_bot || target->channel_id != channel_id || clib__strcmp(target->public_key, identity->valuestring))
+    status0 = !base__is_client_valid(sender_client_id);
+    if (status0 == FALSE)
+    {
+        status0 = !base__is_client_valid(target_id);
+    }
+    if (status0 == FALSE)
+    {
+        status4 = !channel->is_existing;
+        status5 = (target->is_music_bot) != FALSE;
+        status6 = target->channel_id != channel_id;
+        status0 = status4 == TRUE || status5 == TRUE || status6 == TRUE;
+    }
+    if (status0 == FALSE)
+    {
+        status0 = (clib__strcmp(target->public_key, identity->valuestring)) != FALSE;
+    }
+    if (status0 == TRUE)
     {
         goto end;
     }
@@ -381,8 +536,19 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
     if (permission == PERMISSION_ASSIGN_CHANNEL_GROUPS)
     {
         old_role = channel_groups__role(target, channel);
-        if (!g_server_settings.is_permission_system_enabled || !channel_groups__can_assign(actor, target, channel, (uint)role)
-            || (channel->is_temp_channel && target->is_temp_admin_channel && target->temp_channel_id == channel_id))
+        status0 = !g_server_settings.is_permission_system_enabled;
+        if (status0 == FALSE)
+        {
+            status0 = !channel_groups__can_assign(actor, target, channel, (uint)role);
+        }
+        if (status0 == FALSE)
+        {
+            status1 = (channel->is_temp_channel) != FALSE;
+            status2 = (target->is_temp_admin_channel) != FALSE;
+            status3 = target->temp_channel_id == channel_id;
+            status0 = status1 == TRUE && status2 == TRUE && status3 == TRUE;
+        }
+        if (status0 == TRUE)
         {
             goto denied;
         }
@@ -398,7 +564,8 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
     }
     else
     {
-        if (!channel_groups__can_moderate(actor, target, channel, permission))
+        status = channel_groups__can_moderate(actor, target, channel, permission);
+        if (status == FALSE)
         {
             goto denied;
         }
@@ -413,7 +580,8 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
             {
                 goto denied;
             }
-            if (!channel__check_channel_access(target, &g_channel_array[destination_id], NULL_POINTER, TRUE))
+            status = channel__check_channel_access(target, &g_channel_array[destination_id], NULL_POINTER, TRUE);
+            if (status == FALSE)
             {
                 goto end;
             }
@@ -433,7 +601,8 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
         }
         else if (permission == PERMISSION_MUTE_CLIENTS)
         {
-            if (!util__get_monotonic_ms(&now))
+            status = util__get_monotonic_ms(&now);
+            if (status == FALSE)
             {
                 goto end;
             }
@@ -452,7 +621,8 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
 denied:
     server_msg__administration__send_access_denied_to_single_client(actor, NULL_POINTER);
 end:
-    if (base__is_client_valid(sender_client_id))
+    status = base__is_client_valid(sender_client_id);
+    if (status != FALSE)
     {
         server_msg__moderation__send_result(actor, succeeded ? "Change applied." : "The change could not be applied.", succeeded);
     }
@@ -469,6 +639,8 @@ end:
  */
 void client_msg__moderation__process_bans(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status = FALSE;
+    boole status0 = FALSE;
     cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     cJSON* token = cJSON_GetObjectItemCaseSensitive(message, "remove_token");
     client_t* actor = NULL_POINTER;
@@ -477,14 +649,37 @@ void client_msg__moderation__process_bans(cJSON* json_root, uint64 sender_client
     boole show_addresses = FALSE;
     boole removed = FALSE;
 
-    if (token != NULL_POINTER && (!cJSON_IsString(token) || clib__strlen(token->valuestring) != 32))
+    status0 = token != NULL_POINTER;
+    if (status0 == TRUE)
+    {
+        status0 = !cJSON_IsString(token);
+        if (status0 == FALSE)
+        {
+            status0 = clib__strlen(token->valuestring) != 32;
+        }
+    }
+    if (status0 == TRUE)
     {
         return;
     }
     clib__write_lock(&g_clients_global_rwlock_guard);
+    status = base__is_current_client_request(sender_client_id);
+    if (status == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
     actor = &g_clients_array[sender_client_id];
-    if (!permissions__is_allowed(actor, PERMISSION_VIEW_BANS)
-        || (token != NULL_POINTER && !permissions__is_allowed(actor, PERMISSION_REMOVE_BANS)))
+    status0 = !permissions__is_allowed(actor, PERMISSION_VIEW_BANS);
+    if (status0 == FALSE)
+    {
+        status0 = token != NULL_POINTER;
+        if (status0 == TRUE)
+        {
+            status0 = !permissions__is_allowed(actor, PERMISSION_REMOVE_BANS);
+        }
+    }
+    if (status0 == TRUE)
     {
         server_msg__administration__send_access_denied_to_single_client(actor, NULL_POINTER);
         clib__unlock(&g_clients_global_rwlock_guard);

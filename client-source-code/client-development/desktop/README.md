@@ -72,6 +72,12 @@ Choose **Save** to keep the connection without connecting immediately. Saved
 connections, the local identity and preferences are stored in `desktop.json` in
 the operating system's application-data directory.
 
+Use **Import .lmn** or **Export .lmn** beside the identity field to move an
+identity between the browser and desktop clients. The file contains the raw
+identity string. Choose the same RSA key size in both clients so they derive the
+same public key. Keep the file private because anyone who has it can use that
+identity.
+
 ## Voice chat
 
 Open the audio settings to choose the microphone and speakers, change volume and

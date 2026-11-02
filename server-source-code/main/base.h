@@ -3,6 +3,22 @@
 
 #include "definitions.h"
 
+typedef struct client_request_context_t
+{
+    ws_cli_conn_t* socket;
+    uint64 client_id;
+    boole authenticated;
+    boole active;
+} client_request_context_t;
+
+// Begin while the clients lock protects the socket/authentication snapshot. End
+// restores the prior thread-local scope, including when dispatch is nested.
+void base__begin_client_request(ws_cli_conn_t* socket, uint64 client_id, boole authenticated, client_request_context_t* previous);
+void base__end_client_request(const client_request_context_t* previous);
+// Caller holds the clients lock. Internal calls without a request scope remain
+// allowed for a valid existing slot; WebSocket dispatch must establish a scope.
+boole base__is_current_client_request(uint64 client_id);
+
 boole base__is_request_allowed_based_on_spam_protection(uint64 client_index);
 uint64 base__get_chat_message_id(void);
 void base__increment_chat_message_id(void);

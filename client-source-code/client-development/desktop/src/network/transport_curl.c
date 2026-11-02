@@ -282,6 +282,10 @@ label_finished:
     }
     else
     {
+        pthread_mutex_lock(&transport->lock);
+        transport->status.certificate_rejected = result == CURLE_PEER_FAILED_VERIFICATION
+            || result == CURLE_SSL_PINNEDPUBKEYNOTMATCH || result == CURLE_SSL_ISSUER_ERROR;
+        pthread_mutex_unlock(&transport->lock);
         clib__string_format(detail, sizeof(detail), "Connection failed: %s", curl_easy_strerror(result));
         _transport_internal__status(transport, DESKTOP_TRANSPORT_FAILED, detail);
     }

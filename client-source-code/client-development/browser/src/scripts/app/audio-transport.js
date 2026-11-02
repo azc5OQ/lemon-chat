@@ -858,6 +858,16 @@ function audio_transport__receive(buffer)
     {
         return;
     }
+    let packet_counter = 0n;
+    for (const byte of opened.counter_bytes)
+    {
+        packet_counter = (packet_counter << 8n) | BigInt(byte);
+    }
+    const discard_through = g_client_list[client_index].discard_audio_through_counter;
+    if (discard_through != null && packet_counter <= discard_through)
+    {
+        return;
+    }
     let inner = keys__media_apply_inner_layers(keys__media_server_key_layers(), opened.sender_id, opened.counter_bytes, opened.inner, false);
     let content = null;
     if (g_client_list[client_index].is_music_bot == true)
@@ -877,6 +887,7 @@ function audio_transport__receive(buffer)
     decoded.set(content, 4);
     g_opus_decoder_worker.postMessage({
         type: "mainthread__add_decrypted_data_to_opus_decoder",
+        counter: packet_counter.toString(),
         value: decoded.buffer
     }, [decoded.buffer]);
 }

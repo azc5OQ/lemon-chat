@@ -2,11 +2,11 @@
 // Funnel is one of the solutions for self-hosting behind CGNAT.
 
 #include "tailscale.h"
-#include "clib/clib.h"
-#include "base.h"
-#include "first_time_setup.h"
-#include "util.h"
-#include "../third-party/dave-g-json/cJSON.h"
+#include "../clib/clib.h"
+#include "../base.h"
+#include "../first_time_setup.h"
+#include "../util.h"
+#include "../../third-party/dave-g-json/cJSON.h"
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -69,6 +69,7 @@ static boole _tailscale_internal__find_executable(char* path, uint64 capacity)
     char program_files[768];
     char installed_path[1024];
     DWORD length = 0;
+    boole success = FALSE;
     uint64 index = 0;
     const char* directories[] =
     {
@@ -83,7 +84,8 @@ static boole _tailscale_internal__find_executable(char* path, uint64 capacity)
         if (length > 0 && length < sizeof(program_files))
         {
             clib__string_format(installed_path, sizeof(installed_path), "%s\\Tailscale\\tailscale.exe", program_files);
-            if (util__find_executable(installed_path, path, capacity))
+            success = util__find_executable(installed_path, path, capacity);
+            if (success)
             {
                 return TRUE;
             }
@@ -197,6 +199,7 @@ static int _tailscale_internal__run(const char* const* arguments, char* output, 
     uint64 index = 0;
     int result = -1;
     char executable[1024];
+    boole success = FALSE;
 #if defined(_WIN32) || defined(WIN32)
     char command[4096];
     SECURITY_ATTRIBUTES security;
@@ -228,7 +231,8 @@ static int _tailscale_internal__run(const char* const* arguments, char* output, 
 #endif
 
     output[0] = 0;
-    if (!_tailscale_internal__find_executable(executable, sizeof(executable)))
+    success = _tailscale_internal__find_executable(executable, sizeof(executable));
+    if (!success)
     {
         return -1;
     }
@@ -237,13 +241,15 @@ static int _tailscale_internal__run(const char* const* arguments, char* output, 
     clib__memset(&security, 0, sizeof(security));
     clib__memset(&startup, 0, sizeof(startup));
     clib__memset(&process, 0, sizeof(process));
-    if (!_tailscale_internal__append_argument(command, sizeof(command), executable))
+    success = _tailscale_internal__append_argument(command, sizeof(command), executable);
+    if (!success)
     {
         return -1;
     }
     for (index = 0; arguments[index] != NULL_POINTER; index++)
     {
-        if (!_tailscale_internal__append_argument(command, sizeof(command), arguments[index]))
+        success = _tailscale_internal__append_argument(command, sizeof(command), arguments[index]);
+        if (!success)
         {
             return -1;
         }
@@ -648,6 +654,7 @@ static boole _tailscale_internal__has_foreground_port(cJSON* status, int64 publi
     char suffix[20];
     uint64 name_length = 0;
     uint64 suffix_length = 0;
+    boole has_foreground_port = FALSE;
 
     if (foreground == NULL_POINTER)
     {
@@ -685,7 +692,8 @@ static boole _tailscale_internal__has_foreground_port(cJSON* status, int64 publi
                 return TRUE;
             }
         }
-        if (_tailscale_internal__has_foreground_port(child, public_port, depth + 1))
+        has_foreground_port = _tailscale_internal__has_foreground_port(child, public_port, depth + 1);
+        if (has_foreground_port)
         {
             return TRUE;
         }
@@ -718,12 +726,14 @@ static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cs
     cJSON* item = NULL_POINTER;
     boole public = FALSE;
     boole root_matches = FALSE;
+    boole has_foreground_port = FALSE;
 
     clib__string_format(port, sizeof(port), "%lld", public_port);
     clib__string_format(endpoint, sizeof(endpoint), "%s:%lld", g_tailscale_hostname, public_port);
     clib__string_format(suffix, sizeof(suffix), ":%lld", public_port);
     suffix_length = clib__strlen(suffix);
-    if (_tailscale_internal__has_foreground_port(status, public_port, 0))
+    has_foreground_port = _tailscale_internal__has_foreground_port(status, public_port, 0);
+    if (has_foreground_port)
     {
         return -1;
     }
@@ -824,6 +834,7 @@ boole tailscale__configure(void)
     char chat_target[64];
     int page_state = -1;
     int chat_state = -1;
+    boole success = FALSE;
 
     g_tailscale_ready = FALSE;
     g_tailscale_hostname[0] = 0;
@@ -847,7 +858,8 @@ boole tailscale__configure(void)
     {
         return FALSE;
     }
-    if (!_tailscale_internal__read_hostname(status))
+    success = _tailscale_internal__read_hostname(status);
+    if (!success)
     {
         cJSON_Delete(status);
         printf("%s A running Tailscale connection with a valid ts.net address is required for Funnel.\n", g_mark_warn);

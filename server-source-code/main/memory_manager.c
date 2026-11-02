@@ -141,7 +141,7 @@ nuint memorymanager__allocate(uint64 size, uint64 type)
     memorymanager_header_t* header = 0;
     nuint result = 0;
 
-    if (size == 0 || size > SIZE_MAX - sizeof(memorymanager_header_t))
+    if (size == 0 || size > (uint64)INT64_MAX || size > SIZE_MAX - sizeof(memorymanager_header_t))
     {
         return 0;
     }
@@ -186,108 +186,52 @@ nuint memorymanager__allocate(uint64 size, uint64 type)
  */
 nuint memorymanager__realloc(nuint address, uint64 newsize)
 {
-    memorymanager_header_t* old_header = 0;
-    memorymanager_header_t* new_header = 0;
-#if LEMON_TRACK_ALLOCATIONS
-    memorymanager_header_t* prev = 0;
-    memorymanager_header_t* next = 0;
-#endif
+    memorymanager_header_t* header = NULL_POINTER;
+    uint64 old_size = 0;
+    uint64 copy_size = 0;
     uint type = 0;
-    nuint result = 0;
+    nuint replacement = 0;
 
     if (address == 0)
     {
         return memorymanager__allocate(newsize, 0);
     }
-
     if (newsize == 0)
     {
         memorymanager__free(address);
         return 0;
     }
-    if (newsize > SIZE_MAX - sizeof(memorymanager_header_t))
+    if (newsize > (uint64)INT64_MAX || newsize > SIZE_MAX - sizeof(memorymanager_header_t))
     {
         return 0;
     }
-
-    old_header = _memorymanager_internal__header_of(address);
-
+    header = _memorymanager_internal__header_of(address);
 #if LEMON_TRACK_ALLOCATIONS
     pthread_mutex_lock(&g_memorymanager_lock);
 #endif
-
-    if (old_header->guard != MEMORYMANAGER_GUARD_LIVE)
+    if (header->guard != MEMORYMANAGER_GUARD_LIVE)
     {
 #if LEMON_TRACK_ALLOCATIONS
         pthread_mutex_unlock(&g_memorymanager_lock);
 #endif
-        DBG_MEMORY_MANAGER log_info("%s %p %s", "memorymanager__realloc bad guard on ", (void*)address, " (not a tracked block) \n");
         return 0;
     }
-
-    type = old_header->type;
+    old_size = header->size;
+    type = header->type;
 #if LEMON_TRACK_ALLOCATIONS
-    prev = old_header->prev;
-    next = old_header->next;
-    _memorymanager_internal__unlink(old_header);
-#endif
-
-    new_header = (memorymanager_header_t*)realloc((void*)old_header, sizeof(memorymanager_header_t) + newsize);
-
-    if (new_header == NULL_POINTER)
-    {
-#if LEMON_TRACK_ALLOCATIONS
-        // realloc failed, so the original block is still valid; relink it and report failure
-        old_header->prev = prev;
-        old_header->next = next;
-
-        if (prev != NULL_POINTER)
-        {
-            prev->next = old_header;
-        }
-        else
-        {
-            g_memorymanager_head = old_header;
-        }
-
-        if (next != NULL_POINTER)
-        {
-            next->prev = old_header;
-        }
-
-        pthread_mutex_unlock(&g_memorymanager_lock);
-#endif
-
-        return 0;
-    }
-
-    new_header->size = newsize;
-    new_header->type = type;
-    new_header->guard = MEMORYMANAGER_GUARD_LIVE;
-
-#if LEMON_TRACK_ALLOCATIONS
-    new_header->prev = prev;
-    new_header->next = next;
-    if (prev != NULL_POINTER)
-    {
-        prev->next = new_header;
-    }
-    else
-    {
-        g_memorymanager_head = new_header;
-    }
-
-    if (next != NULL_POINTER)
-    {
-        next->prev = new_header;
-    }
-
     pthread_mutex_unlock(&g_memorymanager_lock);
 #endif
-
-    result = (nuint)(new_header + 1);
-
-    return result;
+    // Keep the old allocation intact on failure, zero any growth, and wipe all
+    // old bytes before releasing them even when the block becomes smaller.
+    replacement = memorymanager__allocate(newsize, type);
+    if (replacement == 0)
+    {
+        return 0;
+    }
+    copy_size = old_size < newsize ? old_size : newsize;
+    clib__memcpy((void*)replacement, (void*)address, (int64)copy_size);
+    memorymanager__free(address);
+    return replacement;
 }
 
 /**

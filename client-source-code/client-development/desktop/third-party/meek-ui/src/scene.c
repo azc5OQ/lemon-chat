@@ -375,8 +375,8 @@ void scene__set_on_change(gui_node_t* node, char* handler_name)
     node->on_change_name[n] = 0;
 }
 
-// Per-node teardown shared between the iterative + recursive paths
-// of scene__node_free. Clears any file-scope pointers that may
+// Per-node teardown before scene__node_free releases any node. Clears
+// any file-scope pointers that may
 // reference `n` (overlay / root / focus / pressed / hover), runs
 // the widget's on_destroy hook, and frees auto-allocated user_data.
 // Does NOT free `n` itself or recurse into children.
@@ -413,30 +413,8 @@ static void _scene_internal__node_teardown_one(gui_node_t* n)
     scene_text__release(n);
 }
 
-// Recursive fallback used only when the iterative path can't allocate
-// its work list. Same semantics as the historical recursive
-// implementation; depth is bounded by the C stack, so a pathological
-// 100k-deep tree could blow it -- but if we got here, the system is
-// already out of memory, and recursion at least makes forward progress.
-static void _scene_internal__node_free_recursive(gui_node_t* n)
-{
-    if (n == NULL_POINTER)
-    {
-        return;
-    }
-    _scene_internal__node_teardown_one(n);
-    gui_node_t* c = n->first_child;
-    while (c != NULL_POINTER)
-    {
-        gui_node_t* next = c->next_sibling;
-        _scene_internal__node_free_recursive(c);
-        c = next;
-    }
-    GUI_FREE(n);
-}
-
 /**
- * @brief recursively free a subtree rooted at node.
+ * @brief release a complete subtree without allocating a work list or recursing.
  *
  * @param gui_node_t* node -> Root of the subtree (may be NULL).
  *
@@ -444,101 +422,64 @@ static void _scene_internal__node_free_recursive(gui_node_t* n)
  */
 void scene__node_free(gui_node_t* node)
 {
+    gui_node_t* current = node;
+    gui_node_t* parent = NULL_POINTER;
+    gui_node_t* next = NULL_POINTER;
+    boole finished = FALSE;
     if (node == NULL_POINTER)
     {
         return;
     }
-    // Iterative free so deeply nested trees can't overflow the C
-    // stack. Three-phase:
-    // Phase 1: walk the tree level-order, collecting every node
-    // pointer into a dynamic array. PURE collection --
-    // no teardown, no free. The walk uses first_child /
-    // next_sibling, which we don't touch.
-    // Phase 2: iterate the collected list once, calling per-node
-    // teardown (on_destroy + user_data free) on each.
-    // Order doesn't matter for correctness; we go in
-    // collected order (parents-before-children) to
-    // match the historical recursive contract.
-    // Phase 3: reverse-iterate the list and GUI_FREE each node
-    // so children's allocations get returned before
-    // their parents'.
-    // Splitting collection from teardown means the realloc-failure
-    // recovery path is straightforward: we know exactly which nodes
-    // are in the list (none teardown'd yet) and which still need
-    // recursive handling (the un-collected suffix of `n`'s child
-    // chain). No risk of double-teardown.
-    // Falls back to recursion entirely if the initial allocation
-    // fails -- recursion uses C stack but at least makes forward
-    // progress, which is what matters when memory is already
-    // exhausted.
-    int64       cap   = 64;
-    gui_node_t**  list  = (gui_node_t**)GUI_MALLOC_T(cap* sizeof(gui_node_t*), MM_TYPE__GENERIC);
-    if (list == NULL_POINTER)
-    {
-        _scene_internal__node_free_recursive(node);
-        return;
-    }
-    int64       count          = 0;
-    int64       visit_idx      = 0;
-    gui_node_t*   uncollected    = NULL_POINTER; // first un-collected sibling, or NULL.
-    list[count++] = node;
 
-    while (visit_idx < count && uncollected == NULL_POINTER)
+    // Teardown runs parent-first while every node and link is still alive.
+    // Existing parent links replace the temporary collection array, so an
+    // allocation failure cannot skip descendants or leave input targets behind.
+    while (current != NULL_POINTER)
     {
-        gui_node_t* n = list[visit_idx++];
-        for (gui_node_t* c = n->first_child; c != NULL_POINTER; c = c->next_sibling)
+        _scene_internal__node_teardown_one(current);
+        if (current->first_child != NULL_POINTER)
         {
-            if (count >= cap)
+            current = current->first_child;
+            continue;
+        }
+        while (current != node && current->next_sibling == NULL_POINTER)
+        {
+            current = current->parent;
+        }
+        if (current == node)
+        {
+            break;
+        }
+        current = current->next_sibling;
+    }
+
+    // Free children before their parents. Save both links before each free,
+    // and stop at the requested root even if it has a parent or a sibling.
+    current = node;
+    while (current != NULL_POINTER)
+    {
+        while (current->first_child != NULL_POINTER)
+        {
+            current = current->first_child;
+        }
+        while (current != NULL_POINTER)
+        {
+            finished = current == node;
+            parent = current->parent;
+            next = finished ? NULL_POINTER : current->next_sibling;
+            GUI_FREE(current);
+            if (finished)
             {
-                int64       new_cap  = cap * 2;
-                gui_node_t**  new_list = (gui_node_t**)GUI_REALLOC(list, new_cap* sizeof(gui_node_t*));
-                if (new_list == NULL_POINTER)
-                {
-                    // Grow failed. Stop collecting. Remember `c` so
-                    // phase-2.5 can recursively free it and its
-                    // later siblings -- those subtrees never made
-                    // it into the list, so handling them via the
-                    // recursive helper (which does its own
-                    // teardown + free) keeps the bookkeeping clean.
-                    uncollected = c;
-                    break;
-                }
-                list = new_list;
-                cap  = new_cap;
+                return;
             }
-            list[count++] = c;
+            if (next != NULL_POINTER)
+            {
+                current = next;
+                break;
+            }
+            current = parent;
         }
     }
-
-    // Phase 2: per-node teardown. on_destroy hooks may inspect
-    // first_child / next_sibling to walk children -- those pointers
-    // are still valid here because phase 3 hasn't run yet, and the
-    // un-collected siblings (if any) haven't been freed yet either.
-    for (int64 i = 0; i < count; i++)
-    {
-        _scene_internal__node_teardown_one(list[i]);
-    }
-
-    // Phase 2.5 (only if grow failed): recursively free the
-    // un-collected suffix of children. Walks via next_sibling so
-    // we visit ALL un-collected siblings, not just `c`'s subtree.
-    // recursive_free does its own teardown + free.
-    while (uncollected != NULL_POINTER)
-    {
-        gui_node_t* next = uncollected->next_sibling;
-        _scene_internal__node_free_recursive(uncollected);
-        uncollected = next;
-    }
-
-    // Phase 3: reverse-iterate the list so children are freed
-    // before their parents. Matches the historical recursive
-    // ordering for any external observer (memory-tracker logs,
-    // leak-sweep tools, etc.).
-    for (int64 i = count - 1; i >= 0; i--)
-    {
-        GUI_FREE(list[i]);
-    }
-    GUI_FREE(list);
 }
 
 // ===== tree reconciliation for hot reload ====================================

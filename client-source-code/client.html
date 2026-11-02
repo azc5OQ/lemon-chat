@@ -56398,6 +56398,27 @@ function audio_opus_glue__opus_decoder_worker_interval_function()
 function audio_opus_glue__opus_decoder_worker_onmessage(event)
 {
     // voice frame: [4B sender client id][encrypted(2B sequence + opus)]
+    if (event.data.type === "discard_sender_audio")
+    {
+        const sender_id = event.data.sender_id;
+        const mapping = opus_decoder_sender_map.get(sender_id);
+        if (mapping != null)
+        {
+            opus_decoder_pool_free_indices.push(mapping.pool_index);
+            opus_decoder_sender_map.delete(sender_id);
+        }
+        const queue_index = opus_decoder_worker_current_channel_opus_client_ids.indexOf(sender_id);
+        if (queue_index >= 0)
+        {
+            opus_decoder_worker_clients_opus_data[queue_index] = [];
+        }
+        if (opus_decoder_direct_worklet_port != null)
+        {
+            // The reset shares the PCM pipe, so earlier decoded frames cannot arrive after it.
+            opus_decoder_direct_worklet_port.postMessage({ type: "clear_sender", sender_id: sender_id });
+        }
+        return;
+    }
     if (event.data.type == "mainthread__add_decrypted_data_to_opus_decoder")
     {
         // the main thread removed every encryption layer already (audio_transport__receive), for a member
@@ -58815,6 +58836,11 @@ function audio__lemon_audio_worklet_scope()
                 {
                     event.data.port.onmessage = (pipe_event) =>
                     {
+                        if (pipe_event.data.type === "clear_sender")
+                        {
+                            this.playback_buffers.delete(pipe_event.data.sender_id);
+                            return;
+                        }
                         this.playback_buffer_write(pipe_event.data.id, pipe_event.data.pcm);
                     };
                     return;
@@ -59971,6 +59997,26 @@ var server_msg = {
      */
     process_stop_song_stream_from_server: function(msg)
     {
+        const client_index = channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id);
+        const boundary = msg.message.discard_audio_through_counter;
+        if (client_index >= 0 && g_client_list[client_index].is_music_bot
+            && typeof boundary === "string" && /^[0-9]{1,20}$/.test(boundary))
+        {
+            const discard_through = BigInt(boundary);
+            if (discard_through <= 18446744073709551615n)
+            {
+                const previous = g_client_list[client_index].discard_audio_through_counter;
+                if (previous == null || discard_through >= previous)
+                {
+                    g_client_list[client_index].discard_audio_through_counter = discard_through;
+                    g_opus_decoder_worker.postMessage({
+                        type: "discard_sender_audio",
+                        sender_id: msg.message.client_id,
+                        counter: boundary
+                    });
+                }
+            }
+        }
         // start / stop song stream messages server pupose of handling marquee animation where text moves
         // microphone changes in gui are handles elsewhere
 
@@ -91607,6 +91653,16 @@ function audio_transport__receive(buffer)
     {
         return;
     }
+    let packet_counter = 0n;
+    for (const byte of opened.counter_bytes)
+    {
+        packet_counter = (packet_counter << 8n) | BigInt(byte);
+    }
+    const discard_through = g_client_list[client_index].discard_audio_through_counter;
+    if (discard_through != null && packet_counter <= discard_through)
+    {
+        return;
+    }
     let inner = keys__media_apply_inner_layers(keys__media_server_key_layers(), opened.sender_id, opened.counter_bytes, opened.inner, false);
     let content = null;
     if (g_client_list[client_index].is_music_bot == true)
@@ -91626,6 +91682,7 @@ function audio_transport__receive(buffer)
     decoded.set(content, 4);
     g_opus_decoder_worker.postMessage({
         type: "mainthread__add_decrypted_data_to_opus_decoder",
+        counter: packet_counter.toString(),
         value: decoded.buffer
     }, [decoded.buffer]);
 }

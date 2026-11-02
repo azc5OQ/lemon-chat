@@ -570,11 +570,13 @@ boole util__fill_secure_random_bytes(unsigned char* out_buffer, uint64 length)
  */
 boole util__fill_block_of_data_with_ascii_characters(char* block, uint64 length)
 {
+    boole status = FALSE;
     uint64 lowerbound = 33;
     uint64 upperbound = 126;
     uint64 i = 0;
 
-    if (util__fill_secure_random_bytes((unsigned char*)block, length) == FALSE)
+    status = util__fill_secure_random_bytes((unsigned char*)block, length);
+    if (status == FALSE)
     {
         return FALSE;
     }
@@ -596,12 +598,13 @@ void util__free_json_message(cJSON* json_root_object1, char* json_root_object1_s
 {
     if (json_root_object1 != NULL_POINTER)
     {
-        cJSON_Delete(json_root_object1);
+        util__json_delete_secure(json_root_object1);
     }
 
     if (json_root_object1_string != NULL_POINTER)
     {
-        free(json_root_object1_string);
+        clib__null_memory(json_root_object1_string, strlen(json_root_object1_string));
+        cJSON_free(json_root_object1_string);
     }
 }
 
@@ -645,4 +648,118 @@ boole util__password_matches(char* plaintext, char* stored_base64_hash)
 
     util__hash_password_to_base64(plaintext, computed, sizeof(computed));
     return clib__is_string_equal(computed, stored_base64_hash);
+}
+
+/**
+ * @brief Reads a JSON integer only after validating its type and conversion range.
+ * @attention A failed read leaves the destination unchanged.
+ */
+boole util__json_read_int64(const cJSON* value, int64 minimum, int64 maximum, int64* result)
+{
+    double number = 0;
+    int64 parsed = 0;
+
+    if (result == NULL_POINTER || !cJSON_IsNumber(value) || minimum > maximum)
+    {
+        return FALSE;
+    }
+    number = value->valuedouble;
+    if (!(number >= -9223372036854775808.0 && number < 9223372036854775808.0))
+    {
+        return FALSE;
+    }
+    parsed = (int64)number;
+    if ((double)parsed != number || parsed < minimum || parsed > maximum)
+    {
+        return FALSE;
+    }
+    *result = parsed;
+    return TRUE;
+}
+
+/**
+ * @brief Reads an unsigned JSON integer without fractional or out-of-range casts.
+ * @attention A failed read leaves the destination unchanged.
+ */
+boole util__json_read_uint64(const cJSON* value, uint64 maximum, uint64* result)
+{
+    double number = 0;
+    uint64 parsed = 0;
+
+    if (result == NULL_POINTER || !cJSON_IsNumber(value))
+    {
+        return FALSE;
+    }
+    number = value->valuedouble;
+    if (!(number >= 0.0 && number < 18446744073709551616.0))
+    {
+        return FALSE;
+    }
+    parsed = (uint64)number;
+    if ((double)parsed != number || parsed > maximum)
+    {
+        return FALSE;
+    }
+    *result = parsed;
+    return TRUE;
+}
+
+/**
+ * @brief Clears owned JSON strings before releasing a tree.
+ * @attention Borrowed strings and referenced child trees remain owned by their caller.
+ */
+void util__json_delete_secure(cJSON* root)
+{
+    cJSON* child = NULL_POINTER;
+
+    if (root == NULL_POINTER)
+    {
+        return;
+    }
+    if (!(root->type & cJSON_IsReference))
+    {
+        while (root->child != NULL_POINTER)
+        {
+            child = cJSON_DetachItemViaPointer(root, root->child);
+            util__json_delete_secure(child);
+        }
+        if (root->valuestring != NULL_POINTER)
+        {
+            clib__null_memory(root->valuestring, strlen(root->valuestring));
+        }
+    }
+    if (!(root->type & cJSON_StringIsConst) && root->string != NULL_POINTER)
+    {
+        clib__null_memory(root->string, strlen(root->string));
+    }
+    cJSON_Delete(root);
+}
+
+/** @brief Transfers ownership to the object, or releases the child on failure. */
+boole util__json_add_owned_object(cJSON* object, const char* name, cJSON* child)
+{
+    if (!cJSON_AddItemToObject(object, name, child))
+    {
+        util__json_delete_secure(child);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/** @brief Transfers ownership to the array, or releases the child on failure. */
+boole util__json_add_owned_array(cJSON* array, cJSON* child)
+{
+    if (!cJSON_AddItemToArray(array, child))
+    {
+        util__json_delete_secure(child);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+
+/** @brief Clears the owned contents of a removed JSON property. */
+void util__json_delete_item_secure(cJSON* object, const char* name)
+{
+    util__json_delete_secure(cJSON_DetachItemFromObjectCaseSensitive(object, name));
 }

@@ -24,10 +24,23 @@
  */
 cstring channel__type_change_error(const client_t* actor, const channel_t* channel, boole temporary)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     uint64 i = 0;
 
-    if (actor == NULL_POINTER || channel == NULL_POINTER || !actor->is_existing || !actor->is_authenticated
-        || actor->is_music_bot || !channel->is_existing)
+    status0 = actor == NULL_POINTER;
+    status1 = channel == NULL_POINTER;
+    if (status0 == TRUE || status1 == TRUE)
+    {
+        return "The client or channel is no longer available.";
+    }
+    status0 = actor->is_existing == FALSE;
+    status1 = actor->is_authenticated == FALSE;
+    status2 = actor->is_music_bot != FALSE;
+    status3 = channel->is_existing == FALSE;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
     {
         return "The client or channel is no longer available.";
     }
@@ -39,7 +52,8 @@ cstring channel__type_change_error(const client_t* actor, const channel_t* chann
     {
         return "The root channel must remain permanent.";
     }
-    if (!channel_groups__is_allowed(actor, channel, PERMISSION_EDIT_CHANNEL_OPTIONS))
+    status0 = channel_groups__is_allowed(actor, channel, PERMISSION_EDIT_CHANNEL_OPTIONS);
+    if (status0 == FALSE)
     {
         return "Changing channel type requires Edit channel options.";
     }
@@ -48,12 +62,16 @@ cstring channel__type_change_error(const client_t* actor, const channel_t* chann
         return permissions__is_allowed(actor, PERMISSION_CREATE_CHANNEL) ? NULL_POINTER
             : "Making a channel permanent requires Create permanent channels.";
     }
-    if (!permissions__is_allowed(actor, PERMISSION_CREATE_TEMP_CHANNEL)
-        || (!g_server_settings.is_permission_system_enabled && !g_server_settings.is_temp_channel_creation_allowed && !actor->is_admin))
+    status0 = permissions__is_allowed(actor, PERMISSION_CREATE_TEMP_CHANNEL) == FALSE;
+    status1 = g_server_settings.is_permission_system_enabled == FALSE;
+    status2 = g_server_settings.is_temp_channel_creation_allowed == FALSE;
+    status3 = actor->is_admin == FALSE;
+    if (status0 == TRUE || (status1 == TRUE && status2 == TRUE && status3 == TRUE))
     {
         return "Creating temporary channels is not permitted.";
     }
-    if (!channel_groups__is_allowed(actor, channel, PERMISSION_DELETE_CHANNEL))
+    status0 = channel_groups__is_allowed(actor, channel, PERMISSION_DELETE_CHANNEL);
+    if (status0 == FALSE)
     {
         return "Making a channel temporary requires Delete channels because it will be deleted when its owner leaves.";
     }
@@ -74,7 +92,10 @@ cstring channel__type_change_error(const client_t* actor, const channel_t* chann
     }
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        if (g_clients_array[i].is_existing && g_clients_array[i].is_music_bot && g_clients_array[i].channel_id == channel->channel_id)
+        status0 = g_clients_array[i].is_existing != FALSE;
+        status1 = g_clients_array[i].is_music_bot != FALSE;
+        status2 = g_clients_array[i].channel_id == channel->channel_id;
+        if (status0 == TRUE && status1 == TRUE && status2 == TRUE)
         {
             return "Remove the music bot before making this channel temporary.";
         }
@@ -177,12 +198,28 @@ boole channel__read_required_powers(cJSON* object, channel_t* channel)
  * @param object JSON object receiving the channel requirements.
  * @param channel Channel whose requirements are copied.
  */
-void channel__write_required_powers(cJSON* object, const channel_t* channel)
+boole channel__write_required_powers(cJSON* object, const channel_t* channel)
 {
-    cJSON_AddNumberToObject(object, "required_talk_power", channel->required_talk_power);
-    cJSON_AddNumberToObject(object, "required_message_power", channel->required_message_power);
-    cJSON_AddNumberToObject(object, "required_picture_power", channel->required_picture_power);
-    cJSON_AddNumberToObject(object, "required_stream_power", channel->required_stream_power);
+    if (!cJSON_AddNumberToObject(object, "required_talk_power", channel->required_talk_power))
+    {
+        goto json_failure;
+    }
+    if (!cJSON_AddNumberToObject(object, "required_message_power", channel->required_message_power))
+    {
+        goto json_failure;
+    }
+    if (!cJSON_AddNumberToObject(object, "required_picture_power", channel->required_picture_power))
+    {
+        goto json_failure;
+    }
+    if (!cJSON_AddNumberToObject(object, "required_stream_power", channel->required_stream_power))
+    {
+        goto json_failure;
+    }
+    return TRUE;
+
+json_failure:
+    return FALSE;
 }
 
 /**
@@ -238,21 +275,45 @@ uint64 channel__get_client_count_for_channel(uint64 channel_id)
  */
 void channel__mark_channels_for_deletion(uint64 channel_id, uint64* out_current_index, uint64* out_channel_indices)
 {
-    uint64 i = 0;
+    uint64 parent_index = 0;
+    uint64 child_index = 0;
+    uint64 seen_index = 0;
+    uint64 parent_id = channel_id;
+    boole already_marked = FALSE;
 
-    if (out_current_index == NULL_POINTER || out_channel_indices == NULL_POINTER)
+    if (out_current_index == NULL_POINTER || out_channel_indices == NULL_POINTER
+        || channel_id >= g_server_settings.max_channel_count
+        || *out_current_index > g_server_settings.max_channel_count)
     {
         return;
     }
 
-    for (i = 0; i < g_server_settings.max_channel_count; i++)
+    // Iterate the bounded output as a work queue. A cycle cannot append a node twice.
+    for (parent_index = 0; parent_index <= *out_current_index; parent_index++)
     {
-        if (channel_id == g_channel_array[i].parent_channel_id)
+        parent_id = parent_index == 0 ? channel_id : out_channel_indices[parent_index - 1];
+        for (child_index = 0; child_index < g_server_settings.max_channel_count; child_index++)
         {
-            out_channel_indices[*out_current_index] = i;
-            *out_current_index += 1;
-            DBG_CLIENT_MESSAGE log_info("%s %s %s", "mark_channels_for_deletion need to remove channel ", g_channel_array[i].name, " \n");
-            channel__mark_channels_for_deletion(g_channel_array[i].channel_id, out_current_index, out_channel_indices);
+            if (!g_channel_array[child_index].is_existing
+                || child_index == channel_id
+                || g_channel_array[child_index].parent_channel_id != parent_id)
+            {
+                continue;
+            }
+            already_marked = FALSE;
+            for (seen_index = 0; seen_index < *out_current_index; seen_index++)
+            {
+                if (out_channel_indices[seen_index] == child_index)
+                {
+                    already_marked = TRUE;
+                    break;
+                }
+            }
+            if (already_marked == FALSE && *out_current_index < g_server_settings.max_channel_count)
+            {
+                out_channel_indices[*out_current_index] = child_index;
+                *out_current_index += 1;
+            }
         }
     }
 }
@@ -324,7 +385,15 @@ boole channel__find_new_maintainer_for_channel(uint64* _out__new_index_of_mainta
     uint64 possible_new_maintainers_count = 0;
     int random_index = 0;
 
+    if (_out__new_index_of_maintainer == NULL_POINTER)
+    {
+        return FALSE;
+    }
     possible_new_maintainers = (uint64*)memorymanager__allocate(sizeof(uint64) * g_server_settings.max_client_count, MEMALLOC_FIND_MAINTAINER);
+    if (possible_new_maintainers == NULL_POINTER)
+    {
+        return FALSE;
+    }
     // maintainer will be randomly chosen
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
@@ -476,10 +545,8 @@ void channel__destroy_temp_channel(uint64 temp_channel_id)
 }
 
 /**
- * @brief moves a client into a channel server-side and tells everyone, the same way the delete path moves
- *        clients to the root channel: pass the maintainer role of the channel being left to another client, set the new
- *        channel id, broadcast the channel join, sync the audio peer, then send the new maintainer id and
- *        the active microphone usage to the moved client
+ * @brief Moves a client, replaces its former channel maintainer, and broadcasts the join.
+ *        Updates its audio peer, maintainer id and microphone state.
  *
  * @param uint64 client_id -> the client to move
  * @param uint64 destination_channel_id -> the channel to move the client into
@@ -520,13 +587,10 @@ void channel__move_client_into_channel(uint64 client_id, uint64 destination_chan
 }
 
 /**
- * @brief collects the ids of every valid client sitting in channel_id, except one, into
- *        out_receiving_client_ids.
+ * @brief Collects valid client ids in a channel, excluding the specified client.
  *
- *        used to build the recipient list when something has to be broadcast to a channel without
- *        echoing it back to the client that caused it. validity is base__is_client_valid, so
- *        free/unauthenticated slots are skipped. out_receiving_client_ids must have room for
- *        max_client_count entries - the function does no bounds checking of its own.
+ * @attention out_receiving_client_ids must hold max_client_count entries; this function
+ *            does not check its capacity. Free and unauthenticated slots are skipped.
  *
  * @param int client_to_ignore -> index of the client to leave out, pass a value no slot can have to include everyone
  * @param uint64 channel_id -> id of the channel to collect clients from
@@ -568,18 +632,43 @@ uint64 channel__get_other_clients_in_channel(int client_to_ignore, uint64 channe
  */
 boole channel__check_channel_access(client_t* client, channel_t* channel, char* password, boole password_already_proven)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
+    boole status4 = FALSE;
+
     if (client->is_admin == TRUE)
     {
         return TRUE;
     }
-    if (channel->is_client_limit_active == TRUE && (channel->max_client_count == 0 || channel__get_client_count_for_channel(channel->channel_id) >= channel->max_client_count))
+    status0 = channel->is_client_limit_active == TRUE;
+    status1 = channel->max_client_count == 0;
+    status2 = FALSE;
+    if (status0 == TRUE && status1 == FALSE)
+    {
+        status2 = channel__get_client_count_for_channel(channel->channel_id) >= channel->max_client_count;
+    }
+    if (status0 == TRUE && (status1 == TRUE || status2 == TRUE))
     {
         server_msg__channel__send_full_to_single_client(client, channel->channel_id);
         return FALSE;
     }
-    if (channel->is_using_password == TRUE && password_already_proven == FALSE
-        && !permissions__can_bypass_channel_password(client, channel)
-        && (password == NULL_POINTER || util__password_matches(password, channel->password) == FALSE))
+    status0 = channel->is_using_password == TRUE;
+    status1 = password_already_proven == FALSE;
+    status2 = FALSE;
+    status3 = password == NULL_POINTER;
+    status4 = FALSE;
+    // Keep permission resolution and password hashing behind the same gates.
+    if (status0 == TRUE && status1 == TRUE)
+    {
+        status2 = permissions__can_bypass_channel_password(client, channel) == FALSE;
+        if (status2 == TRUE && status3 == FALSE)
+        {
+            status4 = util__password_matches(password, channel->password) == FALSE;
+        }
+    }
+    if (status0 == TRUE && status1 == TRUE && status2 == TRUE && (status3 == TRUE || status4 == TRUE))
     {
         server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
         return FALSE;
@@ -596,6 +685,10 @@ boole channel__check_channel_access(client_t* client, channel_t* channel, char* 
  */
 void channel__send_hidden_members(client_t* client, channel_t* channel)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     uint64 i = 0;
     client_t* member = NULL_POINTER;
 
@@ -606,7 +699,11 @@ void channel__send_hidden_members(client_t* client, channel_t* channel)
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         member = &g_clients_array[i];
-        if (member->is_existing == TRUE && member->is_authenticated == TRUE && member->is_music_bot == FALSE && member->channel_id == channel->channel_id)
+        status0 = member->is_existing == TRUE;
+        status1 = member->is_authenticated == TRUE;
+        status2 = member->is_music_bot == FALSE;
+        status3 = member->channel_id == channel->channel_id;
+        if (status0 == TRUE && status1 == TRUE && status2 == TRUE && status3 == TRUE)
         {
             server_msg__channel__send_join_message_to_single_client(client, member, channel);
         }
@@ -624,10 +721,16 @@ void channel__send_hidden_members(client_t* client, channel_t* channel)
  */
 boole channel__replace_departed_maintainer(channel_t* channel, uint64 client_id)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     uint64 replacement = 0;
     boole found = FALSE;
 
-    if (channel->is_existing == FALSE || channel->is_channel_maintainer_present == FALSE || channel->maintainer_id != client_id)
+    status0 = channel->is_existing == FALSE;
+    status1 = channel->is_channel_maintainer_present == FALSE;
+    status2 = channel->maintainer_id != client_id;
+    if (status0 == TRUE || status1 == TRUE || status2 == TRUE)
     {
         return FALSE;
     }

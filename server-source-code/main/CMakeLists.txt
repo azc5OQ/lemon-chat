@@ -99,8 +99,8 @@ add_executable(chat-server
         core/channel_groups.c
         msg/client/client_msg_moderation.c
         msg/server/server_msg_moderation.c
-        stunnel.c
-        tailscale.c
+        integrations/stunnel.c
+        integrations/tailscale.c
         core/audio_channel.c
         audio_webrtc.c
         audio_websocket.c

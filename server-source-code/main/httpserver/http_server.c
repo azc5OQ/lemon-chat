@@ -228,10 +228,18 @@ static boole _http_server_internal__send_all(http_socket_t client_socket, void* 
 {
     uint64 total_sent = 0;
     int sent_now = 0;
+    uint64 remaining = 0;
+    int chunk_length = 0;
 
+    if (data == NULL_POINTER && length != 0)
+    {
+        return FALSE;
+    }
     while (total_sent < length)
     {
-        sent_now = send(client_socket, (char*)data + total_sent, (int)(length - total_sent), HTTP_SEND_FLAGS);
+        remaining = length - total_sent;
+        chunk_length = remaining > 65536 ? 65536 : (int)remaining;
+        sent_now = send(client_socket, (char*)data + total_sent, chunk_length, HTTP_SEND_FLAGS);
 
         if (sent_now <= 0)
         {
@@ -542,10 +550,12 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
     uint64 read_count = 0;
     boole is_client_page = FALSE;
     boole is_first_chunk = TRUE;
+    boole status = FALSE;
 
     DBG_HTTP_SERVER log_info("%s %s", "http server: request for", request_path);
 
-    if (_http_server_internal__is_request_path_safe(request_path) == FALSE)
+    status = _http_server_internal__is_request_path_safe(request_path);
+    if (status == FALSE)
     {
         DBG_HTTP_SERVER log_info("%s", "http server: request path refused as unsafe");
         _http_server_internal__send_simple_response(client_socket, "403 Forbidden", "403 Forbidden");
@@ -580,7 +590,8 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
         clib__null_memory(header, sizeof(header));
         clib__string_format(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nConnection: close\r\nCache-Control: no-cache\r\n\r\n", content_type, (long long)g_http_client_page_cache_size);
 
-        if (_http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header)) == TRUE)
+        status = _http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header));
+        if (status == TRUE)
         {
             _http_server_internal__send_all(client_socket, g_http_client_page_cache, g_http_client_page_cache_size);
         }
@@ -615,7 +626,8 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
     clib__null_memory(header, sizeof(header));
     clib__string_format(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nConnection: close\r\nCache-Control: no-cache\r\n\r\n", content_type, (long long)file_size);
 
-    if (_http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header)) == FALSE)
+    status = _http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header));
+    if (status == FALSE)
     {
         fclose(file);
         return;
@@ -636,7 +648,8 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
         }
         is_first_chunk = FALSE;
 
-        if (_http_server_internal__send_all(client_socket, send_chunk, read_count) == FALSE)
+        status = _http_server_internal__send_all(client_socket, send_chunk, read_count);
+        if (status == FALSE)
         {
             break;
         }

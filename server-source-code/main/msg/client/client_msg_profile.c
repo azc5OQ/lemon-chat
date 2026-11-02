@@ -30,6 +30,7 @@ static boole _client_msg_profile_internal__is_change_client_username_message_val
     cJSON* json_new_username = 0;
     cJSON* json_client_id = 0;
     cJSON* json_message_object = 0;
+    uint64 validated_client_id = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == 0)
@@ -47,7 +48,8 @@ static boole _client_msg_profile_internal__is_change_client_username_message_val
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_client_id == NULL_POINTER \n");
         return FALSE;
     }
-    if (cJSON_IsNumber(json_client_id) == FALSE)
+    if (g_server_settings.max_client_count == 0
+        || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &validated_client_id) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_profile_internal__is_change_client_username_message_valid cJSON_IsNumber(client_id) \n");
         return FALSE;
@@ -92,6 +94,7 @@ static boole _client_msg_profile_internal__is_change_client_username_message_val
  */
 void client_msg__profile__process_change_client_username(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
     boole status = FALSE;
     boole does_client_have_permission_to_change_username = FALSE;
     cJSON* json_message_value = 0;
@@ -124,6 +127,12 @@ void client_msg__profile__process_change_client_username(cJSON* json_root, uint6
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
 
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    status0 = base__is_current_client_request(sender_client_id);
+    if (status0 == FALSE)
+    {
+        goto label_client_msg__process_change_client_username_end;
+    }
 
     // check if client has permission to change the username
     client_to_alter = &g_clients_array[json_client_id->valueint];
@@ -202,17 +211,14 @@ void client_msg__profile__process_change_client_username(cJSON* json_root, uint6
 
 label_client_msg__process_change_client_username_end:
 
-    clib__unlock(&g_clients_global_rwlock_guard);
-
     if (is_change_success == TRUE)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "calling server_msg__profile__send_client_rename_message_to_all_clients \n");
-
-        clib__read_lock(&g_clients_global_rwlock_guard);
+        // Keep the renamed target in this slot until its saved identity and event
+        // are published; both callees already require the clients lock.
         identity_store__sync_client_identity_in_store(client_to_alter);
         server_msg__profile__send_client_rename_message_to_all_clients(client_to_alter, client_to_alter->username);
-        clib__unlock(&g_clients_global_rwlock_guard);
     }
+    clib__unlock(&g_clients_global_rwlock_guard);
 }
 
 
@@ -223,6 +229,11 @@ label_client_msg__process_change_client_username_end:
  */
 void client_msg__profile__process_request_stored_clients(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     client_t* client = 0;
 
     (void)json_root; // the request has no fields to read
@@ -230,7 +241,11 @@ void client_msg__profile__process_request_stored_clients(cJSON* json_root, uint6
     if (g_server_settings.is_identity_storage_enabled == FALSE || g_server_settings.is_stored_client_list_allowed == FALSE)
     {
         clib__read_lock(&g_clients_global_rwlock_guard);
-        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        status = base__is_current_client_request(sender_client_id);
+        if (status == TRUE)
+        {
+            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        }
         clib__unlock(&g_clients_global_rwlock_guard);
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__profile__process_request_stored_clients stored clients list is not enabled \n");
         return;
@@ -240,13 +255,22 @@ void client_msg__profile__process_request_stored_clients(cJSON* json_root, uint6
 
     client = &g_clients_array[sender_client_id];
 
-    if (client->is_authenticated == FALSE || client->is_existing == FALSE || client->is_music_bot == TRUE)
+    status0 = base__is_current_client_request(sender_client_id) == FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = client->is_authenticated == FALSE;
+        status2 = client->is_existing == FALSE;
+        status3 = client->is_music_bot == TRUE;
+        status0 = status1 == TRUE || status2 == TRUE || status3 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         goto label_client_msg__process_request_stored_clients_end;
     }
 
     // Groups can change who may view the stored names and avatars.
-    if (permissions__is_allowed(client, PERMISSION_VIEW_STORED_USERS) == FALSE)
+    status = permissions__is_allowed(client, PERMISSION_VIEW_STORED_USERS);
+    if (status == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__profile__process_request_stored_clients client_id", sender_client_id, "cannot view stored users \n");
@@ -277,6 +301,11 @@ label_client_msg__process_request_stored_clients_end:
  */
 void client_msg__profile__process_avatar_upload(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     client_t* client = 0;
     cJSON* json_message_object = 0;
     cJSON* json_base64_avatar = 0;
@@ -287,7 +316,11 @@ void client_msg__profile__process_avatar_upload(cJSON* json_root, uint64 sender_
     if (g_server_settings.is_avatar_upload_allowed == FALSE)
     {
         clib__read_lock(&g_clients_global_rwlock_guard);
-        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        status = base__is_current_client_request(sender_client_id);
+        if (status == TRUE)
+        {
+            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        }
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
@@ -318,13 +351,26 @@ void client_msg__profile__process_avatar_upload(cJSON* json_root, uint64 sender_
     clib__write_lock(&g_clients_global_rwlock_guard);
 
     client = &g_clients_array[sender_client_id];
-    if (client->is_authenticated == FALSE || client->is_existing == FALSE || client->is_music_bot == TRUE || client->public_key[0] == 0)
+    status0 = base__is_current_client_request(sender_client_id) == FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = client->is_authenticated == FALSE;
+        status2 = client->is_existing == FALSE;
+        status3 = client->is_music_bot == TRUE;
+        status0 = status1 == TRUE || status2 == TRUE || status3 == TRUE;
+    }
+    if (status0 == FALSE)
+    {
+        status0 = client->public_key[0] == 0;
+    }
+    if (status0 == TRUE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
-    if (base__is_server_ram_budget_reached())
+    status = base__is_server_ram_budget_reached();
+    if (status != FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(client, "The server has reached its RAM budget. Try uploading again later.");
         clib__unlock(&g_clients_global_rwlock_guard);
@@ -368,6 +414,10 @@ void client_msg__profile__process_avatar_upload(cJSON* json_root, uint64 sender_
  */
 void client_msg__profile__process_delete_avatar(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     client_t* client = 0;
     char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
 
@@ -376,7 +426,11 @@ void client_msg__profile__process_delete_avatar(cJSON* json_root, uint64 sender_
     if (g_server_settings.is_avatar_upload_allowed == FALSE)
     {
         clib__read_lock(&g_clients_global_rwlock_guard);
-        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        status = base__is_current_client_request(sender_client_id);
+        if (status == TRUE)
+        {
+            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        }
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
@@ -384,7 +438,18 @@ void client_msg__profile__process_delete_avatar(cJSON* json_root, uint64 sender_
     clib__write_lock(&g_clients_global_rwlock_guard);
 
     client = &g_clients_array[sender_client_id];
-    if (client->is_authenticated == FALSE || client->is_existing == FALSE || client->public_key[0] == 0)
+    status0 = base__is_current_client_request(sender_client_id) == FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = client->is_authenticated == FALSE;
+        status2 = client->is_existing == FALSE;
+        status0 = status1 == TRUE || status2 == TRUE;
+    }
+    if (status0 == FALSE)
+    {
+        status0 = client->public_key[0] == 0;
+    }
+    if (status0 == TRUE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -420,6 +485,10 @@ void client_msg__profile__process_delete_avatar(cJSON* json_root, uint64 sender_
  */
 void client_msg__profile__process_request_avatar_for_client(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     client_t* sender = 0;
     client_t* target = 0;
     cJSON* json_message_object = 0;
@@ -438,13 +507,8 @@ void client_msg__profile__process_request_avatar_for_client(cJSON* json_root, ui
     }
 
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
-    if (cJSON_IsNumber(json_client_id) == FALSE)
-    {
-        return;
-    }
-
-    target_client_id = (uint64)json_client_id->valueint;
-    if (target_client_id >= g_server_settings.max_client_count)
+    if (g_server_settings.max_client_count == 0
+        || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &target_client_id) == FALSE)
     {
         return;
     }
@@ -454,7 +518,15 @@ void client_msg__profile__process_request_avatar_for_client(cJSON* json_root, ui
     sender = &g_clients_array[sender_client_id];
     target = &g_clients_array[target_client_id];
 
-    if (sender->is_authenticated == FALSE || sender->is_existing == FALSE || target->is_existing == FALSE)
+    status0 = base__is_current_client_request(sender_client_id) == FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = sender->is_authenticated == FALSE;
+        status2 = sender->is_existing == FALSE;
+        status3 = target->is_existing == FALSE;
+        status0 = status1 == TRUE || status2 == TRUE || status3 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -482,6 +554,9 @@ void client_msg__profile__process_request_avatar_for_client(cJSON* json_root, ui
  */
 void client_msg__profile__process_request_avatars_batch(cJSON* json_root, uint64 sender_client_id)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
     client_t* sender = 0;
     client_t* target = 0;
     cJSON* json_message_object = 0;
@@ -510,7 +585,14 @@ void client_msg__profile__process_request_avatars_batch(cJSON* json_root, uint64
     clib__write_lock(&g_clients_global_rwlock_guard);
 
     sender = &g_clients_array[sender_client_id];
-    if (sender->is_authenticated == FALSE || sender->is_existing == FALSE)
+    status0 = base__is_current_client_request(sender_client_id) == FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = sender->is_authenticated == FALSE;
+        status2 = sender->is_existing == FALSE;
+        status0 = status1 == TRUE || status2 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -522,13 +604,8 @@ void client_msg__profile__process_request_avatars_batch(cJSON* json_root, uint64
         {
             break; // cap one batch so a single request can't blast unbounded work
         }
-        if (cJSON_IsNumber(json_id) == FALSE)
-        {
-            continue;
-        }
-
-        target_client_id = (uint64)json_id->valueint;
-        if (target_client_id >= g_server_settings.max_client_count)
+        if (g_server_settings.max_client_count == 0
+            || util__json_read_uint64(json_id, g_server_settings.max_client_count - 1, &target_client_id) == FALSE)
         {
             continue;
         }

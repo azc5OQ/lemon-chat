@@ -150,6 +150,7 @@ void server_msg__audio__send_webrtc_sdp_offer_to_single_client(client_t* receive
  */
 void server_msg__audio__send_state_of_client_to_all_clients(client_t* subject, uint64 state)
 {
+    boole status = FALSE;
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
     cJSON* root_other_channel = NULL_POINTER;
@@ -181,7 +182,8 @@ void server_msg__audio__send_state_of_client_to_all_clients(client_t* subject, u
     {
         client = &g_clients_array[i];
 
-        if (base__is_client_valid_and_not_music_bot((int)i) == FALSE)
+        status = base__is_client_valid_and_not_music_bot((int)i);
+        if (status == FALSE)
         {
             continue;
         }

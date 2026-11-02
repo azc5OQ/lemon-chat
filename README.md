@@ -28,36 +28,21 @@
 - create music bots
 
 
+
+
 ## Live demo -> https://fruitybackendtesting.com/client.html
 <br>
 
+
 ## How to start the server:
-
-- for all server and client builds, supported platforms and processor choices, see [What you can build](docs/building.md)
-- clone the repository and run `windows_build_script.bat` or `linux_build_script.sh` from `server-source-code`
+- watch `how-to-build-and-use-video.mkv`
 - or download a prebuilt release
-- watch `how-to-build-and-use-video.mkv`, included in the repository
-- for general setup and hosting instructions, see the [self-hosting guide](selfhosting-tools/README.md): Tailscale Funnel, Cloudflare Tunnel, ngrok, direct hosting and WireGuard with a VPS
-
 
 ## How to start the client:
-
-- open `client.html` in your browser
-
-## Documentation
-
-- [Administration](docs/administration.md): admin login, managing the server, saving changes and backups, with screenshots.
-- [Server settings](docs/server-settings.md): server options, feature controls and limits.
-- [Permissions](docs/permissions.md#what-negate-skip-and-grant-are-for): groups, powers, protection, Negate, Skip and Grant with examples.
-- [Permission reference](docs/permission-reference.md): complete permission fields and saved values.
-- [Channels](docs/channels.md): creating and editing channels, membership, audio and video.
-- [Encryption](docs/encryption.md): how encryption works in detail.
-- [JSON messages](docs/messages.md): request, reply and response bodies, fields and examples.
-- [Audio and video connections](docs/webrtc.md): WebSocket, WebRTC, ports and encryption.
-- [Building](docs/building.md): supported platforms, build tools and commands.
+- The simplest way is to open client.html in your browser
+- An Android app and a native desktop client is also supported
 
 See the [documentation index](docs/README.md) for all guides.
-
 
 
 <br>

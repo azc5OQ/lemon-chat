@@ -19,6 +19,11 @@ static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client
  */
 static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket, cstring operation)
 {
+    boole status = FALSE;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     cJSON* id = cJSON_GetObjectItemCaseSensitive(message, "emoji_id");
     cJSON* name = cJSON_GetObjectItemCaseSensitive(message, "name");
@@ -42,7 +47,15 @@ static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client
         clib__read_lock(&g_clients_global_rwlock_guard);
     }
     client = &g_clients_array[client_id];
-    if (!client->is_existing || !client->is_authenticated || client->p_ws_connection != socket)
+    status0 = base__is_current_client_request(client_id) == FALSE;
+    if (status0 == FALSE)
+    {
+        status1 = !client->is_existing;
+        status2 = !client->is_authenticated;
+        status3 = client->p_ws_connection != socket;
+        status0 = status1 == TRUE || status2 == TRUE || status3 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -63,7 +76,8 @@ static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client
     }
     else if (clib__strcmp(operation, "delete_server_emoji") == 0)
     {
-        if (emojis__remove(requested_id))
+        status = emojis__remove(requested_id);
+        if (status != FALSE)
         {
             server_msg__emojis__send_deleted(requested_id);
         }

@@ -316,6 +316,8 @@ static void _ui_layout_internal__div(gui_node_t* node, float x, float y, float w
     if (count > 0 && width > 0 && (clib__strcmp(node->klass, "row audio-buttons") == 0
         || clib__strcmp(node->klass, "row bookmark-buttons") == 0
         || clib__strcmp(node->klass, "row attachment-actions") == 0
+        || clib__strcmp(node->klass, "row identity-actions") == 0
+        || clib__strcmp(node->id, "identity-file-actions") == 0
         || clib__strcmp(node->id, "chat-settings-buttons") == 0))
     {
         button_width = clib__fmaxf(1, (width / scale - node->resolved.pad_l - node->resolved.pad_r - (count - 1) * node->resolved.gap) / count);

@@ -5,7 +5,7 @@
 #include "../../third-party/dave-g-json/cJSON.h"
 
 boole channel__read_required_powers(cJSON* object, channel_t* channel);
-void channel__write_required_powers(cJSON* object, const channel_t* channel);
+boole channel__write_required_powers(cJSON* object, const channel_t* channel);
 cstring channel__type_change_error(const client_t* actor, const channel_t* channel, boole temporary);
 void channel__set_temporary(client_t* actor, channel_t* channel, boole temporary);
 

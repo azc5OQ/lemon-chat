@@ -91,7 +91,7 @@ target_link_libraries(lemon_desktop_transport PUBLIC lemon_desktop_core lemon_de
 
 add_library(lemon_desktop_crypto STATIC src/crypto/crypto.c src/crypto/media.c)
 target_include_directories(lemon_desktop_crypto PUBLIC src)
-target_link_libraries(lemon_desktop_crypto PUBLIC lemon_desktop_system PRIVATE lemon_desktop_json
+target_link_libraries(lemon_desktop_crypto PUBLIC lemon_desktop_system PRIVATE lemon_desktop_core lemon_desktop_json
     lemon_desktop_aes lemon_desktop_crypto_library lemon_desktop_identity_keygen)
 add_library(lemon_desktop_audio STATIC src/audio/audio.c src/audio/activity.c src/audio/devices.c)
 target_include_directories(lemon_desktop_audio PUBLIC src)
@@ -312,7 +312,7 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/core_check.c"
     target_link_libraries(lemon-overlay-data-check PRIVATE lemon_desktop_core)
     add_test(NAME desktop-overlay-data COMMAND lemon-overlay-data-check)
     add_executable(lemon-desktop-core-check checks/core_check.c)
-    target_link_libraries(lemon-desktop-core-check PRIVATE lemon_desktop_core)
+    target_link_libraries(lemon-desktop-core-check PRIVATE lemon_desktop_core lemon_desktop_json)
     add_test(NAME desktop-core COMMAND lemon-desktop-core-check)
     if(WIN32 AND LEMON_DESKTOP_OVERLAY)
         add_executable(lemon-overlay-check src/overlay/checks/overlay_check.c)
@@ -323,6 +323,10 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/core_check.c"
     endif()
     add_executable(lemon-desktop-transport-check checks/transport_check.c)
     target_link_libraries(lemon-desktop-transport-check PRIVATE lemon_desktop_transport)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/tls_warning_check.c")
+        add_executable(lemon-desktop-tls-warning-check checks/tls_warning_check.c)
+        target_link_libraries(lemon-desktop-tls-warning-check PRIVATE lemon_desktop_transport)
+    endif()
     add_executable(lemon-desktop-session-check checks/session_check.c)
     target_link_libraries(lemon-desktop-session-check PRIVATE lemon_desktop_session lemon_desktop_json)
     find_program(LEMON_NODE_EXECUTABLE NAMES node nodejs)

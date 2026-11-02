@@ -4,6 +4,12 @@
 #include "definitions.h"
 #include "../third-party/dave-g-json/cJSON.h"
 
+void util__json_delete_secure(cJSON* root);
+void util__json_delete_item_secure(cJSON* object, const char* name);
+boole util__json_add_owned_object(cJSON* object, const char* name, cJSON* child);
+boole util__json_add_owned_array(cJSON* array, cJSON* child);
+boole util__json_read_int64(const cJSON* value, int64 minimum, int64 maximum, int64* result);
+boole util__json_read_uint64(const cJSON* value, uint64 maximum, uint64* result);
 boole util__get_process_ram_usage(uint64* bytes);
 boole util__find_executable(cstring command, char* path, uint64 capacity);
 boole util__start_detached_thread(void* (*entry)(void*), void* argument);

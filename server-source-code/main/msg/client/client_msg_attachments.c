@@ -1,4 +1,4 @@
-// This file checks uploaded file pieces, requests to deliver completed uploads and attachment receive preferences.
+// This file checks uploaded file pieces, completed uploads and attachment receive preferences.
 #include "client_msg.h"
 #include "../../core/attachments.h"
 #include "../../core/permissions.h"
@@ -7,11 +7,28 @@
 #include "../../base.h"
 #include "../../memory_manager.h"
 #include "../../clib/clib.h"
+#include "../../util.h"
 #include "../../../third-party/rxi-log/log.h"
 
-// declarations
-static boole _client_msg_attachments_internal__is_client_msg_file_send_request_valid(cJSON* json_root);
-static boole _client_msg_attachments_internal__is_file_send_completed_request_valid(cJSON* json_root);
+typedef enum
+{
+    ATTACHMENT_INTENT_INVALID,
+    ATTACHMENT_INTENT_MUSIC,
+    ATTACHMENT_INTENT_DIRECT_PICTURE,
+    ATTACHMENT_INTENT_CHANNEL_PICTURE,
+    ATTACHMENT_INTENT_DIRECT_FILE,
+    ATTACHMENT_INTENT_CHANNEL_FILE
+} attachment_intent_t;
+
+typedef struct
+{
+    attachment_intent_t intent;
+    cstring intent_name;
+    cstring song_name;
+    char* file_header;
+    uint64 receiver_id;
+    uint64 local_message_id;
+} attachment_completion_t;
 
 /**
  * @brief Remembers which new attachments this client does not want to receive.
@@ -22,6 +39,10 @@ static boole _client_msg_attachments_internal__is_file_send_completed_request_va
  */
 void client_msg__attachments__process_attachment_receive_preferences(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket)
 {
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    boole status3 = FALSE;
     cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     cJSON* direct_pictures = cJSON_GetObjectItemCaseSensitive(message, "block_direct_chat_pictures");
     cJSON* direct_files = cJSON_GetObjectItemCaseSensitive(message, "block_direct_chat_files");
@@ -29,13 +50,38 @@ void client_msg__attachments__process_attachment_receive_preferences(cJSON* json
     cJSON* channel_files = cJSON_GetObjectItemCaseSensitive(message, "block_channel_chat_files");
     client_t* client = NULL_POINTER;
 
-    if (!cJSON_IsBool(direct_pictures) || !cJSON_IsBool(direct_files) || !cJSON_IsBool(channel_pictures) || !cJSON_IsBool(channel_files) || sender_client_id >= g_server_settings.max_client_count)
+    status0 = !cJSON_IsBool(direct_pictures);
+    if (status0 == FALSE)
+    {
+        status0 = !cJSON_IsBool(direct_files);
+    }
+    if (status0 == FALSE)
+    {
+        status0 = !cJSON_IsBool(channel_pictures);
+    }
+    if (status0 == FALSE)
+    {
+        status0 = !cJSON_IsBool(channel_files);
+    }
+    if (status0 == FALSE)
+    {
+        status0 = sender_client_id >= g_server_settings.max_client_count;
+    }
+    if (status0 == TRUE)
     {
         return;
     }
     clib__write_lock(&g_clients_global_rwlock_guard);
     client = &g_clients_array[sender_client_id];
-    if (client->is_existing && client->is_authenticated && client->p_ws_connection == socket)
+    status0 = (base__is_current_client_request(sender_client_id)) != FALSE;
+    if (status0 == TRUE)
+    {
+        status1 = (client->is_existing) != FALSE;
+        status2 = (client->is_authenticated) != FALSE;
+        status3 = client->p_ws_connection == socket;
+        status0 = status1 == TRUE && status2 == TRUE && status3 == TRUE;
+    }
+    if (status0 == TRUE)
     {
         client->block_direct_chat_pictures = cJSON_IsTrue(direct_pictures);
         client->block_direct_chat_files = cJSON_IsTrue(direct_files);
@@ -46,612 +92,406 @@ void client_msg__attachments__process_attachment_receive_preferences(cJSON* json
 }
 
 /**
- * @brief validates a file-send request: total length, base64 data chunk and the is-new-file flag are present and within limits
- *
- * @param cJSON* json_root -> the parsed client request
- *
- * @return boole -> TRUE when the request is valid, FALSE otherwise
+ * @brief Recognizes every supported upload intent independently of server policy.
  */
-static boole _client_msg_attachments_internal__is_client_msg_file_send_request_valid(cJSON* json_root)
+static attachment_intent_t _client_msg_attachments_internal__read_intent(cstring intent)
 {
-    cJSON* json_message_object = 0;
-    cJSON* json_message_total_length = 0;
-    cJSON* json_message_data_part_base64 = 0;
-    cJSON* json_message_is_new_file = 0;
-    uint64 maximum_chunk_length = file_transfer__get_max_file_upload_length() / 400 + 1;
-
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-
-    json_message_total_length = cJSON_GetObjectItemCaseSensitive(json_message_object, "total_bytes_length");
-    if (json_message_total_length == NULL_POINTER)
+    if (intent == NULL_POINTER)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "json_message_total_length == NULL_POINTER \n");
-        return FALSE;
+        return ATTACHMENT_INTENT_INVALID;
     }
-
-    if (cJSON_IsNumber(json_message_total_length) == FALSE)
+    if (clib__strcmp(intent, "musicbot_file") == 0)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(json_message_total_length) \n");
-        return FALSE;
+        return ATTACHMENT_INTENT_MUSIC;
     }
-
-    if (json_message_total_length->valueint <= 0 || (uint64)json_message_total_length->valueint >= file_transfer__get_max_file_upload_length())
+    if (clib__strcmp(intent, "direct_chat_picture_file") == 0)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "json_message_total_length->valueint out of allowed range \n");
-        return FALSE;
+        return ATTACHMENT_INTENT_DIRECT_PICTURE;
     }
-
-    json_message_data_part_base64 = cJSON_GetObjectItemCaseSensitive(json_message_object, "data_part_base64");
-    if (json_message_data_part_base64 == NULL_POINTER)
+    if (clib__strcmp(intent, "channel_chat_picture_file") == 0)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "json_message_data_part_base64 == NULL_POINTER \n");
-        return FALSE;
+        return ATTACHMENT_INTENT_CHANNEL_PICTURE;
     }
-
-    if (cJSON_IsString(json_message_data_part_base64) == FALSE)
+    if (clib__strcmp(intent, "direct_chat_file") == 0)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsString(data_part_base64) \n");
-        return FALSE;
+        return ATTACHMENT_INTENT_DIRECT_FILE;
     }
-
-    // Accept the new 16 KiB pieces and the larger pieces older clients used
-    // for big uploads. The declared total length still limits the whole file.
-    if (maximum_chunk_length < 16384)
+    if (clib__strcmp(intent, "channel_chat_file") == 0)
     {
-        maximum_chunk_length = 16384;
+        return ATTACHMENT_INTENT_CHANNEL_FILE;
     }
-    if (clib__utf8_string_length(json_message_data_part_base64->valuestring) > maximum_chunk_length)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "data_part_base64->valuestring length too large \n");
-        return FALSE;
-    }
-
-    json_message_is_new_file = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_new_file");
-    if (json_message_is_new_file == NULL_POINTER)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "json_message_is_new_file == NULL_POINTER \n");
-        return FALSE;
-    }
-
-    if (cJSON_IsBool(json_message_is_new_file) == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsBool(json_message_is_new_file) \n");
-        return FALSE;
-    }
-
-    return TRUE;
+    return ATTACHMENT_INTENT_INVALID;
 }
 
 /**
- * @brief receives file from client, but keeps it in memory, this function doenst know what to do with it
- *
- * @param cJSON* json_root -> the parsed client request
- * @param uint64 sender_client_id -> id of the client that sent the request
- *
- * @return void
+ * @brief Returns the current policy rejection, while the caller holds the clients lock.
+ */
+static char* _client_msg_attachments_internal__policy_error(attachment_intent_t intent, uint64 length)
+{
+    uint64 maximum_length = MAX_CLIENT_FILE_UPLOAD_LENGTH;
+
+    if (intent == ATTACHMENT_INTENT_INVALID)
+    {
+        return "invalid_upload_intent";
+    }
+    if ((intent == ATTACHMENT_INTENT_DIRECT_PICTURE || intent == ATTACHMENT_INTENT_DIRECT_FILE)
+        && g_server_settings.is_private_messaging_allowed == FALSE)
+    {
+        return "private_messages_disabled";
+    }
+    if (intent == ATTACHMENT_INTENT_DIRECT_PICTURE || intent == ATTACHMENT_INTENT_CHANNEL_PICTURE)
+    {
+        if (g_server_settings.is_chat_picture_allowed == FALSE)
+        {
+            return "chat_pictures_disabled";
+        }
+        maximum_length = file_transfer__get_max_chat_picture_encrypted_length();
+    }
+    else if (intent == ATTACHMENT_INTENT_DIRECT_FILE || intent == ATTACHMENT_INTENT_CHANNEL_FILE)
+    {
+        if (g_server_settings.is_file_upload_allowed == FALSE)
+        {
+            return "file_uploads_disabled";
+        }
+        maximum_length = file_transfer__get_max_chat_file_encrypted_length();
+    }
+    if (length == 0 || length > maximum_length)
+    {
+        return "file_too_large";
+    }
+    return NULL_POINTER;
+}
+
+/**
+ * @brief Releases the current upload and clears its routing and length state.
+ * @attention The caller holds the clients write lock.
+ */
+static void _client_msg_attachments_internal__discard_upload(client_t* client)
+{
+    if (client->file_upload_extension.file_upload_buffer != NULL_POINTER)
+    {
+        memorymanager__free((nuint)client->file_upload_extension.file_upload_buffer);
+    }
+    clib__null_memory(&client->file_upload_extension, sizeof(client->file_upload_extension));
+}
+
+/**
+ * @brief Receives a bounded file chunk after validating its numeric length and current upload policy.
  */
 void client_msg__attachments__process_file_send_request(cJSON* json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
-    cJSON* json_message_object = 0;
-    cJSON* json_message_total_length = 0;
-    cJSON* json_message_data_part_base64 = 0;
-    cJSON* json_message_is_new_file = 0;
+    boole status0 = FALSE;
+    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON* new_file = cJSON_GetObjectItemCaseSensitive(message, "is_new_file");
+    cstring data = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(message, "data_part_base64"));
+    cstring intent_name = NULL_POINTER;
+    char* policy_error = NULL_POINTER;
+    client_t* sender = NULL_POINTER;
+    attachment_intent_t intent = ATTACHMENT_INTENT_INVALID;
+    uint64 total_length = 0;
+    uint64 maximum_chunk_length = 0;
+    int64 data_length = 0;
 
-    client_t* client_sender = 0;
-    int64 data_part_length = 0;
-    cJSON* upload_intent = NULL_POINTER;
-    cstring intent = NULL_POINTER;
-
-    // idea, don't provide upload file reason in upload file request, simply send the upload reason to server in separate message, after server signals the client that the file upload is done.
-    // "hey client, I'm done receiving the file, what should I do with it"
-    // that makes checking it easier and doesn't change much of existing logic
-
-    // a new file over the upload cap is refused with a reason, not just dropped by the validator below
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    json_message_total_length = cJSON_GetObjectItemCaseSensitive(json_message_object, "total_bytes_length");
-    json_message_is_new_file = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_new_file");
-
-    if (cJSON_IsNumber(json_message_total_length) == TRUE && cJSON_IsTrue(json_message_is_new_file) == TRUE && json_message_total_length->valueint > 0 && (uint64)json_message_total_length->valueint >= file_transfer__get_max_file_upload_length())
+    status0 = cJSON_IsObject(message) == FALSE;
+    if (status0 == FALSE)
     {
-        clib__read_lock(&g_clients_global_rwlock_guard);
-
-        if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
-        {
-            server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[sender_client_id], "file_too_large", 0);
-        }
-
-        clib__unlock(&g_clients_global_rwlock_guard);
-        return;
+        status0 = cJSON_IsBool(new_file) == FALSE;
     }
-
-    status = _client_msg_attachments_internal__is_client_msg_file_send_request_valid(json_root);
-    if (status == FALSE)
+    if (status0 == FALSE)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__attachments__process_file_send_request is not valid");
+        status0 = data == NULL_POINTER;
+    }
+    if (status0 == FALSE)
+    {
+        status0 = util__json_read_uint64(cJSON_GetObjectItemCaseSensitive(message, "total_bytes_length"), 9007199254740991ULL, &total_length) == FALSE;
+    }
+    if (status0 == FALSE)
+    {
+        status0 = total_length == 0;
+    }
+    if (status0 == TRUE)
+    {
         return;
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-
-    client_sender = &g_clients_array[sender_client_id];
-
-    if (client_sender->is_authenticated == FALSE || client_sender->is_existing == FALSE)
+    if (sender_client_id >= g_server_settings.max_client_count || base__is_current_client_request(sender_client_id) == FALSE)
     {
-        DBG_FILE_UPLOAD log_info("%s", "client->is_authenticated == FALSE || client->is_existing == FALSE end");
-        goto label_client_msg__process_file_send_request_end;
+        goto end;
+    }
+    sender = &g_clients_array[sender_client_id];
+    if (sender->is_authenticated == FALSE || sender->is_existing == FALSE || sender->is_idle == TRUE)
+    {
+        goto end;
     }
 
-    json_message_data_part_base64 = cJSON_GetObjectItemCaseSensitive(json_message_object, "data_part_base64");
-    upload_intent = cJSON_GetObjectItemCaseSensitive(json_message_object, "file_send_intent");
-    intent = cJSON_IsTrue(json_message_is_new_file) ? cJSON_GetStringValue(upload_intent) : client_sender->file_upload_extension.intent;
-    if (permissions__can_upload(client_sender, intent) == FALSE)
+    intent_name = cJSON_IsTrue(new_file) ? cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(message, "file_send_intent")) : sender->file_upload_extension.intent;
+    intent = _client_msg_attachments_internal__read_intent(intent_name);
+    policy_error = _client_msg_attachments_internal__policy_error(intent, total_length);
+    if (policy_error != NULL_POINTER)
     {
-        server_msg__administration__send_access_denied_to_single_client(client_sender, NULL_POINTER);
-        server_msg__attachments__send_file_send_error_to_single_client(client_sender, "insufficient_permissions", 0);
-        if (client_sender->file_upload_extension.file_upload_buffer != NULL_POINTER)
+        server_msg__attachments__send_file_send_error_to_single_client(sender, policy_error, 0);
+        _client_msg_attachments_internal__discard_upload(sender);
+        goto end;
+    }
+    status = permissions__can_upload(sender, intent_name);
+    if (status == FALSE)
+    {
+        server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
+        server_msg__attachments__send_file_send_error_to_single_client(sender, "insufficient_permissions", 0);
+        _client_msg_attachments_internal__discard_upload(sender);
+        goto end;
+    }
+
+    maximum_chunk_length = file_transfer__get_max_file_upload_length() / 400 + 1;
+    if (maximum_chunk_length < 16384)
+    {
+        maximum_chunk_length = 16384;
+    }
+    data_length = clib__utf8_string_length_check_max_length(data, maximum_chunk_length);
+    if (data_length < 0 || (uint64)data_length > total_length)
+    {
+        _client_msg_attachments_internal__discard_upload(sender);
+        goto end;
+    }
+
+    if (cJSON_IsTrue(new_file))
+    {
+        status = base__is_server_ram_budget_reached();
+        if (status != FALSE)
         {
-            memorymanager__free((nuint)client_sender->file_upload_extension.file_upload_buffer);
+            server_msg__attachments__send_file_send_error_to_single_client(sender, "server_ram_budget_reached", 0);
+            goto end;
         }
-        clib__memset(&client_sender->file_upload_extension, 0, sizeof(client_sender->file_upload_extension));
-        goto label_client_msg__process_file_send_request_end;
-    }
-
-    // a new file gets a buffer of exactly its declared length (already checked against the upload cap),
-    // so the per-client cost is the file, not the cap. a continuation appends to the upload in progress
-    if (json_message_is_new_file->valueint == 1)
-    {
-        if (base__is_server_ram_budget_reached())
+        _client_msg_attachments_internal__discard_upload(sender);
+        sender->file_upload_extension.file_upload_buffer = (ubyte*)memorymanager__allocate(total_length + 1, MEMALLOC_FILE_UPLOAD_BY_PARTS);
+        if (sender->file_upload_extension.file_upload_buffer == NULL_POINTER)
         {
-            server_msg__attachments__send_file_send_error_to_single_client(client_sender, "server_ram_budget_reached", 0);
-            goto label_client_msg__process_file_send_request_end;
+            goto end;
         }
-        DBG_FILE_UPLOAD log_info("%s", "json_message_is_new_file->valueint == 1");
-
-        if (client_sender->file_upload_extension.file_upload_buffer != NULL_POINTER)
-        {
-            memorymanager__free((nuint)client_sender->file_upload_extension.file_upload_buffer);
-            client_sender->file_upload_extension.file_upload_buffer = NULL_POINTER;
-        }
-
-        // +1 keeps the null terminator the intent handlers read the buffer up to
-        client_sender->file_upload_extension.file_upload_buffer = (ubyte*)memorymanager__allocate((uint64)json_message_total_length->valueint + 1, MEMALLOC_FILE_UPLOAD_BY_PARTS);
-        memcpy(client_sender->file_upload_extension.intent, intent, strlen(intent) + 1);
-        client_sender->file_upload_extension.buffer_cursor = 0;
-        client_sender->file_upload_extension.expected_file_length = 0;
-
-        if (client_sender->file_upload_extension.file_upload_buffer == NULL_POINTER)
-        {
-            log_info("%s %d %s", "upload buffer allocation failed for", json_message_total_length->valueint, "bytes \n");
-            goto label_client_msg__process_file_send_request_end;
-        }
-
-        client_sender->file_upload_extension.expected_file_length = json_message_total_length->valueint;
+        clib__string_copy(sender->file_upload_extension.intent, sizeof(sender->file_upload_extension.intent), intent_name);
+        sender->file_upload_extension.expected_file_length = total_length;
     }
-    else
+    else if (sender->file_upload_extension.file_upload_buffer == NULL_POINTER
+        || sender->file_upload_extension.expected_file_length != total_length)
     {
-        if (client_sender->file_upload_extension.file_upload_buffer == NULL_POINTER || client_sender->file_upload_extension.expected_file_length != json_message_total_length->valueint)
-        {
-            DBG_FILE_UPLOAD log_info("%s", "expected length of file and what user is sending is not the same, aborting upload of this file");
-
-            if (client_sender->file_upload_extension.file_upload_buffer != NULL_POINTER)
-            {
-                memorymanager__free((nuint)client_sender->file_upload_extension.file_upload_buffer);
-                client_sender->file_upload_extension.file_upload_buffer = NULL_POINTER;
-            }
-
-            client_sender->file_upload_extension.buffer_cursor = 0;
-            client_sender->file_upload_extension.expected_file_length = 0;
-
-            goto label_client_msg__process_file_send_request_end;
-        }
+        _client_msg_attachments_internal__discard_upload(sender);
+        goto end;
     }
 
-    // append this base64 chunk at the cursor, then advance the cursor by its length
-    data_part_length = clib__utf8_string_length(json_message_data_part_base64->valuestring);
-
-    // never let the accumulated upload exceed the client-declared length: the buffer is exactly that big
-    if (client_sender->file_upload_extension.buffer_cursor + data_part_length > client_sender->file_upload_extension.expected_file_length)
+    if (sender->file_upload_extension.buffer_cursor > total_length
+        || (uint64)data_length > total_length - sender->file_upload_extension.buffer_cursor)
     {
-        DBG_FILE_UPLOAD log_info("%s", "upload chunk would exceed declared file length, aborting upload");
-        memorymanager__free((nuint)client_sender->file_upload_extension.file_upload_buffer);
-        client_sender->file_upload_extension.file_upload_buffer = NULL_POINTER;
-        client_sender->file_upload_extension.buffer_cursor = 0;
-        client_sender->file_upload_extension.expected_file_length = 0;
-        goto label_client_msg__process_file_send_request_end;
+        _client_msg_attachments_internal__discard_upload(sender);
+        goto end;
     }
-
-    clib__copy_memory(json_message_data_part_base64->valuestring, client_sender->file_upload_extension.file_upload_buffer + client_sender->file_upload_extension.buffer_cursor, data_part_length, data_part_length);
-
-    client_sender->file_upload_extension.buffer_cursor += data_part_length;
-
-    DBG_FILE_UPLOAD log_info("%s %llu %s", "client_msg__attachments__process_file_send_request client_sender->file_upload_extension.buffer_cursor", client_sender->file_upload_extension.buffer_cursor, "\n");
-    DBG_FILE_UPLOAD log_info("%s %d %s", "client_msg__attachments__process_file_send_request total bytes length", json_message_total_length->valueint, "\n");
-
-    if (client_sender->file_upload_extension.buffer_cursor == json_message_total_length->valueint)
+    clib__copy_memory(data, sender->file_upload_extension.file_upload_buffer + sender->file_upload_extension.buffer_cursor, data_length, data_length);
+    sender->file_upload_extension.buffer_cursor += (uint64)data_length;
+    if (sender->file_upload_extension.buffer_cursor == total_length)
     {
-        server_msg__attachments__send_file_send_completed_status_to_single_client(client_sender);
+        server_msg__attachments__send_file_send_completed_status_to_single_client(sender);
     }
 
-label_client_msg__process_file_send_request_end:
+end:
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
 /**
- * @brief validates a file-send-completed request: the file-send intent and its matching extra-data fields are present and valid
- *
- * @param cJSON* json_root -> the parsed client request
- *
- * @return boole -> TRUE when the request is valid, FALSE otherwise
+ * @brief Validates every required completion field before routing, even when its feature is disabled.
+ * @attention The caller holds the clients lock and owns the JSON throughout delivery.
  */
-static boole _client_msg_attachments_internal__is_file_send_completed_request_valid(cJSON* json_root)
+static boole _client_msg_attachments_internal__read_completion(cJSON* json_root, attachment_completion_t* completion)
 {
-    cJSON* json_message_object = 0;
-    cJSON* json_file_send_intent = 0;
-    cJSON* json_file_send_intent_extra_data = 0;
-    boole is_intent_allowed = FALSE;
-    cJSON* json_song_name = 0;
-    cJSON* json_musicbot_id = 0;
-    int64 song_name_length = 0;
-    cJSON* json_receiver_id = 0;
-    cJSON* json_local_message_id = 0;
-    cJSON* json_file_header = 0;
-    int64 file_header_length = 0;
-    boole is_chat_file_intent = FALSE;
+    boole status0 = FALSE;
+    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON* extra = cJSON_GetObjectItemCaseSensitive(message, "file_send_intent_extra_data");
+    uint64 receiver_count = g_server_settings.max_client_count;
+    int64 string_length = 0;
 
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    json_file_send_intent = cJSON_GetObjectItemCaseSensitive(json_message_object, "file_send_intent");
-    json_file_send_intent_extra_data = cJSON_GetObjectItemCaseSensitive(json_message_object, "file_send_intent_extra_data");
-
-    if (json_file_send_intent == NULL_POINTER)
+    if (cJSON_IsObject(message) == FALSE || cJSON_IsObject(extra) == FALSE)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "json_file_send_intent == NULL_POINTER \n");
         return FALSE;
     }
-
-    if (cJSON_IsString(json_file_send_intent) == FALSE)
+    completion->intent_name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(message, "file_send_intent"));
+    completion->intent = _client_msg_attachments_internal__read_intent(completion->intent_name);
+    if (completion->intent == ATTACHMENT_INTENT_INVALID)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsString(json_file_send_intent) \n");
         return FALSE;
     }
-
-    if (json_file_send_intent_extra_data == NULL_POINTER)
+    if (completion->intent == ATTACHMENT_INTENT_MUSIC)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "json_file_send_intent_extra_data == NULL_POINTER \n");
-        return FALSE;
-    }
-
-    if (cJSON_IsObject(json_file_send_intent_extra_data) == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "!cJSON_IsObject(json_file_send_intent_extra_data \n");
-        return FALSE;
-    }
-
-    if (clib__utf8_string_length(json_file_send_intent->valuestring) == 0 || clib__utf8_string_length(json_file_send_intent->valuestring) > 30)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "json_file_send_intent->valuestring has wrong length");
-        return FALSE;
-    }
-
-    if (clib__is_string_equal(json_file_send_intent->valuestring, "musicbot_file") == TRUE)
-    {
-        is_intent_allowed = TRUE;
-    }
-
-    // inline pictures can be switched off by the admin; honest clients refuse locally before uploading
-    if (g_server_settings.is_chat_picture_allowed == TRUE)
-    {
-        if (clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_picture_file") == TRUE)
+        completion->song_name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(extra, "song_name"));
+        status0 = completion->song_name == NULL_POINTER;
+        if (status0 == FALSE)
         {
-            is_intent_allowed = TRUE;
+            status0 = receiver_count == 0;
         }
-
-        if (clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_picture_file") == TRUE)
+        if (status0 == FALSE)
         {
-            is_intent_allowed = TRUE;
+            status0 = util__json_read_uint64(cJSON_GetObjectItemCaseSensitive(extra, "musicbot_id"), receiver_count - 1, &completion->receiver_id) == FALSE;
         }
-    }
-
-    if (clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_file") == TRUE)
-    {
-        is_intent_allowed = TRUE;
-        is_chat_file_intent = TRUE;
-    }
-
-    if (clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_file") == TRUE)
-    {
-        is_intent_allowed = TRUE;
-        is_chat_file_intent = TRUE;
-    }
-
-    // a chat file carries its encrypted name/size header next to the body; opaque here, only bounded
-    if (is_chat_file_intent == TRUE)
-    {
-        json_file_header = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "file_header");
-
-        if (json_file_header == NULL_POINTER || cJSON_IsString(json_file_header) == FALSE || json_file_header->valuestring == NULL_POINTER)
+        if (status0 == TRUE)
         {
-            DBG_CLIENT_MESSAGE log_info("%s", "chat file: file_header missing or not a string \n");
             return FALSE;
         }
-
-        file_header_length = clib__utf8_string_length_check_max_length(json_file_header->valuestring, FILE_HEADER_MAX_LENGTH);
-        if (file_header_length == -1 || file_header_length == 0)
+        string_length = clib__utf8_string_length_check_max_length(completion->song_name, SONG_NAME_MAX_LENGTH - 1);
+        return string_length > 0;
+    }
+    if (completion->intent == ATTACHMENT_INTENT_CHANNEL_PICTURE || completion->intent == ATTACHMENT_INTENT_CHANNEL_FILE)
+    {
+        receiver_count = g_server_settings.max_channel_count;
+    }
+    status0 = receiver_count == 0;
+    if (status0 == FALSE)
+    {
+        status0 = util__json_read_uint64(cJSON_GetObjectItemCaseSensitive(extra, "receiver_id"), receiver_count - 1, &completion->receiver_id) == FALSE;
+    }
+    if (status0 == FALSE)
+    {
+        status0 = util__json_read_uint64(cJSON_GetObjectItemCaseSensitive(extra, "local_message_id"), 9007199254740991ULL, &completion->local_message_id) == FALSE;
+    }
+    if (status0 == TRUE)
+    {
+        return FALSE;
+    }
+    if (completion->intent == ATTACHMENT_INTENT_DIRECT_FILE || completion->intent == ATTACHMENT_INTENT_CHANNEL_FILE)
+    {
+        completion->file_header = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(extra, "file_header"));
+        if (completion->file_header == NULL_POINTER)
         {
-            DBG_CLIENT_MESSAGE log_info("%s", "chat file: file_header has wrong length \n");
+            return FALSE;
+        }
+        string_length = clib__utf8_string_length_check_max_length(completion->file_header, FILE_HEADER_MAX_LENGTH);
+        if (string_length <= 0)
+        {
             return FALSE;
         }
     }
-
-    if (is_intent_allowed == TRUE)
-    {
-        // check more types than musicbot file in future
-        if (clib__is_string_equal(json_file_send_intent->valuestring, "musicbot_file") == TRUE)
-        {
-            json_song_name = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "song_name");
-            json_musicbot_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "musicbot_id");
-
-            if (cJSON_IsString(json_song_name) == FALSE)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsString(json_song_name) \n");
-                return FALSE;
-            }
-
-            if (json_song_name->valuestring == NULL_POINTER)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "json_song_name->valuestring == NULL_POINTER \n");
-                return FALSE;
-            }
-
-            song_name_length = clib__utf8_string_length_check_max_length(json_song_name->valuestring, SONG_NAME_MAX_LENGTH - 1);
-            if (song_name_length == -1 || song_name_length == 0)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "song_name_length == -1 || song_name_length == 0 \n");
-                return FALSE;
-            }
-
-            if (json_musicbot_id == NULL_POINTER)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(musicbot_id) \n");
-                return FALSE;
-            }
-
-            if (cJSON_IsNumber(json_musicbot_id) == FALSE)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(musicbot_id) \n");
-                return FALSE;
-            }
-
-            if (json_musicbot_id->valueint < 0 || json_musicbot_id->valueint >= g_server_settings.max_client_count)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "json_musicbot_id is invalid");
-                return FALSE;
-            }
-        }
-        else if ((clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_picture_file") == TRUE) || clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_picture_file") == TRUE || is_chat_file_intent == TRUE)
-        {
-            json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "receiver_id");
-            json_local_message_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "local_message_id");
-
-            if (json_receiver_id == NULL_POINTER)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "client json_receiver_id == NULL_POINTER \n");
-                return FALSE;
-            }
-            if (cJSON_IsNumber(json_receiver_id) == FALSE)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "client :cJSON_IsNumber(json_receiver_id) \n");
-                return FALSE;
-            }
-
-            if (json_receiver_id->valueint < 0 || json_receiver_id->valueint >= g_server_settings.max_client_count)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "client :  json_receiver_id->valueint < 0 || json_receiver_id->valueint >= g_server_settings.max_client_count \n");
-                return FALSE;
-            }
-
-            if (json_local_message_id == NULL_POINTER)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "client json_local_message_id == NULL_POINTERn");
-                return FALSE;
-            }
-
-            if (cJSON_IsNumber(json_local_message_id) == FALSE)
-            {
-                DBG_CLIENT_MESSAGE log_info("%s", "client cJSON_IsNumber(json_local_message_id) \n");
-                return FALSE;
-            }
-        }
-    }
-
     return TRUE;
 }
 
 /**
- * @brief tells server what to do with uploaded file. currently implemented only for mp3s for music bots, plan to do it for channel and direct images
- *
- * @param cJSON* json_root -> the parsed client request
- * @param uint64 sender_client_id -> id of the client that sent the request
- *
- * @return void
+ * @brief Routes a completed upload only after validating metadata and rechecking current policy.
  */
 void client_msg__attachments__process_file_send_completed_request(cJSON* json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
-
-    cJSON* json_message_object = 0;
-    cJSON* json_file_send_intent = 0;
-    cJSON* json_file_send_intent_extra_data = 0;
-
-    cJSON* json_musicbot_id = 0;
-    client_t* sender_client = 0;
-    client_t* music_bot = 0;
-    cJSON* json_song_name = 0;
+    boole status0 = FALSE;
+    boole status1 = FALSE;
+    boole status2 = FALSE;
+    attachment_completion_t completion = {0};
+    client_t* sender = NULL_POINTER;
+    client_t* music_bot = NULL_POINTER;
     musicbot_add_song_arg_struct_t* arguments = NULL_POINTER;
-    uint64 thread_id = 0;
-    cJSON* json_receiver_id = 0;
-    cJSON* json_local_message_id = 0;
-    cJSON* json_file_header = 0;
-    boole is_direct_chat_file = FALSE;
-    boole is_channel_chat_file = FALSE;
-
-    status = _client_msg_attachments_internal__is_file_send_completed_request_valid(json_root);
-    if (status == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__attachments__process_file_send_completed_request is not valid");
-        return;
-    }
-    else
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__attachments__process_file_send_completed_request is valid");
-    }
+    char* policy_error = NULL_POINTER;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-
-    // pull the file-send intent and its extra data from the message
-    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    json_file_send_intent = cJSON_GetObjectItemCaseSensitive(json_message_object, "file_send_intent");
-    json_file_send_intent_extra_data = cJSON_GetObjectItemCaseSensitive(json_message_object, "file_send_intent_extra_data");
-
-    sender_client = &g_clients_array[sender_client_id];
-
-    if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE)
+    if (sender_client_id >= g_server_settings.max_client_count || base__is_current_client_request(sender_client_id) == FALSE)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "client->is_authenticated == FALSE || client->is_existing == FALSE goto label_client_msg__process_file_send_completed_request_end end");
-        goto label_client_msg__process_file_send_completed_request_end;
+        goto end;
+    }
+    sender = &g_clients_array[sender_client_id];
+    if (sender->is_authenticated == FALSE || sender->is_existing == FALSE || sender->is_idle == TRUE)
+    {
+        goto end;
+    }
+    status = _client_msg_attachments_internal__read_completion(json_root, &completion);
+    if (status == FALSE)
+    {
+        goto end;
+    }
+    status0 = sender->file_upload_extension.file_upload_buffer == NULL_POINTER;
+    if (status0 == FALSE)
+    {
+        status1 = sender->file_upload_extension.expected_file_length == 0;
+        status2 = sender->file_upload_extension.buffer_cursor != sender->file_upload_extension.expected_file_length;
+        status0 = status1 == TRUE || status2 == TRUE;
+    }
+    if (status0 == TRUE)
+    {
+        goto end;
+    }
+    policy_error = _client_msg_attachments_internal__policy_error(completion.intent, sender->file_upload_extension.expected_file_length);
+    if (policy_error != NULL_POINTER)
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(sender, policy_error, completion.local_message_id);
+        goto discard;
+    }
+    if (clib__strcmp(sender->file_upload_extension.intent, completion.intent_name) != 0
+        || permissions__can_upload(sender, completion.intent_name) == FALSE)
+    {
+        server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
+        server_msg__attachments__send_file_send_error_to_single_client(sender, "insufficient_permissions", completion.local_message_id);
+        goto discard;
     }
 
-    // an upload must actually be in progress. file_upload_buffer is NULL on a fresh connection and after a
-    // prior upload completes (it is freed and zeroed below), so without this guard the intent handlers pass a
-    // NULL buffer to clib__utf8_string_length / the picture handlers, dereferencing address 0 and crashing the
-    // whole server. the buffer pointer is the single source of truth for whether an upload is in progress.
-    if (sender_client->file_upload_extension.file_upload_buffer == NULL_POINTER)
+    if (completion.intent == ATTACHMENT_INTENT_MUSIC)
     {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__attachments__process_file_send_completed_request: no upload in progress, ignoring");
-        goto label_client_msg__process_file_send_completed_request_end;
-    }
-
-    // not all parts arrived
-    if (sender_client->file_upload_extension.expected_file_length == 0 || sender_client->file_upload_extension.buffer_cursor != sender_client->file_upload_extension.expected_file_length)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__attachments__process_file_send_completed_request: upload incomplete, discarding");
-        goto label_client_msg__process_file_send_completed_request_end;
-    }
-
-    if (clib__strcmp(sender_client->file_upload_extension.intent, json_file_send_intent->valuestring) != 0
-        || permissions__can_upload(sender_client, json_file_send_intent->valuestring) == FALSE)
-    {
-        server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
-        server_msg__attachments__send_file_send_error_to_single_client(sender_client, "insufficient_permissions", 0);
-        memorymanager__free((nuint)sender_client->file_upload_extension.file_upload_buffer);
-        clib__memset(&sender_client->file_upload_extension, 0, sizeof(sender_client->file_upload_extension));
-        goto label_client_msg__process_file_send_completed_request_end;
-    }
-
-    if (clib__is_string_equal(json_file_send_intent->valuestring, "musicbot_file") == TRUE)
-    {
-        json_song_name = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "song_name");
-        json_musicbot_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "musicbot_id");
-
-        if (permissions__is_allowed(sender_client, PERMISSION_UPLOAD_MUSIC_TRACKS) == FALSE)
+        music_bot = &g_clients_array[completion.receiver_id];
+        if (music_bot->is_existing == FALSE || music_bot->is_music_bot == FALSE)
         {
-            server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
-            DBG_CLIENT_MESSAGE log_info("%s", "sender_client->is_admin == FALSE");
-            goto label_client_msg__process_file_send_completed_request_end;
+            goto discard;
         }
-
-        music_bot = &g_clients_array[json_musicbot_id->valueint];
-        if (music_bot->is_music_bot == FALSE)
-        {
-            DBG_CLIENT_MESSAGE log_info("%s", "music_bot->is_music_bot == FALSE goto label_client_msg__process_file_send_completed_request_end end");
-            goto label_client_msg__process_file_send_completed_request_end;
-        }
-
-        // copy of song name must be initialized here because by the time the add_music_bot thread gets to it
-        // main thread deletes the json holding the song name
         arguments = (musicbot_add_song_arg_struct_t*)memorymanager__allocate(sizeof(musicbot_add_song_arg_struct_t), MEMALLOC_MUSICBOT_SONG);
         if (arguments == NULL_POINTER)
         {
-            goto label_client_msg__process_file_send_completed_request_end;
+            goto discard;
         }
-        clib__null_memory(arguments, sizeof(musicbot_add_song_arg_struct_t));
-
         arguments->music_bot = music_bot;
-        arguments->mp3_data_buffer_length = sender_client->file_upload_extension.expected_file_length;
-        arguments->mp3_data_buffer = sender_client->file_upload_extension.file_upload_buffer;
-        sender_client->file_upload_extension.file_upload_buffer = NULL_POINTER;
+        arguments->mp3_data_buffer_length = sender->file_upload_extension.expected_file_length;
+        arguments->mp3_data_buffer = sender->file_upload_extension.file_upload_buffer;
+        sender->file_upload_extension.file_upload_buffer = NULL_POINTER;
         arguments->sender_client_id = sender_client_id;
-        clib__memcpy(arguments->sender_identity, sender_client->public_key, sizeof(arguments->sender_identity));
-        clib__string_copy(arguments->song_name, sizeof(arguments->song_name), json_song_name->valuestring);
-
+        clib__memcpy(arguments->sender_identity, sender->public_key, sizeof(arguments->sender_identity));
+        clib__string_copy(arguments->song_name, sizeof(arguments->song_name), completion.song_name);
         file_transfer__add_uploaded_song(arguments);
     }
-    else if (clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_picture_file") == TRUE)
+    else if (completion.intent == ATTACHMENT_INTENT_DIRECT_PICTURE)
     {
-        json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "receiver_id");
-        json_local_message_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "local_message_id");
-        file_transfer__process_direct_chat_picture(sender_client_id, json_receiver_id->valueint, json_local_message_id->valueint, sender_client->file_upload_extension.file_upload_buffer);
-        DBG_CLIENT_MESSAGE log_info("%s", "direct_chat_picture_file success");
+        file_transfer__process_direct_chat_picture(sender_client_id, completion.receiver_id, completion.local_message_id, sender->file_upload_extension.file_upload_buffer);
     }
-    else if (clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_picture_file") == TRUE)
+    else if (completion.intent == ATTACHMENT_INTENT_DIRECT_FILE)
     {
-        json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "receiver_id");
-        json_local_message_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "local_message_id");
-        clib__read_lock(&g_channels_global_rwlock_guard);
-        if (sender_client->channel_id < g_server_settings.max_channel_count
-            && permissions__can_use_channel(sender_client, &g_channel_array[sender_client->channel_id], PERMISSION_CHANNEL_PICTURE_POWER) == TRUE)
-        {
-            file_transfer__process_channel_chat_picture(sender_client_id, json_local_message_id->valueint, sender_client->file_upload_extension.file_upload_buffer);
-        }
-        else
-        {
-            server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
-            server_msg__attachments__send_file_send_error_to_single_client(sender_client, "insufficient_permissions", json_local_message_id->valueint);
-        }
-        clib__unlock(&g_channels_global_rwlock_guard);
+        file_transfer__process_direct_chat_file(sender_client_id, completion.receiver_id, completion.local_message_id, sender->file_upload_extension.file_upload_buffer, completion.file_header);
     }
     else
     {
-        is_direct_chat_file = clib__is_string_equal(json_file_send_intent->valuestring, "direct_chat_file");
-        is_channel_chat_file = clib__is_string_equal(json_file_send_intent->valuestring, "channel_chat_file");
-
-        // chat files: the policy gates answer the sender with a reason; the client also checks both
-        // before uploading, so these only fire for a changed setting or a tampered client
-        if (is_direct_chat_file == TRUE || is_channel_chat_file == TRUE)
+        clib__read_lock(&g_channels_global_rwlock_guard);
+        status0 = sender->channel_id < g_server_settings.max_channel_count;
+        if (status0 == TRUE)
         {
-            json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "receiver_id");
-            json_local_message_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "local_message_id");
-            json_file_header = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "file_header");
-
-            if (g_server_settings.is_file_upload_allowed == FALSE)
+            status0 = g_channel_array[sender->channel_id].is_existing == TRUE;
+        }
+        if (status0 == TRUE)
+        {
+            status0 = completion.intent != ATTACHMENT_INTENT_CHANNEL_PICTURE;
+            if (status0 == FALSE)
             {
-                server_msg__attachments__send_file_send_error_to_single_client(sender_client, "file_uploads_disabled", json_local_message_id->valueint);
+                status0 = permissions__can_use_channel(sender, &g_channel_array[sender->channel_id], PERMISSION_CHANNEL_PICTURE_POWER) == TRUE;
             }
-            else if (sender_client->file_upload_extension.buffer_cursor > file_transfer__get_max_chat_file_encrypted_length())
+        }
+        if (status0 == TRUE)
+        {
+            if (completion.intent == ATTACHMENT_INTENT_CHANNEL_PICTURE)
             {
-                server_msg__attachments__send_file_send_error_to_single_client(sender_client, "file_too_large", json_local_message_id->valueint);
-            }
-            else if (is_direct_chat_file == TRUE)
-            {
-                file_transfer__process_direct_chat_file(sender_client_id, json_receiver_id->valueint, json_local_message_id->valueint, sender_client->file_upload_extension.file_upload_buffer, json_file_header->valuestring);
+                file_transfer__process_channel_chat_picture(sender_client_id, completion.local_message_id, sender->file_upload_extension.file_upload_buffer);
             }
             else
             {
-                file_transfer__process_channel_chat_file(sender_client_id, json_local_message_id->valueint, sender_client->file_upload_extension.file_upload_buffer, json_file_header->valuestring);
+                file_transfer__process_channel_chat_file(sender_client_id, completion.local_message_id, sender->file_upload_extension.file_upload_buffer, completion.file_header);
             }
         }
+        else
+        {
+            server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
+            server_msg__attachments__send_file_send_error_to_single_client(sender, "insufficient_permissions", completion.local_message_id);
+        }
+        clib__unlock(&g_channels_global_rwlock_guard);
     }
 
-    // no matter what the reason for calling client_msg__attachments__process_file_send_completed_request was
-    // it got called, so free the file
-    if (sender_client->file_upload_extension.file_upload_buffer != NULL_POINTER)
-    {
-        memorymanager__free((nuint)sender_client->file_upload_extension.file_upload_buffer);
-    }
-    sender_client->file_upload_extension.buffer_cursor = 0;
-    sender_client->file_upload_extension.expected_file_length = 0;
-    sender_client->file_upload_extension.file_upload_buffer = 0;
-
-label_client_msg__process_file_send_completed_request_end:
+discard:
+    _client_msg_attachments_internal__discard_upload(sender);
+end:
     clib__unlock(&g_clients_global_rwlock_guard);
 }
