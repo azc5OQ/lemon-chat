@@ -48,7 +48,7 @@
 
 - [Administration](docs/administration.md): admin login, managing the server, saving changes and backups, with screenshots.
 - [Server settings](docs/server-settings.md): server options, feature controls and limits.
-- [Permissions](docs/permissions.md): groups, powers, protection, Negate, Skip and Grant.
+- [Permissions](docs/permissions.md#what-negate-skip-and-grant-are-for): groups, powers, protection, Negate, Skip and Grant with examples.
 - [Permission reference](docs/permission-reference.md): complete permission fields and saved values.
 - [Channels](docs/channels.md): creating and editing channels, membership, audio and video.
 - [Encryption](docs/encryption.md): how encryption works in detail.

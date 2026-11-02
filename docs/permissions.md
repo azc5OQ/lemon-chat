@@ -10,6 +10,20 @@ Assignments belong to the user's **identity**, which the client saves and uses w
 
 The server checks permissions when it receives a request. The client also uses them to show the available controls, but hiding a button is not the check that enforces the rule.
 
+## What Negate, Skip and Grant are for
+
+The **Simple** view shows the normal permission values. The **Advanced** view shows the same permissions and adds **Negate**, **Skip** and **Grant**. Most groups do not need these three settings. They are used when the normal highest-value rule is not enough.
+
+Imagine that the Member server group gives talk power 50. You create a Listener channel group with talk power 10 because people assigned to it should not be able to speak in that channel.
+
+Without **Negate**, the higher power wins. The user keeps talk power 50, so the Listener group does not restrict them. Set Negate on the Listener group's talk power 10 and the result becomes 10. Negate is useful when one group must lower a permission supplied by another group.
+
+Now imagine a trusted speaker has server talk power 75 and should keep it in every channel. Set **Skip** on that server permission. The Listener channel group's Negate value can no longer replace it, so the trusted speaker keeps 75. The channel's required talk power still applies. Skip is useful when a server permission must remain unchanged by channel groups.
+
+**Grant** controls who may edit a permission row. A manager with permission editing power 50 can edit a row with Grant 25, but cannot edit a row with Grant 75. This lets the same manager change ordinary permissions while sensitive permissions remain protected. Grant does not give the permission to a user and does not change its power value.
+
+The detailed sections explain the full [Negate rules](#negate-use-the-lowest-marked-value), [Skip rules](#skip-keep-the-server-result) and [Grant checks](#grant-required-permission-editing-power), including how they combine and which administrators may change them.
+
 ## Enabling groups
 
 The group system is controlled by `is_permission_system_enabled` in `server_settings.json`. Set it to `true` to use groups. Stop the server before editing the file and start it again afterward; this setting cannot change while the server is running.
