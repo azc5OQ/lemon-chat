@@ -5,8 +5,7 @@
 #include "../../core/permissions.h"
 #include "../../base.h"
 #include "../../util.h"
-#include "../../clib/clib_string.h"
-#include "../../clib/clib_memory.h"
+#include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 
 // declarations

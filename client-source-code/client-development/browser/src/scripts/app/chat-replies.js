@@ -33,6 +33,69 @@ function chat_replies__find_original(context, quote)
 }
 
 /**
+ * @brief Offers the quoted author's picture to themes that show a reply avatar.
+ * @param block Quoted preview whose author identity determines the picture.
+ * @param original Matching original message, when it is still in this conversation.
+ */
+function chat_replies__update_avatar(block, original)
+{
+    let reference = chat_replies.references.get(block);
+    let content = block.querySelector(".chat-reply-content");
+    if (!reference || !content)
+    {
+        return;
+    }
+    let author = g_client_list.find(function(client)
+    {
+        return client.public_key === reference.quote.author_public_key;
+    });
+    let source = author ? author.base64_avatar : reference.avatar_source;
+    if (!author && original)
+    {
+        let header = original.closest(".single-message-content");
+        let avatar = header && header.querySelector(':scope > :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container) > img.chat-message-avatar');
+        if (avatar)
+        {
+            source = avatar.getAttribute("src");
+        }
+    }
+    reference.avatar_source = typeof source === "string" ? source : "";
+    if (reference.avatar_source)
+    {
+        content.style.setProperty("--chat-reply-avatar", "url(" + JSON.stringify(reference.avatar_source) + ")");
+        content.style.setProperty("--chat-reply-avatar-size", "cover");
+    }
+    else
+    {
+        content.style.removeProperty("--chat-reply-avatar");
+        content.style.removeProperty("--chat-reply-avatar-size");
+    }
+}
+
+/**
+ * @brief Refreshes reply pictures after an avatar arrives, changes or is deleted.
+ * @param sender_client_id Optional sender whose current avatar changed.
+ */
+function chat_replies__refresh_avatars(sender_client_id)
+{
+    if (!G_HAS_DOM)
+    {
+        return;
+    }
+    let sender = sender_client_id != null ? channel_tree__get_client_by_client_id(sender_client_id) : null;
+    for (let block of document.querySelectorAll(".chat-reply-quote"))
+    {
+        let reference = chat_replies.references.get(block);
+        if (!reference || (sender && reference.quote.author_public_key !== sender.public_key))
+        {
+            continue;
+        }
+        let original = chat_replies__find_original(block.closest(".chat-context"), reference.quote);
+        chat_replies__update_avatar(block, original);
+    }
+}
+
+/**
  * @brief Shows whether the quoted message is still available without changing its saved text.
  * @param block Quoted preview displayed above a reply.
  */
@@ -41,6 +104,7 @@ function chat_replies__update_reference(block)
     let reference = chat_replies.references.get(block);
     let original = chat_replies__find_original(block.closest(".chat-context"), reference.quote);
     let message = original && chat_replies.messages.get(original);
+    chat_replies__update_avatar(block, original);
     reference.is_deleted = reference.is_deleted || (!!message && message.deleted);
     let deleted = reference.is_deleted;
     let unavailable = !original;

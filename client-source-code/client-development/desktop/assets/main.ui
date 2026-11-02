@@ -1,0 +1,461 @@
+<window title="Lemon Chat">
+    <div class="column" id="shell">
+        <div class="row" id="toolbar">
+            <button class="menu-button" on_click="on_show_connection" text="Connections" />
+            <button class="menu-button" on_click="on_show_bookmarks" text="Bookmarks" />
+            <div id="toolbar-spacer" />
+            <button id="server-info-button" class="menu-button web-toolbar-icon" on_click="on_show_server_info" />
+            <button id="channels-button" class="menu-button web-toolbar-icon" on_click="on_show_channels" />
+            <button id="profile-button" class="menu-button web-toolbar-icon" on_click="on_profile" />
+            <button id="idle-button" class="menu-button web-toolbar-icon" on_click="on_idle" />
+            <button id="audio-settings-button" class="menu-button web-toolbar-icon" on_click="on_show_audio" />
+            <button id="local-settings-button" class="menu-button web-toolbar-icon" on_click="on_show_settings" />
+        </div>
+        <div class="row" id="workspace">
+            <div class="column" id="sidebar">
+                <label id="channel-path" text="Not connected" />
+                <div class="column" id="member-list" />
+                <label class="muted" id="tree-caption" text="Connect through the Connections menu." />
+                <div class="column" id="audio-dock">
+                    <label class="muted" id="audio-status" text="Not connected" />
+                    <div class="row audio-buttons">
+                        <button id="microphone-button" on_click="on_microphone" text="Mic off" />
+                        <button id="listening-button" on_click="on_listening" text="Deafen" />
+                    </div>
+                </div>
+            </div>
+            <button id="sidebar-divider" />
+            <div class="column" id="conversation">
+                <div class="row" id="chat-tabs">
+                    <button class="tab-scroll" id="tabs-previous" on_click="on_scroll_tabs" text="&lt;" />
+                    <div class="row" id="conversation-tabs">
+                        <label id="channel-title" text="Not connected" />
+                    </div>
+                    <button class="tab-scroll" id="tabs-next" on_click="on_scroll_tabs" text="&gt;" />
+                </div>
+                <label class="muted" id="view-caption" text="Not connected to a channel" />
+                <div class="column" id="messages">
+                    <div class="column" id="chat-history" />
+                </div>
+                <div class="column" id="composer">
+                    <input id="message-input" />
+                    <div class="row" id="composer-actions">
+                        <button id="picture-button" text="Picture" on_click="on_attachment_open" />
+                        <button id="file-button" text="File" on_click="on_attachment_open" />
+                        <label id="composer-spacer" class="muted" text="Enter to send" />
+                        <button id="send-button" text="Send" on_click="on_send_chat" />
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row" id="status-bar">
+            <label id="connection-status" text="Ready to connect" />
+            <label id="toolbar-hint" class="muted" />
+            <label id="received-status" class="muted" text="No messages received" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="message-edit-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Edit message" />
+            <button class="close-button" text="×" on_click="on_cancel_message_edit" />
+        </div>
+        <div class="column panel-body">
+            <textarea id="message-edit-text" />
+            <div class="row attachment-actions">
+                <button id="message-edit-save" text="Save changes" on_click="on_save_message_edit" />
+                <button id="message-edit-cancel" text="Cancel" on_click="on_cancel_message_edit" />
+            </div>
+            <label class="muted" id="message-edit-result" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="attachment-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" id="attachment-title" text="Send attachment" />
+            <button class="close-button" on_click="on_attachment_close" text="×" />
+        </div>
+        <div class="column panel-body">
+            <filepicker id="attachment-picker" on_change="on_attachment_pick" />
+            <label text="Filename" />
+            <input id="attachment-filename" />
+            <div class="row attachment-actions">
+                <button id="attachment-submit" text="Send" on_click="on_attachment_submit" />
+                <button id="attachment-cancel" text="Cancel" on_click="on_attachment_close" />
+            </div>
+            <label class="muted" id="attachment-result" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="chat-settings-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Appearance and chat" />
+            <button class="close-button" on_click="on_chat_settings_close" text="×" />
+        </div>
+        <div class="column panel-body">
+            <label text="Theme" />
+            <select id="chat-theme-preset" class="audio-device-select" on_change="on_chat_theme">
+                <option text="Classic" />
+                <option text="Slate" />
+                <option text="Amber" />
+                <option text="Custom stylesheet" />
+            </select>
+            <div class="column theme-file-fields hidden" id="chat-theme-custom">
+                <label text="Theme stylesheet" />
+                <input id="chat-theme" text="classic.css" />
+                <label class="muted" text="CSS filename in assets/themes. Save changes also reloads the file." />
+            </div>
+            <label text="Maximum picture width (64-1024 pixels)" />
+            <input id="chat-image-width" text="480" />
+            <label text="Maximum picture height (64-1024 pixels)" />
+            <input id="chat-image-height" text="360" />
+            <label class="muted" text="Pictures keep their proportions. Saving keeps the original file." />
+            <label id="chat-scale-label" text="Chat size: 100%" />
+            <slider id="chat-scale" min="75" max="150" step="5" value="100" on_change="on_chat_settings_values" />
+            <label class="muted" text="Changes the conversation size. Channels and members stay the same size." />
+            <checkbox id="block-channel-pictures" text="Do not receive channel pictures" />
+            <checkbox id="block-channel-files" text="Do not receive channel files" />
+            <checkbox id="block-direct-pictures" text="Do not receive direct pictures" />
+            <checkbox id="block-direct-files" text="Do not receive direct files" />
+        </div>
+        <div class="column" id="chat-settings-footer">
+            <label class="muted" id="chat-settings-result" />
+            <div class="row" id="chat-settings-buttons">
+                <div class="spacer" />
+                <button id="chat-settings-save" text="Save changes" on_click="on_chat_settings_save" />
+                <button id="chat-settings-close" text="Close" on_click="on_chat_settings_close" />
+            </div>
+        </div>
+    </div>
+    <div class="column panel hidden" id="connection-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Connections" />
+            <button class="close-button" on_click="on_close_connection" text="×" />
+        </div>
+        <div class="column panel-body">
+            <div class="row connection-address-row">
+                <div class="column connection-host"><label text="Hostname" /><input id="server-address" text="127.0.0.1" /></div>
+                <div class="column connection-port"><label text="Port" /><input id="server-port" text="3000" /></div>
+            </div>
+            <label class="muted" text="Domain name or IP address. Secure connection is tried first." />
+            <label text="Username" />
+            <input id="username" />
+            <label text="Identity string" />
+            <input id="identity-string" type="password" />
+            <checkbox id="identity-reveal" text="Show identity (allows copying)" on_change="on_identity_reveal" />
+            <label class="muted" text="Leave empty to create an identity. Your identity and key size are saved locally." />
+            <label text="RSA key size" />
+            <input id="identity-bits" text="2048" />
+            <div class="row connection-key-heading">
+                <label class="spacer" text="Server encryption keys" />
+                <button id="server-key-add" text="+ Add key" on_click="on_server_key_add" />
+            </div>
+            <div class="column" id="server-keys">
+                <div id="server-key-row-0" class="row server-key-row hidden">
+                    <label class="server-key-number" text="1" />
+                    <select id="server-key-type-0" class="server-key-type"><option text="AES-256" /></select>
+                    <input id="server-key-value-0" class="server-key-value" />
+                    <button id="server-key-remove-0" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                </div>
+                <div id="server-key-row-1" class="row server-key-row hidden">
+                    <label class="server-key-number" text="2" />
+                    <select id="server-key-type-1" class="server-key-type"><option text="AES-256" /></select>
+                    <input id="server-key-value-1" class="server-key-value" />
+                    <button id="server-key-remove-1" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                </div>
+                <div id="server-key-row-2" class="row server-key-row hidden">
+                    <label class="server-key-number" text="3" />
+                    <select id="server-key-type-2" class="server-key-type"><option text="AES-256" /></select>
+                    <input id="server-key-value-2" class="server-key-value" />
+                    <button id="server-key-remove-2" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                </div>
+                <div id="server-key-row-3" class="row server-key-row hidden">
+                    <label class="server-key-number" text="4" />
+                    <select id="server-key-type-3" class="server-key-type"><option text="AES-256" /></select>
+                    <input id="server-key-value-3" class="server-key-value" />
+                    <button id="server-key-remove-3" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                </div>
+                <div id="server-key-row-4" class="row server-key-row hidden">
+                    <label class="server-key-number" text="5" />
+                    <select id="server-key-type-4" class="server-key-type"><option text="AES-256" /></select>
+                    <input id="server-key-value-4" class="server-key-value" />
+                    <button id="server-key-remove-4" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                </div>
+                <div id="server-key-row-5" class="row server-key-row hidden">
+                    <label class="server-key-number" text="6" />
+                    <select id="server-key-type-5" class="server-key-type"><option text="AES-256" /></select>
+                    <input id="server-key-value-5" class="server-key-value" />
+                    <button id="server-key-remove-5" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                </div>
+                <div id="server-key-row-6" class="row server-key-row hidden">
+                    <label class="server-key-number" text="7" />
+                    <select id="server-key-type-6" class="server-key-type"><option text="AES-256" /></select>
+                    <input id="server-key-value-6" class="server-key-value" />
+                    <button id="server-key-remove-6" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                </div>
+                <div id="server-key-row-7" class="row server-key-row hidden">
+                    <label class="server-key-number" text="8" />
+                    <select id="server-key-type-7" class="server-key-type"><option text="AES-256" /></select>
+                    <input id="server-key-value-7" class="server-key-value" />
+                    <button id="server-key-remove-7" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                </div>
+            </div>
+            <label class="muted" text="Add keys in the server's order. Save or Connect keeps them for next time." />
+        </div>
+        <div class="column" id="connection-footer">
+            <div class="row" id="connection-buttons">
+                <button on_click="on_connect" text="Connect" />
+                <button id="connection-save" on_click="on_connect" text="Save" />
+                <button on_click="on_disconnect" text="Disconnect" />
+            </div>
+            <label class="muted" id="login-result" text="Use the same identity and key size as your browser to keep that identity." />
+        </div>
+    </div>
+    <div class="column panel hidden" id="server-info-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Server info" />
+            <button class="close-button" on_click="on_close_server_info" text="×" />
+        </div>
+        <div class="column panel-body" id="server-info-features">
+            <div class="row server-info-row">
+                <label class="server-info-label" text="Used slots" />
+                <label class="server-info-value" id="server-info-slots" text="Loading..." />
+            </div>
+            <div class="row server-info-row">
+                <label class="server-info-label" text="Uptime" />
+                <label class="server-info-value" id="server-info-uptime" text="Loading..." />
+            </div>
+        </div>
+        <div class="column" id="server-info-footer">
+            <button id="server-info-refresh" on_click="on_refresh_server_info" text="Refresh" />
+            <label id="server-info-result" class="muted" text="Server-wide settings. Your group permissions may be more restrictive." />
+        </div>
+    </div>
+    <div class="column panel hidden" id="bookmarks-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Bookmarks" />
+            <button class="close-button" on_click="on_close_bookmarks" text="×" />
+        </div>
+        <div class="column panel-body">
+            <div id="bookmark-list" />
+            <div class="row bookmark-buttons">
+                <button on_click="on_bookmark_add" text="Add" />
+                <button id="bookmark-remove" on_click="on_bookmark_remove" text="Remove" />
+            </div>
+            <label text="Name" />
+            <input id="bookmark-name" />
+            <label text="Server address" />
+            <input id="bookmark-address" />
+            <div class="row bookmark-buttons">
+                <button on_click="on_bookmark_save" text="Save changes" />
+                <button on_click="on_bookmark_use" text="Use address" />
+            </div>
+            <label class="muted" id="bookmark-result" text="Choose an address to fill Connections." />
+        </div>
+    </div>
+    <div class="column panel hidden" id="join-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" id="join-channel-name" text="Join channel" />
+            <button class="close-button" on_click="on_close_join" text="×" />
+        </div>
+        <div class="column panel-body">
+            <label text="Channel password" />
+            <input id="channel-password" type="password" />
+            <button on_click="on_join_password" text="Join" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="member-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" id="member-title" text="Member" />
+            <button class="close-button" on_click="on_close_member" text="×" />
+        </div>
+        <div class="column panel-body">
+            <label id="member-detail" text="" />
+            <button id="member-message" on_click="on_private_message" text="Private message" />
+            <button id="member-mute" on_click="on_mute_member" text="Mute locally" />
+            <button id="member-poke" on_click="on_member_action" text="Poke" />
+            <button id="member-move" on_click="on_member_action" text="Move to channel" />
+            <button id="member-kick-channel" on_click="on_member_action" text="Kick from channel" />
+            <button id="member-mute-channel" on_click="on_member_action" text="Mute for everyone" />
+            <button id="member-stop-stream" on_click="on_member_action" text="Stop stream" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="action-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" id="action-title" text="Action" />
+            <button class="close-button" on_click="on_action_close" text="×" />
+        </div>
+        <div class="column panel-body">
+            <label id="action-label" text="Value" />
+            <input id="action-value" />
+            <button id="action-submit" on_click="on_action_submit" text="Save changes" />
+            <label class="muted" id="action-result" text="" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="confirm-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Confirm kick" />
+            <button class="close-button" on_click="on_action_close" text="×" />
+        </div>
+        <div class="column panel-body">
+            <label id="confirm-question" text="Kick from channel?" />
+            <label class="muted" id="confirm-description" text="" />
+            <button on_click="on_action_close" text="Cancel" />
+            <button on_click="on_action_confirm" text="Kick from channel" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="move-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" id="move-title" text="Move to channel" />
+            <button class="close-button" on_click="on_action_close" text="×" />
+        </div>
+        <div class="column panel-body">
+            <div class="column" id="move-destinations" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="notice-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" id="notice-title" text="Poke" />
+            <button class="close-button" on_click="on_action_close" text="×" />
+        </div>
+        <div class="column panel-body">
+            <label id="notice-text" text="" />
+            <button on_click="on_action_close" text="Dismiss" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="channels-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Channel settings" />
+            <button class="close-button" on_click="on_close_channels" text="×" />
+        </div>
+        <div class="row" id="channel-editor-layout">
+            <div class="column" id="channel-editor-sidebar">
+                <div class="column" id="channel-editor-list" />
+                <button id="channel-add" on_click="on_channel_create" text="+ Add child channel" />
+                <button id="channel-remove" on_click="on_channel_delete" text="Delete channel" />
+            </div>
+            <div class="column" id="channel-editor-main">
+                <div class="column" id="channel-editor-fields">
+                    <label class="section" id="channel-form-title" text="Channel" />
+                    <label class="muted" id="channel-form-context" text="" />
+                    <label text="Name" />
+                    <input id="channel-edit-name" />
+                    <label text="Description" />
+                    <textarea id="channel-edit-description" />
+                    <checkbox id="channel-replace-password" text="Replace password (empty removes it)" />
+                    <input id="channel-edit-password" type="password" placeholder="Current password is kept unless ticked" />
+                    <checkbox id="channel-edit-audio" text="Allow voice and music" />
+                    <checkbox id="channel-edit-video" text="Allow video streams" />
+                    <checkbox id="channel-edit-temporary" text="Temporary channel" />
+                    <checkbox id="channel-edit-limited" text="Limit members" />
+                    <input id="channel-edit-capacity" text="0" />
+                    <label class="section" text="Required power" />
+                    <div class="row channel-number-row">
+                        <label text="Speak" />
+                        <input id="channel-talk-power" text="0" />
+                    </div>
+                    <div class="row channel-number-row">
+                        <label text="Send messages" />
+                        <input id="channel-message-power" text="0" />
+                    </div>
+                    <div class="row channel-number-row">
+                        <label text="Send pictures" />
+                        <input id="channel-picture-power" text="0" />
+                    </div>
+                    <div class="row channel-number-row">
+                        <label text="Stream video" />
+                        <input id="channel-stream-power" text="0" />
+                    </div>
+                </div>
+                <label class="muted" id="channel-form-result" text="Changes apply only when saved." />
+                <button id="channel-save" on_click="on_channel_save" text="Save changes" />
+            </div>
+        </div>
+    </div>
+    <div class="column panel hidden" id="channel-delete-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Confirm channel deletion" />
+            <button class="close-button" on_click="on_channel_delete_cancel" text="×" />
+        </div>
+        <div class="column panel-body">
+            <label id="channel-delete-question" text="Delete this channel?" />
+            <label class="muted" text="The server will remove the channel and move its members." />
+            <button on_click="on_channel_delete_cancel" text="Cancel" />
+            <button on_click="on_channel_delete_confirm" text="Delete channel" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="audio-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Audio settings" />
+            <button class="close-button" on_click="on_close_audio" text="×" />
+        </div>
+        <div class="column panel-body" id="audio-fields">
+            <label class="section" text="Microphone transmission" />
+            <label text="Mode" />
+            <select class="audio-device-select" id="voice-activation" on_change="on_audio_values">
+                <option text="Push to talk" />
+                <option text="Voice activation" />
+            </select>
+            <label id="ptt-label" text="Push-to-talk key" />
+            <select class="audio-device-select" id="ptt-key" on_change="on_audio_values" />
+            <label class="muted" text="Enable the microphone with the Mic button. Push to talk uses the selected key, including while your game has focus." />
+            <label id="volume-label" text="Listening volume: 100%" />
+            <slider id="audio-volume" min="0" max="100" step="1" value="100" on_change="on_audio_values" />
+            <label id="gain-label" text="Microphone gain: 100%" />
+            <slider id="microphone-gain" min="0" max="200" step="1" value="100" on_change="on_audio_values" />
+            <label id="activation-label" text="Minimum voice level: -45 dB" />
+            <slider id="activation-threshold" min="-60" max="-10" step="1" value="-45" on_change="on_audio_values" />
+            <label id="input-level" class="muted" text="Enable your microphone to check its level." />
+            <div id="input-meter-track"><div id="input-meter-fill" /></div>
+            <label class="muted" text="If quiet words are missed, lower the minimum level. If room noise opens the microphone, raise it." />
+            <label id="bitrate-label" text="Voice bitrate: 64 kbit/s" />
+            <slider id="voice-bitrate" min="32" max="128" step="16" value="64" on_change="on_audio_values" />
+            <label class="muted" text="Opus uses 48 kHz audio. Higher bitrate leaves more room for detail and uses more bandwidth; 64 kbit/s is the default." />
+            <label text="Microphone" />
+            <select class="audio-device-select" id="audio-input-device" on_change="on_audio_device"><option text="System default" /></select>
+            <label text="Speakers / headphones" />
+            <select class="audio-device-select" id="audio-output-device" on_change="on_audio_device"><option text="System default" /></select>
+            <button id="audio-refresh-devices" on_click="on_audio_refresh_devices" text="Refresh devices" />
+            <label class="muted" id="audio-devices-result" text="Device choices apply when saved." />
+            <label class="muted" text="An unavailable saved microphone stays off. Choose System default to follow the OS device. The microphone starts disabled each time the app opens." />
+        </div>
+        <div class="column" id="audio-footer">
+            <button on_click="on_save_audio" text="Save changes" />
+            <label id="audio-result" class="muted" text="Changes apply when saved." />
+        </div>
+    </div>
+    <div class="column panel hidden" id="settings-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Local settings" />
+            <button class="close-button" on_click="on_close_settings" text="×" />
+        </div>
+        <div class="column panel-body">
+            <button on_click="on_show_audio" text="Microphone, push to talk and audio" />
+            <button on_click="on_chat_settings" text="Appearance, chat and attachments" />
+            <label text="See your channel and who is speaking while you play." />
+            <checkbox id="overlay-enabled" text="Enable game overlay" />
+            <label text="Game executable" />
+            <input id="game-executable" placeholder="game.exe" />
+            <label class="muted" text="Enter the executable name to detect when the game starts." />
+            <button on_click="on_save_overlay" text="Save settings" />
+            <label class="muted" id="settings-result" text="Disabled by default" />
+            <label class="section" text="Overlay status" />
+            <label id="overlay-status" text="Game overlay disabled" />
+            <label id="overlay-support" class="muted" text="Currently supports D3D11 games with the same 32/64-bit architecture as the client." />
+            <button id="preview-button" on_click="on_overlay_preview" text="Preview channel and speakers" />
+            <label class="muted" text="Preview uses sample members. It does not connect to a server." />
+        </div>
+    </div>
+    <div class="column panel hidden" id="member-volume-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Adjust volume" />
+            <button class="close-button" on_click="on_context_volume_close" text="×" />
+        </div>
+        <div class="column panel-body">
+            <label id="member-volume-name" />
+            <label id="member-volume-label" text="Listening volume: 100%" />
+            <slider id="member-volume" min="0" max="200" step="5" value="100" on_change="on_context_volume_change" />
+            <button on_click="on_context_volume_save" text="Save changes" />
+            <label class="muted" id="member-volume-result" text="Changes only how loudly you hear this client." />
+        </div>
+    </div>
+    <div class="context-menu hidden" id="context-menu" on_click="on_context_choose" />
+    <div class="context-menu hidden" id="context-submenu" on_click="on_context_choose" />
+</window>

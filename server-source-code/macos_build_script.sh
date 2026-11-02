@@ -2,6 +2,8 @@
 #
 # Build the lemon-chat server + bundled stunnel into ../buildresult/ on macOS.
 #   ./macos_build_script.sh
+# Browser output prompts for minified/unminified; LEMON_CLIENT_BUILD_MODE skips that prompt.
+# Example: LEMON_CLIENT_BUILD_MODE=minified ./macos_build_script.sh (or unminified).
 #
 #
 # Prerequisites
@@ -30,6 +32,13 @@ warning()
 
 ROOT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THIRD_PARTY_DIRECTORY="$ROOT_DIRECTORY/third-party"
+
+if ! command -v node >/dev/null 2>&1
+then
+    warning "Node.js is required for the browser client. Install it from https://nodejs.org/"
+    warning "Optional minification: npm install --global terser"
+    exit 1
+fi
 LINK_DIR="$ROOT_DIRECTORY/main/linkage-files/macos"
 
 # =============================================================================
@@ -221,11 +230,10 @@ cp -v "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/libopus.a" "$LINK_DIR/libopus.a"
 # =============================================================================
 
 message "building the browser client (client.html)"
-if command -v python3 >/dev/null 2>&1
+if ! node "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.cjs"
 then
-    python3 "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.py"
-else
-    warning "python3 not found - skipping client build; served client.html may be stale/missing"
+    warning "browser client build failed; stopping before packaging an outdated page"
+    exit 1
 fi
 
 # =============================================================================

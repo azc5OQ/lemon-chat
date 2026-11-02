@@ -3,8 +3,7 @@
 #include "../server/server_msg.h"
 #include "../../core/video_channel.h"
 #include "../../base.h"
-#include "../../clib/clib_string.h"
-#include "../../clib/clib_memory.h"
+#include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 
 // declarations

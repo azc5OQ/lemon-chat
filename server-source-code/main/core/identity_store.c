@@ -8,8 +8,7 @@
 #include "../base.h"
 
 #include "../memory_manager.h"
-#include "../clib/clib_memory.h"
-#include "../clib/clib_string.h"
+#include "../clib/clib.h"
 #include "../util.h"
 #include "../../third-party/zhicheng/base64.h"
 #include "../../third-party/ITH-sha/sha256.h"
@@ -312,8 +311,8 @@ void identity_store__sync_client_identity_in_store(client_t* client)
     clib__null_memory(&g_client_stored_data[slot].public_key[0], MAX_PUBLIC_KEY_LENGTH);
     clib__null_memory(&g_client_stored_data[slot].username[0], USERNAME_MAX_LENGTH);
     clib__null_memory(&g_client_stored_data[slot].group_ids[0], sizeof(g_client_stored_data[slot].group_ids));
-    clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
-    clib__copy_memory(client->username, &g_client_stored_data[slot].username[0], clib__utf8_string_length(client->username), USERNAME_MAX_LENGTH - 1); // remember the last-seen username for the admin ui
+    clib__string_copy(g_client_stored_data[slot].public_key, sizeof(g_client_stored_data[slot].public_key), identity_hash);
+    clib__string_copy(g_client_stored_data[slot].username, sizeof(g_client_stored_data[slot].username), client->username); // remember the last-seen username for the admin ui
 
     g_client_stored_data[slot].group_id_count = 0;
     for (t = 0; t < cvector_size(client->group_ids)
@@ -433,14 +432,14 @@ void identity_store__set_identity_avatar_by_hash(char* identity_hash, char* base
         }
 
         clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
-        clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
+        clib__string_copy(g_client_stored_data[slot].public_key, sizeof(g_client_stored_data[slot].public_key), identity_hash);
     }
 
     clib__null_memory(&g_client_stored_data[slot].base64_avatar[0], MAX_CLIENT_AVATAR_LENGTH);
 
     if (clearing == FALSE)
     {
-        clib__copy_memory(base64_avatar, &g_client_stored_data[slot].base64_avatar[0], clib__utf8_string_length(base64_avatar), MAX_CLIENT_AVATAR_LENGTH - 1);
+        clib__string_copy(g_client_stored_data[slot].base64_avatar, sizeof(g_client_stored_data[slot].base64_avatar), base64_avatar);
     }
     else if (g_client_stored_data[slot].group_id_count == 0 && g_client_stored_data[slot].raw_public_key[0] == 0)
     {
@@ -552,11 +551,11 @@ void identity_store__store_identity_raw_public_key(char* identity_hash, char* ra
         }
 
         clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
-        clib__copy_memory(identity_hash, &g_client_stored_data[slot].public_key[0], clib__utf8_string_length(identity_hash), MAX_PUBLIC_KEY_LENGTH - 1);
+        clib__string_copy(g_client_stored_data[slot].public_key, sizeof(g_client_stored_data[slot].public_key), identity_hash);
     }
 
     clib__null_memory(&g_client_stored_data[slot].raw_public_key[0], MAX_PUBLIC_KEY_LENGTH);
-    clib__copy_memory(raw_public_key, &g_client_stored_data[slot].raw_public_key[0], clib__utf8_string_length(raw_public_key), MAX_PUBLIC_KEY_LENGTH - 1);
+    clib__string_copy(g_client_stored_data[slot].raw_public_key, sizeof(g_client_stored_data[slot].raw_public_key), raw_public_key);
 
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 }
@@ -688,16 +687,16 @@ boole identity_store__queue_offline_message(char* recipient_identity_hash, char*
     g_offline_message_sequence_counter++;
     g_offline_messages[free_slot].sequence_number = g_offline_message_sequence_counter;
 
-    clib__copy_memory(recipient_identity_hash, &g_offline_messages[free_slot].recipient_identity_hash[0], clib__utf8_string_length(recipient_identity_hash), IDENTITY_HASH_MAX_LENGTH - 1);
+    clib__string_copy(g_offline_messages[free_slot].recipient_identity_hash, sizeof(g_offline_messages[free_slot].recipient_identity_hash), recipient_identity_hash);
 
     if (sender_identity_hash != NULL_POINTER)
     {
-        clib__copy_memory(sender_identity_hash, &g_offline_messages[free_slot].sender_identity_hash[0], clib__utf8_string_length(sender_identity_hash), IDENTITY_HASH_MAX_LENGTH - 1);
+        clib__string_copy(g_offline_messages[free_slot].sender_identity_hash, sizeof(g_offline_messages[free_slot].sender_identity_hash), sender_identity_hash);
     }
 
     if (sender_name != NULL_POINTER)
     {
-        clib__copy_memory(sender_name, &g_offline_messages[free_slot].sender_name[0], clib__utf8_string_length(sender_name), USERNAME_MAX_LENGTH - 1);
+        clib__string_copy(g_offline_messages[free_slot].sender_name, sizeof(g_offline_messages[free_slot].sender_name), sender_name);
     }
 
     DBG_IDENTITIES log_info("%s %llu %s", "queue_offline_message: queued as sequence", g_offline_messages[free_slot].sequence_number, "\n");
@@ -776,8 +775,7 @@ boole identity_store__get_identity_avatar_by_hash(char* identity_hash, char* out
         {
             if (g_client_stored_data[i].base64_avatar[0] != 0)
             {
-                clib__copy_memory(&g_client_stored_data[i].base64_avatar[0], out_buffer, clib__utf8_string_length(&g_client_stored_data[i].base64_avatar[0]), out_buffer_size - 1);
-                found = TRUE;
+                found = clib__string_copy(out_buffer, out_buffer_size, g_client_stored_data[i].base64_avatar);
             }
             break;
         }

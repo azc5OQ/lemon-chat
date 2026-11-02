@@ -10,7 +10,7 @@
 #include "base.h"
 #include "../third-party/libdatachannel-0.24.2/include/rtc/rtc.h"
 #include "../third-party/rxi-log/log.h"
-#include "clib/clib_memory.h"
+#include "clib/clib.h"
 #include "audio_webrtc.h"
 #include "video_webrtc.h"
 #include "core/video_channel.h"

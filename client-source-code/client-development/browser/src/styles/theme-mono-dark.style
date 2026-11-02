@@ -1,0 +1,13 @@
+/* Palette only: Mono Light and Mono Dark use the same layout. */
+:root
+{
+    color-scheme: dark;
+    --mono-bg: #09090b;
+    --mono-surface: #19191c;
+    --mono-text: #f2f2f3;
+    --mono-muted: #a0a0a9;
+    --mono-line: #303036;
+    --mono-inverse: #101013;
+    --mono-accent: #8bacff;
+    --mono-icon-filter: invert(1);
+}

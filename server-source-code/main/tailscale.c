@@ -1,5 +1,8 @@
-// This file configures Funnel through the installed Tailscale program.
+// This file configures Funnel using the installed Tailscale program.
+// Funnel is one of the solutions for self-hosting behind CGNAT.
+
 #include "tailscale.h"
+#include "clib/clib.h"
 #include "base.h"
 #include "first_time_setup.h"
 #include "util.h"
@@ -79,7 +82,7 @@ static boole _tailscale_internal__find_executable(char* path, uint64 capacity)
         length = GetEnvironmentVariableA(directories[index], program_files, sizeof(program_files));
         if (length > 0 && length < sizeof(program_files))
         {
-            snprintf(installed_path, sizeof(installed_path), "%s\\Tailscale\\tailscale.exe", program_files);
+            clib__string_format(installed_path, sizeof(installed_path), "%s\\Tailscale\\tailscale.exe", program_files);
             if (util__find_executable(installed_path, path, capacity))
             {
                 return TRUE;
@@ -112,7 +115,7 @@ boole tailscale__is_available(void)
  */
 static boole _tailscale_internal__append_argument(char* command, uint64 capacity, cstring argument)
 {
-    uint64 position = strlen(command);
+    uint64 position = clib__strlen(command);
     uint64 slashes = 0;
     uint64 count = 0;
     const char* cursor = argument;
@@ -230,10 +233,10 @@ static int _tailscale_internal__run(const char* const* arguments, char* output, 
         return -1;
     }
 #if defined(_WIN32) || defined(WIN32)
-    memset(command, 0, sizeof(command));
-    memset(&security, 0, sizeof(security));
-    memset(&startup, 0, sizeof(startup));
-    memset(&process, 0, sizeof(process));
+    clib__memset(command, 0, sizeof(command));
+    clib__memset(&security, 0, sizeof(security));
+    clib__memset(&startup, 0, sizeof(startup));
+    clib__memset(&process, 0, sizeof(process));
     if (!_tailscale_internal__append_argument(command, sizeof(command), executable))
     {
         return -1;
@@ -574,7 +577,7 @@ static boole _tailscale_internal__read_hostname(cJSON* status)
     uint64 label = 0;
     unsigned char current = 0;
 
-    if (!cJSON_IsString(state) || strcmp(state->valuestring, "Running") != 0)
+    if (!cJSON_IsString(state) || clib__strcmp(state->valuestring, "Running") != 0)
     {
         printf("%s Start Tailscale and sign in before restarting Lemon Chat. Direct WS remains available.\n", g_mark_warn);
         return FALSE;
@@ -583,7 +586,7 @@ static boole _tailscale_internal__read_hostname(cJSON* status)
     {
         return FALSE;
     }
-    length = strlen(name->valuestring);
+    length = clib__strlen(name->valuestring);
     if (length > 0 && name->valuestring[length - 1] == '.')
     {
         length--;
@@ -616,10 +619,10 @@ static boole _tailscale_internal__read_hostname(cJSON* status)
                 return FALSE;
             }
         }
-        g_tailscale_hostname[index] = (char)tolower(current);
+        g_tailscale_hostname[index] = (char)clib__tolower(current);
     }
     g_tailscale_hostname[length] = 0;
-    if (label == 0 || g_tailscale_hostname[length - 1] == '-' || strcmp(g_tailscale_hostname + length - 7, ".ts.net") != 0)
+    if (label == 0 || g_tailscale_hostname[length - 1] == '-' || clib__strcmp(g_tailscale_hostname + length - 7, ".ts.net") != 0)
     {
         g_tailscale_hostname[0] = 0;
         return FALSE;
@@ -654,9 +657,9 @@ static boole _tailscale_internal__has_foreground_port(cJSON* status, int64 publi
     {
         return TRUE;
     }
-    snprintf(port, sizeof(port), "%lld", public_port);
-    snprintf(suffix, sizeof(suffix), ":%lld", public_port);
-    suffix_length = strlen(suffix);
+    clib__string_format(port, sizeof(port), "%lld", public_port);
+    clib__string_format(suffix, sizeof(suffix), ":%lld", public_port);
+    suffix_length = clib__strlen(suffix);
     cJSON_ArrayForEach(child, foreground)
     {
         if (!cJSON_IsObject(child))
@@ -676,8 +679,8 @@ static boole _tailscale_internal__has_foreground_port(cJSON* status, int64 publi
             {
                 return TRUE;
             }
-            name_length = strlen(entry->string);
-            if (name_length >= suffix_length && strcmp(entry->string + name_length - suffix_length, suffix) == 0)
+            name_length = clib__strlen(entry->string);
+            if (name_length >= suffix_length && clib__strcmp(entry->string + name_length - suffix_length, suffix) == 0)
             {
                 return TRUE;
             }
@@ -716,10 +719,10 @@ static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cs
     boole public = FALSE;
     boole root_matches = FALSE;
 
-    snprintf(port, sizeof(port), "%lld", public_port);
-    snprintf(endpoint, sizeof(endpoint), "%s:%lld", g_tailscale_hostname, public_port);
-    snprintf(suffix, sizeof(suffix), ":%lld", public_port);
-    suffix_length = strlen(suffix);
+    clib__string_format(port, sizeof(port), "%lld", public_port);
+    clib__string_format(endpoint, sizeof(endpoint), "%s:%lld", g_tailscale_hostname, public_port);
+    clib__string_format(suffix, sizeof(suffix), ":%lld", public_port);
+    suffix_length = clib__strlen(suffix);
     if (_tailscale_internal__has_foreground_port(status, public_port, 0))
     {
         return -1;
@@ -736,9 +739,9 @@ static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cs
         {
             return -1;
         }
-        name_length = strlen(item->string);
-        if (name_length >= suffix_length && strcmp(item->string + name_length - suffix_length, suffix) == 0 &&
-            strcmp(item->string, endpoint) != 0)
+        name_length = clib__strlen(item->string);
+        if (name_length >= suffix_length && clib__strcmp(item->string + name_length - suffix_length, suffix) == 0 &&
+            clib__strcmp(item->string, endpoint) != 0)
         {
             return -1;
         }
@@ -762,7 +765,7 @@ static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cs
         {
             return -1;
         }
-        if (strcmp(item->string, "/") != 0 && public == FALSE)
+        if (clib__strcmp(item->string, "/") != 0 && public == FALSE)
         {
             return -1;
         }
@@ -771,7 +774,7 @@ static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cs
     proxy = cJSON_GetObjectItemCaseSensitive(root, "Proxy");
     if (root != NULL_POINTER)
     {
-        if (!cJSON_IsString(proxy) || strcmp(proxy->valuestring, target) != 0 || cJSON_GetArraySize(root) != 1)
+        if (!cJSON_IsString(proxy) || clib__strcmp(proxy->valuestring, target) != 0 || cJSON_GetArraySize(root) != 1)
         {
             return -1;
         }
@@ -793,7 +796,7 @@ static boole _tailscale_internal__set_route(int64 public_port, cstring target)
     char* output = NULL_POINTER;
     int result = -1;
 
-    snprintf(port_argument, sizeof(port_argument), "--https=%lld", public_port);
+    clib__string_format(port_argument, sizeof(port_argument), "--https=%lld", public_port);
     output = malloc(LEMON_TAILSCALE_OUTPUT_LIMIT + 1);
     if (output == NULL_POINTER)
     {
@@ -856,8 +859,8 @@ boole tailscale__configure(void)
     {
         return FALSE;
     }
-    snprintf(page_target, sizeof(page_target), "http://127.0.0.1:%lld", g_server_settings.http_port);
-    snprintf(chat_target, sizeof(chat_target), "http://127.0.0.1:%lld", g_server_settings.websocket_port);
+    clib__string_format(page_target, sizeof(page_target), "http://127.0.0.1:%lld", g_server_settings.http_port);
+    clib__string_format(chat_target, sizeof(chat_target), "http://127.0.0.1:%lld", g_server_settings.websocket_port);
     page_state = _tailscale_internal__check_route(status, 443, page_target);
     chat_state = _tailscale_internal__check_route(status, g_server_settings.wss_port, chat_target);
     cJSON_Delete(status);

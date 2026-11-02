@@ -3,8 +3,7 @@
 
 #undef DEBUG_ACTIVE
 
-#define ARCHITECTURE_AMD64 1
-// #define ARCHITECTURE_I386 1
+#include "clib/clib.h"
 
 #ifndef MYTYPEDEF_DEFINITIONS
 #define MYTYPEDEF_DEFINITIONS 1
@@ -25,15 +24,6 @@ typedef union safe_byte_t
     unsigned char saf2;
 } safe_byte_t;
 
-typedef signed char boole; // 1 byte always (George Boole)
-typedef unsigned char ubyte; // 1 byte always
-typedef unsigned int uint; // 4 bytes always
-typedef unsigned short ushort; // 2 bytes always
-typedef unsigned long long uint64; // 8 bytes always+
-typedef unsigned long long nuint; // size of an address, native unsigned integer (memory manager / raw addresses only)
-typedef signed long long int64; // 8 bytes always
-typedef unsigned long long timestamp; // 8 bytes always
-typedef const char* cstring;
 // typedef wchar_t* wstring;
 
 #define DBG_CONNECTION_PROGRESS if (0)
@@ -315,6 +305,7 @@ typedef struct server_settings
     uint64 max_channel_count;
     uint64 client_count;
     uint64 max_client_count;
+    uint64 reserved_slots;
     uint64 keys_count;
     int64 websocket_port;
     // wireguard mode (see selfhosting-tools/wireguard/README.md): this server sits behind a router that forwards its ports
@@ -423,6 +414,8 @@ typedef struct music_bot_client_extension_t
     music_bot_audio_keys_t* audio_keys;
     uint64 music_bot_pthread_handle;
     boole is_music_bot_running;
+    _Atomic(boole) is_playback_paused;
+    _Atomic(boole) is_skip_requested;
     uint64 music_bot_songs_count;
     uint64 pending_song_uploads; // pins the song table until detached upload workers finish
     music_bot_single_song_data_t* songs; // allocated once for an actual music bot
@@ -433,6 +426,7 @@ typedef struct client_file_upload_extension_t
     ubyte* file_upload_buffer; // stores the base64 content of the file
     uint64 buffer_cursor;
     uint64 expected_file_length;
+    char intent[31];
 } client_file_upload_extension_t;
 
 typedef struct client_t
@@ -466,6 +460,8 @@ typedef struct client_t
     uint channel_message_power;
     uint channel_picture_power;
     uint stream_power;
+    uint channel_group_role;
+    uint64 muted_until_ms;
     int64 audio_state; // 1 -> active, 2 -> not active but enabled, 3 -> disabled but audio still active, 4 -> audio disabled
     uint64 timestamp_connected;
     uint64 timestamp_last_action;
@@ -509,6 +505,13 @@ typedef struct client_t
     client_file_upload_extension_t file_upload_extension;
 } client_t;
 
+typedef struct channel_group_member_t
+{
+    char identity[IDENTITY_HASH_MAX_LENGTH];
+    uint role;
+    uint64 muted_until_ms;
+} channel_group_member_t;
+
 // channel id is the same as the channel's index in the array
 typedef struct channel
 {
@@ -541,6 +544,7 @@ typedef struct channel
     char name[CHANNEL_NAME_MAX_LENGTH];
     char password[CHANNEL_PASSWORD_MAX_LENGTH];
     char description[CHANNEL_DESCRIPTION_MAX_LENGTH];
+    channel_group_member_t* group_members;
 } channel_t;
 
 typedef struct message
@@ -571,7 +575,7 @@ typedef enum permission_t
     PERMISSION_ASSIGN_GROUPS,
     PERMISSION_REMOVE_GROUPS,
     PERMISSION_EDIT_GROUP_PERMISSIONS,
-    PERMISSION_MANAGE_ICONS,
+    PERMISSION_UPLOAD_ICONS,
     PERMISSION_VIEW_CLIENT_DETAILS,
     PERMISSION_VIEW_SERVER_LOGS,
     PERMISSION_VIEW_SERVER_INFO,
@@ -579,6 +583,38 @@ typedef enum permission_t
     PERMISSION_RECEIVE_OFFLINE_MESSAGES,
     PERMISSION_MESSAGE_IDLE_CLIENTS,
     PERMISSION_CALL_IDLE_CLIENTS,
+    PERMISSION_DELETE_ICONS,
+    PERMISSION_UPLOAD_EMOJIS,
+    PERMISSION_DELETE_EMOJIS,
+    PERMISSION_VIEW_IP_ADDRESSES,
+    PERMISSION_VIEW_BANS,
+    PERMISSION_REMOVE_BANS,
+    PERMISSION_MOVE_CLIENTS,
+    PERMISSION_KICK_FROM_CHANNEL,
+    PERMISSION_MUTE_CLIENTS,
+    PERMISSION_STOP_CLIENT_STREAMS,
+    PERMISSION_EDIT_CHANNEL_NAME,
+    PERMISSION_EDIT_CHANNEL_DESCRIPTION,
+    PERMISSION_EDIT_CHANNEL_PASSWORD,
+    PERMISSION_EDIT_CHANNEL_POWERS,
+    PERMISSION_EDIT_CHANNEL_OPTIONS,
+    PERMISSION_DELETE_CHANNEL,
+    PERMISSION_ASSIGN_CHANNEL_GROUPS,
+    PERMISSION_SEND_DIRECT_PICTURES,
+    PERMISSION_SEND_DIRECT_FILES,
+    PERMISSION_SEND_CHANNEL_PICTURES,
+    PERMISSION_SEND_CHANNEL_FILES,
+    PERMISSION_CREATE_MUSIC_BOTS,
+    PERMISSION_DELETE_MUSIC_BOTS,
+    PERMISSION_UPLOAD_MUSIC_TRACKS,
+    PERMISSION_DELETE_MUSIC_TRACKS,
+    PERMISSION_CONTROL_MUSIC_PLAYBACK,
+    PERMISSION_USE_RESERVED_SLOTS,
+    PERMISSION_CREATE_CHANNEL_GROUPS,
+    PERMISSION_EDIT_CHANNEL_GROUPS,
+    PERMISSION_DELETE_CHANNEL_GROUPS,
+    PERMISSION_VIEW_CLIENT_CONNECTION_TIME,
+    PERMISSION_BYPASS_CHANNEL_PASSWORD,
     PERMISSION_COUNT
 } permission_t;
 
@@ -590,6 +626,12 @@ enum
 };
 
 #define PERMISSION_POWER_MAX 1000U
+
+enum
+{
+    PERMISSION_FLAG_NEGATE = 1,
+    PERMISSION_FLAG_SKIP = 2
+};
 
 typedef enum permission_power_t
 {
@@ -603,6 +645,11 @@ typedef enum permission_power_t
     PERMISSION_CHANNEL_MESSAGE_POWER,
     PERMISSION_CHANNEL_PICTURE_POWER,
     PERMISSION_STREAM_POWER,
+    PERMISSION_MOVE_POWER,
+    PERMISSION_MOVE_PROTECTION,
+    PERMISSION_MODERATION_POWER,
+    PERMISSION_MODERATION_PROTECTION,
+    PERMISSION_EDIT_POWER,
     PERMISSION_POWER_COUNT
 } permission_power_t;
 
@@ -610,6 +657,10 @@ typedef struct group_permissions_t
 {
     uint values[PERMISSION_COUNT];
     uint powers[PERMISSION_POWER_COUNT];
+    uint flags[PERMISSION_COUNT];
+    uint power_flags[PERMISSION_POWER_COUNT];
+    uint grants[PERMISSION_COUNT];
+    uint power_grants[PERMISSION_POWER_COUNT];
 } group_permissions_t;
 
 typedef enum group_type_t
@@ -636,6 +687,7 @@ typedef struct group_t
 typedef struct ban_entry_t
 {
     boole is_existing;
+    char removal_token[33];
     uint64 timestamp_banned;
     char ip_address[BAN_IP_MAX_LENGTH];
     char country_iso_code[COUNTRY_ISO_CODE_LENGTH];

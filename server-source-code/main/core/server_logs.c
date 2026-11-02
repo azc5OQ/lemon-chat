@@ -1,7 +1,7 @@
 #include "../util.h"
 #include "../definitions.h"
 
-#include "../clib/clib_memory.h"
+#include "../clib/clib.h"
 #include "../../third-party/dave-g-json/cJSON.h"
 #include "../base.h"
 #include "../memory_manager.h"
@@ -119,11 +119,11 @@ static void _server_logs_internal__append(char* text)
 
     if (time_parts != NULL_POINTER)
     {
-        snprintf(entry->text, ADMIN_LOG_ENTRY_MAX_LENGTH, "%04d-%02d-%02d %02d:%02d:%02d | %s", time_parts->tm_year + 1900, time_parts->tm_mon + 1, time_parts->tm_mday, time_parts->tm_hour, time_parts->tm_min, time_parts->tm_sec, text);
+        clib__string_format(entry->text, ADMIN_LOG_ENTRY_MAX_LENGTH, "%04d-%02d-%02d %02d:%02d:%02d | %s", time_parts->tm_year + 1900, time_parts->tm_mon + 1, time_parts->tm_mday, time_parts->tm_hour, time_parts->tm_min, time_parts->tm_sec, text);
     }
     else
     {
-        snprintf(entry->text, ADMIN_LOG_ENTRY_MAX_LENGTH, "%s", text);
+        clib__string_format(entry->text, ADMIN_LOG_ENTRY_MAX_LENGTH, "%s", text);
     }
 
     pthread_mutex_lock(&g_admin_log_mutex);
@@ -201,7 +201,7 @@ void server_logs__client_joined(client_t* client)
         return;
     }
 
-    snprintf(text, sizeof(text), "join: %s (ip %s)", client->username, client->ip_address);
+    clib__string_format(text, sizeof(text), "join: %s (ip %s)", client->username, client->ip_address);
     _server_logs_internal__append(text);
 }
 
@@ -222,7 +222,7 @@ void server_logs__fast_reconnect(client_t* client)
         return;
     }
 
-    snprintf(text, sizeof(text), "fast reconnect: %s (ip %s)", client->username, client->ip_address);
+    clib__string_format(text, sizeof(text), "fast reconnect: %s (ip %s)", client->username, client->ip_address);
     _server_logs_internal__append(text);
 }
 
@@ -244,7 +244,7 @@ void server_logs__client_disconnect_reason(client_t* client, char* reason)
         return;
     }
 
-    snprintf(text, sizeof(text), "%s: %s (ip %s)", reason, client->username, client->ip_address);
+    clib__string_format(text, sizeof(text), "%s: %s (ip %s)", reason, client->username, client->ip_address);
     _server_logs_internal__append(text);
 }
 
@@ -265,7 +265,7 @@ void server_logs__username_changed(char* old_username, char* new_username)
         return;
     }
 
-    snprintf(text, sizeof(text), "rename: %s -> %s", old_username, new_username);
+    clib__string_format(text, sizeof(text), "rename: %s -> %s", old_username, new_username);
     _server_logs_internal__append(text);
 }
 
@@ -287,7 +287,7 @@ void server_logs__group_added(int group_id, char* target_username, char* admin_u
         return;
     }
 
-    snprintf(text, sizeof(text), "group %d added to %s by %s", group_id, target_username, admin_username);
+    clib__string_format(text, sizeof(text), "group %d added to %s by %s", group_id, target_username, admin_username);
     _server_logs_internal__append(text);
 }
 
@@ -308,7 +308,7 @@ void server_logs__client_kicked(char* target_username, char* admin_username)
         return;
     }
 
-    snprintf(text, sizeof(text), "kick: %s by %s", target_username, admin_username);
+    clib__string_format(text, sizeof(text), "kick: %s by %s", target_username, admin_username);
     _server_logs_internal__append(text);
 }
 
@@ -330,7 +330,7 @@ void server_logs__client_banned(char* target_username, char* target_ip, char* ad
         return;
     }
 
-    snprintf(text, sizeof(text), "ban: %s (ip %s) by %s", target_username, target_ip, admin_username);
+    clib__string_format(text, sizeof(text), "ban: %s (ip %s) by %s", target_username, target_ip, admin_username);
     _server_logs_internal__append(text);
 }
 
@@ -352,7 +352,7 @@ void server_logs__client_disconnected(client_t* client)
         return;
     }
 
-    snprintf(text, sizeof(text), "disconnect: %s (ip %s)", client->username, client->ip_address);
+    clib__string_format(text, sizeof(text), "disconnect: %s (ip %s)", client->username, client->ip_address);
     _server_logs_internal__append(text);
 }
 
@@ -373,7 +373,7 @@ void server_logs__join_refused(char* reason, char* ip_address)
         return;
     }
 
-    snprintf(text, sizeof(text), "join refused: %s (ip %s)", reason, ip_address);
+    clib__string_format(text, sizeof(text), "join refused: %s (ip %s)", reason, ip_address);
     _server_logs_internal__append(text);
 }
 
@@ -393,7 +393,7 @@ void server_logs__socket_opened(char* ip_address)
         return;
     }
 
-    snprintf(text, sizeof(text), "socket opened (ip %s)", ip_address);
+    clib__string_format(text, sizeof(text), "socket opened (ip %s)", ip_address);
     _server_logs_internal__append(text);
 }
 
@@ -417,11 +417,11 @@ void server_logs__socket_closed(char* ip_address, char* username)
 
     if (username != NULL_POINTER && username[0] != 0)
     {
-        snprintf(text, sizeof(text), "socket closed: %s (ip %s)", username, shown_ip);
+        clib__string_format(text, sizeof(text), "socket closed: %s (ip %s)", username, shown_ip);
     }
     else
     {
-        snprintf(text, sizeof(text), "socket closed before login (ip %s)", shown_ip);
+        clib__string_format(text, sizeof(text), "socket closed before login (ip %s)", shown_ip);
     }
     _server_logs_internal__append(text);
 }
@@ -443,7 +443,7 @@ void server_logs__join_refused_country(char* country_iso_code, char* ip_address)
         return;
     }
 
-    snprintf(text, sizeof(text), "join refused: country %s is blocked (ip %s)", country_iso_code, ip_address);
+    clib__string_format(text, sizeof(text), "join refused: country %s is blocked (ip %s)", country_iso_code, ip_address);
     _server_logs_internal__append(text);
 }
 
@@ -466,7 +466,7 @@ void server_logs__admin_password_failed(char* username, char* ip_address, char* 
     }
 
     // the attempt is shown so the admin can see what was tried; capped so a long one cannot fill the line
-    snprintf(text, sizeof(text), "wrong admin password \"%.64s\" from %s (ip %s)", attempted_password != NULL_POINTER ? attempted_password : "", username, ip_address);
+    clib__string_format(text, sizeof(text), "wrong admin password \"%.64s\" from %s (ip %s)", attempted_password != NULL_POINTER ? attempted_password : "", username, ip_address);
     _server_logs_internal__append(text);
 }
 
@@ -487,7 +487,7 @@ void server_logs__server_settings_updated(char* admin_username, boole save_succe
         return;
     }
 
-    snprintf(text, sizeof(text), "server settings updated by %s", admin_username);
+    clib__string_format(text, sizeof(text), "server settings updated by %s", admin_username);
     _server_logs_internal__append(text);
 }
 
@@ -511,7 +511,7 @@ void server_logs__cleared_by(char* admin_username)
 
     pthread_mutex_unlock(&g_admin_log_mutex);
 
-    snprintf(text, sizeof(text), "log cleared by %s", admin_username);
+    clib__string_format(text, sizeof(text), "log cleared by %s", admin_username);
     _server_logs_internal__append(text);
 }
 

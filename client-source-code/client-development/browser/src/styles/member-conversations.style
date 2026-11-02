@@ -1,0 +1,47 @@
+/* Shared conversation-list controls. Themes enable them with --member-conversations: 1.
+   Use --member-conversations-auto-open: 1 to return to chat after selecting a row. */
+body:not(.member-conversations-active) :is(#member-conversations-profile, #member-conversations-search, #member-conversations-search-empty, .member-conversation-preview, .member-conversation-time),
+body.member-conversations-active #member-list-body > .member-conversation-filtered,
+#member-conversations-search-empty[hidden]
+{
+    display: none !important;
+}
+
+#member-conversations-profile
+{
+    display: none;
+}
+
+#member-conversations-search
+{
+    display: block;
+    flex: 0 0 auto;
+    margin: 12px;
+}
+
+#member-conversations-search-input
+{
+    box-sizing: border-box;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--set-line, #888);
+    border-radius: var(--set-radius, 8px);
+    background: var(--set-field, #fff);
+    color: var(--set-text, #222);
+    font: 16px/24px var(--set-font, sans-serif);
+}
+
+#member-conversations-search-empty
+{
+    margin: 12px;
+    color: var(--set-muted, #777);
+    font: 14px/1.5 var(--set-font, sans-serif);
+}
+
+.member-conversation-preview,
+.member-conversation-time
+{
+    display: block;
+    color: var(--set-muted, #777);
+    font: 12px/1.5 var(--set-font, sans-serif);
+}

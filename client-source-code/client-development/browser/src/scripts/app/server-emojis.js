@@ -1,5 +1,40 @@
 // This file lets admins upload server emojis and loads their pictures when clients need them.
 
+// Standard aliases match the built-in Unicode emoji names offered by the server.
+var server_emoji_unicode_aliases = Object.freeze(
+{
+    like: "\ud83d\udc4d",
+    love: "\u2764\ufe0f",
+    laugh: "\ud83d\ude02",
+    surprise: "\ud83d\ude2e",
+    sad: "\ud83d\ude22",
+    celebrate: "\ud83c\udf89",
+    grin: "\ud83d\ude00",
+    smile: "\ud83d\ude04",
+    affection: "\ud83e\udd70",
+    heart_eyes: "\ud83d\ude0d",
+    cool: "\ud83d\ude0e",
+    thinking: "\ud83e\udd14",
+    mind_blown: "\ud83e\udd2f",
+    sleep: "\ud83d\ude34",
+    cry: "\ud83d\ude2d",
+    angry: "\ud83d\ude21",
+    eyes: "\ud83d\udc40",
+    raised_hands: "\ud83d\ude4c",
+    applause: "\ud83d\udc4f",
+    thanks: "\ud83d\ude4f",
+    strong: "\ud83d\udcaa",
+    fire: "\ud83d\udd25",
+    hundred: "\ud83d\udcaf",
+    yes: "\u2705",
+    no: "\u274c",
+    rocket: "\ud83d\ude80",
+    music: "\ud83c\udfb5",
+    lemon: "\ud83c\udf4b",
+    dislike: "\ud83d\udc4e",
+    handshake: "\ud83e\udd1d"
+});
+
 var server_emojis =
 {
     entries: new Map(),
@@ -9,6 +44,7 @@ var server_emojis =
     connected: false,
     generation: null,
     observer: null,
+    text_observer: null,
     page: 0,
     page_size: 24,
     upload_name: null,
@@ -55,11 +91,11 @@ function server_emojis__setup()
     };
     document.getElementById("server-emojis-save").onclick = function()
     {
-        if (g_is_authenticated && g_is_local_client_admin && !server_emojis.saving)
+        if (g_is_authenticated && ["upload_emojis", "delete_emojis"].some(groups__has_permission) && !server_emojis.saving)
         {
             server_emojis.saving = true;
             server_emojis.status = "Saving emojis…";
-            connection__send_message_object({ message: { type: "save_server_settings" } });
+            connection__send_message_object({ message: { type: "save_server_emojis" } });
             server_emojis__render_admin();
         }
     };
@@ -81,6 +117,7 @@ function server_emojis__setup()
             }
         }
     });
+    server_emojis__setup_chat();
     server_emojis__render_admin();
 }
 
@@ -177,12 +214,18 @@ function server_emojis__render_image(element, id, fallback_name)
     element.dataset.serverEmojiName = name;
     element.replaceChildren();
     element.classList.toggle("server-emoji-unicode", !!entry && !!entry.unicode);
+    let inline = element.classList.contains("chat-inline-emoji");
+    element.classList.toggle("chat-inline-emoji-loaded", inline && !!data && !(entry && entry.unicode));
     if (entry && entry.unicode)
     {
         element.textContent = entry.unicode;
     }
     else if (data)
     {
+        if (inline)
+        {
+            element.textContent = element.dataset.serverEmojiShortcode || ":" + name + ":";
+        }
         let image = document.createElement("img");
         image.alt = ":" + name + ":";
         image.src = data;
@@ -190,7 +233,7 @@ function server_emojis__render_image(element, id, fallback_name)
     }
     else
     {
-        element.textContent = ":" + name + ":";
+        element.textContent = inline ? element.dataset.serverEmojiShortcode || ":" + name + ":" : ":" + name + ":";
         if (server_emojis.entries.has(id) && server_emojis.observer)
         {
             server_emojis.observer.observe(element);
@@ -257,6 +300,7 @@ function server_emojis__refresh_images(id = null)
  */
 function server_emojis__notify_reactions()
 {
+    server_emojis__refresh_messages();
     if (typeof chat_reactions__refresh_server_emojis === "function")
     {
         chat_reactions__refresh_server_emojis();
@@ -410,7 +454,7 @@ function server_emojis__receive(message)
  */
 function server_emojis__open_admin()
 {
-    if (g_is_authenticated && g_is_local_client_admin)
+    if (g_is_authenticated && ["upload_emojis", "delete_emojis"].some(groups__has_permission))
     {
         server_emojis__render_admin();
     }
@@ -425,7 +469,7 @@ function server_emojis__render_admin()
     {
         return;
     }
-    let admin = g_is_authenticated && g_is_local_client_admin;
+    let admin = g_is_authenticated && ["upload_emojis", "delete_emojis"].some(groups__has_permission);
     let query = document.getElementById("server-emojis-search").value.trim().toLowerCase();
     let entries = server_emojis__get_entries().filter(function(entry)
     {
@@ -445,7 +489,7 @@ function server_emojis__render_admin()
         server_emojis.deleting.clear();
         server_emojis.saving = false;
     }
-    document.getElementById("server-emojis-upload").disabled = !admin || server_emojis.upload_name != null;
+    document.getElementById("server-emojis-upload").disabled = !groups__has_permission("upload_emojis") || server_emojis.upload_name != null;
     document.getElementById("server-emojis-save").disabled = !admin || server_emojis.saving
         || server_emojis.upload_name != null || server_emojis.deleting.size > 0;
     document.getElementById("server-emojis-previous").disabled = server_emojis.page === 0;
@@ -465,10 +509,10 @@ function server_emojis__render_admin()
         server_emojis__render_image(image, entry.id, entry.name);
         remove.type = "button";
         remove.textContent = server_emojis.confirmation === entry.id ? "Confirm delete" : "Delete";
-        remove.disabled = !admin || server_emojis.deleting.has(entry.id);
+        remove.disabled = !groups__has_permission("delete_emojis") || server_emojis.deleting.has(entry.id);
         remove.onclick = function()
         {
-            if (!g_is_authenticated || !g_is_local_client_admin || server_emojis.entries.get(entry.id) !== entry)
+            if (!g_is_authenticated || !groups__has_permission("delete_emojis") || server_emojis.entries.get(entry.id) !== entry)
             {
                 return;
             }
@@ -541,7 +585,7 @@ async function server_emojis__prepare_image(file)
 async function server_emojis__upload(event)
 {
     event.preventDefault();
-    if (!g_is_authenticated || !g_is_local_client_admin || server_emojis.upload_name != null)
+    if (!g_is_authenticated || !groups__has_permission("upload_emojis") || server_emojis.upload_name != null)
     {
         return;
     }
@@ -564,7 +608,7 @@ async function server_emojis__upload(event)
     try
     {
         let base64 = await server_emojis__prepare_image(file);
-        if (!g_is_authenticated || !g_is_local_client_admin || generation !== g_worker_connection_generation
+        if (!g_is_authenticated || !groups__has_permission("upload_emojis") || generation !== g_worker_connection_generation
             || server_emojis.upload_sequence !== sequence || server_emojis.upload_name !== name)
         {
             return;
@@ -581,4 +625,227 @@ async function server_emojis__upload(event)
         }
     }
     server_emojis__render_admin();
+}
+
+/**
+ * @brief Resolves named emoji in ordinary text, leaving URLs, code and escapes alone.
+ * @param text Plain message text, never HTML.
+ * @return Text and known emoji tokens in their original order.
+ */
+function server_emojis__tokenize_message(text)
+{
+    let aliases = new Map(Object.entries(server_emoji_unicode_aliases).map(function(entry)
+    {
+        return [entry[0], { name: entry[0], unicode: entry[1] }];
+    }));
+    for (let entry of server_emojis.entries.values())
+    {
+        aliases.set(entry.name, entry);
+    }
+    let tokens = [];
+    let pattern = /(`+)[\s\S]*?\1|`+[^`]*$|(?:https?:\/\/|ftp:\/\/|mailto:|www\.)[^\s<>]+|:([a-z0-9_]{1,32}):/gi;
+    let previous = 0;
+    for (let match of text.matchAll(pattern))
+    {
+        if (!match[2])
+        {
+            continue;
+        }
+        let backslashes = 0;
+        for (let index = match.index - 1; index >= 0 && text[index] === "\\"; index--)
+        {
+            backslashes++;
+        }
+        let entry = aliases.get(match[2].toLowerCase());
+        if (!entry || backslashes % 2 !== 0)
+        {
+            continue;
+        }
+        if (match.index > previous)
+        {
+            tokens.push(text.slice(previous, match.index));
+        }
+        tokens.push({ entry: entry, shortcode: match[0] });
+        previous = match.index + match[0].length;
+    }
+    if (previous < text.length)
+    {
+        tokens.push(text.slice(previous));
+    }
+    return tokens;
+}
+
+/**
+ * @brief Decorates only text nodes in a message, without reparsing generated markup.
+ * @param paragraph Message body or quoted text preview.
+ */
+function server_emojis__render_message(paragraph)
+{
+    if (!G_HAS_DOM || !paragraph || paragraph.isContentEditable)
+    {
+        return;
+    }
+    for (let image of paragraph.querySelectorAll(".chat-inline-emoji"))
+    {
+        let shortcode = image.dataset.serverEmojiShortcode || image.textContent;
+        let tokens = server_emojis__tokenize_message(shortcode);
+        let token = tokens.length === 1 && typeof tokens[0] !== "string" ? tokens[0] : null;
+        if (!token || token.entry.unicode)
+        {
+            server_emojis__forget_images(image);
+            image.replaceWith(document.createTextNode(token ? token.entry.unicode : shortcode));
+        }
+        else if (image.dataset.serverEmojiId !== token.entry.id || image.dataset.serverEmojiName !== token.entry.name)
+        {
+            server_emojis__render_image(image, token.entry.id, token.entry.name);
+        }
+    }
+    let walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT,
+    {
+        acceptNode: function(node)
+        {
+            return node.nodeValue.includes(":") && node.parentElement
+                && !node.parentElement.closest("a, code, pre, script, style, textarea, [data-server-emoji-id], [contenteditable=true]")
+                ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+    });
+    let nodes = [];
+    while (walker.nextNode())
+    {
+        nodes.push(walker.currentNode);
+    }
+    for (let node of nodes)
+    {
+        let tokens = server_emojis__tokenize_message(node.nodeValue);
+        if (!tokens.some(function(token)
+        {
+            return typeof token !== "string";
+        }))
+        {
+            continue;
+        }
+        let content = document.createDocumentFragment();
+        for (let token of tokens)
+        {
+            if (typeof token === "string")
+            {
+                content.append(document.createTextNode(token));
+            }
+            else if (token.entry.unicode)
+            {
+                content.append(document.createTextNode(token.entry.unicode));
+            }
+            else
+            {
+                let image = document.createElement("span");
+                image.className = "chat-inline-emoji";
+                image.dataset.serverEmojiShortcode = token.shortcode;
+                image.title = token.shortcode;
+                server_emojis__render_image(image, token.entry.id, token.entry.name);
+                content.append(image);
+            }
+        }
+        node.replaceWith(content);
+    }
+}
+
+/**
+ * @brief Restores literal custom shortcodes before the message becomes editable.
+ * @param paragraph Own message about to enter edit mode.
+ */
+function server_emojis__prepare_message_edit(paragraph)
+{
+    server_emojis__forget_images(paragraph);
+    for (let image of paragraph.querySelectorAll(".chat-inline-emoji"))
+    {
+        image.replaceWith(document.createTextNode(image.dataset.serverEmojiShortcode || image.textContent));
+    }
+}
+
+/**
+ * @brief Parses new messages and edits in one batch, independently of reactions or previews.
+ */
+function server_emojis__setup_chat()
+{
+    if (!G_HAS_DOM || typeof MutationObserver === "undefined" || server_emojis.text_observer)
+    {
+        return;
+    }
+    let container = document.getElementById("chat-context-container");
+    if (!container)
+    {
+        return;
+    }
+    let selector = ".single-chat-message-content-p, .chat-reply-text, #chat-reply-text";
+    server_emojis.text_observer = new MutationObserver(function(changes)
+    {
+        let paragraphs = new Set();
+        for (let change of changes)
+        {
+            let target = change.target.nodeType === 1 ? change.target : change.target.parentElement;
+            let paragraph = target && target.closest(selector);
+            if (paragraph)
+            {
+                paragraphs.add(paragraph);
+            }
+            for (let node of change.removedNodes)
+            {
+                if (node.nodeType === 1)
+                {
+                    server_emojis__forget_images(node);
+                }
+            }
+            for (let node of change.addedNodes)
+            {
+                if (node.nodeType !== 1)
+                {
+                    continue;
+                }
+                if (node.matches(selector))
+                {
+                    paragraphs.add(node);
+                }
+                for (let added of node.querySelectorAll(selector))
+                {
+                    paragraphs.add(added);
+                }
+            }
+        }
+        for (let paragraph of paragraphs)
+        {
+            if (paragraph.isConnected && !paragraph.isContentEditable)
+            {
+                for (let image of paragraph.querySelectorAll(".chat-inline-emoji:not(.chat-inline-emoji-loaded)"))
+                {
+                    if (server_emojis.observer && server_emojis.entries.has(image.dataset.serverEmojiId))
+                    {
+                        server_emojis.observer.observe(image);
+                    }
+                }
+                server_emojis__render_message(paragraph);
+            }
+        }
+    });
+    server_emojis.text_observer.observe(container, { childList: true, subtree: true, characterData: true });
+    let preview = document.getElementById("chat-reply-preview");
+    if (preview)
+    {
+        server_emojis.text_observer.observe(preview, { childList: true, subtree: true, characterData: true });
+    }
+    server_emojis__refresh_messages();
+}
+
+/**
+ * @brief Resolves aliases when a newly received catalog makes earlier placeholders known.
+ */
+function server_emojis__refresh_messages()
+{
+    if (!G_HAS_DOM)
+    {
+        return;
+    }
+    for (let paragraph of document.querySelectorAll(".single-chat-message-content-p, .chat-reply-text, #chat-reply-text"))
+    {
+        server_emojis__render_message(paragraph);
+    }
 }

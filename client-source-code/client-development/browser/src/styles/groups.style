@@ -1,4 +1,156 @@
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+#moderation-dialog#moderation-dialog
+{
+    width: min(640px, calc(100vw - 24px));
+}
+
+.channel-groups-tabs
+{
+    display: flex;
+    gap: 4px;
+    padding: 8px 10px 0;
+}
+
+#channel-groups-panel .channel-groups-list
+{
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow-y: auto;
+}
+
+#channel-groups-footer #channel-groups-edit-status
+{
+    flex: 1;
+    font-size: 12px;
+}
+
+#channel-groups-panel .channel-groups-list > button
+{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-align: left;
+    border-color: transparent;
+    border-radius: 0;
+    background: transparent;
+}
+
+#groups-dialog .channel-groups-tabs [aria-pressed="true"],
+#channel-groups-panel .channel-groups-list [aria-pressed="true"]
+{
+    background: var(--groups-selected, var(--set-selected, #648aac40));
+}
+
+#channel-groups-panel .groups-details > form
+{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    flex: 1;
+}
+
+#groups-dialog #channel-groups-panel .groups-details h2
+{
+    margin: 0;
+    font-size: 1.1em;
+    flex: 0 0 auto;
+}
+
+#channel-groups-panel .groups-details > p
+{
+    margin: 8px 0;
+}
+
+#channel-groups-panel .groups-table-scroll
+{
+    flex: 1;
+    overflow: auto;
+    max-height: 55dvh;
+}
+
+#channel-groups-panel input[type="number"]
+{
+    width: 80px;
+}
+
+#moderation-dialog .channel-groups-icon-options
+{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+    gap: 4px;
+    max-height: 45dvh;
+    overflow-y: auto;
+}
+
+#moderation-dialog .channel-groups-icon-options > button
+{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+}
+
+#moderation-dialog .channel-groups-icon-options > button[aria-pressed="true"]
+{
+    background: var(--groups-selected, var(--set-selected, #648aac40));
+}
+
+#moderation-dialog .channel-groups-icon-options img
+{
+    max-width: 24px;
+    max-height: 24px;
+    object-fit: contain;
+}
+
+.client-description-group-heading,
+.client-description-group-empty
+{
+    display: block;
+    margin: 4px 0;
+    font-size: inherit;
+}
+
+#moderation-dialog .moderation-content
+{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    overflow-wrap: anywhere;
+}
+
+#moderation-dialog .moderation-content > div
+{
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#moderation-dialog .moderation-content > div > :first-child
+{
+    flex: 1;
+    min-width: 0;
+}
+
+#moderation-dialog > [role="status"]
+{
+    margin: 0 14px 14px;
+}
+
+#musicbot-playback-controls
+{
+    display: flex;
+    gap: 8px;
+    margin: 8px;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog)
 {
     width: min(1110px, calc(100vw - 24px));
     max-width: none;
@@ -15,26 +167,43 @@
     overflow: auto;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)::backdrop
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog)::backdrop
 {
     background: var(--groups-backdrop, #0006);
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) *,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) *::before,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) *::after
+/* Group editing floats above the chat without blocking the rest of the page. */
+#groups-dialog,
+#groups-icon-picker,
+#moderation-dialog[data-modeless="true"]
+{
+    position: fixed;
+    inset: 12px;
+    height: fit-content;
+    z-index: 1000;
+}
+
+#groups-icon-picker,
+#moderation-dialog[data-modeless="true"]
+{
+    z-index: 1001;
+}
+
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) *,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) *::before,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) *::after
 {
     box-sizing: border-box;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) [hidden]
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) [hidden]
 {
     display: none !important;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) button:where(:not(.close-button)),
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) input,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) select
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) button:where(:not(.close-button)),
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) input,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) select
 {
     position: static;
     float: none;
@@ -50,13 +219,13 @@
     max-width: 100%;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) input[type="search"],
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) input[type="text"]
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) input[type="search"],
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) input[type="text"]
 {
     width: 100%;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) button:where(:not(.close-button))
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) button:where(:not(.close-button))
 {
     cursor: default;
     font-size: 12px;
@@ -67,57 +236,73 @@
     box-shadow: none;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) button:where(:not(.close-button)):active:not(:disabled)
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) button:where(:not(.close-button, .groups-permission-name, [aria-pressed], .groups-category button)):active:not(:disabled)
 {
     filter: brightness(0.92);
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) button:where(:not(.close-button)):hover:not(:disabled)
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) button:where(:not(.close-button, .groups-permission-name, [aria-pressed], .groups-category button)):hover:not(:disabled)
 {
     filter: var(--set-button-hover-filter, brightness(1.14));
     background: var(--set-button-hover-bg, var(--set-button-bg, var(--set-accent, #5a8cff)));
     color: var(--set-button-hover-text, var(--set-button-text, var(--set-accent-text, #ffffff)));
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) :focus-visible
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) :focus-visible
 {
     outline: 2px solid var(--set-accent, #6ab2f2);
     outline-offset: -2px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) :disabled
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) :disabled
 {
     opacity: .55;
     cursor: default;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-titlebar,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-detail-heading,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-footer,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-toolbar
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-titlebar,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-detail-heading,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-footer,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-toolbar
 {
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-titlebar
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-titlebar
 {
     justify-content: space-between;
     padding: 5px 8px 5px 12px;
-    border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
-    background: var(--groups-title-background, var(--groups-panel, var(--set-panel, #36393f)));
+}
+
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) > :is(#menu-bar-container, #server-info-header, .groups-titlebar, #video-stream-popup-header)
+{
+    background: var(--groups-title-background, var(--set-panel, #36393f));
     color: var(--groups-title-text, var(--set-text, #e8e8e8));
+    border-bottom: var(--groups-title-border, 1px solid var(--set-line, rgba(255, 255, 255, 0.14)));
+    border-radius: var(--groups-title-radius, 0);
+    box-shadow: var(--groups-title-shadow, none);
+}
+
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) > :is(#menu-bar-container, #server-info-header, .groups-titlebar, #video-stream-popup-header) > :is(.dialog-title, strong)
+{
+    color: inherit;
+    font-family: var(--set-font, 'Raleway', sans-serif);
+    font-size: 12px;
+    font-weight: var(--groups-title-weight, 600);
+    letter-spacing: var(--groups-title-spacing, 0.06em);
+    text-shadow: var(--groups-title-text-shadow, none);
 }
 
 /* Let the theme replace the browser's button background. */
-:where(#groups-dialog, #groups-log-dialog, #groups-icon-picker) :where(.close-button)
+:where(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) :where(.close-button)
 {
     background: transparent;
 }
 
 /* Use each theme's close button. Only its position belongs to this window. */
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button
 {
     position: relative;
     inset: auto;
@@ -127,11 +312,10 @@
     padding: 0;
     min-width: 0;
     min-height: 0;
-    box-shadow: none;
     cursor: default;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-columns
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-columns
 {
     display: grid;
     grid-template-columns: minmax(170px, 21%) minmax(0, 1fr) minmax(190px, 24%);
@@ -141,9 +325,9 @@
     min-height: 360px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-sidebar,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-details,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-members-panel
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-sidebar,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-details,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-members-panel
 {
     display: flex;
     flex-direction: column;
@@ -152,15 +336,15 @@
     min-height: 0;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-details,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-members-panel
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-details,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-members-panel
 {
     border-left: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
     padding-left: 10px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) h2,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) p
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) h2,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) p
 {
     position: static;
     display: block;
@@ -173,30 +357,30 @@
     overflow-wrap: anywhere;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) h2
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) h2
 {
     font-weight: 600;
     flex: 1;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-mode-label,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-filter,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-filter label,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-assignment-options
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-mode-label,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-filter,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-filter label,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-assignment-options
 {
     display: flex;
     align-items: center;
     gap: 5px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-mode-label,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-filter label
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-mode-label,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-filter label
 {
     flex: 0 0 auto;
     white-space: nowrap;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) input[type="checkbox"]
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) input[type="checkbox"]
 {
     width: 14px;
     height: 14px;
@@ -206,9 +390,10 @@
     accent-color: var(--set-accent, #6ab2f2);
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-list,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-members,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-table-scroll
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-list,
+#groups-dialog #channel-groups-panel .channel-groups-list,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) :is(#groups-members, #channel-groups-members),
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-table-scroll
 {
     flex: 1;
     overflow: auto;
@@ -219,8 +404,8 @@
     scrollbar-width: thin;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-list-entry,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-member
 {
     display: flex;
     align-items: center;
@@ -236,8 +421,8 @@
     padding: 3px 5px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry > span,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member-name
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-list-entry > span,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-member-name
 {
     flex: 1;
     min-width: 0;
@@ -246,15 +431,15 @@
     white-space: nowrap;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry small,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member small
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-list-entry small,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-member small
 {
     font-size: 11px;
     opacity: .7;
     flex: 0 0 auto;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-icon
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-icon
 {
     width: 16px;
     height: 16px;
@@ -262,39 +447,40 @@
     object-fit: contain;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-create,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-icon-setting
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-create,
+#groups-dialog #channel-groups-create,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-icon-setting
 {
     display: flex;
     flex-direction: column;
     gap: 5px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-icon-setting
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-icon-setting
 {
     border-top: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
     padding-top: 7px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-preset-description
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-preset-description
 {
     margin: 0;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-button,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-preview
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-icon-button,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-icon-preview
 {
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-preview span
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-icon-preview span
 {
     display: none;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-options
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-icon-options
 {
     display: grid;
     grid-template-columns: repeat(auto-fill, 48px);
@@ -309,7 +495,7 @@
     padding: 3px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-options button
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-icon-options button
 {
     display: flex;
     align-items: center;
@@ -324,13 +510,6 @@
     background: transparent;
     color: inherit;
     box-shadow: none;
-    filter: none;
-}
-
-#groups-icon-picker #groups-icon-options button:is(:hover, :focus-visible)
-{
-    background: var(--set-row-hover, rgba(255, 255, 255, 0.05));
-    color: inherit;
     filter: none;
 }
 
@@ -359,7 +538,7 @@
     grid-column: 1 / -1;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-permission-form
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-permission-form
 {
     display: flex;
     flex-direction: column;
@@ -368,7 +547,7 @@
     margin: 0;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-table
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-table
 {
     border-collapse: collapse;
     width: 100%;
@@ -377,7 +556,7 @@
     color: inherit;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-table th
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-table th
 {
     position: sticky;
     top: 0;
@@ -389,35 +568,35 @@
     padding: 5px 8px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-table th:last-child
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-table th:last-child
 {
     width: 112px;
     border-left: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-table td
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-table td
 {
     padding: 0;
     border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
     vertical-align: middle;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-row > td:last-child
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-row > td:last-child
 {
     padding: 2px 4px;
     border-left: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-row input,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-row select
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-row input,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-row select
 {
     width: 100%;
     padding: 2px 4px;
     min-height: 24px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-name,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-name,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-category button
 {
     display: block;
     border: 0;
@@ -431,39 +610,39 @@
     overflow-wrap: anywhere;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-name small
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-name small
 {
     display: block;
     font-size: 11px;
     opacity: .7;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-category button
 {
     background: var(--groups-panel, var(--set-panel, #36393f));
     font-weight: 600;
     padding-left: 7px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button::before
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-category button::before
 {
     content: "▾";
     display: inline-block;
     width: 16px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button[aria-expanded="false"]::before
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-category button[aria-expanded="false"]::before
 {
     content: "▸";
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-row[aria-selected="true"]
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-row[aria-selected="true"]
 {
     background: var(--set-selected, #2b5278);
     color: var(--set-selected-text, var(--set-text, #e8e8e8));
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-help
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-help
 {
     min-height: 82px;
     padding: 7px 8px;
@@ -471,68 +650,85 @@
     background: var(--set-field, rgba(255, 255, 255, 0.06));
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-description,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-preset-description,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-member-note,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-note,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-icon-status,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-edit-status,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-save-note
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-description,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-preset-description,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-member-note,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #channel-groups-member-note,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-icon-note,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-icon-status,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-edit-status,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-save-note
 {
     font-size: 12px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-no-permissions,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-empty
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-no-permissions,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-empty
 {
     padding: 12px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-save-note
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-save-note
 {
     flex: 1;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-footer
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-footer
 {
     border-top: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
     padding: 8px 10px;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-toolbar,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-footer
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-toolbar,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-footer
 {
     flex-wrap: wrap;
 }
 
-.groups-settings-link
+#server-settings-tab .groups-settings-link
 {
-    padding: 16px;
+    box-sizing: border-box;
+    padding: 16px 18px;
+    color: var(--set-text, #e8e8e8);
+    font: 13px/1.5 var(--set-font, sans-serif);
+}
+
+#server-settings-tab .groups-settings-description
+{
+    max-width: 48ch;
+    margin: 0 0 14px;
     color: inherit;
     font: inherit;
 }
 
-.groups-settings-link p,
-.groups-settings-link button
+#server-settings-tab .groups-settings-note
 {
-    font: inherit !important;
+    margin: 8px 0 0;
+    color: var(--set-muted, #aeb6c2);
+    font: 12px/1.5 var(--set-font, sans-serif);
+}
+
+#server-settings-open-groups:focus-visible
+{
+    outline: 2px solid var(--set-accent, #70b9ff);
+    outline-offset: 2px;
 }
 
 @media (max-width: 800px)
 {
-    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-columns
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-columns
     {
         height: auto;
         grid-template-columns: minmax(150px, 30%) minmax(0, 1fr);
     }
 
-    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-sidebar,
-    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-details
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-sidebar,
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-details
     {
         height: 500px;
     }
 
-    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-members-panel
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-members-panel
     {
         grid-column: 1 / -1;
         height: 270px;
@@ -544,31 +740,31 @@
 
 @media (max-width: 540px)
 {
-    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-columns
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-columns
     {
         display: flex;
         flex-direction: column;
     }
 
-    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-sidebar
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-sidebar
     {
         height: auto;
         min-height: 300px;
     }
 
-    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-columns > *
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-columns > *
     {
         flex-shrink: 0;
     }
 
-    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-details
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-details
     {
         height: 510px;
         border-left: 0;
         padding-left: 0;
     }
 
-    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-save-note
+    :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-save-note
     {
         flex-basis: 100%;
     }
@@ -585,52 +781,44 @@ body.server-groups-disabled .identity-entry-groups
     display: none !important;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker),
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) *
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog),
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) *
 {
     font-family: var(--set-font, 'Raleway', sans-serif);
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) label
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) label
 {
     font-size: 12px;
     font-weight: 400;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) input,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) select
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) input,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) select
 {
     padding: 4px 7px;
     font-size: 11px;
     border-radius: var(--groups-field-radius, var(--set-radius, 4px));
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-name,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-list-entry,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-member,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-permission-name,
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-category button
 {
     font-size: 12px;
     filter: none;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry:hover,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member:hover,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-permission-name:hover,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-category button:hover
-{
-    background: var(--set-row-hover, rgba(255, 255, 255, 0.05));
-}
-
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-list-entry[aria-pressed="true"],
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-member[aria-pressed="true"]
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-list-entry[aria-pressed="true"],
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-member[aria-pressed="true"]
 {
     background: var(--set-selected, #2b5278);
     color: var(--set-selected-text, var(--set-text, #e8e8e8));
     border-color: transparent;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) select option
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) select option
 {
     color: var(--set-field-text, inherit);
     background: var(--groups-option-background, var(--set-panel, #36393f));
@@ -736,7 +924,7 @@ body.server-groups-disabled .identity-entry-groups
     justify-content: space-between;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) #groups-actions button
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) #groups-actions button
 {
     padding: 6px 7px;
 }
@@ -757,7 +945,7 @@ body.server-groups-disabled .identity-entry-groups
     flex-direction: column;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-titlebar
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) .groups-titlebar
 {
     cursor: move;
     user-select: none;
@@ -784,7 +972,7 @@ body.server-groups-disabled .identity-entry-groups
     }
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) :is(button, select, input[type="checkbox"])
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog) :is(button, select, input[type="checkbox"])
 {
     cursor: default;
 }
@@ -809,4 +997,307 @@ body.server-groups-disabled .identity-entry-groups
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+}
+
+/* Keep the group type selector distinct from action buttons. */
+#groups-dialog .channel-groups-tabs > button
+{
+    background: transparent;
+    color: var(--set-text);
+    border: 1px solid transparent;
+    border-bottom-width: 2px;
+    box-shadow: none;
+}
+
+#groups-dialog .channel-groups-tabs > button[aria-pressed="true"]
+{
+    background: var(--groups-selected, var(--set-selected, #648aac40));
+    color: var(--set-text, inherit);
+    border-bottom-color: var(--set-accent);
+    font-weight: 700;
+}
+
+/* Conflict controls stay compact and use the active theme's form styling. */
+#groups-dialog .groups-permission-table th:nth-child(2)
+{
+    width: 96px;
+}
+
+#groups-dialog .groups-permission-table th:nth-child(n + 3),
+#groups-dialog .groups-permission-table .groups-flag-cell
+{
+    width: 52px;
+    text-align: center;
+}
+
+#groups-dialog .groups-permission-table .groups-flag-cell input[type="checkbox"]
+{
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    min-height: 16px;
+    margin: 6px;
+    padding: 0;
+    cursor: default;
+    accent-color: var(--set-accent, #568aad);
+}
+
+#groups-dialog .groups-permission-table .groups-flag-cell input:focus-visible
+{
+    outline: 2px solid var(--set-accent, #568aad);
+    outline-offset: 3px;
+}
+
+#groups-dialog .groups-permission-table[data-advanced="false"] tr > :nth-child(n+3)
+{
+    display: none;
+}
+
+#groups-dialog .groups-permission-table th.groups-grant-heading,
+#groups-dialog .groups-permission-table td.groups-grant-cell
+{
+    width: 82px;
+    min-width: 82px;
+    text-align: center;
+}
+
+#groups-dialog .groups-permission-table .groups-grant-cell input
+{
+    box-sizing: border-box;
+    width: 74px;
+    min-width: 0;
+    padding: 5px 7px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+#groups-dialog .groups-permission-table .groups-grant-cell input:disabled
+{
+    opacity: 0.65;
+}
+
+#groups-permission-guide
+{
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 24px 24px;
+    color: var(--set-text, inherit);
+    line-height: 1.55;
+    overscroll-behavior: contain;
+}
+
+#groups-permission-guide > *
+{
+    max-width: 76ch;
+    margin-inline: 0;
+}
+
+#groups-permission-guide h2
+{
+    font: inherit;
+    font-size: 1.2em;
+    font-weight: 600;
+    margin-block: 0 8px;
+}
+
+#groups-permission-guide details
+{
+    border-bottom: 1px solid var(--set-line, #8885);
+    padding: 0;
+}
+
+#groups-permission-guide .groups-help-concept
+{
+    margin-block: 20px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--set-line, #8885);
+}
+
+#groups-permission-guide .groups-help-concept h3
+{
+    margin: 0 0 8px;
+    font: inherit;
+    font-weight: 600;
+}
+
+#groups-permission-guide .groups-help-concept p
+{
+    margin: 0 0 10px;
+}
+
+#groups-permission-guide summary
+{
+    padding: 12px 0;
+    cursor: default;
+    font-weight: 600;
+}
+
+#groups-permission-guide details p
+{
+    margin: 0 0 12px;
+}
+
+#groups-permission-guide summary:focus-visible
+{
+    outline: 2px solid var(--set-accent, #568aad);
+    outline-offset: 2px;
+}
+
+@media (max-width: 540px)
+{
+    #groups-dialog .channel-groups-tabs
+    {
+        flex-wrap: wrap;
+        gap: 4px;
+        flex-shrink: 0;
+    }
+
+    #groups-dialog .channel-groups-tabs > button
+    {
+        flex: 1 1 90px;
+        min-width: 0;
+        min-height: 40px;
+        padding-inline: 6px;
+        white-space: normal;
+    }
+
+    #groups-permission-guide
+    {
+        padding: 12px 14px;
+    }
+}
+
+/* Membership actions are separate from the full permissions editor. */
+:root .group-assignment-parent
+{
+    position: relative;
+    padding-left: var(--context-menu-text-padding, 33px);
+    padding-right: 26px;
+    cursor: default;
+}
+
+:root .context-menu-item > .group-assignment-parent-icon
+{
+    display: var(--context-menu-icon-display, block);
+    position: absolute;
+    left: var(--context-menu-icon-left, 3.5px);
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    transform: translateY(-50%);
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
+:root .group-assignment-parent::after
+{
+    content: "›";
+    position: absolute;
+    right: 10px;
+    background: none;
+    color: currentColor;
+}
+
+:root #group-assignment-menu
+{
+    display: block;
+    position: fixed;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    margin: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    z-index: 10001;
+}
+
+:root #group-assignment-menu > .channel-list-context-menu-items
+{
+    position: relative;
+    top: auto;
+    left: auto;
+    width: var(--context-menu-width);
+    min-width: 0;
+    max-width: 100%;
+}
+
+:root #group-assignment-menu > .channel-list-context-menu-background
+{
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    pointer-events: none;
+}
+
+:root #group-assignment-menu .group-assignment-option
+{
+    min-height: var(--context-row-height, 28px);
+    padding-right: 28px !important;
+    text-align: left;
+    cursor: default;
+}
+
+:root #group-assignment-menu .group-assignment-option:focus-visible
+{
+    outline: 2px solid var(--set-accent, currentColor);
+    outline-offset: -1px;
+}
+
+:root #group-assignment-menu .group-assignment-option::before
+{
+    display: none;
+}
+
+:root #group-assignment-menu .groups-icon,
+:root #group-assignment-menu .group-assignment-check
+{
+    display: block;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+:root #group-assignment-menu .groups-icon
+{
+    display: var(--context-menu-icon-display, block);
+    left: var(--context-menu-icon-left, 3.5px);
+}
+
+:root #group-assignment-menu .group-assignment-check
+{
+    right: 7px;
+    line-height: 16px;
+    text-align: center;
+}
+
+:root #group-assignment-menu .groups-icon[hidden]
+{
+    visibility: hidden;
+}
+
+:root #group-assignment-menu .group-assignment-option > span:last-child
+{
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Channel permission names use the same inset as server permission names. */
+#groups-dialog #channel-groups-panel .groups-permission-table td:first-child
+{
+    padding-left: 12px;
 }

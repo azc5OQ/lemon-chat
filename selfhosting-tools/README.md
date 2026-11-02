@@ -7,7 +7,7 @@ Here is how to make your Lemon Chat server accessible from the internet. You can
 The website and the chat use separate connections. In the public setups below:
 
 - **HTTPS** loads `client.html` in the browser.
-- **WSS** is the secure WebSocket connection to the chat server. It also carries audio and video when they use WebSocket.
+- **WSS** is the secure WebSocket connection to the chat server. Audio and video can use separate WSS connections at the same server address and port.
 
 Both need to work. Being able to open the page does not mean the chat can connect yet.
 
@@ -20,6 +20,8 @@ When a tunnel handles HTTPS and WSS, Lemon Chat can use normal HTTP and WS on yo
 WebRTC needs additional UDP ports. Getting it to work over the internet means more router and firewall settings, along with the correct public address. That is more work than you need for a simple setup.
 
 **WebRTC will not work through the Funnel, Cloudflare or ngrok setups shown below.** You can set up UDP separately, for example with WireGuard and a VPS, but that needs extra setup.
+
+WebRTC is optional. With either method, clients connect to the Lemon Chat server, which forwards audio and video to the other users. The [WebRTC guide](../docs/webrtc.md) explains its design, the built-in Violet STUN service, and why users do not exchange IP addresses through WebRTC.
 
 ### NAT, CGNAT and why port forwarding sometimes fails
 

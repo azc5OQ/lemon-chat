@@ -14,14 +14,14 @@
 
 #include "../../third-party/rxi-log/log.h"
 
-#include "../clib/clib_memory.h"
-#include "../clib/clib_string.h"
+#include "../clib/clib.h"
 
 #include "../memory_manager.h"
 #include "../msg/server/server_msg.h"
 
 #include "audio_channel.h"
 #include "permissions.h"
+#include "channel_groups.h"
 #include "../audio_webrtc.h"
 #include "../audio_websocket.h"
 #include "../video_websocket.h"
@@ -294,6 +294,8 @@ void audio_channel__apply_permission_changes(void)
  */
 void audio_channel__process_client_channel_join(client_t* client)
 {
+    channel_groups__refresh(client);
+    server_msg__moderation__send_channel_access(client, &g_channel_array[client->channel_id]);
     audio_websocket__clear_queue(client);
     audio_webrtc__process_client_channel_join(client);
 }
@@ -366,7 +368,7 @@ void audio_channel__send_music_bot_data(uint64 sender_music_bot_client_id, uint6
         media_auth__write_body_header(body, sender_music_bot_client_id, counter);
         body[12] = (unsigned char)sequence_number;
         body[13] = (unsigned char)(sequence_number >> 8);
-        memcpy(body + 14, data, data_length);
+        clib__memcpy(body + 14, data, data_length);
         for (i = 0; i < 4; i++)
         {
             // Music bots currently give clients four AES-256 keys. Mark each

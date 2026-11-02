@@ -610,8 +610,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                     </div>\n\
                     <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
                     <span class=\"client-video-watching-icon\" data-client-id=\"" + client_id + "\" title=\"watching the stream\" style=\"display: none;\"></span>\n\
-                    <div class='client-groups' id =\"client-groups-" + client_id + "\">\n\
-                    </div>\n\
+                    <div class='client-groups' id =\"client-groups-" + client_id + "\"></div>\n\
                 </div>";
     }
     else
@@ -622,15 +621,15 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
         let is_idle_client_html = client.is_idle == true ? " idle-client" : "";
         let music_bot_client_html = client.is_music_bot == true ? " music-bot-client" : "";
 
-        result = "<div class=\"connected-client " + is_channel_collapsed + " " + music_bot_client_html + " " + is_idle_client_html + "\" data-connected-client-id=\"" + client_id + "\">\n\
+        result = "<div class=\"connected-client " + is_channel_collapsed + " " + music_bot_client_html + " " + is_idle_client_html + "\" data-connected-client-id=\"" + client_id + "\" draggable=\"true\" style=\"--client-indent: " + indentation_level * 20 + "px;\">\n\
                     <div style=\"width: " + indentation_level * 20 + "px; height: 1px; vertical-align:top; display: inline-block;\">\n\
-                        <div class=\"client-mute-state\" style=\"display: "+client_mute_state_display+";\"></div>\n\
                     </div>\n\
+                    " + chat__generate_unread_badge_html(unread_count) + "\n\
                     <div class='client-audio-state "+ client_audio_state_html_class + "' id=\"client-audio-state-" + client_id + "\"" + avatar_inline_style + "><div class=\"client-audio-availability\"></div>\n\
+                    <div class=\"client-mute-state\" title=\"Muted by you\" style=\"display: "+client_mute_state_display+";\"></div>\n\
                     </div>\n\
-                    <p class=\"connected-client-p "+additional_client_type_html_class+"\">" + username + "</p>\n\
+                    <p class=\"connected-client-p "+additional_client_type_html_class+"\"><span class=\"client-name-text\">" + username + "<svg class=\"client-ignore-state\" aria-hidden=\"true\" style=\"display: "+client_ignore_state_display+";\" viewBox=\"0 0 100 20\" preserveAspectRatio=\"none\"><path d=\"M1 2L99 18M1 18L99 2\"></path></svg></span></p>\n\
                     <div class=\"connected-client-country-flag country-flag-"+(country_iso_code ? (""+country_iso_code).toLowerCase() : "")+"\"></div>\n\
-                    <p class=\"connected-client-p-received-messages-number\" style=\"display: "+((unread_count > 0) ? "inline-block" : "none")+";\">"+unread_count+"</p>\n\
                     <div class=\"marquee-music-playing-container\" data-marquee-music-playing-container-id='"+ client_id + "'\>\n\
                         <p class='p-marquee-song-icon'>[</p>\n\
                         <div class=\"marquee\">\n\
@@ -640,12 +639,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                     </div>\n\
                     <span class=\"client-video-stream-icon\" data-client-id=\"" + client_id + "\" title=\"streaming - click to open the stream window\" style=\"display: none;\"></span>\n\
                     <span class=\"client-video-watching-icon\" data-client-id=\"" + client_id + "\" title=\"watching the stream\" style=\"display: none;\"></span>\n\
-                    <div class='client-groups' id=\"client-groups-" + client_id + "\">\n\
-                    </div>\n\
-                    <svg class=\"client-ignore-state\" style=\"margin-left: "+indentation_level * 20+"px; display: "+client_ignore_state_display+";\"  viewBox=\"0 0 100 20\">\n\
-                        <line x1=\"0\" y1=\"0\" x2=\"100\" y2=\"20\"></line>\n\
-                        <line x1=\"0\" y1=\"20\" x2=\"100\" y2=\"0\"></line>\n\
-                    </svg>\n\
+                    <div class='client-groups' id=\"client-groups-" + client_id + "\"></div>\n\
                 </div>";
     }
 
@@ -781,6 +775,8 @@ function channel_tree__apply_avatar_to_ui(client_id, base64)
     // re-applied by avatar_inline_style_for_client on every tree render (channel switch etc.)
     let client_object = channel_tree__get_client_by_client_id(client_id);
     if (client_object != null) { client_object.base64_avatar = has_avatar ? base64 : null; }
+
+    android_host__refresh_message_avatars(client_id);
 
     // offer it to the tree row the way the renderer does (a variable plus a marker, never a painted
     // background), so a new or cleared avatar shows without waiting for the next full render
@@ -920,7 +916,10 @@ function channel_tree__start_avatar_prefetch()
         let client_object = g_client_list[i];
 
         if (client_object == null) { continue; }
-        if (client_object.client_id == g_local_client_id) { continue; }
+        if (client_object.client_id == g_local_client_id && g_show_message_avatars == false)
+        {
+            continue;
+        }
         if (client_object.is_music_bot == true) { continue; }
         if (typeof client_object.base64_avatar === "string" && client_object.base64_avatar.length > 0) { continue; }
         if (g_avatar.prefetch_queue.indexOf(client_object.client_id) != -1) { continue; }

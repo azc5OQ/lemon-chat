@@ -17,6 +17,19 @@ boole permissions__can_create_group(const client_t* sender, const group_permissi
 
 boole permissions__is_allowed(const client_t* client, permission_t permission);
 boole permissions__can_moderate(const client_t* sender, const client_t* target, permission_t permission);
+boole permissions__can_moderate_in_channel(const client_t* sender, const client_t* target, const channel_t* channel, permission_t permission);
+boole permissions__is_allowed_in_channel(const client_t* client, const channel_t* channel, permission_t permission);
+uint permissions__power_in_channel(const client_t* client, const channel_t* channel, permission_power_t power);
+boole permissions__read_flags(cJSON* object, group_permissions_t* permissions, boole channel);
+void permissions__write_flags(cJSON* object, const group_permissions_t* permissions, boole channel);
+boole permissions__has_flags(const group_permissions_t* permissions);
+void permissions__init_grants(group_permissions_t* permissions);
+boole permissions__read_grants(cJSON* object, group_permissions_t* permissions, boole channel);
+void permissions__write_grants(cJSON* object, const group_permissions_t* permissions, boole channel);
+boole permissions__can_edit_values(uint edit_power, const group_permissions_t* previous, const group_permissions_t* proposed, boole channel);
+boole permissions__can_upload(const client_t* sender, cstring intent);
+cstring permissions__name(permission_t permission);
+uint permissions__power(const client_t* client, permission_power_t power);
 boole permissions__read(cJSON* object, group_permissions_t* permissions);
 cJSON* permissions__write(const group_permissions_t* permissions);
 
@@ -30,3 +43,5 @@ cJSON* permissions__write_group_access(const client_t* client, uint64 group_id);
 
 boole permissions__is_stored_client_allowed(const client_stored_data_t* stored, permission_t permission);
 boole permissions__is_identity_allowed(const char* identity_hash, permission_t permission);
+
+boole permissions__can_bypass_channel_password(const client_t* client, const channel_t* channel);

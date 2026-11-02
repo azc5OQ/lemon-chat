@@ -4,8 +4,7 @@
 #include "../definitions.h"
 #include "../metadata_crypto.h"
 
-#include "../clib/clib_string.h"
-#include "../clib/clib_memory.h"
+#include "../clib/clib.h"
 #include "../../third-party/dave-g-json/cJSON.h"
 #include "../base.h"
 #include "../../third-party/rxi-log/log.h"
@@ -15,6 +14,7 @@
 #include "server_settings.h"
 #include "permissions.h"
 #include "channel.h"
+#include "channel_groups.h"
 #include "../memory_manager.h"
 #include "../audio_websocket.h"
 #include <string.h>
@@ -82,8 +82,8 @@ void settings__init_channel_list(void)
     root_channel->is_audio_enabled = TRUE;
     root_channel->is_video_stream_enabled = TRUE;
 
-    clib__copy_memory((void*)&channel_name, (void*)&root_channel->name, strlen(channel_name), CHANNEL_NAME_MAX_LENGTH);
-    clib__copy_memory((void*)&description, (void*)&root_channel->description, strlen(description), CHANNEL_DESCRIPTION_MAX_LENGTH);
+    clib__string_copy(root_channel->name, sizeof(root_channel->name), channel_name);
+    clib__string_copy(root_channel->description, sizeof(root_channel->description), description);
     root_channel->type = 1;
     root_channel->maintainer_id = -1;
     root_channel->maintainer_generation = 0;
@@ -145,6 +145,7 @@ void settings__load_persisted_state(void)
     boole duplicate_membership = FALSE;
 
     emojis__load(NULL_POINTER);
+    channel_groups__init();
     settings_file = fopen("server_settings.json", "rb");
     if (settings_file == NULL_POINTER)
     {
@@ -180,6 +181,7 @@ void settings__load_persisted_state(void)
         return;
     }
 
+    channel_groups__load_catalog(cJSON_GetObjectItemCaseSensitive(json_root, "channel_group_definitions"));
     // channels
     json_channels = cJSON_GetObjectItemCaseSensitive(json_root, "channels");
     if (cJSON_IsArray(json_channels) == TRUE)
@@ -257,6 +259,7 @@ void settings__load_persisted_state(void)
                 channel_in_loop->is_client_limit_active = cJSON_IsTrue(json_field);
             }
 
+            channel_groups__read(channel_in_loop, cJSON_GetObjectItemCaseSensitive(json_channel, "channel_groups"));
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "max_client_count");
             if (cJSON_IsNumber(json_field))
             {
@@ -279,19 +282,19 @@ void settings__load_persisted_state(void)
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "name");
             if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
             {
-                clib__copy_memory(json_field->valuestring, &channel_in_loop->name[0], clib__utf8_string_length(json_field->valuestring), CHANNEL_NAME_MAX_LENGTH - 1);
+                clib__string_copy(channel_in_loop->name, sizeof(channel_in_loop->name), json_field->valuestring);
             }
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "password");
             if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
             {
-                clib__copy_memory(json_field->valuestring, &channel_in_loop->password[0], clib__utf8_string_length(json_field->valuestring), CHANNEL_PASSWORD_MAX_LENGTH - 1);
+                clib__string_copy(channel_in_loop->password, sizeof(channel_in_loop->password), json_field->valuestring);
             }
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_channel, "description");
             if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
             {
-                clib__copy_memory(json_field->valuestring, &channel_in_loop->description[0], clib__utf8_string_length(json_field->valuestring), CHANNEL_DESCRIPTION_MAX_LENGTH - 1);
+                clib__string_copy(channel_in_loop->description, sizeof(channel_in_loop->description), json_field->valuestring);
             }
 
             loaded_channels++;
@@ -352,6 +355,7 @@ void settings__load_persisted_state(void)
 
             group_in_loop = &g_groups_array[group_id];
             clib__null_memory(group_in_loop, sizeof(group_t));
+            permissions__init_grants(&group_in_loop->permissions);
             group_in_loop->id = group_id;
             group_in_loop->is_existing = TRUE;
 
@@ -383,7 +387,7 @@ void settings__load_persisted_state(void)
             json_field = cJSON_GetObjectItemCaseSensitive(json_group, "name");
             if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
             {
-                clib__copy_memory(json_field->valuestring, &group_in_loop->name[0], clib__utf8_string_length(json_field->valuestring), GROUP_MAX_NAME_LENGTH - 1);
+                clib__string_copy(group_in_loop->name, sizeof(group_in_loop->name), json_field->valuestring);
             }
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_group, "permissions");
@@ -432,24 +436,24 @@ void settings__load_persisted_state(void)
             ban_in_loop = &g_ban_array[ban_slot];
             clib__null_memory(ban_in_loop, sizeof(ban_entry_t));
             ban_in_loop->is_existing = TRUE;
-            clib__copy_memory(json_field->valuestring, &ban_in_loop->ip_address[0], clib__utf8_string_length(json_field->valuestring), BAN_IP_MAX_LENGTH - 1);
+            clib__string_copy(ban_in_loop->ip_address, sizeof(ban_in_loop->ip_address), json_field->valuestring);
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_ban, "country_iso_code");
             if (cJSON_IsString(json_field) && json_field->valuestring != NULL_POINTER)
             {
-                clib__copy_memory(json_field->valuestring, &ban_in_loop->country_iso_code[0], clib__utf8_string_length(json_field->valuestring), COUNTRY_ISO_CODE_LENGTH - 1);
+                clib__string_copy(ban_in_loop->country_iso_code, sizeof(ban_in_loop->country_iso_code), json_field->valuestring);
             }
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_ban, "identity");
             if (cJSON_IsString(json_field) && json_field->valuestring != NULL_POINTER)
             {
-                clib__copy_memory(json_field->valuestring, &ban_in_loop->identity[0], clib__utf8_string_length(json_field->valuestring), MAX_PUBLIC_KEY_LENGTH - 1);
+                clib__string_copy(ban_in_loop->identity, sizeof(ban_in_loop->identity), json_field->valuestring);
             }
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_ban, "extra_data");
             if (cJSON_IsString(json_field) && json_field->valuestring != NULL_POINTER)
             {
-                clib__copy_memory(json_field->valuestring, &ban_in_loop->extra_data[0], clib__utf8_string_length(json_field->valuestring), BAN_EXTRA_DATA_MAX_LENGTH - 1);
+                clib__string_copy(ban_in_loop->extra_data, sizeof(ban_in_loop->extra_data), json_field->valuestring);
             }
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_ban, "timestamp_banned");
@@ -484,18 +488,18 @@ void settings__load_persisted_state(void)
 
             identity_in_loop = &g_client_stored_data[identity_slot];
             clib__null_memory(identity_in_loop, sizeof(client_stored_data_t));
-            clib__copy_memory(json_field->valuestring, &identity_in_loop->public_key[0], clib__utf8_string_length(json_field->valuestring), MAX_PUBLIC_KEY_LENGTH - 1);
+            clib__string_copy(identity_in_loop->public_key, sizeof(identity_in_loop->public_key), json_field->valuestring);
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "username");
             if (cJSON_IsString(json_field) == TRUE && json_field->valuestring != NULL_POINTER)
             {
-                clib__copy_memory(json_field->valuestring, &identity_in_loop->username[0], clib__utf8_string_length(json_field->valuestring), USERNAME_MAX_LENGTH - 1);
+                clib__string_copy(identity_in_loop->username, sizeof(identity_in_loop->username), json_field->valuestring);
             }
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "base64_avatar");
             if (cJSON_IsString(json_field) == TRUE && json_field->valuestring != NULL_POINTER)
             {
-                clib__copy_memory(json_field->valuestring, &identity_in_loop->base64_avatar[0], clib__utf8_string_length(json_field->valuestring), MAX_CLIENT_AVATAR_LENGTH - 1);
+                clib__string_copy(identity_in_loop->base64_avatar, sizeof(identity_in_loop->base64_avatar), json_field->valuestring);
             }
 
             json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "last_seen");
@@ -510,7 +514,7 @@ void settings__load_persisted_state(void)
             json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "raw_public_key");
             if (cJSON_IsString(json_field) == TRUE && json_field->valuestring != NULL_POINTER)
             {
-                clib__copy_memory(json_field->valuestring, &identity_in_loop->raw_public_key[0], clib__utf8_string_length(json_field->valuestring), MAX_PUBLIC_KEY_LENGTH - 1);
+                clib__string_copy(identity_in_loop->raw_public_key, sizeof(identity_in_loop->raw_public_key), json_field->valuestring);
             }
 
             identity_in_loop->group_id_count = 0;
@@ -614,7 +618,7 @@ void settings__init_groups_and_icons(void)
     admin_group->is_existing = TRUE;
     admin_group->group_type = GROUP_TYPE_ADMIN;
     permissions__set_preset(GROUP_TYPE_ADMIN, &admin_group->permissions);
-    clib__copy_memory((void*)&group_name, (void*)&admin_group->name, strlen(group_name), GROUP_MAX_NAME_LENGTH);
+    clib__string_copy(admin_group->name, sizeof(admin_group->name), group_name);
 
     admin_icon = &g_icons_array[0];
     admin_icon->id = 0;
@@ -673,7 +677,7 @@ boole settings__ensure_default_groups(void)
     group->is_existing = TRUE;
     group->is_default_guest = TRUE;
     group->group_type = GROUP_TYPE_GUEST;
-    clib__copy_memory("Guest", group->name, 5, GROUP_MAX_NAME_LENGTH);
+    clib__string_copy(group->name, sizeof(group->name), "Guest");
     permissions__set_preset(GROUP_TYPE_GUEST, &group->permissions);
     g_guest_group_id = free_id;
 
@@ -689,7 +693,7 @@ boole settings__ensure_default_groups(void)
                 group->id = i;
                 group->is_existing = TRUE;
                 group->group_type = GROUP_TYPE_NORMAL;
-                clib__copy_memory("Normal", group->name, 6, GROUP_MAX_NAME_LENGTH);
+                clib__string_copy(group->name, sizeof(group->name), "Normal");
                 permissions__set_preset(GROUP_TYPE_NORMAL, &group->permissions);
                 break;
             }
@@ -769,7 +773,7 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
     if (config_json != NULL_POINTER)
     {
         clib__null_memory(config_script, sizeof(config_script));
-        snprintf(config_script, sizeof(config_script), "window.__SERVER_CONFIG__=%s;", config_json);
+        clib__string_format(config_script, sizeof(config_script), "window.__SERVER_CONFIG__=%s;", config_json);
         http_server__set_client_config(config_script);
         cJSON_free(config_json);
     }
@@ -801,7 +805,7 @@ void settings__read_wireguard_fields(cJSON* json_root)
     if (cJSON_IsString(json_field) && json_field->valuestring != NULL_POINTER)
     {
         clib__null_memory(g_server_settings.webrtc_public_address, sizeof(g_server_settings.webrtc_public_address));
-        clib__copy_memory(json_field->valuestring, g_server_settings.webrtc_public_address, clib__utf8_string_length(json_field->valuestring), sizeof(g_server_settings.webrtc_public_address) - 1);
+        clib__string_copy(g_server_settings.webrtc_public_address, sizeof(g_server_settings.webrtc_public_address), json_field->valuestring);
     }
     json_field = cJSON_GetObjectItemCaseSensitive(json_root, "webrtc_port_range_begin");
     if (cJSON_IsNumber(json_field))
@@ -933,7 +937,7 @@ void settings__load(void)
     g_server_settings.webrtc_port_range_begin = 20000;
     g_server_settings.webrtc_port_range_end = 20099;
 
-    clib__copy_memory(default_client_name, g_server_settings.default_client_name, strlen(default_client_name), 100);
+    clib__string_copy(g_server_settings.default_client_name, sizeof(g_server_settings.default_client_name), default_client_name);
 
     // optional non-interactive setup: if server_settings.json exists, load it and skip the prompts below; any omitted field keeps the default set above
     {
@@ -980,12 +984,20 @@ void settings__load(void)
                     g_server_settings.websocket_port = json_field->valueint;
                 }
 
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "reserved_slots");
+                g_server_settings.reserved_slots = 0;
+                if (cJSON_IsNumber(json_field) && json_field->valuedouble >= 0
+                    && json_field->valuedouble < g_server_settings.max_client_count
+                    && json_field->valuedouble == (double)(uint64)json_field->valuedouble)
+                {
+                    g_server_settings.reserved_slots = (uint64)json_field->valuedouble;
+                }
                 settings__read_wireguard_fields(json_root);
 
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "admin_password");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
                 {
-                    clib__copy_memory(json_field->valuestring, &g_server_settings.admin_password[0], clib__utf8_string_length(json_field->valuestring), 50);
+                    clib__string_copy(g_server_settings.admin_password, sizeof(g_server_settings.admin_password), json_field->valuestring);
                 }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_admin_password_initial");
                 if (cJSON_IsBool(json_field))
@@ -1008,7 +1020,7 @@ void settings__load(void)
                                 fprintf(stderr, "Failed to derive a configured encryption key.\n");
                                 exit(EXIT_FAILURE);
                             }
-                            clib__copy_memory(json_key->valuestring, &plaintext_keys[key_index][0], clib__utf8_string_length(json_key->valuestring), 255);
+                            clib__string_copy(plaintext_keys[key_index], sizeof(plaintext_keys[key_index]), json_key->valuestring);
                             key_index++;
                         }
                     }
@@ -1274,22 +1286,22 @@ void settings__load(void)
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "stunnel_domain");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
                 {
-                    clib__copy_memory(json_field->valuestring, &g_server_settings.stunnel_domain[0], clib__utf8_string_length(json_field->valuestring), 255);
+                    clib__string_copy(g_server_settings.stunnel_domain, sizeof(g_server_settings.stunnel_domain), json_field->valuestring);
                 }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "stunnel_cert_fullchain");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
                 {
-                    clib__copy_memory(json_field->valuestring, &g_server_settings.stunnel_cert_fullchain[0], clib__utf8_string_length(json_field->valuestring), 511);
+                    clib__string_copy(g_server_settings.stunnel_cert_fullchain, sizeof(g_server_settings.stunnel_cert_fullchain), json_field->valuestring);
                 }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "stunnel_cert_privkey");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
                 {
-                    clib__copy_memory(json_field->valuestring, &g_server_settings.stunnel_cert_privkey[0], clib__utf8_string_length(json_field->valuestring), 511);
+                    clib__string_copy(g_server_settings.stunnel_cert_privkey, sizeof(g_server_settings.stunnel_cert_privkey), json_field->valuestring);
                 }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "client_html_dest");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
                 {
-                    clib__copy_memory(json_field->valuestring, &g_server_settings.client_html_dest[0], clib__utf8_string_length(json_field->valuestring), 511);
+                    clib__string_copy(g_server_settings.client_html_dest, sizeof(g_server_settings.client_html_dest), json_field->valuestring);
                 }
 
                 // optional bundled http server that serves the client (mainly for LAN testing)
@@ -1316,12 +1328,12 @@ void settings__load(void)
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "http_webroot");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
                 {
-                    clib__copy_memory(json_field->valuestring, &g_server_settings.http_webroot[0], clib__utf8_string_length(json_field->valuestring), 511);
+                    clib__string_copy(g_server_settings.http_webroot, sizeof(g_server_settings.http_webroot), json_field->valuestring);
                 }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "default_theme");
                 if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
                 {
-                    clib__copy_memory(json_field->valuestring, &g_server_settings.default_theme[0], clib__utf8_string_length(json_field->valuestring), 31);
+                    clib__string_copy(g_server_settings.default_theme, sizeof(g_server_settings.default_theme), json_field->valuestring);
                 }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_server_uptime_published");
                 if (cJSON_IsBool(json_field))
@@ -1554,7 +1566,7 @@ boole settings__write_file_atomically(char* path, char* contents)
     {
         return FALSE;
     }
-    path_length = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+    path_length = clib__string_format(tmp_path, sizeof(tmp_path), "%s.tmp", path);
     if (path_length < 0 || (size_t)path_length >= sizeof(tmp_path))
     {
         return FALSE;
@@ -1567,7 +1579,7 @@ boole settings__write_file_atomically(char* path, char* contents)
         goto atomic_write_end;
     }
 
-    contents_length = strlen(contents);
+    contents_length = clib__strlen(contents);
     io_failed = (boole)(fwrite(contents, 1, contents_length, file) != contents_length);
     if (fflush(file) != 0)
     {
@@ -1780,6 +1792,10 @@ boole settings__save_server_settings_to_file(void)
         return FALSE;
     }
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_server_uptime_published");
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "reserved_slots");
+    cJSON_AddNumberToObject(json_root, "reserved_slots", (double)g_server_settings.reserved_slots);
+    cJSON_DeleteItemFromObjectCaseSensitive(json_root, "channel_group_definitions");
+    cJSON_AddItemToObject(json_root, "channel_group_definitions", channel_groups__write_catalog(TRUE));
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_server_slots_published");
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_server_banner_published");
     cJSON_DeleteItemFromObjectCaseSensitive(json_root, "is_server_features_published");
@@ -1927,6 +1943,7 @@ boole settings__save_server_settings_to_file(void)
         }
 
         json_channel = cJSON_CreateObject();
+        cJSON_AddItemToObject(json_channel, "channel_groups", channel_groups__write(channel_in_loop));
         cJSON_AddNumberToObject(json_channel, "channel_id", channel_in_loop->channel_id);
         cJSON_AddNumberToObject(json_channel, "parent_channel_id", (int64)channel_in_loop->parent_channel_id);
         cJSON_AddNumberToObject(json_channel, "type", channel_in_loop->type);
@@ -2090,6 +2107,7 @@ void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
     cJSON_AddItemToObject(json_root, "is_audio_over_websocket_allowed", cJSON_CreateBool(g_server_settings.is_audio_over_websocket_allowed == TRUE));
     cJSON_AddItemToObject(json_root, "is_audio_over_webrtc_allowed", cJSON_CreateBool(g_server_settings.is_audio_over_webrtc_allowed == TRUE));
     cJSON_AddNumberToObject(json_root, "server_slots", (double)g_server_settings.max_client_count);
+    cJSON_AddNumberToObject(json_root, "reserved_slots", (double)g_server_settings.reserved_slots);
     cJSON_AddStringToObject(json_root, "admin_password", &g_server_settings.admin_password[0]);
     cJSON_AddItemToObject(json_root, "is_admin_password_initial", cJSON_CreateBool(g_server_settings.is_admin_password_initial == TRUE));
 

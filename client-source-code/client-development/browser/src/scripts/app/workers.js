@@ -1389,6 +1389,10 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
+        else if (["moderation_result", "channel_access", "client_context_access", "ban_list", "channel_group_changed"].includes(msg.message.type))
+        {
+            self.postMessage({ type: "data_processing_worker__moderation", value: msg.message });
+        }
         else if (msg.message.type == "client_info")
         {
             workers__post_to_main({

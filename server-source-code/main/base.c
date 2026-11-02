@@ -12,7 +12,7 @@
 #include "audio_websocket.h"
 #include "video_websocket.h"
 #include "memory_manager.h"
-#include "clib/clib_string.h"
+#include "clib/clib.h"
 #include "../third-party/dave-g-json/cJSON.h"
 #include "util.h"
 #include "../third-party/rxi-log/log.h"
@@ -292,19 +292,19 @@ boole base__is_music_bot_and_song_slot_valid(int client_id)
  */
 boole base__is_attachment_blocked(client_t* client, cstring receive_type)
 {
-    if (strcmp(receive_type, "direct_chat_picture") == 0)
+    if (clib__strcmp(receive_type, "direct_chat_picture") == 0)
     {
         return g_server_settings.is_blocking_direct_chat_pictures_active && client->block_direct_chat_pictures;
     }
-    if (strcmp(receive_type, "direct_chat_file") == 0)
+    if (clib__strcmp(receive_type, "direct_chat_file") == 0)
     {
         return g_server_settings.is_blocking_direct_chat_files_active && client->block_direct_chat_files;
     }
-    if (strcmp(receive_type, "channel_chat_picture") == 0)
+    if (clib__strcmp(receive_type, "channel_chat_picture") == 0)
     {
         return g_server_settings.is_blocking_channel_chat_pictures_active && client->block_channel_chat_pictures;
     }
-    if (strcmp(receive_type, "channel_chat_file") == 0)
+    if (clib__strcmp(receive_type, "channel_chat_file") == 0)
     {
         return g_server_settings.is_blocking_channel_chat_files_active && client->block_channel_chat_files;
     }
@@ -472,7 +472,7 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     if (json_root == NULL_POINTER)
     {
         // the frame is about to cost the client its socket, so its head goes to the log always
-        log_info("%s %llu %s %llu %s %.600s", "client : ", client_index, " unparseable frame, decrypted length ", (uint64)strlen(decrypted_metadata_cstring), " text : ", decrypted_metadata_cstring);
+        log_info("%s %llu %s %llu %s %.600s", "client : ", client_index, " unparseable frame, decrypted length ", (uint64)clib__strlen(decrypted_metadata_cstring), " text : ", decrypted_metadata_cstring);
         ws_close_client(websocket);
         // there is no json object to call cJSON_Delete on so just disconnect the client
         return;
@@ -483,7 +483,7 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
     if (status == FALSE)
     {
         // same reason as above: the validator said why, this says what it looked at
-        log_info("%s %llu %s %llu %s %.600s", "client : ", client_index, " rejected frame, decrypted length ", (uint64)strlen(decrypted_metadata_cstring), " text : ", decrypted_metadata_cstring);
+        log_info("%s %llu %s %llu %s %.600s", "client : ", client_index, " rejected frame, decrypted length ", (uint64)clib__strlen(decrypted_metadata_cstring), " text : ", decrypted_metadata_cstring);
         ws_close_client(websocket);
         cJSON_Delete(json_root);
         return;
@@ -599,6 +599,30 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
             else if (clib__is_string_equal(message_type, "create_channel_request"))
             {
                 client_msg__channel__process_create_request(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "edit_channel_group"))
+            {
+                client_msg__moderation__process_channel_group(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "channel_access_request"))
+            {
+                client_msg__moderation__process_channel_access(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "moderate_client"))
+            {
+                client_msg__moderation__process_client_action(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "musicbot_playback"))
+            {
+                client_msg__moderation__process_music_control(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "save_server_emojis"))
+            {
+                client_msg__moderation__process_save_emojis(json_root, client_index);
+            }
+            else if (clib__is_string_equal(message_type, "manage_bans"))
+            {
+                client_msg__moderation__process_bans(json_root, client_index);
             }
             else if (clib__is_string_equal(message_type, "edit_channel_request"))
             {

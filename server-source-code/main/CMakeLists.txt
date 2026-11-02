@@ -96,6 +96,9 @@ add_executable(chat-server
         core/administration.c
         core/emojis.c
         core/permissions.c
+        core/channel_groups.c
+        msg/client/client_msg_moderation.c
+        msg/server/server_msg_moderation.c
         stunnel.c
         tailscale.c
         core/audio_channel.c
@@ -111,8 +114,7 @@ add_executable(chat-server
         ../third-party/kokke-tiny-aes-c/aes.c
         ../third-party/ITH-sha/sha256.c
         ../third-party/dave-g-json/cJSON.c
-        clib/clib_memory.c
-        clib/clib_string.c
+        clib/clib.c
         clib/clib_rwlock.c
         msg/client/client_msg_connection.c
         msg/client/client_msg_channel.c

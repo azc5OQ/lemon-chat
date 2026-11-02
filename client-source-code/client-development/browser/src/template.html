@@ -81,10 +81,23 @@
     </style>
 
 
+    <!-- Mono phone theme: the existing theme picker also switches its light/dark palette. -->
+    <style id="style-theme-mono-light" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-default.style @@ */
+/* @@INCLUDE: styles/theme-mono.style @@ */
+    </style>
+
+    <style id="style-theme-mono-dark" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-default.style @@ */
+/* @@INCLUDE: styles/theme-mono.style @@ */
+/* @@INCLUDE: styles/theme-mono-dark.style @@ */
+    </style>
+
     <!-- layout engine bits: always active, NOT a theme sheet. the style-theme-html-element
          class must stay off this element - apply_theme() disables every sheet carrying it -->
     <style id="style-layout">
 /* @@INCLUDE: styles/layout.style @@ */
+/* @@INCLUDE: styles/member-conversations.style @@ */
 /* @@INCLUDE: styles/link-previews.style @@ */
 /* @@INCLUDE: styles/server-info.style @@ */
 /* @@INCLUDE: styles/chat-reactions.style @@ */
@@ -125,6 +138,8 @@
 /* @@INCLUDE: scripts/app/chat-replies.js @@ */
 /* @@INCLUDE: scripts/app/image-upload.js @@ */
 /* @@INCLUDE: scripts/app/groups.js @@ */
+/* @@INCLUDE: scripts/app/moderation.js @@ */
+/* @@INCLUDE: scripts/app/channel-groups.js @@ */
 /* @@INCLUDE: scripts/app/server-emojis.js @@ */
 /* @@INCLUDE: scripts/app/link-previews.js @@ */
 /* @@INCLUDE: scripts/app/layout.js @@ */
@@ -134,7 +149,9 @@
 /* @@INCLUDE: scripts/app/video.js @@ */
 /* @@INCLUDE: scripts/app/server-settings-tab.js @@ */
 /* @@INCLUDE: scripts/app/server-info.js @@ */
+/* @@INCLUDE: scripts/app/client-status.js @@ */
 /* @@INCLUDE: scripts/app/dispatch.js @@ */
+/* @@INCLUDE: scripts/app/member-conversations.js @@ */
 /* @@INCLUDE: scripts/app/main.js @@ */
     </script>
 
@@ -168,8 +185,10 @@
             <div id="server-settings-tab-subcontainer2">
                 <div id="server-settings-tab-groups" data-server-groups>
                     <div class="groups-settings-link">
-                        <p>Manage server groups, upload icons and assign groups to users.</p>
-                        <button type="button" id="server-settings-open-groups">Open server groups</button>
+                        <p class="server-settings-general-header">server groups</p>
+                        <p class="groups-settings-description">Manage server and channel groups, their permissions, members and icons.</p>
+                        <button type="button" id="server-settings-open-groups">Manage groups</button>
+                        <p class="groups-settings-note">Opens the Groups window.</p>
                     </div>
                 </div>
                 <div id="server-settings-tab-emojis" style="display: none;">
@@ -183,7 +202,7 @@
                             <input id="server-emojis-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required>
                             <button id="server-emojis-upload" type="submit">Upload</button>
                         </form>
-                        <p>PNG, JPEG and static WebP images up to 10 MiB are resized to at most 128 × 128 pixels before upload. Animated GIFs keep their animation and must fit within 128 × 128 pixels, 256 KiB and 200 frames. Names use lowercase letters, numbers and underscores.</p>
+                        <p>PNG, JPEG and static WebP images up to 10 MiB are resized to at most 128 &times; 128 pixels before upload. Animated GIFs keep their animation and must fit within 128 &times; 128 pixels, 256 KiB and 200 frames. Names use lowercase letters, numbers and underscores.</p>
                         <div class="server-emojis-toolbar">
                             <label for="server-emojis-search">search</label>
                             <input id="server-emojis-search" type="search" placeholder="find an emoji">
@@ -208,9 +227,9 @@
                             <dl>
                                 <div><dt>Used slots</dt><dd data-admin-server-slots>Unavailable</dd></div>
                                 <div><dt>Uptime</dt><dd data-admin-server-uptime>Unavailable</dd></div>
-                                <div title="RAM currently used by the server process, including shared memory. Refreshed every five seconds while this tab is visible."><dt>Server RAM usage</dt><dd data-admin-server-ram>Waiting for the server…</dd></div>
-                                <div title="Total WebSocket and WebRTC data received since this server started. Includes chat, audio and video. Excludes the client web page and network protocol overhead outside WebSocket."><dt>Data received</dt><dd data-admin-server-received>Waiting for the server…</dd></div>
-                                <div title="Total WebSocket and WebRTC data sent since this server started. Sending one stream to ten viewers counts ten copies. WebRTC counts data accepted for sending, without retransmissions or transport headers."><dt>Data sent</dt><dd data-admin-server-sent>Waiting for the server…</dd></div>
+                                <div title="RAM currently used by the server process, including shared memory. Refreshed every five seconds while this tab is visible."><dt>Server RAM usage</dt><dd data-admin-server-ram>Waiting for the server&hellip;</dd></div>
+                                <div title="Total WebSocket and WebRTC data received since this server started. Includes chat, audio and video. Excludes the client web page and network protocol overhead outside WebSocket."><dt>Data received</dt><dd data-admin-server-received>Waiting for the server&hellip;</dd></div>
+                                <div title="Total WebSocket and WebRTC data sent since this server started. Sending one stream to ten viewers counts ten copies. WebRTC counts data accepted for sending, without retransmissions or transport headers."><dt>Data sent</dt><dd data-admin-server-sent>Waiting for the server&hellip;</dd></div>
                             </dl>
                             <p class="server-settings-general-subheader">server banner</p>
                             <img data-admin-server-banner class="server-info-banner" alt="Server banner preview" hidden>
@@ -222,6 +241,13 @@
                             <p>PNG, JPEG or WebP. Large images are resized to fit.</p>
                             <p id="server-banner-status" role="status"></p>
                         </section>
+
+                        <p class="server-settings-general-subheader">reserved slots</p>
+                        <label class="server-settings-general-row">
+                            <span>Slots for permitted groups</span>
+                            <input id="server-settings-reserved-slots" type="number" min="0" step="1" value="0">
+                        </label>
+                        <p class="server-settings-help">Part of the existing slot count, kept for groups with Use reserved slots. Zero disables reservation. Requires server groups.</p>
 
                         <p class="server-settings-general-subheader">information shared with users</p>
                         <label class="server-settings-general-row">
@@ -546,7 +572,7 @@
             <p id="groups-icon-status" role="status"></p>
         </div>
         <footer class="groups-footer">
-            <button type="button" id="groups-icon-upload" title="PNG, JPEG or static WebP, up to 10 MiB. Images are resized to at most 64 × 64 pixels before upload.">Upload…</button>
+            <button type="button" id="groups-icon-upload" title="PNG, JPEG or static WebP, up to 10 MiB. Images are resized to at most 64 &times; 64 pixels before upload.">Upload&hellip;</button>
             <input id="groups-icon-file" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
             <div class="groups-icon-confirm">
                 <button type="button" id="groups-icon-done">Cancel</button>
@@ -573,13 +599,12 @@
                 <form id="groups-create" hidden>
                     <input type="text" id="groups-new-name" aria-label="New group name" placeholder="New group name" maxlength="31" required>
                     <label for="groups-new-type">Initial permissions</label>
-                    <select id="groups-new-type" aria-describedby="groups-preset-description">
+                    <select id="groups-new-type">
                         <option value="admin">Admin</option>
                         <option value="moderator">Moderator</option>
                         <option value="normal" selected>Normal</option>
                         <option value="guest">Guest</option>
                     </select>
-                    <p id="groups-preset-description"></p>
                     <div class="groups-toolbar">
                         <button type="submit">Create</button>
                         <button type="button" id="groups-create-cancel">Cancel</button>
@@ -590,10 +615,10 @@
                 <div class="groups-detail-heading">
                     <h2 id="groups-detail-title">Permissions</h2>
                     <button type="button" id="groups-icon-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="groups-icon-picker" title="Choose the selected group's icon">
-                        <span id="groups-icon-preview"></span><span>Icon…</span>
+                        <span id="groups-icon-preview"></span><span>Icon</span>
                     </button>
                     <label class="groups-mode-label" for="groups-mode">View
-                        <select id="groups-mode" title="Simple shows named power levels. Advanced shows numbers. Action permissions use Default, Allow or Deny in both views."><option value="simple">Simple</option><option value="advanced">Advanced</option></select>
+                        <select id="groups-mode" title="Simple shows named power levels. Advanced shows numbers. Action permissions use Enable or Disable in both views."><option value="simple">Simple</option><option value="advanced">Advanced</option></select>
                     </label>
                 </div>
                 <div class="groups-permission-filter">
@@ -603,7 +628,7 @@
                 <form id="groups-permission-form" novalidate>
                     <div class="groups-table-scroll">
                         <table class="groups-permission-table">
-                            <thead><tr><th scope="col">Permission</th><th scope="col" id="groups-value-heading">Setting</th></tr></thead>
+                            <thead><tr><th scope="col">Permission</th><th scope="col" id="groups-value-heading">Setting</th><th scope="col" title="The lowest flagged value wins">Negate</th><th scope="col" title="Ignore channel-group changes to this permission">Skip</th><th scope="col" class="groups-grant-heading" title="Required permission editing power. See Permission help.">Grant</th></tr></thead>
                             <tbody id="groups-permissions"></tbody>
                         </table>
                         <p id="groups-no-permissions" hidden>No permissions match this filter.</p>
@@ -614,8 +639,7 @@
                     <p id="groups-description"></p>
                 </div>
                 <div class="groups-toolbar groups-permission-actions">
-                    <button type="submit" form="groups-permission-form" id="groups-apply">Apply</button>
-                    <button type="button" id="groups-reset">Reset selected</button>
+                    <button type="button" id="groups-reset" title="Restore the selected permission's saved value">Reset selected</button>
                     <span id="groups-edit-status" role="status"></span>
                 </div>
             </section>
@@ -627,12 +651,58 @@
                     <button type="button" id="groups-member-add">Add</button>
                     <button type="button" id="groups-member-remove">Remove</button>
                 </div>
-                <label id="groups-assignment-options"><input type="checkbox" id="groups-show-all">Include users outside this group</label>
+                <button type="button" id="groups-member-cancel" hidden>Back to members</button>
                 <p id="groups-member-note" role="status"></p>
             </aside>
         </div>
+        <section id="groups-permission-guide" aria-labelledby="groups-guide-title" hidden>
+            <h2 id="groups-guide-title">Permissions</h2>
+            <p>This documentation helps you find your way around Lemon Chat's permission system.</p>
+            <p>Permissions are assigned to a user's identity through server groups. Adding someone to a group changes their permissions.</p>
+            <p>Server groups apply across the whole server. Channel groups apply only in the channel where they are assigned.</p>
+            <p>Simple and Advanced are two views of the same permissions. Simple shows Enabled, Disabled and power values. Advanced also shows Negate, Skip and Grant. Switching views does not change the permissions.</p>
+
+            <section class="groups-help-concept">
+                <h3>Enabled and Disabled</h3>
+                <p>These values control whether a group gives a permission.</p>
+                <p>Imagine a user has two groups. One enables a permission, and the other disables it. <strong>Enabled normally wins</strong>, so the user can still do that action. Disabled alone does not take away a permission given by another group. Negate can change this, as explained below.</p>
+            </section>
+
+            <section class="groups-help-concept">
+                <h3>Power</h3>
+                <p>Some actions also compare your power with a required value. For example, to ban someone with ban protection 100, you need the ban permission enabled and ban power of at least 100.</p>
+                <p>If your groups give different powers for the same action, the highest value normally wins. None means 0.</p>
+            </section>
+
+            <p>Negate, Skip and Grant are advanced settings. They are useful when you need more control over how permissions combine or who can edit them.</p>
+
+            <section class="groups-help-concept">
+                <h3>Negate</h3>
+                <p>Imagine you want to stop certain people from speaking in a channel, even though their server groups give them enough talk power to speak there.</p>
+                <p>For example, the channel requires talk power 25. A Members server group gives 50, but you want people assigned to a Listener channel group to have only 10 in that channel.</p>
+                <p>Giving Listener talk power 10 is not enough on its own: the higher value, 50, would still win. Setting <strong>Negate on Listener's talk power</strong> makes its value of 10 take priority. The user now has 10 in that channel, so they cannot meet the required 25.</p>
+                <p>Negate affects only the permission it is set on. If several applicable groups set Negate on that permission, the lowest of those marked values wins. It also works with Enabled and Disabled: <strong>Disabled with Negate overrides ordinary Enabled values</strong>.</p>
+            </section>
+
+            <section class="groups-help-concept">
+                <h3>Skip</h3>
+                <p>Now imagine you want moderators to keep their server talk power even when they are assigned to Listener in that channel.</p>
+                <p>Give the moderator's server group talk power 75 and set <strong>Skip on that permission</strong>. Their server talk power stays 75, even if Listener gives 10 with Negate. Without Skip, Listener would reduce it to 10.</p>
+                <p>Skip keeps that server permission from being changed by channel groups. It does not ignore Negate in other server groups, and it does not bypass channel requirements: talk power 75 is still too low for a channel requiring 100.</p>
+            </section>
+
+            <section class="groups-help-concept">
+                <h3>Grant</h3>
+                <p>Imagine you want someone to edit picture permissions in a group, but leave its ban permissions locked.</p>
+                <p><strong>Grant is the permission editing power required to change a particular setting.</strong> If the editor has permission editing power 50, they can change a picture setting with Grant 25, but cannot change a ban setting with Grant 75.</p>
+                <p>Without different Grant values, those settings would require the same editing power. The editor still needs permission to edit the group and cannot give permissions or powers they do not have. New permission rows start with Grant 1000.</p>
+            </section>
+
+            <p>Full server administrators bypass these group permission checks. Only they can edit groups that use Negate or Skip.</p>
+            <p>Choose <strong>Save changes</strong> to apply permission edits. Changing a value or pressing Enter in a permission field does not save it.</p>
+        </section>
         <div class="groups-footer">
-            <span id="groups-save-note">Apply uses the permissions now. Save keeps all group changes after a server restart.</span>
+            <span id="groups-save-note">Permission changes apply only when you choose Save changes.</span>
             <button type="button" id="groups-save">Save changes</button>
             <button type="button" id="groups-done">Close</button>
         </div>
@@ -679,10 +749,21 @@
                     <div id="local-settings-scroll">
                         <section class="local-settings-page" id="local-settings-page-appearance" role="tabpanel" aria-labelledby="local-settings-tab-appearance" tabindex="0">
                             <h2 class="local-settings-section-title">Appearance</h2>
+                            <div class="local-settings-row local-settings-chat-scale-row">
+                                <label class="local-settings-text" for="local-settings-chat-scale">
+                                    <span class="local-settings-label">chat size</span>
+                                    <span class="local-settings-hint">scales messages, pictures and replies; keeps the channel list unchanged</span>
+                                </label>
+                                <div class="local-settings-chat-scale-controls">
+                                    <input type="range" id="local-settings-chat-scale" min="50" max="200" step="5" value="100">
+                                    <output id="local-settings-chat-scale-value" for="local-settings-chat-scale">100%</output>
+                                    <input type="button" id="local-settings-chat-scale-reset" value="Reset" title="Reset chat size to 100%">
+                                </div>
+                            </div>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
                                     <span class="local-settings-label">show avatars</span>
-                                    <span class="local-settings-hint">draws each person's picture beside their messages</span>
+                                    <span class="local-settings-hint">shows a picture or initials beside messages in every theme</span>
                                 </span>
                                 <input type="checkbox" id="local-settings-show-avatars">
                             </label>
@@ -872,6 +953,17 @@
                         </section>
                         <section class="local-settings-page" id="local-settings-page-files" role="tabpanel" aria-labelledby="local-settings-tab-files" tabindex="0" hidden>
                             <h2 class="local-settings-section-title">Files & pictures</h2>
+                            <label class="local-settings-row local-settings-row-select">
+                                <span class="local-settings-text"><span class="local-settings-label">maximum image width (X), in pixels</span></span>
+                                <input type="number" class="local-settings-image-limit" id="local-settings-image-max-width" min="32" max="4096" step="1" value="600">
+                            </label>
+                            <label class="local-settings-row local-settings-row-select">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">maximum image height (Y), in pixels</span>
+                                    <span class="local-settings-hint">pictures keep their proportions; opening the original is unchanged</span>
+                                </span>
+                                <input type="number" class="local-settings-image-limit" id="local-settings-image-max-height" min="32" max="4096" step="1" value="480">
+                            </label>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
                                     <span class="local-settings-label">block direct chat pictures</span>
@@ -947,16 +1039,18 @@
             </div>
             <input type="button" id="choose-theme-button" value="theme">
             <div id="choose-theme-button-list">
-                <p class='choose-theme-item' data-name="default" data-mobile="false">Default</p>
-                <p class='choose-theme-item' data-name="hybrid" data-mobile="false">Hybrid-v1</p>
-                <p class='choose-theme-item' data-name="hybrid-v2" data-mobile="false">Hybrid V2</p>
-                <p class='choose-theme-item' data-name="aero" data-mobile="false">Aero</p>
-                <p class='choose-theme-item' data-name="ozone" data-mobile="false">Ozone</p>
-                <p class='choose-theme-item' data-name="termix" data-mobile="false">Termix</p>
-                <p class='choose-theme-item' data-name="default-mobile" data-mobile="true">Mobile</p>
-                <p class='choose-theme-item' data-name="pocket" data-mobile="true">Pocket</p>
-                <p class='choose-theme-item' data-name="simpledark" data-mobile="true">Simpledark</p>
-                <p class='choose-theme-item' data-name="bluebell" data-mobile="true">Bluebell</p>
+                <button type="button" class="choose-theme-item" data-name="default" data-mobile="false">Default</button>
+                <button type="button" class="choose-theme-item" data-name="hybrid" data-mobile="false">Hybrid-v1</button>
+                <button type="button" class="choose-theme-item" data-name="hybrid-v2" data-mobile="false">Hybrid V2</button>
+                <button type="button" class="choose-theme-item" data-name="aero" data-mobile="false">Aero</button>
+                <button type="button" class="choose-theme-item" data-name="ozone" data-mobile="false">Ozone</button>
+                <button type="button" class="choose-theme-item" data-name="termix" data-mobile="false">Termix</button>
+                <button type="button" class="choose-theme-item" data-name="default-mobile" data-mobile="true" title="Designed for mobile">Mobile</button>
+                <button type="button" class="choose-theme-item" data-name="pocket" data-mobile="true" title="Designed for mobile">Pocket</button>
+                <button type="button" class="choose-theme-item" data-name="simpledark" data-mobile="true" title="Designed for mobile">Simpledark</button>
+                <button type="button" class="choose-theme-item" data-name="bluebell" data-mobile="true" title="Designed for mobile">Bluebell</button>
+                <button type="button" class="choose-theme-item" data-name="mono-light" data-mobile="true" title="Designed for mobile">Mono Light</button>
+                <button type="button" class="choose-theme-item" data-name="mono-dark" data-mobile="true" title="Designed for mobile">Mono Dark</button>
             </div>
             <input type="button" id="layout-edit-button" value="layout" title="re-arrange the panels; click again to lock them in place">
             <input type="button" id="switch-identity-button" value="import identity" title="import identity: load an identity file or passphrase, then reconnect as that identity">
@@ -1110,11 +1204,16 @@
                 <div id="current-channel-description">
                 </div>
                 <div id="current-client-description">
-                    <div id="current-client-avatar">
+                    <div class="client-profile-header">
+                        <div id="current-client-avatar"></div>
+                        <div class="client-profile-identity">
+                            <p id="current-client-description-client-name"></p>
+                            <p id="current-client-description-meta"></p>
+                        </div>
                     </div>
-                    <p style="padding-left: 7px; padding-top: 7px;">connected client</p>
-                    <p id="current-client-description-client-name"></p>
-                    <p id="current-client-description-meta" style="padding-left: 7px;font-style: italic;font-weight: bold;font-size: 9px;"></p>
+                    <dl class="client-status-details">
+                        <div hidden><dt>Online since:</dt><dd id="current-client-connected"></dd></div>
+                    </dl>
                     <div id="current-client-description-groups">
                     </div>
                 </div>
@@ -1135,7 +1234,7 @@
                     <div id="chat-reply-preview" hidden>
                         <strong id="chat-reply-author"></strong>
                         <span id="chat-reply-text"></span>
-                        <button type="button" id="chat-reply-cancel" aria-label="Cancel reply">×</button>
+                        <button type="button" id="chat-reply-cancel" aria-label="Cancel reply">&times;</button>
                     </div>
                     <label id="color-picker-selector-div">
                         <input id="color-picker-input" type="color" style="display: none"/>
@@ -1207,8 +1306,8 @@
         <!-- video streaming (video.js): the movable, resizable window; the streamer's preview or a viewer's picture -->
         <div id="video-stream-popup" style="display: none;">
             <div id="video-stream-popup-header">
-                <span id="video-stream-popup-title">stream</span>
-                <span id="video-stream-popup-close" title="close (a viewer disconnects)">&#10005;</span>
+                <strong id="video-stream-popup-title">stream</strong>
+                <button type="button" id="video-stream-popup-close" class="close-button" aria-label="Close stream window" title="close (a viewer disconnects)"></button>
             </div>
             <div id="video-stream-popup-body">
                 <video id="video-stream-preview" autoplay muted playsinline style="display: none;"></video>
@@ -1223,7 +1322,7 @@
                     <label>Resolution limit <select id="video-stream-resolution"><option value="640">360p</option><option value="854">480p</option><option value="1280" selected>720p</option><option value="1920">1080p</option></select></label>
                     <label>Video bitrate <input id="video-stream-bitrate" type="number" min="0.2" max="20" step="0.1" value="2.5"> Mbps</label>
                     <label><input id="video-stream-adaptive" type="checkbox" checked> Adjust quality automatically</label>
-                    <button type="button" id="video-stream-apply-settings">Apply</button>
+                    <button type="button" id="video-stream-apply-settings" class="button-1">Apply</button>
                 </div>
                 <p>Automatic adjustment lowers quality when sending falls behind. Frame rate is a target; a movie keeps its original frame rate if it is lower.</p>
                 <output id="video-stream-throughput" aria-live="off"></output>
@@ -1260,7 +1359,7 @@
                             <span id="channel-properties-icon-label-row" class="dialog-form-label" data-server-groups>Icon</span>
                             <span id="channel-properties-icon-row" data-server-groups>
                                 <button type="button" class="button-1" id="channel-properties-icon-box" title="change the channel icon now" aria-label="Choose channel icon"></button>
-                                <button type="button" class="button-1" id="channel-properties-icon-remove-button" title="remove the channel icon now" aria-label="Remove channel icon">×</button>
+                                <button type="button" class="button-1" id="channel-properties-icon-remove-button" title="remove the channel icon now" aria-label="Remove channel icon">&times;</button>
                             </span>
                         </div>
                         <label class="dialog-form-label" for="channel-properties-input-channel-password">Password</label>
@@ -1282,7 +1381,10 @@
                         <div id="channel-properties-panel-channel" role="tabpanel" aria-labelledby="channel-properties-tab-channel" aria-hidden="false">
                             <fieldset class="channel-properties-section">
                                 <legend>Channel type</legend>
-                                <p id="channel-properties-type">Permanent</p>
+                                <select class="text-input-not-pretty-2" id="channel-properties-type" aria-label="Channel type" aria-describedby="channel-properties-type-description">
+                                    <option value="permanent">Permanent</option>
+                                    <option value="temporary">Temporary</option>
+                                </select>
                                 <p id="channel-properties-type-description" class="channel-properties-help">Stays on the server until deleted.</p>
                             </fieldset>
                             <fieldset class="channel-properties-section">
@@ -1490,7 +1592,7 @@
                 </div>
                 <div id="client-info-content">
                     <p class="client-info-row"><span class="client-info-label">user</span><span id="client-info-username"></span></p>
-                    <p class="client-info-row"><span class="client-info-label">connected</span><span id="client-info-connected"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">Connected for</span><span id="client-info-connected"></span></p>
                     <p class="client-info-row"><span class="client-info-label">ip address</span><span id="client-info-ip"></span></p>
                     <p class="client-info-row"><span class="client-info-label">country</span><span id="client-info-country"></span></p>
                     <p class="client-info-row"><span class="client-info-label">last action</span><span id="client-info-last-action"></span></p>

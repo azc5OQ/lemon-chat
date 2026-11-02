@@ -5,8 +5,7 @@
 #include "../../core/identity_store.h"
 #include "../../memory_manager.h"
 #include "../../util.h"
-#include "../../clib/clib_memory.h"
-#include "../../clib/clib_string.h"
+#include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 #include "../../../third-party/zhicheng/base64.h"
 

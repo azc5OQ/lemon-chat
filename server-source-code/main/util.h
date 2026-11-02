@@ -17,7 +17,7 @@ void util__get_executable_directory(char* out_directory, uint64 out_directory_si
 boole util__fill_secure_random_bytes(unsigned char* out_buffer, uint64 length);
 boole util__fill_block_of_data_with_ascii_characters(char* block, uint64 length);
 void util__free_json_message(cJSON* json_root_object1, char* json_root_object1_string);
-void util__hash_password_to_base64(char* plaintext, char* out, int64 out_size);
+void util__hash_password_to_base64(cstring plaintext, char* out, int64 out_size);
 boole util__password_matches(char* plaintext, char* stored_base64_hash);
 
 #endif

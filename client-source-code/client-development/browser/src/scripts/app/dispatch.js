@@ -590,6 +590,10 @@ function dispatch__mainthread_onmessage(e)
             channel_tree__apply_server_update(server_msg.process_channel_list_from_server, e.data.value);
         }
     }
+    else if (e.data.type == "data_processing_worker__moderation")
+    {
+        moderation__receive(e.data.value);
+    }
     else if (e.data.type == "data_processing_worker__server_emoji")
     {
         server_emojis__receive(e.data.value);

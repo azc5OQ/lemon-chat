@@ -35,24 +35,27 @@ var UI = {
     {
         let button = document.getElementById("choose-theme-button");
         let menu = document.getElementById("choose-theme-button-list");
-        let parent = menu.offsetParent;
-        let button_box = null;
-        let parent_box = null;
-        let left = 0;
-        let top = 0;
-
-        if (parent == null)
+        if (!menu.classList.contains("theme-menu-open"))
         {
             return;
         }
-        button_box = button.getBoundingClientRect();
-        parent_box = parent.getBoundingClientRect();
-        left = button_box.left - parent_box.left - parent.clientLeft + parent.scrollLeft;
-        top = button_box.bottom - parent_box.top - parent.clientTop + parent.scrollTop;
-        left = Math.max(0, Math.min(left, parent.clientWidth - menu.offsetWidth));
+        let button_box = button.getBoundingClientRect();
+        let below = window.innerHeight - button_box.bottom - 8;
+        let above = button_box.top - 8;
+        let upwards = below < Math.min(menu.scrollHeight, 320) && above > below;
+        menu.style.setProperty("--theme-menu-height", Math.max(44, upwards ? above : below) + "px");
+        let left = Math.max(8, Math.min(button_box.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8));
+        let top = upwards ? button_box.top - menu.offsetHeight : button_box.bottom;
         menu.style.setProperty("--theme-menu-left", left + "px");
-        menu.style.setProperty("--theme-menu-top", top + "px");
-        menu.style.setProperty("--theme-menu-bottom", (parent.clientHeight - top + button_box.height) + "px");
+        menu.style.setProperty("--theme-menu-top", Math.max(8, top) + "px");
+    },
+
+    close_theme_menu: function()
+    {
+        let menu = document.getElementById("choose-theme-button-list");
+        menu.classList.remove("theme-menu-open");
+        delete menu.dataset.pinned;
+        document.getElementById("choose-theme-button").setAttribute("aria-expanded", "false");
     },
 
     /**
@@ -62,9 +65,82 @@ var UI = {
     setup_theme_menu_positioning: function()
     {
         let button = document.getElementById("choose-theme-button");
-
-        button.addEventListener("mouseenter", UI.position_theme_menu);
-        button.addEventListener("focus", UI.position_theme_menu);
+        let menu = document.getElementById("choose-theme-button-list");
+        let close_timer = null;
+        // Filtered or transformed toolbars otherwise become a fixed-position containing block.
+        document.body.append(menu);
+        menu.dataset.positioned = "true";
+        button.setAttribute("aria-controls", menu.id);
+        button.setAttribute("aria-expanded", "false");
+        function open()
+        {
+            clearTimeout(close_timer);
+            menu.classList.add("theme-menu-open");
+            button.setAttribute("aria-expanded", "true");
+            UI.position_theme_menu();
+        }
+        function leave()
+        {
+            clearTimeout(close_timer);
+            close_timer = setTimeout(function()
+            {
+                if (!menu.dataset.pinned && !menu.matches(":hover") && !button.matches(":hover")
+                    && !menu.contains(document.activeElement) && document.activeElement !== button)
+                {
+                    UI.close_theme_menu();
+                }
+            }, 250);
+        }
+        button.addEventListener("mouseenter", open);
+        button.addEventListener("mouseleave", leave);
+        menu.addEventListener("mouseenter", open);
+        menu.addEventListener("mouseleave", leave);
+        button.addEventListener("click", function(event)
+        {
+            event.stopPropagation();
+            if (menu.dataset.pinned)
+            {
+                UI.close_theme_menu();
+            }
+            else
+            {
+                menu.dataset.pinned = "true";
+                open();
+            }
+        });
+        button.addEventListener("keydown", function(event)
+        {
+            if (event.key === "ArrowDown")
+            {
+                event.preventDefault();
+                open();
+                let first_visible_item = Array.from(menu.querySelectorAll(".choose-theme-item")).find(function(item)
+                {
+                    return item.getClientRects().length > 0;
+                });
+                if (first_visible_item)
+                {
+                    first_visible_item.focus();
+                }
+            }
+        });
+        document.addEventListener("pointerdown", function(event)
+        {
+            if (!menu.contains(event.target) && event.target !== button)
+            {
+                UI.close_theme_menu();
+            }
+        });
+        document.addEventListener("keydown", function(event)
+        {
+            if (event.key === "Escape" && menu.classList.contains("theme-menu-open"))
+            {
+                UI.close_theme_menu();
+                button.focus();
+            }
+        });
+        menu.addEventListener("focusout", leave);
+        button.addEventListener("blur", leave);
         window.addEventListener("resize", UI.position_theme_menu);
     },
 
@@ -134,6 +210,74 @@ var UI = {
     },
 
     /**
+     * @brief Saves device-only chat scale and inline picture limits.
+     * @return void
+     */
+    setup_chat_display_settings: function()
+    {
+        let scale = document.getElementById("local-settings-chat-scale");
+        let width = document.getElementById("local-settings-image-max-width");
+        let height = document.getElementById("local-settings-image-max-height");
+        let controls = [
+            [scale, "lemon_chat_display_scale", 100],
+            [width, "lemon_chat_image_max_width", 600],
+            [height, "lemon_chat_image_max_height", 480]
+        ];
+
+        function bounded_value(input, value, fallback)
+        {
+            let number = Number(value);
+            if (value == null || value === "" || !Number.isFinite(number))
+            {
+                number = fallback;
+            }
+            return Math.max(Number(input.min), Math.min(Number(input.max), Math.round(number)));
+        }
+
+        function apply()
+        {
+            let chat = document.getElementById("chat-context-container");
+            let scroll_range = Math.max(0, chat.scrollHeight - chat.clientHeight);
+            let at_bottom = scroll_range - chat.scrollTop < 4;
+            let scroll_fraction = scroll_range > 0 ? chat.scrollTop / scroll_range : 0;
+            let style = document.documentElement.style;
+            style.setProperty("--chat-display-scale", Number(scale.value) / 100);
+            style.setProperty("--chat-image-max-width", bounded_value(width, width.value, 600) + "px");
+            style.setProperty("--chat-image-max-height", bounded_value(height, height.value, 480) + "px");
+            document.getElementById("local-settings-chat-scale-value").value = scale.value + "%";
+            scale.setAttribute("aria-valuetext", scale.value + "%");
+            let next_scroll_range = Math.max(0, chat.scrollHeight - chat.clientHeight);
+            chat.scrollTop = at_bottom ? next_scroll_range : scroll_fraction * next_scroll_range;
+        }
+
+        for (let [input, key, fallback] of controls)
+        {
+            input.value = bounded_value(input, utils__storage_get(key), fallback);
+            input.addEventListener("input", function()
+            {
+                if (input.value !== "" && input.validity.valid)
+                {
+                    utils__storage_set(key, input.value);
+                    apply();
+                }
+            });
+            input.addEventListener("change", function()
+            {
+                input.value = bounded_value(input, input.value, fallback);
+                utils__storage_set(key, input.value);
+                apply();
+            });
+        }
+        document.getElementById("local-settings-chat-scale-reset").addEventListener("click", function()
+        {
+            scale.value = 100;
+            utils__storage_set("lemon_chat_display_scale", "100");
+            apply();
+        });
+        apply();
+    },
+
+    /**
      * @brief removes every open channel-list, add-group and chat-input context menu
      *        clicks on add-group menu items are left alone, so their own handler still runs
      *
@@ -144,18 +288,6 @@ var UI = {
      */
     delete_contextmenus: function(setbackgroundColor = false, handle_group_contextmenu_click = true)
     {
-        // quick fix
-        if (handle_group_contextmenu_click)
-        {
-            if (event != null && event.target != null)
-            {
-                if (event.target.classList.contains("add-group-context-menu-item"))
-                {
-                    return;
-                }
-            }
-        }
-
         let elements_count1 = document.getElementsByClassName("channel-list-context-menu").length;
         for (let i = 0; i < elements_count1; i++)
         {
@@ -324,39 +456,11 @@ var UI = {
             return;
         }
 
-        let channel_node = event.target.parentNode;
-
+        let channel_node = event.target.closest(".single-channel");
         UI.delete_contextmenus(true);
-
-        let clicked_channel_id = parseInt(channel_node.getAttribute("data-channel-id"));
-
-        if (clicked_channel_id == g_current_channel_id)
+        if (channel_node)
         {
-            console.log("cannot join current channel"); // checked also at server side
-            return;
-        }
-
-        let selected_channel = channel_tree__get_channel_by_id(g_channel_list, clicked_channel_id);
-
-        if (selected_channel.is_using_password == true)
-        {
-            document.getElementById("channel-password-enter-container").style.display = "block";
-            document.getElementById("background-container").style.display = "block";
-        }
-        else
-        {
-            let message_object = {
-                message: {
-                    type: "join_channel_request",
-                    channel_id: parseInt(clicked_channel_id),
-                    channel_password: ""
-                }
-            };
-
-            console.log(message_object);
-
-            connection__send_message_object(message_object);
-            console.log("join channel requested: channel_id=" + clicked_channel_id);
+            moderation__join_channel(Number(channel_node.dataset.channelId));
         }
     },
 
@@ -890,7 +994,15 @@ var UI = {
             document.getElementById("current-client-description").style.display = "block";
             document.getElementById("current-channel-description").style.display = "none";
             let client = channel_tree__get_client_by_client_id(g_chat_message_receiver_id);
-            document.getElementById("current-client-description-client-name").innerHTML = chat__sanitize_string(client.username);
+            let client_name = document.getElementById("current-client-description-client-name");
+            client_name.textContent = client.username;
+            if (Number(client.client_id) === Number(g_local_client_id))
+            {
+                let self_label = document.createElement("span");
+                self_label.className = "client-profile-self-label";
+                self_label.textContent = " (you)";
+                client_name.appendChild(self_label);
+            }
             document.getElementById("current-client-description-groups").innerHTML = "";
             document.getElementById("current-client-avatar").style.backgroundImage = "";
             document.getElementById("current-client-avatar").style.backgroundSize = "";
@@ -904,29 +1016,8 @@ var UI = {
             document.getElementById("current-client-description-meta").textContent =
                 channel_tree__describe_client_for_profile(client);
 
-            for (let i = 0; i < client.group_ids.length; i++)
-            {
-                let group = channel_tree__get_group_by_group_id(client.group_ids[i]);
-
-                if (group == null)
-                {
-                    continue;
-                }
-
-                // same has_icon guard as the group rows, plus a null check - this dereferenced the
-                // icon unchecked, so a group pointing at a deleted icon threw here
-                let icon = (group.has_icon == true) ? channel_tree__get_icon_by_icon_id(group.group_linked_icon_id) : null;
-                let icon_style = (icon != null) ? ("background-image: url(" + icon.base64_icon + ")") : "";
-
-                let html_to_append = '<div class="client-description-group-entry">\n\
-                                        <div class="client-description-group-entry-icon" style="'+icon_style+'">\n\
-                                        </div>\n\
-                                        <div class="client-description-group-entry-name">'+group.group_name+'\n\
-                                        </div>\n\
-                                    </div>';
-
-                document.getElementById("current-client-description-groups").insertAdjacentHTML("beforeend", html_to_append);
-            }
+            channel_groups__profile(client);
+            client_status__select("profile", client);
         }
         else if (event.which == 3 || is_touch_event == true && is_short_click == false)
         {
@@ -950,14 +1041,6 @@ var UI = {
 
             UI.delete_contextmenus();
 
-            // create two divs one visible, second invisible, becomes visible after hover on "add group". groups will be shown in it
-
-            let add_group_html_class = "";
-            if (channel_tree__is_local_client_admin() == false)
-            {
-                add_group_html_class = " context-menu-item-disabled";
-            }
-
             let contextmenu_useronclick = "";
 
             if (g_selected_client_id != g_local_client_id)
@@ -966,11 +1049,11 @@ var UI = {
 
                 let string_to_append = "";
 
-                if (the_client.is_music_bot == false && groups__can_moderate(the_client, "kick"))
+                if (the_client.is_music_bot == false)
                 {
                     string_to_append += "<p class='context-menu-item' data-action='12'>kick</p>";
                 }
-                if (the_client.is_music_bot == false && groups__can_moderate(the_client, "ban"))
+                if (the_client.is_music_bot == false)
                 {
                     string_to_append += "<p class='context-menu-item' data-action='13'>ban</p>";
                 }
@@ -981,7 +1064,7 @@ var UI = {
                                                 <div class='channel-list-context-menu-background'>\n\
                                                 </div>\n\
                                                 <div class='channel-list-context-menu-items'>\n\
-                                                    " + (groups__is_allowed(channel_tree__get_client_by_client_id(g_local_client_id), "call_idle_clients") ? "<p class='context-menu-item' data-action='11'>call</p>" : "") + "\n\
+                                                    <p class='context-menu-item' data-action='11'>call</p>\n\
                                                     <p class='context-menu-item' data-action='8'>poke</p>\n\
                                                     "+ string_to_append +"\n\
                                                 </div>\n\
@@ -1011,7 +1094,6 @@ var UI = {
                                                     <p class='context-menu-item' data-action='4'>" + ((the_client.is_ignored_by_local_client == true ) ? 'un-ignore' : 'ignore') + "</p>\n\
                                                     <p class='context-menu-item' data-action='5'>" + ((the_client.is_muted_by_local_client == true ) ? 'un-mute' : 'mute') + "</p>\n\
                                                     <p class='context-menu-item' data-action='18'>adjust volume</p>\n\
-                                                    <p class='context-menu-item"+add_group_html_class+"' data-action='6' data-server-groups data-server-groups-shortcut>server groups</p>\n\
                                                     <p class='context-menu-item' data-action='7'>info</p>\n\
                                                     <p class='context-menu-item' data-action='8'>poke</p>\n\
                                                     "+ string_to_append +"\n\
@@ -1037,7 +1119,6 @@ var UI = {
                                                 <div class='channel-list-context-menu-items'>\n\
                                                     <p class='context-menu-item' data-action='9'>set username</p>\n\
                                                     " + avatar_menu_html + "\n\
-                                                    <p class='context-menu-item"+add_group_html_class+"' data-action='6' data-server-groups data-server-groups-shortcut>manage groups</p>\n\
                                                     <p class='context-menu-item' data-action='7'>info</p>\n\
                                                 </div>\n\
                                             </div>";
@@ -1049,6 +1130,7 @@ var UI = {
             {
                 choose_avatar_input.onchange = UI.choose_avatar_input_onchange;
             }
+            moderation__filter_music_menu();
             document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.top = clientY.toString();
             document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.left = clientX.toString();
 
@@ -1064,6 +1146,13 @@ var UI = {
                 document.getElementsByClassName("context-menu-item")[i].addEventListener("click", UI.contextmenuitem_onclick);
 
             }
+            let client_menu = document.querySelector("#contextmenus-container .channel-list-context-menu");
+            let menu_client = channel_tree__get_client_by_client_id(Number(g_selected_client_id));
+            client_menu.dataset.contextClient = g_selected_client_id;
+            moderation__refresh_menu_access();
+            moderation__attach_client_menu(client_menu, menu_client);
+            groups__attach_assignment_menu(client_menu, menu_client);
+
 
 
         }
@@ -1101,13 +1190,24 @@ var UI = {
     {
         event.stopPropagation();
 
-        let action = (event.currentTarget || event.srcElement).getAttribute("data-action");
+        let item = event.currentTarget || event.srcElement;
+        let action = item.getAttribute("data-action");
+        if (item.getAttribute("aria-disabled") === "true"
+            || !moderation__menu_action_allowed(action, item.closest(".channel-list-context-menu")))
+        {
+            event.preventDefault?.();
+            return;
+        }
 
         UI.delete_contextmenus();
 
         if (action == "server-info")
         {
             server_info__open();
+        }
+        else if (action == "server-moderation")
+        {
+            moderation__tools();
         }
         else if (action == 0)
         {
@@ -1184,30 +1284,7 @@ var UI = {
         }
         else if (action == 3)
         {
-            if (g_selected_channel_id == g_current_channel_id)
-            {
-                return;
-            }
-
-            let selected_channel = channel_tree__get_channel_by_id(g_channel_list, g_selected_channel_id);
-
-            if (selected_channel.is_using_password == true)
-            {
-                document.getElementById("channel-password-enter-container").style.display = "block";
-                document.getElementById("background-container").style.display = "block";
-            }
-            else
-            {
-                let message_object = {
-                    message: {
-                        type: "join_channel_request",
-                        channel_id: parseInt(g_selected_channel_id),
-                        channel_password: ""
-                    }
-                };
-
-                connection__send_message_object(message_object);
-            }
+            moderation__join_channel(Number(g_selected_channel_id));
         }
         else if (action == 4) // ignore client locally
         {
@@ -1255,27 +1332,11 @@ var UI = {
             }
 
         }
-        else if (action == 6)
-        {
-            groups__open(g_selected_client_id);
-        }
         else if (action == 7) // Public client details are already available. Other details require server permission.
         {
             UI.show_client_info_popup(g_selected_client_id);
 
-            if (!groups__has_permission("view_client_details"))
-            {
-                return;
-            }
 
-            let message_object = {
-                message: {
-                    type: "get_client_info",
-                    client_id: parseInt(g_selected_client_id),
-                }
-            };
-
-            connection__send_message_object(message_object);
         }
         else if (action == 8)
         {
@@ -1354,27 +1415,11 @@ var UI = {
         }
         else if (action == 12)
         {
-            let message_object = {
-                message: {
-                    type: "kick",
-                    client_id: parseInt(g_selected_client_id),
-                }
-            };
-
-            connection__send_message_object(message_object);
-            console.log("kick requested: client_id=" + g_selected_client_id);
+            moderation__confirm_client_action(channel_tree__get_client_by_client_id(g_selected_client_id), "kick");
         }
         else if (action == 13)
         {
-            let message_object = {
-                message: {
-                    type: "ban",
-                    client_id: parseInt(g_selected_client_id),
-                }
-            };
-
-            connection__send_message_object(message_object);
-            console.log("ban requested: client_id=" + g_selected_client_id);
+            moderation__confirm_client_action(channel_tree__get_client_by_client_id(g_selected_client_id), "ban");
         }
         else if (action == 14)
         {
@@ -1529,19 +1574,48 @@ var UI = {
     },
 
     /**
-     * @brief a key released in the chat input: enter sends the message, everything else counts as writing for the typing indicator
-     *
-     * @return void
+     * @brief Sends on Enter before the textarea inserts a line break.
+     * @param event Key pressed in the chat input.
      */
-    chat_input_on_keyup: function()
+    chat_input_on_keydown: function(event)
     {
-        if (event.key == "Enter" || event.keyCode == 13)
+        if (event.isComposing || event.keyCode === 229)
         {
-            chat__send_chat_message();
             return;
         }
+        if (event.key === "Enter" || event.keyCode === 13)
+        {
+            event.preventDefault();
+            if (!event.repeat)
+            {
+                chat__send_chat_message();
+            }
+        }
+    },
 
-        // everything else counts as writing; the send itself is throttled inside
+    /**
+     * @brief Handles keyboards that insert a line break without an Enter key event.
+     * @param event Pending change to the chat input.
+     */
+    chat_input_on_beforeinput: function(event)
+    {
+        if (!event.isComposing && (event.inputType === "insertLineBreak" || event.inputType === "insertParagraph"))
+        {
+            event.preventDefault();
+            chat__send_chat_message();
+        }
+    },
+
+    /**
+     * @brief Updates the typing indicator after text input.
+     * @param event Key released in the chat input.
+     */
+    chat_input_on_keyup: function(event)
+    {
+        if (event.key === "Enter" || event.keyCode === 13 || event.isComposing || event.keyCode === 229)
+        {
+            return;
+        }
         chat__send_typing_indicator();
     },
 
@@ -1675,8 +1749,11 @@ var UI = {
     {
         let new_username = this.value;
 
-        if (new_username.length == 0)
+        if (new_username.trim().length === 0)
         {
+            this.value = g_local_username;
+            this.setAttribute("value", g_local_username);
+            UI.schedule_member_list_sync();
             return;
         }
 
@@ -1882,9 +1959,8 @@ var UI = {
                 (selected_channel_index != -1 && g_channel_list[selected_channel_index].is_root_channel == true)
                     ? "" : "<p class='context-menu-item' data-action='1'>delete</p>";
             let server_info_menu_item_html =
-                (selected_channel_index != -1 && g_channel_list[selected_channel_index].is_root_channel == true
-                    && g_server_info.visibility.features)
-                    ? (groups__has_permission("view_server_info") ? "<p class='context-menu-item' data-action='server-info'>server info</p>" : "") : "";
+                (selected_channel_index != -1 && g_channel_list[selected_channel_index].is_root_channel == true)
+                    ? "<p class='context-menu-item' data-action='server-info'>server info</p><p class='context-menu-item' data-action='server-moderation'>server moderation</p>" : "";
 
             let contextmenu_html = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY + "px; left:" + clientX.toString() + "px; \">\n\
                                         <div class='channel-list-context-menu-background'>\n\
@@ -1900,6 +1976,7 @@ var UI = {
                                     </div>";
 
             document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend", contextmenu_html);
+            moderation__filter_music_menu();
             document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.top = clientY.toString();
             document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.left = clientX.toString();
 
@@ -1911,6 +1988,10 @@ var UI = {
             }
 
             let channel_id = parseInt(currentTarget.getAttribute("data-channel-id"));
+            let channel_menu = document.querySelector("#contextmenus-container .channel-list-context-menu");
+            channel_menu.dataset.contextChannel = channel_id;
+            moderation__refresh_menu_access();
+            moderation__send("channel_access_request", { channel_id: channel_id });
             let index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, channel_id);
 
             server_info__show_channel_description(g_channel_list[index]);
@@ -1958,6 +2039,7 @@ var UI = {
         document.getElementById("client-info-identity").innerText = "";
 
         document.getElementById("client-info-container").style.display = "block";
+        client_status__select("popup", client);
     },
 
     /**
@@ -2099,6 +2181,7 @@ var UI = {
 
         UI.show_client_info_popup_shell();
 
+        client_status__select("popup", null);
         document.getElementById("client-info-username").innerText = stored_client.username;
 
         let group_names = [];
@@ -2241,6 +2324,10 @@ var UI = {
             {
                 document.body.classList.toggle("msgr-neighbors-only", pocket_previous_neighbors);
             }
+        }
+        if (typeof member_conversations__apply_theme === "function")
+        {
+            member_conversations__apply_theme();
         }
         groups__apply_theme_access(themename);
         chat__apply_theme_formatting();
@@ -2611,7 +2698,7 @@ var UI = {
                 let inp = inputs[0];
                 let p = document.createElement("p");
                 p.className = "connected-client-p";
-                p.textContent = inp.value;
+                p.textContent = g_local_username || inp.value;
                 inp.parentNode.replaceChild(p, inp);
             }
 
@@ -2788,6 +2875,10 @@ var UI = {
         {
             header.textContent = "members — " + count;
         }
+        if (typeof member_conversations__schedule_refresh === "function")
+        {
+            member_conversations__schedule_refresh();
+        }
     },
 
     /**
@@ -2859,7 +2950,8 @@ var UI = {
     choose_theme_item_onclick: function(event)
     {
         event.stopPropagation();
-        UI.apply_theme(event.target.getAttribute("data-name"));
+        UI.close_theme_menu();
+        UI.apply_theme(event.currentTarget.getAttribute("data-name"));
     },
 
     /**
@@ -2944,6 +3036,7 @@ var UI = {
         document.getElementById("cancel-channel-button").onclick = UI.channel_properties_closebutton_onclick;
         document.getElementById("create-channel-button").onclick = UI.create_channel_button_onclick;
         document.getElementById("edit-channel-button").onclick = UI.edit_channel_button_onclick;
+        document.getElementById("channel-properties-type").onchange = UI.describe_channel_type;
         document.getElementById("channel-properties-limit-clients-checkbox").onchange = UI.refresh_channel_limit_input_visibility;
         document.getElementById("channel-properties-remove-password").onchange = UI.channel_password_removal_onchange;
         for (let name of ["channel", "audio", "permissions"])
@@ -3053,6 +3146,11 @@ var UI = {
             }
         };
 
+        let type = document.getElementById("channel-properties-type");
+        if (!type.disabled && type.value !== type.dataset.originalValue)
+        {
+            message_object.message.is_temp_channel = type.value === "temporary";
+        }
         let powers = UI.read_channel_power_inputs();
         if (!powers)
         {
@@ -3212,11 +3310,9 @@ var UI = {
                 ? Number(channel["required_" + action + "_power"]) || 0 : 0;
         }
         let temporary = channel ? channel.is_temp_channel === true : !groups__has_permission("create_channel");
-        document.getElementById("channel-properties-type").textContent = temporary ? "Temporary" : "Permanent";
-        document.getElementById("channel-properties-type-description").textContent = temporary
-            ? "Deleted when its owner leaves this channel." : "Stays on the server until deleted.";
-        document.getElementById("channel-properties-type").title = channel ? "Channel type cannot be changed."
-            : "The server chooses the type from your permission to create permanent or temporary channels.";
+        let type = document.getElementById("channel-properties-type");
+        type.value = temporary ? "temporary" : "permanent";
+        type.dataset.originalValue = type.value;
         let root = channel && channel.is_root_channel === true;
         let password = document.getElementById("channel-properties-input-channel-password");
         password.disabled = root;
@@ -3229,7 +3325,53 @@ var UI = {
         limit.disabled = root;
         limit.title = root ? "The root channel uses the server's client limit." : "";
         document.getElementById("channel-properties-input-max-clients").disabled = root;
+        moderation.channel_edit = channel ? Number(channel.channel_id) : null;
+        moderation__channel_fields(moderation.channel_edit);
+        if (channel)
+        {
+            moderation__send("channel_access_request", { channel_id: Number(channel.channel_id) });
+        }
         UI.select_channel_properties_tab("channel", false);
+    },
+
+    /**
+     * @brief Uses server-checked conversion rights; older servers keep the type read-only.
+     */
+    refresh_channel_type_options: function(channel_id)
+    {
+        let type = document.getElementById("channel-properties-type");
+        let access = channel_id == null ? null : moderation.channels.get(Number(channel_id));
+        let current = type.dataset.originalValue;
+        if (access && typeof access.is_temp_channel === "boolean")
+        {
+            current = access.is_temp_channel ? "temporary" : "permanent";
+            if (current !== type.dataset.originalValue)
+            {
+                type.value = current;
+                type.dataset.originalValue = current;
+            }
+        }
+        for (let option of type.options)
+        {
+            let allowed = access && access[option.value === "temporary" ? "can_make_temporary" : "can_make_permanent"] === true;
+            option.disabled = option.value !== current && !allowed;
+        }
+        let other = current === "temporary" ? "permanent" : "temporary";
+        type.disabled = channel_id == null || !access || access["can_make_" + other] !== true;
+        type.title = channel_id == null
+            ? "New channel type follows your permission to create permanent or temporary channels."
+            : access && access[other + "_type_error"] || (type.disabled ? "Channel type changes are unavailable on this server or are still loading." : "Change between Permanent and Temporary.");
+        UI.describe_channel_type();
+    },
+
+    describe_channel_type: function()
+    {
+        let type = document.getElementById("channel-properties-type");
+        let converting = type.value !== type.dataset.originalValue;
+        document.getElementById("channel-properties-type-description").textContent = type.value === "temporary"
+            ? converting ? "You become its owner. The channel is deleted when you leave or disconnect."
+                : "Deleted when its owner leaves or disconnects."
+            : "Stays on the server until deleted. Save server settings to keep changes after a restart.";
     },
 
     /**

@@ -1,3 +1,4 @@
+#include "../../clib/clib.h"
 // This file creates message objects and queues encrypted messages for delivery to clients.
 
 #include "server_msg.h"
@@ -98,7 +99,7 @@ int server_msg__delivery__queue_text(ws_cli_conn_t* socket, const crypto_session
     {
         return -1;
     }
-    text_size = strlen(plaintext);
+    text_size = clib__strlen(plaintext);
     if (text_size > (size_t)g_server_settings.websocket_message_max_length || text_size > (SIZE_MAX - sizeof(*outgoing) - 8192) / 5)
     {
         ws_abort_client(socket);
@@ -111,7 +112,7 @@ int server_msg__delivery__queue_text(ws_cli_conn_t* socket, const crypto_session
         return -1;
     }
     outgoing->text_size = text_size;
-    memcpy(outgoing->text, plaintext, text_size + 1);
+    clib__memcpy(outgoing->text, plaintext, text_size + 1);
     if (session != NULL_POINTER)
     {
         outgoing->session = *session;

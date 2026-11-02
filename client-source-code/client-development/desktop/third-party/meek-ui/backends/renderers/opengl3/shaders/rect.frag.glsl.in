@@ -1,0 +1,26 @@
+#version 330 core
+in vec4  v_color;
+in vec2  v_local;
+in vec2  v_rect_size;
+in float v_radius;
+flat in float v_quad;
+flat in vec2 v_rect_origin;
+uniform vec2 u_viewport;
+out vec4 o_color;
+
+@RENDERER_SDF_ROUND_BOX_GLSL@
+
+void main()
+{
+    vec2 half_size = v_rect_size * 0.5;
+    vec2 local = v_local;
+    if (v_quad > 0.5) {
+        local = vec2(gl_FragCoord.x, u_viewport.y - gl_FragCoord.y) - v_rect_origin;
+        if (any(lessThan(local, vec2(0.0))) || any(greaterThanEqual(local, v_rect_size))) discard;
+    }
+    vec2 p = local - half_size;
+    float d = sd_round_box(p, half_size, v_radius);
+    float aa = 1.0 - smoothstep(@RENDERER_SDF_AA_MIN@, @RENDERER_SDF_AA_MAX@, d);
+    if (aa <= 0.0) discard;
+    o_color = vec4(v_color.rgb, v_color.a * aa);
+}

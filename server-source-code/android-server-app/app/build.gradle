@@ -46,12 +46,14 @@ android
     // This .so is a PIE executable, not a JNI library. It must be extracted so
     // ProcessBuilder can execute it from the installer's nativeLibraryDir.
     sourceSets.main.jniLibs.srcDir layout.buildDirectory.dir('generated/server-libs')
+    sourceSets.main.assets.srcDir layout.buildDirectory.dir('generated/web-client')
     packagingOptions
     {
         jniLibs
         {
             useLegacyPackaging = true
             keepDebugSymbols += '**/libchat-server.so'
+            keepDebugSymbols += '**/liblemon-funnel.so'
         }
     }
     buildTypes
@@ -105,4 +107,69 @@ def nativeTasks = serverAbis.collect
 tasks.named('preBuild')
 {
     dependsOn nativeTasks
+}
+
+def funnelTasks = serverAbis.collect
+{
+    abi ->
+    tasks.register('buildFunnel' + abi.replaceAll('[^a-zA-Z0-9]', '_'))
+    {
+        doLast
+        {
+            exec
+            {
+                commandLine 'python', rootProject.file('funnel/build.py'),
+                    '--ndk', new File(android.sdkDirectory, "ndk/${android.ndkVersion}"),
+                    '--abi', abi, '--output',
+                    layout.buildDirectory.file("generated/server-libs/${abi}/liblemon-funnel.so").get().asFile
+            }
+        }
+    }
+}
+
+// Gradle never prompts. Optional minification: install Terser, then use -PclientBuildMode=minified.
+def clientBuildMode = providers.gradleProperty('clientBuildMode').orElse('unminified').get()
+if (!(clientBuildMode in ['minified', 'unminified']))
+{
+    throw new GradleException('clientBuildMode must be minified or unminified')
+}
+def browserClientDirectory = rootProject.file('../../client-source-code/client-development/browser')
+
+def prepareWebClient = tasks.register('prepareWebClient')
+{
+    inputs.property 'clientBuildMode', clientBuildMode
+    inputs.dir new File(browserClientDirectory, 'src')
+    inputs.file new File(browserClientDirectory, 'build.cjs')
+    outputs.file layout.buildDirectory.file('generated/web-client/client.html')
+    doLast
+    {
+        exec
+        {
+            commandLine 'node', new File(browserClientDirectory, 'build.cjs'),
+                '--' + clientBuildMode, '--no-server-copy'
+        }
+        copy
+        {
+            from rootProject.file('../../client-source-code/client.html')
+            into layout.buildDirectory.dir('generated/web-client')
+        }
+    }
+}
+
+def prepareFunnelNotices = tasks.register('prepareFunnelNotices')
+{
+    dependsOn funnelTasks
+    doLast
+    {
+        copy
+        {
+            from layout.buildDirectory.file("generated/funnel-build/${serverAbis[0]}/tailscale-notices.txt")
+            into layout.buildDirectory.dir('generated/web-client')
+        }
+    }
+}
+
+tasks.named('preBuild')
+{
+    dependsOn prepareFunnelNotices, prepareWebClient
 }

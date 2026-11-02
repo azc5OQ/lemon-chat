@@ -129,8 +129,8 @@ anywhere.
    - `libopusjs/libopus-workingbuild.tar.gz`
    - `mp3-to-pcm/minimp3-wasm.tar.gz`
 3. The build produces a `.wasm` file.
-4. Convert that `.wasm` into a Base64 string with the included
-   [`wasmstob64.py`](wasmstob64.py) script, then paste it into `client.html`.
+4. Replace the matching binary under `../src/wasm/`, then run the browser
+   builder (`node ../build.cjs`). It embeds the binary as base64 automatically.
 
 The archives of both projects the WebAssembly files were built from are
 included in this directory.

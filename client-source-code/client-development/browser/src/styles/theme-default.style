@@ -209,7 +209,7 @@ a-toast:hover {
 .marquee div {
     padding-left: 100%;
     display: inline-block;
-    font-family: roboto,sans-serif;
+    font-family: var(--set-font);
     font-size: 11px;
     vertical-align: top;
     color: #7ee8ff;
@@ -244,7 +244,7 @@ a-toast:hover {
     text-align: center;
     width: 97px;
     height: 20px;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 13px;
     transition: 0.3s ease;
     border-radius: 3px;
@@ -489,13 +489,13 @@ a-toast:hover {
     box-sizing: border-box;
     color: white;
     text-align: left;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     overflow-y: auto;
 }
 
 .server-settings-general-header {
     margin: 0 0 14px 0;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 16px;
     font-weight: 600;
     color: white;
@@ -507,7 +507,7 @@ a-toast:hover {
     gap: 10px;
     width: fit-content;
     margin-bottom: 12px;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 14px;
     color: white;
 }
@@ -541,7 +541,7 @@ a-toast:hover {
     display: flex;
     flex-direction: column;
     min-width: 0;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
 }
 
 .ban-entry-ip {
@@ -581,7 +581,7 @@ a-toast:hover {
 .ban-entry-empty {
     color: #9fb0b5;
     font-size: 13px;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
 }
 
 #save-server-settings-button {
@@ -590,7 +590,7 @@ a-toast:hover {
     padding: 7px 14px;
     border: 0px;
     border-radius: 3px;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 13px;
     color: white;
     transition: 0.3s ease;
@@ -621,7 +621,7 @@ a-toast:hover {
     box-sizing: border-box;
     color: white;
     text-align: left;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     overflow-y: auto;
 }
 
@@ -632,7 +632,7 @@ a-toast:hover {
     width: 97px;
     border: 0px;
     height: 20px;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 13px;
     transition: 0.3s ease;
     border-radius: 3px;
@@ -685,10 +685,10 @@ a-toast:hover {
 
 .connected-client-p {
     display: inline-block;
-    color: #63eb2c;
+    color: var(--client-name-color, #63eb2c);
     vertical-align: top;
     margin-top: 2px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
 }
 
 .connected-client-p-music-bot {
@@ -722,7 +722,7 @@ a-toast:hover {
     background-color: inherit;
     border-radius: 9px;
     color: #898e8c;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     font-size: 10px;
     margin: 0px;
     font-weight: bold;
@@ -782,7 +782,7 @@ a-toast:hover {
     vertical-align: top;
     outline: none;
     border: none;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     resize: none;
 }
 
@@ -811,7 +811,7 @@ a-toast:hover {
     background-color: inherit;
     color: white;
     height: calc(100% - 30px);
-    font-family: sans-serif;
+    font-family: var(--set-font);
     display: inline-block;
     vertical-align: top;
     width: 100%;
@@ -892,7 +892,7 @@ a-toast:hover {
     top: 0px;
     width: 130px;
     font-size: 1em;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     padding: 5px;
     display: block;
 }
@@ -903,8 +903,8 @@ a-toast:hover {
 
 #current-client-description-client-name {
     padding: 7px;
-    font-family: sans-serif;
-    color: #63eb2c;
+    font-family: var(--set-font);
+    color: var(--client-name-color, #63eb2c);
     font-size: 15px;
     font-style: normal;
 }
@@ -931,7 +931,7 @@ a-toast:hover {
     background-position: right center;
     background-position-x: 102px;
     font-size: 15px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     padding-top: 5px;
     padding-bottom: 5px;
     white-space: nowrap;
@@ -946,7 +946,7 @@ a-toast:hover {
     top: 0px;
     width: 130px;
     font-size: 1em;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     padding: 5px;
 }
 
@@ -988,7 +988,7 @@ a-toast:hover {
     top: 0px;
     width: 130px;
     font-size: 0.7em;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     padding: 5px;
     overflow: hidden;
 }
@@ -1005,7 +1005,7 @@ a-toast:hover {
     padding-left: 15px;
     padding-top: 5px;
     padding-bottom: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     color: white;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
@@ -1054,8 +1054,8 @@ a-toast:hover {
 
 .single-channel p {
     padding-left: 3px;
-    font: 16px sans-serif;
-    font-family: Raleway;
+    font: 16px var(--set-font);
+    font-family: var(--set-font);
 }
 
 #space-devider4 {
@@ -1096,7 +1096,7 @@ a-toast:hover {
     background-color: inherit;
     border-radius: 9px;
     color: white;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     width: 94%;
     min-height: 44px;
     margin: 0px;
@@ -1146,7 +1146,7 @@ a-toast:hover {
 #connected-local-client-input {
     background-color: inherit;
     height: 16px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     font-weight: bold;
     display: inline-block;
     vertical-align: top;
@@ -1165,7 +1165,7 @@ a-toast:hover {
     width: 96%;
     padding-top: 5px;
     padding-bottom: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
 }
 
 .chat-spacer {
@@ -1187,7 +1187,7 @@ a-toast:hover {
     font-size: 10px;
     vertical-align: middle;
     font-style: italic;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     color: #898e8c;
     font-weight: bold;
 }
@@ -1232,17 +1232,18 @@ a-toast:hover {
     overflow-x: hidden;
 }
 
-.single-chat-message-content-p-hover {
-    background-image: linear-gradient( 109.6deg, rgba(34, 47, 79,0.5) 11.2%, rgba(36,163,190,0.5) 91.1%);
-    border-radius: 5px;
+.single-chat-message-content-p-hover
+{
+    background: transparent;
 }
 
-.local-single-chat-message-content-p:hover {
-    border-radius: 5px;
-    background-image: linear-gradient( 109.6deg, rgba(34, 47, 79,0.5) 11.2%, rgba(36,163,190,0.5) 91.1%);
+.local-single-chat-message-content-p:hover
+{
+    background: transparent;
 }
 
-.connected-client, .connected-local-client {
+.connected-client, .connected-local-client
+{
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
     -webkit-user-select: none;
@@ -1250,8 +1251,8 @@ a-toast:hover {
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
-    padding-top: 2px;
-    padding-bottom: 2px;
+    padding-top: 3px;
+    padding-bottom: 3px;
     min-width: max-content;
 }
 
@@ -1338,7 +1339,12 @@ a-toast:hover {
     --context-menu-icon-display: none;
     --context-menu-text-padding: 5px;
 
-    --set-font: 'Raleway', sans-serif;
+    --client-self-color: #cddc39;
+    --client-unread-bg: #cddc39;
+    --client-unread-color: #202414;
+    --client-unread-border: #dce75d;
+    --client-unread-radius: 999px;
+    --set-font: "Inter", "Segoe UI", sans-serif;
     --set-panel: #36393f;
     --set-text: #e6e8ea;
     --set-muted: rgba(255, 255, 255, 0.45);
@@ -1383,7 +1389,7 @@ a-toast:hover {
     vertical-align: top;
     color: white;
 
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 13px;
     cursor: move;
 }
@@ -1392,7 +1398,7 @@ a-toast:hover {
     display: inline-block;
     width: calc(100% - 187px);
     height: 100%;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
 }
 
 #custom-file-upload-button-image {
@@ -1402,7 +1408,7 @@ a-toast:hover {
 .custom-file-upload-button {
     display: inline-block;
     background-color: #7d8799;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     color: #ffffff;
     padding: 15px 1px 15px 15px;
     text-align: center;
@@ -1428,7 +1434,7 @@ a-toast:hover {
 
 #current-channel-description {
     word-break: break-all;
-    font: 12px sans-serif;
+    font: 12px var(--set-font);
     font-style: italic;
     color: #ffffff;
     height: 100%;
@@ -1438,7 +1444,7 @@ a-toast:hover {
 
 #current-client-description {
     word-break: break-all;
-    font: 12px sans-serif;
+    font: 12px var(--set-font);
     font-style: italic;
     color: #ffffff;
     height: 100%;
@@ -1473,7 +1479,7 @@ a-toast:hover {
     border-radius: 5px;
     padding: 6px;
     color: #8e1ed2;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     font-size: 16px;
     background: #ffffff;
 }
@@ -1484,7 +1490,7 @@ a-toast:hover {
 
 .text-input-pretty {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     width: 200px;
     border-bottom: 3px solid gold;
     border-left-color: #202020;
@@ -1507,7 +1513,7 @@ a-toast:hover {
 
 .text-input-pretty[disabled] {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     background-color: #202020;
     border-style: solid;
     color: wheat;
@@ -1536,7 +1542,7 @@ a-toast:hover {
 
 .text-input-not-pretty {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     width: 185px;
     border-bottom: 1px solid white;
     border-left-color: #36393f;
@@ -1551,7 +1557,7 @@ a-toast:hover {
 
 .text-input-not-pretty[disabled] {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     background-color: #36393f;
     border-style: solid;
     color: white;
@@ -1561,7 +1567,7 @@ a-toast:hover {
 
 .text-input-not-pretty-2 {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     width: 172px;
     border-bottom: 1px solid white;
     border-left-color: #36393f;
@@ -1576,7 +1582,7 @@ a-toast:hover {
 
 .text-input-not-pretty-2[disabled] {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     background-color: #36393f;
     border-style: solid;
     color: white;
@@ -1751,8 +1757,8 @@ a-toast:hover {
     z-index: 1;
     top: 24px;
     right: 116px;
-    font: 16px sans-serif;
-    font-family: 'Raleway';
+    font: 16px var(--set-font);
+    font-family: var(--set-font);
 }
 
 #hide-chat-button:hover, #chat-input-container-send-chat-input:hover, #show-secret-identity-string:hover, #show-admin-password-entry:hover, #hide-show-flags-button:hover, #show-hide-log-button:hover, #clear-chat-button:hover, #enter-server-settings:hover, #microphone-always-broadcasting-audio-button:hover, #sound-effects-button:hover {
@@ -1800,7 +1806,7 @@ a-toast:hover {
 }
 
 #p-secret-identity-string {
-    font-family: sans-serif;
+    font-family: var(--set-font);
     font-size: 13px;
     padding: 8px;
     color: #cddc39;
@@ -1816,7 +1822,7 @@ a-toast:hover {
     display: inline-block;
     vertical-align: top;
     font-size: 12px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     min-width: 35px;
     color: white;
 }
@@ -1894,7 +1900,7 @@ a-toast:hover {
 #client-info-content {
     padding: 6px 18px 4px 18px;
     color: white;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     font-size: 14px;
 }
 
@@ -1978,7 +1984,7 @@ a-toast:hover {
 }
 /* the signature lemon close button on every dialog; the doubled class is needed because
    layout.style's plain cross loads after the themes and would win a specificity tie */
-:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button.close-button,
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button.close-button,
 #channel-properties-edit .close-button.close-button,
 #channel-password-enter .close-button.close-button,
 #musicbot-management-dialog .close-button.close-button,
@@ -2001,7 +2007,7 @@ a-toast:hover {
     background: transparent;
 }
 
-:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button.close-button::before,
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button.close-button::before,
 #channel-properties-edit .close-button.close-button::before,
 #channel-password-enter .close-button.close-button::before,
 #musicbot-management-dialog .close-button.close-button::before,
@@ -2017,7 +2023,7 @@ a-toast:hover {
     content: none;
 }
 
-:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button.close-button:hover,
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button.close-button:hover,
 #channel-properties-edit .close-button.close-button:hover,
 #channel-password-enter .close-button.close-button:hover,
 #musicbot-management-dialog .close-button.close-button:hover,
@@ -2034,29 +2040,58 @@ a-toast:hover {
     border-color: #d8d22b;
 }
 
-#toggle-microphone-label {
+#toggle-microphone-label
+{
     display: none;
     position: absolute;
-    bottom: 0px;
-    left: 0px;
+    bottom: 12px;
+    left: 12px;
     width: 40px;
-    border-radius: 7px;
     height: 40px;
-    background-color: #36393f;
-    transition: all 0.3s;
-    background-repeat: no-repeat;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 1px solid #52616b;
+    background: #25333b;
+    color: #b7c6ce;
     cursor: pointer;
-    background-size: 32px 32px;
-    background-position: center;
-    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAELklEQVRoQ+2ZWehOXRTGf+hDuJIpmVKUJIUiY9wRMpRMFy58hogoZUgk04WUqQyJEqJMZSgy9hlKXBK5+MgsuVDm0KN9tJ3/Gfbe55z3f2PdvO85Z++1n2fvtddae+0GlC/DgOmAftsDDYHnwDVgL3C9zCEblKisFbAPGJ2j8xTwL/CmjLHLItAFuAh0dQT1PzAc0G8hKYNAC+AG0MsTyX2gH/DBs98fzcsgsA5YHghiPbAisO+vbkUJNAdeAfoNkRdAB+B7QufWwDjgYNYqFSUwFtCmDBGZjjb85YTObc37HuZX7RJNrSiBZYDMwFdcwUd6RTKRRFECm4FFnuh9wUfqZwF74mMVJbAFWOBBIBS8PJYCY53YUUsCAj8GuJRAuI153zPh2wMTM7Th60itCFQCvgw36mJClYGvBYFKwVdNoHLwVRKoCfiqCNQMvCuBf4AdQB9gFXDG8mXxTRzq5+8BI0xepYi7GrgLzAO+ZsUZFzc6BThklCiQyGdHYhMIBS8/ryClpFCiMXQ4kkwFDhcloEgroJHYpCMCoWYjnVuBhZb+H9Z/vdf3VHFZgTwCMwMjbASqXglsBM4HpAf2jFZOYDaw0xpRm/qbeW6Wkqfb+XyWBejbJmCJadQY+Gx1mBsbu44uFxPSqeiE1VPgXmeg8gEvNQIvEpKOwBNL90TgeNE90B+4ZSmRx1CNJ0l8wUuH3Gd0KhsA3LQUDwH+K0qgpZnxRsZcpFQ+Oi4h4LWSOhNHvn4psMEo1jm5XV79yMWEpE8z3tfxDJtn8/Z3ebht1gtV7Qaa5zum7JKpz5WAIqKiZd4B3Af8BWCU5RAEXOYSYXIqubgSSAMWYjbSpUKYUoZ3RrFwaJUHm+cvQLfYhk7EUIRACHgBk8momGW7SxXGVCCLZBcwx2U5QwlkgdcBfD8wCOgMKDV4amb4KPA4BkyuUu9VxZa8BXoDz6oiEHwATwCkUsl2QMFRIrLjfYplviuQNfPxrDJrArUySkMmxxqtBVa6zHzUxodAns3LvmUKB4ArgJ5tUZqgIDgBmAE0jX3XWWOND3i1dSWQBz4+rgLTQxMAZR4yu04JoNXvI7A4L+dJI+ZCIG/D6pJipO/MmfYqcilZfBTYP3cF8sDrlkUnqaHAfEDV6iY5YOQ+laDtBq6ajRuKP5OAK3h7cN0TyM7lBuXHZTYSuU7l/UoPlEe9D0Yc65hmQrpc0OyoPh8X+flo5rNwnLVM65xJG8rC/VtPGgHdImqJQ8GrX70S0EnrtJnpiITrzEft65WAQNgkksDLZ0+yomh8tZTLS4dEVYuXKfYjl3vE1Jy8TSzPjQrANOBk7GCh69Hb3qNld5BObXIvySOQpkwX20odFF3LEEXt7gmJXq7uUAJSHKUF8ZQgd9BYg0/AsYxzdqa+IgR8gVbS/i+BSqbVQ+lPvaMNQOE4cEcAAAAASUVORK5CYII=);
+    z-index: 250;
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-#toggle-microphone-label:hover {
-    background-color: #7d8799;
+#toggle-microphone-label::before
+{
+    content: "";
+    position: absolute;
+    inset: 9px;
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='12' rx='3'/%3E%3Cpath d='M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
-#toggle-microphone:checked + #toggle-microphone-label {
-    background-color: #7d8799;
+#toggle-microphone:not(:checked) ~ #toggle-microphone-label::after
+{
+    content: "";
+    position: absolute;
+    top: 19px;
+    left: 8px;
+    width: 24px;
+    height: 2px;
+    border-radius: 1px;
+    background: currentColor;
+    box-shadow: 0 -2px #25333b;
+    transform: rotate(-45deg);
+}
+
+#toggle-microphone-label:hover
+{
+    background: #354752;
+    color: #ffffff;
+}
+
+#toggle-microphone:checked ~ #toggle-microphone-label
+{
+    background: #25333b;
+    color: #75d2ac;
+    border-color: #75d2ac;
 }
 
 #toggle-microphone {
@@ -2237,7 +2272,12 @@ a-toast:hover {
     --reaction-panel: #36393f;
     --reaction-radius: 5px;
     --reaction-shadow: none;
-    --reaction-font: var(--set-font, "Raleway", sans-serif);
+    --reaction-font: var(--set-font);
+    --chat-author-font: "Inter", "Segoe UI", sans-serif;
+    --chat-author-weight: 600;
+    --chat-meta-font: "Inter", system-ui, sans-serif;
+    --chat-meta-size: 11px;
+    --chat-edited-color: #b4a7bb;
     --chat-author-size: 13px;
     --chat-author-color: #adc5e4;
     --chat-local-author-color: #c4d6ec;
@@ -2282,6 +2322,61 @@ a-toast:hover {
     border-bottom: 0;
 }
 
+:root .single-chat-message
+{
+    box-sizing: border-box;
+    width: auto;
+    padding-left: 14px;
+    padding-right: 14px;
+}
+
+:root .single-chat-message > .single-message-content
+{
+    width: 100%;
+}
+
+:root .single-server-message
+{
+    box-sizing: border-box;
+    width: auto;
+    padding-inline: 14px;
+}
+
+:root .single-chat-message .chat-message-avatar
+{
+    position: absolute;
+    top: 1px;
+    left: 0;
+    width: 38px;
+    height: 38px;
+    margin: 0;
+}
+
+:root .single-chat-message .chat-message-avatar-placeholder
+{
+    background: #435b70;
+    color: #ecf6ff;
+    font-size: 14px;
+}
+
+:root .single-chat-message :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container):has(> .chat-message-avatar)
+{
+    position: relative;
+    min-height: 20px;
+    padding-left: 50px;
+}
+
+:root .single-message-content:has(> :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container) > .chat-message-avatar)
+{
+    min-height: 38px;
+}
+
+:root .single-message-content:has(> :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container) > .chat-message-avatar) > .single-chat-message-content
+{
+    margin-left: 50px;
+    max-width: calc(100% - 50px);
+}
+
 :root #chat-reply-preview
 {
     border-color: #657285;
@@ -2289,9 +2384,122 @@ a-toast:hover {
     font-family: var(--reaction-font);
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup)
 {
     --groups-radius: 8px;
     --groups-title-background: #36393f;
     --groups-title-text: #e6e8ea;
 }
+
+:where(body, button, input, select, textarea)
+{
+    font-family: var(--set-font);
+}
+
+/* Unavailable microphones keep the same centred circular footprint. */
+.client-audio-state:is(.client-audio-state-microphone-disabled, .client-audio-state-completely-disabled)
+{
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #667b86;
+    border-radius: 50%;
+    background-color: #23373f;
+    background-position: center;
+    background-size: 14px 14px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c5d4dc' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M9 9V6a3 3 0 0 1 6 0v5M9 13a3 3 0 0 0 5 2M6 10v2a6 6 0 0 0 10 4M18 10v2M12 18v3m-3 0h6M3 3l18 18'/%3E%3C/svg%3E");
+}
+
+/* Default keeps neutral client names and recognisable microphone badges distinct
+   from the channel tree's cyan chevrons. Other themes reuse this base sheet. */
+:root:has(#style-theme-default:not([media]))
+{
+    --client-name-color: #d7dce3;
+    --client-self-color: #e5ba91;
+}
+
+:root:has(#style-theme-default:not([media])) .connected-local-client > :is(#connected-local-client-input, .connected-client-p)
+{
+    font-weight: 700;
+}
+
+:root:has(#style-theme-default:not([media])) .client-audio-state
+{
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #424c5b;
+    border-radius: 50%;
+    background-color: #1b222c;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 16px 16px;
+    box-shadow: none;
+}
+
+:root:has(#style-theme-default:not([media])) .client-audio-state-microphone-enabled
+{
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22%23d7e0ea%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%227%22%20y%3D%222%22%20width%3D%226%22%20height%3D%2210%22%20rx%3D%223%22%2F%3E%3Cpath%20d%3D%22M4%208v2a6%206%200%200%200%2012%200V8M10%2016v3m-3%200h6%22%2F%3E%3C%2Fsvg%3E");
+}
+
+:root:has(#style-theme-default:not([media])) .client-audio-state-microphone-disabled
+{
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22%239aa6b6%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%227%22%20y%3D%222%22%20width%3D%226%22%20height%3D%2210%22%20rx%3D%223%22%2F%3E%3Cpath%20d%3D%22M4%208v2a6%206%200%200%200%2012%200V8M10%2016v3m-3%200h6%22%2F%3E%3Cpath%20d%3D%22m3%203%2014%2014%22%20stroke%3D%22%231b222c%22%20stroke-width%3D%223.8%22%2F%3E%3Cpath%20d%3D%22m3%203%2014%2014%22%20stroke%3D%22%23d79a92%22%20stroke-width%3D%221.8%22%2F%3E%3C%2Fsvg%3E");
+}
+
+:root:has(#style-theme-default:not([media])) .client-audio-state-microphone-active
+{
+    border-color: #75e6cf;
+    background-color: #4dd7bd;
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22%2310251f%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%227%22%20y%3D%222%22%20width%3D%226%22%20height%3D%2210%22%20rx%3D%223%22%2F%3E%3Cpath%20d%3D%22M4%208v2a6%206%200%200%200%2012%200V8M10%2016v3m-3%200h6%22%2F%3E%3Cpath%20d%3D%22M1.5%207v6m17-6v6%22%2F%3E%3C%2Fsvg%3E");
+    box-shadow: 0 0 4px rgb(77 215 189 / 24%);
+}
+
+:root:has(#style-theme-default:not([media])) .client-audio-state-completely-disabled
+{
+    border-color: #3b4350;
+    background-color: #191e26;
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22%238995a5%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%207h3l5-4v14l-5-4H3V7Zm11%200a5%205%200%200%201%200%206%22%2F%3E%3Cpath%20d%3D%22m3%203%2014%2014%22%20stroke%3D%22%23191e26%22%20stroke-width%3D%223.8%22%2F%3E%3Cpath%20d%3D%22m3%203%2014%2014%22%20stroke%3D%22%238995a5%22%20stroke-width%3D%221.8%22%2F%3E%3C%2Fsvg%3E");
+    box-shadow: none;
+}
+
+:root:has(#style-theme-default:not([media])) #toggle-microphone-label
+{
+    border-color: #424c5b;
+    background: #1b222c;
+    color: #c8d2df;
+    box-shadow: none;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+:root:has(#style-theme-default:not([media])) #toggle-microphone:not(:checked) ~ #toggle-microphone-label::after
+{
+    background: #d79a92;
+    box-shadow: 0 -2px #1b222c;
+}
+
+:root:has(#style-theme-default:not([media])) #toggle-microphone-label:hover
+{
+    border-color: #718096;
+    background: #28323f;
+    color: #edf2f8;
+}
+
+:root:has(#style-theme-default:not([media])) #toggle-microphone:not(:checked) ~ #toggle-microphone-label:hover::after
+{
+    box-shadow: 0 -2px #28323f;
+}
+
+:root:has(#style-theme-default:not([media])) #toggle-microphone:checked ~ #toggle-microphone-label
+{
+    border-color: #75e6cf;
+    background: #4dd7bd;
+    color: #10251f;
+    box-shadow: 0 0 6px rgb(77 215 189 / 20%);
+}
+
+:root:has(#style-theme-default:not([media])) #toggle-microphone:checked ~ #toggle-microphone-label:hover
+{
+    background: #75e6cf;
+}
+

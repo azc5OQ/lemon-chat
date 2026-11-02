@@ -1,7 +1,9 @@
+#include "../../clib/clib.h"
 // This file handles requests to view, upload and delete server emojis.
 #include "client_msg.h"
 #include "../server/server_msg.h"
 #include "../../core/emojis.h"
+#include "../../core/permissions.h"
 #include "../../base.h"
 #include "../../clib/clib_rwlock.h"
 #include <string.h>
@@ -25,7 +27,7 @@ static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client
     cstring error = NULL_POINTER;
     cstring requested_id = cJSON_IsString(id) ? id->valuestring : NULL_POINTER;
     char new_id[33] = {0};
-    boole editing = (boole)(strcmp(operation, "upload_server_emoji") == 0 || strcmp(operation, "delete_server_emoji") == 0);
+    boole editing = (boole)(clib__strcmp(operation, "upload_server_emoji") == 0 || clib__strcmp(operation, "delete_server_emoji") == 0);
 
     if (client_id >= g_server_settings.max_client_count)
     {
@@ -45,20 +47,21 @@ static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
-    if (editing && !client->is_admin)
+    if (editing && permissions__is_allowed(client, clib__strcmp(operation, "upload_server_emoji") == 0
+        ? PERMISSION_UPLOAD_EMOJIS : PERMISSION_DELETE_EMOJIS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
-        server_msg__emojis__send_error(client, operation, "Only a server administrator can change emojis.", requested_id);
+        server_msg__emojis__send_error(client, operation, "Insufficient permissions.", requested_id);
     }
-    else if (strcmp(operation, "load_server_emojis") == 0)
+    else if (clib__strcmp(operation, "load_server_emojis") == 0)
     {
         server_msg__emojis__send_list(client);
     }
-    else if (strcmp(operation, "load_server_emoji") == 0)
+    else if (clib__strcmp(operation, "load_server_emoji") == 0)
     {
         server_msg__emojis__send_image(client, requested_id);
     }
-    else if (strcmp(operation, "delete_server_emoji") == 0)
+    else if (clib__strcmp(operation, "delete_server_emoji") == 0)
     {
         if (emojis__remove(requested_id))
         {

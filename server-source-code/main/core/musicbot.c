@@ -10,8 +10,8 @@
 
 #include "audio_channel.h"
 #include "musicbot.h"
-#include "../clib/clib_string.h"
-#include "../clib/clib_memory.h"
+#include "permissions.h"
+#include "../clib/clib.h"
 #include "../memory_manager.h"
 #include "../msg/server/server_msg.h"
 #include "../util.h"
@@ -39,6 +39,36 @@ typedef struct musicbot_prepare_arg_t
 static void _musicbot_internal__prepare_song(client_t* music_bot_client, int64 song_index, musicbot_prepared_song_t* out_prepared);
 static void* _musicbot_internal__prepare_thread(void* arg_void);
 static void* _musicbot_internal__reaper_thread(void* arg_void);
+static boole _musicbot_internal__wait_for_playback(client_t* client, uint64* playback_start_ms);
+
+/**
+ * @brief Waits while playback is paused and keeps the playback clock current.
+ * @param client Music bot whose controls are atomic.
+ * @param playback_start_ms Clock adjusted by the time spent paused.
+ */
+static boole _musicbot_internal__wait_for_playback(client_t* client, uint64* playback_start_ms)
+{
+    uint64 pause_start = 0;
+    uint64 pause_end = 0;
+
+    if (atomic_load(&client->music_bot_client_extension.is_playback_paused))
+    {
+        pause_start = util__get_timestamp_ms();
+        while (atomic_load(&client->music_bot_client_extension.is_playback_paused)
+            && client->music_bot_client_extension.is_music_bot_running
+            && !atomic_load(&client->music_bot_client_extension.is_skip_requested))
+        {
+            util__sleep_for_milliseconds(50);
+        }
+        pause_end = util__get_timestamp_ms();
+        if (pause_end > pause_start)
+        {
+            *playback_start_ms += pause_end - pause_start;
+        }
+    }
+    return client->music_bot_client_extension.is_music_bot_running
+        && !atomic_exchange(&client->music_bot_client_extension.is_skip_requested, FALSE);
+}
 
 /**
  * @brief decodes one uploaded mp3 into 48 kHz int16 PCM ready for the opus encoder: full mp3 decode,
@@ -386,7 +416,9 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
         
         clib__write_lock(&g_clients_global_rwlock_guard);
 
-        status = base__is_client_valid_musicbot(arg->music_bot->client_id);
+        status = base__is_client_valid_musicbot(arg->music_bot->client_id)
+            && permissions__is_allowed(&g_clients_array[arg->sender_client_id], PERMISSION_UPLOAD_MUSIC_TRACKS)
+            && clib__strcmp(g_clients_array[arg->sender_client_id].public_key, arg->sender_identity) == 0;
 
         if (status == FALSE)
         {
@@ -407,7 +439,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
         song_in_loop->mp3_data_buffer = arg->mp3_data_buffer;
         song_in_loop->mp3_data_buffer_length = arg->mp3_data_buffer_length;
         DBG_MUSIC_BOT log_info("%s %s %s", "musicbot__add_song added song -> ", arg->song_name, "\n");
-        clib__copy_memory((void*)arg->song_name, song_in_loop->song_name, clib__utf8_string_length(arg->song_name), SONG_NAME_MAX_LENGTH);
+        clib__string_copy(song_in_loop->song_name, sizeof(song_in_loop->song_name), arg->song_name);
         clib__null_memory((void*)&mp3, sizeof(drmp3));
 
         // Decode MP3
@@ -463,6 +495,16 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
             break;
         }
 
+        if (!permissions__is_allowed(&g_clients_array[arg->sender_client_id], PERMISSION_UPLOAD_MUSIC_TRACKS)
+            || clib__strcmp(g_clients_array[arg->sender_client_id].public_key, arg->sender_identity) != 0)
+        {
+            clib__memset(song_in_loop, 0, sizeof(*song_in_loop));
+            memorymanager__free((nuint)arg->mp3_data_buffer);
+            memorymanager__free((nuint)arg);
+            clib__unlock(&g_clients_global_rwlock_guard);
+            return;
+        }
+
         // at this point read lock is still active
         song_in_loop = &arg->music_bot->music_bot_client_extension.songs[i];
         if (song_in_loop->is_existing == TRUE)
@@ -495,7 +537,9 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t* arg)
         clib__read_lock(&g_clients_global_rwlock_guard);
 
         // the requester may have left and the bot's slot may have been reused while the song loaded
-        if (base__is_client_valid_admin((int)arg->sender_client_id) == TRUE && base__is_client_valid_musicbot((int)arg->music_bot->client_id) == TRUE)
+        if (permissions__is_allowed(&g_clients_array[arg->sender_client_id], PERMISSION_UPLOAD_MUSIC_TRACKS)
+            && clib__strcmp(g_clients_array[arg->sender_client_id].public_key, arg->sender_identity) == 0
+            && base__is_client_valid_musicbot((int)arg->music_bot->client_id) == TRUE)
         {
             server_msg__musicbot__send_song_list_to_single_client(&g_clients_array[arg->sender_client_id], arg->music_bot);
         }
@@ -680,7 +724,7 @@ void* musicbot__threadstart(void* argument)
             frames_done = 0;
 
             clib__null_memory(music_bot_client->song_name, SONG_NAME_MAX_LENGTH);
-            clib__copy_memory(current_song->song_name, music_bot_client->song_name, clib__utf8_string_length(current_song->song_name), SONG_NAME_MAX_LENGTH);
+            clib__string_copy(music_bot_client->song_name, sizeof(music_bot_client->song_name), current_song->song_name);
             server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_channel(music_bot_client);
 
             is_stop_reason_sudden_song_deletion = FALSE;
@@ -693,6 +737,11 @@ void* musicbot__threadstart(void* argument)
 
             for (drmp3_uint64 frame_offset = 0; frame_offset < prepared_song.frame_count; frame_offset += frame_size)
             {
+                if (!_musicbot_internal__wait_for_playback(music_bot_client, &song_playback_start_ms))
+                {
+                    is_stop_reason_sudden_song_deletion = TRUE;
+                    break;
+                }
                 // stop mid-song if the bot was shut down or the song was deleted
                 if (music_bot_client->music_bot_client_extension.is_music_bot_running == FALSE || music_bot_client->music_bot_client_extension.songs[song_index].is_existing == FALSE)
                 {

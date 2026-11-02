@@ -60,7 +60,7 @@ body {
     height: 100%;
     margin: 0px;
     overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    font-family: var(--set-font);
     color: #f5f5f5;
 
     /* member-strip sizes, fallbacks only, because main.js apply_member_list_scale overwrites them live as inline body variables */
@@ -356,7 +356,7 @@ body.msgr-neighbors-only #member-list-body .member-list-client:not(.in-current-c
     overflow: visible;
     background: transparent;
     padding: 0;
-    margin: 0;
+    margin: 1px 0;
     min-height: 0;
     line-height: normal;
     border-radius: 0;
@@ -457,6 +457,7 @@ body.msgr-neighbors-only #member-list-body .member-list-client:not(.in-current-c
     white-space: nowrap;
     padding: 0;
 }
+
 
 
 #member-list-body .member-list-client .connected-client-p-received-messages-number {
@@ -723,11 +724,12 @@ body.msgr-vertical #current-client-description {
     border-radius: 5px;
 }
 
-.single-server-message {
-    text-align: center;
+.single-server-message
+{
+    text-align: left;
     color: #708499;
     font-size: 12px;
-    padding: 4px 0;
+    padding: 4px 12px;
     background: transparent;
     width: 100%;
 }
@@ -1367,8 +1369,6 @@ a-toast {
 .channel-list-context-menu-items .context-menu-item[data-action="6"],
 .channel-list-context-menu-items .context-menu-item[data-action="8"],
 .channel-list-context-menu-items .context-menu-item[data-action="9"],
-.channel-list-context-menu-items .context-menu-item[data-action="12"],
-.channel-list-context-menu-items .context-menu-item[data-action="13"],
 .channel-list-context-menu-items .context-menu-item[data-action="19"] {
     display: none !important;
 }
@@ -1803,7 +1803,7 @@ div#connection-status-extra {
     margin: 14px auto 0 auto;
     max-width: 340px;
     text-align: center;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     animation: connection-status-fade-in 0.6s ease;
 }
 
@@ -1957,7 +1957,7 @@ div#local-settings-container {
     background-clip: padding-box;
     box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
     color: #e4e6e8;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    font-family: var(--set-font);
 }
 
 div#local-settings-container div#menu-bar-container {
@@ -2227,6 +2227,11 @@ body.android-app #another-buttons-loading-container {
     --reaction-radius: 8px;
     --reaction-shadow: 0 4px 14px #0005;
     --reaction-font: var(--set-font);
+    --chat-author-font: "Inter", system-ui, sans-serif;
+    --chat-author-weight: 600;
+    --chat-meta-font: "Inter", system-ui, sans-serif;
+    --chat-meta-size: 12px;
+    --chat-edited-color: #b9b6cb;
     --chat-author-size: 13px;
     --chat-author-color: #94b8dc;
     --chat-local-author-color: #c5d6ea;
@@ -2294,11 +2299,6 @@ body.android-app #another-buttons-loading-container {
     border-bottom: 0;
 }
 
-:root .chat-reply-quote:hover
-{
-    background: var(--reaction-selected);
-}
-
 :root #chat-reply-preview
 {
     display: grid;
@@ -2330,7 +2330,12 @@ body.android-app #another-buttons-loading-container {
 
 :root
 {
-    --set-font: "Segoe UI", Roboto, sans-serif;
+    --client-self-color: #78c2ff;
+    --client-unread-bg: #448ac4;
+    --client-unread-color: #ffffff;
+    --client-unread-border: #72b1e0;
+    --client-unread-radius: 9px;
+    --set-font: "Inter", system-ui, sans-serif;
     --set-panel: #242f3d;
     --set-text: #f5f5f5;
     --set-muted: #8b9baa;
@@ -2347,7 +2352,7 @@ body.android-app #another-buttons-loading-container {
     --set-button-border: 1px solid rgba(0, 0, 0, 0.6);
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup)
 {
     --groups-radius: 14px;
     --groups-title-background: #242f3d;
@@ -2436,4 +2441,9 @@ div#local-settings-container .local-settings-row-select input[type="button"]:not
 #channel-properties-edit[style*="left:"]
 {
     transform: none;
+}
+
+:where(body, button, input, select, textarea)
+{
+    font-family: var(--set-font);
 }

@@ -138,7 +138,7 @@ function voice__process_start_sending_audio()
 }
 
 /**
- * @brief the glow on the mic controls while actually transmitting, so the user knows the mic is hot
+ * @brief Shows transmission on push-to-talk controls; the enable toggle keeps its own state.
  *
  * @param boolean is_transmitting -> true while audio is going out
  *
@@ -146,7 +146,7 @@ function voice__process_start_sending_audio()
  */
 function voice__set_mic_transmitting_visual(is_transmitting)
 {
-    let button_ids = ["microphone-push-to-talk-button-touch-device", "microphone-always-broadcasting-audio-button", "toggle-microphone-label"];
+    let button_ids = ["microphone-push-to-talk-button-touch-device", "microphone-always-broadcasting-audio-button"];
 
     for (let i = 0; i < button_ids.length; i++)
     {
@@ -154,8 +154,14 @@ function voice__set_mic_transmitting_visual(is_transmitting)
 
         if (button != null)
         {
-            if (is_transmitting == true) { button.classList.add("mic-transmitting"); }
-            else { button.classList.remove("mic-transmitting"); }
+            if (is_transmitting == true)
+            {
+                button.classList.add("mic-transmitting");
+            }
+            else
+            {
+                button.classList.remove("mic-transmitting");
+            }
         }
     }
 }

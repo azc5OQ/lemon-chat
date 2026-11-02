@@ -1,5 +1,7 @@
 // This file manages channels, their members and the client chosen to maintain each channel's keys.
 #include "channel.h"
+#include "channel_groups.h"
+#include "permissions.h"
 #include "../video_websocket.h"
 #include "../definitions.h"
 #include "../../third-party/dave-g-json/cJSON.h"
@@ -8,14 +10,121 @@
 #include "../base.h"
 #include "../msg/server/server_msg.h"
 #include "../memory_manager.h"
-#include "../clib/clib_memory.h"
-#include "../clib/clib_string.h"
+#include "../clib/clib.h"
 #include "../util.h"
 #include "audio_channel.h"
 #include "video_channel.h"
 #include "server_logs.h"
 
 // declarations
+
+/**
+ * @brief Checks a type conversion while the clients and channels locks are held.
+ * @return NULL when allowed, otherwise a user-facing reason.
+ */
+cstring channel__type_change_error(const client_t* actor, const channel_t* channel, boole temporary)
+{
+    uint64 i = 0;
+
+    if (actor == NULL_POINTER || channel == NULL_POINTER || !actor->is_existing || !actor->is_authenticated
+        || actor->is_music_bot || !channel->is_existing)
+    {
+        return "The client or channel is no longer available.";
+    }
+    if (temporary == channel->is_temp_channel)
+    {
+        return NULL_POINTER;
+    }
+    if (channel->is_root_channel || channel->channel_id == ROOT_CHANNEL_ID)
+    {
+        return "The root channel must remain permanent.";
+    }
+    if (!channel_groups__is_allowed(actor, channel, PERMISSION_EDIT_CHANNEL_OPTIONS))
+    {
+        return "Changing channel type requires Edit channel options.";
+    }
+    if (!temporary)
+    {
+        return permissions__is_allowed(actor, PERMISSION_CREATE_CHANNEL) ? NULL_POINTER
+            : "Making a channel permanent requires Create permanent channels.";
+    }
+    if (!permissions__is_allowed(actor, PERMISSION_CREATE_TEMP_CHANNEL)
+        || (!g_server_settings.is_permission_system_enabled && !g_server_settings.is_temp_channel_creation_allowed && !actor->is_admin))
+    {
+        return "Creating temporary channels is not permitted.";
+    }
+    if (!channel_groups__is_allowed(actor, channel, PERMISSION_DELETE_CHANNEL))
+    {
+        return "Making a channel temporary requires Delete channels because it will be deleted when its owner leaves.";
+    }
+    if (actor->is_idle || actor->channel_id != channel->channel_id)
+    {
+        return "Join this channel first. You will own it until you leave.";
+    }
+    if (actor->is_temp_admin_channel && actor->temp_channel_id != channel->channel_id)
+    {
+        return "You already own another temporary channel.";
+    }
+    for (i = 0; i < g_server_settings.max_channel_count; i++)
+    {
+        if (g_channel_array[i].is_existing && g_channel_array[i].parent_channel_id == (int64)channel->channel_id)
+        {
+            return "Remove or move the child channels before making this channel temporary.";
+        }
+    }
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        if (g_clients_array[i].is_existing && g_clients_array[i].is_music_bot && g_clients_array[i].channel_id == channel->channel_id)
+        {
+            return "Remove the music bot before making this channel temporary.";
+        }
+    }
+    return NULL_POINTER;
+}
+
+/**
+ * @brief Applies a validated conversion without recreating the channel or moving members.
+ * @attention Caller holds clients and channels write locks and has checked type_change_error.
+ */
+void channel__set_temporary(client_t* actor, channel_t* channel, boole temporary)
+{
+    uint64 i = 0;
+    client_t* client = NULL_POINTER;
+    char identity[IDENTITY_HASH_MAX_LENGTH] = {0};
+
+    if (temporary == channel->is_temp_channel)
+    {
+        return;
+    }
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+        if (client->is_temp_admin_channel && client->temp_channel_id == channel->channel_id)
+        {
+            if (!temporary && g_server_settings.is_permission_system_enabled && client->is_existing && client->is_authenticated)
+            {
+                util__hash_password_to_base64(client->public_key, identity, sizeof(identity));
+                channel_groups__set(channel, identity, CHANNEL_GROUP_ADMIN);
+            }
+            client->is_temp_admin_channel = FALSE;
+            client->temp_channel_id = 0;
+        }
+    }
+    channel->is_temp_channel = temporary;
+    if (temporary)
+    {
+        actor->is_temp_admin_channel = TRUE;
+        actor->temp_channel_id = channel->channel_id;
+    }
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+        if (client->is_existing && client->is_authenticated && client->channel_id == channel->channel_id)
+        {
+            channel_groups__refresh(client);
+        }
+    }
+}
 
 /**
  * @brief Checks channel power requirements and applies them only when all are valid.
@@ -349,6 +458,7 @@ void channel__destroy_temp_channel(uint64 temp_channel_id)
     }
 
     // free the channel slot and tell everyone the channel is gone
+    channel_groups__clear(&g_channel_array[temp_channel_id]);
     clib__null_memory(&g_channel_array[temp_channel_id], sizeof(channel_t));
     // No client clicked delete: the owner left this temporary channel.
     server_msg__channel__send_delete_message_to_all_clients(temp_channel_id, UINT64_MAX);
@@ -467,7 +577,9 @@ boole channel__check_channel_access(client_t* client, channel_t* channel, char* 
         server_msg__channel__send_full_to_single_client(client, channel->channel_id);
         return FALSE;
     }
-    if (channel->is_using_password == TRUE && password_already_proven == FALSE && (password == NULL_POINTER || util__password_matches(password, channel->password) == FALSE))
+    if (channel->is_using_password == TRUE && password_already_proven == FALSE
+        && !permissions__can_bypass_channel_password(client, channel)
+        && (password == NULL_POINTER || util__password_matches(password, channel->password) == FALSE))
     {
         server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
         return FALSE;

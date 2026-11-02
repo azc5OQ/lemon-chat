@@ -1,0 +1,27 @@
+[
+  {
+    "source": "rect.vert.glsl",
+    "header": "rect.vert.h",
+    "declaration": "static const char* _VULKAN_RENDERER_INTERNAL__RECT_VS_GLSL"
+  },
+  {
+    "source": "rect.frag.glsl.in",
+    "header": "rect.frag.h",
+    "declaration": "static const char* _VULKAN_RENDERER_INTERNAL__RECT_FS_GLSL"
+  },
+  {
+    "source": "text_image.vert.glsl",
+    "header": "text_image.vert.h",
+    "declaration": "static const char* _VULKAN_RENDERER_INTERNAL__TX_VS_GLSL"
+  },
+  {
+    "source": "text.frag.glsl",
+    "header": "text.frag.h",
+    "declaration": "static const char* _VULKAN_RENDERER_INTERNAL__TEXT_FS_GLSL"
+  },
+  {
+    "source": "image.frag.glsl",
+    "header": "image.frag.h",
+    "declaration": "static const char* _VULKAN_RENDERER_INTERNAL__IMAGE_FS_GLSL"
+  }
+]

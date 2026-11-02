@@ -1,7 +1,7 @@
 #include "definitions.h"
 
 #include "memory_manager.h"
-#include "clib/clib_memory.h"
+#include "clib/clib.h"
 
 #include "../third-party/rxi-log/log.h"
 

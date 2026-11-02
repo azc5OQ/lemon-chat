@@ -7,8 +7,7 @@
 #include "../../base.h"
 #include "../../util.h"
 #include "../../memory_manager.h"
-#include "../../clib/clib_string.h"
-#include "../../clib/clib_memory.h"
+#include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 
 // declarations
@@ -102,7 +101,7 @@ void client_msg__musicbot__process_start_song_stream_message(cJSON* json_root, u
 
     client->is_streaming_song = TRUE;
     clib__null_memory(client->song_name, SONG_NAME_MAX_LENGTH);
-    clib__copy_memory(json_song_name->valuestring, client->song_name, clib__utf8_string_length(json_song_name->valuestring), SONG_NAME_MAX_LENGTH);
+    clib__string_copy(client->song_name, sizeof(client->song_name), json_song_name->valuestring);
 
     server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_channel(client);
 
@@ -245,7 +244,7 @@ void client_msg__musicbot__process_create_request(cJSON* json_root, uint64 sende
     // this was checked before but not within write lock like here
     admin = &g_clients_array[sender_client_id];
 
-    if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
+    if (permissions__is_allowed(admin, PERMISSION_CREATE_MUSIC_BOTS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(admin, NULL_POINTER);
         goto label_client_msg__process_create_music_bot_end;
@@ -324,9 +323,11 @@ void client_msg__musicbot__process_create_request(cJSON* json_root, uint64 sende
     DBG_CLIENT_MESSAGE log_info("%s %p %s", "client_msg__musicbot__process_create_request client id is -> ", (void*)&music_bot->client_id, "\n");
 
     clib__null_memory(music_bot->username, USERNAME_MAX_LENGTH);
-    clib__copy_memory(json_music_bot_username->valuestring, music_bot->username, clib__utf8_string_length(json_music_bot_username->valuestring), USERNAME_MAX_LENGTH);
+    clib__string_copy(music_bot->username, sizeof(music_bot->username), json_music_bot_username->valuestring);
 
     music_bot->music_bot_client_extension.is_music_bot_running = TRUE;
+    atomic_init(&music_bot->music_bot_client_extension.is_playback_paused, FALSE);
+    atomic_init(&music_bot->music_bot_client_extension.is_skip_requested, FALSE);
     if (pthread_create((pthread_t*)&music_bot->music_bot_client_extension.music_bot_pthread_handle, 0, musicbot__threadstart, (void*)music_bot) != 0)
     {
         free(music_bot->music_bot_client_extension.audio_keys);
@@ -414,7 +415,7 @@ void client_msg__musicbot__process_delete_request(cJSON* json_root, uint64 sende
     // this was checked before but not within write lock like here
     admin = &g_clients_array[sender_client_id];
 
-    if (admin->is_authenticated == FALSE || admin->is_existing == FALSE || admin->is_admin == FALSE)
+    if (permissions__is_allowed(admin, PERMISSION_DELETE_MUSIC_BOTS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(admin, NULL_POINTER);
         goto label_client_msg__process_delete_music_bot_end;
@@ -551,7 +552,9 @@ void client_msg__musicbot__process_get_song_list_request(cJSON* json_root, uint6
         goto label_client_msg__process_musicbot_get_song_list_request_end;
     }
 
-    if (client->is_admin == FALSE)
+    if (permissions__is_allowed(client, PERMISSION_UPLOAD_MUSIC_TRACKS) == FALSE
+        && permissions__is_allowed(client, PERMISSION_DELETE_MUSIC_TRACKS) == FALSE
+        && permissions__is_allowed(client, PERMISSION_CONTROL_MUSIC_PLAYBACK) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client->is_admin == FALSE goto label_client_msg__process_musicbot_get_song_list_request_end end");
         server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
@@ -676,7 +679,7 @@ void client_msg__musicbot__process_remove_song_request(cJSON* json_root, uint64 
         goto label_client_msg__process_remove_song_from_music_bot_request_end;
     }
 
-    if (sender_client->is_admin == FALSE)
+    if (permissions__is_allowed(sender_client, PERMISSION_DELETE_MUSIC_TRACKS) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "sender is not admin");
         server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);

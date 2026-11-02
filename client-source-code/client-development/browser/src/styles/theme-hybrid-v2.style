@@ -1656,8 +1656,8 @@ body
     user-select: none;
     min-width: max-content;
     cursor: default;
-    padding-top: 0 !important;
-    padding-bottom: 1px !important;
+    padding-top: 1px !important;
+    padding-bottom: 2px !important;
     line-height: 16px !important;
     min-height: 0 !important;
     white-space: nowrap;
@@ -2052,6 +2052,11 @@ body
 :root
 {
     color-scheme: dark;
+    --client-self-color: #9cf0b0;
+    --client-unread-bg: #326f46;
+    --client-unread-color: #effff3;
+    --client-unread-border: #5c9d6f;
+    --client-unread-radius: 2px;
     --set-font: "Segoe UI", Tahoma, Arial, sans-serif;
     --set-panel: #0e1d14;
     --set-panel-2: #0e1d14;
@@ -2872,7 +2877,7 @@ div#video-stream-popup
 }
 
 .close-button:hover,
-:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button:hover,
+:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button:hover,
 #server-settings-tab .close-button:hover
 {
     background: #351b1b;
@@ -3633,9 +3638,11 @@ a-toast
 
 :root .chat-reply-quote
 {
+    --reaction-text: #20412d;
+    --reaction-accent: #25603e;
     padding: 4px 8px;
     border-left: 2px solid #439962;
-    background: #0a2116;
+    background: linear-gradient(to right, #e4eee7 0%, #ffffff 90%);
     font-family: var(--reaction-font);
 }
 
@@ -3651,10 +3658,14 @@ a-toast
     font-family: var(--reaction-font);
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup)
 {
     --groups-radius: 2px;
-    --groups-title-background: #07110c;
-    --groups-title-text: #79e59e;
+    --groups-title-background: linear-gradient(#07110c, #0e1d14);
+    --groups-title-text: #d2e8d9;
+    --groups-title-border: 1px solid #294c36;
+    --groups-title-radius: 1px 1px 0 0;
+    --groups-title-weight: 400;
+    --groups-title-spacing: normal;
     --groups-shadow: 0 8px 28px #0008;
 }

@@ -1,0 +1,42 @@
+[
+  {
+    "source": "rect.vert.glsl.in",
+    "header": "rect.vert.h",
+    "declaration": "static char* _gles3_renderer_internal__vs_src"
+  },
+  {
+    "source": "rect.frag.glsl.in",
+    "header": "rect.frag.h",
+    "declaration": "static char* _gles3_renderer_internal__fs_src"
+  },
+  {
+    "source": "text.vert.glsl.in",
+    "header": "text.vert.h",
+    "declaration": "static char* _gles3_renderer_internal__text_vs_src"
+  },
+  {
+    "source": "text.frag.glsl.in",
+    "header": "text.frag.h",
+    "declaration": "static char* _gles3_renderer_internal__text_fs_src"
+  },
+  {
+    "source": "image.vert.glsl.in",
+    "header": "image.vert.h",
+    "declaration": "static const char* _GLES3_RENDERER_INTERNAL__IMAGE_VS"
+  },
+  {
+    "source": "image.frag.glsl.in",
+    "header": "image.frag.h",
+    "declaration": "static const char* _GLES3_RENDERER_INTERNAL__IMAGE_FS"
+  },
+  {
+    "source": "blur.vert.glsl.in",
+    "header": "blur.vert.h",
+    "declaration": "static const char* _GLES3_RENDERER_INTERNAL__BLUR_VS"
+  },
+  {
+    "source": "blur.frag.glsl.in",
+    "header": "blur.frag.h",
+    "declaration": "static const char* _GLES3_RENDERER_INTERNAL__BLUR_FS"
+  }
+]

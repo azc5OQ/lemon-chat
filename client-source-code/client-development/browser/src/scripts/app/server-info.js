@@ -337,7 +337,9 @@ function server_info__apply_visibility()
     }
     for (element of document.querySelectorAll(".context-menu-item[data-action='server-info']"))
     {
-        element.hidden = !g_server_info.visibility.features;
+        moderation__set_menu_access(element, moderation__menu_action_allowed("server-info"),
+            groups__has_permission("view_server_info") ? "The server is not sharing this information."
+                : "Your permissions do not allow viewing server information.");
     }
     if (root)
     {
@@ -659,6 +661,7 @@ function server_info__banner_result(data)
  */
 function server_info__reset()
 {
+    client_status__reset();
     let dialog = document.getElementById("server-info-dialog");
     let banner = document.querySelector("[data-admin-server-banner]");
     let element = null;

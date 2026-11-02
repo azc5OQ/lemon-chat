@@ -8,8 +8,7 @@
 #include "../definitions.h"
 
 #include "http_server.h"
-#include "../clib/clib_memory.h"
-#include "../clib/clib_string.h"
+#include "../clib/clib.h"
 
 #include "../../third-party/rxi-log/log.h"
 
@@ -46,6 +45,7 @@ typedef int http_socket_t;
 
 #define HTTP_SERVER_REQUEST_BUFFER_SIZE 8192
 #define HTTP_SERVER_PATH_SIZE 1024
+#define HTTP_SERVER_WEBROOT_SIZE 512
 #define HTTP_SERVER_SEND_CHUNK_SIZE 16384
 #define HTTP_SERVER_HEADER_SIZE 512
 #define HTTP_CLIENT_CONFIG_SIZE 2048
@@ -201,14 +201,14 @@ static int _http_server_internal__read_request(http_socket_t client_socket, char
         {
             return 0;
         }
-        if (memchr(buffer + received, 0, (size_t)received_now) != NULL_POINTER)
+        if (clib__memchr(buffer + received, 0, (size_t)received_now) != NULL_POINTER)
         {
             _http_server_internal__send_simple_response(client_socket, "400 Bad Request", "400 Bad Request");
             return 0;
         }
         received += (size_t)received_now;
         buffer[received] = 0;
-        if (strstr(buffer, "\r\n\r\n") != NULL_POINTER)
+        if (clib__strstr(buffer, "\r\n\r\n") != NULL_POINTER)
         {
             return (int)received;
         }
@@ -258,7 +258,7 @@ static void _http_server_internal__send_simple_response(http_socket_t client_soc
 
     clib__null_memory(response, sizeof(response));
 
-    snprintf(response, sizeof(response), "HTTP/1.1 %s\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: %llu\r\nConnection: close\r\n\r\n%s", status_line, clib__utf8_string_length(body), body);
+    clib__string_format(response, sizeof(response), "HTTP/1.1 %s\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: %llu\r\nConnection: close\r\n\r\n%s", status_line, clib__utf8_string_length(body), body);
 
     _http_server_internal__send_all(client_socket, response, clib__utf8_string_length(response));
 }
@@ -313,7 +313,7 @@ static const char* _http_server_internal__content_type_for_path(const char* file
     uint64 i = 0;
     uint64 count = 0;
 
-    extension = strrchr(file_path, '.');
+    extension = clib__strrchr(file_path, '.');
 
     if (extension == NULL_POINTER)
     {
@@ -345,11 +345,18 @@ void http_server__set_client_config(char* config_script)
     if (g_http_client_config_script == NULL_POINTER)
     {
         g_http_client_config_script = calloc(HTTP_CLIENT_CONFIG_SIZE, 1);
-        if (g_http_client_config_script == NULL_POINTER) { return; }
+        if (g_http_client_config_script == NULL_POINTER)
+        {
+            return;
+        }
     }
     clib__null_memory(g_http_client_config_script, HTTP_CLIENT_CONFIG_SIZE);
-    clib__copy_memory(config_script, g_http_client_config_script, clib__utf8_string_length(config_script), HTTP_CLIENT_CONFIG_SIZE - 1);
-    g_http_client_config_set = TRUE;
+    g_http_client_config_set = clib__string_copy(
+        g_http_client_config_script, HTTP_CLIENT_CONFIG_SIZE, config_script);
+    if (g_http_client_config_set == FALSE)
+    {
+        log_error("http server: client configuration does not fit its buffer");
+    }
 }
 
 /**
@@ -465,7 +472,7 @@ static void _http_server_internal__cache_client_page(void)
     uint64 read_count = 0;
 
     clib__null_memory(file_path, sizeof(file_path));
-    snprintf(file_path, sizeof(file_path), "%s%s", g_http_server_webroot, "/client.html");
+    clib__string_format(file_path, sizeof(file_path), "%s%s", g_http_server_webroot, "/client.html");
 
     file = fopen(file_path, "rb");
     if (file == NULL_POINTER)
@@ -571,7 +578,7 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
         content_type = _http_server_internal__content_type_for_path(serve_target);
 
         clib__null_memory(header, sizeof(header));
-        snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nConnection: close\r\nCache-Control: no-cache\r\n\r\n", content_type, (long long)g_http_client_page_cache_size);
+        clib__string_format(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nConnection: close\r\nCache-Control: no-cache\r\n\r\n", content_type, (long long)g_http_client_page_cache_size);
 
         if (_http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header)) == TRUE)
         {
@@ -582,7 +589,7 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
 #endif
 
     clib__null_memory(file_path, sizeof(file_path));
-    snprintf(file_path, sizeof(file_path), "%s%s", g_http_server_webroot, serve_target);
+    clib__string_format(file_path, sizeof(file_path), "%s%s", g_http_server_webroot, serve_target);
 
     file = fopen(file_path, "rb");
     if (file == NULL_POINTER)
@@ -606,7 +613,7 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char*
     content_type = _http_server_internal__content_type_for_path(serve_target);
 
     clib__null_memory(header, sizeof(header));
-    snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nConnection: close\r\nCache-Control: no-cache\r\n\r\n", content_type, (long long)file_size);
+    clib__string_format(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nConnection: close\r\nCache-Control: no-cache\r\n\r\n", content_type, (long long)file_size);
 
     if (_http_server_internal__send_all(client_socket, header, clib__utf8_string_length(header)) == FALSE)
     {
@@ -754,14 +761,14 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
 
         if (g_http_https_redirect_port == 443)
         {
-            snprintf(redirect_location, sizeof(redirect_location), "https://%s%s", redirect_host, request_path);
+            clib__string_format(redirect_location, sizeof(redirect_location), "https://%s%s", redirect_host, request_path);
         }
         else
         {
-            snprintf(redirect_location, sizeof(redirect_location), "https://%s:%lld%s", redirect_host, g_http_https_redirect_port, request_path);
+            clib__string_format(redirect_location, sizeof(redirect_location), "https://%s:%lld%s", redirect_host, g_http_https_redirect_port, request_path);
         }
 
-        snprintf(redirect_response, sizeof(redirect_response), "HTTP/1.1 301 Moved Permanently\r\nLocation: %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", redirect_location);
+        clib__string_format(redirect_response, sizeof(redirect_response), "HTTP/1.1 301 Moved Permanently\r\nLocation: %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", redirect_location);
         _http_server_internal__send_all(client_socket, redirect_response, clib__utf8_string_length(redirect_response));
         return;
     }
@@ -939,8 +946,12 @@ void http_server__start(int64 port, char* webroot)
 
     g_http_server_port = port;
 
-    if (g_http_server_webroot != NULL_POINTER) { return; } // initialized once, before the serving thread
-    g_http_server_webroot = calloc(512, 1);
+    // Initialized once, before the serving thread.
+    if (g_http_server_webroot != NULL_POINTER)
+    {
+        return;
+    }
+    g_http_server_webroot = calloc(HTTP_SERVER_WEBROOT_SIZE, 1);
     if (g_http_server_webroot == NULL_POINTER)
     {
         log_error("http server: could not allocate webroot");
@@ -948,7 +959,13 @@ void http_server__start(int64 port, char* webroot)
     }
     if (webroot != NULL_POINTER)
     {
-        clib__copy_memory(webroot, g_http_server_webroot, clib__utf8_string_length(webroot), 511);
+        if (clib__string_copy(g_http_server_webroot, HTTP_SERVER_WEBROOT_SIZE, webroot) == FALSE)
+        {
+            log_error("http server: webroot does not fit its buffer");
+            free(g_http_server_webroot);
+            g_http_server_webroot = NULL_POINTER;
+            return;
+        }
     }
 
 #ifndef DEBUG_ACTIVE

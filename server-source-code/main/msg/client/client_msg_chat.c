@@ -8,8 +8,7 @@
 #include "../../httpclient/httpclient.h"
 #include "../../base.h"
 #include "../../util.h"
-#include "../../clib/clib_string.h"
-#include "../../clib/clib_memory.h"
+#include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 #include "../../../third-party/zhicheng/base64.h"
 
@@ -756,7 +755,7 @@ void client_msg__chat__process_resolve_url_request(cJSON* json_root, uint64 clie
     cJSON* request_id = cJSON_GetObjectItemCaseSensitive(message, "request_id");
     httpclient_url_t parsed;
     if (!cJSON_IsString(url) || !cJSON_IsString(request_id)
-        || strlen(url->valuestring) > 2048 || !request_id->valuestring[0] || strlen(request_id->valuestring) > 64
+        || clib__strlen(url->valuestring) > 2048 || !request_id->valuestring[0] || clib__strlen(request_id->valuestring) > 64
         || httpclient__parse_url(url->valuestring, &parsed) != HTTPCLIENT_OK)
     {
         return;

@@ -1,0 +1,29 @@
+; meek_ui.def - exports of meek_ui.dll that carry no GUI_API decoration.
+; clib/memory_manager.h is self-contained and declares its functions plain,
+; so the DLL lists them here; everything else is exported by GUI_API.
+EXPORTS
+    memory_manager__init
+    memory_manager__init_single_threaded
+    memory_manager__init_win32
+    memory_manager__shutdown
+    memory_manager__alloc
+    memory_manager__calloc
+    memory_manager__realloc
+    memory_manager__free
+    memory_manager__host_alloc
+    memory_manager__host_calloc
+    memory_manager__host_realloc
+    memory_manager__host_free
+    memory_manager__get_stats
+    memory_manager__dump_live
+    memory_manager__delegate_to
+    memory_manager__export
+    memory_manager__is_delegating
+    stdlib__exp
+    stdlib__log
+    stdlib__pow_positive
+    stdlib__cos_bounded
+    stdlib__hypot
+    stdlib__copysign
+    stdlib__isfinite
+    stdlib__nan

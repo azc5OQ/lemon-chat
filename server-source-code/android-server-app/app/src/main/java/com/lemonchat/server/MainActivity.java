@@ -49,7 +49,7 @@ public class MainActivity extends Activity
 {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView status, address, portLabel, guidance, memory;
-    private Button start, stop, settings, copy;
+    private Button start, stop, settings, copy, tailscaleSignIn;
     private int port = 1111, slots = 16;
     private String shareAddress = "";
     private boolean startPending;
@@ -78,8 +78,8 @@ public class MainActivity extends Activity
         });
         setContentView(scroll);
         AddLabel(page, "LEMON CHAT", 13, true).setTextColor(Color.rgb(66, 101, 27));
-        AddLabel(page, "Host a LAN server", 30, true);
-        AddLabel(page, "Connect with friends on the same Wi-Fi. Everyone joins using the Lemon Chat client app.", 16,
+        AddLabel(page, "Host a chat server", 30, true);
+        AddLabel(page, "Host on your local network or share a public address through Tailscale Funnel.", 16,
                  false);
         AddGap(page, 20);
         LinearLayout card = CreateColumn();
@@ -92,16 +92,27 @@ public class MainActivity extends Activity
         page.addView(card);
         status = AddLabel(card, "Stopped", 22, true);
         guidance = AddLabel(card, "", 15, false);
-        AddLabel(card, "IP ADDRESS FOR FRIENDS", 12, true);
+        AddLabel(card, "SERVER ADDRESS", 12, true);
         address = AddLabel(card, "Checking network…", 22, true);
         address.setTextIsSelectable(true);
         portLabel = AddLabel(card, "Websocket port: 1111", 18, true);
-        copy = AddButton(card, "Copy IP address", () ->
+        copy = AddButton(card, "Copy address", () ->
         {
             getSystemService(ClipboardManager.class)
                 .setPrimaryClip(ClipData.newPlainText("Lemon Chat address", shareAddress));
-            Toast.makeText(this, "IP address copied", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Address copied", Toast.LENGTH_SHORT).show();
         });
+        tailscaleSignIn = AddButton(card, "Sign in to Tailscale", () ->
+        {
+            android.net.Uri uri = android.net.Uri.parse(ServerService.funnelLogin);
+            if ("https".equals(uri.getScheme()) && "login.tailscale.com".equals(uri.getHost()))
+            {
+                startActivity(new Intent(Intent.ACTION_VIEW, uri));
+            }
+        });
+        tailscaleSignIn.setVisibility(View.GONE);
+        AddButton(page, "Tailscale setup help", () -> startActivity(new Intent(Intent.ACTION_VIEW,
+            android.net.Uri.parse("https://tailscale.com/kb/1223/funnel"))));
         start = AddButton(page, "Start server", () ->
         {
             if (!new File(getFilesDir(), "server_settings.json").exists())
@@ -224,7 +235,17 @@ public class MainActivity extends Activity
                                                     : "Ready to join. Share the IP address and port below with your friends.")
                              : (ServerService.active
                                     ? "Please wait while the server starts or stops."
-                                    : "Start the server when you’re ready. Settings are saved on this phone."));
+                                    : "Start the server when you're ready. Settings are saved on this phone."));
+        tailscaleSignIn.setVisibility(ServerService.funnelLogin.isEmpty() ? View.GONE : View.VISIBLE);
+        if (FunnelSettings.IsEnabled(this))
+        {
+            shareAddress = ServerService.funnelAddress;
+            address.setText(shareAddress.isEmpty() ? "Public address not ready" : shareAddress);
+            portLabel.setText("HTTPS: 443   WSS: 8443");
+            copy.setEnabled(!shareAddress.isEmpty());
+            guidance.setText("Visitors can open the HTTPS address without installing Tailscale. " +
+                "In the client, use the same hostname and WSS port 8443. Audio and video use WebSocket.");
+        }
     }
 
     private LinkedHashSet<String> GetLocalAddresses()
@@ -399,7 +420,7 @@ public class MainActivity extends Activity
         EditText admin = AddField(form, "Admin password", "", true, false);
         EditText confirm = AddField(form, "Repeat admin password", "", true, false);
         AddLabel(form, "Join password — for friends (optional)", 16, true);
-        AddLabel(form, "Friends enter this under Server keys in the client app. Leave empty to let anyone on your LAN join.", 14, false);
+        AddLabel(form, "Enter this under Server keys in the client. Leave empty to allow anyone who can reach the server to join.", 14, false);
         JSONArray keys = json.optJSONArray("keys");
         EditText join = AddField(form, "Join password", keys != null ? keys.optString(0, "") : "", true, false);
         CheckBox showPasswords = new CheckBox(this);
@@ -414,6 +435,12 @@ public class MainActivity extends Activity
                 field.setSelection(field.length());
             }
         });
+        CheckBox publicHosting = new CheckBox(this);
+        publicHosting.setText("Public access through Tailscale Funnel");
+        publicHosting.setChecked(FunnelSettings.IsEnabled(this));
+        form.addView(publicHosting);
+        AddLabel(form, "Sign in to your Tailscale account after starting. Enable HTTPS and Funnel in that account. " +
+            "The public address can be reached by anyone. Your join password still applies.", 14, false);
         LinearLayout advanced = CreateColumn();
         Button expand = AddButton(form, "Advanced ▾", () -> {});
         form.addView(advanced);
@@ -485,8 +512,22 @@ public class MainActivity extends Activity
             }
         }
         advanced.addView(audioTransport);
-        AddLabel(advanced, "WebSocket helps when UDP is blocked. Audio stays encrypted. Poor connections may add delay. " +
-                 "Video still uses WebRTC. Each audio connection adds about 38 KiB of buffers and two threads.", 14, false);
+        Runnable updateTransport = () ->
+        {
+            for (int index = 0; index < audioTransport.getChildCount(); index++)
+            {
+                RadioButton option = (RadioButton)audioTransport.getChildAt(index);
+                option.setEnabled(!publicHosting.isChecked());
+                if (publicHosting.isChecked() && "websocket".equals(option.getTag()))
+                {
+                    audioTransport.check(option.getId());
+                }
+            }
+        };
+        publicHosting.setOnCheckedChangeListener((button, checked) -> updateTransport.run());
+        updateTransport.run();
+        AddLabel(advanced, "Funnel uses WebSocket for audio and video because it does not forward UDP. " +
+                 "Audio stays encrypted. Poor connections may add delay.", 14, false);
         CheckBox video = new CheckBox(this);
         video.setText("Allow video / screen sharing");
         video.setChecked(json.optBoolean("is_video_streaming_active", false));
@@ -519,6 +560,7 @@ public class MainActivity extends Activity
                                     Integer.parseInt(slotField.getText().toString()), admin.getText().toString(),
                                     join.getText().toString(), video.isChecked(),
                                     (String)audioTransport.findViewById(audioTransport.getCheckedRadioButtonId()).getTag());
+                FunnelSettings.SetEnabled(this, publicHosting.isChecked());
                 dialog.dismiss();
                 LoadSummary();
                 RenderStatus();

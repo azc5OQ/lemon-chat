@@ -94,7 +94,7 @@ static boole _url_resolver_internal__same_session(const url_resolver_job_t* job)
     client_t* client = &g_clients_array[job->client_id];
     return client->is_existing && client->is_authenticated && client->session_keys.is_ready
         && client->p_ws_connection == job->socket
-        && memcmp(&client->session_keys.authentication, &job->session_authentication, sizeof(job->session_authentication)) == 0;
+        && clib__memcmp(&client->session_keys.authentication, &job->session_authentication, sizeof(job->session_authentication)) == 0;
 }
 
 /**
@@ -111,7 +111,7 @@ static cJSON* _url_resolver_internal__result(const char* url)
     for (unsigned int index = 0; index < URL_RESOLVER_CACHE_SIZE; index++)
     {
         url_resolver_cache_t* entry = &g_url_resolver_cache[index];
-        if (entry->result != NULL_POINTER && entry->expires > now && strcmp(entry->url, url) == 0)
+        if (entry->result != NULL_POINTER && entry->expires > now && clib__strcmp(entry->url, url) == 0)
         {
             cJSON* result = cJSON_Duplicate(entry->result, TRUE);
             pthread_mutex_unlock(&g_url_resolver_mutex);
@@ -141,7 +141,7 @@ static cJSON* _url_resolver_internal__result(const char* url)
     pthread_mutex_lock(&g_url_resolver_mutex);
     url_resolver_cache_t* entry = &g_url_resolver_cache[g_url_resolver_cache_next++ % URL_RESOLVER_CACHE_SIZE];
     cJSON_Delete(entry->result);
-    strcpy(entry->url, url);
+    clib__string_copy(entry->url, sizeof(entry->url), url);
     entry->expires = util__get_timestamp_ms() + (succeeded ? 600000 : 60000);
     entry->result = cJSON_Duplicate(result, TRUE);
     pthread_mutex_unlock(&g_url_resolver_mutex);
@@ -190,7 +190,7 @@ static void* _url_resolver_internal__worker(void* unused)
         }
         clib__unlock(&g_clients_global_rwlock_guard);
         cJSON_Delete(result);
-        memset(&job->session_authentication, 0, sizeof(job->session_authentication));
+        clib__memset(&job->session_authentication, 0, sizeof(job->session_authentication));
         free(job);
     }
     return NULL_POINTER;
@@ -268,8 +268,8 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
         job->client_id = client_id;
         job->socket = client->p_ws_connection;
         job->session_authentication = client->session_keys.authentication;
-        strcpy(job->url, url);
-        strcpy(job->request_id, request_id);
+        clib__string_copy(job->url, sizeof(job->url), url);
+        clib__string_copy(job->request_id, sizeof(job->request_id), request_id);
     }
     else
     {
@@ -291,7 +291,7 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
             server_msg__chat__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url, NULL_POINTER);
         }
         clib__unlock(&g_clients_global_rwlock_guard);
-        memset(&job->session_authentication, 0, sizeof(job->session_authentication));
+        clib__memset(&job->session_authentication, 0, sizeof(job->session_authentication));
         free(job);
         return;
     }

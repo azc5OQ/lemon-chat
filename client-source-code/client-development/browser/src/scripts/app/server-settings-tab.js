@@ -31,6 +31,7 @@ var SERVER_SETTINGS_FIELDS = [
         tab: "general"
     },
     { key: "is_server_uptime_published", id: "server-settings-publish-uptime", kind: "bool", fallback: true, tab: "general" },
+    { key: "reserved_slots", id: "server-settings-reserved-slots", kind: "number", fallback: 0, tab: "general" },
     { key: "is_server_slots_published", id: "server-settings-publish-slots", kind: "bool", fallback: true, tab: "general" },
     { key: "is_server_banner_published", id: "server-settings-publish-banner", kind: "bool", fallback: true, tab: "general" },
     { key: "is_server_features_published", id: "server-settings-publish-features", kind: "bool", fallback: true, tab: "general" },

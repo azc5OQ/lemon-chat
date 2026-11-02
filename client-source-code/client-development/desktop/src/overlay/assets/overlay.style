@@ -1,0 +1,84 @@
+window
+{
+    background-color: transparent;
+    font-family: SpaceGrotesk-Regular;
+    font-size: 14;
+    font-color: #edf2fb;
+    pad: 0;
+}
+#overlay-panel
+{
+    position: absolute;
+    left: 16;
+    top: 16;
+    width: 240;
+    display: flex;
+    flex-direction: column;
+    pad: 8;
+    gap: 4;
+    radius: 4;
+    background-color: rgba(10, 14, 20, 0.28);
+}
+#overlay-caption
+{
+    height: 16;
+    font-size: 11;
+    font-color: #c4d67e;
+}
+#overlay-channel
+{
+    font-size: 16;
+    height: 22;
+    font-color: #f5f7fc;
+}
+#overlay-members
+{
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.member
+{
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    size: 0x24;
+    pad: 2;
+    gap: 6;
+    radius: 2;
+}
+.speaking
+{
+    background-color: rgba(117, 206, 146, 0.18);
+    font-color: #a7e9b9;
+}
+.voice-icon, .voice-icon-active, .voice-icon-disabled, .voice-icon-muted
+{
+    size: 24x20;
+    font-color: #a6b6cb;
+}
+.voice-icon-active
+{
+    font-color: #a7e9b9;
+}
+.voice-icon-disabled, .voice-icon-muted
+{
+    font-color: #f0a3a3;
+}
+.member-name
+{
+    size: 0x20;
+    width: 100%;
+}
+.member-state
+{
+    display: none;
+}
+.muted
+{
+    font-color: #a0adc0;
+}
+.hidden
+{
+    display: none;
+}

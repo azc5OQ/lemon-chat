@@ -20,11 +20,6 @@
     text-shadow: none;
 }
 
-.chat-reply-quote:hover
-{
-    background: var(--reaction-selected);
-}
-
 .chat-reply-quote > svg
 {
     display: none;
@@ -42,6 +37,7 @@
 .chat-reply-quote strong,
 #chat-reply-author
 {
+    font-family: var(--chat-author-font, var(--reaction-font, sans-serif));
     flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
@@ -175,4 +171,14 @@
 #chat-reply-preview[hidden]
 {
     display: none !important;
+}
+
+:root body.message-avatars-hidden .chat-reply-content
+{
+    padding-left: 0;
+}
+
+:root body.message-avatars-hidden .chat-reply-content::before
+{
+    display: none;
 }

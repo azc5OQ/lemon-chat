@@ -1,0 +1,12 @@
+[
+  {
+    "source": "rect.hlsl.in",
+    "header": "rect.h",
+    "declaration": "static const char* _D3D12_RENDERER_INTERNAL__HLSL_SRC"
+  },
+  {
+    "source": "text_image.hlsl",
+    "header": "text_image.h",
+    "declaration": "static const char* _D3D12_RENDERER_INTERNAL__TX_HLSL_SRC"
+  }
+]

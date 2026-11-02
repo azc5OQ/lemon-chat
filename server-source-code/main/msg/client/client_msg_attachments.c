@@ -6,8 +6,7 @@
 #include "../../core/musicbot.h"
 #include "../../base.h"
 #include "../../memory_manager.h"
-#include "../../clib/clib_string.h"
-#include "../../clib/clib_memory.h"
+#include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 
 // declarations
@@ -141,6 +140,8 @@ void client_msg__attachments__process_file_send_request(cJSON* json_root, uint64
 
     client_t* client_sender = 0;
     int64 data_part_length = 0;
+    cJSON* upload_intent = NULL_POINTER;
+    cstring intent = NULL_POINTER;
 
     // idea, don't provide upload file reason in upload file request, simply send the upload reason to server in separate message, after server signals the client that the file upload is done.
     // "hey client, I'm done receiving the file, what should I do with it"
@@ -182,6 +183,19 @@ void client_msg__attachments__process_file_send_request(cJSON* json_root, uint64
     }
 
     json_message_data_part_base64 = cJSON_GetObjectItemCaseSensitive(json_message_object, "data_part_base64");
+    upload_intent = cJSON_GetObjectItemCaseSensitive(json_message_object, "file_send_intent");
+    intent = cJSON_IsTrue(json_message_is_new_file) ? cJSON_GetStringValue(upload_intent) : client_sender->file_upload_extension.intent;
+    if (permissions__can_upload(client_sender, intent) == FALSE)
+    {
+        server_msg__administration__send_access_denied_to_single_client(client_sender, NULL_POINTER);
+        server_msg__attachments__send_file_send_error_to_single_client(client_sender, "insufficient_permissions", 0);
+        if (client_sender->file_upload_extension.file_upload_buffer != NULL_POINTER)
+        {
+            memorymanager__free((nuint)client_sender->file_upload_extension.file_upload_buffer);
+        }
+        clib__memset(&client_sender->file_upload_extension, 0, sizeof(client_sender->file_upload_extension));
+        goto label_client_msg__process_file_send_request_end;
+    }
 
     // a new file gets a buffer of exactly its declared length (already checked against the upload cap),
     // so the per-client cost is the file, not the cap. a continuation appends to the upload in progress
@@ -202,6 +216,7 @@ void client_msg__attachments__process_file_send_request(cJSON* json_root, uint64
 
         // +1 keeps the null terminator the intent handlers read the buffer up to
         client_sender->file_upload_extension.file_upload_buffer = (ubyte*)memorymanager__allocate((uint64)json_message_total_length->valueint + 1, MEMALLOC_FILE_UPLOAD_BY_PARTS);
+        memcpy(client_sender->file_upload_extension.intent, intent, strlen(intent) + 1);
         client_sender->file_upload_extension.buffer_cursor = 0;
         client_sender->file_upload_extension.expected_file_length = 0;
 
@@ -523,12 +538,22 @@ void client_msg__attachments__process_file_send_completed_request(cJSON* json_ro
         goto label_client_msg__process_file_send_completed_request_end;
     }
 
+    if (clib__strcmp(sender_client->file_upload_extension.intent, json_file_send_intent->valuestring) != 0
+        || permissions__can_upload(sender_client, json_file_send_intent->valuestring) == FALSE)
+    {
+        server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
+        server_msg__attachments__send_file_send_error_to_single_client(sender_client, "insufficient_permissions", 0);
+        memorymanager__free((nuint)sender_client->file_upload_extension.file_upload_buffer);
+        clib__memset(&sender_client->file_upload_extension, 0, sizeof(sender_client->file_upload_extension));
+        goto label_client_msg__process_file_send_completed_request_end;
+    }
+
     if (clib__is_string_equal(json_file_send_intent->valuestring, "musicbot_file") == TRUE)
     {
         json_song_name = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "song_name");
         json_musicbot_id = cJSON_GetObjectItemCaseSensitive(json_file_send_intent_extra_data, "musicbot_id");
 
-        if (sender_client->is_admin == FALSE)
+        if (permissions__is_allowed(sender_client, PERMISSION_UPLOAD_MUSIC_TRACKS) == FALSE)
         {
             server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
             DBG_CLIENT_MESSAGE log_info("%s", "sender_client->is_admin == FALSE");
@@ -556,7 +581,8 @@ void client_msg__attachments__process_file_send_completed_request(cJSON* json_ro
         arguments->mp3_data_buffer = sender_client->file_upload_extension.file_upload_buffer;
         sender_client->file_upload_extension.file_upload_buffer = NULL_POINTER;
         arguments->sender_client_id = sender_client_id;
-        clib__copy_memory(json_song_name->valuestring, arguments->song_name, clib__utf8_string_length(json_song_name->valuestring), SONG_NAME_MAX_LENGTH - 1);
+        clib__memcpy(arguments->sender_identity, sender_client->public_key, sizeof(arguments->sender_identity));
+        clib__string_copy(arguments->song_name, sizeof(arguments->song_name), json_song_name->valuestring);
 
         file_transfer__add_uploaded_song(arguments);
     }

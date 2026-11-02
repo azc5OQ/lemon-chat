@@ -10,8 +10,7 @@ var node_ui_visibility_from_host = false;
 var main_is_push_to_talk_key_down = false;
 
 /**
- * @brief global mousedown: closes the chat-message context menu, and every other context menu
- *        unless the click was on a menu item (so the item's own click handler still runs)
+ * @brief Closes context menus when the pointer is pressed outside them.
  *
  * @param object event -> the mouse event
  *
@@ -21,7 +20,7 @@ function main__document_onmousedown(event)
 {
     UI.delete_chat_message_contextmenu();
 
-    let is_channel_list_contextmenu_delete_needed = !event.target.classList.contains("context-menu-item");
+    let is_channel_list_contextmenu_delete_needed = !event.target.closest(".context-menu-item, .channel-list-context-menu, .chat-input-container-context-menu");
 
     if (is_channel_list_contextmenu_delete_needed)
     {
@@ -354,6 +353,10 @@ async function main__window_onload()
                     }
 
                     channel_tab.click();
+                    if (typeof member_conversations__show_selected_chat === "function")
+                    {
+                        member_conversations__show_selected_chat();
+                    }
                 }
             }
             else
@@ -379,6 +382,10 @@ async function main__window_onload()
             if (is_short_click == true && offline_contact != null)
             {
                 UI.open_offline_chat_context(offline_contact);
+                if (typeof member_conversations__show_selected_chat === "function")
+                {
+                    member_conversations__show_selected_chat();
+                }
             }
             else
             {
@@ -397,6 +404,11 @@ async function main__window_onload()
         // pass it the REAL tree row no matter which clone was tapped
         let forwarded_event = { stopPropagation: function() {}, currentTarget: null, which: null };
         UI.connected_user_onmousedown(forwarded_event, true, click_x, click_y, tree_row, is_short_click);
+        if (is_short_click && typeof member_conversations__show_selected_chat === "function"
+            && g_current_chat_context_id === "chat-context-pm-" + strip_client_id)
+        {
+            member_conversations__show_selected_chat();
+        }
         return true;
     }
 
@@ -906,6 +918,8 @@ async function main__window_onload()
     {
         head_menu__init();
     }
+    document.getElementById("chat-input-container-text-input").onkeydown = UI.chat_input_on_keydown;
+    document.getElementById("chat-input-container-text-input").onbeforeinput = UI.chat_input_on_beforeinput;
     document.getElementById("chat-input-container-text-input").onkeyup = UI.chat_input_on_keyup;
     document.getElementById("chat-input-container-text-input").onfocus = main__chat_input_onfocus;
     document.getElementById("chat-input-container-text-input").onpaste = chat_files__chat_input_onpaste;
@@ -1021,6 +1035,7 @@ async function main__window_onload()
 
     // These settings apply only on this device.
     UI.setup_local_settings_tabs();
+    UI.setup_chat_display_settings();
     document.getElementById("local-settings-show-mp3-button").checked = utils__storage_get("lemon_show_mp3_button") !== "0";
     document.body.classList.toggle("hide-mp3-button", !document.getElementById("local-settings-show-mp3-button").checked);
     channel_tree__setup_icon_preference();
@@ -1029,6 +1044,8 @@ async function main__window_onload()
     chat_replies__setup();
     groups__setup();
     server_emojis__setup();
+    moderation__setup();
+    channel_groups__setup();
     chat_files__setup_receive_preferences_controls();
     document.getElementById("local-settings-button").onclick = function()
     {
@@ -1281,6 +1298,11 @@ async function main__window_onload()
     {
         g_show_message_avatars = this.checked;
         utils__storage_set("lemon_show_message_avatars", this.checked ? "1" : "0");
+        android_host__refresh_message_avatars();
+        if (this.checked)
+        {
+            channel_tree__start_avatar_prefetch();
+        }
     };
 
     document.getElementById("local-settings-theme-chat-formatting").onchange = function()
@@ -1504,40 +1526,6 @@ async function main__window_onload()
         document.getElementsByClassName("server-settings-tab-li")[i].onclick = UI.server_settings_tab_li_onclick;
     }
 
-
-    // make the server settings window draggable by its left nav column (tab clicks still work,
-    // since a click without movement does not reposition the window)
-    (function() {
-        let settings_window = document.getElementById("server-settings-tab");
-        let drag_handle = document.getElementById("server-settings-tab-subcontainer");
-        let is_dragging = false;
-        let drag_offset_x = 0;
-        let drag_offset_y = 0;
-
-        if (settings_window != null && drag_handle != null)
-        {
-            drag_handle.addEventListener("mousedown", function(e) {
-                let rect = settings_window.getBoundingClientRect();
-                is_dragging = true;
-                drag_offset_x = e.clientX - rect.left;
-                drag_offset_y = e.clientY - rect.top;
-                e.preventDefault();
-            });
-
-            document.addEventListener("mousemove", function(e) {
-                if (is_dragging == false)
-                {
-                    return;
-                }
-                settings_window.style.left = (e.clientX - drag_offset_x) + "px";
-                settings_window.style.top = (e.clientY - drag_offset_y) + "px";
-            });
-
-            document.addEventListener("mouseup", function() {
-                is_dragging = false;
-            });
-        }
-    })();
 
     // every popup drags by its title bar; the drag keeps it at an inline fixed position, and that position
     // is cleared on every re-open so popups start centered (a position taken while hidden was 0,0 forever)

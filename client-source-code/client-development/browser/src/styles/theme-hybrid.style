@@ -1944,6 +1944,11 @@ body, input, button, textarea, select, p, li, label {
 /* this theme's --set-* dialog palette, because layout.style lays out and paints every dialog from these variables */
 :root {
 
+    --client-self-color: #000000;
+    --client-unread-bg: #356eb1;
+    --client-unread-color: #ffffff;
+    --client-unread-border: #23548c;
+    --client-unread-radius: 2px;
     --set-font: Tahoma, 'Raleway', sans-serif;
     --set-panel: #ffffff;
     --set-text: #000000;
@@ -2088,7 +2093,8 @@ body, input, button, textarea, select, p, li, label {
     padding-left: 20px !important;
 }
 
-.connected-client, .connected-local-client {
+.connected-client, .connected-local-client
+{
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
     -webkit-user-select: none;
@@ -2098,8 +2104,8 @@ body, input, button, textarea, select, p, li, label {
     user-select: none;
     min-width: max-content;
     cursor: default;
-    padding-top: 0 !important;
-    padding-bottom: 1px !important;
+    padding-top: 1px !important;
+    padding-bottom: 2px !important;
     line-height: 16px !important;
     min-height: 0 !important;
     white-space: nowrap;
@@ -3248,10 +3254,19 @@ body:not(.android-app) #container-2
 
 :root .single-chat-message
 {
+    box-sizing: border-box;
+    width: auto;
     min-height: 0;
     padding-top: 2px;
     padding-bottom: 2px;
     container: hybrid-message / inline-size;
+}
+
+:root .single-server-message
+{
+    box-sizing: border-box;
+    width: auto;
+    padding-inline: 14px;
 }
 
 :root .single-chat-message > .single-message-content
@@ -3415,7 +3430,7 @@ body:not(.android-app) #container-2
 {
     padding: 4px 6px;
     border-left: 2px solid #8baac5;
-    background: #eff2f5;
+    background: linear-gradient(to right, #eaf1f7 0%, #ffffff 90%);
     font: 11px/1.4 Tahoma, Arial, sans-serif;
 }
 
@@ -3439,12 +3454,12 @@ body:not(.android-app) #container-2
     color: #ffffff;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup)
 {
     --groups-panel: #f0f0f0;
     --groups-list-background: #ffffff;
-    --groups-title-background: #f0f0f0;
-    --groups-title-text: #111;
+    --groups-title-background: #ffffff;
+    --groups-title-text: #1a1a1a;
     --groups-radius: 0;
     --groups-frame: 1px solid #808080;
     --groups-shadow: 0 2px 10px rgb(0 0 0 / 35%);
@@ -3460,7 +3475,7 @@ body:not(.android-app) #container-2
     --set-selected-text: #000000;
 }
 
-:root :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-titlebar
+:root :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog) .groups-titlebar
 {
     min-height: 30px;
     padding: 3px 6px 3px 10px;
@@ -3517,11 +3532,6 @@ body:not(.android-app) #container-2
 {
     padding: 4px 7px;
     background: #f0f0f0;
-}
-
-:root #groups-dialog:not(.groups-advanced) .groups-permission-table thead
-{
-    display: none;
 }
 
 :root #groups-dialog .groups-permission-table td,

@@ -3,6 +3,21 @@
 {
     position: relative;
 }
+/* Scale message contents, leaving the panel layout and channel tree alone. */
+#chat-context-container > .chat-context
+{
+    zoom: var(--chat-display-scale, 1);
+}
+
+/* Limits are display pixels, even when the surrounding messages are enlarged. */
+#chat-context-container .chat-picture-img:not(.chat-picture-img-default):not(.chat-picture-deleted)
+{
+    width: auto;
+    height: auto;
+    max-width: min(100%, calc(var(--chat-image-max-width, 600px) / var(--chat-display-scale, 1)));
+    max-height: calc(var(--chat-image-max-height, 480px) / var(--chat-display-scale, 1));
+    object-fit: contain;
+}
 #chat-search
 {
     position: absolute;
@@ -118,6 +133,21 @@
     overflow: hidden;
     resize: both;
     font-size: 12px;
+}
+
+:root #server-settings-tab,
+:root #server-settings-tab > #server-settings-tab-subcontainer,
+:root #server-settings-tab .server-settings-tab-li,
+:root #server-settings-tab .close-button,
+:root #server-settings-tab button
+{
+    cursor: default;
+}
+
+:root #server-settings-tab > #menu-bar-container
+{
+    cursor: move;
+    user-select: none;
 }
 
 /* Settings labels, notes and controls use the selected theme's font. */
@@ -416,6 +446,7 @@
     box-shadow: 0 0 0 2px var(--set-accent-soft, rgba(90, 140, 255, 0.25));
 }
 
+#server-settings-tab #server-settings-open-groups,
 #server-settings-tab input[type="button"],
 #server-settings-tab .custom-file-upload-button {
     box-sizing: border-box;
@@ -430,6 +461,7 @@
     font-size: 12px;
     transition: filter 0.12s ease;
 }
+#server-settings-tab #server-settings-open-groups:hover,
 #server-settings-tab input[type="button"]:hover,
 #server-settings-tab .custom-file-upload-button:hover {
     filter: var(--set-button-hover-filter, brightness(1.14));
@@ -437,6 +469,7 @@
     color: var(--set-button-hover-text, var(--set-button-text, var(--set-accent-text, #ffffff)));
     border: var(--set-button-hover-border, var(--set-button-border, 1px solid transparent));
 }
+#server-settings-tab #server-settings-open-groups:active,
 #server-settings-tab input[type="button"]:active,
 #server-settings-tab .custom-file-upload-button:active {
     filter: brightness(0.92);
@@ -1161,9 +1194,104 @@ body[data-layout-edit="1"] #communication-system-container > .layout-dragging
     overflow: hidden;
 }
 
-/* Keep client indicators on one line and hide anything beyond the row. */
-#channel-list-container .connected-client
+
+:root :is(#channel-list-container, #idle-clients-container, #member-list-body) .connected-client > .connected-client-p-received-messages-number
 {
+    position: static;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    float: none;
+    width: 20px;
+    min-width: 20px;
+    height: 18px;
+    margin: var(--client-unread-margin, 0 4px 0 0);
+    padding: 0;
+    border: 1px solid var(--client-unread-border);
+    border-radius: var(--client-unread-radius);
+    background: var(--client-unread-bg);
+    color: var(--client-unread-color);
+    box-shadow: inset 0 1px 0 #ffffff20, 0 1px 1px #00000020;
+    font: 600 11px/1 var(--set-font, sans-serif);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+    text-indent: 0;
+    text-align: center;
+    vertical-align: middle;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+:root :is(#channel-list-container, #idle-clients-container, #member-list-body) .connected-client > .connected-client-p-received-messages-number[data-unread-digits="2"]
+{
+    font-size: 9px;
+}
+
+:root :is(#channel-list-container, #idle-clients-container, #member-list-body) .connected-client > .connected-client-p-received-messages-number[data-unread-digits="3"]
+{
+    font-size: 8px;
+}
+
+:root :is(#channel-list-container, #idle-clients-container) .connected-client > .connected-client-p-received-messages-number
+{
+    position: absolute;
+    left: auto;
+    top: 50%;
+    margin: 0;
+    transform: translate(calc(var(--client-indent, 20px) - 20px), -50%);
+    z-index: 1;
+}
+
+:root #member-list-body .member-list-client > .connected-client-p-received-messages-number
+{
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    margin: 0;
+    z-index: 2;
+}
+
+:root .connected-client-p-received-messages-number[hidden]
+{
+    display: none !important;
+}
+
+/* Keep client indicators on one line and hide anything beyond the row. */
+:root :is(#channel-list-container, #idle-clients-container, #member-list-body) .connected-client .client-mute-state
+{
+    position: static;
+    inset: auto;
+    float: none;
+    flex: 0 0 14px;
+    order: -1;
+    width: 14px;
+    min-width: 14px;
+    max-width: 14px;
+    height: 14px;
+    margin: 0 3px;
+    padding: 0;
+    transform: none;
+    align-self: center;
+    fill: none;
+    stroke: var(--set-muted, #8995a3);
+    stroke-width: 1.7px;
+    overflow: visible;
+    background: none;
+    pointer-events: auto;
+}
+
+:root :is(#channel-list-container, #idle-clients-container, #member-list-body) .connected-client .client-mute-state
+{
+    background-color: var(--set-muted, #8995a3);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 4 5 7H2v6h3l4 3zM13 7l5 6m0-6-5 6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+:is(#channel-list-container, #idle-clients-container) .connected-client
+{
+    position: relative;
+    box-sizing: border-box;
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
@@ -1172,71 +1300,75 @@ body[data-layout-edit="1"] #communication-system-container > .layout-dragging
     white-space: nowrap;
 }
 
-#channel-list-container .connected-client > div:first-child,
-#channel-list-container .connected-client .client-audio-state,
-#channel-list-container .connected-client .client-video-stream-icon,
-#channel-list-container .connected-client .client-video-watching-icon,
-#channel-list-container .connected-client .connected-client-p-received-messages-number
+:is(#channel-list-container, #idle-clients-container) .connected-client > div:first-child,
+:is(#channel-list-container, #idle-clients-container) .connected-client .client-audio-state,
+:is(#channel-list-container, #idle-clients-container) .connected-client .client-video-stream-icon,
+:is(#channel-list-container, #idle-clients-container) .connected-client .client-video-watching-icon,
+:is(#channel-list-container, #idle-clients-container) .connected-client .connected-client-p-received-messages-number
 {
     flex: 0 0 auto;
 }
 
-#channel-list-container .connected-client .connected-client-p,
-#channel-list-container .connected-client #connected-local-client-input
+:is(#channel-list-container, #idle-clients-container) .connected-client .connected-client-p,
+:is(#channel-list-container, #idle-clients-container) .connected-client #connected-local-client-input
 {
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-#channel-list-container .connected-client .marquee-music-playing-container
-{
-    flex: 0 1 auto;
-    max-width: 100%;
-    min-width: 0;
-    overflow: hidden;
-}
-
-#channel-list-container .connected-client .client-groups
-{
-    display: block;
     flex: 1 1 0;
     min-width: 0;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+:is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container
+{
+    flex: 0 1 auto;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+:is(#channel-list-container, #idle-clients-container) .connected-client .client-groups
+{
+    display: block;
+    flex: 0 3 auto;
+    width: max-content;
+    min-width: 0;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     text-align: right;
+    direction: rtl;
+    unicode-bidi: isolate;
     white-space: nowrap;
     float: none;
     order: 10;
-    margin-left: 0;
+    margin-left: auto;
 }
 
-#channel-list-container .connected-client .client-groups:not(:empty)
+:is(#channel-list-container, #idle-clients-container) .connected-client .client-groups:has(.single-group)
 {
     min-width: 1em;
 }
 
 /* Keep the dots visible even when no complete group icon fits. */
-#channel-list-container .connected-client .client-groups::before
+:is(#channel-list-container, #idle-clients-container) .connected-client .client-groups::before
 {
     content: "\200b";
 }
 
-#channel-list-container .connected-client .single-group
+:is(#channel-list-container, #idle-clients-container) .connected-client .single-group
 {
     flex-shrink: 0;
 }
 
-#channel-list-container .connected-client .connected-client-country-flag
+:is(#channel-list-container, #idle-clients-container) .connected-client .connected-client-country-flag
 {
     flex: 0 0 auto;
     float: none;
     order: 20;
     margin-left: 4px;
+    margin-right: 4px;
 }
 
 /* tree rows must survive a long press, because the browser's own hold behaviours (text
@@ -1510,6 +1642,12 @@ p.identity-dialog-hint {
 
 /* the local client's name input inherits the row font/padding, because as an <input> it rendered
    taller than the <p> rows around it; :where() keeps zero specificity so no theme sizing is overridden */
+/* Keep your name distinct in the channel tree and its member list. */
+:root .connected-local-client > :is(#connected-local-client-input, .connected-client-p)
+{
+    color: var(--client-self-color, var(--set-accent)) !important;
+}
+
 :where(#connected-local-client-input) {
     font: inherit;
     line-height: inherit;
@@ -1651,6 +1789,19 @@ p.identity-dialog-hint {
     vertical-align: middle;
 }
 
+.chat-message-avatar-placeholder
+{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    background: var(--set-button-bg, #536878);
+    color: var(--set-button-text, #fff);
+    font: 600 10px / 1 sans-serif;
+    letter-spacing: 0;
+    user-select: none;
+}
+
 .single-chat-message-sender-username-container,
 .single-chat-message-sender-local-username-container
 {
@@ -1783,6 +1934,14 @@ p.identity-dialog-hint {
 #local-settings-container select:focus {
     border-color: var(--set-accent, #5a8cff);
     box-shadow: 0 0 0 2px var(--set-accent-soft, rgba(90, 140, 255, 0.25));
+}
+
+/* An inset hover ring works with every theme's field border without moving the control.
+   Keep the theme's keyboard focus ring and leave unavailable controls unchanged. */
+:root select:enabled:not([aria-disabled="true"]):hover:not(:focus-visible)
+{
+    outline: 1px solid var(--set-accent, currentColor) !important;
+    outline-offset: -1px !important;
 }
 
 #local-settings-audio-connection-row
@@ -1956,7 +2115,7 @@ p.identity-dialog-hint {
     display: none;
 }
 
-:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button {
+:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button {
     width: 22px;
     height: 22px;
     border: 0;
@@ -1967,11 +2126,11 @@ p.identity-dialog-hint {
     text-align: center;
 }
 
-:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button::before {
+:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button::before {
     content: "\2715";
 }
 
-:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button:hover {
+:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button:hover {
     background: var(--set-danger-soft, rgba(208, 80, 80, 0.16));
     color: var(--set-danger-strong, #ff6b6b);
 }
@@ -2070,6 +2229,55 @@ div#local-settings-container.closing {
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+}
+#local-settings-container .local-settings-chat-scale-row
+{
+    flex-wrap: wrap;
+}
+
+.local-settings-chat-scale-controls
+{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1 1 100%;
+    min-width: 0;
+}
+
+#local-settings-chat-scale
+{
+    flex: 1 1 auto;
+    min-width: 60px;
+    width: 100%;
+    margin: 0;
+    accent-color: var(--set-accent, #5a8cff);
+    cursor: default;
+}
+
+#local-settings-chat-scale-value
+{
+    min-width: 4ch;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+#local-settings-container .local-settings-image-limit
+{
+    box-sizing: border-box;
+    width: 90px;
+    min-height: 32px;
+    padding: 4px 7px;
+    color: var(--set-field-text, inherit);
+    background: var(--set-field, transparent);
+    border: var(--set-field-border, 1px solid var(--set-line, #647084));
+    border-radius: var(--set-radius, 4px);
+    font: inherit;
+}
+
+#local-settings-container .local-settings-image-limit:focus-visible
+{
+    outline: 2px solid var(--set-accent, #5a8cff);
+    outline-offset: 1px;
 }
 .client-audio-availability {
     display: none;
@@ -2749,19 +2957,34 @@ div#local-settings-container.closing {
     resize: none;
 }
 
-#video-stream-popup-header {
+#video-stream-popup-header
+{
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 10px;
+    flex: 0 0 auto;
+    min-height: 30px;
+    box-sizing: border-box;
+    padding: 5px 8px 5px 12px;
+    gap: 8px;
     cursor: move;
     user-select: none;
-    background: var(--set-row-hover, rgba(255, 255, 255, 0.06));
-    font-size: 13px;
 }
 
-#video-stream-popup-close {
-    padding: 0 4px;
+#video-stream-popup-title
+{
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#video-stream-popup-close:focus-visible
+{
+    outline: 2px solid var(--set-accent, currentColor);
+    outline-offset: 2px;
 }
 
 #video-stream-popup-body {
@@ -3235,6 +3458,25 @@ body.chat-use-theme-formatting #chat-context-container .single-chat-message-cont
     background-repeat: no-repeat;
 }
 
+/* Inline SVG actions share the same icon slot as the theme's image icons. */
+.channel-list-context-menu-items .context-menu-item:has(> .group-assignment-parent-icon)::before
+{
+    display: none;
+}
+
+/* Keep disabled actions readable and their explanation available on hover. */
+:root .channel-list-context-menu-items .context-menu-item:is(.context-menu-item-disabled, [aria-disabled="true"]),
+:root .channel-list-context-menu-items .context-menu-item:is(.context-menu-item-disabled, [aria-disabled="true"]):hover
+{
+    color: var(--set-muted, #8b949f) !important;
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    opacity: 0.65 !important;
+    cursor: default !important;
+    pointer-events: auto;
+}
+
 /* Keep the group submenu beside the wider main menu. */
 .channel-list-context-menu + .add-group-context-menu
 {
@@ -3437,6 +3679,26 @@ body.chat-use-theme-formatting #chat-context-container .single-chat-message-cont
 {
     font: inherit;
 }
+#video-stream-settings :is(select, input[type="number"])
+{
+    box-sizing: border-box;
+    min-height: 28px;
+    padding: 4px 7px;
+    color: var(--set-field-text, var(--set-text, inherit));
+    background: var(--set-field, transparent);
+    border: var(--set-field-border, 1px solid var(--set-line, currentColor));
+    border-radius: var(--set-radius, 4px);
+    cursor: default;
+}
+#video-stream-settings select:hover:not(:disabled)
+{
+    border-color: var(--set-accent, currentColor);
+    background: var(--set-row-hover, var(--set-field, transparent));
+}
+#video-stream-apply-settings
+{
+    cursor: default;
+}
 #video-stream-bitrate
 {
     width: 5em;
@@ -3569,4 +3831,210 @@ body.hide-server-icons-in-channel-list #channel-list-container .connected-client
         width: 44px;
         height: 44px;
     }
+}
+
+/* One anchored, scrollable theme picker for mouse, keyboard and touch. */
+:root body > #choose-theme-button-list[data-positioned]
+{
+    display: none !important;
+    transition: none;
+    transform: none;
+    animation: none;
+    position: fixed;
+    inset: var(--theme-menu-top, 48px) auto auto var(--theme-menu-left, 8px) !important;
+    width: min(240px, calc(100vw - 16px));
+    min-width: 0;
+    max-width: calc(100vw - 16px);
+    max-height: min(480px, var(--theme-menu-height, calc(100dvh - 64px)));
+    box-sizing: border-box;
+    margin: 0;
+    padding: 5px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    background: var(--set-panel, #30343a);
+    color: var(--set-text, #edf0f4);
+    border: 1px solid var(--set-line, #69717c);
+    border-radius: var(--set-radius, 6px);
+    box-shadow: 0 8px 24px #0003;
+    z-index: 10001;
+}
+
+:root body > #choose-theme-button-list[data-positioned].theme-menu-open
+{
+    display: block !important;
+}
+
+:root body > #choose-theme-button-list[data-positioned]::before
+{
+    display: none;
+}
+
+:root #choose-theme-button-list > .choose-theme-item
+{
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: auto;
+    min-height: 32px;
+    margin: 0;
+    padding: 7px 10px;
+    appearance: none;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: 13px/18px var(--set-font, sans-serif);
+    text-align: left;
+    white-space: nowrap;
+    cursor: default;
+}
+
+:root #choose-theme-button-list > .choose-theme-item[data-mobile="true"]::after
+{
+    content: "";
+    display: block;
+    float: right;
+    width: 16px;
+    height: 18px;
+    margin-left: 12px;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6' y='2' width='12' height='20' rx='2.5'/%3E%3Cpath d='M10 5h4M11 19h2'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6' y='2' width='12' height='20' rx='2.5'/%3E%3Cpath d='M10 5h4M11 19h2'/%3E%3C/svg%3E") center / contain no-repeat;
+    pointer-events: none;
+}
+
+:root #choose-theme-button-list > .choose-theme-item:is(:hover, :focus-visible)
+{
+    background: var(--set-hover, #80808022);
+    color: inherit;
+    outline: none;
+    box-shadow: none;
+}
+
+@media (pointer: coarse)
+{
+    :root #choose-theme-button-list > .choose-theme-item
+    {
+        min-height: 44px;
+        padding-top: 13px;
+        padding-bottom: 13px;
+    }
+}
+
+:root :is(#channel-list-container, #idle-clients-container) .connected-client > :is(.connected-client-p, #connected-local-client-input)
+{
+    align-self: center;
+    box-sizing: border-box;
+    min-width: min(4ch, 30%);
+    margin: 0;
+    padding: 0;
+    height: auto;
+    line-height: 20px;
+}
+
+:root .connected-client .client-name-text
+{
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
+/* Editable local names share the same centered line as the other client names. */
+:root :is(#channel-list-container, #idle-clients-container) #connected-local-client-input
+{
+    inset: auto;
+    transform: none;
+}
+
+:root :is(#channel-list-container, #idle-clients-container) .connected-client > .connected-client-p
+{
+    display: flex;
+    align-items: center;
+}
+
+:root :is(#channel-list-container, #idle-clients-container) .connected-client .client-name-text
+{
+    line-height: inherit;
+}
+
+:root :is(#channel-list-container, #idle-clients-container) .connected-client > .client-audio-state
+{
+    margin-right: 6px;
+}
+
+:root .connected-client .client-name-text > .client-ignore-state
+{
+    position: absolute;
+    inset: 2px 0;
+    width: 100%;
+    height: calc(100% - 4px);
+    margin: 0;
+    fill: none;
+    stroke: var(--client-ignore-color, #d5ac39);
+    stroke-width: 1.5px;
+    pointer-events: none;
+}
+
+:root .connected-client .client-ignore-state path
+{
+    vector-effect: non-scaling-stroke;
+}
+
+:root :is(#channel-list-container, #idle-clients-container) .connected-client > div:first-child
+{
+    position: relative;
+    order: -2;
+}
+
+:root :is(#channel-list-container, #idle-clients-container) .connected-client .client-groups
+{
+    align-self: center;
+    line-height: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+:root :is(#channel-list-container, #idle-clients-container) .connected-client .single-group
+{
+    width: 16px;
+    height: 16px;
+    margin-top: 0;
+    margin-bottom: 0;
+    vertical-align: middle;
+    background-position: center;
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+
+:root .channel-drop-target
+{
+    outline: 1px solid var(--set-accent, #6999ba);
+    outline-offset: -1px;
+    background-color: var(--set-hover, #80808022);
+}
+
+/* Local mute belongs to the audio indicator, not the right-side membership badges. */
+:root :is(#channel-list-container, #idle-clients-container) .client-audio-state
+{
+    position: relative;
+    overflow: visible;
+}
+
+:root :is(#channel-list-container, #idle-clients-container) .client-audio-state > .client-mute-state
+{
+    position: absolute;
+    left: -5px;
+    bottom: 0;
+    top: auto;
+    right: auto;
+    width: 12px;
+    height: 12px;
+    min-width: 12px;
+    max-width: 12px;
+    margin: 0;
+    z-index: 2;
+    background-color: var(--client-mute-color, #cf6f78);
 }

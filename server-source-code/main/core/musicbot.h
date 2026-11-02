@@ -8,6 +8,7 @@ typedef struct musicbot_add_song_arg_struct_t
     uint64 mp3_data_buffer_length;
     client_t* music_bot;
     uint64 sender_client_id;
+    char sender_identity[MAX_PUBLIC_KEY_LENGTH];
 } musicbot_add_song_arg_struct_t;
 
 void musicbot__remove_song(client_t* music_bot, uint64 song_id);

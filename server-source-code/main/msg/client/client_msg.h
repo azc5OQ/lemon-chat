@@ -4,6 +4,13 @@
 #include "../../definitions.h"
 #include "../../../third-party/dave-g-json/cJSON.h"
 
+void client_msg__moderation__process_channel_access(cJSON* json_root, uint64 sender_client_id);
+void client_msg__moderation__process_client_action(cJSON* json_root, uint64 sender_client_id);
+void client_msg__moderation__process_channel_group(cJSON* json_root, uint64 sender_client_id);
+void client_msg__moderation__process_bans(cJSON* json_root, uint64 sender_client_id);
+void client_msg__moderation__process_music_control(cJSON* json_root, uint64 sender_client_id);
+void client_msg__moderation__process_save_emojis(cJSON* json_root, uint64 sender_client_id);
+
 void client_msg__connection__process_connection_check(cJSON* json_root, uint64 sender_client_id);
 void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket);
 void client_msg__connection__process_public_key_challenge_response(cJSON* json_root, uint64 sender_client_id);

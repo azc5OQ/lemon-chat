@@ -1,0 +1,20 @@
+@_GLES3_RENDERER_INTERNAL__GLSL_VERSION@
+precision highp float;
+uniform sampler2D u_src;
+uniform vec2  u_step;
+uniform float u_sigma;
+in vec2 v_uv;
+out vec4 out_color;
+void main() {
+    if (u_sigma <= 0.0) { out_color = texture(u_src, v_uv); return; }
+    float two_sigma_sq = 2.0 * u_sigma * u_sigma;
+    vec4  acc  = vec4(0.0);
+    float wsum = 0.0;
+    for (int i = -16; i <= 16; ++i) {
+        float fi = float(i);
+        float w  = exp(-(fi*fi) / two_sigma_sq);
+        acc  += texture(u_src, v_uv + u_step * fi) * w;
+        wsum += w;
+    }
+    out_color = acc / wsum;
+}

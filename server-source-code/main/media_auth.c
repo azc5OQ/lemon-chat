@@ -38,7 +38,7 @@
 #include "base.h" // server settings
 #include "../third-party/rxi-log/log.h"
 
-#include "clib/clib_memory.h"
+#include "clib/clib.h"
 
 #include "media_auth.h"
 
@@ -241,7 +241,7 @@ uint64 media_auth__decrypt_from_client(client_t* sender, int stream, const unsig
     // Remove the encryption used between this client and the server. Recreate
     // its starting value from the packet number, direction and audio/video
     // choice, then decrypt with the key agreed on when this client connected.
-    memcpy(out_body, frame + MEDIA_FRAME_HEADER, body_size);
+    clib__memcpy(out_body, frame + MEDIA_FRAME_HEADER, body_size);
     _media_auth_internal__session_block(_media_auth_internal__read_u64(frame + 1), MEDIA_DIRECTION_FROM_CLIENT, stream, block);
     if (!metadata_crypto__crypt(&sender->session_keys.encryption, block, sizeof(block), out_body, body_size, CRYPTO_DECRYPT))
     {
@@ -288,7 +288,7 @@ uint64 media_auth__encrypt_for_client(client_t* receiver, int stream, const unsi
     frame_counter = atomic_fetch_add_explicit(&receiver->media_send_counter, 1, memory_order_relaxed);
     out_frame[0] = MEDIA_FRAME_VERSION;
     _media_auth_internal__write_u64(out_frame + 1, frame_counter);
-    memcpy(out_frame + MEDIA_FRAME_HEADER, body, body_size);
+    clib__memcpy(out_frame + MEDIA_FRAME_HEADER, body, body_size);
     _media_auth_internal__session_block(frame_counter, MEDIA_DIRECTION_TO_CLIENT, stream, block);
     if (!metadata_crypto__crypt(&receiver->session_keys.encryption, block, sizeof(block), out_frame + MEDIA_FRAME_HEADER, body_size, CRYPTO_ENCRYPT))
     {
@@ -299,6 +299,6 @@ uint64 media_auth__encrypt_for_client(client_t* receiver, int stream, const unsi
     {
         return 0;
     }
-    memcpy(out_frame + MEDIA_FRAME_HEADER + body_size, code, MEDIA_FRAME_CODE);
+    clib__memcpy(out_frame + MEDIA_FRAME_HEADER + body_size, code, MEDIA_FRAME_CODE);
     return frame_size;
 }

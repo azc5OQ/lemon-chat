@@ -341,6 +341,10 @@ function chat_reactions__edit(state)
         receiver_type: state.peer_id == null ? "channel" : "user",
         receiver_id: state.peer_id == null ? g_current_channel_id : state.peer_id
     });
+    if (typeof server_emojis__prepare_message_edit === "function")
+    {
+        server_emojis__prepare_message_edit(state.element);
+    }
     state.element.setAttribute("contenteditable", "true");
     state.element.addEventListener("blur", chat__local_chat_message_onblur);
     state.element.addEventListener("keydown", chat__local_chat_message_onkeydown);

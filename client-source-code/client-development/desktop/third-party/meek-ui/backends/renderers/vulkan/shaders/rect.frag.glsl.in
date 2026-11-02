@@ -1,0 +1,23 @@
+#version 450
+layout(constant_id = 0) const uint target_srgb = 0u;
+layout(location = 0) in  vec4  v_color;
+layout(location = 1) in  vec2  v_local;
+layout(location = 2) in  vec2  v_rect_size;
+layout(location = 3) in  float v_radius;
+layout(location = 0) out vec4  o_color;
+@RENDERER_SDF_ROUND_BOX_GLSL@
+void main() {
+    vec2 half_size = v_rect_size * 0.5;
+    vec2 p = v_local - half_size;
+    float d = sd_round_box(p, half_size, v_radius);
+    float aa = 1.0 - smoothstep(@RENDERER_SDF_AA_MIN@, @RENDERER_SDF_AA_MAX@, d);
+    if (aa <= 0.0) discard;
+    o_color = vec4(v_color.rgb, v_color.a * aa);
+    // The framebuffer performs linear-light blending and encodes its result.
+    // Decode our byte-oriented source color first so opaque colors stay equal.
+    if (target_srgb != 0u) {
+        vec3 low = o_color.rgb / 12.92;
+        vec3 high = pow((o_color.rgb + 0.055) / 1.055, vec3(2.4));
+        o_color.rgb = mix(high, low, lessThanEqual(o_color.rgb, vec3(0.04045)));
+    }
+}

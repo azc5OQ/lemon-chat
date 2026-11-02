@@ -1236,14 +1236,12 @@ a-toast:hover
 
 .single-chat-message-content-p-hover
 {
-    background-color: #d8eaf8;
-    border-radius: 5px;
+    background: transparent;
 }
 
 .local-single-chat-message-content-p:hover
 {
-    border-radius: 5px;
-    background-color: #d8eaf8;
+    background: transparent;
 }
 
 .custom-font-usage-Yellowtail
@@ -2244,6 +2242,11 @@ body, input, button, textarea, select, p, li, label
 
 :root
 {
+    --client-self-color: #000000;
+    --client-unread-bg: linear-gradient(#69abe0, #276ca8);
+    --client-unread-color: #ffffff;
+    --client-unread-border: #306f9f;
+    --client-unread-radius: 4px;
     --set-font: Tahoma, 'Raleway', sans-serif;
     --set-panel: #ffffff;
     --set-text: #000000;
@@ -2408,8 +2411,8 @@ body, input, button, textarea, select, p, li, label
     user-select: none;
     min-width: max-content;
     cursor: default;
-    padding-top: 0 !important;
-    padding-bottom: 1px !important;
+    padding-top: 1px !important;
+    padding-bottom: 2px !important;
     line-height: 16px !important;
     min-height: 0 !important;
     white-space: nowrap;
@@ -2713,7 +2716,6 @@ body, input, button, textarea, select, p, li, label
     border: 1px solid #7a7a7a !important;
     border-radius: 0 !important;
     background: #ffffff !important;
-    height: 7px;
 }
 
 #channel-properties-input-container
@@ -3178,6 +3180,21 @@ body, input, button, textarea, select, p, li, label
     letter-spacing: 0;
 }
 
+/* The client marks its selected conversation with this inline background color. */
+#chat-context-selectors-container .chat-context-selector:is([style*="background-color: rgb(54, 57, 63)"], [style*="background-color: #36393f"])
+{
+    background: linear-gradient(#d9f0ff, #a7d3f2) !important;
+    border-color: #548cb5;
+    border-bottom-color: #2875ad;
+    box-shadow: inset 0 1px 0 #f5fcff, inset 0 -3px 0 #2875ad;
+}
+
+#chat-context-selectors-container .chat-context-selector:is([style*="background-color: rgb(54, 57, 63)"], [style*="background-color: #36393f"]) .p-container p
+{
+    color: #103958;
+    font-weight: 600;
+}
+
 .single-chat-message,
 .single-chat-message-content,
 .single-chat-message-content-p,
@@ -3582,7 +3599,7 @@ input:focus-visible, button:focus-visible, textarea:focus-visible, select:focus-
 }
 
 :is(#identity-string-use-container-enter, #secret-identity-string-container-enter, #local-settings-container) #menu-bar-container > .close-button,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-titlebar > .close-button
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .groups-titlebar > .close-button
 {
     top: 0;
     right: 5px;
@@ -3591,7 +3608,7 @@ input:focus-visible, button:focus-visible, textarea:focus-visible, select:focus-
 }
 
 :is(#identity-string-use-container-enter, #secret-identity-string-container-enter, #local-settings-container) #menu-bar-container > .close-button:hover,
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker) .groups-titlebar > .close-button:hover
+:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .groups-titlebar > .close-button:hover
 {
     background: linear-gradient(#ffd1b9 0%, #ee8770 45%, #dc4a29 46%, #efad6c 100%);
 }
@@ -3636,7 +3653,7 @@ input:focus-visible, button:focus-visible, textarea:focus-visible, select:focus-
 }
 
 .close-button,
-:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button,
+:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button,
 #server-settings-tab .close-button.close-button,
 #video-stream-popup-close
 {
@@ -3663,7 +3680,7 @@ input:focus-visible, button:focus-visible, textarea:focus-visible, select:focus-
 }
 
 .close-button:hover,
-:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button:hover,
+:is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button:hover,
 #server-settings-tab .close-button.close-button:hover,
 #video-stream-popup-close:hover
 {
@@ -3705,6 +3722,17 @@ input:focus-visible, button:focus-visible, textarea:focus-visible, select:focus-
 .text-input-pretty
 {
     font: 12px "Segoe UI", Tahoma, Arial, sans-serif;
+}
+
+/* Give form fields a usable height without changing compact tree names or textareas. */
+input:is(.text-input-pretty, .text-input-not-pretty, .text-input-not-pretty-2),
+:is(#server-settings-tab, #local-settings-container) input:is([type="text"], [type="password"], [type="number"], [type="search"], [type="email"], [type="url"], [type="tel"]),
+#server-bookmark-name
+{
+    box-sizing: border-box;
+    min-height: 30px;
+    padding: 5px 8px;
+    line-height: 18px;
 }
 
 #connect-button
@@ -4332,9 +4360,67 @@ a-toast
 
 :root .chat-reply-quote
 {
+    --reaction-accent: #2b6b98;
     padding: 5px 8px;
     border-left: 2px solid #78b4dc;
-    background: linear-gradient(#f6fbff, #e8f2fa);
+    background: linear-gradient(to right, #e5f1fa 0%, #ffffff 90%);
+}
+
+:root .single-chat-message
+{
+    box-sizing: border-box;
+    width: auto;
+    min-height: 0;
+    padding: 4px 14px;
+}
+
+:root .single-server-message
+{
+    box-sizing: border-box;
+    width: auto;
+    padding-inline: 14px;
+}
+
+:root .single-chat-message .single-message-content
+{
+    display: block;
+    width: 100%;
+    padding: 0;
+}
+
+:root .single-chat-message .chat-message-avatar
+{
+    position: absolute;
+    top: 1px;
+    left: 0;
+    width: 38px;
+    height: 38px;
+    margin: 0;
+}
+
+:root .single-chat-message .chat-message-avatar-placeholder
+{
+    background: linear-gradient(#eff8ff, #c4deef);
+    color: #356485;
+    font-size: 14px;
+}
+
+:root .single-chat-message :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container):has(> .chat-message-avatar)
+{
+    position: relative;
+    min-height: 20px;
+    padding-left: 50px;
+}
+
+:root .single-message-content:has(> :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container) > .chat-message-avatar)
+{
+    min-height: 38px;
+}
+
+:root .single-message-content:has(> :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container) > .chat-message-avatar) > .single-chat-message-content
+{
+    margin-left: 50px;
+    max-width: calc(100% - 50px);
 }
 
 :root .chat-reply-content
@@ -4356,12 +4442,18 @@ a-toast
     color: #ffffff;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup)
 {
     --groups-radius: 6px;
     --groups-frame: 1px solid #7191aa;
     --groups-shadow: inset 0 0 0 1px #ffffffc0, 0 8px 24px #18384f55;
-    --groups-title-background: linear-gradient(#dceef9, #a8cce4);
-    --groups-title-text: #152f44;
+    --groups-title-background: var(--aero-glass);
+    --groups-title-text: #17314d;
+    --groups-title-border: 1px solid #8eabc2;
+    --groups-title-radius: 5px 5px 0 0;
+    --groups-title-shadow: inset 0 1px 0 rgba(255,255,255,0.95);
+    --groups-title-text-shadow: 0 0 4px #ffffff, 0 0 8px #ffffff;
+    --groups-title-weight: 400;
+    --groups-title-spacing: 0;
     --groups-option-background: #fff;
 }

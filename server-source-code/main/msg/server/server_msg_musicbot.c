@@ -1,3 +1,4 @@
+#include "../../clib/clib.h"
 // This file sends music bot audio keys, song lists and playback notices.
 
 #include "server_msg.h"
@@ -41,7 +42,7 @@ void server_msg__musicbot__add_keys(cJSON* object, client_t* receiver, client_t*
     {
         for (j = 0; j < 32; j++)
         {
-            snprintf(key_hex + j * 2, 3, "%02x", audio_keys->keys[i][j]);
+            clib__string_format(key_hex + j * 2, 3, "%02x", audio_keys->keys[i][j]);
         }
         cJSON_AddItemToArray(keys, cJSON_CreateString(key_hex));
     }
@@ -205,6 +206,8 @@ void server_msg__musicbot__send_song_list_to_single_client(client_t* receiver, c
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     root = server_msg__delivery__new_message("music_bot_song_list", &message);
+    cJSON_AddNumberToObject(message, "bot_id", (double)music_bot->client_id);
+    cJSON_AddBoolToObject(message, "is_paused", atomic_load(&music_bot->music_bot_client_extension.is_playback_paused));
     json_songs_array = cJSON_CreateArray();
 
     // create array of clients

@@ -1,7 +1,6 @@
 // This file provides helpers for clocks, threads, memory usage, executable lookup, random data, hashing and JSON.
 #include "definitions.h"
-#include "clib/clib_string.h"
-#include "clib/clib_memory.h"
+#include "clib/clib.h"
 #include "util.h"
 #include "../third-party/zhicheng/base64.h"
 #include "../third-party/ITH-sha/sha256.h"
@@ -45,7 +44,7 @@ static boole _util_internal__check_executable(cstring candidate, char* path, uin
 #endif
 
 #ifdef _WIN32
-    length = strlen(candidate);
+    length = clib__strlen(candidate);
     if (length < 4 || _stricmp(candidate + length - 4, ".exe") != 0)
     {
         return FALSE;
@@ -82,13 +81,13 @@ static boole _util_internal__check_executable(cstring candidate, char* path, uin
     {
         return FALSE;
     }
-    length = strlen(absolute);
+    length = clib__strlen(absolute);
     if (length >= capacity)
     {
         free(absolute);
         return FALSE;
     }
-    memcpy(path, absolute, length + 1);
+    clib__memcpy(path, absolute, length + 1);
     free(absolute);
 #endif
     return TRUE;
@@ -129,12 +128,12 @@ boole util__find_executable(cstring command, char* path, uint64 capacity)
     {
         return FALSE;
     }
-    command_length = strlen(command);
-    explicit_path = strchr(command, '/') != NULL_POINTER;
+    command_length = clib__strlen(command);
+    explicit_path = clib__strchr(command, '/') != NULL_POINTER;
 #ifdef _WIN32
     separator = ';';
     slash = '\\';
-    explicit_path = explicit_path || strchr(command, '\\') != NULL_POINTER || strchr(command, ':') != NULL_POINTER;
+    explicit_path = explicit_path || clib__strchr(command, '\\') != NULL_POINTER || clib__strchr(command, ':') != NULL_POINTER;
     basename = command;
     for (cursor = command; *cursor != 0; cursor++)
     {
@@ -143,14 +142,14 @@ boole util__find_executable(cstring command, char* path, uint64 capacity)
             basename = cursor + 1;
         }
     }
-    if (strchr(basename, '.') == NULL_POINTER)
+    if (clib__strchr(basename, '.') == NULL_POINTER)
     {
         suffix = ".exe";
     }
 #else
     (void)basename;
 #endif
-    suffix_length = strlen(suffix);
+    suffix_length = clib__strlen(suffix);
     if (command_length > SIZE_MAX - suffix_length - 2)
     {
         return FALSE;
@@ -162,8 +161,8 @@ boole util__find_executable(cstring command, char* path, uint64 capacity)
         {
             return FALSE;
         }
-        memcpy(candidate, command, command_length);
-        memcpy(candidate + command_length, suffix, suffix_length + 1);
+        clib__memcpy(candidate, command, command_length);
+        clib__memcpy(candidate + command_length, suffix, suffix_length + 1);
         found = _util_internal__check_executable(candidate, path, capacity);
         free(candidate);
         return found;
@@ -209,10 +208,10 @@ boole util__find_executable(cstring command, char* path, uint64 capacity)
             {
                 return FALSE;
             }
-            memcpy(candidate, start, directory_length);
+            clib__memcpy(candidate, start, directory_length);
             candidate[directory_length] = slash;
-            memcpy(candidate + directory_length + 1, command, command_length);
-            memcpy(candidate + directory_length + 1 + command_length, suffix, suffix_length + 1);
+            clib__memcpy(candidate + directory_length + 1, command, command_length);
+            clib__memcpy(candidate + directory_length + 1 + command_length, suffix, suffix_length + 1);
             found = _util_internal__check_executable(candidate, path, capacity);
             free(candidate);
             if (found == TRUE)
@@ -472,7 +471,7 @@ void util__get_executable_directory(char* out_directory, uint64 out_directory_si
         return;
     }
 
-    snprintf(out_directory, out_directory_size, "%s", resolved_path);
+    clib__string_format(out_directory, out_directory_size, "%s", resolved_path);
 #else
     link_length = readlink("/proc/self/exe", out_directory, out_directory_size - 1);
     if (link_length <= 0)
@@ -484,7 +483,7 @@ void util__get_executable_directory(char* out_directory, uint64 out_directory_si
     out_directory[link_length] = 0;
 #endif
 
-    last_slash = strrchr(out_directory, '/');
+    last_slash = clib__strrchr(out_directory, '/');
     if (last_slash != NULL_POINTER)
     {
         *last_slash = 0;
@@ -512,7 +511,7 @@ void util__get_executable_directory(char* out_directory, uint64 out_directory_si
         return;
     }
 
-    last_separator = strrchr(out_directory, '\\');
+    last_separator = (char*)clib__strrchr(out_directory, '\\');
     if (last_separator != NULL_POINTER)
     {
         *last_separator = 0;
@@ -540,7 +539,7 @@ boole util__fill_secure_random_bytes(unsigned char* out_buffer, uint64 length)
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
 
-    ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char*)pers, strlen(pers));
+    ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char*)pers, clib__strlen(pers));
     if (ret != 0)
     {
         DBG_ENCRYPTION log_info("%s %d", "util__fill_secure_random_bytes: ctr_drbg_seed failed ", ret);
@@ -615,21 +614,21 @@ void util__free_json_message(cJSON* json_root_object1, char* json_root_object1_s
  *
  * @return void
  */
-void util__hash_password_to_base64(char* plaintext, char* out, int64 out_size)
+void util__hash_password_to_base64(cstring plaintext, char* out, int64 out_size)
 {
     ITH_SHA256_CTX ctx;
     unsigned char digest[32];
     char encoded[BASE64_ENCODE_OUT_SIZE(32)];
 
     ith_sha256_init(&ctx);
-    ith_sha256_update(&ctx, (unsigned char*)plaintext, strlen(plaintext));
+    ith_sha256_update(&ctx, (unsigned char*)plaintext, clib__strlen(plaintext));
     ith_sha256_final(&ctx, digest);
 
     clib__null_memory(encoded, sizeof(encoded));
     zchg_base64_encode(digest, 32, encoded);
 
     clib__null_memory(out, out_size);
-    clib__copy_memory(encoded, out, clib__utf8_string_length(encoded), out_size - 1);
+    clib__string_copy(out, out_size, encoded);
 }
 
 /**

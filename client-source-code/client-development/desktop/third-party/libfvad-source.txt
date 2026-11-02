@@ -1,0 +1,6 @@
+Upstream: https://github.com/dpirch/libfvad
+Revision: 532ab666c20d3cfda38bca63abbb0f152706c369
+Archive: https://codeload.github.com/dpirch/libfvad/zip/532ab666c20d3cfda38bca63abbb0f152706c369
+Archive SHA256: a72a440f1a4e6abe0204027ec3484f23b75395808df3fdf1274e78e1d4623a97
+License: BSD-3-Clause, with upstream PATENTS grant.
+Source files are unchanged. The desktop builds them as lemon-vad.dll/.so/.dylib.

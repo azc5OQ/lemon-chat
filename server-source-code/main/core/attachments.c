@@ -8,8 +8,7 @@
 #include "../base.h"
 #include "../msg/server/server_msg.h"
 #include "../memory_manager.h"
-#include "../clib/clib_memory.h"
-#include "../clib/clib_string.h"
+#include "../clib/clib.h"
 #include "../util.h"
 #include "musicbot.h"
 #include "../../third-party/zhicheng/base64.h"
@@ -35,7 +34,7 @@ static boole _file_transfer_internal__file_client_is_current(uint64 client_id, c
     {
         return FALSE;
     }
-    return g_clients_array[client_id].session_keys.is_ready && g_clients_array[client_id].session_keys.authentication.type == authentication_key->type && memcmp(&g_clients_array[client_id].session_keys.authentication.material, &authentication_key->material, sizeof(authentication_key->material)) == 0;
+    return g_clients_array[client_id].session_keys.is_ready && g_clients_array[client_id].session_keys.authentication.type == authentication_key->type && clib__memcmp(&g_clients_array[client_id].session_keys.authentication.material, &authentication_key->material, sizeof(authentication_key->material)) == 0;
 }
 
 /**
@@ -108,7 +107,7 @@ static void* _file_transfer_internal__file_download_thread(void* argument)
         {
             goto file_download_end;
         }
-        memset(queued, 0, receiver_count * sizeof(boole));
+        clib__memset(queued, 0, receiver_count * sizeof(boole));
         started_ms = util__get_timestamp_ms();
         do
         {
@@ -308,7 +307,7 @@ void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64
         arg->size = buffer_to_send_total_size;
         arg->server_chat_message_id = server_chat_message_id;
         arg->local_chat_message_id = local_message_id;
-        clib__copy_memory("channel_chat_picture", &arg->receive_type[0], clib__utf8_string_length("channel_chat_picture"), sizeof(arg->receive_type) - 1);
+        clib__string_copy(arg->receive_type, sizeof(arg->receive_type), "channel_chat_picture");
 
         _file_transfer_internal__start_file_download(arg);
     }
@@ -373,7 +372,7 @@ void file_transfer__process_direct_chat_picture(uint64 sender_client_id, uint64 
         arg->size = buffer_to_send_total_size;
         arg->server_chat_message_id = server_chat_message_id;
         arg->local_chat_message_id = local_message_id;
-        clib__copy_memory("direct_chat_picture", &arg->receive_type[0], clib__utf8_string_length("direct_chat_picture"), sizeof(arg->receive_type) - 1);
+        clib__string_copy(arg->receive_type, sizeof(arg->receive_type), "direct_chat_picture");
 
         _file_transfer_internal__start_file_download(arg);
     }
@@ -430,7 +429,7 @@ void file_transfer__process_channel_chat_file(uint64 client_sender_id, uint64 lo
     arg->size = buffer_to_send_total_size;
     arg->server_chat_message_id = server_chat_message_id;
     arg->local_chat_message_id = local_message_id;
-    clib__copy_memory("channel_chat_file", &arg->receive_type[0], clib__utf8_string_length("channel_chat_file"), sizeof(arg->receive_type) - 1);
+    clib__string_copy(arg->receive_type, sizeof(arg->receive_type), "channel_chat_file");
 
     _file_transfer_internal__start_file_download(arg);
 }
@@ -494,7 +493,7 @@ void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 rec
     arg->size = buffer_to_send_total_size;
     arg->server_chat_message_id = server_chat_message_id;
     arg->local_chat_message_id = local_message_id;
-    clib__copy_memory("direct_chat_file", &arg->receive_type[0], clib__utf8_string_length("direct_chat_file"), sizeof(arg->receive_type) - 1);
+    clib__string_copy(arg->receive_type, sizeof(arg->receive_type), "direct_chat_file");
 
     _file_transfer_internal__start_file_download(arg);
 }

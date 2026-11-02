@@ -20,6 +20,10 @@ var server_msg = {
         {
             group.permissions = msg.message.permissions;
         }
+        if (typeof groups__permissions_saved === "function")
+        {
+            groups__permissions_saved(msg.message.group_id, msg.message.permissions);
+        }
         if (typeof groups__schedule_refresh === "function")
         {
             groups__schedule_refresh();
@@ -41,6 +45,7 @@ var server_msg = {
         UI.wire_settings_delete_delegation();
 
         g_groups = msg.message.groups.slice();
+        channel_groups.catalog = Array.isArray(msg.message.channel_groups) ? msg.message.channel_groups : [];
         if (msg.message.access)
         {
             groups__apply_access(msg.message.access);
@@ -469,6 +474,7 @@ var server_msg = {
         single_client.identity_hash = (msg.message.identity_hash != null) ? msg.message.identity_hash : "";
         single_client.public_key = msg.message.public_key;
         single_client.channel_id = msg.message.channel_id;
+        single_client.channel_group_id = Number(msg.message.channel_group_id) || 0;
         single_client.group_ids = (msg.message.group_ids != null) ? msg.message.group_ids : [];
         single_client.audio_state = msg.message.audio_state;
         single_client.is_clients_channel_hidden = false;
@@ -705,6 +711,8 @@ var server_msg = {
     process_client_coming_back_from_idle_mode_from_server: function(msg)
     {
         g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)].channel_id = msg.message.channel_id;
+        g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)].channel_group_id = Number(msg.message.channel_group_id) || 0;
+        groups__schedule_refresh();
         g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)].is_idle = false;
 
         // the local client returned from idle: sync the channel globals - a stale
@@ -988,6 +996,21 @@ var server_msg = {
         g_channel_list[index].is_using_password = msg.message.is_using_password;
         g_channel_list[index].name = msg.message.channel_name;
         g_channel_list[index].is_audio_enabled = msg.message.is_audio_enabled;
+        if (typeof msg.message.is_temp_channel === "boolean")
+        {
+            g_channel_list[index].is_temp_channel = msg.message.is_temp_channel;
+            document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[2]
+                .classList.toggle("single-channel-is-temp", msg.message.is_temp_channel);
+            moderation.channels.delete(Number(msg.message.channel_id));
+            if (moderation.channel_edit === Number(msg.message.channel_id))
+            {
+                let type = document.getElementById("channel-properties-type");
+                type.value = msg.message.is_temp_channel ? "temporary" : "permanent";
+                type.dataset.originalValue = type.value;
+                UI.refresh_channel_type_options(Number(msg.message.channel_id));
+                moderation__send("channel_access_request", { channel_id: Number(msg.message.channel_id) });
+            }
+        }
         // an older server sends no toggle: the channel then streams (the server side defaults the same way)
         g_channel_list[index].is_video_stream_enabled = (msg.message.is_video_stream_enabled != false);
         video__refresh_controls();
@@ -1044,7 +1067,7 @@ var server_msg = {
         }
     },
     /**
-     * @brief the client-info popup for admins: username, connected time, ip, country, last action, identity
+     * @brief Applies the client details that the server permitted this user to request.
      *
      * @param object msg -> the server message, msg.message holds the info fields
      *
@@ -1052,30 +1075,10 @@ var server_msg = {
      */
     process_client_info_from_server: function(msg)
     {
-        if (!groups__has_permission("view_client_details"))
+        if (G_HAS_DOM)
         {
-            return;
+            client_status__receive(msg.message);
         }
-        // The server sends these details only to users with permission to view them.
-        let client = channel_tree__get_client_by_client_id(msg.message.client_id);
-        let username = (client != null && client.username != null) ? client.username : ("client " + msg.message.client_id);
-
-        let total_seconds = parseInt(msg.message.connected_seconds);
-        if (isNaN(total_seconds)) { total_seconds = 0; }
-        let days = Math.floor(total_seconds / 86400);
-        let hours = Math.floor((total_seconds % 86400) / 3600);
-        let minutes = Math.floor((total_seconds % 3600) / 60);
-
-        let country = (msg.message.country_iso_code != null && msg.message.country_iso_code.length > 0) ? msg.message.country_iso_code : "unknown";
-
-        document.getElementById("client-info-username").innerText = username;
-        document.getElementById("client-info-connected").innerText = days + "d " + hours + "h " + minutes + "m";
-        document.getElementById("client-info-ip").innerText = msg.message.ip_address;
-        document.getElementById("client-info-country").innerText = country;
-        document.getElementById("client-info-last-action").innerText = parseInt(msg.message.last_action_seconds_ago) + "s ago";
-        document.getElementById("client-info-identity").innerText = msg.message.identity;
-
-        document.getElementById("client-info-container").style.display = "block";
     },
 
     /**
@@ -1623,6 +1626,10 @@ var server_msg = {
     process_channel_chat_message_from_server: function(msg)
     {
         let received_channel_chat_message_object = JSON.parse(msg.message.decrypted_value);
+        if (chat__receive_message_edit(received_channel_chat_message_object, msg.message, false))
+        {
+            return;
+        }
         if (chat_reactions__receive(received_channel_chat_message_object, msg.message, false))
         {
             return;
@@ -1846,6 +1853,10 @@ var server_msg = {
     {
         let received_direct_message_object = msg.message.some_json.type === "direct_chat_message"
             ? JSON.parse(msg.message.some_json.value) : null;
+        if (chat__receive_message_edit(received_direct_message_object, msg.message, true))
+        {
+            return;
+        }
         if (chat_reactions__receive(received_direct_message_object, msg.message, true))
         {
             return;
@@ -2156,6 +2167,7 @@ var server_msg = {
         let local_client_channel_id = channel_tree__get_client_by_client_id(g_local_client_id).channel_id;
 
         g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)].channel_id = -2;
+        g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)].channel_group_id = 0;
         g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)].is_idle = true;
         keys__channel_member_left(departing_client);
 
@@ -2365,6 +2377,7 @@ var server_msg = {
                 single_client.identity_hash = (msg.message.clients[i].identity_hash != null) ? msg.message.clients[i].identity_hash : "";
                 single_client.public_key = msg.message.clients[i].public_key;
                 single_client.channel_id = msg.message.clients[i].channel_id;
+                single_client.channel_group_id = Number(msg.message.clients[i].channel_group_id) || 0;
                 single_client.audio_state = msg.message.clients[i].audio_state;
                 single_client.group_ids = msg.message.clients[i].group_ids;
                 single_client.is_clients_channel_hidden = msg.message.clients[i].is_clients_channel_hidden;
@@ -2405,6 +2418,7 @@ var server_msg = {
                 single_client.identity_hash = (msg.message.clients[i].identity_hash != null) ? msg.message.clients[i].identity_hash : "";
                 single_client.public_key = msg.message.clients[i].public_key;
                 single_client.channel_id = msg.message.clients[i].channel_id;
+                single_client.channel_group_id = Number(msg.message.clients[i].channel_group_id) || 0;
                 single_client.audio_state = msg.message.clients[i].audio_state;
                 single_client.group_ids = msg.message.clients[i].group_ids;
                 single_client.is_clients_channel_hidden = msg.message.clients[i].is_clients_channel_hidden;
@@ -2478,6 +2492,7 @@ var server_msg = {
                 single_client.identity_hash = (msg.message.clients[i].identity_hash != null) ? msg.message.clients[i].identity_hash : "";
                 single_client.public_key = msg.message.clients[i].public_key;
                 single_client.channel_id = msg.message.clients[i].channel_id;
+                single_client.channel_group_id = Number(msg.message.clients[i].channel_group_id) || 0;
                 single_client.country_iso_code = msg.message.clients[i].country_iso_code;
                 single_client.is_idle = msg.message.clients[i].is_idle;
                 single_client.is_ignored_by_local_client = false;
@@ -2653,6 +2668,8 @@ var server_msg = {
         let client_old_channel_id = client_that_joined.channel_id;
         let departing_client = { ...client_that_joined };
         client_that_joined.channel_id = msg.message.channel_id;
+        client_that_joined.channel_group_id = Number(msg.message.channel_group_id) || 0;
+        groups__schedule_refresh();
         if (client_old_channel_id !== msg.message.channel_id)
         {
             keys__channel_member_left(departing_client);
@@ -3066,23 +3083,12 @@ var server_msg = {
         }
     },
     /**
-     * @brief Replaces an authorized edit and marks the message as edited.
-     * @param msg Message identifier, changed text and requester information.
+     * @brief Discards the legacy edit command, whose body has no content encryption.
+     * @param msg Untrusted legacy command; edits now arrive inside encrypted chat contents.
      */
     process_chat_message_edit_from_server: function(msg)
     {
-        let recorded_author_public_key = g_chat_message_author_public_keys[msg.message.chat_message_id];
-        if (recorded_author_public_key !== undefined && recorded_author_public_key !== msg.message.requester_public_key && msg.message.requester_is_admin !== true)
-        {
-            return;
-        }
-
-        let element = document.querySelector('.single-chat-message-content-p[data-single-chat-message-server-message-id="' + msg.message.chat_message_id + '"]');
-        if (element != null)
-        {
-            element.textContent = msg.message.new_message_value;
-            element.classList.add("chat-message-edited");
-        }
+        // Never accept replacement text from an outer, server-readable command.
     },
     /**
      * @brief Stores an uploaded icon and continues any remaining uploads.
@@ -3454,7 +3460,7 @@ var server_msg = {
      */
     process_music_bot_song_list_from_server: function(msg)
     {
-        console.log(msg);
+        moderation__music_controls(msg.message);
 
         document.getElementById("musicbot-management-background-container").style.display = "block";
 
@@ -3474,6 +3480,7 @@ var server_msg = {
 
         for (let x = 0; x < document.getElementsByClassName("remove-song-from-musicbot-button").length; x++)
         {
+            document.getElementsByClassName("remove-song-from-musicbot-button")[x].disabled = !groups__has_permission("delete_music_tracks");
             document.getElementsByClassName("remove-song-from-musicbot-button")[x].onclick = function(event) {
                 event.stopPropagation();
 
@@ -3762,10 +3769,7 @@ var client_msg = {
      */
     send_file_send_request: function(total_bytes_length, data_part_base64, index)
     {
-        // uploads file by smaller base64 parts that server will merge together to produce file... for now this will be used only for mp3 files
-        // after the file upload is done, server sends the information to the client that it is done, and by that it asks the client what to do with the file (is it mp3 file, image for channel, for client, or avatar?)
-
-        is_new_file = false;
+        let is_new_file = false;
         if (index === 0)
         {
             is_new_file = true;
@@ -3776,7 +3780,9 @@ var client_msg = {
                 type: "file_send",
                 total_bytes_length: total_bytes_length,
                 data_part_base64: data_part_base64,
-                is_new_file: is_new_file
+                is_new_file: is_new_file,
+                file_send_intent: index === 0 ? g_file_send_intent : undefined,
+                file_send_intent_extra_data: index === 0 ? g_file_send_intent_extra_data : undefined
             }
         };
 

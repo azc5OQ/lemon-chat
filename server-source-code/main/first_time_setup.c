@@ -5,8 +5,7 @@
 // This file asks the server owner how to host and configure Lemon Chat.
 // It saves the answers when no valid server_settings.json exists yet.
 
-#include "clib/clib_string.h"
-#include "clib/clib_memory.h"
+#include "clib/clib.h"
 #include "../third-party/dave-g-json/cJSON.h"
 #include "base.h"
 #include "first_time_setup.h"
@@ -130,7 +129,7 @@ static boole _first_time_setup_internal__ask_yes_no_with_note(const char* questi
             return default_answer;
         }
 
-        clib__sanitize_stdin(input);
+        clib__string_trim_newline(input, sizeof(input));
 
         // lowercase in place, so "Y", "Yes" and "YES" are one answer and not three
         for (i = 0; input[i] != 0; i++)
@@ -198,12 +197,12 @@ static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, 
 
         printf("%s %s", g_mark_ask, "Set the server admin password: ");
         fgets(first, sizeof(first), stdin);
-        clib__sanitize_stdin(first);
+        clib__string_trim_newline(first, sizeof(first));
         printf("\n");
 
         printf("%s %s", g_mark_ask, "Enter the admin password again: ");
         fgets(second, sizeof(second), stdin);
-        clib__sanitize_stdin(second);
+        clib__string_trim_newline(second, sizeof(second));
         printf("\n");
 
 #ifndef WIN32
@@ -225,7 +224,7 @@ static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, 
             continue;
         }
 
-        clib__copy_memory(first, out_plaintext, clib__utf8_string_length(first), out_capacity - 1);
+        clib__string_copy(out_plaintext, out_capacity, first);
         clib__null_memory(first, sizeof(first));
         clib__null_memory(second, sizeof(second));
         return;
@@ -296,12 +295,12 @@ static int64 _first_time_setup_internal__scan_client_themes(char* client_html_pa
     cursor = buffer;
     for (;;)
     {
-        comment_open = strstr(cursor, "<!--");
+        comment_open = (char*)clib__strstr(cursor, "<!--");
         if (comment_open == NULL_POINTER)
         {
             break;
         }
-        comment_close = strstr(comment_open, "-->");
+        comment_close = (char*)clib__strstr(comment_open, "-->");
         if (comment_close == NULL_POINTER)
         {
             break;
@@ -316,14 +315,14 @@ static int64 _first_time_setup_internal__scan_client_themes(char* client_html_pa
     cursor = buffer;
     for (;;)
     {
-        found = strstr(cursor, marker);
+        found = (char*)clib__strstr(cursor, marker);
         if (found == NULL_POINTER)
         {
             break;
         }
 
-        value_start = found + strlen(marker);
-        value_end = strchr(value_start, '"');
+        value_start = found + clib__strlen(marker);
+        value_end = (char*)clib__strchr(value_start, '"');
         if (value_end == NULL_POINTER)
         {
             break;
@@ -335,7 +334,7 @@ static int64 _first_time_setup_internal__scan_client_themes(char* client_html_pa
             duplicate = FALSE;
             for (j = 0; j < count; j++)
             {
-                if ((strncmp(out_themes[j], value_start, length) == 0) && (out_themes[j][length] == 0))
+                if ((clib__strncmp(out_themes[j], value_start, length) == 0) && (out_themes[j][length] == 0))
                 {
                     duplicate = TRUE;
                     break;
@@ -345,7 +344,7 @@ static int64 _first_time_setup_internal__scan_client_themes(char* client_html_pa
             if (duplicate == FALSE)
             {
                 clib__null_memory(out_themes[count], 32);
-                clib__copy_memory(value_start, out_themes[count], length, 31);
+                clib__string_copy_n(out_themes[count], 32, value_start, length);
                 count++;
             }
         }
@@ -374,14 +373,14 @@ static void _first_time_setup_internal__ask_certificate_paths(void)
         g_server_settings.is_stunnel_enabled = FALSE;
         return;
     }
-    clib__sanitize_stdin(g_server_settings.stunnel_cert_fullchain);
+    clib__string_trim_newline(g_server_settings.stunnel_cert_fullchain, sizeof(g_server_settings.stunnel_cert_fullchain));
     printf("%s %s", g_mark_ask, "Path to the private key file (privkey.pem), without quotes: ");
     if (fgets(g_server_settings.stunnel_cert_privkey, sizeof(g_server_settings.stunnel_cert_privkey), stdin) == NULL_POINTER)
     {
         g_server_settings.is_stunnel_enabled = FALSE;
         return;
     }
-    clib__sanitize_stdin(g_server_settings.stunnel_cert_privkey);
+    clib__string_trim_newline(g_server_settings.stunnel_cert_privkey, sizeof(g_server_settings.stunnel_cert_privkey));
 
     if (access(g_server_settings.stunnel_cert_fullchain, R_OK) != 0 || access(g_server_settings.stunnel_cert_privkey, R_OK) != 0)
     {
@@ -486,13 +485,13 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
             {
                 continue;
             }
-            snprintf(probe, sizeof(probe), "/etc/letsencrypt/live/%s/fullchain.pem", entry->d_name);
+            clib__string_format(probe, sizeof(probe), "/etc/letsencrypt/live/%s/fullchain.pem", entry->d_name);
             if (access(probe, R_OK) == 0)
             {
-                snprintf(probe, sizeof(probe), "/etc/letsencrypt/live/%s/privkey.pem", entry->d_name);
+                clib__string_format(probe, sizeof(probe), "/etc/letsencrypt/live/%s/privkey.pem", entry->d_name);
                 if (access(probe, R_OK) == 0)
                 {
-                    snprintf(found_domains[found_count], 256, "%s", entry->d_name);
+                    clib__string_format(found_domains[found_count], 256, "%s", entry->d_name);
                     found_count++;
                 }
             }
@@ -509,13 +508,13 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
         }
         printf("%s", "Certificate number, or 'm' to enter file paths: ");
         fgets(input, sizeof(input), stdin);
-        clib__sanitize_stdin(input);
-        selection = atoi(input);
+        clib__string_trim_newline(input, sizeof(input));
+        selection = clib__atoi(input);
         if (selection >= 1 && (uint64)selection <= found_count)
         {
-            snprintf(g_server_settings.stunnel_domain, 256, "%s", found_domains[selection - 1]);
-            snprintf(g_server_settings.stunnel_cert_fullchain, 512, "/etc/letsencrypt/live/%s/fullchain.pem", found_domains[selection - 1]);
-            snprintf(g_server_settings.stunnel_cert_privkey, 512, "/etc/letsencrypt/live/%s/privkey.pem", found_domains[selection - 1]);
+            clib__string_format(g_server_settings.stunnel_domain, 256, "%s", found_domains[selection - 1]);
+            clib__string_format(g_server_settings.stunnel_cert_fullchain, 512, "/etc/letsencrypt/live/%s/fullchain.pem", found_domains[selection - 1]);
+            clib__string_format(g_server_settings.stunnel_cert_privkey, 512, "/etc/letsencrypt/live/%s/privkey.pem", found_domains[selection - 1]);
             return;
         }
     }
@@ -538,7 +537,7 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
             g_server_settings.is_stunnel_enabled = FALSE;
             return;
         }
-        clib__sanitize_stdin(domain);
+        clib__string_trim_newline(domain, sizeof(domain));
         if (domain[0] == 0)
         {
             g_server_settings.is_stunnel_enabled = FALSE;
@@ -591,9 +590,9 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
             return;
         }
 
-        snprintf(g_server_settings.stunnel_domain, 256, "%s", domain);
-        snprintf(g_server_settings.stunnel_cert_fullchain, 512, "/etc/letsencrypt/live/%s/fullchain.pem", domain);
-        snprintf(g_server_settings.stunnel_cert_privkey, 512, "/etc/letsencrypt/live/%s/privkey.pem", domain);
+        clib__string_format(g_server_settings.stunnel_domain, 256, "%s", domain);
+        clib__string_format(g_server_settings.stunnel_cert_fullchain, 512, "/etc/letsencrypt/live/%s/fullchain.pem", domain);
+        clib__string_format(g_server_settings.stunnel_cert_privkey, 512, "/etc/letsencrypt/live/%s/privkey.pem", domain);
 
         // only enable wss if certbot actually produced the cert + key
         if (access(g_server_settings.stunnel_cert_privkey, R_OK) != 0 || access(g_server_settings.stunnel_cert_fullchain, R_OK) != 0)
@@ -618,7 +617,7 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
         {
             break;
         }
-        clib__sanitize_stdin(g_server_settings.stunnel_domain);
+        clib__string_trim_newline(g_server_settings.stunnel_domain, sizeof(g_server_settings.stunnel_domain));
         if (g_server_settings.stunnel_domain[0] == 0)
         {
             _first_time_setup_internal__ask_certificate_paths();
@@ -630,13 +629,13 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
     // certbot's default location on windows
     clib__null_memory(probe_fullchain, sizeof(probe_fullchain));
     clib__null_memory(probe_privkey, sizeof(probe_privkey));
-    snprintf(probe_fullchain, sizeof(probe_fullchain), "C:\\Certbot\\live\\%s\\fullchain.pem", g_server_settings.stunnel_domain);
-    snprintf(probe_privkey, sizeof(probe_privkey), "C:\\Certbot\\live\\%s\\privkey.pem", g_server_settings.stunnel_domain);
+    clib__string_format(probe_fullchain, sizeof(probe_fullchain), "C:\\Certbot\\live\\%s\\fullchain.pem", g_server_settings.stunnel_domain);
+    clib__string_format(probe_privkey, sizeof(probe_privkey), "C:\\Certbot\\live\\%s\\privkey.pem", g_server_settings.stunnel_domain);
 
     if (access(probe_fullchain, R_OK) == 0 && access(probe_privkey, R_OK) == 0)
     {
-        snprintf(g_server_settings.stunnel_cert_fullchain, 512, "%s", probe_fullchain);
-        snprintf(g_server_settings.stunnel_cert_privkey, 512, "%s", probe_privkey);
+        clib__string_format(g_server_settings.stunnel_cert_fullchain, 512, "%s", probe_fullchain);
+        clib__string_format(g_server_settings.stunnel_cert_privkey, 512, "%s", probe_privkey);
         printf("%s %s%s\n", g_mark_ok, "Found the Certbot certificate under C:\\Certbot\\live\\", g_server_settings.stunnel_domain);
         return;
     }
@@ -673,14 +672,14 @@ static boole _first_time_setup_internal__has_wireguard(void)
         {
             continue;
         }
-        snprintf(command, sizeof(command), "%s\\WireGuard\\wg.exe", directory);
+        clib__string_format(command, sizeof(command), "%s\\WireGuard\\wg.exe", directory);
         attributes = GetFileAttributesA(command);
         if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
             GetBinaryTypeA(command, &binary_type) == 0)
         {
             continue;
         }
-        snprintf(command, sizeof(command), "%s\\WireGuard\\wireguard.exe", directory);
+        clib__string_format(command, sizeof(command), "%s\\WireGuard\\wireguard.exe", directory);
         attributes = GetFileAttributesA(command);
         if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 &&
             GetBinaryTypeA(command, &binary_type) != 0)
@@ -746,12 +745,12 @@ static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void)
         {
             return HOSTING_DIRECT;
         }
-        clib__sanitize_stdin(input);
+        clib__string_trim_newline(input, sizeof(input));
         if (input[0] == 0)
         {
             return HOSTING_DIRECT;
         }
-        choice = strtol(input, &end, 10);
+        choice = clib__strtol(input, &end, 10);
         if (end != input && *end == 0 && choice >= HOSTING_DIRECT && choice <= HOSTING_OTHER_PROXY)
         {
             requirement = _first_time_setup_internal__get_hosting_requirement((first_time_setup_hosting_t)choice);
@@ -786,12 +785,12 @@ static int64 _first_time_setup_internal__ask_port(const char* question, int64 de
         {
             return default_port;
         }
-        clib__sanitize_stdin(input);
+        clib__string_trim_newline(input, sizeof(input));
         if (input[0] == 0)
         {
             return default_port;
         }
-        port = strtol(input, &end, 10);
+        port = clib__strtol(input, &end, 10);
         if (end != input && *end == 0 && port >= 1 && port <= 65535)
         {
             return port;
@@ -899,11 +898,11 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
         clib__null_memory(theme_scan_path, sizeof(theme_scan_path));
         if (g_server_settings.http_webroot[0] != 0)
         {
-            snprintf(theme_scan_path, sizeof(theme_scan_path), "%s/client.html", g_server_settings.http_webroot);
+            clib__string_format(theme_scan_path, sizeof(theme_scan_path), "%s/client.html", g_server_settings.http_webroot);
         }
         else
         {
-            snprintf(theme_scan_path, sizeof(theme_scan_path), "client.html");
+            clib__string_format(theme_scan_path, sizeof(theme_scan_path), "client.html");
         }
 
         client_theme_count = _first_time_setup_internal__scan_client_themes(theme_scan_path, client_themes, 16);
@@ -918,11 +917,11 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
             clib__null_memory(input, sizeof(input));
             printf("%s %s", g_mark_ask, "Default theme number (Enter to keep the client's default): ");
             fgets(input, sizeof(input), stdin);
-            clib__sanitize_stdin(input);
-            theme_choice = atoi(input);
+            clib__string_trim_newline(input, sizeof(input));
+            theme_choice = clib__atoi(input);
             if ((theme_choice >= 1) && (theme_choice <= client_theme_count))
             {
-                clib__copy_memory(client_themes[theme_choice - 1], &g_server_settings.default_theme[0], clib__utf8_string_length(client_themes[theme_choice - 1]), 31);
+                clib__string_copy(g_server_settings.default_theme, sizeof(g_server_settings.default_theme), client_themes[theme_choice - 1]);
                 printf("%s %s%s\n", g_mark_ok, "default theme: ", g_server_settings.default_theme);
             }
         }
@@ -960,7 +959,7 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
             {
                 break;
             }
-            clib__sanitize_stdin(input);
+            clib__string_trim_newline(input, sizeof(input));
 
             if (input[0] == 0 || clib__is_string_equal(input, "3") == TRUE)
             {
@@ -1050,12 +1049,12 @@ void first_time_setup__run(char plaintext_keys[][256])
         clib__null_memory(input, sizeof(input));
         printf("%s %s", g_mark_ask, "Number of connection passwords required (1-100): ");
         fgets(input, sizeof(input), stdin);
-        clib__sanitize_stdin(input);
+        clib__string_trim_newline(input, sizeof(input));
 
         // clamp into range with a signed temporary: at least 1 (the operator already opted in) and
         // never past the 100-slot keys / plaintext_keys arrays. doing the comparison signed avoids a
         // negative atoi result wrapping to a huge uint64
-        requested_key_count = atoi(input);
+        requested_key_count = clib__atoi(input);
         if (requested_key_count < 1)
         {
             requested_key_count = 1;
@@ -1071,9 +1070,9 @@ void first_time_setup__run(char plaintext_keys[][256])
             clib__null_memory(input, sizeof(input));
             printf("%s%s%llu%s", g_mark_ask, " Connection password ", i + 1, ": ");
             fgets(input, sizeof(input), stdin);
-            clib__sanitize_stdin(input);
+            clib__string_trim_newline(input, sizeof(input));
 
-            clib__copy_memory(input, &plaintext_keys[i][0], clib__utf8_string_length(input), 255);
+            clib__string_copy(plaintext_keys[i], sizeof(plaintext_keys[i]), input);
 
             // Turn the entered password into an AES key. Store its type with
             // its bytes so the encryption code knows which method to use.
@@ -1112,12 +1111,12 @@ void first_time_setup__run(char plaintext_keys[][256])
         {
             break;
         }
-        clib__sanitize_stdin(input);
+        clib__string_trim_newline(input, sizeof(input));
         if (input[0] == 0)
         {
             break;
         }
-        slots = strtol(input, &end, 10);
+        slots = clib__strtol(input, &end, 10);
         if (end != input && *end == 0 && slots >= 1 && slots <= MAX_SERVER_SLOTS)
         {
             g_server_settings.max_client_count = (uint64)slots;
@@ -1130,7 +1129,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     util__hash_password_to_base64(input, &g_server_settings.admin_password[0], ADMIN_PASSWORD_MAX_LENGTH);
     g_server_settings.is_admin_password_initial = TRUE;
     // keep the plaintext only for this run's startup summary (shown once, then cleared)
-    clib__copy_memory(input, &g_first_run_admin_password[0], clib__utf8_string_length(input), ADMIN_PASSWORD_MAX_LENGTH - 1);
+    clib__string_copy(g_first_run_admin_password, ADMIN_PASSWORD_MAX_LENGTH, input);
     clib__null_memory(input, sizeof(input));
 
     printf("\n%s %s\n\n", g_mark_info, "3/4  Voice and server behaviour.");
@@ -1331,7 +1330,7 @@ static boole _first_time_setup_internal__is_tunnel_setup_available(void)
     working_directory = realpath(".", NULL_POINTER);
     settings_directory = realpath("../buildresult", NULL_POINTER);
 
-    if (working_directory != NULL_POINTER && settings_directory != NULL_POINTER && strcmp(working_directory, settings_directory) == 0)
+    if (working_directory != NULL_POINTER && settings_directory != NULL_POINTER && clib__strcmp(working_directory, settings_directory) == 0)
     {
         is_same_directory = TRUE;
     }
@@ -1382,7 +1381,7 @@ static void _first_time_setup_internal__run_tunnel_setup(void)
     }
 
     // cmd.exe removes the outer pair of quotes; the inner pair keeps a path with spaces in one piece
-    snprintf(command_line, sizeof(command_line), "cmd.exe /c \"\"%s\"\"", script_path);
+    clib__string_format(command_line, sizeof(command_line), "cmd.exe /c \"\"%s\"\"", script_path);
 
     if (CreateProcessA(NULL_POINTER, command_line, NULL_POINTER, NULL_POINTER, FALSE, CREATE_NEW_CONSOLE, NULL_POINTER, NULL_POINTER, &startup_info, &process_info) == 0)
     {
@@ -1525,12 +1524,12 @@ static void _first_time_setup_internal__ask_wireguard_details(char* input, uint6
         {
             return;
         }
-        clib__sanitize_stdin(input);
+        clib__string_trim_newline(input, input_size);
 
         if (sscanf(input, "%u.%u.%u.%u%c", &octets[0], &octets[1], &octets[2], &octets[3], &trailing) == 4 && octets[0] <= 255 && octets[1] <= 255 && octets[2] <= 255 && octets[3] <= 255 && clib__utf8_string_length(input) < sizeof(g_server_settings.webrtc_public_address))
         {
             clib__null_memory(g_server_settings.webrtc_public_address, sizeof(g_server_settings.webrtc_public_address));
-            clib__copy_memory(input, g_server_settings.webrtc_public_address, clib__utf8_string_length(input), sizeof(g_server_settings.webrtc_public_address) - 1);
+            clib__string_copy(g_server_settings.webrtc_public_address, sizeof(g_server_settings.webrtc_public_address), input);
             break;
         }
 
@@ -1545,7 +1544,7 @@ static void _first_time_setup_internal__ask_wireguard_details(char* input, uint6
         {
             return;
         }
-        clib__sanitize_stdin(input);
+        clib__string_trim_newline(input, input_size);
 
         if (input[0] == 0)
         {

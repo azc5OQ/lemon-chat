@@ -1,3 +1,4 @@
+#include "../clib/clib.h"
 // This file stores the server emojis that users can choose as chat reactions.
 #include "emojis.h"
 #include "../util.h"
@@ -140,7 +141,7 @@ static boole _emojis_internal__png_valid(const ubyte* bytes, uint64 length)
     boole valid_depth = FALSE;
     boole has_data = FALSE;
 
-    if (length < 45 || memcmp(bytes, signature, 8) != 0)
+    if (length < 45 || clib__memcmp(bytes, signature, 8) != 0)
     {
         return FALSE;
     }
@@ -166,7 +167,7 @@ static boole _emojis_internal__png_valid(const ubyte* bytes, uint64 length)
         }
         if (offset == 8)
         {
-            if (chunk != 13 || memcmp(bytes + offset + 4, "IHDR", 4) != 0)
+            if (chunk != 13 || clib__memcmp(bytes + offset + 4, "IHDR", 4) != 0)
             {
                 return FALSE;
             }
@@ -187,19 +188,19 @@ static boole _emojis_internal__png_valid(const ubyte* bytes, uint64 length)
                 return FALSE;
             }
         }
-        else if (memcmp(bytes + offset + 4, "IHDR", 4) == 0)
+        else if (clib__memcmp(bytes + offset + 4, "IHDR", 4) == 0)
         {
             return FALSE;
         }
-        if (memcmp(bytes + offset + 4, "acTL", 4) == 0)
+        if (clib__memcmp(bytes + offset + 4, "acTL", 4) == 0)
         {
             return FALSE;
         }
-        if (memcmp(bytes + offset + 4, "IDAT", 4) == 0 && chunk > 0)
+        if (clib__memcmp(bytes + offset + 4, "IDAT", 4) == 0 && chunk > 0)
         {
             has_data = TRUE;
         }
-        if (memcmp(bytes + offset + 4, "IEND", 4) == 0)
+        if (clib__memcmp(bytes + offset + 4, "IEND", 4) == 0)
         {
             return has_data && chunk == 0 && offset + 12 == length;
         }
@@ -320,7 +321,7 @@ static boole _emojis_internal__gif_valid(const ubyte* bytes, uint64 length)
     uint block = 0;
     boole has_global_colors = FALSE;
 
-    if (length < 14 || (memcmp(bytes, "GIF87a", 6) != 0 && memcmp(bytes, "GIF89a", 6) != 0))
+    if (length < 14 || (clib__memcmp(bytes, "GIF87a", 6) != 0 && clib__memcmp(bytes, "GIF89a", 6) != 0))
     {
         return FALSE;
     }
@@ -444,16 +445,16 @@ static boole _emojis_internal__image_valid(cstring base64)
     {
         return FALSE;
     }
-    if (strncmp(base64, "data:image/png;base64,", 22) == 0)
+    if (clib__strncmp(base64, "data:image/png;base64,", 22) == 0)
     {
         payload = base64 + 22;
         png = TRUE;
     }
-    else if (strncmp(base64, "data:image/jpeg;base64,", 23) == 0)
+    else if (clib__strncmp(base64, "data:image/jpeg;base64,", 23) == 0)
     {
         payload = base64 + 23;
     }
-    else if (strncmp(base64, "data:image/gif;base64,", 22) == 0)
+    else if (clib__strncmp(base64, "data:image/gif;base64,", 22) == 0)
     {
         payload = base64 + 22;
         maximum_bytes = SERVER_EMOJI_GIF_MAX_BYTES;
@@ -481,7 +482,7 @@ static boole _emojis_internal__image_valid(cstring base64)
     }
     for (i = 0; i < length - padding; i++)
     {
-        symbol = strchr(alphabet, payload[i]);
+        symbol = clib__strchr(alphabet, payload[i]);
         if (symbol == NULL_POINTER)
         {
             return FALSE;
@@ -531,7 +532,7 @@ static boole _emojis_internal__unicode_valid(cstring unicode)
     }
     for (i = 0; i < sizeof(default_emojis) / sizeof(default_emojis[0]); i++)
     {
-        if (strcmp(default_emojis[i].unicode, unicode) == 0)
+        if (clib__strcmp(default_emojis[i].unicode, unicode) == 0)
         {
             return TRUE;
         }
@@ -600,7 +601,7 @@ static cstring _emojis_internal__store(cstring name, cstring base64, cstring uni
                 available = i;
             }
         }
-        else if (strcmp(server_emojis[i].name, name) == 0 || strcmp(server_emojis[i].id, id) == 0)
+        else if (clib__strcmp(server_emojis[i].name, name) == 0 || clib__strcmp(server_emojis[i].id, id) == 0)
         {
             error = "An emoji with that name or identifier already exists.";
             break;
@@ -614,7 +615,7 @@ static cstring _emojis_internal__store(cstring name, cstring base64, cstring uni
     {
         if (base64 != NULL_POINTER)
         {
-            copy = (char*)malloc(strlen(base64) + 1);
+            copy = (char*)malloc(clib__strlen(base64) + 1);
         }
         if (base64 != NULL_POINTER && copy == NULL_POINTER)
         {
@@ -624,14 +625,14 @@ static cstring _emojis_internal__store(cstring name, cstring base64, cstring uni
         {
             if (base64 != NULL_POINTER)
             {
-                strcpy(copy, base64);
+                clib__string_copy(copy, clib__strlen(base64) + 1, base64);
             }
             if (unicode != NULL_POINTER)
             {
-                strcpy(server_emojis[available].unicode, unicode);
+                clib__string_copy(server_emojis[available].unicode, sizeof(server_emojis[available].unicode), unicode);
             }
-            strcpy(server_emojis[available].id, id);
-            strcpy(server_emojis[available].name, name);
+            clib__string_copy(server_emojis[available].id, sizeof(server_emojis[available].id), id);
+            clib__string_copy(server_emojis[available].name, sizeof(server_emojis[available].name), name);
             server_emojis[available].base64 = copy;
         }
     }
@@ -671,10 +672,10 @@ boole emojis__remove(cstring id)
     pthread_mutex_lock(&server_emojis_mutex);
     for (i = 0; i < MAX_SERVER_EMOJIS; i++)
     {
-        if (server_emojis[i].id[0] != 0 && strcmp(server_emojis[i].id, id) == 0)
+        if (server_emojis[i].id[0] != 0 && clib__strcmp(server_emojis[i].id, id) == 0)
         {
             free(server_emojis[i].base64);
-            memset(&server_emojis[i], 0, sizeof(server_emojis[i]));
+            clib__memset(&server_emojis[i], 0, sizeof(server_emojis[i]));
             removed = TRUE;
             break;
         }
@@ -750,7 +751,7 @@ cJSON* emojis__image(cstring id)
     pthread_mutex_lock(&server_emojis_mutex);
     for (i = 0; i < MAX_SERVER_EMOJIS; i++)
     {
-        if (server_emojis[i].base64 != NULL_POINTER && strcmp(server_emojis[i].id, id) == 0)
+        if (server_emojis[i].base64 != NULL_POINTER && clib__strcmp(server_emojis[i].id, id) == 0)
         {
             image = cJSON_CreateObject();
             if (image == NULL_POINTER
@@ -787,7 +788,7 @@ void emojis__load(cJSON* array)
     for (i = 0; i < MAX_SERVER_EMOJIS; i++)
     {
         free(server_emojis[i].base64);
-        memset(&server_emojis[i], 0, sizeof(server_emojis[i]));
+        clib__memset(&server_emojis[i], 0, sizeof(server_emojis[i]));
     }
     pthread_mutex_unlock(&server_emojis_mutex);
     if (array == NULL_POINTER)

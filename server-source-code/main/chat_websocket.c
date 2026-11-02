@@ -14,8 +14,7 @@
 #include "base.h"
 
 #include "memory_manager.h"
-#include "clib/clib_memory.h"
-#include "clib/clib_string.h"
+#include "clib/clib.h"
 #include "util.h"
 #include "metadata_crypto.h"
 #include "audio_websocket.h"
@@ -150,7 +149,7 @@ static void _chat_websocket_internal__onopen(ws_cli_conn_t* client)
     g_clients_array[index].is_existing = TRUE;
     g_clients_array[index].client_id = index;
     g_clients_array[index].audio_state = AUDIO_STATE__AUDIO_COMPLETELY_DISABLED;
-    clib__copy_memory(ip_address, g_clients_array[index].ip_address, clib__utf8_string_length(ip_address), 45);
+    clib__string_copy(g_clients_array[index].ip_address, sizeof(g_clients_array[index].ip_address), ip_address);
 
 label_onopen_end:
     clib__unlock(&g_clients_global_rwlock_guard);

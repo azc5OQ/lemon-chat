@@ -449,6 +449,16 @@ function chat__send_pending_chat_file(receiver_type)
 }
 
 /**
+ * @brief Converts line breaks in outgoing text to spaces.
+ * @param value Text from the message input.
+ * @return Text ready for the local message and encrypted payload.
+ */
+function chat__normalize_composed_text(value)
+{
+    return value.replace(/[ \t]*[\r\n\u2028\u2029]+[ \t]*/g, " ").trim();
+}
+
+/**
  * @brief the one send path for the text in the input, for both targets
  *        "channel" is the current channel (keys already known), "user" the selected person
  *        (encrypted to their public key); a pending file goes first, on its own.
@@ -477,7 +487,7 @@ function chat__send_composed_chat_message(target)
     }
 
     let text_input = document.getElementById("chat-input-container-text-input");
-    let chat_message_to_send_value = text_input.value;
+    let chat_message_to_send_value = chat__normalize_composed_text(text_input.value);
     text_input.value = "";
 
     if (g_base64_picture_string_to_send.length == 0 && chat_message_to_send_value.trim().length == 0)
@@ -756,7 +766,7 @@ function chat__send_offline_chat_message(offline_contact)
         utils__custom_alert("insufficient permissions");
         return;
     }
-    let chat_message_to_send_value = document.getElementById('chat-input-container-text-input').value;
+    let chat_message_to_send_value = chat__normalize_composed_text(document.getElementById('chat-input-container-text-input').value);
     document.getElementById('chat-input-container-text-input').value = "";
 
     if (chat_message_to_send_value.trim().length == 0)
@@ -933,18 +943,87 @@ function chat__finish_message_edit(element, save)
         element.innerHTML = edit.original;
         return;
     }
-    element.textContent = text;
-    connection__send_message_object(
+    let payload = JSON.stringify(
     {
-        message:
-        {
-            type: "edit_chat_message_request",
-            message_id: edit.message_id,
-            new_message_value: text,
-            receiver_type: edit.receiver_type,
-            receiver_id: edit.receiver_id
-        }
+        type: "chat_message_edit",
+        message_id: edit.state.id,
+        author_public_key: edit.state.author,
+        new_message_value: text
     });
+    let request = null;
+    if (edit.receiver_type === "user")
+    {
+        request =
+        {
+            type: "mainthread__create_direct_chat_message",
+            receiver_public_key: edit.state.peer_key,
+            chat_message_receiver_id: edit.receiver_id,
+            chat_message_value: payload
+        };
+    }
+    else
+    {
+        if (!keys__are_message_keys_valid(g_current_channel_keys))
+        {
+            element.innerHTML = edit.original;
+            utils__custom_alert("Wait for this channel's encryption keys before editing a message.");
+            return;
+        }
+        request =
+        {
+            type: "mainthread__create_channel_chat_message",
+            current_channel_id: edit.receiver_id,
+            current_channel_keys: g_current_channel_keys,
+            chat_message_to_send_value: payload
+        };
+    }
+    request.local_message_id = g_local_message_id++;
+    // The worker applies the same content encryption as a new message before transport encryption.
+    g_data_processing_worker.postMessage(request);
+    element.textContent = text;
+    element.classList.add("chat-message-edited");
+}
+
+/**
+ * @brief Applies an edit only after decrypting a chat message from the original author.
+ * @param object payload -> decrypted edit contents, including the original message's random identifier
+ * @param object message -> sender, channel and sequence supplied by the server
+ * @param boolean direct -> whether this arrived through the private message route
+ * @return boolean true when the payload is an edit, including an invalid edit that must be discarded
+ */
+function chat__receive_message_edit(payload, message, direct)
+{
+    if (!payload || payload.type !== "chat_message_edit")
+    {
+        return false;
+    }
+    if (!G_HAS_DOM || message.sender_id === g_local_client_id
+        || typeof payload.message_id !== "string" || !/^[a-f0-9]{32}$/.test(payload.message_id)
+        || typeof payload.author_public_key !== "string"
+        || typeof payload.new_message_value !== "string" || !payload.new_message_value.trim()
+        || !Number.isSafeInteger(message.server_chat_message_id) || message.server_chat_message_id < 0)
+    {
+        return true;
+    }
+    let sender = channel_tree__get_client_by_client_id(message.sender_id);
+    let actor = channel_tree__get_public_key_by_client_id(message.sender_id);
+    if (!sender || sender.is_ignored_by_local_client || !actor || actor !== payload.author_public_key)
+    {
+        return true;
+    }
+    let context = document.getElementById(direct ? "chat-context-pm-" + message.sender_id : "chat-context-channel-" + message.channel_id);
+    let element = chat_replies__find_original(context, payload);
+    let state = element && chat_reactions.entries.get(element);
+    if (!state || state.author !== actor || state.generation !== g_worker_connection_generation
+        || (direct && state.peer_key !== actor)
+        || (state.last_edit_sequence != null && state.last_edit_sequence >= message.server_chat_message_id))
+    {
+        return true;
+    }
+    state.last_edit_sequence = message.server_chat_message_id;
+    element.textContent = payload.new_message_value;
+    element.classList.add("chat-message-edited");
+    return true;
 }
 
 /**
@@ -1682,29 +1761,48 @@ function chat__clear_unread_count(client_id)
 }
 
 /**
- * @brief paints a client row's unread badge from the state; visibility is a parameter, because one caller hides the badge without clearing it (a message grouped under the same sender)
- *
- * @param number client_id -> the client
- * @param boolean is_visible -> whether the badge shows
- *
- * @return void
+ * @brief Formats an unread count for its badge and accessible label.
+ * @param count Number of unread messages.
+ */
+function chat__get_unread_badge_content(count)
+{
+    let text = count > 99 ? "99+" : String(count);
+    return (
+    {
+        text: text,
+        digits: text.length,
+        label: count + (count === 1 ? " unread message" : " unread messages")
+    });
+}
+
+/**
+ * @brief Creates the unread badge when a client row is drawn.
+ * @param count Number of unread messages.
+ */
+function chat__generate_unread_badge_html(count)
+{
+    let content = chat__get_unread_badge_content(count);
+    return '<p class="connected-client-p-received-messages-number" data-unread-digits="' + content.digits
+        + '" title="' + content.label + '" aria-label="' + content.label + '"'
+        + (count > 0 ? '' : ' hidden') + '>' + content.text + '</p>';
+}
+
+/**
+ * @brief Updates the client row and any copies shown in the member list.
+ * @param client_id Client whose unread count changed.
+ * @param is_visible Whether to show the badge.
  */
 function chat__render_unread_badge(client_id, is_visible)
 {
-    let row = document.querySelector('[data-connected-client-id="' + client_id + '"]');
-
-    if (row == null)
+    let count = chat__get_unread_count(client_id);
+    let content = chat__get_unread_badge_content(count);
+    let badges = document.querySelectorAll('.connected-client[data-connected-client-id="' + client_id + '"] > .connected-client-p-received-messages-number');
+    for (let badge of badges)
     {
-        return;
+        badge.hidden = !is_visible || count <= 0;
+        badge.textContent = content.text;
+        badge.dataset.unreadDigits = String(content.digits);
+        badge.title = content.label;
+        badge.setAttribute("aria-label", content.label);
     }
-
-    let badge = row.getElementsByClassName("connected-client-p-received-messages-number")[0];
-
-    if (badge == null)
-    {
-        return;
-    }
-
-    badge.style.display = (is_visible == true) ? "inline-block" : "none";
-    badge.innerHTML = chat__get_unread_count(client_id);
 }

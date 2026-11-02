@@ -1,3 +1,5 @@
+#include "../../clib/clib.h"
+#include "../../core/channel_groups.h"
 // This file sends login replies, client lists, connection notices and keepalive replies.
 
 #include "server_msg.h"
@@ -14,6 +16,7 @@ typedef struct listed_client_t
 {
     uint64 client_id;
     int64 channel_id;
+    uint channel_group_id;
     int64 audio_state;
     boole is_music_bot;
     boole is_idle;
@@ -200,6 +203,7 @@ static char* _server_msg_connection_internal__encode_client_list(void* context, 
         cJSON_AddStringToObject(single_client, "public_key", client_in_loop->public_key);
 
         cJSON_AddNumberToObject(single_client, "channel_id", (double)client_in_loop->channel_id);
+        cJSON_AddNumberToObject(single_client, "channel_group_id", client_in_loop->channel_group_id);
 
         cJSON_AddNumberToObject(single_client, "client_id", (double)client_in_loop->client_id);
 
@@ -215,7 +219,7 @@ static char* _server_msg_connection_internal__encode_client_list(void* context, 
             {
                 for (byte_index = 0; byte_index < 32; byte_index++)
                 {
-                    snprintf(key_hex + byte_index * 2, 3, "%02x", client_in_loop->music_keys.keys[key_index][byte_index]);
+                    clib__string_format(key_hex + byte_index * 2, 3, "%02x", client_in_loop->music_keys.keys[key_index][byte_index]);
                 }
                 cJSON_AddItemToArray(music_keys, cJSON_CreateString(key_hex));
             }
@@ -325,7 +329,7 @@ void server_msg__connection__send_client_list_to_single_client(client_t* receive
     outgoing->allocation_size = allocation_size;
     outgoing->count = count;
     outgoing->session = receiver->session_keys;
-    memcpy(outgoing->local_username, receiver->username, sizeof(outgoing->local_username));
+    clib__memcpy(outgoing->local_username, receiver->username, sizeof(outgoing->local_username));
     groups = (int*)(outgoing->clients + count);
     count = 0;
     for (i = 0; i < g_server_settings.max_client_count; i++)
@@ -338,27 +342,29 @@ void server_msg__connection__send_client_list_to_single_client(client_t* receive
         listed = &outgoing->clients[count++];
         listed->client_id = client->client_id;
         listed->channel_id = (int64)client->channel_id;
+        listed->channel_group_id = client->is_idle ? 0 : client->channel_group_role;
         listed->audio_state = client->audio_state;
         listed->is_music_bot = client->is_music_bot;
         listed->is_idle = client->is_idle;
         listed->is_streaming_song = client->is_streaming_song;
         listed->is_streaming_video = client->is_streaming_video;
-        memcpy(listed->username, client->username, sizeof(listed->username));
+        clib__memcpy(listed->username, client->username, sizeof(listed->username));
         util__hash_password_to_base64(client->public_key, listed->identity_hash, sizeof(listed->identity_hash));
-        memcpy(listed->public_key, client->public_key, sizeof(listed->public_key));
-        memcpy(listed->song_name, client->song_name, sizeof(listed->song_name));
-        snprintf(listed->country_iso_code, sizeof(listed->country_iso_code), "%s", server_msg__profile__country_code_to_send(client));
+        clib__memcpy(listed->public_key, client->public_key, sizeof(listed->public_key));
+        clib__memcpy(listed->song_name, client->song_name, sizeof(listed->song_name));
+        clib__string_format(listed->country_iso_code, sizeof(listed->country_iso_code), "%s", server_msg__profile__country_code_to_send(client));
         listed->group_count = g_server_settings.is_permission_system_enabled ? (int)cvector_size(client->group_ids) : 0;
         if (listed->group_count != 0)
         {
             listed->group_ids = groups;
-            memcpy(groups, client->group_ids, (size_t)listed->group_count * sizeof(int));
+            clib__memcpy(groups, client->group_ids, (size_t)listed->group_count * sizeof(int));
             groups += listed->group_count;
         }
         // Decide what this receiver may see while the channel settings are locked.
         if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE && receiver->channel_id != client->channel_id && client->channel_id < g_server_settings.max_channel_count && g_channel_array[client->channel_id].is_existing == TRUE && g_channel_array[client->channel_id].is_using_password == TRUE)
         {
             listed->channel_id = -1;
+            listed->channel_group_id = 0;
         }
         if (listed->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client->channel_id != ROOT_CHANNEL_ID)
         {
@@ -452,6 +458,7 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
         cJSON_AddStringToObject(message, "identity_hash", identity_hash);
         cJSON_AddStringToObject(message, "public_key", subject->public_key);
         cJSON_AddNumberToObject(message, "channel_id", (double)subject->channel_id);
+        cJSON_AddNumberToObject(message, "channel_group_id", subject->is_idle ? 0 : subject->channel_group_role);
         cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
         cJSON_AddBoolToObject(message, "is_music_bot", subject->is_music_bot);
 

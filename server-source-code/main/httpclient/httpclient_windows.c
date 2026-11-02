@@ -1,3 +1,4 @@
+#include "../clib/clib.h"
 // This file provides the Windows connections used for URL previews when a
 // client posts a website link in chat. The feature must be enabled in the
 // server settings. It lets the server download the page and preview picture
@@ -215,8 +216,8 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
                 return eof ? HTTPCLIENT_TRUNCATED : error;
             }
         }
-        memset(input, 0, sizeof(input));
-        memset(output, 0, sizeof(output));
+        clib__memset(input, 0, sizeof(input));
+        clib__memset(output, 0, sizeof(output));
         input[0].BufferType = SECBUFFER_TOKEN;
         input[0].pvBuffer = connection->encrypted;
         input[0].cbBuffer = connection->used;
@@ -279,7 +280,7 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
         }
         if (extra != 0)
         {
-            memmove(connection->encrypted, connection->encrypted + connection->used - extra, extra);
+            clib__memmove(connection->encrypted, connection->encrypted + connection->used - extra, extra);
         }
         connection->used = extra;
         if (status == SEC_E_OK)
@@ -345,7 +346,7 @@ static httpclient_error_t _httpclient_internal__encrypt(https_connection_t* conn
         {
             amount = connection->sizes.cbMaximumMessage;
         }
-        memset(buffers, 0, sizeof(buffers));
+        clib__memset(buffers, 0, sizeof(buffers));
         buffers[0].BufferType = SECBUFFER_STREAM_HEADER;
         buffers[0].pvBuffer = record;
         buffers[0].cbBuffer = connection->sizes.cbHeader;
@@ -356,7 +357,7 @@ static httpclient_error_t _httpclient_internal__encrypt(https_connection_t* conn
         buffers[2].pvBuffer = record + connection->sizes.cbHeader + amount;
         buffers[2].cbBuffer = connection->sizes.cbTrailer;
         buffers[3].BufferType = SECBUFFER_EMPTY;
-        memcpy(buffers[1].pvBuffer, (const ubyte*)data + position, amount);
+        clib__memcpy(buffers[1].pvBuffer, (const ubyte*)data + position, amount);
         message.ulVersion = SECBUFFER_VERSION;
         message.cBuffers = 4;
         message.pBuffers = buffers;
@@ -415,7 +416,7 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t* connect
                 return eof ? HTTPCLIENT_TRUNCATED : error;
             }
         }
-        memset(buffers, 0, sizeof(buffers));
+        clib__memset(buffers, 0, sizeof(buffers));
         buffers[0].BufferType = SECBUFFER_DATA;
         buffers[0].pvBuffer = connection->encrypted;
         buffers[0].cbBuffer = connection->used;
@@ -466,7 +467,7 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t* connect
         }
         if (extra != 0)
         {
-            memmove(connection->encrypted, connection->encrypted + connection->used - extra, extra);
+            clib__memmove(connection->encrypted, connection->encrypted + connection->used - extra, extra);
         }
         connection->used = extra;
         if (status == SEC_I_RENEGOTIATE)
@@ -499,7 +500,7 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t* conn
     int size = 0;
     httpclient_error_t error = HTTPCLIENT_SOCKET;
 
-    memset(&hints, 0, sizeof(hints));
+    clib__memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
@@ -642,8 +643,8 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
         {
             connection->hostname[index] = (WCHAR)(ubyte)url->host[index];
         }
-        memset(&credentials, 0, sizeof(credentials));
-        memset(&tls, 0, sizeof(tls));
+        clib__memset(&credentials, 0, sizeof(credentials));
+        clib__memset(&tls, 0, sizeof(tls));
         tls.grbitDisabledProtocols = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT;
         credentials.dwVersion = SCH_CREDENTIALS_VERSION;
         credentials.dwFlags = SCH_CRED_AUTO_CRED_VALIDATION | SCH_CRED_NO_DEFAULT_CREDS | SCH_USE_STRONG_CRYPTO |

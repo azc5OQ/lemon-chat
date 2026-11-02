@@ -1,3 +1,4 @@
+#include "../../clib/clib.h"
 // This file sends usernames, avatars, visible country codes and stored client information.
 #include "../../core/permissions.h"
 

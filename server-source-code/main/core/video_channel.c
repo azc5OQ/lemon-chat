@@ -12,8 +12,7 @@
 
 #include "../../third-party/rxi-log/log.h"
 
-#include "../clib/clib_memory.h"
-#include "../clib/clib_string.h"
+#include "../clib/clib.h"
 
 #include "../memory_manager.h"
 #include "../msg/server/server_msg.h"
@@ -173,9 +172,9 @@ boole video_channel__start(client_t* streamer, cstring source, cstring codec, in
 
     streamer->is_streaming_video = TRUE;
     clib__null_memory(streamer->video_stream_source, VIDEO_STREAM_SOURCE_MAX_LENGTH);
-    clib__copy_memory((void*)source, streamer->video_stream_source, clib__utf8_string_length(source), VIDEO_STREAM_SOURCE_MAX_LENGTH - 1);
+    clib__string_copy(streamer->video_stream_source, sizeof(streamer->video_stream_source), source);
     clib__null_memory(streamer->video_stream_codec, VIDEO_STREAM_CODEC_MAX_LENGTH);
-    clib__copy_memory((void*)codec, streamer->video_stream_codec, clib__utf8_string_length(codec), VIDEO_STREAM_CODEC_MAX_LENGTH - 1);
+    clib__string_copy(streamer->video_stream_codec, sizeof(streamer->video_stream_codec), codec);
     streamer->video_stream_width = width;
     streamer->video_stream_height = height;
     streamer->video_stream_fps = fps;

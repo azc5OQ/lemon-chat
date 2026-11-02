@@ -14,8 +14,7 @@
 #include "../third-party/libdatachannel-0.24.2/include/rtc/rtc.h"
 #include "../third-party/rxi-log/log.h"
 
-#include "clib/clib_memory.h"
-#include "clib/clib_string.h"
+#include "clib/clib.h"
 
 #include "memory_manager.h"
 #include "msg/server/server_msg.h"
@@ -260,7 +259,7 @@ static void _audio_webrtc_internal__send_public_candidate(const char* candidate,
     }
 
     clib__null_memory(rewritten, sizeof(rewritten));
-    snprintf(rewritten, sizeof(rewritten), "%sp %s %s %llu %s %s typ srflx raddr %s rport %s", foundation, component, transport, priority, g_server_settings.webrtc_public_address, port, ip, port);
+    clib__string_format(rewritten, sizeof(rewritten), "%sp %s %s %llu %s %s typ srflx raddr %s rport %s", foundation, component, transport, priority, g_server_settings.webrtc_public_address, port, ip, port);
 
     DBG_AUDIO_WEBRTC log_info("%s %s", "public candidate:", rewritten);
 
@@ -958,7 +957,7 @@ boole audio_webrtc__initialize_datachannel_connection(client_t* client)
     peer->last_sent_audio_state = 0;
 
     clib__null_memory(peer->dh_shared_secret, SHARED_SECRET_LENGTH);
-    clib__copy_memory(client->dh_shared_secret, peer->dh_shared_secret, clib__utf8_string_length(client->dh_shared_secret), SHARED_SECRET_LENGTH);
+    clib__string_copy(peer->dh_shared_secret, sizeof(peer->dh_shared_secret), client->dh_shared_secret);
 
     // the c api returns a NEGATIVE error code on failure, never 0 - the old == 0 check let a
     // failed create through as a "live" slot that could never send an offer

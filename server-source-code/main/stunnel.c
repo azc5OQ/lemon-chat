@@ -5,8 +5,7 @@
 #include "definitions.h"
 #include "base.h"
 #include "first_time_setup.h"
-#include "clib/clib_memory.h"
-#include "clib/clib_string.h"
+#include "clib/clib.h"
 #ifdef WIN32
 #include <windows.h>
 static HANDLE g_stunnel_job = NULL_POINTER;
@@ -175,7 +174,7 @@ void stunnel__renew_certificate_if_due(void)
 
     // only certbot-managed certificates can be renewed by certbot; manually entered cert paths
     // outside /etc/letsencrypt/live/ are the operator's own responsibility
-    if (g_server_settings.is_stunnel_enabled == FALSE || g_server_settings.stunnel_domain[0] == 0 || strncmp(g_server_settings.stunnel_cert_fullchain, "/etc/letsencrypt/live/", 22) != 0)
+    if (g_server_settings.is_stunnel_enabled == FALSE || g_server_settings.stunnel_domain[0] == 0 || clib__strncmp(g_server_settings.stunnel_cert_fullchain, "/etc/letsencrypt/live/", 22) != 0)
     {
         return;
     }
@@ -210,7 +209,7 @@ void stunnel__renew_certificate_if_due(void)
     DWORD found_length = 0;
     DWORD exit_code = 0;
 
-    if (g_server_settings.is_stunnel_enabled == FALSE || g_server_settings.stunnel_domain[0] == 0 || (strstr(g_server_settings.stunnel_cert_fullchain, "\\live\\") == NULL_POINTER && strstr(g_server_settings.stunnel_cert_fullchain, "/live/") == NULL_POINTER))
+    if (g_server_settings.is_stunnel_enabled == FALSE || g_server_settings.stunnel_domain[0] == 0 || (clib__strstr(g_server_settings.stunnel_cert_fullchain, "\\live\\") == NULL_POINTER && clib__strstr(g_server_settings.stunnel_cert_fullchain, "/live/") == NULL_POINTER))
     {
         return;
     }
@@ -232,7 +231,7 @@ void stunnel__renew_certificate_if_due(void)
     printf("checking whether the https/wss certificate needs renewal (certbot renew)...\n");
 
     clib__null_memory(command_line, sizeof(command_line));
-    snprintf(command_line, sizeof(command_line), "\"%s\" renew --cert-name %s --non-interactive", certbot_path, g_server_settings.stunnel_domain);
+    clib__string_format(command_line, sizeof(command_line), "\"%s\" renew --cert-name %s --non-interactive", certbot_path, g_server_settings.stunnel_domain);
 
     if (_stunnel_internal__run_and_wait(command_line, 180000, &exit_code) == FALSE)
     {
@@ -276,10 +275,10 @@ void stunnel__launch(void)
     util__get_executable_directory(exe_dir, sizeof(exe_dir));
     if (exe_dir[0] == 0)
     {
-        snprintf(exe_dir, sizeof(exe_dir), ".");
+        clib__string_format(exe_dir, sizeof(exe_dir), ".");
     }
-    snprintf(conf_path, sizeof(conf_path), "%s/stunnel.conf", exe_dir);
-    snprintf(stunnel_path, sizeof(stunnel_path), "%s/stunnel", exe_dir);
+    clib__string_format(conf_path, sizeof(conf_path), "%s/stunnel.conf", exe_dir);
+    clib__string_format(stunnel_path, sizeof(stunnel_path), "%s/stunnel", exe_dir);
 
     conf_file = fopen(conf_path, "w");
     if (conf_file == NULL_POINTER)
@@ -324,7 +323,7 @@ void stunnel__launch(void)
 
     // a previous run's stunnel may still hold the wss/https ports (e.g. the server was SIGKILLed so
     // PR_SET_PDEATHSIG never fired); kill the one launched with this same conf, then let the ports free
-    snprintf(kill_old_stunnel_command, sizeof(kill_old_stunnel_command), "pkill -f '%s' 2>/dev/null", conf_path);
+    clib__string_format(kill_old_stunnel_command, sizeof(kill_old_stunnel_command), "pkill -f '%s' 2>/dev/null", conf_path);
     system(kill_old_stunnel_command);
     usleep(300000);
 
@@ -378,15 +377,15 @@ void stunnel__launch(void)
     util__get_executable_directory(exe_dir, sizeof(exe_dir));
     if (exe_dir[0] == 0)
     {
-        snprintf(exe_dir, sizeof(exe_dir), ".");
+        clib__string_format(exe_dir, sizeof(exe_dir), ".");
     }
-    snprintf(conf_path, sizeof(conf_path), "%s\\stunnel.conf", exe_dir);
-    snprintf(log_path, sizeof(log_path), "%s\\stunnel.log", exe_dir);
-    snprintf(pid_path, sizeof(pid_path), "%s\\stunnel.pid", exe_dir);
-    snprintf(stunnel_path, sizeof(stunnel_path), "%s\\tstunnel.exe", exe_dir);
+    clib__string_format(conf_path, sizeof(conf_path), "%s\\stunnel.conf", exe_dir);
+    clib__string_format(log_path, sizeof(log_path), "%s\\stunnel.log", exe_dir);
+    clib__string_format(pid_path, sizeof(pid_path), "%s\\stunnel.pid", exe_dir);
+    clib__string_format(stunnel_path, sizeof(stunnel_path), "%s\\tstunnel.exe", exe_dir);
     if (access(stunnel_path, 0) != 0)
     {
-        snprintf(stunnel_path, sizeof(stunnel_path), "%s\\stunnel.exe", exe_dir);
+        clib__string_format(stunnel_path, sizeof(stunnel_path), "%s\\stunnel.exe", exe_dir);
     }
 
     if (access(stunnel_path, 0) != 0)
@@ -434,7 +433,7 @@ void stunnel__launch(void)
 
     _stunnel_internal__terminate_stale_stunnel(pid_path);
 
-    snprintf(command_line, sizeof(command_line), "\"%s\" \"%s\"", stunnel_path, conf_path);
+    clib__string_format(command_line, sizeof(command_line), "\"%s\" \"%s\"", stunnel_path, conf_path);
     ZeroMemory(&startup_info, sizeof(startup_info));
     startup_info.cb = sizeof(startup_info);
     ZeroMemory(&process_info, sizeof(process_info));

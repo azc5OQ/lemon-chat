@@ -6,6 +6,7 @@
 #include "../../core/client_login.h"
 #include "../../core/identity_store.h"
 #include "../../core/permissions.h"
+#include "../../core/channel_groups.h"
 #include "../../core/administration.h"
 #include "../../core/login_admission.h"
 #include "../../metadata_crypto.h"
@@ -15,8 +16,7 @@
 #include "../../base.h"
 #include "../../util.h"
 #include "../../memory_manager.h"
-#include "../../clib/clib_string.h"
-#include "../../clib/clib_memory.h"
+#include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 #include "../../../third-party/zhicheng/base64.h"
 #include "../../dh_primes.h"
@@ -224,7 +224,7 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
     // A DH public value is a decimal number smaller than the known prime.
     // Check its size and digits before parsing it as a large integer.
     {
-        length = strlen(verification_string->valuestring);
+        length = clib__strlen(verification_string->valuestring);
         maximum_length = sizeof(DH_MODULUS_STR) - 1;
 
         if (length == 0 || length > maximum_length)
@@ -563,9 +563,9 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
         clib__unlock(&g_clients_global_rwlock_guard);
         goto _label_client_msg__process_public_key_info_end;
     }
-    clib__copy_memory(public_key, g_clients_array[sender_client_id].public_key, clib__utf8_string_length(public_key), MAX_PUBLIC_KEY_LENGTH - 1);
+    clib__string_copy(g_clients_array[sender_client_id].public_key, sizeof(g_clients_array[sender_client_id].public_key), public_key);
     clib__null_memory(g_clients_array[sender_client_id].dh_shared_secret, SHARED_SECRET_LENGTH);
-    clib__copy_memory(shared_secret_string, g_clients_array[sender_client_id].dh_shared_secret, clib__utf8_string_length(shared_secret_string), SHARED_SECRET_LENGTH - 1);
+    clib__string_copy(g_clients_array[sender_client_id].dh_shared_secret, sizeof(g_clients_array[sender_client_id].dh_shared_secret), shared_secret_string);
     g_clients_array[sender_client_id].is_dh_shared_secret_agreed_upon = TRUE;
     // Make the keys that this connection will use for metadata, audio and video.
     // Also choose a random starting packet number for media sent to this client.
@@ -778,11 +778,11 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON* j
     {
         clib__null_memory(candidate_username, USERNAME_MAX_LENGTH);
         clib__null_memory(suffix_buffer, sizeof(suffix_buffer));
-        clib__copy_memory(json_chosen_username->valuestring, candidate_username, chosen_length, USERNAME_MAX_LENGTH);
+        clib__string_copy_n(candidate_username, sizeof(candidate_username), json_chosen_username->valuestring, chosen_length);
 
         if (i > 0)
         {
-            sprintf(suffix_buffer, "%llu", (unsigned long long)(i + 1));
+            clib__string_format(suffix_buffer, sizeof(suffix_buffer), "%llu", (unsigned long long)(i + 1));
 
             // a name that long has no room left for a number, so stop trying
             if ((chosen_length + (int64)clib__utf8_string_length(suffix_buffer)) > 50)
@@ -790,13 +790,16 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON* j
                 break;
             }
 
-            clib__copy_memory(&suffix_buffer[0], &candidate_username[chosen_length], clib__utf8_string_length(suffix_buffer), USERNAME_MAX_LENGTH - chosen_length);
+            if (!clib__string_append(candidate_username, sizeof(candidate_username), suffix_buffer))
+            {
+                break;
+            }
         }
 
         if (_client_msg_connection_internal__is_username_free_at_login(candidate_username, client_index) == TRUE)
         {
             clib__null_memory(g_clients_array[client_index].username, USERNAME_MAX_LENGTH);
-            clib__copy_memory(candidate_username, g_clients_array[client_index].username, clib__utf8_string_length(candidate_username), USERNAME_MAX_LENGTH);
+            clib__string_copy(g_clients_array[client_index].username, sizeof(g_clients_array[client_index].username), candidate_username);
             DBG_AUTHENTICATION log_info("%s %llu %s %s %s", "client ", client_index, " connected with chosen username ", g_clients_array[client_index].username, "\n");
             return TRUE;
         }
@@ -825,6 +828,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
     boole is_fast_reconnect = FALSE; // the client asks to resume its still-open session
     boole is_resumed_session = FALSE; // granted: current_client is the adopted session, not a fresh join
     int64 adopted_index = -1;
+    uint64 connected_count = 0;
+    uint64 slot = 0;
 
     // status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     // if (status == FALSE)
@@ -1006,6 +1011,28 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
             }
 
             permissions__refresh_guest_membership(current_client);
+            channel_groups__refresh_locked(current_client);
+            if (!is_resumed_session && g_server_settings.is_permission_system_enabled
+                && g_server_settings.reserved_slots > 0
+                && !permissions__is_allowed_in_groups(current_client, PERMISSION_USE_RESERVED_SLOTS))
+            {
+                for (slot = 0; slot < g_server_settings.max_client_count; slot++)
+                {
+                    if (g_clients_array[slot].is_existing && g_clients_array[slot].is_authenticated)
+                    {
+                        connected_count++;
+                    }
+                }
+                if (connected_count > g_server_settings.max_client_count - g_server_settings.reserved_slots)
+                {
+                    server_msg__administration__send_access_denied_to_single_client(current_client, "Only reserved slots are available.");
+                    clib__unlock(&g_icons_global_rwlock_guard);
+                    clib__unlock(&g_groups_global_rwlock_guard);
+                    clib__unlock(&g_channels_global_rwlock_guard);
+                    client_session__close_websocket_connection(sender_client_id, FALSE);
+                    goto _label_client_msg__process_public_key_challenge_response_end;
+                }
+            }
             identity_store__sync_client_identity_in_store(current_client);
             identity_store__update_offline_public_key(current_client);
 

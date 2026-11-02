@@ -12,8 +12,7 @@
 #include "../base.h"
 
 #include "../memory_manager.h"
-#include "../clib/clib_memory.h"
-#include "../clib/clib_string.h"
+#include "../clib/clib.h"
 #include "../util.h"
 #include "../metadata_crypto.h"
 #include "login_admission.h"
@@ -56,7 +55,7 @@ uint64 client_login__get_public_key_bit_length(char* public_key_modulus)
     }
 
     // an 8192-bit modulus is 1368 base64 chars; anything longer is not a valid key
-    key_string_length = (uint64)strlen(public_key_modulus);
+    key_string_length = (uint64)clib__strlen(public_key_modulus);
     if (key_string_length == 0 || key_string_length > 1372)
     {
         return 0;
@@ -113,7 +112,7 @@ char* client_login__encrypt_string_with_public_key(char* public_key_modulus, uns
     DBG_ENCRYPTION log_info("%s %s %s", "public_key_modulus_base64 ", public_key_modulus, "\n");
 
     // an 8192-bit modulus is 1368 base64 chars / 1024 bytes; longer input is not a valid key
-    if (strlen(public_key_modulus) > 1372)
+    if (clib__strlen(public_key_modulus) > 1372)
     {
         base64_out_buffer = (void*)memorymanager__allocate(1, MEMALLOC_PUBLIC_KEY_ENCRYPT);
         ((char*)base64_out_buffer)[0] = 0;
@@ -122,7 +121,7 @@ char* client_login__encrypt_string_with_public_key(char* public_key_modulus, uns
 
     public_key_modulus_binary = (char*)memorymanager__allocate(2048, MEMALLOC_PUBLIC_KEY_ENCRYPT);
 
-    buffer_modulus_bin_outsize = zchg_base64_decode(public_key_modulus, strlen(public_key_modulus), (unsigned char*)public_key_modulus_binary);
+    buffer_modulus_bin_outsize = zchg_base64_decode(public_key_modulus, clib__strlen(public_key_modulus), (unsigned char*)public_key_modulus_binary);
 
     DBG_ENCRYPTION log_info("%s %llu %s", "buffer_modulus_bin_outsize ", buffer_modulus_bin_outsize, "\n");
 
@@ -131,7 +130,7 @@ char* client_login__encrypt_string_with_public_key(char* public_key_modulus, uns
 
     mbedtls_entropy_init(&entropy);
 
-    ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char*)pers, strlen(pers));
+    ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char*)pers, clib__strlen(pers));
     if (ret != 0)
     {
         DBG_ENCRYPTION log_info("%s %d", "failed\n  ! mbedtls_ctr_drbg_seed returned ", ret);

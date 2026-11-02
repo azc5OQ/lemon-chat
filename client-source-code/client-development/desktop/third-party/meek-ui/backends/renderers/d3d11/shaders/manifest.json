@@ -1,0 +1,57 @@
+[
+  {
+    "source": "rect.vert.hlsl",
+    "header": "rect.vert.h",
+    "declaration": "static char* _d3d11_renderer_internal__vs_src"
+  },
+  {
+    "source": "rect.frag.hlsl.in",
+    "header": "rect.frag.h",
+    "declaration": "static char* _d3d11_renderer_internal__ps_src"
+  },
+  {
+    "source": "text.vert.hlsl",
+    "header": "text.vert.h",
+    "declaration": "static char* _d3d11_renderer_internal__text_vs_src"
+  },
+  {
+    "source": "text.frag.hlsl",
+    "header": "text.frag.h",
+    "declaration": "static char* _d3d11_renderer_internal__text_ps_src"
+  },
+  {
+    "source": "image.frag.hlsl",
+    "header": "image.frag.h",
+    "declaration": "static const char* _D3D11_RENDERER_INTERNAL__IMAGE_PS_SRC"
+  },
+  {
+    "source": "background.hlsl",
+    "header": "background.h",
+    "declaration": "static const char meek_background_hlsl[]"
+  },
+  {
+    "source": "compose.hlsl",
+    "header": "compose.h",
+    "declaration": "static const char meek_compose_hlsl[]"
+  },
+  {
+    "source": "layer.vert.hlsl",
+    "header": "layer.vert.h",
+    "declaration": "static const char* _D3D11_RENDERER_INTERNAL__LAYER_VS_SRC"
+  },
+  {
+    "source": "layer.frag.hlsl",
+    "header": "layer.frag.h",
+    "declaration": "static const char* _D3D11_RENDERER_INTERNAL__LAYER_PS_SRC"
+  },
+  {
+    "source": "blur.vert.hlsl",
+    "header": "blur.vert.h",
+    "declaration": "static const char* _d3d11_blur_vs"
+  },
+  {
+    "source": "blur.frag.hlsl",
+    "header": "blur.frag.h",
+    "declaration": "static const char* _d3d11_blur_ps"
+  }
+]

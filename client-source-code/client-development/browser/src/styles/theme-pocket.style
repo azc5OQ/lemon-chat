@@ -2,7 +2,12 @@
 :root
 {
     color-scheme: light;
-    --set-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --client-self-color: #006d68;
+    --client-unread-bg: #006d68;
+    --client-unread-color: #ffffff;
+    --client-unread-border: #0b8279;
+    --client-unread-radius: 9px;
+    --set-font: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
     --set-panel: #ffffff;
     --set-panel-2: #f0f5f5;
     --set-text: #203638;
@@ -39,6 +44,11 @@
     --reaction-radius: 6px;
     --reaction-shadow: 0 4px 20px #2036381a;
     --reaction-font: var(--set-font);
+    --chat-author-font: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    --chat-author-weight: 600;
+    --chat-meta-font: "Inter", system-ui, sans-serif;
+    --chat-meta-size: 12px;
+    --chat-edited-color: #6b766b;
     --chat-author-size: 13px;
     --chat-author-color: #1e7063;
     --chat-local-author-color: #1e7063;
@@ -517,6 +527,12 @@ body:has(.head-menu-dropdown.is-open) #head-menu-left-group #bookmarks-menu
     background: #edf5f3;
 }
 
+:root :is(#channel-list-container, #idle-clients-container) .connected-client
+{
+    margin-top: 1px;
+    margin-bottom: 1px;
+}
+
 :root :is(#channel-list-container, #idle-clients-container) :is(.single-channel-name-p, .connected-client-p, #connected-local-client-input)
 {
     color: #203638;
@@ -844,7 +860,7 @@ body:has(.head-menu-dropdown.is-open) #chat-context-selectors-container
     padding: 8px 12px 14px;
     color: #63796d;
     background: transparent;
-    text-align: center;
+    text-align: left;
     font: 12px/18px var(--set-font);
 }
 
@@ -1056,11 +1072,6 @@ body:has(.head-menu-dropdown.is-open) #chat-context-selectors-container
 :root .chat-reply-content
 {
     border-bottom: 0;
-}
-
-:root .chat-reply-quote:hover
-{
-    background: #d8efea;
 }
 
 :root #chat-reply-author
@@ -1314,7 +1325,7 @@ body:has(.head-menu-dropdown.is-open) :is(#microphone-push-to-talk-button-touch-
 }
 
 /* Shared dialog variables keep the newer windows consistent with the theme. */
-:root :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+:root :is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup)
 {
     --groups-panel: #ffffff;
     --groups-list-background: #f7faf9;
@@ -1327,19 +1338,19 @@ body:has(.head-menu-dropdown.is-open) :is(#microphone-push-to-talk-button-touch-
     font-size: 14px;
 }
 
-:root :is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) :is(button, select, input:not([type="checkbox"]))
+:root :is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog) :is(button, select, input:not([type="checkbox"]))
 {
     min-height: 44px;
     font-size: 14px;
 }
 
-:root :is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) input:is([type="search"], [type="text"], [type="number"])
+:root :is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog) input:is([type="search"], [type="text"], [type="number"])
 {
     font-size: 16px;
 }
 
 :root .close-button,
-:root :is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker) .close-button
+:root :is(#local-settings-container, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button
 {
     width: 44px;
     height: 44px;
@@ -1359,12 +1370,12 @@ body:has(.head-menu-dropdown.is-open) :is(#microphone-push-to-talk-button-touch-
     content: "\00d7";
 }
 
-:root :is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #poke-client-enter, #adjust-volume-card, #set-new-username-enter, #client-info-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter, #android-settings-warning) .close-button.close-button::before
+:root :is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup, #channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #poke-client-enter, #adjust-volume-card, #set-new-username-enter, #client-info-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter, #android-settings-warning) .close-button.close-button::before
 {
     content: "\00d7";
 }
 
-:root :is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #poke-client-enter, #adjust-volume-card, #set-new-username-enter, #client-info-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter, #android-settings-warning) .close-button.close-button
+:root :is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup, #channel-properties-edit, #channel-password-enter, #musicbot-management-dialog, #admin-password-enter, #poke-client-enter, #adjust-volume-card, #set-new-username-enter, #client-info-enter, #identity-string-use-container-enter, #secret-identity-string-container-enter, #android-settings-warning) .close-button.close-button
 {
     width: 44px;
     height: 44px;
@@ -2584,7 +2595,7 @@ body:has(.head-menu-dropdown.is-open) :is(#microphone-push-to-talk-button-touch-
     min-width: 0;
     height: 54px;
     min-height: 54px;
-    margin: 0 0 3px;
+    margin: 1px 0 4px;
     padding: 7px;
     border: 1px solid transparent;
     border-radius: 10px;
@@ -2975,4 +2986,9 @@ body:has(.head-menu-dropdown.is-open) :is(#microphone-push-to-talk-button-touch-
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
     }
+}
+
+:where(body, button, input, select, textarea)
+{
+    font-family: var(--set-font);
 }

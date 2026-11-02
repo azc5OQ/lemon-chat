@@ -1,20 +1,18 @@
 # client-development
 
 Source workspace for the chat client. The shipped client is a single
-`client.html` (~4.6 MB), but it is authored here as many small files and glued
-back together by `build.py`.
+`client.html`, but it is authored here as many small files and assembled by
+`build.cjs`. Choose minified or readable output when building; development sources stay readable.
 
 ## Layout
 
 ```
 client-development/browser/
-├─ build.py            # glues src/ -> ../../client.html (the shipped client, in client-source-code)
-├─ build.bat           # Windows: runs build.py, then pauses
-├─ build.sh            # Unix:    runs build.py
-├─ _split.py           # one-time bootstrap (see below)
+├─ build.cjs            # glues src/ -> ../../client.html (the shipped client, in client-source-code)
+├─ build.bat           # Windows: runs build.cjs, then pauses
+├─ build.sh            # Unix:    runs build.cjs
 ├─ client-webassemblies/   # Opus/minimp3 .wasm *sources* + how to rebuild them
 │  ├─ README.md            # what the two modules are, build/removal steps
-│  ├─ wasmstob64.py        # converts a built .wasm into the embedded base64
 │  ├─ libopusjs/           # libopus source archive (.tar.gz)
 │  └─ mp3-to-pcm/          # minimp3 source archive (.tar.gz)
 └─ src/
@@ -66,22 +64,83 @@ then what it does), one `@param type name -> what` per parameter and `@return ty
 (`void` when nothing comes back). Add one to a new function; `lemonchat-study/tools/docinv.py`
 lists any that lack it.
 
-`styles/fonts.style` is large because the fonts are base64-embedded.
+`styles/fonts.style` contains the embedded fonts. The existing fonts use base64
+TrueType data. Inter, Manrope and Plus Jakarta Sans use base64 WOFF2 data to
+reduce the size of `client.html`. All three retain their full character sets and
+variable weights. Inter also retains its optical size axis.
+
+These fonts come from the SIL Open Font License editions in the
+[Google Fonts repository](https://github.com/google/fonts). Each font declaration
+includes its source URL, source revision, original file hash, copyright notice
+and complete license. The notices are included in the built client as well.
+No font is downloaded when someone opens the client.
+
+| Theme | Interface font | Usernames and headings | Timestamps |
+| --- | --- | --- | --- |
+| Default, Mobile, Termix, Simpledark | Inter | Inter | Inter |
+| Ozone | Inter | Manrope | Inter |
+| Pocket, Bluebell | Plus Jakarta Sans | Plus Jakarta Sans | Inter |
+| Aero, Hybrid V1, Hybrid V2 | Existing theme fonts | Existing theme fonts | Existing theme fonts |
+
+The theme's `--set-font` controls settings, dialogs, alerts, controls and lists.
+`--chat-author-font` and `--chat-meta-font` control message names and timestamps.
+Custom message font choices remain separate. To replace an embedded font,
+update its base64 data, weight range and source notice in `fonts.style`, then
+run the normal client build. The build itself needs no font conversion tools.
 
 ## Building
 
-Run any of:
+Install a maintained LTS version of [Node.js](https://nodejs.org/) and reopen
+your terminal. A readable build needs only Node.js. To enable minification,
+install [Terser](https://terser.org/docs/cli-usage/) yourself:
 
-```
-build.bat        (Windows)
-./build.sh       (Linux/macOS)
-python build.py
+```sh
+npm install --global terser
 ```
 
-Output is written straight to `../../client.html`, i.e. `client-source-code/client.html`, the
-shipped client itself — deleted and regenerated every run. There is no separate
-`client-build.html` step anymore; the build *is* the ship. The output path is
-the `OUT` variable near the top of `build.py` if you want to change it.
+Run `build.bat` on Windows, `./build.sh` on Linux/macOS, or `node build.cjs`.
+Choose **1. Minified** or **2. Unminified**. When Terser is unavailable, option 1
+is shown as **disabled** and cannot be selected. The build never installs tools
+or downloads packages. Node.js and Terser are not bundled with this project.
+
+Both modes assemble `src/` into `../../client.html` and refresh an existing
+`buildresult/client.html`. Source files stay readable and unchanged. Output
+files are replaced only after assembly and validation succeed; a missing or
+failed minifier leaves the previous output intact.
+
+Minified output keeps the existing size savings: repeated CSS images are stored
+once, TrueType fonts are losslessly packaged as WOFF, and CSS whitespace is
+compacted. Terser 5 or newer removes JavaScript whitespace and ordinary comments.
+Names, license notices, the worker patch target and the headless export seam
+are preserved. Code compression and dead-code removal stay disabled.
+
+For scripts and CI, choose explicitly:
+
+```sh
+node build.cjs --unminified
+node build.cjs --minified
+node build.cjs --minified --output preview/client.html
+node build.cjs --unminified --no-server-copy
+node build.cjs --check
+node build.cjs --check-minifier
+```
+
+`--output` builds an isolated file without updating the shipped or server copy.
+`--check` checks assembled JavaScript syntax and the worker patch target without
+writing output. `--check-minifier` reports whether an installed Terser can run.
+The build looks for a resolvable Terser package or the global npm installation.
+
+Server build scripts use the same builder. Set
+`LEMON_CLIENT_BUILD_MODE=unminified` or `minified` to skip the prompt;
+command-line options take precedence. A build without a terminal must specify
+its mode. Both Android Gradle projects default to unminified output. Use
+`-PclientBuildMode=minified` after installing Terser to request minification.
+Their separate native and headless build tools retain their own prerequisites.
+
+`--no-minify-js` optimizes CSS/assets while keeping JavaScript readable.
+`--minify-js` and `--no-optimize` remain aliases for `--minified` and
+`--unminified`. The Windows wrapper pauses only when launched interactively
+without arguments or an environment-selected mode and preserves the exit code.
 
 ## How the glue works
 
@@ -95,7 +154,7 @@ on its own line:
 </script>
 ```
 
-`build.py` replaces each marker line with that file's exact bytes. The marker is
+`build.cjs` replaces each marker line with that file's exact bytes. The marker is
 a `/* ... */` block comment, which is valid in both CSS and JS, so editors do
 not flag it.
 
@@ -106,7 +165,7 @@ mid-string-literal, because that is where the base64 sits in the library code:
 - `scripts/vendor/libopus.emscripten.js` → `var libopus_webassembly_base64 = '@@WASM:wasm/libopus.wasm@@';`
 - `scripts/app/minimp3-worker.js` → `let mp3_decoder_webassembly_base64 = "@@WASM:wasm/mp3_decoder.wasm@@";`
 
-`build.py` expands the `@@INCLUDE` markers first, then swaps each
+`build.cjs` expands the `@@INCLUDE` markers first, then swaps each
 `@@WASM:...@@` for `base64(the .wasm file)`.
 
 ## Editing
@@ -163,16 +222,29 @@ keys or as locals elsewhere (`local_username`, `current_channel_id`, `host`,
 
 ## Notes
 
-- Many libraries were originally concatenated *inside* a single `<script>` tag.
-  The split cuts them apart at their own headers; the build just concatenates,
-  so the result is identical to the original byte-for-byte.
-- `_split.py` is the one-time bootstrap that created `src/` from the shipped `client.html`.
-  It is kept for reference / re-splitting. Note that `build.py` now overwrites
-  `../../client.html` on every run, so it is no longer a pristine original — the
-  untouched first version lives in git history. You normally do **not** run
-  `_split.py` — use `build.py`.
-- `client-webassemblies/` holds the *sources* for the two embedded `.wasm`
-  binaries (libopus, minimp3), the `wasmstob64.py` converter, and a README on
-  how to rebuild them. The build does **not** touch this folder — the binaries
-  it actually embeds are the ones under `src/wasm/`. Only come here when you
-  need to recompile a `.wasm` from scratch. See `client-webassemblies/README.md`.
+- Libraries split across source files are concatenated in template order.
+- `client-webassemblies/` holds WebAssembly sources and rebuild instructions.
+  The browser build embeds binaries from `src/wasm/` automatically; no separate
+  base64 conversion script is needed.
+
+## Shared conversation-list features
+
+`src/scripts/app/member-conversations.js` adds name/channel search, previews of
+messages already retained in the client, their displayed send times, and optional
+navigation from the member list into the selected chat. It uses the existing member
+mirror and chat contexts, with no new server protocol or separate history store.
+Previews update when messages arrive, change or are removed. A conversation without
+retained messages shows its channel or presence instead of an invented preview.
+
+Themes opt in with `--member-conversations: 1` on `:root`. To also reveal chat when
+a member or channel is selected, set `--member-conversations-auto-open: 1`.
+`styles/member-conversations.style` supplies the common controls and hides them when
+the active theme does not opt in. Each theme can style the search, optional profile,
+`.member-conversation-preview` and `.member-conversation-time` to suit its own layout.
+No theme names are checked in the JavaScript module.
+
+Mono Light and Mono Dark are registered as mobile themes. Both share
+`styles/theme-mono.style`; `styles/theme-mono-dark.style` only changes the palette.
+Use the half-light/half-dark theme control to select either palette. The bottom
+People/Chat control switches between the full people list and the conversation;
+a tap on a person opens their chat, while a hold retains the existing actions menu.

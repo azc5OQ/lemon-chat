@@ -8,8 +8,7 @@
 #include "../../base.h"
 #include "../../util.h"
 #include "../../memory_manager.h"
-#include "../../clib/clib_string.h"
-#include "../../clib/clib_memory.h"
+#include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 #include "../../../third-party/zhicheng/base64.h"
 
@@ -195,7 +194,7 @@ void client_msg__profile__process_change_client_username(cJSON* json_root, uint6
                 server_logs__username_changed(client_to_alter->username, json_message_value->valuestring);
 
                 clib__null_memory(client_to_alter->username, USERNAME_MAX_LENGTH);
-                clib__copy_memory(json_message_value->valuestring, client_to_alter->username, new_username_length, USERNAME_MAX_LENGTH);
+                clib__string_copy_n(client_to_alter->username, sizeof(client_to_alter->username), json_message_value->valuestring, new_username_length);
                 is_change_success = TRUE;
             }
         }

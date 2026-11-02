@@ -1,30 +1,32 @@
 // This file sends admin replies, client details, server logs, icons and groups.
 #include "../../core/permissions.h"
+#include "../../core/channel_groups.h"
 
 #include "server_msg.h"
 #include "../../base.h"
 #include "../../core/identity_store.h"
 #include "../../util.h"
-#include "../../clib/clib_string.h"
+#include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 #include "../../../third-party/zhicheng/base64.h"
 #include "../../core/server_logs.h"
 
 /**
- * @brief sends one client's info (connected duration, ip, country, identity, last action) to a single
- *        admin client, in reply to a get_client_info request
+ * @brief Replies with the client details that the receiver has permission to view.
  *
- * @param client_t* receiver -> the admin the reply is sent to (provides the websocket + shared secret)
+ * @param client_t* receiver -> client requesting the details
  * @param client_t* subject -> the client the info is about
+ * @param cJSON* request -> request whose identifier is included in the reply
  *
  * @attention caller must hold at least the clients read lock
  *
  * @return void
  */
-void server_msg__administration__send_client_info_to_single_client(client_t* receiver, client_t* subject)
+void server_msg__administration__send_client_info_to_single_client(client_t* receiver, client_t* subject, cJSON* request)
 {
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;
+    cJSON* request_id = cJSON_GetObjectItemCaseSensitive(request, "request_id");
     uint64 now_ms = 0;
     uint64 connected_seconds = 0;
     uint64 last_action_seconds_ago = 0;
@@ -42,11 +44,24 @@ void server_msg__administration__send_client_info_to_single_client(client_t* rec
     root = server_msg__delivery__new_message("client_info", &message);
 
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
-    cJSON_AddNumberToObject(message, "connected_seconds", (double)connected_seconds);
-    cJSON_AddNumberToObject(message, "last_action_seconds_ago", (double)last_action_seconds_ago);
-    cJSON_AddStringToObject(message, "ip_address", &subject->ip_address[0]);
-    cJSON_AddStringToObject(message, "country_iso_code", &subject->country_iso_code[0]);
-    cJSON_AddStringToObject(message, "identity", &subject->public_key[0]);
+    if (cJSON_IsNumber(request_id) && request_id->valuedouble >= 0 && request_id->valuedouble <= 2147483647.0)
+    {
+        cJSON_AddNumberToObject(message, "request_id", request_id->valuedouble);
+    }
+    if (permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_CONNECTION_TIME) == TRUE)
+    {
+        cJSON_AddNumberToObject(message, "connected_seconds", (double)connected_seconds);
+    }
+    if (permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_DETAILS) == TRUE)
+    {
+        cJSON_AddNumberToObject(message, "last_action_seconds_ago", (double)last_action_seconds_ago);
+        if (permissions__is_allowed(receiver, PERMISSION_VIEW_IP_ADDRESSES) == TRUE)
+        {
+            cJSON_AddStringToObject(message, "ip_address", &subject->ip_address[0]);
+        }
+        cJSON_AddStringToObject(message, "country_iso_code", &subject->country_iso_code[0]);
+        cJSON_AddStringToObject(message, "identity", &subject->public_key[0]);
+    }
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
@@ -152,6 +167,8 @@ void server_msg__administration__send_group_list_to_single_client(client_t* rece
 
     cJSON_AddItemToObject(message, "groups", json_groups_array);
     cJSON_AddItemToObject(message, "access", permissions__write_access(receiver));
+    cJSON_AddItemToObject(message, "channel_groups", g_server_settings.is_permission_system_enabled
+        ? channel_groups__write_catalog(permissions__is_allowed_in_groups(receiver, PERMISSION_VIEW_GROUP_PERMISSIONS)) : cJSON_CreateArray());
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
@@ -294,7 +311,7 @@ void server_msg__administration__send_force_admin_password_change_to_single_clie
  *
  * @return void
  */
-void server_msg__administration__send_access_denied_to_single_client(client_t* receiver, char* reason)
+void server_msg__administration__send_access_denied_to_single_client(client_t* receiver, const char* reason)
 {
     cJSON* root = NULL_POINTER;
     cJSON* message = NULL_POINTER;

@@ -13,8 +13,7 @@
 #include "../base.h"
 #include "../msg/server/server_msg.h"
 #include "../memory_manager.h"
-#include "../clib/clib_memory.h"
-#include "../clib/clib_string.h"
+#include "../clib/clib.h"
 #include "../util.h"
 #include "audio_channel.h"
 #include "../audio_websocket.h"
@@ -101,19 +100,17 @@ boole client_session__assign_username_for_newly_joined_client(uint64 client_inde
         // try "<default_name><n>" for n = 0, 1, 2, ... until a username no client is using is found
         for (username_suffix_number = 0; username_suffix_number < g_server_settings.max_client_count; username_suffix_number++)
         {
-            uint64 default_name_length = 0;
-
             clib__null_memory(candidate_username, USERNAME_MAX_LENGTH);
-            clib__copy_memory(g_server_settings.default_client_name, candidate_username, clib__utf8_string_length(g_server_settings.default_client_name), USERNAME_MAX_LENGTH);
+            clib__string_copy(candidate_username, sizeof(candidate_username), g_server_settings.default_client_name);
 
-            // as long as I know what I'm doing, shouldn't be dangerous
             clib__null_memory(index_suffix_buffer, 16);
 
-            // itoa(username_suffix_number, index_suffix_buffer, 10); gcc on linux does not support itoa so I'm using sprintf
-            sprintf(index_suffix_buffer, "%llu", username_suffix_number);
+            clib__string_format(index_suffix_buffer, sizeof(index_suffix_buffer), "%llu", username_suffix_number);
 
-            default_name_length = clib__utf8_string_length(candidate_username);
-            clib__copy_memory(&index_suffix_buffer[0], &candidate_username[default_name_length], clib__utf8_string_length(index_suffix_buffer), clib__utf8_string_length(g_server_settings.default_client_name));
+            if (!clib__string_append(candidate_username, sizeof(candidate_username), index_suffix_buffer))
+            {
+                break;
+            }
 
             DBG_AUTHENTICATION log_info("%s %s %s", "index_suffix_buffer -> ", index_suffix_buffer, "\n");
             DBG_AUTHENTICATION log_info("%s %s %s", "candidate_username -> ", candidate_username, "\n");
@@ -165,7 +162,7 @@ final_check:
     return result; // either code jumps to end_loop or it returns false here
 
 end_loop:
-    clib__copy_memory(&candidate_username[0], &g_clients_array[client_index].username[0], clib__utf8_string_length(candidate_username), USERNAME_MAX_LENGTH);
+    clib__string_copy(g_clients_array[client_index].username, sizeof(g_clients_array[client_index].username), candidate_username);
     DBG_AUTHENTICATION log_info("%s %llu %s %s", "client: ", client_index, g_clients_array[client_index].username, "\n");
 
     return result;
@@ -312,9 +309,9 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
         atomic_load_explicit(&new_entry->media_send_counter, memory_order_relaxed), memory_order_relaxed);
     clib__copy_memory(new_entry->challenge_string, old_session->challenge_string, CHALLENGE_STRING_LENGTH, CHALLENGE_STRING_LENGTH);
     clib__null_memory(old_session->ip_address, sizeof(old_session->ip_address));
-    clib__copy_memory(new_entry->ip_address, old_session->ip_address, clib__utf8_string_length(new_entry->ip_address), sizeof(old_session->ip_address));
+    clib__string_copy(old_session->ip_address, sizeof(old_session->ip_address), new_entry->ip_address);
     clib__null_memory(old_session->country_iso_code, sizeof(old_session->country_iso_code));
-    clib__copy_memory(new_entry->country_iso_code, old_session->country_iso_code, clib__utf8_string_length(new_entry->country_iso_code), sizeof(old_session->country_iso_code));
+    clib__string_copy(old_session->country_iso_code, sizeof(old_session->country_iso_code), new_entry->country_iso_code);
     old_session->timestamp_last_maintain_connection_message_received = timestamp_now;
     old_session->timestamp_last_action = timestamp_now;
     // Replacing a socket must not move an idle client into root without a channel-join message.

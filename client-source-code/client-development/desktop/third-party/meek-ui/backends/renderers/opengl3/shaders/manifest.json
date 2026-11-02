@@ -1,0 +1,62 @@
+[
+  {
+    "source": "rect.vert.glsl",
+    "header": "rect.vert.h",
+    "declaration": "static char* _opengl3_renderer_internal__vs_src"
+  },
+  {
+    "source": "rect.frag.glsl.in",
+    "header": "rect.frag.h",
+    "declaration": "static char* _opengl3_renderer_internal__fs_src"
+  },
+  {
+    "source": "text.vert.glsl",
+    "header": "text.vert.h",
+    "declaration": "static char* _opengl3_renderer_internal__text_vs_src"
+  },
+  {
+    "source": "text.frag.glsl",
+    "header": "text.frag.h",
+    "declaration": "static char* _opengl3_renderer_internal__text_fs_src"
+  },
+  {
+    "source": "rect_srgb.frag.glsl.in",
+    "header": "rect_srgb.frag.h",
+    "declaration": "static char* _opengl3_renderer_internal__fs_src_srgb"
+  },
+  {
+    "source": "text_srgb.frag.glsl",
+    "header": "text_srgb.frag.h",
+    "declaration": "static char* _opengl3_renderer_internal__text_fs_src_srgb"
+  },
+  {
+    "source": "image.vert.glsl",
+    "header": "image.vert.h",
+    "declaration": "static const char* _OPENGL3_RENDERER_INTERNAL__IMAGE_VS"
+  },
+  {
+    "source": "image.frag.glsl",
+    "header": "image.frag.h",
+    "declaration": "static const char* _OPENGL3_RENDERER_INTERNAL__IMAGE_FS"
+  },
+  {
+    "source": "layer.vert.glsl",
+    "header": "layer.vert.h",
+    "declaration": "static const char* _OPENGL3_RENDERER_INTERNAL__LAYER_VS"
+  },
+  {
+    "source": "layer.frag.glsl",
+    "header": "layer.frag.h",
+    "declaration": "static const char* _OPENGL3_RENDERER_INTERNAL__LAYER_FS"
+  },
+  {
+    "source": "blur.vert.glsl",
+    "header": "blur.vert.h",
+    "declaration": "static const char* _opengl3_blur_vs"
+  },
+  {
+    "source": "blur.frag.glsl",
+    "header": "blur.frag.h",
+    "declaration": "static const char* _opengl3_blur_fs"
+  }
+]

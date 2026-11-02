@@ -1,0 +1,17 @@
+struct PSIn {
+    float4 col : COLOR0;
+    float2 lc  : TEXCOORD0;
+    float2 rs  : TEXCOORD1;
+    float  rad : TEXCOORD2;
+};
+
+@RENDERER_SDF_ROUND_BOX_HLSL@
+
+float4 ps_main(PSIn i) : COLOR {
+    float2 half_size = i.rs * 0.5;
+    float2 p = i.lc - half_size;
+    float d = sd_round_box(p, half_size, i.rad);
+    float aa = 1.0 - smoothstep(@RENDERER_SDF_AA_MIN@, @RENDERER_SDF_AA_MAX@, d);
+    if (aa <= 0.0) discard;
+    return float4(i.col.rgb, i.col.a * aa);
+}

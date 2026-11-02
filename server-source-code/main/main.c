@@ -6,8 +6,7 @@
 #include "ip_tools.h"
 #include "definitions.h"
 
-#include "clib/clib_string.h"
-#include "clib/clib_memory.h"
+#include "clib/clib.h"
 #include "../third-party/dave-g-json/cJSON.h" // needed by base.h
 #include "base.h"
 #include "metadata_crypto.h"
@@ -134,7 +133,7 @@ static void _main_internal__print_startup_summary(void)
     // valid for exactly 90 days from issuance and the fullchain.pem symlink target's modification
     // time is the issuance time. renewal already ran before this summary, so under 30 days here
     // means the renewal did not succeed
-    if (is_stunnel_started == TRUE && strncmp(g_server_settings.stunnel_cert_fullchain, "/etc/letsencrypt/live/", 22) == 0 && stat(g_server_settings.stunnel_cert_fullchain, &certificate_file_info) == 0)
+    if (is_stunnel_started == TRUE && clib__strncmp(g_server_settings.stunnel_cert_fullchain, "/etc/letsencrypt/live/", 22) == 0 && stat(g_server_settings.stunnel_cert_fullchain, &certificate_file_info) == 0)
     {
         certificate_days_left = 90 - (((int64)time(NULL_POINTER) - (int64)certificate_file_info.st_mtime) / 86400);
         if (certificate_days_left < 0)
@@ -555,7 +554,7 @@ int main(void)
 
         if (g_server_settings.http_webroot[0] != 0)
         {
-            clib__copy_memory(g_server_settings.http_webroot, http_webroot_resolved, clib__utf8_string_length(g_server_settings.http_webroot), sizeof(http_webroot_resolved) - 1);
+            clib__string_copy(http_webroot_resolved, sizeof(http_webroot_resolved), g_server_settings.http_webroot);
         }
 #ifndef WIN32
         else
@@ -576,7 +575,7 @@ int main(void)
         // warn loudly if client.html is not where the http server will look for it, so the operator does
         // not get a silent 404 in the browser
         clib__null_memory(client_html_path, sizeof(client_html_path));
-        snprintf(client_html_path, sizeof(client_html_path), "%s/client.html", http_webroot_resolved);
+        clib__string_format(client_html_path, sizeof(client_html_path), "%s/client.html", http_webroot_resolved);
         client_html_file = fopen(client_html_path, "rb");
         if (client_html_file != NULL_POINTER)
         {
@@ -635,7 +634,7 @@ int main(void)
         {
             break;
         }
-        clib__sanitize_stdin(input);
+        clib__string_trim_newline(input, sizeof(input));
     }
 
     log_info("%s", "stdin closed, console input is off");

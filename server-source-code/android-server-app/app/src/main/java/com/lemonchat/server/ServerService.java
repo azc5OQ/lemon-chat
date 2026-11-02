@@ -16,6 +16,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import org.json.JSONObject;
 
 /** One foreground session owns exactly one native server process. */
 public class ServerService extends Service
@@ -26,12 +27,16 @@ public class ServerService extends Service
     public static boolean active;
     public static boolean hosting;
     public static String status = "Stopped";
+    public static String funnelAddress = "";
+    public static String funnelLogin = "";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ServerProcess runner = new ServerProcess();
+    private final FunnelProcess funnel = new FunnelProcess();
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     private boolean stopping;
     private int generation;
+    private String funnelFailure = "";
 
     @Override public IBinder onBind(Intent intent)
     {
@@ -50,6 +55,7 @@ public class ServerService extends Service
                 hosting = false;
                 status = "Stopping…";
                 UpdateNotification();
+                funnel.Stop();
                 runner.Stop();
             }
             else
@@ -65,6 +71,9 @@ public class ServerService extends Service
         active = true;
         hosting = false;
         stopping = false;
+        funnelAddress = "";
+        funnelLogin = "";
+        funnelFailure = "";
         status = "Starting…";
         final int session = ++generation;
         try
@@ -90,39 +99,7 @@ public class ServerService extends Service
                 wifiLock = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "lemonchat:hosting");
                 wifiLock.acquire();
             }
-            runner.Start(Collections.singletonList(executable.getAbsolutePath()), getFilesDir(),
-                         new File(getFilesDir(), "server.log"), new ServerProcess.Listener()
-                         {
-                             @Override public void Ready()
-                             {
-                                 handler.post(() ->
-                                 {
-                                     if (session != generation || stopping || !active)
-                                     {
-                                         return;
-                                     }
-                                     hosting = true;
-                                     status = "Hosting";
-                                     UpdateNotification();
-                                 });
-                             }
-                             @Override public void Finished(int code, String error)
-                             {
-                                 handler.post(() ->
-                                 {
-                                     if (session != generation)
-                                     {
-                                         return;
-                                     }
-                                     Finish(stopping ? "Stopped"
-                                                     : "Server stopped unexpectedly. Open View log for details.");
-                                     if (error != null)
-                                     {
-                                         AppendError(error);
-                                     }
-                                 });
-                             }
-                         });
+            PrepareServer(session, executable);
         }
         catch (Exception error)
         {
@@ -130,6 +107,149 @@ public class ServerService extends Service
             Finish("Could not start. Check Settings and View log.");
         }
         return START_NOT_STICKY;
+    }
+
+    /** Copies the web client and writes startup settings away from the UI thread. */
+    private void PrepareServer(int session, File executable)
+    {
+        new Thread(() ->
+        {
+            try
+            {
+                JSONObject settings = FunnelSettings.Prepare(this);
+                handler.post(() ->
+                {
+                    if (session != generation || !active)
+                    {
+                        return;
+                    }
+                    if (stopping)
+                    {
+                        Finish("Stopped");
+                        return;
+                    }
+                    LaunchNativeServer(session, executable, settings);
+                });
+            }
+            catch (Exception error)
+            {
+                handler.post(() ->
+                {
+                    if (session == generation && active)
+                    {
+                        Finish("Could not prepare hosting: " + error.getMessage());
+                    }
+                });
+            }
+        }, "lemon-hosting-setup").start();
+    }
+
+    private void LaunchNativeServer(int session, File executable, JSONObject settings)
+    {
+        runner.Start(Collections.singletonList(executable.getAbsolutePath()), getFilesDir(),
+            new File(getFilesDir(), "server.log"), new ServerProcess.Listener()
+            {
+                @Override public void Ready()
+                {
+                    handler.post(() ->
+                    {
+                        if (session != generation || stopping || !active)
+                        {
+                            return;
+                        }
+                        hosting = true;
+                        status = "Hosting";
+                        if (FunnelSettings.IsEnabled(ServerService.this))
+                        {
+                            try
+                            {
+                                StartFunnel(session, settings);
+                            }
+                            catch (Exception error)
+                            {
+                                funnelFailure = "Could not start Funnel: " + error.getMessage();
+                                runner.Stop();
+                            }
+                        }
+                        UpdateNotification();
+                    });
+                }
+
+                @Override public void Finished(int code, String error)
+                {
+                    handler.post(() ->
+                    {
+                        if (session != generation)
+                        {
+                            return;
+                        }
+                        Finish(stopping ? "Stopped" : !funnelFailure.isEmpty() ? funnelFailure
+                            : "Server stopped unexpectedly. Open View log for details.");
+                        if (error != null)
+                        {
+                            AppendError(error);
+                        }
+                    });
+                }
+            });
+    }
+
+    private void StartFunnel(int session, JSONObject settings)
+    {
+        status = "Connecting Tailscale";
+        funnel.Start(new File(getApplicationInfo().nativeLibraryDir, "liblemon-funnel.so"), getFilesDir(),
+            settings.optInt("http_port", 8080), settings.optInt("websocket_port", 1111), new FunnelProcess.Listener()
+            {
+                @Override public void Update(String type, String value)
+                {
+                    handler.post(() ->
+                    {
+                        if (session != generation || stopping || !active)
+                        {
+                            return;
+                        }
+                        if (type.equals("login"))
+                        {
+                            funnelLogin = value;
+                            status = "Sign in to Tailscale";
+                        }
+                        else if (type.equals("ready"))
+                        {
+                            funnelLogin = "";
+                            funnelAddress = value;
+                            status = "Hosting publicly";
+                        }
+                        else if (type.equals("status"))
+                        {
+                            status = value;
+                        }
+                        else if (type.equals("error"))
+                        {
+                            funnelFailure = "Funnel: " + value;
+                            funnelAddress = "";
+                            funnel.Stop();
+                            runner.Stop();
+                        }
+                        UpdateNotification();
+                    });
+                }
+
+                @Override public void Finished()
+                {
+                    handler.post(() ->
+                    {
+                        if (session == generation && active && !stopping)
+                        {
+                            funnelAddress = "";
+                            if (funnelFailure.isEmpty())
+                            {
+                                funnelFailure = "Tailscale stopped. Start hosting again to reconnect.";
+                            }
+                            runner.Stop();
+                        }
+                    });
+                }
+            });
     }
 
     private void AppendError(String message)
@@ -145,6 +265,9 @@ public class ServerService extends Service
 
     private void Finish(String message)
     {
+        funnel.Stop();
+        funnelAddress = "";
+        funnelLogin = "";
         status = message;
         active = false;
         hosting = false;
@@ -171,7 +294,7 @@ public class ServerService extends Service
     {
         NotificationManager manager = getSystemService(NotificationManager.class);
         manager.createNotificationChannel(
-            new NotificationChannel(CHANNEL, "LAN server", NotificationManager.IMPORTANCE_LOW));
+            new NotificationChannel(CHANNEL, "Chat server", NotificationManager.IMPORTANCE_LOW));
         PendingIntent open =
             PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class),
                                       PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
@@ -196,12 +319,16 @@ public class ServerService extends Service
 
     @Override public void onDestroy()
     {
+        boolean wasActive = active;
         ++generation;
+        funnel.Stop();
         runner.Stop();
+        funnelAddress = "";
+        funnelLogin = "";
         ReleaseLocks();
         active = false;
         hosting = false;
-        if ("Hosting".equals(status) || "Starting…".equals(status) || stopping)
+        if (wasActive || stopping)
         {
             status = "Stopped";
         }

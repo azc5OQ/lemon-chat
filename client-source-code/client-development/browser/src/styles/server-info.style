@@ -1,4 +1,165 @@
-/* Server details use the current theme's colors and fit narrow description panels. */
+/* Status panels use the active theme's fonts and colors. */
+:root #current-client-description,
+:root #current-channel-description
+{
+    box-sizing: border-box;
+    padding: 10px;
+    color: var(--set-text, inherit);
+    font: 400 12px/1.4 var(--set-font, sans-serif);
+    font-style: normal;
+    text-align: left;
+    word-break: normal;
+    overflow-wrap: anywhere;
+    overflow-y: auto;
+}
+
+:root #current-client-avatar
+{
+    box-sizing: border-box;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    margin: 0;
+    font-size: 20px;
+    line-height: 40px;
+}
+
+:root .client-profile-header
+{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+:root .client-profile-identity
+{
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+:root #current-client-description .client-profile-identity > p
+{
+    margin: 0;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-shadow: none;
+    text-align: left;
+}
+
+:root #current-client-description-meta
+{
+    opacity: 0.78;
+    font-size: 12px;
+}
+
+:root #current-client-description #current-client-description-client-name
+{
+    margin: 0 0 2px;
+    font-size: 14px;
+    font-family: var(--chat-author-font, var(--set-font, sans-serif));
+    font-weight: var(--chat-author-weight, 600);
+    line-height: 1.4;
+}
+
+:root .client-status-details
+{
+    margin: 8px 0 0;
+    font: inherit;
+}
+
+:root .client-status-details > div,
+:root #root-server-info dl > div
+{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2px 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid currentColor;
+    border-color: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+:root .client-status-details dt,
+:root #root-server-info dt
+{
+    opacity: 0.78;
+    font-weight: 400;
+    white-space: nowrap;
+}
+
+:root .client-status-details dd,
+:root #root-server-info dd
+{
+    min-width: 0;
+    margin: 0;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+
+:root #root-server-info
+{
+    padding: 0;
+    font: inherit;
+}
+
+:root #current-channel-description .channel-description-text
+{
+    margin-top: 8px;
+    font: inherit;
+    text-align: left;
+}
+
+:root #current-client-description-groups
+{
+    margin: 0;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+}
+
+:root #current-client-description-groups .client-description-group-heading
+{
+    margin: 8px 0 2px;
+    font-size: 12px;
+    font-weight: 500;
+    opacity: 0.78;
+}
+
+:root #current-client-description-groups .client-description-group-entry
+{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 0;
+    margin-right: 0;
+    min-width: 0;
+    max-width: 100%;
+    text-align: left;
+}
+
+:root #current-client-description-groups .client-description-group-entry > span
+{
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+:root .client-description-group-entry img
+{
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+}
+
+:root .client-status-details > [hidden],
+:root .client-info-row[hidden]
+{
+    display: none;
+}
+
 .server-info-summary
 {
     padding: 8px;
@@ -115,8 +276,6 @@
     gap: 8px;
     min-height: 30px;
     padding: 0 4px 0 10px;
-    border-bottom: 1px solid var(--set-line, #555);
-    background: var(--set-panel-2, var(--set-panel, #2f3136));
     cursor: move;
     user-select: none;
 }
@@ -137,42 +296,6 @@
     line-height: 30px;
     letter-spacing: normal;
     text-align: left;
-}
-
-#server-info-header .close-button
-{
-    position: relative;
-    inset: auto;
-    display: grid;
-    place-items: center;
-    flex: 0 0 auto;
-    float: none;
-    width: 24px;
-    height: 24px;
-    margin: 0;
-    padding: 0 !important;
-    margin-left: auto;
-    border: 0;
-    border-radius: var(--set-radius, 4px);
-    background: transparent;
-    box-shadow: none;
-    color: var(--set-muted, #bbb);
-    font: 13px/1 sans-serif;
-}
-
-#server-info-header .close-button::before
-{
-    content: "\2715";
-    position: static;
-    display: block;
-    line-height: 1;
-    color: inherit;
-}
-
-#server-info-header .close-button:hover
-{
-    background: var(--set-danger-soft, #683535);
-    color: var(--set-danger-strong, #ffb6af);
 }
 
 #server-info-body
@@ -243,4 +366,54 @@
 {
     min-height: 1.2em;
     font-size: 0.9em;
+}
+
+:root #current-client-description-client-name
+{
+    font-family: var(--chat-author-font, var(--set-font, sans-serif));
+}
+
+:root #current-client-description-client-name .client-profile-self-label
+{
+    color: var(--set-muted, inherit);
+    font-size: 0.85em;
+    font-weight: 400;
+    font-style: normal;
+    white-space: nowrap;
+}
+
+
+/* Public keys wrap within the client window instead of determining its width. */
+:root #client-info-enter
+{
+    box-sizing: border-box;
+    width: 560px;
+    min-width: 0;
+    max-width: calc(100vw - 32px);
+}
+
+:root #client-info-content
+{
+    min-width: 0;
+    max-height: calc(100vh - 120px);
+    overflow: auto;
+}
+
+:root #client-info-content .client-info-row,
+:root #client-info-content .client-info-row > span:not(.client-info-label)
+{
+    min-width: 0;
+}
+
+:root #client-info-content .client-info-row > span:not(.client-info-label)
+{
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+
+:root #client-info-content #client-info-identity
+{
+    text-align: left;
+    user-select: text;
 }

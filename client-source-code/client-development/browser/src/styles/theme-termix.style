@@ -36,7 +36,7 @@ body {
     margin: 0;
     overflow: hidden;
     color: var(--tmx-text);
-    font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-family: var(--set-font);
     font-size: 14px;
     background: var(--tmx-main);
 }
@@ -763,10 +763,36 @@ div#image-upload-preview {
 /* this theme's --set-* dialog palette, because layout.style lays out and paints every dialog from these variables */
 :root
 {
-    --context-menu-icon-display: none;
-    --context-menu-text-padding: 10px;
+    --context-menu-icon-display: block;
+    --context-menu-text-padding: 33px;
+    --context-menu-icon-left: 8px;
+    --menu-icon-create-channel: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M8%203H3v14h14v-5M14%201v8m-4-4h8M6%208h3M6%2012h6%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-delete: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%205h14M7%205V2h6v3M5%205l1%2013h8l1-13M8%208v7m4-7v7%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-edit: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m3%2013%2010-10%204%204L7%2017l-5%201%201-5ZM11%205l4%204%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-join: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M11%203h6v14h-6M2%2010h11M9%206l4%204-4%204%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-ignore: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2210%22%20cy%3D%2210%22%20r%3D%227.5%22%2F%3E%3Cpath%20d%3D%22m5%205%2010%2010%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-mute: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%207h3l5-4v14l-5-4H3V7Zm11%201%204%204m0-4-4%204%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-group: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%227%22%20cy%3D%226%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M1%2017v-2a6%206%200%200%201%2012%200v2M13%203a3%203%200%200%201%200%206M15%2011a4%204%200%200%201%204%204v2%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-info: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2210%22%20cy%3D%2210%22%20r%3D%227.5%22%2F%3E%3Cpath%20d%3D%22M10%209v6m0-10v.5%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-poke: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M7%2010V4a2%202%200%200%201%204%200v5l4%201a3%203%200%200%201%202%203l-1%205H7L3%2012a2%202%200%200%201%203-2l1%201M15%203l2-2m-2%205h3%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-username: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%225%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M1%2015v-2a5%205%200%200%201%209-3m0%206%206-6%203%203-6%206h-3v-3Z%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-avatar: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2216%22%20height%3D%2216%22%20rx%3D%222%22%2F%3E%3Ccircle%20cx%3D%2210%22%20cy%3D%227%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M4%2018v-1a6%206%200%200%201%2012%200v1%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-call: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m5%202%203%204-2%203a13%2013%200%200%200%205%205l3-2%204%203-2%203C9%2019%201%2011%202%204l3-2Z%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-kick: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M9%203H3v14h6M9%2010h9m-4-4%204%204-4%204%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-ban: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2210%22%20cy%3D%2210%22%20r%3D%227.5%22%2F%3E%3Cpath%20d%3D%22m5%205%2010%2010%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-music-create: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M8%2014V4l9-2v10M8%207l9-2%22%2F%3E%3Cellipse%20cx%3D%225%22%20cy%3D%2215%22%20rx%3D%223%22%20ry%3D%222%22%2F%3E%3Cellipse%20cx%3D%2214%22%20cy%3D%2213%22%20rx%3D%223%22%20ry%3D%222%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-music-settings: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M7%2014V3l8-1v8M7%206l8-1%22%2F%3E%3Cellipse%20cx%3D%224%22%20cy%3D%2215%22%20rx%3D%223%22%20ry%3D%222%22%2F%3E%3Ccircle%20cx%3D%2214%22%20cy%3D%2214%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M14%2010V9m0%2010v-1m4-4h1m-10%200h1m1-3-1-1m7%207%201%201m-1-7%201-1m-7%207-1%201%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-avatar-delete: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2216%22%20height%3D%2216%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22m6%206%208%208m0-8-8%208%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-volume: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M2%207h4l5-4v14l-5-4H2V7Zm12-1a6%206%200%200%201%200%208m2-11a10%2010%200%200%201%200%2014%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-register: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%227%22%20cy%3D%226%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M1%2017v-2a6%206%200%200%201%2010-4m1%204%202%202%205-6%22%2F%3E%3C%2Fsvg%3E");
+    --menu-icon-server-info: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2216%22%20height%3D%226%22%20rx%3D%221%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%2212%22%20width%3D%2216%22%20height%3D%226%22%20rx%3D%221%22%2F%3E%3Cpath%20d%3D%22M5%205h.5M5%2015h.5M9%205h6m-6%2010h6%22%2F%3E%3C%2Fsvg%3E");
 
-    --set-font: 'Segoe UI', 'Raleway', sans-serif;
+    --client-self-color: #b5a3ff;
+    --client-unread-bg: #d49a56;
+    --client-unread-color: #241a10;
+    --client-unread-border: #e6b579;
+    --client-unread-radius: 6px;
+    --set-font: "Inter", "Segoe UI", sans-serif;
     --set-panel: var(--tmx-sidebar);
     --set-text: var(--tmx-text);
     --set-muted: var(--tmx-muted);
@@ -855,30 +881,65 @@ div#image-upload-preview {
 #android-settings-button { display: none; }
 #toggle-microphone { position: absolute; display: none; }
 #microphone-push-to-talk-button-touch-device { display: none; }
-#toggle-microphone-label {
+#toggle-microphone-label
+{
     display: none;
     position: fixed;
     bottom: 12px;
     left: 12px;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    border: 1px solid var(--tmx-line);
-    background-color: var(--tmx-sidebar);
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: 24px 24px;
-    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAELklEQVRoQ+2ZWehOXRTGf+hDuJIpmVKUJIUiY9wRMpRMFy58hogoZUgk04WUqQyJEqJMZSgy9hlKXBK5+MgsuVDm0KN9tJ3/Gfbe55z3f2PdvO85Z++1n2fvtddae+0GlC/DgOmAftsDDYHnwDVgL3C9zCEblKisFbAPGJ2j8xTwL/CmjLHLItAFuAh0dQT1PzAc0G8hKYNAC+AG0MsTyX2gH/DBs98fzcsgsA5YHghiPbAisO+vbkUJNAdeAfoNkRdAB+B7QufWwDjgYNYqFSUwFtCmDBGZjjb85YTObc37HuZX7RJNrSiBZYDMwFdcwUd6RTKRRFECm4FFnuh9wUfqZwF74mMVJbAFWOBBIBS8PJYCY53YUUsCAj8GuJRAuI153zPh2wMTM7Th60itCFQCvgw36mJClYGvBYFKwVdNoHLwVRKoCfiqCNQMvCuBf4AdQB9gFXDG8mXxTRzq5+8BI0xepYi7GrgLzAO+ZsUZFzc6BThklCiQyGdHYhMIBS8/ryClpFCiMXQ4kkwFDhcloEgroJHYpCMCoWYjnVuBhZb+H9Z/vdf3VHFZgTwCMwMjbASqXglsBM4HpAf2jFZOYDaw0xpRm/qbeW6Wkqfb+XyWBejbJmCJadQY+Gx1mBsbu44uFxPSqeiE1VPgXmeg8gEvNQIvEpKOwBNL90TgeNE90B+4ZSmRx1CNJ0l8wUuH3Gd0KhsA3LQUDwH+K0qgpZnxRsZcpFQ+Oi4h4LWSOhNHvn4psMEo1jm5XV79yMWEpE8z3tfxDJtn8/Z3ebht1gtV7Qaa5zum7JKpz5WAIqKiZd4B3Af8BWCU5RAEXOYSYXIqubgSSAMWYjbSpUKYUoZ3RrFwaJUHm+cvQLfYhk7EUIRACHgBk8momGW7SxXGVCCLZBcwx2U5QwlkgdcBfD8wCOgMKDV4amb4KPA4BkyuUu9VxZa8BXoDz6oiEHwATwCkUsl2QMFRIrLjfYplviuQNfPxrDJrArUySkMmxxqtBVa6zHzUxodAns3LvmUKB4ArgJ5tUZqgIDgBmAE0jX3XWWOND3i1dSWQBz4+rgLTQxMAZR4yu04JoNXvI7A4L+dJI+ZCIG/D6pJipO/MmfYqcilZfBTYP3cF8sDrlkUnqaHAfEDV6iY5YOQ+laDtBq6ajRuKP5OAK3h7cN0TyM7lBuXHZTYSuU7l/UoPlEe9D0Yc65hmQrpc0OyoPh8X+flo5rNwnLVM65xJG8rC/VtPGgHdImqJQ8GrX70S0EnrtJnpiITrzEft65WAQNgkksDLZ0+yomh8tZTLS4dEVYuXKfYjl3vE1Jy8TSzPjQrANOBk7GCh69Hb3qNld5BObXIvySOQpkwX20odFF3LEEXt7gmJXq7uUAJSHKUF8ZQgd9BYg0/AsYxzdqa+IgR8gVbS/i+BSqbVQ+lPvaMNQOE4cEcAAAAASUVORK5CYII=);
+    width: 40px;
+    height: 40px;
+    box-sizing: border-box;
+    border-radius: 12px;
+    --tmx-mic-background: var(--tmx-sidebar);
+    border: 1px solid var(--tmx-accent);
+    background: var(--tmx-mic-background);
+    color: var(--tmx-accent);
     cursor: pointer;
     z-index: 250;
-    transition: background-color 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
-#toggle-microphone-label:hover {
-    background-color: var(--tmx-hover);
+
+#toggle-microphone-label::before
+{
+    content: "";
+    position: absolute;
+    inset: 9px;
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='12' rx='3'/%3E%3Cpath d='M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6'/%3E%3C/svg%3E") center / contain no-repeat;
 }
-#toggle-microphone:checked ~ #toggle-microphone-label {
-    background-color: var(--tmx-green);
-    border-color: var(--tmx-green);
+
+#toggle-microphone:not(:checked) ~ #toggle-microphone-label::after
+{
+    content: "";
+    position: absolute;
+    top: 19px;
+    left: 8px;
+    width: 24px;
+    height: 2px;
+    border-radius: 1px;
+    background: currentColor;
+    box-shadow: 0 -2px var(--tmx-mic-background);
+    transform: rotate(-45deg);
+}
+
+#toggle-microphone-label:hover
+{
+    --tmx-mic-background: #302b57;
+    color: #c9c1ff;
+}
+
+#toggle-microphone:checked ~ #toggle-microphone-label
+{
+    --tmx-mic-background: var(--tmx-accent);
+    color: var(--tmx-darkest);
+    border-color: var(--tmx-accent);
+}
+
+#toggle-microphone:checked ~ #toggle-microphone-label:hover
+{
+    --tmx-mic-background: #a397ff;
+    border-color: #a397ff;
 }
 .add-group-context-menu { display: none; }
 .collapsed { display: none !important; }
@@ -928,10 +989,11 @@ div#image-upload-preview {
     opacity: 0.85;
 }
 
-.connected-client {
+.connected-client
+{
     overflow: hidden;
     margin: 0 8px 0 16px;
-    padding: 2px 6px;
+    padding: 3px 6px;
     border-radius: 4px;
     min-height: 0;
     line-height: 20px;
@@ -1112,7 +1174,14 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
 }
 .context-menu-item,
 .channel-list-context-menu-items p, .channel-list-context-menu-items label,
-.chat-input-container-context-menu-items p, .chat-input-container-context-menu-items label {
+.chat-input-container-context-menu-items p, .chat-input-container-context-menu-items label
+{
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 32px;
+    margin: 0;
+    line-height: 20px;
     color: var(--tmx-text) !important;
     border-radius: 4px;
     padding: 6px 10px;
@@ -1124,6 +1193,16 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
 .chat-input-container-context-menu-items p:hover {
     background: var(--tmx-accent);
     color: #ffffff !important;
+}
+
+:root .channel-list-context-menu-items .context-menu-item::before
+{
+    background-image: none;
+    background-color: currentColor;
+    mask-image: var(--context-menu-icon, linear-gradient(transparent, transparent));
+    mask-size: contain;
+    mask-position: center;
+    mask-repeat: no-repeat;
 }
 
 #space-devider-42 { background: var(--tmx-sidebar); padding-top: 6px; }
@@ -1340,9 +1419,10 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
 }
 
 
-.member-list-client .client-groups {
-    margin-left: auto;
-    float: none;
+/* Membership badges belong in the tree and client details, not this compact roster. */
+:root #member-list-body .member-list-client .client-groups
+{
+    display: none;
 }
 #member-list-empty {
     padding: 6px 14px;
@@ -1423,7 +1503,13 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
     max-height: 280px;
     overflow-y: auto;
 }
-.chat-message-context-menu-items p, .add-group-context-menu-items p {
+.chat-message-context-menu-items p, .add-group-context-menu-items p
+{
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 32px;
+    margin: 0;
+    line-height: 20px;
     color: var(--tmx-text) !important;
     display: block;
     padding: 6px 10px;
@@ -2155,7 +2241,8 @@ input[type="radio"] {
     transform: scale(0.92);
 }
 
-.chat-message-context-menu-items p, .add-group-context-menu-items p {
+.chat-message-context-menu-items p, .add-group-context-menu-items p
+{
     transition: background-color 0.12s ease, color 0.12s ease, transform 0.08s ease;
 }
 .chat-message-context-menu-items p:active, .add-group-context-menu-items p:active {
@@ -2278,7 +2365,7 @@ input[type="radio"] {
     padding: 0 10px;
     border-radius: 6px;
     color: var(--tmx-text);
-    font: 500 13px "Segoe UI", sans-serif;
+    font: 500 13px var(--set-font);
 }
 
 #choose-theme-button-list
@@ -2376,7 +2463,8 @@ input[type="radio"] {
 
 .single-server-message
 {
-    margin: 12px 20px;
+    margin: 12px clamp(8px, 2.5%, 20px);
+    padding-inline: clamp(8px, 2.5%, 20px);
     font-size: 12px;
     font-style: normal;
     color: var(--tmx-muted);
@@ -2428,10 +2516,10 @@ input[type="radio"] {
     animation: none;
 }
 
-.member-list-client
+:root .member-list-client
 {
     min-height: 40px;
-    margin: 2px 6px;
+    margin: 3px 6px;
     padding: 5px 8px;
     border-radius: 5px;
 }
@@ -2484,7 +2572,7 @@ input[type="radio"] {
     min-height: 0;
     padding: 10px 0;
     margin: 0;
-    font: 14px/1.5 "Segoe UI", sans-serif;
+    font: 14px/1.5 var(--set-font);
     resize: none;
 }
 
@@ -2553,7 +2641,7 @@ input[type="radio"] {
     border-radius: 4px;
     color: #ffffff;
     background: var(--tmx-accent);
-    font: 600 13px "Segoe UI", sans-serif;
+    font: 600 13px var(--set-font);
     transform: none;
     box-shadow: none;
 }
@@ -2722,7 +2810,12 @@ input[type="radio"] {
     --reaction-panel: var(--tmx-sidebar);
     --reaction-radius: 7px;
     --reaction-shadow: none;
-    --reaction-font: "Segoe UI", sans-serif;
+    --reaction-font: var(--set-font);
+    --chat-author-font: "Inter", "Segoe UI", sans-serif;
+    --chat-author-weight: 600;
+    --chat-meta-font: "Inter", system-ui, sans-serif;
+    --chat-meta-size: 11px;
+    --chat-edited-color: #a8a4bb;
     --chat-author-size: 13px;
     --chat-author-color: #a4bee9;
     --chat-local-author-color: #8bceb9;
@@ -2738,18 +2831,6 @@ input[type="radio"] {
     border-color: var(--tmx-line);
     border-radius: 9px;
     box-shadow: 0 5px 16px #080e1d66;
-}
-
-:root .chat-message-tools::before
-{
-    content: "";
-    display: block;
-    flex: 0 0 26px;
-    width: 26px;
-    height: 26px;
-    margin: 0 4px 0 1px;
-    border-radius: 50%;
-    background: var(--tmx-active) var(--reaction-person-icon) center / 19px no-repeat;
 }
 
 :root .chat-message-tools > button,
@@ -2822,24 +2903,36 @@ input[type="radio"] {
 :root .single-chat-message .chat-message-avatar
 {
     position: absolute;
-    top: 0;
+    top: 1px;
     left: 0;
-    width: 40px;
-    height: 40px;
+    width: 38px;
+    height: 38px;
     margin: 0;
+}
+
+:root .single-chat-message .chat-message-avatar-placeholder
+{
+    background: var(--tmx-accent);
+    color: #fff;
+    font-size: 14px;
 }
 
 :root .single-chat-message :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container):has(> .chat-message-avatar)
 {
     position: relative;
     min-height: 20px;
-    padding-left: 46px;
+    padding-left: 50px;
+}
+
+:root .single-message-content:has(> :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container) > .chat-message-avatar)
+{
+    min-height: 38px;
 }
 
 :root .single-message-content:has(> :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container) > .chat-message-avatar) > .single-chat-message-content
 {
-    margin-left: 46px;
-    max-width: calc(100% - 46px);
+    margin-left: 50px;
+    max-width: calc(100% - 50px);
 }
 
 :root .chat-reply-quote
@@ -2864,9 +2957,9 @@ input[type="radio"] {
 
 :root .single-message-content:has(> .single-chat-message-content > .chat-reply-quote):has(.chat-message-avatar)
 {
-    --tmx-reply-content-inset: 46px;
-    --tmx-reply-quote-inset: 46px;
-    --tmx-reply-connector-left: -26px;
+    --tmx-reply-content-inset: 50px;
+    --tmx-reply-quote-inset: 50px;
+    --tmx-reply-connector-left: -31px;
 }
 
 :root .single-message-content:has(> .single-chat-message-content > .chat-reply-quote) > :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container)
@@ -2941,7 +3034,7 @@ input[type="radio"] {
     width: 21px;
     height: 21px;
     border-radius: 50%;
-    background: var(--tmx-active) var(--reaction-person-icon) center / 16px no-repeat;
+    background: var(--tmx-active) var(--chat-reply-avatar, var(--reaction-person-icon)) center / var(--chat-reply-avatar-size, 16px) no-repeat;
 }
 
 :root #chat-reply-preview
@@ -2957,11 +3050,28 @@ input[type="radio"] {
     color: var(--reaction-accent);
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup)
 {
     --groups-radius: 6px;
     --groups-title-background: var(--tmx-darkest);
+    --groups-title-shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.25);
     --groups-list-background: var(--tmx-main);
     --groups-shadow: 0 12px 36px #0008;
     --groups-option-background: var(--tmx-input);
+}
+
+:where(body, button, input, select, textarea)
+{
+    font-family: var(--set-font);
+}
+
+:root #member-list-body .member-list-client
+{
+    --client-unread-margin: 0;
+}
+
+/* This roster shows connected members; saved offline identities belong to contact views. */
+:root #member-list-body > .member-list-client.offline-contact
+{
+    display: none;
 }

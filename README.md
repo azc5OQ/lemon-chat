@@ -33,6 +33,7 @@
 
 ## How to start the server:
 
+- for all server and client builds, supported platforms and processor choices, see [What you can build](docs/building.md)
 - clone the repository and run `windows_build_script.bat` or `linux_build_script.sh` from `server-source-code`
 - or download a prebuilt release
 - watch `how-to-build-and-use-video.mkv`, included in the repository
@@ -42,6 +43,19 @@
 ## How to start the client:
 
 - open `client.html` in your browser
+
+## Documentation
+
+- [Administration](docs/administration.md): admin login, managing the server, saving changes and backups, with screenshots.
+- [Server settings](docs/server-settings.md): server options, feature controls and limits.
+- [Permissions](docs/permissions.md): the complete permission lists, groups, powers and protection values.
+- [Channels](docs/channels.md): creating and editing channels, membership, audio and video.
+- [Encryption](docs/encryption.md): how encryption works in detail.
+- [JSON messages](docs/messages.md): request, reply and response bodies, fields and examples.
+- [WebRTC](docs/webrtc.md): how audio and video connections work and why WebRTC is optional.
+- [Building](docs/building.md): supported platforms, build tools and commands.
+
+See the [documentation index](docs/README.md) for all guides.
 
 
 
@@ -76,7 +90,9 @@
 I made this chat to be similar to TeamSpeak and Mumble, which you can see in the interface.<br>
 Voice chat is optional and can be enabled by the admin in each channel. Text, pictures, and audio sent between users are end-to-end encrypted.<br>
 This chat does not rely on TLS/SSL alone. Messages are encrypted between users even when TLS/SSL is not used, and the server relays them without having the keys to read them.<br>
-WebSocket is used for text and pictures. Audio and video can use either WebSocket or WebRTC DataChannel. Only the DataChannel part of WebRTC is used; clients connect to the server, not to each other, so they do not share their IP addresses with other users through WebRTC.<br>
+WebSocket is used for text and pictures. Audio and video can use either WebSocket or WebRTC DataChannel. WebRTC is optional, and the server can choose WebSocket only.<br>
+Clients connect to the server, not to each other, so they do not share their IP addresses with other users through WebRTC.<br>
+Lemon Chat runs its own STUN service using Violet. See [WebRTC in Lemon Chat](docs/webrtc.md) for how WebRTC was added for voice, how its DataChannels work, and why it is now optional.<br>
 The `client.html` file has everything embedded in it. Open it in your browser, enter the server's IP address and port, and connect. It can also be packaged into a desktop app using a tool like Electron if needed.<br>
 The server should be easy to build if the correct build tools are installed. The C/C++ libraries needed to build it are already included in this repository.<br>
 Use the `.bat` build script on Windows or the `.sh` script for your system.
@@ -160,5 +176,3 @@ Base64 by zhicheng -> https://github.com/zhicheng/base64
 stunnel -> https://www.stunnel.org/
 <br>
 OpenSSL -> https://www.openssl.org/
-
-

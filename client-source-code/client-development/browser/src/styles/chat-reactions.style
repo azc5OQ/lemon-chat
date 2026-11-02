@@ -9,7 +9,7 @@
     max-width: 100%;
     padding-inline-end: 0.5em;
     color: var(--chat-author-color, var(--reaction-accent));
-    font-family: var(--reaction-font, sans-serif) !important;
+    font-family: var(--chat-author-font, var(--reaction-font, sans-serif)) !important;
     font-size: var(--chat-author-size, 13px) !important;
     font-weight: 600;
     font-style: normal;
@@ -38,8 +38,8 @@
     max-width: 100%;
     margin: 0;
     color: var(--chat-meta-color, var(--reaction-text));
-    font: 400 11px/1.45 var(--reaction-font, sans-serif);
-    font-variant-numeric: tabular-nums;
+    font: 400 var(--chat-meta-size, 11px)/1.45 var(--chat-meta-font, var(--reaction-font, sans-serif));
+    font-variant-numeric: lining-nums tabular-nums;
     letter-spacing: normal;
     vertical-align: baseline;
     white-space: nowrap;
@@ -232,8 +232,7 @@
     flex: 0 0 17px;
 }
 
-.chat-message-tools .chat-reply-button span,
-.chat-message-menu .chat-reply-button span
+.chat-message-tools .chat-reply-button span
 {
     display: none;
 }

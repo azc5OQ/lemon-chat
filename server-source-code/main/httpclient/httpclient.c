@@ -1,3 +1,4 @@
+#include "../clib/clib.h"
 // This file helps provide URL previews when a client posts a website link in
 // chat. The feature must be enabled in the server settings. The server uses
 // this code to request the page and read the website's response, so the preview
@@ -212,7 +213,7 @@ httpclient_error_t _httpclient_internal__append(http_buffer_t* buffer, const voi
     }
     if (size != 0)
     {
-        memcpy(buffer->data + buffer->size, data, size);
+        clib__memcpy(buffer->data + buffer->size, data, size);
     }
     buffer->size += size;
     buffer->data[buffer->size] = 0;
@@ -232,7 +233,7 @@ static void _httpclient_internal__consume(http_buffer_t* buffer, uint size)
     buffer->size -= size;
     if (buffer->size != 0)
     {
-        memmove(buffer->data, buffer->data + size, buffer->size);
+        clib__memmove(buffer->data, buffer->data + size, buffer->size);
     }
     if (buffer->data != NULL)
     {
@@ -426,7 +427,7 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t* parser, h
     {
         return HTTPCLIENT_MEMORY;
     }
-    memcpy(response->headers, text, size);
+    clib__memcpy(response->headers, text, size);
     response->headers[size] = 0;
     response->status_code = status;
     parser->remaining = content_length;
@@ -717,7 +718,7 @@ httpclient_error_t httpclient__parse_url(const char* url, httpclient_url_t* pars
     {
         return HTTPCLIENT_ARGUMENT;
     }
-    memset(parsed, 0, sizeof(*parsed));
+    clib__memset(parsed, 0, sizeof(*parsed));
     char* host = parsed->host;
     char* port = parsed->port;
     char* target = parsed->target;
@@ -761,7 +762,7 @@ httpclient_error_t httpclient__parse_url(const char* url, httpclient_url_t* pars
     {
         return HTTPCLIENT_ARGUMENT;
     }
-    memcpy(host, url + start, end - start);
+    clib__memcpy(host, url + start, end - start);
     host[end - start] = 0;
     if (*ipv6)
     {
@@ -783,7 +784,7 @@ httpclient_error_t httpclient__parse_url(const char* url, httpclient_url_t* pars
             }
         }
     }
-    memcpy(port, parsed->is_https ? "443" : "80", parsed->is_https ? 4 : 3);
+    clib__memcpy(port, parsed->is_https ? "443" : "80", parsed->is_https ? 4 : 3);
     if (end < length && url[end] == ':')
     {
         port_start = ++end;
@@ -797,7 +798,7 @@ httpclient_error_t httpclient__parse_url(const char* url, httpclient_url_t* pars
         {
             return HTTPCLIENT_ARGUMENT;
         }
-        memcpy(port, url + port_start, port_end - port_start);
+        clib__memcpy(port, url + port_start, port_end - port_start);
         port[port_end - port_start] = 0;
     }
     if (end < length && url[end] != '/' && url[end] != '?')
@@ -809,7 +810,7 @@ httpclient_error_t httpclient__parse_url(const char* url, httpclient_url_t* pars
     {
         target[index++] = '/';
     }
-    memcpy(target + index, url + end, length - end);
+    clib__memcpy(target + index, url + end, length - end);
     target[index + length - end] = 0;
     return HTTPCLIENT_OK;
 }
@@ -835,7 +836,7 @@ void httpclient__response_free(httpclient_response_t* response)
     {
         free(response->body);
     }
-    memset(response, 0, sizeof(*response));
+    clib__memset(response, 0, sizeof(*response));
 }
 
 /**
@@ -862,7 +863,7 @@ httpclient_error_t httpclient__request(const httpclient_request_t* request, http
     {
         return HTTPCLIENT_ARGUMENT;
     }
-    memset(response, 0, sizeof(*response));
+    clib__memset(response, 0, sizeof(*response));
     if (request == NULL || request->url == NULL || (request->body_size != 0 && request->body == NULL)
         || request->body_size > BODY_LIMIT_MAX || request->max_response_bytes > BODY_LIMIT_MAX)
     {

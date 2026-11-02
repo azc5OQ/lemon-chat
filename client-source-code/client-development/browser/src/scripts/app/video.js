@@ -95,6 +95,13 @@ var video_throughput_timer = null;
 var video_pump_timer = null;
 var video_pump_is_rvfc = false;
 var video_is_pumping = false;
+var video_capture_reader = null;
+var video_capture_track = null;
+var video_capture_generation = 0;
+var video_pump_callback = null;
+var video_pump_schedule = 0;
+var video_last_presented_frames = null;
+var video_next_capture_ms = 0;
 var video_last_keyframe_request_sent_ms = 0;
 var video_is_worker_canvas_transferred = false;
 var video_popup_drag = null;               // { start_x, start_y, left, top } while the header is dragged
@@ -832,12 +839,135 @@ function video__on_stream_confirmed()
     }
 
     video_is_pumping = true;
-    video__schedule_next_frame();
+    video__start_frame_capture();
     video__refresh_controls();
 }
 
 /**
- * @brief schedules the next frame pull: the video element's own frame callback where it exists, a timer at the target rate otherwise
+ * @brief Reads source frames without tying streaming to preview repaint callbacks.
+ * @return Promise resolves when capture ends or falls back to the video element.
+ */
+async function video__start_frame_capture()
+{
+    video__stop_frame_capture();
+    let generation = video_capture_generation;
+    let preview = document.getElementById("video-stream-preview");
+    let reader = null;
+    let track = null;
+
+    if (typeof MediaStreamTrackProcessor === "function")
+    {
+        try
+        {
+            if (video_source_media_stream != null)
+            {
+                track = video_source_media_stream.getVideoTracks()[0].clone();
+            }
+            else if (typeof preview.captureStream === "function")
+            {
+                let stream = preview.captureStream();
+                track = stream.getVideoTracks()[0];
+                for (let unused of stream.getTracks())
+                {
+                    if (unused !== track)
+                    {
+                        unused.stop();
+                    }
+                }
+            }
+            if (track != null)
+            {
+                reader = new MediaStreamTrackProcessor({ track: track, maxBufferSize: 1 }).readable.getReader();
+                video_capture_track = track;
+                video_capture_reader = reader;
+                while (video_is_pumping && generation === video_capture_generation)
+                {
+                    let result = await reader.read();
+                    if (result.done)
+                    {
+                        break;
+                    }
+                    try
+                    {
+                        if (video_is_pumping && generation === video_capture_generation)
+                        {
+                            video__pump_frame(performance.now(), { mediaTime: result.value.timestamp / 1000000 }, result.value);
+                        }
+                    }
+                    finally
+                    {
+                        result.value.close();
+                    }
+                }
+            }
+        }
+        catch (capture_error)
+        {
+            if (generation === video_capture_generation)
+            {
+                console.log("source frame capture unavailable: " + capture_error.message);
+            }
+        }
+        finally
+        {
+            if (track != null)
+            {
+                track.stop();
+            }
+            if (reader != null)
+            {
+                await reader.cancel().catch(function()
+                {
+                });
+                reader.releaseLock();
+            }
+            if (generation === video_capture_generation)
+            {
+                video_capture_track = null;
+                video_capture_reader = null;
+            }
+        }
+    }
+    if (generation === video_capture_generation && video_is_pumping)
+    {
+        video_last_source_time = null;
+        video__schedule_next_frame();
+    }
+}
+
+/**
+ * @brief Releases only capture-owned tracks and invalidates callbacks from an earlier stream.
+ */
+function video__stop_frame_capture()
+{
+    video_capture_generation++;
+    video_pump_schedule++;
+    clearTimeout(video_pump_timer);
+    video_pump_timer = null;
+    let preview = document.getElementById("video-stream-preview");
+    if (video_pump_callback != null && typeof preview.cancelVideoFrameCallback === "function")
+    {
+        preview.cancelVideoFrameCallback(video_pump_callback);
+    }
+    video_pump_callback = null;
+    if (video_capture_reader != null)
+    {
+        video_capture_reader.cancel().catch(function()
+        {
+        });
+        video_capture_reader = null;
+    }
+    if (video_capture_track != null)
+    {
+        video_capture_track.stop();
+        video_capture_track = null;
+    }
+    video_last_presented_frames = null;
+    video_next_capture_ms = 0;
+}
+
+/**
+ * @brief Uses preview notifications with a timer fallback when repaint callbacks are delayed.
  *
  * @return void
  */
@@ -845,20 +975,44 @@ function video__schedule_next_frame()
 {
     let preview = document.getElementById("video-stream-preview");
 
-    if (video_is_pumping == false)
+    if (video_is_pumping == false || video_capture_reader != null)
     {
         return;
     }
 
-    if (typeof preview.requestVideoFrameCallback === "function")
+    let schedule = video_pump_schedule;
+    function pull(now, metadata, from_preview)
     {
-        video_pump_is_rvfc = true;
-        preview.requestVideoFrameCallback(video__pump_frame);
+        if (schedule !== video_pump_schedule || !video_is_pumping)
+        {
+            return;
+        }
+        if (from_preview)
+        {
+            video_pump_callback = null;
+        }
+        else
+        {
+            video_pump_timer = null;
+        }
+        video__pump_frame(now, metadata);
     }
-    else
+    video_pump_is_rvfc = typeof preview.requestVideoFrameCallback === "function";
+    // The timer must not cancel a real frame notification that is about to arrive.
+    // Both drivers share the frame/rate checks, and stopping invalidates both.
+    if (video_pump_is_rvfc && video_pump_callback == null)
     {
-        video_pump_is_rvfc = false;
-        video_pump_timer = setTimeout(function() { video__pump_frame(performance.now(), null); }, 1000 / g_video_stream.fps);
+        video_pump_callback = preview.requestVideoFrameCallback(function(now, metadata)
+        {
+            pull(now, metadata, true);
+        });
+    }
+    if (video_pump_timer == null)
+    {
+        video_pump_timer = setTimeout(function()
+        {
+            pull(performance.now(), { mediaTime: preview.currentTime }, false);
+        }, 1000 / g_video_stream.fps);
     }
 }
 
@@ -870,7 +1024,7 @@ function video__schedule_next_frame()
  *
  * @return void
  */
-function video__pump_frame(now, metadata)
+function video__pump_frame(now, metadata, source_frame)
 {
     let preview = document.getElementById("video-stream-preview");
     let frame = null;
@@ -884,13 +1038,31 @@ function video__pump_frame(now, metadata)
         return;
     }
 
-    // Use the video's frame time. Browser callbacks can run late and then close together.
-    if (video_pump_is_rvfc && metadata && video_last_source_time !== null
+    // Track timestamps identify actual source pictures. The preview fallback uses one
+    // clock because currentTime and repaint metadata can describe different pictures.
+    if (source_frame != null && metadata && video_last_source_time !== null
         && metadata.mediaTime >= video_last_source_time
         && (metadata.mediaTime - video_last_source_time) * 1000 < min_interval_ms - 0.5)
     {
         video__schedule_next_frame();
         return;
+    }
+    if (source_frame == null && now + 1 < video_next_capture_ms)
+    {
+        video__schedule_next_frame();
+        return;
+    }
+
+    let presented = null;
+    if (source_frame == null && typeof preview.getVideoPlaybackQuality === "function")
+    {
+        let quality = preview.getVideoPlaybackQuality();
+        presented = quality.totalVideoFrames - quality.droppedVideoFrames;
+        if (presented > 0 && presented === video_last_presented_frames)
+        {
+            video__schedule_next_frame();
+            return;
+        }
     }
 
     is_busy = video_transport__buffered_amount() > video__send_buffer_limit()
@@ -907,7 +1079,12 @@ function video__pump_frame(now, metadata)
     {
         timestamp_us = Math.round(now * 1000);
 
-        if (preview.videoWidth != g_video_stream.width || preview.videoHeight != g_video_stream.height)
+        if (source_frame != null)
+        {
+            // WebCodecs scales the source frame to the configured encoder dimensions.
+            frame = new VideoFrame(source_frame, { timestamp: timestamp_us });
+        }
+        else if (preview.videoWidth != g_video_stream.width || preview.videoHeight != g_video_stream.height)
         {
             if (video_scale_canvas == null)
             {
@@ -942,6 +1119,8 @@ function video__pump_frame(now, metadata)
 
         video_last_encoded_ms = now;
         video_last_source_time = metadata ? metadata.mediaTime : null;
+        video_last_presented_frames = presented;
+        video_next_capture_ms = Math.max(video_next_capture_ms + min_interval_ms, now);
     }
     catch (frame_error)
     {
@@ -1300,6 +1479,7 @@ function video__stop_stream(tell_server, reason)
     let was_streaming = (g_video_stream.role == "streamer" || g_video_stream.is_start_pending == true);
 
     video_is_pumping = false;
+    video__stop_frame_capture();
     video_sender_generation++;
     video_pending_encryption = false;
     video_pending_picture = null;

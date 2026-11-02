@@ -8,8 +8,7 @@
 #include "../base.h"
 
 #include "../memory_manager.h"
-#include "../clib/clib_memory.h"
-#include "../clib/clib_string.h"
+#include "../clib/clib.h"
 #include "../util.h"
 #include "audio_channel.h"
 #include "../audio_websocket.h"
@@ -185,18 +184,18 @@ boole server_admin__add_ban(char* ip_address, char* country_iso_code, char* iden
     clib__null_memory(&g_ban_array[free_index], sizeof(ban_entry_t));
     g_ban_array[free_index].is_existing = TRUE;
     g_ban_array[free_index].timestamp_banned = util__get_timestamp_ms();
-    clib__copy_memory(ip_address, &g_ban_array[free_index].ip_address[0], clib__utf8_string_length(ip_address), BAN_IP_MAX_LENGTH - 1);
+    clib__string_copy(g_ban_array[free_index].ip_address, sizeof(g_ban_array[free_index].ip_address), ip_address);
     if (country_iso_code != NULL_POINTER)
     {
-        clib__copy_memory(country_iso_code, &g_ban_array[free_index].country_iso_code[0], clib__utf8_string_length(country_iso_code), COUNTRY_ISO_CODE_LENGTH - 1);
+        clib__string_copy(g_ban_array[free_index].country_iso_code, sizeof(g_ban_array[free_index].country_iso_code), country_iso_code);
     }
     if (identity != NULL_POINTER)
     {
-        clib__copy_memory(identity, &g_ban_array[free_index].identity[0], clib__utf8_string_length(identity), MAX_PUBLIC_KEY_LENGTH - 1);
+        clib__string_copy(g_ban_array[free_index].identity, sizeof(g_ban_array[free_index].identity), identity);
     }
     if (extra_data != NULL_POINTER)
     {
-        clib__copy_memory(extra_data, &g_ban_array[free_index].extra_data[0], clib__utf8_string_length(extra_data), BAN_EXTRA_DATA_MAX_LENGTH - 1);
+        clib__string_copy(g_ban_array[free_index].extra_data, sizeof(g_ban_array[free_index].extra_data), extra_data);
     }
 
     return TRUE;
@@ -341,7 +340,7 @@ static boole _server_admin_internal__is_png_banner_header_valid(const ubyte* ima
     uint width = 0;
     uint height = 0;
 
-    if (length < 33 || memcmp(image, signature, sizeof(signature)) != 0 || image[8] != 0 || image[9] != 0 || image[10] != 0 || image[11] != 13 || memcmp(image + 12, "IHDR", 4) != 0)
+    if (length < 33 || clib__memcmp(image, signature, sizeof(signature)) != 0 || image[8] != 0 || image[9] != 0 || image[10] != 0 || image[11] != 13 || clib__memcmp(image + 12, "IHDR", 4) != 0)
     {
         return FALSE;
     }
@@ -424,7 +423,7 @@ static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte* im
     uint width = 0;
     uint height = 0;
 
-    if (length < 20 || memcmp(image, "RIFF", 4) != 0 || memcmp(image + 8, "WEBP", 4) != 0)
+    if (length < 20 || clib__memcmp(image, "RIFF", 4) != 0 || clib__memcmp(image + 8, "WEBP", 4) != 0)
     {
         return FALSE;
     }
@@ -434,7 +433,7 @@ static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte* im
     {
         return FALSE;
     }
-    if (memcmp(image + 12, "VP8 ", 4) == 0)
+    if (clib__memcmp(image + 12, "VP8 ", 4) == 0)
     {
         if (chunk_length < 10 || (image[20] & 1) != 0 || image[23] != 0x9d || image[24] != 0x01 || image[25] != 0x2a)
         {
@@ -443,7 +442,7 @@ static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte* im
         width = ((uint)image[26] | ((uint)image[27] << 8)) & 0x3fff;
         height = ((uint)image[28] | ((uint)image[29] << 8)) & 0x3fff;
     }
-    else if (memcmp(image + 12, "VP8L", 4) == 0)
+    else if (clib__memcmp(image + 12, "VP8L", 4) == 0)
     {
         if (chunk_length < 5 || image[20] != 0x2f || (image[24] >> 5) != 0)
         {
@@ -452,7 +451,7 @@ static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte* im
         width = 1 + (((uint)image[21] | ((uint)image[22] << 8)) & 0x3fff);
         height = 1 + ((uint)(image[22] >> 6) | ((uint)image[23] << 2) | ((uint)(image[24] & 0x0f) << 10));
     }
-    else if (memcmp(image + 12, "VP8X", 4) == 0)
+    else if (clib__memcmp(image + 12, "VP8X", 4) == 0)
     {
         if (chunk_length != 10 || (image[20] & 0xc1) != 0 || image[21] != 0 || image[22] != 0 || image[23] != 0)
         {
@@ -503,17 +502,17 @@ boole server_admin__is_server_banner_valid(cstring banner)
     {
         return FALSE;
     }
-    if (strncmp(banner, "data:image/png;base64,", sizeof("data:image/png;base64,") - 1) == 0)
+    if (clib__strncmp(banner, "data:image/png;base64,", sizeof("data:image/png;base64,") - 1) == 0)
     {
         prefix_length = sizeof("data:image/png;base64,") - 1;
         image_type = 1;
     }
-    else if (strncmp(banner, "data:image/jpeg;base64,", sizeof("data:image/jpeg;base64,") - 1) == 0)
+    else if (clib__strncmp(banner, "data:image/jpeg;base64,", sizeof("data:image/jpeg;base64,") - 1) == 0)
     {
         prefix_length = sizeof("data:image/jpeg;base64,") - 1;
         image_type = 2;
     }
-    else if (strncmp(banner, "data:image/webp;base64,", sizeof("data:image/webp;base64,") - 1) == 0)
+    else if (clib__strncmp(banner, "data:image/webp;base64,", sizeof("data:image/webp;base64,") - 1) == 0)
     {
         prefix_length = sizeof("data:image/webp;base64,") - 1;
         image_type = 3;
@@ -538,7 +537,7 @@ boole server_admin__is_server_banner_valid(cstring banner)
     }
     for (index = 0; index < payload_length - padding; index++)
     {
-        symbol = strchr(alphabet, payload[index]);
+        symbol = clib__strchr(alphabet, payload[index]);
         if (symbol == NULL_POINTER)
         {
             return FALSE;
@@ -657,7 +656,7 @@ boole server_admin__allow_admin_password_attempt(char* ip_address, uint64 now)
             }
             continue;
         }
-        if (strcmp(entry->ip_address, ip_address) == 0)
+        if (clib__strcmp(entry->ip_address, ip_address) == 0)
         {
             if (entry->attempts >= ADMIN_PASSWORD_ATTEMPTS_PER_MINUTE)
             {
@@ -673,7 +672,7 @@ boole server_admin__allow_admin_password_attempt(char* ip_address, uint64 now)
     {
         return FALSE;
     }
-    snprintf(available->ip_address, sizeof(available->ip_address), "%s", ip_address);
+    clib__string_format(available->ip_address, sizeof(available->ip_address), "%s", ip_address);
     available->window_started_ms = now;
     available->attempts = 1;
     return TRUE;

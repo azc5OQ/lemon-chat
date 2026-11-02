@@ -137,12 +137,9 @@ if (stored_key_code > 0) { g_push_to_talk_key_code = stored_key_code; }
 if (stored_key_label) { g_push_to_talk_key_label = stored_key_label; }
 
 /**
- * @brief the sender header of one message: an optional avatar and the name, tagged with the sender id so a rename can find and retag old messages
- *
- * @param number|null sender_client_id -> the sender, null for an untagged header
- * @param string display_name_html -> the name, already sanitized
- *
- * @return string the header html
+ * @brief Builds the sender name and an optional picture or initials circle.
+ * @param sender_client_id Sender ID, or null for an untagged header.
+ * @param display_name_html Escaped display name.
  */
 function android_host__generate_message_sender_html(sender_client_id, display_name_html)
 {
@@ -154,13 +151,91 @@ function android_host__generate_message_sender_html(sender_client_id, display_na
 
         if (sender != null && typeof sender.base64_avatar === "string" && sender.base64_avatar.length > 0)
         {
-            avatar_html = "<img class=\"chat-message-avatar\" src=\"" + sender.base64_avatar + "\">";
+            avatar_html = "<img class=\"chat-message-avatar\" alt=\"\" src=\"" + chat__sanitize_string(sender.base64_avatar) + "\">";
+        }
+        else
+        {
+            let initials = sender != null ? chat__sanitize_string(UI.initials_for_name(sender.username)) : "?";
+            avatar_html = '<span class="chat-message-avatar chat-message-avatar-placeholder" aria-hidden="true">' + initials + '</span>';
         }
     }
 
     let id_attribute = (sender_client_id != null) ? (" data-sender-id=\"" + sender_client_id + "\"") : "";
 
     return avatar_html + "<p" + id_attribute + ">" + display_name_html + "</p>";
+}
+
+/**
+ * @brief Updates message avatars after an image arrives or the display setting changes.
+ * @param number|undefined sender_client_id -> The sender to update, or all senders when omitted.
+ * @return void
+ */
+function android_host__refresh_message_avatars(sender_client_id)
+{
+    if (G_HAS_DOM == false)
+    {
+        return;
+    }
+
+    document.body.classList.toggle("message-avatars-hidden", !g_show_message_avatars);
+
+    let names = document.querySelectorAll('.single-message-content > :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container) > p[data-sender-id]');
+    for (let name of names)
+    {
+        let client_id = name.getAttribute("data-sender-id");
+        if (sender_client_id != null && String(sender_client_id) !== client_id)
+        {
+            continue;
+        }
+
+        let sender = channel_tree__get_client_by_client_id(Number(client_id));
+        let avatar = name.parentElement.querySelector(".chat-message-avatar");
+        if (g_show_message_avatars == false)
+        {
+            if (avatar != null)
+            {
+                avatar.remove();
+            }
+            continue;
+        }
+        if (sender == null)
+        {
+            continue;
+        }
+        let has_picture = typeof sender.base64_avatar === "string" && sender.base64_avatar.length > 0;
+        let tag = has_picture ? "IMG" : "SPAN";
+        if (avatar != null && avatar.tagName !== tag)
+        {
+            avatar.remove();
+            avatar = null;
+        }
+        if (avatar == null)
+        {
+            avatar = document.createElement(tag);
+            avatar.className = has_picture ? "chat-message-avatar" : "chat-message-avatar chat-message-avatar-placeholder";
+            avatar.setAttribute("aria-hidden", "true");
+            if (has_picture)
+            {
+                avatar.alt = "";
+            }
+            name.before(avatar);
+        }
+        if (has_picture)
+        {
+            if (avatar.getAttribute("src") !== sender.base64_avatar)
+            {
+                avatar.src = sender.base64_avatar;
+            }
+        }
+        else
+        {
+            avatar.textContent = UI.initials_for_name(sender.username);
+        }
+    }
+    if (typeof chat_replies__refresh_avatars === "function")
+    {
+        chat_replies__refresh_avatars(sender_client_id);
+    }
 }
 
 /**
@@ -179,6 +254,7 @@ function android_host__retag_rendered_messages_of_sender(sender_client_id, displ
     {
         name_nodes[i].textContent = display_name;
     }
+    android_host__refresh_message_avatars(sender_client_id);
 }
 
 /**

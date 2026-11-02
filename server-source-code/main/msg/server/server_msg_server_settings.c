@@ -1,3 +1,4 @@
+#include "../../clib/clib.h"
 // This file sends server settings, public server information, banners and changes to server rules.
 
 #include "server_msg.h"
@@ -69,6 +70,7 @@ void server_msg__server_settings__send_to_single_client(client_t* receiver, bool
     }
     cJSON_AddNumberToObject(message, "used_slots", (double)used_slots);
     cJSON_AddNumberToObject(message, "max_slots", (double)g_server_settings.max_client_count);
+    cJSON_AddNumberToObject(message, "reserved_slots", (double)g_server_settings.reserved_slots);
     if (memory_only)
     {
         cJSON_AddBoolToObject(message, "memory_only", TRUE);

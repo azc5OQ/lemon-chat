@@ -1,0 +1,19 @@
+@_GLES3_RENDERER_INTERNAL__GLSL_VERSION@
+precision highp float;
+in vec4  v_color;
+in vec2  v_local;
+in vec2  v_rect_size;
+in float v_radius;
+out vec4 o_color;
+
+@RENDERER_SDF_ROUND_BOX_GLSL@
+
+void main()
+{
+    vec2 half_size = v_rect_size * 0.5;
+    vec2 p = v_local - half_size;
+    float d = sd_round_box(p, half_size, v_radius);
+    float aa = 1.0 - smoothstep(@RENDERER_SDF_AA_MIN@, @RENDERER_SDF_AA_MAX@, d);
+    if (aa <= 0.0) discard;
+    o_color = vec4(v_color.rgb, v_color.a * aa);
+}

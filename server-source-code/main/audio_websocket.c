@@ -158,11 +158,11 @@ static boole _audio_websocket_internal__issue_session(client_t* client)
     // the client gets both values as hex text inside an encrypted chat message
     for (i = 0; i < sizeof(session->auth_key); i++)
     {
-        snprintf(key_hex + i * 2, 3, "%02x", session->auth_key[i]);
+        clib__string_format(key_hex + i * 2, 3, "%02x", session->auth_key[i]);
     }
     for (i = 0; i < sizeof(session->ticket); i++)
     {
-        snprintf(ticket_hex + i * 2, 3, "%02x", session->ticket[i]);
+        clib__string_format(ticket_hex + i * 2, 3, "%02x", session->ticket[i]);
     }
     root = cJSON_CreateObject();
     message = cJSON_AddObjectToObject(root, "message");
@@ -182,7 +182,7 @@ static boole _audio_websocket_internal__issue_session(client_t* client)
             DBG_AUDIO_WEBSOCKET log_info("%s %s %llu", "audio", "websocket session issued to client", client->client_id);
         }
         // the key was in the plaintext: set to zero before the memory is given back
-        mbedtls_platform_zeroize(plaintext, strlen(plaintext));
+        mbedtls_platform_zeroize(plaintext, clib__strlen(plaintext));
         cJSON_free(plaintext);
     }
     cJSON_Delete(root);
@@ -235,7 +235,7 @@ static uint64 _audio_websocket_internal__attach(ws_cli_conn_t* socket, const uns
     // the acknowledgement: the ticket and an authentication code over it, so the client knows the server
     // that answers is the one that issued the session
     acknowledgement[0] = 2;
-    memcpy(acknowledgement + 1, session->ticket, 16);
+    clib__memcpy(acknowledgement + 1, session->ticket, 16);
     if (_audio_websocket_internal__authentication_code(&session->receive_mac, acknowledgement, 17, acknowledgement + 17) == FALSE)
     {
         return UINT64_MAX;

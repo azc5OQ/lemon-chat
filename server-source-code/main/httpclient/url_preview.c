@@ -1,3 +1,4 @@
+#include "../clib/clib.h"
 // This file creates the URL preview shown when a client posts a website link
 // in chat. The feature must be enabled in the server settings. It finds the
 // page's title, description, site name and picture so the client can display
@@ -40,7 +41,7 @@ static void _url_preview_internal__text(const char* source, size_t length, char*
 static void _url_preview_internal__choose(char* output, size_t capacity, const char* value, int priority, int* previous);
 static void _url_preview_internal__remove_directory_steps(char* url);
 static int _url_preview_internal__header(const char* headers, const char* name, char* output, size_t capacity);
-static int _url_preview_internal__download(char* url, unsigned int limit, httpclient_response_t* response);
+static int _url_preview_internal__download(char* url, size_t url_capacity, unsigned int limit, httpclient_response_t* response);
 
 /**
  * @brief Checks whether two strings contain the same text, ignoring uppercase and lowercase letters.
@@ -54,7 +55,7 @@ static int _url_preview_internal__same(const char* left, const char* right)
 {
     while (*left && *right)
     {
-        if (tolower((unsigned char)*left++) != tolower((unsigned char)*right++))
+        if (clib__tolower((unsigned char)*left++) != clib__tolower((unsigned char)*right++))
         {
             return 0;
         }
@@ -74,7 +75,7 @@ static int _url_preview_internal__starts_with(const char* text, const char* pref
 {
     while (*prefix)
     {
-        if (tolower((unsigned char)*text++) != tolower((unsigned char)*prefix++))
+        if (clib__tolower((unsigned char)*text++) != clib__tolower((unsigned char)*prefix++))
         {
             return 0;
         }
@@ -92,12 +93,12 @@ static int _url_preview_internal__starts_with(const char* text, const char* pref
  */
 static const char* _url_preview_internal__find(const char* text, const char* wanted)
 {
-    size_t size = strlen(wanted);
+    size_t size = clib__strlen(wanted);
     for (; *text; text++)
     {
         size_t index = 0;
         while (index < size && text[index]
-            && tolower((unsigned char)text[index]) == tolower((unsigned char)wanted[index]))
+            && clib__tolower((unsigned char)text[index]) == clib__tolower((unsigned char)wanted[index]))
         {
             index++;
         }
@@ -125,7 +126,7 @@ static void _url_preview_internal__copy(char* output, size_t capacity, const cha
     {
         length = capacity - 1;
     }
-    memcpy(output, text, length);
+    clib__memcpy(output, text, length);
     output[length] = 0;
 }
 
@@ -166,33 +167,33 @@ static void _url_preview_internal__text(const char* source, size_t length, char*
                     char* tail = NULL;
                     int hexadecimal = entity[1] == 'x' || entity[1] == 'X';
                     const char* digits = entity + (hexadecimal ? 2 : 1);
-                    decoded = strtoul(digits, &tail, hexadecimal ? 16 : 10);
+                    decoded = clib__strtoul(digits, &tail, hexadecimal ? 16 : 10);
                     if (tail == digits || *tail != 0)
                     {
                         decoded = 0;
                     }
                 }
-                else if (!strcmp(entity, "amp"))
+                else if (!clib__strcmp(entity, "amp"))
                 {
                     decoded = '&';
                 }
-                else if (!strcmp(entity, "lt"))
+                else if (!clib__strcmp(entity, "lt"))
                 {
                     decoded = '<';
                 }
-                else if (!strcmp(entity, "gt"))
+                else if (!clib__strcmp(entity, "gt"))
                 {
                     decoded = '>';
                 }
-                else if (!strcmp(entity, "quot"))
+                else if (!clib__strcmp(entity, "quot"))
                 {
                     decoded = '"';
                 }
-                else if (!strcmp(entity, "apos") || !strcmp(entity, "#39"))
+                else if (!clib__strcmp(entity, "apos") || !clib__strcmp(entity, "#39"))
                 {
                     decoded = '\'';
                 }
-                else if (!strcmp(entity, "nbsp"))
+                else if (!clib__strcmp(entity, "nbsp"))
                 {
                     decoded = ' ';
                 }
@@ -259,7 +260,7 @@ static void _url_preview_internal__text(const char* source, size_t length, char*
         {
             break;
         }
-        memcpy(output + written, bytes, count);
+        clib__memcpy(output + written, bytes, count);
         written += count;
     }
     if (written && output[written - 1] == ' ')
@@ -284,7 +285,7 @@ static void _url_preview_internal__choose(char* output, size_t capacity, const c
 {
     if (value[0] && priority > *previous)
     {
-        _url_preview_internal__text(value, strlen(value), output, capacity);
+        _url_preview_internal__text(value, clib__strlen(value), output, capacity);
         if (output[0])
         {
             *previous = priority;
@@ -308,11 +309,11 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
     int description_priority = 0;
     int image_priority = 0;
     const char* cursor = html;
-    while ((cursor = strchr(cursor, '<')) != NULL)
+    while ((cursor = clib__strchr(cursor, '<')) != NULL)
     {
-        if (!strncmp(cursor, "<!--", 4))
+        if (!clib__strncmp(cursor, "<!--", 4))
         {
-            cursor = strstr(cursor + 4, "-->");
+            cursor = clib__strstr(cursor + 4, "-->");
             if (cursor == NULL)
             {
                 break;
@@ -330,7 +331,7 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
             continue;
         }
         const char* name_start = cursor;
-        while (isalnum((unsigned char)*cursor))
+        while (clib__isalnum((unsigned char)*cursor))
         {
             cursor++;
         }
@@ -343,7 +344,7 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
         // order. Read each quoted value before looking for the next attribute.
         while (*cursor && *cursor != '>')
         {
-            while (isspace((unsigned char)*cursor) || *cursor == '/')
+            while (clib__isspace((unsigned char)*cursor) || *cursor == '/')
             {
                 cursor++;
             }
@@ -352,13 +353,13 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
                 break;
             }
             const char* attribute_start = cursor;
-            while (*cursor && !isspace((unsigned char)*cursor) && *cursor != '=' && *cursor != '>')
+            while (*cursor && !clib__isspace((unsigned char)*cursor) && *cursor != '=' && *cursor != '>')
             {
                 cursor++;
             }
             char attribute[64];
             _url_preview_internal__copy(attribute, sizeof(attribute), attribute_start, (size_t)(cursor - attribute_start));
-            while (isspace((unsigned char)*cursor))
+            while (clib__isspace((unsigned char)*cursor))
             {
                 cursor++;
             }
@@ -367,13 +368,13 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
                 continue;
             }
             cursor++;
-            while (isspace((unsigned char)*cursor))
+            while (clib__isspace((unsigned char)*cursor))
             {
                 cursor++;
             }
             char quote = *cursor == '"' || *cursor == '\'' ? *cursor++ : 0;
             const char* value = cursor;
-            while (*cursor && (quote ? *cursor != quote : !isspace((unsigned char)*cursor) && *cursor != '>'))
+            while (*cursor && (quote ? *cursor != quote : !clib__isspace((unsigned char)*cursor) && *cursor != '>'))
             {
                 cursor++;
             }
@@ -441,7 +442,7 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
             }
             else if (_url_preview_internal__same(key, "og:site_name"))
             {
-                _url_preview_internal__text(content, strlen(content), preview->site_name, sizeof(preview->site_name));
+                _url_preview_internal__text(content, clib__strlen(content), preview->site_name, sizeof(preview->site_name));
             }
         }
     }
@@ -460,9 +461,9 @@ void url_preview__read_html(const char* html, url_preview_t* preview)
  */
 static void _url_preview_internal__remove_directory_steps(char* url)
 {
-    char* authority = strstr(url, "://") + 3;
-    char* path = strchr(authority, '/');
-    char* query = strchr(authority, '?');
+    char* authority = (char*)clib__strstr(url, "://") + 3;
+    char* path = (char*)clib__strchr(authority, '/');
+    char* query = (char*)clib__strchr(authority, '?');
     if (path == NULL || (query != NULL && query < path))
     {
         return;
@@ -473,7 +474,7 @@ static void _url_preview_internal__remove_directory_steps(char* url)
     while (read < end)
     {
         size_t remaining = (size_t)(end - read);
-        if ((remaining >= 3 && !strncmp(read, "/./", 3)) || (remaining == 2 && !strncmp(read, "/.", 2)))
+        if ((remaining >= 3 && !clib__strncmp(read, "/./", 3)) || (remaining == 2 && !clib__strncmp(read, "/.", 2)))
         {
             read += 2;
             if (read == end)
@@ -481,7 +482,7 @@ static void _url_preview_internal__remove_directory_steps(char* url)
                 *write++ = '/';
             }
         }
-        else if ((remaining >= 4 && !strncmp(read, "/../", 4)) || (remaining == 3 && !strncmp(read, "/..", 3)))
+        else if ((remaining >= 4 && !clib__strncmp(read, "/../", 4)) || (remaining == 3 && !clib__strncmp(read, "/..", 3)))
         {
             read += 3;
             while (write > path && write[-1] != '/')
@@ -506,7 +507,7 @@ static void _url_preview_internal__remove_directory_steps(char* url)
             }
         }
     }
-    memmove(write, end, strlen(end) + 1);
+    clib__memmove(write, end, clib__strlen(end) + 1);
 }
 
 /**
@@ -538,11 +539,11 @@ int url_preview__absolute_url(const char* base, const char* reference, char* out
     int written;
     if (_url_preview_internal__starts_with(clean, "http://") || _url_preview_internal__starts_with(clean, "https://"))
     {
-        written = snprintf(output, capacity, "%s", clean);
+        written = clib__string_format(output, capacity, "%s", clean);
     }
     else if (clean[0] == '/' && clean[1] == '/')
     {
-        written = snprintf(output, capacity, "%s:%s", parsed.is_https ? "https" : "http", clean);
+        written = clib__string_format(output, capacity, "%s:%s", parsed.is_https ? "https" : "http", clean);
     }
     else
     {
@@ -552,19 +553,17 @@ int url_preview__absolute_url(const char* base, const char* reference, char* out
         {
             return 0;
         }
-        char* query = strchr(parsed.target, '?');
+        char* query = (char*)clib__strchr(parsed.target, '?');
         if (query != NULL && clean[0] != 0)
         {
             *query = 0;
         }
         if (clean[0] != '/' && clean[0] != '?' && clean[0] != 0)
         {
-            char* slash = strrchr(parsed.target, '/');
+            char* slash = (char*)clib__strrchr(parsed.target, '/');
             slash[1] = 0;
         }
-        written = snprintf(output, capacity, "%s://%s%s%s:%s%s%s", parsed.is_https ? "https" : "http",
-            parsed.is_ipv6 ? "[" : "", parsed.host, parsed.is_ipv6 ? "]" : "", parsed.port,
-            clean[0] == '/' ? "" : parsed.target, clean);
+        written = clib__string_format(output, capacity, "%s://%s%s%s:%s%s%s", parsed.is_https ? "https" : "http", parsed.is_ipv6 ? "[" : "", parsed.host, parsed.is_ipv6 ? "]" : "", parsed.port, clean[0] == '/' ? "" : parsed.target, clean);
     }
     if (written <= 0 || (unsigned int)written >= capacity || httpclient__parse_url(output, &parsed) != HTTPCLIENT_OK)
     {
@@ -587,12 +586,12 @@ int url_preview__absolute_url(const char* base, const char* reference, char* out
 static int _url_preview_internal__header(const char* headers, const char* name, char* output, size_t capacity)
 {
     output[0] = 0;
-    const char* line = strstr(headers, "\r\n");
+    const char* line = clib__strstr(headers, "\r\n");
     while (line != NULL && line[2])
     {
         line += 2;
-        const char* end = strstr(line, "\r\n");
-        const char* colon = strchr(line, ':');
+        const char* end = clib__strstr(line, "\r\n");
+        const char* colon = clib__strchr(line, ':');
         if (end == NULL)
         {
             break;
@@ -604,11 +603,11 @@ static int _url_preview_internal__header(const char* headers, const char* name, 
             if (_url_preview_internal__same(field, name))
             {
                 const char* value = colon + 1;
-                while (value < end && isspace((unsigned char)*value))
+                while (value < end && clib__isspace((unsigned char)*value))
                 {
                     value++;
                 }
-                while (end > value && isspace((unsigned char)end[-1]))
+                while (end > value && clib__isspace((unsigned char)end[-1]))
                 {
                     end--;
                 }
@@ -637,7 +636,7 @@ static int _url_preview_internal__header(const char* headers, const char* name, 
  *
  * @return int -> 1 when a usable response was received, otherwise 0
  */
-static int _url_preview_internal__download(char* url, unsigned int limit, httpclient_response_t* response)
+static int _url_preview_internal__download(char* url, size_t url_capacity, unsigned int limit, httpclient_response_t* response)
 {
     const httpclient_header_t headers[] =
     {
@@ -674,7 +673,7 @@ static int _url_preview_internal__download(char* url, unsigned int limit, httpcl
         {
             return 0;
         }
-        strcpy(url, next);
+        clib__string_copy(url, url_capacity, next);
     }
     return 0;
 }
@@ -691,18 +690,18 @@ static int _url_preview_internal__download(char* url, unsigned int limit, httpcl
  */
 int url_preview__resolve(const char* url, url_preview_t* preview)
 {
-    memset(preview, 0, sizeof(*preview));
-    if (url == NULL || strlen(url) > 2048)
+    clib__memset(preview, 0, sizeof(*preview));
+    if (url == NULL || clib__strlen(url) > 2048)
     {
         return 0;
     }
-    strcpy(preview->url, url);
+    clib__string_copy(preview->url, sizeof(preview->url), url);
     httpclient_response_t response = {0};
-    int success = _url_preview_internal__download(preview->url, PREVIEW_PAGE_LIMIT, &response);
+    int success = _url_preview_internal__download(preview->url, sizeof(preview->url), PREVIEW_PAGE_LIMIT, &response);
     char content_type[128];
     if (success && _url_preview_internal__header(response.headers, "Content-Type", content_type, sizeof(content_type)))
     {
-        char* separator = strchr(content_type, ';');
+        char* separator = (char*)clib__strchr(content_type, ';');
         if (separator != NULL)
         {
             *separator = 0;
@@ -728,11 +727,11 @@ int url_preview__resolve(const char* url, url_preview_t* preview)
     {
         return 1;
     }
-    if (_url_preview_internal__download(image_url, PREVIEW_IMAGE_LIMIT, &response))
+    if (_url_preview_internal__download(image_url, sizeof(image_url), PREVIEW_IMAGE_LIMIT, &response))
     {
         const char* mime = NULL;
         const unsigned char* bytes = response.body;
-        if (response.body_size >= 8 && !memcmp(bytes, "\x89PNG\r\n\x1a\n", 8))
+        if (response.body_size >= 8 && !clib__memcmp(bytes, "\x89PNG\r\n\x1a\n", 8))
         {
             mime = "image/png";
         }
@@ -740,11 +739,11 @@ int url_preview__resolve(const char* url, url_preview_t* preview)
         {
             mime = "image/jpeg";
         }
-        else if (response.body_size >= 6 && (!memcmp(bytes, "GIF87a", 6) || !memcmp(bytes, "GIF89a", 6)))
+        else if (response.body_size >= 6 && (!clib__memcmp(bytes, "GIF87a", 6) || !clib__memcmp(bytes, "GIF89a", 6)))
         {
             mime = "image/gif";
         }
-        else if (response.body_size >= 12 && !memcmp(bytes, "RIFF", 4) && !memcmp(bytes + 8, "WEBP", 4))
+        else if (response.body_size >= 12 && !clib__memcmp(bytes, "RIFF", 4) && !clib__memcmp(bytes + 8, "WEBP", 4))
         {
             mime = "image/webp";
         }
@@ -754,7 +753,7 @@ int url_preview__resolve(const char* url, url_preview_t* preview)
             preview->image_data = malloc(capacity);
             if (preview->image_data != NULL)
             {
-                int prefix = snprintf(preview->image_data, capacity, "data:%s;base64,", mime);
+                int prefix = clib__string_format(preview->image_data, capacity, "data:%s;base64,", mime);
                 size_t written = 0;
                 if (mbedtls_base64_encode((unsigned char*)preview->image_data + prefix, capacity - (size_t)prefix,
                     &written, response.body, response.body_size) != 0)
@@ -779,5 +778,5 @@ int url_preview__resolve(const char* url, url_preview_t* preview)
 void url_preview__free(url_preview_t* preview)
 {
     free(preview->image_data);
-    memset(preview, 0, sizeof(*preview));
+    clib__memset(preview, 0, sizeof(*preview));
 }

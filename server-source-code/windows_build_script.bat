@@ -8,6 +8,8 @@ setlocal EnableExtensions DisableDelayedExpansion
 :: The bootstrap offers to download missing tools. Git for Windows is needed
 :: for the optional stunnel build; its Bash and Perl are selected explicitly.
 :: Stop the server before copying a new EXE or DLL into buildresult.
+:: Browser output prompts for minified/unminified. Set LEMON_CLIENT_BUILD_MODE to skip that prompt.
+:: Example: set "LEMON_CLIENT_BUILD_MODE=minified" (or unminified).
 
 :: =============================================================================
 :: SETUP | Paths and build options
@@ -23,6 +25,13 @@ set "SERVER_BUILD_DIRECTORY=%ROOT_DIRECTORY%build\windows"
 set "THIRD_PARTY_DIRECTORY=%ROOT_DIRECTORY%third-party"
 set "CMAKE_MAKE_PROGRAM=%MINGWPATH%\ninja.exe"
 SET "PATH=%MINGWPATH%;%PATH%"
+
+where node >nul 2>nul
+if errorlevel 1 (
+    echo Node.js is required for the browser client. Install it from https://nodejs.org/
+    echo Optional minification: npm install --global terser
+    exit /b 1
+)
 
 :: third-party projects still declare ancient cmake_minimum_required versions; CMake 4
 :: refuses those outright unless this floor is set (same fix the linux script uses)
@@ -159,7 +168,7 @@ set "PATH=%TOOLDOWNLOADS%\cmake-%CMAKE_VERSION%-windows-x86_64\bin;%PATH%"
 
 :bootstrap_have_cmake
 
-:: ---- Python (needed before configuring Mbed TLS, and later for client.html) ----
+:: ---- Python (needed before configuring Mbed TLS) ----
 call :find_python
 if defined PYTHON_EXECUTABLE goto bootstrap_have_python
 
@@ -496,9 +505,9 @@ copy "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a" "%ROOT_DIRECTORY%\main\li
 :: CLIENT | Generate the browser page
 :: =============================================================================
 
-:: Build the page with the Python checked above. Stop if it fails, so an old page is not shipped.
+:: Build with installed Node.js. Stop on failure so an old page is not shipped.
 echo Building the browser client client.html ...
-"%PYTHON_EXECUTABLE%" "%ROOT_DIRECTORY%\..\client-source-code\client-development\browser\build.py"
+node "%ROOT_DIRECTORY%\..\client-source-code\client-development\browser\build.cjs"
 if errorlevel 1 goto build_failed
 
 :: =============================================================================

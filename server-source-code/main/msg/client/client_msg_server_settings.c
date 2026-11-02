@@ -15,8 +15,7 @@
 #include "../../base.h"
 #include "../../util.h"
 #include "../../memory_manager.h"
-#include "../../clib/clib_string.h"
-#include "../../clib/clib_memory.h"
+#include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 
 // declarations
@@ -56,6 +55,7 @@ static boole _client_msg_server_settings_internal__is_save_server_settings_reque
 void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 sender_client_id)
 {
     uint64 now;
+    uint64 previous_reserved_slots = 0;
     uint64 i;
     boole status = FALSE;
     boole does_sender_have_permission_to_save_settings = FALSE;
@@ -106,7 +106,7 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
     does_sender_have_permission_to_save_settings = base__is_client_valid_admin(sender_client_id);
     if (does_sender_have_permission_to_save_settings == TRUE)
     {
-        snprintf(sender_username, sizeof(sender_username), "%s", g_clients_array[sender_client_id].username);
+        clib__string_format(sender_username, sizeof(sender_username), "%s", g_clients_array[sender_client_id].username);
     }
 
     if (does_sender_have_permission_to_save_settings == FALSE)
@@ -139,6 +139,15 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
     previous_is_blocking_channel_chat_pictures_active = g_server_settings.is_blocking_channel_chat_pictures_active;
     previous_is_blocking_channel_chat_files_active = g_server_settings.is_blocking_channel_chat_files_active;
     previous_is_server_uptime_published = g_server_settings.is_server_uptime_published;
+    previous_reserved_slots = g_server_settings.reserved_slots;
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "reserved_slots");
+    if (cJSON_IsNumber(json_field) && json_field->valuedouble >= 0
+        && json_field->valuedouble < g_server_settings.max_client_count
+        && json_field->valuedouble == (double)(uint64)json_field->valuedouble)
+    {
+        g_server_settings.reserved_slots = (uint64)json_field->valuedouble;
+    }
     previous_is_server_slots_published = g_server_settings.is_server_slots_published;
     previous_is_server_banner_published = g_server_settings.is_server_banner_published;
     previous_is_server_features_published = g_server_settings.is_server_features_published;
@@ -594,6 +603,7 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
         g_server_settings.is_blocking_channel_chat_pictures_active = previous_is_blocking_channel_chat_pictures_active;
         g_server_settings.is_blocking_channel_chat_files_active = previous_is_blocking_channel_chat_files_active;
         g_server_settings.is_server_uptime_published = previous_is_server_uptime_published;
+        g_server_settings.reserved_slots = previous_reserved_slots;
         g_server_settings.is_server_slots_published = previous_is_server_slots_published;
         g_server_settings.is_server_banner_published = previous_is_server_banner_published;
         g_server_settings.is_server_features_published = previous_is_server_features_published;
@@ -740,7 +750,7 @@ void client_msg__server_settings__process_set_banner_request(cJSON* json_root, u
     }
     else if (banner->valuestring[0] != 0)
     {
-        banner_length = strlen(banner->valuestring);
+        banner_length = clib__strlen(banner->valuestring);
         replacement = (char*)memorymanager__allocate(banner_length + 1, MEMALLOC_SERVER_BANNER);
         if (replacement == NULL_POINTER)
         {
@@ -748,7 +758,7 @@ void client_msg__server_settings__process_set_banner_request(cJSON* json_root, u
         }
         else
         {
-            memcpy(replacement, banner->valuestring, banner_length + 1);
+            clib__memcpy(replacement, banner->valuestring, banner_length + 1);
         }
     }
 

@@ -1,3 +1,4 @@
+#include "../../core/channel_groups.h"
 // This file tells clients about channels, membership changes and the selected channel maintainer.
 
 #include "server_msg.h"
@@ -170,6 +171,7 @@ void server_msg__channel__send_edit_message_to_all_clients(channel_t* channel, c
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     cJSON_AddNumberToObject(message, "channel_id", channel->channel_id);
+    cJSON_AddBoolToObject(message, "is_temp_channel", channel->is_temp_channel);
     cJSON_AddStringToObject(message, "channel_name", channel->name);
     cJSON_AddStringToObject(message, "channel_description", channel->description);
     cJSON_AddBoolToObject(message, "is_using_password", (cJSON_bool)channel->is_using_password);
@@ -236,6 +238,7 @@ void server_msg__channel__send_join_message_to_all_clients(client_t* subject, ch
     }
 
     cJSON_AddNumberToObject(message, "channel_id", new_channel->channel_id);
+    cJSON_AddNumberToObject(message, "channel_group_id", channel_groups__role(subject, new_channel));
     cJSON_AddNumberToObject(message, "client_id", subject->client_id);
     cJSON_AddNumberToObject(message, "audio_state", audio_state);
     cJSON_AddBoolToObject(message, "is_streaming_song", is_streaming_song);
@@ -244,6 +247,7 @@ void server_msg__channel__send_join_message_to_all_clients(client_t* subject, ch
     plaintext = cJSON_PrintUnformatted(root);
 
     cJSON_AddNumberToObject(message_hidden, "channel_id", (double)-1);
+    cJSON_AddNumberToObject(message_hidden, "channel_group_id", 0);
     cJSON_AddNumberToObject(message_hidden, "client_id", subject->client_id);
     cJSON_AddNumberToObject(message_hidden, "audio_state", audio_state);
     cJSON_AddBoolToObject(message_hidden, "is_streaming_song", is_streaming_song);
@@ -333,6 +337,7 @@ void server_msg__channel__send_join_message_to_single_client(client_t* receiver,
     }
 
     cJSON_AddNumberToObject(message, "channel_id", new_channel->channel_id);
+    cJSON_AddNumberToObject(message, "channel_group_id", channel_groups__role(subject, new_channel));
     cJSON_AddNumberToObject(message, "client_id", subject->client_id);
     cJSON_AddNumberToObject(message, "audio_state", audio_state);
     cJSON_AddBoolToObject(message, "is_streaming_song", is_streaming_song);
@@ -501,6 +506,7 @@ void server_msg__channel__send_client_coming_back_from_idle_mode_info_to_all_cli
 
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
     cJSON_AddNumberToObject(message, "channel_id", (double)channel_the_client_joins);
+    cJSON_AddNumberToObject(message, "channel_group_id", subject->channel_group_role);
 
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 

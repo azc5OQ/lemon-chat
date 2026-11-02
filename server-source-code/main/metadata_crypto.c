@@ -1,3 +1,4 @@
+#include "clib/clib.h"
 // This file handles the encryption and decryption of Lemon Chat metadata sent
 // between a client and the server. Metadata is information such as channel
 // names, usernames and message types. The server needs to read this information
@@ -63,7 +64,7 @@ int metadata_crypto__key_init(crypto_key_t* key, crypto_key_type_t type, const u
             {
                 if (size == sizeof(initialized.material.aes_256_ctr))
                 {
-                    memcpy(initialized.material.aes_256_ctr, bytes, size);
+                    clib__memcpy(initialized.material.aes_256_ctr, bytes, size);
                     initialized.type = type;
                 }
                 break;
@@ -72,7 +73,7 @@ int metadata_crypto__key_init(crypto_key_t* key, crypto_key_type_t type, const u
             {
                 if (size == sizeof(initialized.material.hmac_sha256))
                 {
-                    memcpy(initialized.material.hmac_sha256, bytes, size);
+                    clib__memcpy(initialized.material.hmac_sha256, bytes, size);
                     initialized.type = type;
                 }
                 break;
@@ -107,13 +108,13 @@ int metadata_crypto__key_from_password(crypto_key_t* key, crypto_key_type_t type
     {
         return 0;
     }
-    memset(key, 0, sizeof(*key));
+    clib__memset(key, 0, sizeof(*key));
     // The server settings currently store passwords as text. SHA256 turns each
     // password into the 32 bytes used by its AES key, just as the client does.
     // If another key type is added, this function must also say how to turn a
     // password into the bytes that the new encryption method needs.
     if (type == CRYPTO_KEY_AES_256_CTR && password != NULL && md != NULL
-        && mbedtls_md(md, (const unsigned char*)password, strlen(password), digest) == 0)
+        && mbedtls_md(md, (const unsigned char*)password, clib__strlen(password), digest) == 0)
     {
         result = metadata_crypto__key_init(key, type, digest, sizeof(digest));
     }
@@ -169,7 +170,7 @@ int metadata_crypto__derive_session_keys(const char* shared_secret, crypto_sessi
     // next 32 bytes are the key used to check whether a message was changed.
     if (shared_secret != NULL && shared_secret[0] != '\0' && md != NULL
         && mbedtls_hkdf(md, salt, sizeof(salt) - 1,
-            (const unsigned char*)shared_secret, strlen(shared_secret),
+            (const unsigned char*)shared_secret, clib__strlen(shared_secret),
             info, sizeof(info) - 1, material, sizeof(material)) == 0
         && metadata_crypto__key_init(&keys->encryption, CRYPTO_KEY_AES_256_CTR, material, 32)
         && metadata_crypto__key_init(&keys->authentication, CRYPTO_KEY_HMAC_SHA256, material + 32, 32))
@@ -353,7 +354,7 @@ static int _metadata_crypto_internal__tag(const crypto_session_keys_t* session,
     const char* iv, const char* data, unsigned char* out)
 {
     return metadata_crypto__hmac_sha256(&session->authentication,
-        (const unsigned char*)iv, strlen(iv), (const unsigned char*)data, strlen(data), out);
+        (const unsigned char*)iv, clib__strlen(iv), (const unsigned char*)data, clib__strlen(data), out);
 }
 
 /**
@@ -393,7 +394,7 @@ char* metadata_crypto__encrypt(const char* plaintext, int64* out_size, const cry
     {
         return NULL_POINTER;
     }
-    text_size = strlen(plaintext);
+    text_size = clib__strlen(plaintext);
     buffer_size = text_size < METADATA_PADDED_SIZE ? METADATA_PADDED_SIZE : text_size;
     if (buffer_size > (uint64)g_server_settings.websocket_message_max_length || buffer_size > (SIZE_MAX - 2) / 4)
     {
@@ -414,7 +415,7 @@ char* metadata_crypto__encrypt(const char* plaintext, int64* out_size, const cry
     {
         goto done;
     }
-    memcpy(buffer, plaintext, text_size);
+    clib__memcpy(buffer, plaintext, text_size);
     // For a message sent by the server, encrypt with each key from the server
     // settings first. Then encrypt that result with the key that this client
     // and the server made from their shared secret when they connected.
@@ -456,11 +457,11 @@ char* metadata_crypto__encrypt(const char* plaintext, int64* out_size, const cry
     // straight into the JSON string without creating a cJSON object first.
     if (session != NULL_POINTER)
     {
-        envelope_size = snprintf(envelope, envelope_capacity, "{\"iv\":\"%s\",\"data\":\"%s\",\"tag\":\"%s\"}", iv_base64, encoded, tag_base64);
+        envelope_size = clib__string_format(envelope, envelope_capacity, "{\"iv\":\"%s\",\"data\":\"%s\",\"tag\":\"%s\"}", iv_base64, encoded, tag_base64);
     }
     else
     {
-        envelope_size = snprintf(envelope, envelope_capacity, "{\"iv\":\"%s\",\"data\":\"%s\"}", iv_base64, encoded);
+        envelope_size = clib__string_format(envelope, envelope_capacity, "{\"iv\":\"%s\",\"data\":\"%s\"}", iv_base64, encoded);
     }
     if (envelope_size <= 0 || (size_t)envelope_size >= envelope_capacity
         || envelope_size > g_server_settings.websocket_message_max_length)
@@ -545,7 +546,7 @@ boole metadata_crypto__decrypt_from_client(const client_t* client, const char* e
     {
         return FALSE;
     }
-    memset(out, 0, capacity);
+    clib__memset(out, 0, capacity);
     if (envelope_text == NULL_POINTER || client == NULL_POINTER || !client->is_existing)
     {
         return FALSE;
@@ -554,9 +555,9 @@ boole metadata_crypto__decrypt_from_client(const client_t* client, const char* e
     iv_item = cJSON_GetObjectItemCaseSensitive(envelope, "iv");
     data_item = cJSON_GetObjectItemCaseSensitive(envelope, "data");
     if (!cJSON_IsString(iv_item) || !cJSON_IsString(data_item)
-        || strlen(iv_item->valuestring) != 24
+        || clib__strlen(iv_item->valuestring) != 24
         || mbedtls_base64_decode(iv, sizeof(iv), &written,
-            (const unsigned char*)iv_item->valuestring, strlen(iv_item->valuestring)) != 0
+            (const unsigned char*)iv_item->valuestring, clib__strlen(iv_item->valuestring)) != 0
         || written != sizeof(iv))
     {
         goto done;
@@ -577,7 +578,7 @@ boole metadata_crypto__decrypt_from_client(const client_t* client, const char* e
         // must include this check value, called the tag. Reject a message that
         // leaves it out; otherwise someone could remove the tag to skip the
         // check that the message has not been changed.
-        if (!cJSON_IsString(tag_item) || strlen(tag_item->valuestring) != 44
+        if (!cJSON_IsString(tag_item) || clib__strlen(tag_item->valuestring) != 44
             || !_metadata_crypto_internal__tag(session, iv_item->valuestring, data_item->valuestring, expected_tag)
             || mbedtls_base64_encode(expected_tag_base64, sizeof(expected_tag_base64), &written,
                 expected_tag, sizeof(expected_tag)) != 0
@@ -590,7 +591,7 @@ boole metadata_crypto__decrypt_from_client(const client_t* client, const char* e
     // incoming base64 text is invalid or its decoded bytes will not fit, stop
     // here without trying to decrypt them.
     if (mbedtls_base64_decode(out, capacity - 1, &decoded_size,
-        (const unsigned char*)data_item->valuestring, strlen(data_item->valuestring)) != 0)
+        (const unsigned char*)data_item->valuestring, clib__strlen(data_item->valuestring)) != 0)
     {
         goto done;
     }
@@ -614,7 +615,7 @@ boole metadata_crypto__decrypt_from_client(const client_t* client, const char* e
 done:
     if (!result)
     {
-        memset(out, 0, capacity);
+        clib__memset(out, 0, capacity);
     }
     cJSON_Delete(envelope);
     metadata_crypto__clear_session_keys(&temporary_session);

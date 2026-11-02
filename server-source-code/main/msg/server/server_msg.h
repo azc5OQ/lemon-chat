@@ -4,6 +4,12 @@
 #include "../../definitions.h"
 #include "../../../third-party/dave-g-json/cJSON.h"
 
+void server_msg__moderation__send_result(client_t* receiver, cstring text, boole succeeded);
+void server_msg__moderation__send_channel_access(client_t* receiver, channel_t* channel);
+void server_msg__moderation__send_client_access(client_t* receiver, client_t* target, channel_t* channel);
+void server_msg__moderation__send_channel_group_changed(client_t* subject);
+void server_msg__moderation__send_bans(client_t* receiver, boole show_addresses);
+
 void server_msg__connection__send_rsa_key_too_weak_to_single_client(client_t* receiver);
 void server_msg__connection__send_public_key_challenge_to_single_client(client_t* receiver, char* random_value_challenge_string, char* dh_public_mix_for_client);
 void server_msg__connection__send_authentication_status_to_single_client(client_t* receiver);
@@ -66,7 +72,7 @@ void server_msg__server_settings__send_banner_changed_to_all_clients(void);
 void server_msg__server_settings__send_banner_result_to_single_client(client_t* receiver, boole success, cstring error);
 void server_msg__server_settings__send_policy_update_to_all_clients(void);
 
-void server_msg__administration__send_client_info_to_single_client(client_t* receiver, client_t* subject);
+void server_msg__administration__send_client_info_to_single_client(client_t* receiver, client_t* subject, cJSON* request);
 void server_msg__administration__send_icon_list_to_single_client(client_t* receiver);
 void server_msg__administration__send_permission_update_to_single_client(client_t* receiver);
 void server_msg__administration__send_permission_updates_to_all_clients(void);
@@ -75,7 +81,7 @@ void server_msg__administration__send_group_list_to_single_client(client_t* rece
 void server_msg__administration__send_admin_status_to_single_client(client_t* receiver);
 void server_msg__administration__send_identity_list_to_single_client(client_t* receiver);
 void server_msg__administration__send_force_admin_password_change_to_single_client(client_t* receiver);
-void server_msg__administration__send_access_denied_to_single_client(client_t* receiver, char* reason);
+void server_msg__administration__send_access_denied_to_single_client(client_t* receiver, const char* reason);
 void server_msg__administration__send_admin_log_to_single_client(client_t* receiver);
 void server_msg__administration__send_add_group_to_client_event_to_all_clients(client_t* subject, uint64 group_id);
 void server_msg__administration__send_remove_group_from_client_event_to_all_clients(client_t* subject, uint64 group_id);

@@ -1,0 +1,7 @@
+<window>
+    <div id="overlay-panel">
+        <label id="overlay-channel" text="Not connected" />
+        <div id="overlay-members" />
+        <label id="overlay-caption" class="hidden" text="" />
+    </div>
+</window>

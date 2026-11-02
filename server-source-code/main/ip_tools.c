@@ -15,8 +15,7 @@
 
 #include "ip_tools.h"
 
-#include "clib/clib_string.h"
-#include "clib/clib_memory.h"
+#include "clib/clib.h"
 #include "../third-party/dave-g-json/cJSON.h"
 
 #include "../third-party/rxi-log/log.h"
@@ -50,15 +49,15 @@ static uint _ip_tools_internal__add_local_ipv4(struct sockaddr* address, char ad
     {
         return count;
     }
-    snprintf(text, sizeof(text), "%u.%u.%u.%u", (uint)bytes[0], (uint)bytes[1], (uint)bytes[2], (uint)bytes[3]);
+    clib__string_format(text, sizeof(text), "%u.%u.%u.%u", (uint)bytes[0], (uint)bytes[1], (uint)bytes[2], (uint)bytes[3]);
     for (index = 0; index < count; index++)
     {
-        if (strcmp(addresses[index], text) == 0)
+        if (clib__strcmp(addresses[index], text) == 0)
         {
             return count;
         }
     }
-    strcpy(addresses[count], text);
+    clib__string_copy(addresses[count], sizeof(addresses[count]), text);
     return count + 1;
 }
 
@@ -153,24 +152,35 @@ uint ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_LEN
  */
 void append_to_string_buffer(StringBuffer* sb, const char* str)
 {
-    uint64 str_len = strlen(str);
-    uint64 new_length = sb->length + str_len;
+    uint64 str_len = clib__strlen(str);
+    uint64 new_length;
+
+    if (str_len > SIZE_MAX - sb->length - 1)
+    {
+        exit(1);
+    }
+    new_length = sb->length + str_len;
 
     // Resize the buffer if necessary
     if (new_length >= sb->capacity)
     {
-        sb->capacity = new_length * 2; // Double the capacity
-        sb->buffer = (char*)realloc(sb->buffer, sb->capacity);
-        if (sb->buffer == NULL_POINTER)
+        uint64 capacity = new_length < SIZE_MAX / 2 ? (new_length + 1) * 2 : new_length + 1;
+        char* resized = (char*)realloc(sb->buffer, capacity);
+        if (resized == NULL_POINTER)
         {
             // Handle memory allocation failure
             DBG_IP_TOOLS printf("%s", "Memory allocation failed \n");
             exit(1);
         }
+        sb->buffer = resized;
+        sb->capacity = capacity;
     }
 
     // Append the string to the buffer
-    strcat(sb->buffer, str);
+    if (!clib__string_append(sb->buffer, sb->capacity, str))
+    {
+        exit(1);
+    }
     sb->length = new_length;
 }
 

@@ -40,6 +40,24 @@ function keys__create_random_message_keys()
 }
 
 /**
+ * @brief Rejects missing or incomplete content keys so an edit cannot be sent without encryption.
+ * @param array keys -> the four AES key and counter pairs
+ * @return boolean whether every pair has the expected bytes
+ */
+function keys__are_message_keys_valid(keys)
+{
+    return Array.isArray(keys) && keys.length === 4 && keys.every(function(key)
+    {
+        return key != null && Array.isArray(key.key_bytes) && key.key_bytes.length === 32
+            && Array.isArray(key.iv_bytes) && key.iv_bytes.length === 16
+            && key.key_bytes.concat(key.iv_bytes).every(function(byte)
+            {
+                return Number.isInteger(byte) && byte >= 0 && byte <= 255;
+            });
+    });
+}
+
+/**
  * @brief Reads channel keys only when their encrypted channel and maintainer version match this client's channel.
  * @param object message -> the received message with its decrypted contents in some_json
  * @param number channel_id -> the client's current channel
@@ -260,7 +278,12 @@ function keys__decrypt_channel_contents(encrypted, picture)
                         && typeof parsed.message_id === "string"
                         && /^[a-f0-9]{32}$/.test(parsed.message_id)
                         && typeof parsed.emoji === "string"
-                        && typeof parsed.active === "boolean")))
+                        && typeof parsed.active === "boolean")
+                    || (parsed.type === "chat_message_edit"
+                        && typeof parsed.message_id === "string"
+                        && /^[a-f0-9]{32}$/.test(parsed.message_id)
+                        && typeof parsed.author_public_key === "string"
+                        && typeof parsed.new_message_value === "string")))
                 {
                     return text;
                 }

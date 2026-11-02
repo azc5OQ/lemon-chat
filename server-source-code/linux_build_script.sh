@@ -4,6 +4,8 @@
 #   ./linux_build_script.sh          normal Linux build
 #   ./linux_build_script.sh --wsl    building inside WSL on /mnt/c with a modern
 #                                    toolchain (GCC 15 / CMake 4)
+# Browser output prompts for minified/unminified; LEMON_CLIENT_BUILD_MODE skips that prompt.
+# Example: LEMON_CLIENT_BUILD_MODE=minified ./linux_build_script.sh (or unminified).
 #
 set -euo pipefail
 
@@ -26,6 +28,13 @@ warning ()
 
 ROOT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THIRD_PARTY_DIRECTORY="$ROOT_DIRECTORY/third-party"
+
+if ! command -v node >/dev/null 2>&1
+then
+    warning "Node.js is required for the browser client. Install it from https://nodejs.org/"
+    warning "Optional minification: npm install --global terser"
+    exit 1
+fi
 
 # =============================================================================
 # SETUP | Compiler and build options
@@ -282,13 +291,12 @@ cp -r -v "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/libopus.a" "$ROOT_DIRECTORY/main/
 # =============================================================================
 
 # the bundled http server serves client.html out of the buildresult directory, so build it here
-# (build.py is fast, about a second) and copy it in next to the server binary below.
+# and copy it in next to the server binary below.
 message "building the browser client (client.html)"
-if type python3 >/dev/null 2>&1
+if ! node "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.cjs"
 then
-    python3 "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.py"
-else
-    warning "python3 not found - skipping client build, the served client.html may be stale or missing"
+    warning "browser client build failed; stopping before packaging an outdated page"
+    exit 1
 fi
 
 # =============================================================================

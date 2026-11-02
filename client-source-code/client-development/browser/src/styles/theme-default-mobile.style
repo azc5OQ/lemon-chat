@@ -214,7 +214,7 @@ a-toast:hover {
 .marquee div {
     padding-left: 100%;
     display: inline-block;
-    font-family: roboto,sans-serif;
+    font-family: var(--set-font);
     font-size: 11px;
     vertical-align: top;
     color: #7ee8ff;
@@ -300,7 +300,7 @@ a-toast:hover {
     text-align: center;
     width: 97px;
     height: 20px;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 13px;
     transition: 0.3s ease;
     border-radius: 3px;
@@ -538,13 +538,13 @@ a-toast:hover {
     background-color: #414f53;
     color: white;
     text-align: left;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     overflow-y: auto;
 }
 
 .server-settings-general-header {
     margin: 0 0 14px 0;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 16px;
     font-weight: 600;
     color: white;
@@ -556,7 +556,7 @@ a-toast:hover {
     gap: 10px;
     width: fit-content;
     margin-bottom: 12px;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 14px;
     color: white;
 }
@@ -635,7 +635,7 @@ a-toast:hover {
     padding: 7px 14px;
     border: 0px;
     border-radius: 3px;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 13px;
     color: white;
     transition: 0.3s ease;
@@ -678,7 +678,7 @@ a-toast:hover {
     width: 97px;
     border: 0px;
     height: 20px;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 13px;
     transition: 0.3s ease;
     border-radius: 3px;
@@ -733,7 +733,7 @@ a-toast:hover {
     color: #63eb2c;
     vertical-align: top;
     margin-top: -2px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
 }
 
 .connected-client-p-music-bot {
@@ -761,13 +761,14 @@ a-toast:hover {
     text-align: right;
 }
 
-.single-server-message {
-    padding-left: 6px;
+.single-server-message
+{
+    padding-left: 8px;
     padding-top: 5px;
     background-color: inherit;
     border-radius: 9px;
     color: #898e8c;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     font-size: 10px;
     margin: 0px;
     font-weight: bold;
@@ -827,7 +828,7 @@ a-toast:hover {
     vertical-align: top;
     outline: none;
     border: none;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     resize: none;
 }
 
@@ -856,7 +857,7 @@ a-toast:hover {
     background-color: inherit;
     color: white;
     height: calc(100% - 30px);
-    font-family: sans-serif;
+    font-family: var(--set-font);
     display: inline-block;
     vertical-align: top;
     width: 100%;
@@ -937,7 +938,7 @@ a-toast:hover {
     top: 0px;
     width: 130px;
     font-size: 1em;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     padding: 5px;
     display: block;
 }
@@ -948,7 +949,7 @@ a-toast:hover {
 
 #current-client-description-client-name {
     padding: 7px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     color: #63eb2c;
     font-size: 15px;
     font-style: normal;
@@ -976,7 +977,7 @@ a-toast:hover {
     background-position: right center;
     background-position-x: 102px;
     font-size: 15px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     padding-top: 5px;
     padding-bottom: 5px;
     white-space: nowrap;
@@ -991,7 +992,7 @@ a-toast:hover {
     top: 0px;
     width: 130px;
     font-size: 1em;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     padding: 5px;
 }
 
@@ -1033,7 +1034,7 @@ a-toast:hover {
     top: 0px;
     width: 130px;
     font-size: 0.7em;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     padding: 5px;
     overflow: hidden;
 }
@@ -1046,7 +1047,7 @@ a-toast:hover {
     padding-left: 15px;
     padding-top: 5px;
     padding-bottom: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     color: white;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
@@ -1095,8 +1096,8 @@ a-toast:hover {
 
 .single-channel p {
     padding-left: 3px;
-    font: 16px sans-serif;
-    font-family: Raleway;
+    font: 16px var(--set-font);
+    font-family: var(--set-font);
 }
 
 #space-devider4 {
@@ -1106,12 +1107,15 @@ a-toast:hover {
     width: 100%;
 }
 
-.single-chat-message {
+.single-chat-message
+{
+    box-sizing: border-box;
     background-color: inherit;
     border-radius: 9px;
     color: white;
-    font-family: sans-serif;
-    width: 94%;
+    font-family: var(--set-font);
+    width: auto;
+    padding-inline: 8px;
     min-height: 44px;
     margin: 0px;
 }
@@ -1160,7 +1164,7 @@ a-toast:hover {
 #connected-local-client-input {
     background-color: inherit;
     height: 16px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     font-weight: bold;
     display: inline-block;
     vertical-align: top;
@@ -1171,15 +1175,16 @@ a-toast:hover {
     top: 3px;
 }
 
-.single-message-content {
+.single-message-content
+{
     display: inline-block;
     vertical-align: top;
     padding-left: 5px;
     font-size: 15px;
-    width: 96%;
+    width: 100%;
     padding-top: 5px;
     padding-bottom: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
 }
 
 .chat-spacer {
@@ -1195,7 +1200,7 @@ a-toast:hover {
     font-size: 10px;
     vertical-align: middle;
     font-style: italic;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     color: #898e8c;
     font-weight: bold;
 }
@@ -1250,7 +1255,8 @@ a-toast:hover {
     background-image: linear-gradient( 109.6deg, rgba(34, 47, 79,0.5) 11.2%, rgba(36,163,190,0.5) 91.1%);
 }
 
-.connected-client, .connected-local-client {
+.connected-client, .connected-local-client
+{
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
     -webkit-user-select: none;
@@ -1258,8 +1264,8 @@ a-toast:hover {
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
-    padding-top: 2px;
-    padding-bottom: 2px;
+    padding-top: 3px;
+    padding-bottom: 3px;
     min-width: max-content;
 }
 
@@ -1344,7 +1350,12 @@ a-toast:hover {
 /* this theme's --set-* dialog palette, because layout.style lays out and paints every dialog from these variables */
 :root {
 
-    --set-font: 'Raleway', sans-serif;
+    --client-self-color: #cddc39;
+    --client-unread-bg: #cddc39;
+    --client-unread-color: #202414;
+    --client-unread-border: #dce75d;
+    --client-unread-radius: 9px;
+    --set-font: "Inter", system-ui, sans-serif;
     --set-panel: #36393f;
     --set-text: #e6e8ea;
     --set-muted: rgba(255, 255, 255, 0.45);
@@ -1388,7 +1399,7 @@ a-toast:hover {
     height: 100%;
     vertical-align: top;
     color: white;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
     font-size: 13px;
     cursor: move;
 }
@@ -1397,7 +1408,7 @@ a-toast:hover {
     display: inline-block;
     width: calc(100% - 187px);
     height: 100%;
-    font-family: 'Raleway', sans-serif;
+    font-family: var(--set-font);
 }
 
 #custom-file-upload-button-image {
@@ -1407,7 +1418,7 @@ a-toast:hover {
 .custom-file-upload-button {
     display: inline-block;
     background-color: #05a3ff;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     color: #ffffff;
     padding: 15px 1px 15px 15px;
     text-align: center;
@@ -1432,7 +1443,7 @@ a-toast:hover {
 
 #current-channel-description {
     word-break: break-all;
-    font: 12px sans-serif;
+    font: 12px var(--set-font);
     font-style: italic;
     color: #ffffff;
     height: 100%;
@@ -1442,7 +1453,7 @@ a-toast:hover {
 
 #current-client-description {
     word-break: break-all;
-    font: 12px sans-serif;
+    font: 12px var(--set-font);
     font-style: italic;
     color: #ffffff;
     height: 100%;
@@ -1477,7 +1488,7 @@ a-toast:hover {
     border-radius: 5px;
     padding: 6px;
     color: #8e1ed2;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     font-size: 16px;
     background: #ffffff;
 }
@@ -1488,7 +1499,7 @@ a-toast:hover {
 
 .text-input-pretty {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     width: 200px;
     border-bottom: 3px solid gold;
     border-left-color: #202020;
@@ -1511,7 +1522,7 @@ a-toast:hover {
 
 .text-input-pretty[disabled] {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     background-color: #202020;
     border-style: solid;
     color: wheat;
@@ -1540,7 +1551,7 @@ a-toast:hover {
 
 .text-input-not-pretty {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     width: 185px;
     border-bottom: 1px solid white;
     border-left-color: #36393f;
@@ -1555,7 +1566,7 @@ a-toast:hover {
 
 .text-input-not-pretty[disabled] {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     background-color: #36393f;
     border-style: solid;
     color: white;
@@ -1565,7 +1576,7 @@ a-toast:hover {
 
 .text-input-not-pretty-2 {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     width: 172px;
     border-bottom: 1px solid white;
     border-left-color: #36393f;
@@ -1580,7 +1591,7 @@ a-toast:hover {
 
 .text-input-not-pretty-2[disabled] {
     padding: 5px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     background-color: #36393f;
     border-style: solid;
     color: white;
@@ -1756,8 +1767,8 @@ a-toast:hover {
     z-index: 1;
     top: 24px;
     right: 116px;
-    font: 16px sans-serif;
-    font-family: 'Raleway';
+    font: 16px var(--set-font);
+    font-family: var(--set-font);
 }
 
 #hide-chat-button:hover, #chat-input-container-send-chat-input:hover, #show-secret-identity-string:hover, #show-admin-password-entry:hover, #hide-show-flags-button:hover, #show-hide-log-button:hover, #clear-chat-button:hover, #enter-server-settings:hover, #microphone-always-broadcasting-audio-button:hover, #sound-effects-button:hover {
@@ -1805,7 +1816,7 @@ a-toast:hover {
 }
 
 #p-secret-identity-string {
-    font-family: sans-serif;
+    font-family: var(--set-font);
     font-size: 13px;
     padding: 8px;
     color: #cddc39;
@@ -1821,7 +1832,7 @@ a-toast:hover {
     display: inline-block;
     vertical-align: top;
     font-size: 12px;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     min-width: 35px;
     color: white;
 }
@@ -1900,7 +1911,7 @@ a-toast:hover {
 #client-info-content {
     padding: 6px 18px 4px 18px;
     color: white;
-    font-family: sans-serif;
+    font-family: var(--set-font);
     font-size: 14px;
 }
 
@@ -2426,14 +2437,19 @@ div#local-settings-container #local-settings-close-button {
     --reaction-panel: #17232c;
     --reaction-radius: 14px;
     --reaction-shadow: none;
-    --reaction-font: Arial, sans-serif;
+    --reaction-font: var(--set-font);
+    --chat-author-font: "Inter", system-ui, sans-serif;
+    --chat-author-weight: 600;
+    --chat-meta-font: "Inter", system-ui, sans-serif;
+    --chat-meta-size: 12px;
+    --chat-edited-color: #c0b0c4;
     --chat-author-size: 13px;
     --chat-author-color: #adc5e4;
     --chat-local-author-color: #c4d6ec;
     --chat-meta-color: #a8b5bd;
 }
 
-:is(#groups-dialog, #groups-log-dialog, #groups-icon-picker)
+:is(#server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup)
 {
     --groups-radius: 8px;
     --groups-title-background: var(--set-panel);
@@ -2611,7 +2627,7 @@ div#local-settings-container #local-settings-close-button
     font-size: 14px;
 }
 
-:root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog) :is(button:not(.close-button), input:not([type="checkbox"]), select)
+:root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog, #moderation-dialog, #server-info-dialog, #video-stream-popup) :is(button:not(.close-button), input:not([type="checkbox"]), select)
 {
     min-height: 40px;
     font-size: 14px;
@@ -2628,7 +2644,7 @@ div#local-settings-container #local-settings-close-button
     min-height: 44px;
 }
 
-:root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog) :is(input[type="text"], input[type="search"], input[type="number"])
+:root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog, #moderation-dialog, #server-info-dialog) :is(input[type="text"], input[type="search"], input[type="number"])
 {
     font-size: 16px;
 }
@@ -2638,14 +2654,14 @@ div#local-settings-container #local-settings-close-button
     flex-wrap: wrap;
 }
 
-:root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog) .groups-titlebar,
+:root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog, #moderation-dialog, #server-info-dialog) .groups-titlebar,
 :root #server-info-header
 {
     min-height: 46px;
     box-sizing: border-box;
 }
 
-:root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog, #channel-properties-edit, #local-settings-container, #server-settings-tab, #server-info-dialog) .close-button
+:root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog, #moderation-dialog, #channel-properties-edit, #local-settings-container, #server-settings-tab, #server-info-dialog, #video-stream-popup) .close-button
 {
     box-sizing: border-box;
     width: 36px;
@@ -2656,7 +2672,7 @@ div#local-settings-container #local-settings-close-button
     color: var(--set-muted);
 }
 
-:root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog, #channel-properties-edit, #local-settings-container, #server-settings-tab, #server-info-dialog) .close-button:hover
+:root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog, #moderation-dialog, #channel-properties-edit, #local-settings-container, #server-settings-tab, #server-info-dialog, #video-stream-popup) .close-button:hover
 {
     background: var(--set-danger-soft);
     color: var(--set-danger-strong);
@@ -2724,11 +2740,6 @@ div#local-settings-container #local-settings-close-button
 :root .chat-reply-content
 {
     border-bottom: 0;
-}
-
-:root .chat-reply-quote:hover
-{
-    background: var(--reaction-selected);
 }
 
 :root #chat-reply-preview
@@ -2933,4 +2944,9 @@ div#local-settings-container #local-settings-close-button
     {
         flex-basis: 100%;
     }
+}
+
+:where(body, button, input, select, textarea)
+{
+    font-family: var(--set-font);
 }
