@@ -48,11 +48,12 @@
 
 - [Administration](docs/administration.md): admin login, managing the server, saving changes and backups, with screenshots.
 - [Server settings](docs/server-settings.md): server options, feature controls and limits.
-- [Permissions](docs/permissions.md): the complete permission lists, groups, powers and protection values.
+- [Permissions](docs/permissions.md): groups, powers, protection, Negate, Skip and Grant.
+- [Permission reference](docs/permission-reference.md): complete permission fields and saved values.
 - [Channels](docs/channels.md): creating and editing channels, membership, audio and video.
 - [Encryption](docs/encryption.md): how encryption works in detail.
 - [JSON messages](docs/messages.md): request, reply and response bodies, fields and examples.
-- [WebRTC](docs/webrtc.md): how audio and video connections work and why WebRTC is optional.
+- [Audio and video connections](docs/webrtc.md): WebSocket, WebRTC, ports and encryption.
 - [Building](docs/building.md): supported platforms, build tools and commands.
 
 See the [documentation index](docs/README.md) for all guides.
@@ -92,7 +93,7 @@ Voice chat is optional and can be enabled by the admin in each channel. Text, pi
 This chat does not rely on TLS/SSL alone. Messages are encrypted between users even when TLS/SSL is not used, and the server relays them without having the keys to read them.<br>
 WebSocket is used for text and pictures. Audio and video can use either WebSocket or WebRTC DataChannel. WebRTC is optional, and the server can choose WebSocket only.<br>
 Clients connect to the server, not to each other, so they do not share their IP addresses with other users through WebRTC.<br>
-Lemon Chat runs its own STUN service using Violet. See [WebRTC in Lemon Chat](docs/webrtc.md) for how WebRTC was added for voice, how its DataChannels work, and why it is now optional.<br>
+Lemon Chat runs its own STUN service using Violet. See [Audio and video connections](docs/webrtc.md) for the WebSocket and WebRTC choices, required ports and encryption layers.<br>
 The `client.html` file has everything embedded in it. Open it in your browser, enter the server's IP address and port, and connect. It can also be packaged into a desktop app using a tool like Electron if needed.<br>
 The server should be easy to build if the correct build tools are installed. The C/C++ libraries needed to build it are already included in this repository.<br>
 Use the `.bat` build script on Windows or the `.sh` script for your system.

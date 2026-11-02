@@ -1,16 +1,23 @@
 # Lemon Chat documentation
 
-These guides describe how Lemon Chat works and how its settings affect the people using it.
+Start with the guide for what you are trying to do. Screenshots use the browser client's Default theme on a demonstration server, so displayed names and values are examples.
 
-The administration, settings, permissions and channel guides include screenshots beside the relevant instructions. They show the browser client's **Default** theme on a demonstration server. Displayed names, limits and permission values illustrate the examples rather than prescribing defaults. Yellow outlines identify important controls, and the identity passphrase is hidden in the export screenshot.
+## Use and administer Lemon Chat
 
-- [What you can build](building.md): server and client builds for Windows, Linux, macOS and Android, processor types, required tools, commands and output files.
-- [Administration](administration.md): admin-password login, opening Server Settings, saving changes, admin identities, moderators, channels, bans, logs and backups.
-- [JSON messages](messages.md): complete request and response bodies, JSON examples, field types, nested objects, optional fields and body variants.
-- [Channels](channels.md): channel creation, membership, audio and video, and the client that creates channel encryption keys.
-- [WebRTC in Lemon Chat](webrtc.md): how WebRTC was added for voice, how Violet STUN and the DataChannels work, and why WebRTC is now optional.
-- [Permissions](permissions.md): complete server and channel permission lists, powers, protection, Grant, Negate, Skip, and how group permissions combine.
-- [Encryption](encryption.md): how encryption works in detail.
-- [Server settings](server-settings.md): the options that apply to everyone on the server, how to change them, and which changes need to be saved.
+- [Administration](administration.md): log in as an administrator, change settings, create moderator groups, manage channels and bans, read logs and make backups.
+- [Server settings](server-settings.md): understand the options and limits that apply to everyone on a server.
+- [Permissions](permissions.md): learn how server groups, channel groups, power, protection, Negate, Skip and Grant work.
+- [Channels](channels.md): create and join channels, use audio and video, and understand maintainers and channel keys.
 
-For installation and setup, read the [project README](../README.md) and the [selfhosting guide](../selfhosting-tools/README.md).
+## Understand the system
+
+- [Encryption](encryption.md): see what is encrypted, which keys are used and what the server can read.
+- [Audio and video connections](webrtc.md): choose between WebSocket and WebRTC and understand the required ports.
+
+## Build or integrate Lemon Chat
+
+- [Building](building.md): choose the correct build script, install its tools and find the output.
+- [JSON messages](messages.md): find complete request and response bodies, examples and field rules.
+- [Permission reference](permission-reference.md): find every permission field, power, protection value and saved format.
+
+For installation and hosting, read the [project README](../README.md) and the [self-hosting guide](../selfhosting-tools/README.md).

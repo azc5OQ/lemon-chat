@@ -192,44 +192,11 @@ Groups, icons and assignments remain saved. To use them again, stop the server, 
 
 ## Group permissions
 
-Admins can open **Server groups** from server settings in every theme. Hybrid V1 and Hybrid V2 also have shortcuts in the toolbar, local settings and user menus. Other themes keep this entry inside admin settings.
+The server settings window opens the group editor, but groups use their own controls and save buttons. Server groups apply across the server. Channel groups apply only in the channel where they are assigned.
 
-Group names and icons appear beside users. Separate permissions control viewing values and members, creating or editing groups, changing memberships, and managing icons. Full server admins can use all these controls. The member list includes connected users and saved offline identities.
+Use the [Permissions guide](permissions.md) when you want to create a group, assign members or understand Enable, Disable, power, Negate, Skip and Grant. Use the [permission reference](permission-reference.md) for every accepted field name, saved value and compatibility note.
 
-### Hiding icons locally
-
-Under **Appearance** in local settings, enable **hide server icons in the channel list** to hide server group and custom channel icons on your device. Flags and audio or video indicators remain visible. This option is off by default. It does not change memberships or permissions.
-
-### Choosing permissions
-
-Group permissions control individual actions, while power values set the level needed to perform some of them. This includes:
-
-- A group can allow permanent channel creation. The Normal, Moderator and Admin presets allow it.
-- Guest allows temporary channel creation. A user can own one temporary channel at a time. The older server checkbox is used only when groups are disabled.
-- Kicking and banning require the action permission and enough power to meet the target user's protection.
-- Viewing saved contacts, sending offline messages, receiving offline messages, and contacting idle users have separate permissions. The relevant server features must also be enabled.
-
-Each action uses **Enable** or **Disable**. Normally, Enable in any assigned group allows it. Powers use the highest value from the user's groups rather than adding the values together. Negate and Skip can change the calculation; the [Permissions guide](permissions.md#negate-skip-and-built-in-help) explains these options after the basic rules.
-
-Simple view offers None (0), Low (25), Normal (50), High (75), Very high (100) and Admin (1000). Advanced view accepts any whole number from 0 to 1000. Switching views keeps custom values.
-
-Users who are not full server admins cannot kick or ban full server admins. The built-in Admin group has ID 0 and fixed permissions.
-
-### Groups, icons and memberships
-
-Use **+ Add** and **Delete group** below the group list to manage server groups. **Icon** beside the selected group's name opens a searchable grid with 80 images per page; the channel group editor labels this control **Choose icon…**. Select an image, then **Use icon** to apply it. **Cancel** keeps the previous icon. The [permissions guide shows the icon picker](permissions.md#choosing-icons).
-
-**Upload** accepts PNG, JPEG and static WebP images and prepares them within the server's image size limit. **Delete icon** removes a shared image after confirmation. Other groups and channels using it also lose that image.
-
-Select the server group on the left, then choose **Add** in its **Members** panel on the right. Select the user in **Add a member**, then choose **Add** again. To remove someone, select them in the group's **Members** list and choose **Remove**. The [moderator walkthrough](administration.md#give-another-person-the-rights-they-need) shows both group creation and the member chooser. Deleting a group removes its saved memberships too.
-
-Permission edits remain unsaved until you select **Save changes**. The client asks the server to accept the edits, then requests that the groups and memberships be saved.
-
-Creating, deleting or renaming a server group, choosing its icon, and adding or removing members send requests immediately. Accepted changes already affect the running server; closing the window does not undo them. Select **Save changes** to keep them after a restart. Channel group changes are saved as part of their accepted requests, as explained in [Saved channel groups](permissions.md#saved-channel-groups).
-
-### Files from versions that used tags
-
-Current settings and messages use `groups`, `group_ids` and `group_id`. Before using an older settings file that called groups tags, update those field names. Also use `admin_group_icon_id`, `admin_group_has_icon` and `is_logging_group_changes_enabled` for the corresponding fields. The server does not load their old names.
+Under **Appearance** in local settings, **hide server icons in the channel list** hides server group and custom channel icons on that device. It does not change group membership or permissions.
 
 ## Server reaction emojis
 

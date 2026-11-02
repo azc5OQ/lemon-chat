@@ -18,6 +18,8 @@ Strings such as `<RSA public key>`, `<base64 ciphertext>` and `<SDP answer lines
 
 ## Contents
 
+Choose the feature area below, then search within that section for the exact request or response type. Client requests and server responses are documented separately even when their names are similar.
+
 - [Application and transport wrappers](#application-and-transport-wrappers)
 - [Server visibility of direct-message bodies](#server-visibility-of-direct-message-bodies)
 - [Connection and client state](#connection-and-client-state)
@@ -2619,7 +2621,7 @@ No additional body fields.
 
 Each action is a stored string decision; numeric powers and `grants` are whole numbers from 0 through 1000. Input is a complete replacement definition: omitted actions, powers and grant thresholds take their defaults. Unknown names are invalid. The full list of supported members is expanded below.
 
-This body supports all [53 server action permissions](permissions.md#complete-server-action-list) and [15 server power/protection fields](permissions.md#powers-and-protection). Their meanings and the [complete Grant/flag scope](permissions.md#complete-grant-and-flag-scope) are listed in the permission guide. Channel-group names are a separate subset and are documented with `edit_channel_group`.
+This body supports all [53 server action permissions](permission-reference.md#complete-server-action-list) and [15 server power/protection fields](permission-reference.md#powers-and-protection). Their meanings and the [complete Grant/flag scope](permission-reference.md#complete-grant-and-flag-scope) are listed in the permission reference. Channel-group names are a separate subset and are documented with `edit_channel_group`.
 
 **Body**
 
@@ -5175,7 +5177,7 @@ The action selects the body variant. Additional fields are listed separately for
 
 Each action is a stored string decision; numeric powers and `grants` are whole numbers from 0 through 1000. Input is a complete replacement definition: omitted actions, powers and grant thresholds take their defaults. Unknown names are invalid. The full list of supported members is expanded below.
 
-The nested `permissions` object accepts exactly the [11 channel action permissions](permissions.md#complete-channel-action-list) and [10 channel power/protection fields](permissions.md#channel-power-fields), plus their `grants` and `flags` objects. Channel flags support `negate` only; `skip` is not accepted.
+The nested `permissions` object accepts exactly the [11 channel action permissions](permission-reference.md#complete-channel-action-list) and [10 channel power/protection fields](permission-reference.md#channel-power-fields), plus their `grants` and `flags` objects. Channel flags support `negate` only; `skip` is not accepted.
 
 **Fields**
 
