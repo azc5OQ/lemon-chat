@@ -14,7 +14,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
+
+/* Feature-test macros must be defined before system headers. */
+#ifdef __APPLE__
+#ifndef _DARWIN_C_SOURCE
+#define _DARWIN_C_SOURCE
+#endif
+#else
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#endif
+#endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -26,7 +37,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
 #include <sys/time.h>
+#include <sys/types.h>
+
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
 
 /* clang-format off */
 #ifndef _WIN32
@@ -39,19 +56,23 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+
 #ifndef SOMAXCONN_HINT
 #define SOMAXCONN_HINT(count) (-(count))
 #endif
+
 typedef int socklen_t;
 #endif
 /* clang-format on */
 
-/* Windows and macOS seems to not have MSG_NOSIGNAL */
+/* Windows and macOS seem not to have MSG_NOSIGNAL. */
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
 #endif
 
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include "../include/utf8.h"
 #include "../include/ws.h"
