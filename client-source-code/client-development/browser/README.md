@@ -90,6 +90,14 @@ run the normal client build. The build itself needs no font conversion tools.
 
 ## Building
 
+To turn edits in `src/` into a new `client.html`, the build script uses Node.js
+to assemble files, embed WebAssembly and validate JavaScript. Node.js is needed
+for this build step independently of the Android runtime. The finished page
+runs in a browser without Node.js. Server builds skip this step when Node.js is
+missing, and continue even if an attempted client build fails. They package the
+existing `client.html` if available, with a warning that it may be outdated.
+Neither Node.js nor a successful client rebuild is required to build the server.
+
 Install a maintained LTS version of [Node.js](https://nodejs.org/) and reopen
 your terminal. A readable build needs only Node.js. To enable minification,
 install [Terser](https://terser.org/docs/cli-usage/) yourself:
@@ -141,6 +149,100 @@ Their separate native and headless build tools retain their own prerequisites.
 `--minify-js` and `--no-optimize` remain aliases for `--minified` and
 `--unminified`. The Windows wrapper pauses only when launched interactively
 without arguments or an environment-selected mode and preserves the exit code.
+
+### Example: rebuild after changing the client
+
+Suppose you change a message label in `src/scripts/app/ui.js`. The server serves
+`client.html`, so editing that source file alone does not update the page people
+open. From `client-source-code/client-development/browser`, run:
+
+```sh
+node build.cjs --unminified
+```
+
+The builder reads `src/template.html`, inserts the files named by its include
+markers, and replaces WebAssembly markers with base64 from the existing binary
+files in `src/wasm`. It checks each assembled script's syntax and the worker
+`THREAD_NAME` patch target. It does not compile the WebAssembly sources; use the
+[WebAssembly guide](client-webassemblies/README.md) when those binaries need rebuilding.
+
+In readable mode, the assembled HTML is written without CSS or JavaScript
+minification. In minified mode, the builder optimizes CSS and embedded assets,
+then runs Terser on the applicable inline scripts. It checks the resulting
+JavaScript syntax, worker patch declaration and headless export seam before
+writing. These checks do not replace testing the page in a browser.
+
+The default result is `client-source-code/client.html`. If the project-root
+`buildresult` directory already exists, the builder also updates
+`buildresult/client.html`. Reload the page served by your server to see the new
+label. Without rebuilding, the existing HTML still contains the old label.
+The completion messages show the output path, mode, include and WebAssembly
+counts, and the assembled and final byte sizes.
+
+### Output files and failures
+
+Use `--output preview/client.html` with a mode to try a build without replacing
+the default page or server copy. Relative output paths are resolved from your
+terminal's current directory. `--no-server-copy` updates the default page but
+leaves `buildresult/client.html` alone. The builder creates missing parent
+directories for the selected output; it does not create `buildresult` just to
+make the automatic server copy.
+
+Each output is written to a temporary file beside its destination and renamed
+into place. Assembly, syntax or minification errors occur before output writes,
+so those failures leave the previous output intact. The default page and server
+copy are written separately: if writing the server copy fails, the default page
+may already have been updated. Check the reported error and output paths before
+assuming both copies match.
+
+A standalone client build returns a nonzero exit code on failure. Common causes
+are missing Node.js, missing input files, invalid JavaScript, unavailable Terser,
+an invalid option or mode, and an unwritable output destination. For a missing
+minifier, install Terser or select `--unminified`. For an unattended build, select
+a mode explicitly; the builder does not silently choose one when it cannot prompt.
+`--check` validates assembly without writing files or requiring Terser;
+`--check-minifier` checks Terser separately without building the page.
+
+### Building the server when the client cannot be rebuilt
+
+Suppose the server machine has the C/C++ build tools but no Node.js. The Windows,
+Linux and macOS server scripts warn, skip the client rebuild and continue to the
+server build. If Node.js exists but the client build returns an error, they print
+a warning and continue in the same way. This includes syntax, minifier, mode
+selection and output-write errors. The client's standalone failure exit code is
+preserved; the server scripts handle it as an optional build step.
+
+During packaging, the scripts copy `client-source-code/client.html` if it exists.
+After a skipped or failed rebuild, that file may be an older client and may not
+match your edited sources. If it is absent, the scripts warn that the bundled
+HTTP server has no page to serve and still continue. You can build the client on
+another machine and place its `client.html` beside the server later. Native server
+build failures still fail the server build normally.
+
+To avoid the mode prompt during a server build, set the environment variable
+before invoking the server script. In Windows Command Prompt:
+
+```bat
+set "LEMON_CLIENT_BUILD_MODE=unminified"
+windows_build_script.bat
+```
+
+In PowerShell:
+
+```powershell
+$env:LEMON_CLIENT_BUILD_MODE = "unminified"
+.\windows_build_script.bat
+```
+
+On Linux, from `server-source-code`:
+
+```sh
+LEMON_CLIENT_BUILD_MODE=unminified bash linux_build_script.sh
+```
+
+Use `macos_build_script.sh` on macOS. Set the value to `minified` when Terser is
+installed and you want minification. If that request fails, the server scripts
+warn and use the existing page; they do not silently rebuild in a different mode.
 
 ## How the glue works
 

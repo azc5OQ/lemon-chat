@@ -123,6 +123,11 @@ static boole _client_msg_server_settings_internal__is_save_server_settings_reque
     {
         return FALSE;
     }
+    value = cJSON_GetObjectItemCaseSensitive(message, "max_channel_count");
+    if (value != NULL_POINTER && util__json_read_int64(value, 1, MAX_CHANNELS, &number) == FALSE)
+    {
+        return FALSE;
+    }
     value = cJSON_GetObjectItemCaseSensitive(message, "max_concurrent_logins");
     if (value != NULL_POINTER && util__json_read_int64(value, 1, 64, &number) == FALSE)
     {
@@ -344,6 +349,11 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
     previous_is_server_uptime_published = g_server_settings.is_server_uptime_published;
     previous_reserved_slots = g_server_settings.reserved_slots;
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "max_channel_count");
+    if (json_field != NULL_POINTER)
+    {
+        g_server_settings.channel_count_limit = (uint64)json_field->valuedouble;
+    }
     json_field = cJSON_GetObjectItemCaseSensitive(json_message_object, "reserved_slots");
     status0 = (cJSON_IsNumber(json_field)) != FALSE;
     if (status0 == TRUE)
@@ -813,6 +823,7 @@ void client_msg__server_settings__process_save_request(cJSON* json_root, uint64 
     // what is on disk (which is what the next restart will load)
     if (save_succeeded == FALSE)
     {
+        g_server_settings.channel_count_limit = previous_general_settings.channel_count_limit;
         g_server_settings.is_display_country_flags_active = previous_is_display_country_flags_active;
         g_server_settings.is_voice_chat_active = previous_voice_chat_active;
         g_server_settings.is_audio_over_websocket_allowed = previous_is_audio_over_websocket_allowed;

@@ -282,6 +282,7 @@ extern "C" {
 	extern int ws_sendframe_bin(ws_cli_conn_t *cli, const char *msg, uint64_t size);
 	extern int ws_get_state(ws_cli_conn_t *cli);
 	extern int ws_close_client(ws_cli_conn_t *cli);
+    extern const char* ws_get_close_reason(ws_cli_conn_t* client);
 	extern int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop,uint32_t timeout_ms);
 	/* Call once before ws_socket; live capacity changes are rejected. */
 	extern int ws_init_client_slots(uint32_t capacity);

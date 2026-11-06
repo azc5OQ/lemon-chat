@@ -73,6 +73,7 @@ void server_msg__server_settings__send_to_single_client(client_t* receiver, bool
     cJSON_AddNumberToObject(message, "used_slots", (double)used_slots);
     cJSON_AddNumberToObject(message, "max_slots", (double)g_server_settings.max_client_count);
     cJSON_AddNumberToObject(message, "reserved_slots", (double)g_server_settings.reserved_slots);
+    cJSON_AddNumberToObject(message, "max_channel_count", (double)g_server_settings.channel_count_limit);
     if (memory_only)
     {
         cJSON_AddBoolToObject(message, "memory_only", TRUE);

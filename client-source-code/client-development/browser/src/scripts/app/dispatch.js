@@ -130,12 +130,18 @@ function dispatch__mainthread_onmessage(e)
     {
         keys__handle_rsa_key_too_weak_notice(e.data.minimum_rsa_key_bits);
     }
+    else if (e.data.type == "data_processing_worker__connection_activity")
+    {
+        g_connection_check.last_response_timestamp = new Date().valueOf();
+    }
     else if (e.data.type == "websocket_worker_onclose")
     {
         if (e.data.reason)
         {
             g_last_disconnect_reason = e.data.reason;
         }
+        utils__custom_log("WebSocket closed: code=" + e.data.close_code + ", clean=" + e.data.was_clean
+            + (e.data.close_reason ? ", reason=" + e.data.close_reason : ""));
         audio_transport__reset();
         // the connect loop of connection.js waits for this signal; it decides whether and when to connect again
         g_last_connect_attempt_failed = true;
@@ -151,7 +157,7 @@ function dispatch__mainthread_onmessage(e)
 
                 if (g_last_disconnect_reason === "")
                 {
-                    g_last_disconnect_reason = "the server closed the connection (it probably kicked this client, or shut down)";
+                    g_last_disconnect_reason = "connection closed (WebSocket code " + (e.data.close_code || "unknown") + ")";
                 }
             }
             else if (g_last_disconnect_reason === "")
@@ -165,10 +171,11 @@ function dispatch__mainthread_onmessage(e)
         connection__signal_connection_closed();
         console.warn("server connection lost (identity switch in progress: " + g_is_identity_switch_in_progress + ")");
 
-        // the resume socket itself died: that is the one allowed failure, back to the connect screen
+        // A transport failure may be temporary. The connect loop retries until
+        // the original recovery deadline; every attempt still requires a valid login.
         if (g_fast_reconnect.in_progress == true)
         {
-            connection__fast_reconnect_failed("the resume socket closed");
+            console.warn("resume socket closed; retrying within the recovery deadline");
         }
         else if (connection__try_start_fast_reconnect("socket closed") == false)
         {
@@ -204,7 +211,7 @@ function dispatch__mainthread_onmessage(e)
 
         if (g_fast_reconnect.in_progress == true)
         {
-            connection__fast_reconnect_failed("the resume socket failed");
+            console.warn("resume socket failed; retrying within the recovery deadline");
         }
         else if (connection__try_start_fast_reconnect("socket error") == false)
         {
@@ -273,11 +280,14 @@ function dispatch__mainthread_onmessage(e)
     {
         if (e.data.value == "success")
         {
-            // a resume the server answered with a plain login: it had no session left to adopt, so
-            // the page state is stale. one clean failure instead of a half-refreshed page
+            // The server already removed the old session. Clear stale UI state and
+            // reconnect normally once, instead of abandoning a recoverable connection.
             if (g_fast_reconnect.in_progress == true && g_fast_reconnect.resumed == false)
             {
-                connection__fast_reconnect_failed("the server had no session to resume");
+                utils__custom_log("old session expired; reconnecting with a fresh session");
+                g_is_authenticated = false;
+                connection__reset_chat_app_keep_identity();
+                connection__wake_connect_loop();
                 return;
             }
 

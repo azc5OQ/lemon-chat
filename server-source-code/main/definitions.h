@@ -302,7 +302,8 @@ typedef struct server_settings
     uint64 delete_channel_request_cooldown_milliseconds;
     uint64 create_channel_request_cooldown_milliseconds;
     uint64 channel_count;
-    uint64 max_channel_count;
+    uint64 max_channel_count; // allocated channel slots and channel-ID bound; fixed at MAX_CHANNELS
+    uint64 channel_count_limit; // configurable creation limit, including root and temporary channels
     uint64 client_count;
     uint64 max_client_count;
     uint64 reserved_slots;

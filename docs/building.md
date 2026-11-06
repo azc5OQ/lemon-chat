@@ -16,17 +16,19 @@ Paths start at the Lemon Chat project directory.
 | Android client APK | `client-source-code/client-development/mobile/android` | Windows: `.\gradlew.bat :app:assembleDebug`; Linux/macOS: `sh ./gradlew :app:assembleDebug` |
 | Android server APK | `server-source-code/android-server-app` | Windows: `.\gradlew.bat :app:assembleDebug`; Linux/macOS: `sh ./gradlew :app:assembleDebug` |
 
-If you want to host a chat, build the server. The server build also creates the browser client's `client.html`.
+If you want to host a chat, build the server. When Node.js is installed, the server build also rebuilds the browser client's `client.html`.
 
 ## Server
 
-The server scripts build the required libraries, the server and `client.html`. They collect the files needed to run the server in `buildresult` at the project root.
+The server scripts build the required libraries and the server, and rebuild `client.html` when Node.js is available. They collect the files needed to run the server in `buildresult` at the project root.
 
 Stop the server before rebuilding. Save any settings or other files you need from `buildresult`: the Linux and macOS scripts recreate that directory, and the Windows script can clear it when you choose a clean build.
 
+If you build the server on a machine without Node.js, the scripts warn and skip rebuilding the browser client. They copy the existing `client-source-code/client.html` into `buildresult` if available; that page may not include your latest client source changes. If the file is missing, they warn that the bundled HTTP server has no page to serve, but still build the server. If Node.js is available but the client build fails, the scripts also warn and continue building the server, using the existing page if available. Node.js and a successful browser client rebuild are not server build requirements.
+
 ### Windows
 
-Install Node.js, open a terminal in `server-source-code`, then run:
+Open a terminal in `server-source-code`, then run:
 
 ```bat
 windows_build_script.bat
@@ -38,13 +40,13 @@ The optional stunnel build needs Git for Windows because it supplies Bash and Pe
 
 ### Linux
 
-Install GCC, G++, CMake, Ninja, Make, pkg-config, Python 3, Node.js, Perl, curl, tar, autoconf, automake and libtool. From `server-source-code`, run `bash linux_build_script.sh`.
+Install GCC, G++, CMake, Ninja, Make, pkg-config, Python 3, Perl, curl, tar, autoconf, automake and libtool. From `server-source-code`, run `bash linux_build_script.sh`.
 
 The result is `buildresult/chat-server.bin` with its supporting files and `start_server.sh`. The script also builds stunnel. Use `--wsl` when building a Linux executable under Windows Subsystem for Linux.
 
 ### macOS
 
-Install the Xcode command-line tools, CMake, Ninja, pkg-config, Python 3 and Node.js. The stunnel build also uses Make and Perl. From `server-source-code`, run `bash macos_build_script.sh`.
+Install the Xcode command-line tools, CMake, Ninja, pkg-config and Python 3. The stunnel build also uses Make and Perl. From `server-source-code`, run `bash macos_build_script.sh`.
 
 The result is `buildresult/chat-server.bin` with its supporting files and `start_server.sh`. The script builds for the compiler's selected architecture.
 
@@ -53,6 +55,8 @@ For hosting and public access after building, read the [self-hosting guide](../s
 ## Browser client
 
 Install Node.js, open `client-source-code/client-development/browser`, then run `build.bat` on Windows or `sh build.sh` on Linux and macOS. The result is `client-source-code/client.html`.
+
+Node.js runs the build script that assembles the source files, embeds WebAssembly and validates JavaScript. This is separate from the Android runtime: opening the finished `client.html` in a browser does not require Node.js.
 
 The script offers readable and minified output. Minifying requires Terser; the readable build does not. The [browser build guide](../client-source-code/client-development/browser/README.md#building) explains the choices and direct `node build.cjs` commands.
 

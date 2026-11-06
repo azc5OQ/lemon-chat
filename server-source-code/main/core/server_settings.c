@@ -952,6 +952,7 @@ void settings__load(void)
     // set the max client/channel counts here too; the JSON path below returns early, so without this the arrays would allocate at size 0
     g_server_settings.max_client_count = DEFAULT_SERVER_SLOTS;
     g_server_settings.max_channel_count = MAX_CHANNELS;
+    g_server_settings.channel_count_limit = MAX_CHANNELS;
 
     // wireguard mode is off unless the setup wizard or selfhosting-tools/wireguard/ scripts switch it on; the range is the
     // default the scripts forward
@@ -1000,6 +1001,18 @@ void settings__load(void)
                         exit(EXIT_FAILURE);
                     }
                     g_server_settings.max_client_count = (uint64)json_field->valuedouble;
+                }
+
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "max_channel_count");
+                if (json_field != NULL_POINTER)
+                {
+                    if (util__json_read_uint64(json_field, MAX_CHANNELS, &g_server_settings.channel_count_limit) == FALSE
+                        || g_server_settings.channel_count_limit < 1)
+                    {
+                        fprintf(stderr, "max_channel_count must be an integer from 1 to %d; fix server_settings.json before starting.\n", MAX_CHANNELS);
+                        util__json_delete_secure(json_root);
+                        exit(EXIT_FAILURE);
+                    }
                 }
 
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "websocket_port");
@@ -1858,6 +1871,11 @@ boole settings__save_server_settings_to_file(void)
     }
     util__json_delete_item_secure(json_root, "is_server_uptime_published");
     util__json_delete_item_secure(json_root, "reserved_slots");
+    util__json_delete_item_secure(json_root, "max_channel_count");
+    if (!cJSON_AddNumberToObject(json_root, "max_channel_count", (double)g_server_settings.channel_count_limit))
+    {
+        goto json_failure;
+    }
     if (!cJSON_AddNumberToObject(json_root, "reserved_slots", (double)g_server_settings.reserved_slots))
     {
         goto json_failure;
@@ -2492,6 +2510,10 @@ void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
         goto json_failure;
     }
     if (!cJSON_AddNumberToObject(json_root, "server_slots", (double)g_server_settings.max_client_count))
+    {
+        goto json_failure;
+    }
+    if (!cJSON_AddNumberToObject(json_root, "max_channel_count", (double)g_server_settings.channel_count_limit))
     {
         goto json_failure;
     }

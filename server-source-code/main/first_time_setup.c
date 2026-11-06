@@ -61,7 +61,8 @@ static boole _first_time_setup_internal__has_wireguard(void);
 #endif
 static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void);
 static int64 _first_time_setup_internal__ask_port(const char* question, int64 default_port);
-static boole _first_time_setup_internal__prompt_network_settings(first_time_setup_hosting_t hosting);
+static void _first_time_setup_internal__prompt_network_settings(first_time_setup_hosting_t hosting);
+static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_hosting_t hosting);
 static boole _first_time_setup_internal__ask_yes_no(const char* question, boole default_answer);
 static boole _first_time_setup_internal__ask_yes_no_with_note(const char* question, const char* note, boole default_answer);
 static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, uint64 out_capacity);
@@ -806,9 +807,9 @@ static int64 _first_time_setup_internal__ask_port(const char* question, int64 de
 /**
  * @brief Asks only the network questions needed for the chosen hosting method.
  * @param first_time_setup_hosting_t hosting -> the selected hosting method
- * @return boole -> TRUE when the WireGuard setup should run after saving the settings
+ * @return void
  */
-static boole _first_time_setup_internal__prompt_network_settings(first_time_setup_hosting_t hosting)
+static void _first_time_setup_internal__prompt_network_settings(first_time_setup_hosting_t hosting)
 {
     char input[256];
     char client_themes[16][32];
@@ -816,7 +817,6 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
     uint64 i = 0;
     int64 client_theme_count = 0;
     int64 theme_choice = 0;
-    boole is_tunnel_setup_requested = FALSE;
     boole is_same_public_hostname = TRUE;
     boole status0 = FALSE;
     boole is_http_tunnel = (hosting == HOSTING_FUNNEL || hosting == HOSTING_CLOUDFLARE || hosting == HOSTING_NGROK);
@@ -937,7 +937,8 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
         }
 
         status0 = _first_time_setup_internal__ask_yes_no_with_note("Save each user's identity in their browser?",
-            "    The browser reuses the same identity after the page is reloaded or reopened.\n",
+            "    The browser reuses the same identity after the page is reloaded or reopened.\n"
+            "    This is separate from saving identities on the server, asked later.\n",
             FALSE);
         if (status0 == TRUE)
         {
@@ -949,11 +950,48 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
 
     if (is_http_tunnel == TRUE)
     {
+        g_server_settings.is_same_ip_address_allowed = TRUE;
+        printf("%s %s\n", g_mark_info, "Multiple clients from the same IP address: allowed.");
+    }
+    else
+    {
+        status0 = _first_time_setup_internal__ask_yes_no_with_note("Limit connections to one client per IP address?", "    For localhost testing with multiple clients, answer no.\n", FALSE);
+        if (status0 == TRUE)
+        {
+            g_server_settings.is_same_ip_address_allowed = FALSE;
+            printf("%s %s\n", g_mark_ok, "Multiple clients from the same IP address: blocked.");
+        }
+    }
+}
+
+/**
+ * @brief Chooses media features before asking which transports they should use.
+ * @param first_time_setup_hosting_t hosting -> the selected hosting method
+ * @return boole -> TRUE when WireGuard setup should run after saving the settings
+ */
+static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_hosting_t hosting)
+{
+    char input[256];
+    boole status0 = FALSE;
+    boole is_tunnel_setup_requested = FALSE;
+    boole is_http_tunnel = (hosting == HOSTING_FUNNEL || hosting == HOSTING_CLOUDFLARE || hosting == HOSTING_NGROK);
+
+    g_server_settings.is_voice_chat_active = _first_time_setup_internal__ask_yes_no("Enable voice chat?", TRUE);
+    g_server_settings.is_music_bot_audio_active = _first_time_setup_internal__ask_yes_no_with_note("Enable music bot audio?",
+        "    Music bots can play audio even when voice chat is disabled.\n", TRUE);
+    g_server_settings.is_video_streaming_active = _first_time_setup_internal__ask_yes_no("Enable video streaming and screen sharing?", FALSE);
+
+    if (g_server_settings.is_voice_chat_active == FALSE && g_server_settings.is_music_bot_audio_active == FALSE && g_server_settings.is_video_streaming_active == FALSE)
+    {
         g_server_settings.is_audio_over_websocket_allowed = TRUE;
         g_server_settings.is_audio_over_webrtc_allowed = FALSE;
-        g_server_settings.is_same_ip_address_allowed = TRUE;
+        printf("%s %s\n", g_mark_info, "Audio and video are disabled. Skipping the transport question; WebSocket is selected if media is enabled later.");
+    }
+    else if (is_http_tunnel == TRUE)
+    {
+        g_server_settings.is_audio_over_websocket_allowed = TRUE;
+        g_server_settings.is_audio_over_webrtc_allowed = FALSE;
         printf("%s %s\n", g_mark_info, "Audio/video connections: WebSocket only for this hosting option.");
-        printf("%s %s\n", g_mark_info, "Multiple clients from the same IP address: allowed.");
     }
     else
     {
@@ -986,13 +1024,6 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
         }
         printf("%s %s%s\n", g_mark_ok, "audio/video connections: ", audio_channel__policy_value());
         clib__null_memory(input, sizeof(input));
-
-        status0 = _first_time_setup_internal__ask_yes_no_with_note("Limit connections to one client per IP address?", "    For localhost testing with multiple clients, answer no.\n", FALSE);
-        if (status0 == TRUE)
-        {
-            g_server_settings.is_same_ip_address_allowed = FALSE;
-            printf("%s %s\n", g_mark_ok, "Multiple clients from the same IP address: blocked.");
-        }
     }
 
     if (hosting == HOSTING_WIREGUARD)
@@ -1005,7 +1036,7 @@ static boole _first_time_setup_internal__prompt_network_settings(first_time_setu
             printf("\n");
             is_tunnel_setup_requested = _first_time_setup_internal__ask_yes_no_with_note("Run the WireGuard setup script after saving these settings?",
                                                                                          "    Configures the VPS over SSH and connects this machine through WireGuard.\n"
-                                                                                         "    Answer no if it is already configured; enter its address and UDP ports below.\n",
+                                                                                         "    Answer no if it is already configured; enter its address and any required UDP ports below.\n",
                                                                                          TRUE);
         }
         else
@@ -1048,9 +1079,9 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     printf("\n%s %s\n\n", g_mark_info, "1/4  Hosting and network connections.");
     hosting = _first_time_setup_internal__ask_hosting();
-    is_tunnel_setup_requested = _first_time_setup_internal__prompt_network_settings(hosting);
+    _first_time_setup_internal__prompt_network_settings(hosting);
 
-    printf("\n%s %s\n\n", g_mark_info, "2/4  Passwords and server slots.");
+    printf("\n%s %s\n\n", g_mark_info, "2/4  Passwords and server limits.");
 
     status0 = _first_time_setup_internal__ask_yes_no_with_note("Require connection passwords to join this server?",
         "    Clients need all configured passwords, entered in the same order.\n",
@@ -1114,6 +1145,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     /* This setting is read only at startup, before any client storage exists. */
     g_server_settings.max_client_count = DEFAULT_SERVER_SLOTS;
     g_server_settings.max_channel_count = MAX_CHANNELS;
+    g_server_settings.channel_count_limit = MAX_CHANNELS;
     for (;;)
     {
         printf("%s Maximum connected clients (1-%d) [%d]: ", g_mark_ask, MAX_SERVER_SLOTS, DEFAULT_SERVER_SLOTS);
@@ -1136,6 +1168,29 @@ void first_time_setup__run(char plaintext_keys[][256])
         printf("%s Enter a whole number from 1 to %d.\n", g_mark_warn, MAX_SERVER_SLOTS);
     }
 
+    printf("%s %s\n", g_mark_info, "The channel limit includes root, permanent channels and temporary channels.");
+    for (;;)
+    {
+        printf("%s Maximum channels (1-%d) [%d]: ", g_mark_ask, MAX_CHANNELS, MAX_CHANNELS);
+        clib__null_memory(input, sizeof(input));
+        if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
+        {
+            break;
+        }
+        clib__string_trim_newline(input, sizeof(input));
+        if (input[0] == 0)
+        {
+            break;
+        }
+        slots = clib__strtol(input, &end, 10);
+        if (end != input && *end == 0 && slots >= 1 && slots <= MAX_CHANNELS)
+        {
+            g_server_settings.channel_count_limit = (uint64)slots;
+            break;
+        }
+        printf("%s Enter a whole number from 1 to %d.\n", g_mark_warn, MAX_CHANNELS);
+    }
+
     _first_time_setup_internal__ask_admin_password(input, sizeof(input));
     util__hash_password_to_base64(input, &g_server_settings.admin_password[0], ADMIN_PASSWORD_MAX_LENGTH);
     g_server_settings.is_admin_password_initial = TRUE;
@@ -1143,14 +1198,9 @@ void first_time_setup__run(char plaintext_keys[][256])
     clib__string_copy(g_first_run_admin_password, ADMIN_PASSWORD_MAX_LENGTH, input);
     clib__null_memory(input, sizeof(input));
 
-    printf("\n%s %s\n\n", g_mark_info, "3/4  Voice and server behaviour.");
+    printf("\n%s %s\n\n", g_mark_info, "3/4  Audio, video and server behaviour.");
 
-    status0 = _first_time_setup_internal__ask_yes_no("Enable voice chat?", TRUE);
-    if (status0 == FALSE)
-    {
-        g_server_settings.is_voice_chat_active = FALSE;
-        printf("%s %s\n", g_mark_off, "voice chat: off");
-    }
+    is_tunnel_setup_requested = _first_time_setup_internal__prompt_media_settings(hosting);
 
 #ifndef WIN32
     status0 = _first_time_setup_internal__ask_yes_no_with_note("Let start_server.sh restart the server after a crash?",
@@ -1165,12 +1215,16 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     printf("\n%s %s\n\n", g_mark_info, "4/4  Client profiles and chat features.");
 
-    status0 = _first_time_setup_internal__ask_yes_no_with_note("Save client identities on the server?",
-        "    Clients keep their assigned groups when they reconnect with the same identity.\n",
+    g_server_settings.is_identity_storage_enabled = _first_time_setup_internal__ask_yes_no_with_note("Save client identities on the server?",
+        g_server_settings.is_permission_system_enabled == TRUE
+            ? "    Saves assigned groups and profiles for clients returning with the same identity.\n"
+            : "    Saves profiles and enables an optional saved-user list for password admins.\n",
         TRUE);
-    if (status0 == FALSE)
+    g_server_settings.is_stored_client_list_allowed = FALSE;
+    g_server_settings.is_last_seen_enabled = FALSE;
+    g_server_settings.is_offline_messaging_allowed = FALSE;
+    if (g_server_settings.is_identity_storage_enabled == FALSE)
     {
-        g_server_settings.is_identity_storage_enabled = FALSE;
         printf("%s %s\n", g_mark_off, "identities: off");
         printf("%s %s\n", "   ", "The saved user list, last seen times and offline messages require saved identities. These options will be skipped.");
     }
@@ -1202,23 +1256,24 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     if (g_server_settings.is_identity_storage_enabled == TRUE)
     {
-        status0 = _first_time_setup_internal__ask_yes_no("Show saved users, including offline users, to clients with permission?", FALSE);
-        if (status0 == TRUE)
+        g_server_settings.is_stored_client_list_allowed = _first_time_setup_internal__ask_yes_no(
+            g_server_settings.is_permission_system_enabled == TRUE
+                ? "Show saved users, including offline users, to clients with permission?"
+                : "Show saved users, including offline users, to password admins?", FALSE);
+        if (g_server_settings.is_stored_client_list_allowed == TRUE)
         {
-            g_server_settings.is_stored_client_list_allowed = TRUE;
-            status0 = _first_time_setup_internal__ask_yes_no("Show when saved users were last online?", FALSE);
-            if (status0 == TRUE)
-            {
-                g_server_settings.is_last_seen_enabled = TRUE;
-            }
+            g_server_settings.is_last_seen_enabled = _first_time_setup_internal__ask_yes_no("Show when saved users were last online?", FALSE);
+            g_server_settings.is_offline_messaging_allowed = _first_time_setup_internal__ask_yes_no_with_note(
+                g_server_settings.is_permission_system_enabled == TRUE
+                    ? "Allow offline messages for users whose groups have permission?"
+                    : "Allow offline messages between password admins?",
+                "    The server saves public keys so users can encrypt messages for offline recipients.\n"
+                "    Encrypted messages wait in RAM until the recipient reconnects.\n"
+                "    Pending messages are lost when the server stops.\n", FALSE);
         }
-        status0 = _first_time_setup_internal__ask_yes_no_with_note("Allow offline messages for users whose groups have permission?",
-            "    The server saves public keys so users can encrypt messages for offline recipients.\n"
-            "    Encrypted messages wait in RAM until the recipient reconnects.\n"
-            "    Pending messages are lost when the server stops.\n", FALSE);
-        if (status0 == TRUE)
+        else
         {
-            g_server_settings.is_offline_messaging_allowed = TRUE;
+            printf("%s %s\n", g_mark_info, "Last seen times and offline messages require the saved-user list. These options will be skipped.");
         }
     }
 
@@ -1255,6 +1310,9 @@ void first_time_setup__run(char plaintext_keys[][256])
         printf("      %s%lld%s\n", "public wss port ...... ", g_server_settings.wss_port, " (provided by another program)");
     }
     printf("      %s%s\n", "connect password ..... ", (g_server_settings.keys_count > 0) ? "set" : "none");
+    printf("      %s%llu\n", "maximum channels ..... ", (unsigned long long)g_server_settings.channel_count_limit);
+    printf("      %s%s\n", "music bot audio ...... ", (g_server_settings.is_music_bot_audio_active == TRUE) ? "on" : "off");
+    printf("      %s%s\n", "video streaming ...... ", (g_server_settings.is_video_streaming_active == TRUE) ? "on" : "off");
     printf("      %s%s\n", "voice chat ........... ", (g_server_settings.is_voice_chat_active == TRUE) ? "on" : "off");
     printf("      %s%s\n", "audio connections .... ", audio_channel__policy_value());
     printf("      %s%s\n", "same-IP clients ...... ", (g_server_settings.is_same_ip_address_allowed == TRUE) ? "allowed" : "blocked");
@@ -1522,9 +1580,8 @@ static void _first_time_setup_internal__reload_tunnel_settings(void)
 }
 
 /**
- * @brief the two answers behind the WireGuard question of the wizard: the router's public IPv4 address, and the UDP port range the router forwards for voice and video
- *        both are asked until they parse; an empty range takes the default. the mode is switched on
- *        only when both answers are usable
+ * @brief Asks for the WireGuard router address and, only with WebRTC enabled, its forwarded UDP range.
+ *        Answers are checked before enabling the mode; an empty range keeps the default.
  *
  * @param char* input -> the wizard's input buffer
  * @param uint64 input_size -> its size
@@ -1558,7 +1615,7 @@ static void _first_time_setup_internal__ask_wireguard_details(char* input, uint6
         printf("%s %s\n", g_mark_warn, "Enter an IPv4 address, for example 203.0.113.10.");
     }
 
-    for (;;)
+    while (g_server_settings.is_audio_over_webrtc_allowed == TRUE)
     {
         clib__null_memory(input, input_size);
         printf("%s %s%lld-%lld%s", g_mark_ask, "UDP port range forwarded by the VPS for WebRTC (BEGIN-END) [", (long long)g_server_settings.webrtc_port_range_begin, (long long)g_server_settings.webrtc_port_range_end, "]: ");
@@ -1585,5 +1642,12 @@ static void _first_time_setup_internal__ask_wireguard_details(char* input, uint6
 
     g_server_settings.is_wireguard_mode_active = TRUE;
     printf("%s %s%s%s%lld%s%lld\n", g_mark_ok, "wireguard mode: on, public address ", g_server_settings.webrtc_public_address, ", udp ", (long long)g_server_settings.webrtc_port_range_begin, "-", (long long)g_server_settings.webrtc_port_range_end);
-    printf("%s %s\n", "   ", "The VPS must forward the selected TCP ports, UDP port 3478 and this UDP range to this machine. See selfhosting-tools/wireguard/README.md.");
+    if (g_server_settings.is_audio_over_webrtc_allowed == TRUE)
+    {
+        printf("%s %s\n", "   ", "The VPS must forward the selected TCP ports, UDP port 3478 and this UDP range to this machine. See selfhosting-tools/wireguard/README.md.");
+    }
+    else
+    {
+        printf("%s %s\n", "   ", "Forward the selected TCP ports to this machine. WebRTC UDP forwarding is not needed with WebSocket-only media.");
+    }
 }

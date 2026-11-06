@@ -5801,6 +5801,7 @@ All listed settings are optional members of `message`. No nested `settings` obje
 | `message.is_video_streaming_active` | boolean | Optional; absent retains current value | Whether video streaming is enabled; this settings field uses active, while login/policy use allowed. |
 | `message.is_hide_clients_in_password_protected_channels_active` | boolean | Optional; absent retains current value | Whether membership of password-protected channels is concealed from outsiders. |
 | `message.is_temp_channel_creation_allowed` | boolean | Optional; absent retains current value | Whether temporary channel creation is enabled by the general setting. |
+| `message.max_channel_count` | number | Optional; absent retains current value | Whole-number creation limit from 1 to 100, including root, permanent and temporary channels. Lowering it preserves existing channels. Invalid values reject the entire update. |
 | `message.is_typing_indicator_allowed` | boolean | Optional; absent retains current value | Whether typing indicators are enabled. |
 | `message.is_client_rename_allowed` | boolean | Optional; absent retains current value | Whether client renaming is enabled. |
 | `message.is_link_preview_allowed` | boolean | Optional; absent retains current value | Whether URL previews are enabled. |
@@ -6041,6 +6042,7 @@ The full example and usage-only example are separate body shapes. `ram_bytes` is
 | `message.is_video_streaming_active` | boolean | Present in full response | Whether video streaming is enabled; this settings field uses active, while login/policy use allowed. |
 | `message.is_hide_clients_in_password_protected_channels_active` | boolean | Present in full response | Whether membership of password-protected channels is concealed from outsiders. |
 | `message.is_temp_channel_creation_allowed` | boolean | Present in full response | Whether temporary channel creation is enabled by the general setting. |
+| `message.max_channel_count` | number | Present in full response | Configured channel creation limit, including root and temporary channels; defaults to 100. |
 | `message.is_typing_indicator_allowed` | boolean | Present in full response | Whether typing indicators are enabled. |
 | `message.is_client_rename_allowed` | boolean | Present in full response | Whether client renaming is enabled. |
 | `message.is_link_preview_allowed` | boolean | Present in full response | Whether URL previews are enabled. |

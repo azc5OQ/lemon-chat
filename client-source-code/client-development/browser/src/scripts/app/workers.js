@@ -37,6 +37,10 @@ var dpw_received_bytes = 0;
 var websocket_data_port = null;
 var websocket_connection_generation = 0;
 var websocket_close_reason = "";
+var websocket_upload_pending = null;
+var websocket_upload_timer = null;
+var WEBSOCKET_UPLOAD_BUFFER_LIMIT = 64 * 1024;
+var WEBSOCKET_UPLOAD_WAIT_MS = 120000;
 
 /**
  * @brief Tracks channel membership in socket order so received keys need not wait for the interface.
@@ -290,7 +294,7 @@ function workers__send_keepalive()
         {
             type: "close",
             connection_generation: dpw_connection_generation,
-            reason: "no heartbeat reply for " + Math.round(now - dpw_keepalive_last_reply) + " ms"
+            reason: "no valid server message for " + Math.round(now - dpw_keepalive_last_reply) + " ms"
         });
         return;
     }
@@ -1168,9 +1172,20 @@ function workers__mainthread__process_received_websocket_message_continue(e)
     {
         return;
     }
-    if (msg == null || msg.message == null)
+    if (msg == null || msg.message == null || typeof msg.message.type !== "string" || msg.message.type.length === 0)
     {
         return;
+    }
+
+    // Any valid decrypted server message proves the connection is receiving.
+    // Heartbeat replies still supply RTT; attachment traffic must not look dead.
+    if (g_is_authenticated)
+    {
+        dpw_keepalive_last_reply = performance.now();
+        if (dpw_socket_port == null)
+        {
+            workers__post_to_main({type: "data_processing_worker__connection_activity"});
+        }
     }
 
     // the webrtc handshake retries every 10s and its frames used to flood the 50kb log,
@@ -1982,6 +1997,57 @@ function workers__deliver_socket_event(message)
 }
 
 /**
+ * @brief Completes or cancels the one upload chunk waiting for socket capacity.
+ * @param boolean sent -> whether this chunk was handed to the current socket
+ */
+function workers__finish_upload_send(sent)
+{
+    clearTimeout(websocket_upload_timer);
+    websocket_upload_timer = null;
+    const pending = websocket_upload_pending;
+    websocket_upload_pending = null;
+    if (pending != null)
+    {
+        pending.reply_port.postMessage({sent: sent});
+        pending.reply_port.close();
+    }
+}
+
+/**
+ * @brief Waits for the browser's outgoing buffer before accepting another upload chunk.
+ * Normal chat and heartbeat messages can still use the socket while uploads wait.
+ */
+function workers__flush_upload_send()
+{
+    const pending = websocket_upload_pending;
+    if (pending == null)
+    {
+        return;
+    }
+    if (pending.generation !== websocket_generation || websocket_instance == null
+        || websocket_instance.readyState !== 1 || performance.now() >= pending.deadline)
+    {
+        workers__finish_upload_send(false);
+        return;
+    }
+    if (websocket_instance.bufferedAmount > WEBSOCKET_UPLOAD_BUFFER_LIMIT)
+    {
+        websocket_upload_timer = setTimeout(workers__flush_upload_send, 25);
+        return;
+    }
+    try
+    {
+        websocket_instance.send(pending.value);
+        workers__finish_upload_send(true);
+    }
+    catch (error)
+    {
+        console.error("upload socket send failed", error);
+        workers__finish_upload_send(false);
+    }
+}
+
+/**
  * @brief the websocket worker's message handler
  *        creates the socket, sends received frames to the decryption thread, sends data when the socket
  *        is open, and closes it on request
@@ -1995,6 +2061,7 @@ function workers__websocket_worker_onmessage(e)
 
     if (e.data.type == "create_websocket_object")
     {
+        workers__finish_upload_send(false);
         let generation = ++websocket_generation;
 
         // a replaced socket is closed, and its events below are ignored as stale
@@ -2034,16 +2101,26 @@ function workers__websocket_worker_onmessage(e)
             });
         });
 
-        websocket_instance.onclose = function ()
+        websocket_instance.onclose = function (event)
         {
-            if (generation != websocket_generation) { return; }
-
-            console.log("websocket closed");
-            workers__deliver_socket_event({
+            if (generation != websocket_generation)
+            {
+                return;
+            }
+            workers__finish_upload_send(false);
+            const code = event != null && typeof event.code === "number" ? event.code : 0;
+            const peer_reason = event != null && typeof event.reason === "string" ? event.reason : "";
+            const was_clean = event != null && event.wasClean === true;
+            console.warn("websocket closed", {code: code, reason: peer_reason, wasClean: was_clean});
+            workers__deliver_socket_event(
+            {
                 type: "websocket_worker_onclose",
-                reason: websocket_close_reason
+                reason: websocket_close_reason,
+                close_code: code,
+                close_reason: peer_reason,
+                was_clean: was_clean
             });
-        }
+        };
 
         websocket_instance.onerror = function (error)
         {
@@ -2073,6 +2150,30 @@ function workers__websocket_worker_onmessage(e)
     {
         if (e.data.connection_generation != null && e.data.connection_generation !== websocket_connection_generation)
         {
+            if (e.data.reply_port != null)
+            {
+                e.data.reply_port.postMessage({sent: false});
+                e.data.reply_port.close();
+            }
+            return;
+        }
+        if (e.data.reply_port != null)
+        {
+            // The page waits for this acknowledgement before creating the next chunk.
+            if (websocket_upload_pending != null)
+            {
+                e.data.reply_port.postMessage({sent: false});
+                e.data.reply_port.close();
+                return;
+            }
+            websocket_upload_pending =
+            {
+                value: e.data.value,
+                reply_port: e.data.reply_port,
+                generation: websocket_generation,
+                deadline: performance.now() + WEBSOCKET_UPLOAD_WAIT_MS
+            };
+            workers__flush_upload_send();
             return;
         }
         // null before the first connect: the loopback ui can forward a request while
@@ -2091,12 +2192,20 @@ function workers__websocket_worker_onmessage(e)
         }
     }
 
+    else if (e.data.type == "cancel_upload")
+    {
+        if (e.data.connection_generation == null || e.data.connection_generation === websocket_connection_generation)
+        {
+            workers__finish_upload_send(false);
+        }
+    }
     else if (e.data.type == "close")
     {
         if (e.data.connection_generation != null && e.data.connection_generation !== websocket_connection_generation)
         {
             return;
         }
+        workers__finish_upload_send(false);
         websocket_close_reason = e.data.reason || "";
         // deliberate disconnect (identity switch): the onclose event that follows
         // drives the normal reset path on the main thread

@@ -10,6 +10,7 @@ var picture_delivery_pending = false; // between the server's upload ack and ima
 var picture_delivery_hide_timer = null;
 
 var upload_ack_timer = null;
+var upload_generation = 0;
 
 var UPLOAD_ACK_TIMEOUT_MS = 300000;   // a slow 10mb upload legitimately takes minutes
 
@@ -172,6 +173,8 @@ function chat__promote_offline_chat_context_state(client)
  */
 function chat__release_file_upload_lock()
 {
+    upload_generation++;
+    connection__cancel_upload_send();
     if (upload_ack_timer != null)
     {
         clearTimeout(upload_ack_timer);
@@ -255,16 +258,17 @@ function chat__can_start_file_upload()
 }
 
 /**
- * @brief uploads a file in parts, one every delay_ms, with the progress overlay; the lock stays until the server's ack
+ * @brief uploads a file in parts when the socket has room, with the progress overlay; the lock stays until the server's ack
  *        a file_send_error mid-upload releases the lock, and the loop stops feeding a file the server dropped
  *
  * @param array parts -> the base64 parts
  * @param number total_bytes_length -> the whole file's length, sent with every part
- * @param number delay_ms -> the pause between parts
+ * @param number delay_ms -> the minimum pause between accepted parts
  *
  * @return void
  */
-function chat__send_file_by_parts(parts, total_bytes_length, delay_ms) {
+function chat__send_file_by_parts(parts, total_bytes_length, delay_ms)
+{
 
     if (g_is_file_being_uploaded == true)
     {
@@ -275,10 +279,11 @@ function chat__send_file_by_parts(parts, total_bytes_length, delay_ms) {
     let i = 0;
     document.getElementById("upload-progress-overlay").style.display = "block";
 
-    function next_part_upload ()
+    const generation = ++upload_generation;
+    async function next_part_upload()
     {
         // a file_send_error released the lock mid-upload: the server dropped this file, stop feeding it
-        if (i > 0 && g_is_file_being_uploaded == false)
+        if (generation !== upload_generation || (i > 0 && g_is_file_being_uploaded == false))
         {
             return;
         }
@@ -298,7 +303,25 @@ function chat__send_file_by_parts(parts, total_bytes_length, delay_ms) {
 
         // send
 
-        client_msg.send_file_send_request(total_bytes_length, part, i);
+        let sent = false;
+        try
+        {
+            sent = await client_msg.send_file_send_request(total_bytes_length, part, i);
+        }
+        catch (error)
+        {
+            console.error("upload chunk failed", error);
+        }
+        if (generation !== upload_generation)
+        {
+            return;
+        }
+        if (!sent)
+        {
+            chat__release_file_upload_lock();
+            utils__custom_alert("Upload stopped because the connection could not accept more data. Please try again.");
+            return;
+        }
 
         i++;
 

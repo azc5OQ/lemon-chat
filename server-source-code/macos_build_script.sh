@@ -33,12 +33,6 @@ warning()
 ROOT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THIRD_PARTY_DIRECTORY="$ROOT_DIRECTORY/third-party"
 
-if ! command -v node >/dev/null 2>&1
-then
-    warning "Node.js is required for the browser client. Install it from https://nodejs.org/"
-    warning "Optional minification: npm install --global terser"
-    exit 1
-fi
 LINK_DIR="$ROOT_DIRECTORY/main/linkage-files/macos"
 
 # =============================================================================
@@ -229,11 +223,17 @@ cp -v "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/libopus.a" "$LINK_DIR/libopus.a"
 # CLIENT | Generate the browser page
 # =============================================================================
 
-message "building the browser client (client.html)"
-if ! node "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.cjs"
+if command -v node >/dev/null 2>&1
 then
-    warning "browser client build failed; stopping before packaging an outdated page"
-    exit 1
+    message "building the browser client (client.html)"
+    if ! node "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.cjs"
+    then
+        warning "browser client build failed; continuing the server build"
+        warning "The existing client-source-code/client.html will be packaged if available; it may be outdated"
+    fi
+else
+    warning "Node.js not found; skipping browser client rebuild and continuing the server build"
+    warning "The existing client-source-code/client.html will be packaged if available; it may be outdated"
 fi
 
 # =============================================================================

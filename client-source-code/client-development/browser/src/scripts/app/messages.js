@@ -3785,7 +3785,7 @@ var client_msg = {
      * @param string data_part_base64 -> this part
      * @param number index -> the part's index
      *
-     * @return void
+     * @return Promise<boolean> -> whether the current socket accepted this chunk
      */
     send_file_send_request: function(total_bytes_length, data_part_base64, index)
     {
@@ -3806,7 +3806,7 @@ var client_msg = {
             }
         };
 
-        connection__send_message_object(message_object);
+        return connection__send_upload_message(message_object);
     },
     /**
      * @brief tells the server what the fully uploaded file is for: the intent plus the global g_file_send_intent_extra_data

@@ -7,6 +7,15 @@
 // number field, "tab" which save button sends it. the load and both saves walk this table
 var SERVER_SETTINGS_FIELDS = [
     {
+        key: "max_channel_count",
+        id: "server-settings-general-max-channel-count",
+        kind: "number",
+        fallback: 100,
+        min: 1,
+        max: 100,
+        tab: "general"
+    },
+    {
         key: "is_blocking_direct_chat_pictures_active",
         id: "server-settings-allow-block-direct-chat-pictures",
         kind: "bool",

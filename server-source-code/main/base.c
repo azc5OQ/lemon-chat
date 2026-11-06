@@ -613,7 +613,7 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
 
     DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %llu %s %s %s", "client : ", client_index, " detected message type is ", message_type, "\n");
 
-    clib__read_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_clients_global_rwlock_guard);
     status0 = base__is_current_client_request(client_index);
     if (status0 == TRUE)
     {
@@ -626,6 +626,10 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
         util__json_delete_secure(json_root);
         return;
     }
+    // A decrypted, well-formed message from this authenticated socket proves
+    // liveness even when its action is later refused by permissions or policy.
+    // Never refresh a replacement session or accept malformed JSON as activity.
+    g_clients_array[client_index].timestamp_last_maintain_connection_message_received = util__get_timestamp_ms();
     is_sender_idle = g_clients_array[client_index].is_idle;
     clib__unlock(&g_clients_global_rwlock_guard);
 

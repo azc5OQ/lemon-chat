@@ -431,6 +431,7 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
     cJSON* json_message_object = 0;
     uint64 i = 0;
     uint64 created_channel_index = 0;
+    uint64 existing_channel_count = 0;
     uint64 channel_creator_client_id = 0;
     char creator_identity[IDENTITY_HASH_MAX_LENGTH] = {0};
     channel_t* channel = 0;
@@ -486,6 +487,22 @@ void client_msg__channel__process_create_request(cJSON* json_root, uint64 sender
         // creating the child channel
         // both need to be wrapper within same write lock because they are tied to one another,
         clib__write_lock(&g_channels_global_rwlock_guard);
+        // Count occupied channels, not their IDs: deleting a channel leaves a reusable hole.
+        // The clients and channels locks also serialize this check with creates and admin saves.
+        for (i = 0; i < g_server_settings.max_channel_count; i++)
+        {
+            if (g_channel_array[i].is_existing == TRUE)
+            {
+                existing_channel_count++;
+            }
+        }
+        if (existing_channel_count >= g_server_settings.channel_count_limit)
+        {
+            clib__unlock(&g_channels_global_rwlock_guard);
+            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "The server's maximum channel count has been reached.");
+            clib__unlock(&g_clients_global_rwlock_guard);
+            return;
+        }
         json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
         json_parent_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "parent_channel_id");
         json_channel_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_password");

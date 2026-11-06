@@ -221,6 +221,7 @@ static void _chat_websocket_internal__onclose(ws_cli_conn_t* websocket)
         goto label_onclose_end;
     }
 
+    server_logs__client_disconnect_reason(&g_clients_array[client_index], (char*)ws_get_close_reason(websocket));
     client_session__process_client_disconnect(client_index);
 
 label_onclose_end:
@@ -399,14 +400,14 @@ void* chat_websocket__listen_thread(void* argument)
 
 /**
  * @brief Checks whether a connection has taken too long to finish signing in or
- * has stopped sending keep-alive messages while that timeout check is enabled.
+ * has stopped sending valid messages while that timeout check is enabled.
  *
  * @param client_t* client -> the client slot whose connection is being checked
  * @param uint64 now -> current time in milliseconds from util__get_timestamp_ms
  *
  * @attention The caller must hold the clients lock while reading the connection
  * and settings. Repeat the check after taking the write lock before disconnecting
- * a client, because a keep-alive message or a settings change may have arrived.
+ * a client, because a valid message or a settings change may have arrived.
  *
  * @return boole -> TRUE when the connection has passed its time limit; FALSE otherwise
  */
@@ -426,7 +427,8 @@ static boole _chat_websocket_internal__has_connection_timed_out(client_t* client
             return FALSE;
         }
 
-        // Idle clients send a message every 120 seconds; active clients send one every 10 seconds.
+        // Every valid authenticated message refreshes liveness, including upload chunks.
+        // Idle clients may wait 120 seconds; active clients send heartbeats every 10 seconds.
         maintain_limit_ms = (g_server_settings.is_idle_mode_allowed == TRUE) ? 150000 : 80000;
         return client->timestamp_last_maintain_connection_message_received + maintain_limit_ms < now;
     }
@@ -516,7 +518,7 @@ void* chat_websocket__check_connections_thread(void* argument)
 
                 // the socket itself: without this only the entry went away and the closed connection
                 // kept its reader thread and ws slot forever (the ws ping used to reap those)
-                server_logs__client_disconnect_reason(client, client->is_authenticated == TRUE ? "heartbeat timeout" : "authentication timeout");
+                server_logs__client_disconnect_reason(client, client->is_authenticated == TRUE ? "client inactivity timeout" : "authentication timeout");
                 client_session__close_websocket_connection(marked_client_ids_for_disconnect[i], FALSE);
                 client_session__process_client_disconnect(marked_client_ids_for_disconnect[i]);
             }

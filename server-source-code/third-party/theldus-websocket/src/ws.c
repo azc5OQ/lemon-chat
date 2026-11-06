@@ -183,6 +183,7 @@ struct ws_connection
 
     struct ws_chat_queue* chat;
     bool chat_mode;
+    _Atomic(const char*) close_reason;
 
     int media_purpose;      // WS_MEDIA_PURPOSE_NONE for the chat socket, else the /audio or /video socket
     uint64_t media_client_id;
@@ -218,6 +219,32 @@ struct ws_connection
 static struct ws_connection* client_socks = NULL;
 static uint32_t client_capacity = 0;
 
+/**
+ * @brief Retains the first close cause without logging message data or addresses.
+ * @param client -> live connection owned by the caller
+ * @param reason -> static literal that remains valid for the connection lifetime
+ */
+static void record_close_reason(ws_cli_conn_t* client, const char* reason)
+{
+    const char* expected = NULL;
+
+    if (client != NULL)
+    {
+        atomic_compare_exchange_strong(&client->close_reason, &expected, reason);
+    }
+}
+
+/**
+ * @brief Reads the transport close cause while the connection is still alive.
+ * @param client -> connection, normally inspected during onclose
+ * @return const char* -> static description; no message contents are included
+ */
+const char* ws_get_close_reason(ws_cli_conn_t* client)
+{
+    const char* reason = client != NULL ? atomic_load(&client->close_reason) : NULL;
+    return reason != NULL ? reason : "connection closed without transport detail";
+}
+
 size_t ws_client_slot_size(void)
 {
     return sizeof(struct ws_connection);
@@ -234,7 +261,11 @@ int ws_init_client_slots(uint32_t capacity)
     client_socks = calloc(capacity, sizeof(*client_socks));
     if (client_socks == NULL) { return -1; }
     client_capacity = capacity;
-    for (i = 0; i < capacity; i++) { client_socks[i].client_sock = -1; }
+    for (i = 0; i < capacity; i++)
+    {
+        client_socks[i].client_sock = -1;
+        atomic_init(&client_socks[i].close_reason, NULL);
+    }
     return 0;
 }
 
@@ -285,6 +316,7 @@ void ws_media_bind(ws_cli_conn_t* client, uint64_t id)
 // Shutdown wakes the reader. Only that reader may release and reuse the slot.
 void ws_abort_client(ws_cli_conn_t* client)
 {
+    record_close_reason(client, "application aborted connection");
     if (client != NULL && client->chat_mode)
     {
         _ws_internal__chat_abort(client);
@@ -579,17 +611,23 @@ static void shutdown_socket(int fd)
 // Each connection owns its queue until its reader has stopped and every queued
 // message has been released. The socket slot cannot be reused before that point.
 #define WS_CHAT_CLIENT_BYTES (32U * 1024U * 1024U)
+#ifndef WS_CHAT_TOTAL_BYTES
 #if SIZE_MAX <= UINT32_MAX
 // The 32-bit build leaves address space for connections, uploads and libraries.
 #define WS_CHAT_TOTAL_BYTES (512U * 1024U * 1024U)
 #else
 #define WS_CHAT_TOTAL_BYTES SIZE_MAX
 #endif
+#endif
 #define WS_CHAT_KEEPALIVE_RESERVE (8U * 1024U * 1024U)
 #define WS_CHAT_CLIENT_MESSAGES 1024U
 #define WS_CHAT_TOTAL_MESSAGES 65536U
 #define WS_CHAT_WRITE_CHUNK 16384U
-#define WS_CHAT_STALL_TIMEOUT_MS 10000U
+// A congested proxy or receiver may pause briefly while other clients keep moving.
+// Keep a finite bound: a partially written frame cannot be dropped or overtaken.
+#ifndef WS_CHAT_STALL_TIMEOUT_MS
+#define WS_CHAT_STALL_TIMEOUT_MS 120000U
+#endif
 #define WS_CHAT_CLOSE_DRAIN_MS 2000U
 
 struct ws_chat_job
@@ -722,6 +760,12 @@ static ssize_t _ws_internal__receive_bytes(ws_cli_conn_t* client, void* buffer, 
 {
     ssize_t received;
     ws_pollfd_t descriptor;
+#ifdef _WIN32
+    bool stopped;
+    const int poll_timeout_ms = 1000;
+#else
+    const int poll_timeout_ms = -1;
+#endif
 
     for (;;)
     {
@@ -732,15 +776,31 @@ static ssize_t _ws_internal__receive_bytes(ws_cli_conn_t* client, void* buffer, 
         }
         if (received >= 0 || !client->chat_mode || !_ws_internal__socket_would_block())
         {
+            if (received <= 0)
+            {
+                record_close_reason(client, received == 0 ? "peer closed TCP connection" : "socket receive failed");
+            }
             return received;
         }
         memset(&descriptor, 0, sizeof(descriptor));
         descriptor.fd = client->client_sock;
         descriptor.events = POLLIN;
-        if (_ws_internal__chat_poll(&descriptor, 1, -1) < 0 && !_ws_internal__socket_would_block())
+        if (_ws_internal__chat_poll(&descriptor, 1, poll_timeout_ms) < 0 && !_ws_internal__socket_would_block())
+        {
+            record_close_reason(client, "socket receive poll failed");
+            return -1;
+        }
+#ifdef _WIN32
+        // WSAPoll may stay asleep after another thread shuts down this socket.
+        // Check cancellation periodically so a silent peer cannot retain its slot.
+        pthread_mutex_lock(&chat_mutex);
+        stopped = client->chat != NULL && client->chat->stopped;
+        pthread_mutex_unlock(&chat_mutex);
+        if (stopped)
         {
             return -1;
         }
+#endif
     }
 }
 
@@ -1117,6 +1177,7 @@ static int _ws_internal__chat_add_job(ws_cli_conn_t* client, struct ws_chat_job*
             chat_failures_client_messages += queue->messages >= client_message_limit;
             chat_failures_total_messages += chat_messages >= message_limit;
 #endif
+            record_close_reason(client, "outgoing queue limit exceeded");
             cancelled = _ws_internal__chat_abort_locked(queue);
         }
         else
@@ -1454,6 +1515,10 @@ static void* _ws_internal__chat_encode_worker(void* unused)
 #ifdef WS_CHAT_TEST_COUNTERS
             chat_failures_encoding += !valid;
 #endif
+            if (!valid)
+            {
+                record_close_reason(queue->client, "outgoing message encoding failed");
+            }
             cancelled = _ws_internal__chat_abort_locked(queue);
         }
         else
@@ -1562,6 +1627,7 @@ static void* _ws_internal__chat_socket_writer(void* unused)
         {
             if (!queue->stopped && queue->close_requested && now >= queue->close_deadline)
             {
+                record_close_reason(queue->client, "close handshake timed out");
                 _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
             }
             job = queue->first;
@@ -1578,6 +1644,7 @@ static void* _ws_internal__chat_socket_writer(void* unused)
 #ifdef WS_CHAT_TEST_COUNTERS
                 chat_failures_stall++;
 #endif
+                record_close_reason(queue->client, "outgoing socket stalled (no send progress)");
                 _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
                 continue;
             }
@@ -1611,6 +1678,7 @@ static void* _ws_internal__chat_socket_writer(void* unused)
             if (!queue->stopped && poll_result > 0
                 && (chat_pollfds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
             {
+                record_close_reason(queue->client, "outgoing socket poll reported error or hangup");
                 _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
             }
             else if (!queue->stopped && poll_result > 0 && (chat_pollfds[i].revents & POLLOUT) != 0)
@@ -1623,6 +1691,7 @@ static void* _ws_internal__chat_socket_writer(void* unused)
                 pthread_mutex_lock(&chat_mutex);
                 if (!write_ok)
                 {
+                    record_close_reason(queue->client, "socket send failed");
                     _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
                 }
             }
@@ -2546,6 +2615,7 @@ static void send_ping_close(ws_cli_conn_t *cli, int threshold, int lock)
 		 * rounds (until that thread has cleaned the slot) are harmless no-ops. */
 		if ((cli->current_ping_id - cli->last_pong_id) > threshold)
         {
+            record_close_reason(cli, "websocket pong timeout");
             ws_abort_client(cli);
         }
 
@@ -2671,6 +2741,7 @@ int ws_get_state(ws_cli_conn_t *client)
  */
 int ws_close_client(ws_cli_conn_t *client)
 {
+    record_close_reason(client, "application requested websocket close");
 	unsigned char clse_code[2];
 	int cc;
 
@@ -3491,6 +3562,7 @@ static void *ws_establishconnection(void *vclient)
 		/* Close event. */
 		else if (wfd.frame_type == WS_FR_OP_CLSE && !wfd.error)
 		{
+            record_close_reason(client, "peer sent websocket close");
 			/*
 			 * We only send a CLOSE frame once, if we're already
 			 * in CLOSING state, there is no need to send.
@@ -3521,6 +3593,10 @@ static void *ws_establishconnection(void *vclient)
 	 * or server closure, as the server is expected to
 	 * always know when the client disconnects.
 	 */
+    if (wfd.error)
+    {
+        record_close_reason(client, "websocket frame rejected");
+    }
 	cli_events.onclose(client);
 
 closed:
@@ -3615,6 +3691,7 @@ static void *ws_accept(void *data)
                 client_socks[i].media = NULL;
                 client_socks[i].media_client_id = UINT64_MAX;
 				client_socks[i].close_thrd = false;
+                atomic_store(&client_socks[i].close_reason, NULL);
 				client_socks[i].last_pong_id = -1;
 				client_socks[i].current_ping_id = -1;
 				set_client_address(&client_socks[i]);
@@ -3826,6 +3903,7 @@ int ws_file(struct ws_events *evs, const char *file)
 	client_socks[0].client_sock = sock;
 	client_socks[0].state = WS_STATE_CONNECTING;
 	client_socks[0].close_thrd = false;
+    atomic_store(&client_socks[0].close_reason, NULL);
 
 	/* Initialize mutexes. */
 	if (pthread_mutex_init(&client_socks[0].mtx_state, NULL))

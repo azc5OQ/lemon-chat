@@ -341,6 +341,11 @@
                         </label>
 
                         <p class="server-settings-general-subheader">voice and channels</p>
+                        <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>maximum channels, including root (1-100)</span>
+                            <input type="number" min="1" max="100" step="1" id="server-settings-general-max-channel-count">
+                        </label>
+                        <p class="server-settings-general-help">Counts permanent and temporary channels. Lowering the limit keeps existing channels and blocks new ones until there is room.</p>
                         <label class="server-settings-general-row">
                             <input type="checkbox" id="server-settings-general-enable-audio">
                             <span>enable audio server-wide</span>

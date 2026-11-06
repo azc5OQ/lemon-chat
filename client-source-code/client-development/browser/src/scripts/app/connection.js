@@ -6,7 +6,7 @@
 // only one attempt runs at a time. the file knows which identity (key pair) and which server
 // address the attempt uses.
 // it also runs the heartbeat loop (the regular message that tells the server the client is still
-// there), the fast reconnect (a second attempt right after a short connection loss, keeping the
+// there), the fast reconnect (bounded retries after a short connection loss, keeping the
 // identity), the hold on the connect page (the page stays hidden for a moment while an automatic
 // attempt runs, so it does not appear for a moment), and the saved server bookmarks (the server list on the
 // connect page).
@@ -17,7 +17,8 @@
 
 var port = 0;
 
-var FAST_RECONNECT_DEADLINE_MS = 12000;
+var FAST_RECONNECT_DEADLINE_MS = 60000;
+var pending_upload_send_cancel = null;
 
 var VERIFICATION_MESSAGE = "welcome";
 
@@ -351,10 +352,15 @@ async function connection__connect_loop()
             continue;
         }
 
-        // a fast reconnect connects again at once with the same identity: no countdown, no button
+        // Retry temporary transport failures within the original recovery deadline.
+        // Yield between attempts so an unavailable proxy cannot cause a tight loop.
         if (g_is_authenticated == false && g_fast_reconnect.in_progress == true)
         {
-            continue;
+            await connection__connect_loop_retry_wait(2);
+            if (g_fast_reconnect.in_progress == true)
+            {
+                continue;
+            }
         }
 
         if (g_is_authenticated == false && g_is_autoconnect_without_user_action_active == false)
@@ -694,10 +700,10 @@ async function connection__websocket_connection_check()
             if (connection__has_keepalive_timed_out(timestamp_now))
             {
                 let silence_ms = timestamp_now - g_connection_check.last_response_timestamp;
-                console.error("loss detector: no heartbeat response for " + silence_ms + "ms");
+                console.error("loss detector: no valid server message for " + silence_ms + "ms");
 
                 // the resume path ends this loop; the login that follows starts a fresh one
-                if (connection__try_start_fast_reconnect("no heartbeat reply for " + silence_ms + " ms") == true)
+                if (connection__try_start_fast_reconnect("no valid server message for " + silence_ms + " ms") == true)
                 {
                     break;
                 }
@@ -727,7 +733,7 @@ async function connection__websocket_connection_check()
 }
 
 /**
- * @brief fast reconnect: the socket is gone but the page keeps everything (lists, chat, channel, keys) and the connect loop connects again at once with the same identity, asking the server to adopt the session
+ * @brief fast reconnect: the socket is gone but the page keeps everything (lists, chat, channel, keys) and the connect loop retries with the same identity for up to 60 seconds, asking the server to adopt the session
  *
  * @param string reason -> why the socket went, for the log
  *
@@ -742,12 +748,13 @@ function connection__try_start_fast_reconnect(reason)
         return false;
     }
 
-    // one attempt per loss: when the resume socket itself closes, the caller runs the full reset
+    // The original deadline is shared by all retries after this loss.
     if (g_fast_reconnect.in_progress == true)
     {
         return false;
     }
 
+    connection__cancel_upload_send();
     g_fast_reconnect.in_progress = true;
     if (typeof server_info__reset === "function")
     {
@@ -918,6 +925,12 @@ function connection__fast_reconnect_apply_lists()
  */
 function connection__reset_chat_app_keep_identity()
 {
+    connection__cancel_upload_send();
+    clearTimeout(g_fast_reconnect.deadline_timer);
+    g_fast_reconnect.deadline_timer = null;
+    g_fast_reconnect.in_progress = false;
+    g_fast_reconnect.resumed = false;
+    g_fast_reconnect.pending_lists = null;
     g_worker_connection_ended = true;
     if (typeof server_info__reset === "function")
     {
@@ -1399,6 +1412,94 @@ function connection__websocket_worker_send(data_to_send)
         type: "send",
         connection_generation: g_worker_connection_active ? g_worker_connection_generation : undefined,
         value: data_to_send
+    });
+}
+
+/**
+ * @brief Cancels an upload chunk waiting on the old session or a refused upload.
+ */
+function connection__cancel_upload_send()
+{
+    if (pending_upload_send_cancel != null)
+    {
+        pending_upload_send_cancel();
+    }
+    if (g_websocket_worker != null)
+    {
+        g_websocket_worker.postMessage(
+        {
+            type: "cancel_upload",
+            connection_generation: g_worker_connection_active ? g_worker_connection_generation : undefined
+        });
+    }
+}
+
+/**
+ * @brief Sends one upload chunk only when the browser socket has room for it.
+ * @param object message_object -> the file_send message for this chunk
+ * @return Promise<boolean> -> true when queued on the current socket, false when cancelled
+ */
+function connection__send_upload_message(message_object)
+{
+    if (!g_worker_connection_active)
+    {
+        connection__send_message_object(message_object);
+        return Promise.resolve(true);
+    }
+    if (pending_upload_send_cancel != null)
+    {
+        return Promise.resolve(false);
+    }
+    const data = keys__encrypt_all_message_data_and_convert_to_base64(connection__process_message_before_sending(message_object));
+    const generation = g_worker_connection_generation;
+    return new Promise(function(resolve)
+    {
+        const channel = new MessageChannel();
+        let finished = false;
+        const finish = function(sent)
+        {
+            if (finished)
+            {
+                return;
+            }
+            finished = true;
+            clearTimeout(timer);
+            channel.port1.close();
+            pending_upload_send_cancel = null;
+            const accepted = sent && generation === g_worker_connection_generation && !g_worker_connection_ended;
+            if (accepted)
+            {
+                g_session.bytes_sent += data.length;
+            }
+            resolve(accepted);
+        };
+        const timer = setTimeout(function()
+        {
+            connection__cancel_upload_send();
+        }, 125000);
+        pending_upload_send_cancel = function()
+        {
+            finish(false);
+        };
+        channel.port1.onmessage = function(event)
+        {
+            finish(event.data.sent === true);
+        };
+        try
+        {
+            g_websocket_worker.postMessage(
+            {
+                type: "send",
+                value: data,
+                connection_generation: generation,
+                reply_port: channel.port2
+            }, [channel.port2]);
+        }
+        catch (error)
+        {
+            channel.port2.close();
+            finish(false);
+        }
     });
 }
 

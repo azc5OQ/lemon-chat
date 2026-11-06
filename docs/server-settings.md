@@ -46,7 +46,7 @@ Hiding the public list does not stop clients from receiving the settings they ne
 | --- | --- |
 | Clients | Country flags, showing the admin flag, country restrictions, renaming, multiple users from one IP address, link previews, and icon or avatar size limits. |
 | Chat | Typing indicators, messages to idle users, direct messages, file uploads, pictures shown in chat, and attachment size limits. |
-| Voice and channels | Audio, video, music bot audio, connection methods, temporary channels, and hiding members of password protected channels. |
+| Voice and channels | Audio, video, music bot audio, connection methods, maximum channel count, temporary channels, and hiding members of password protected channels. |
 | Attachment receive choices | Whether users may block direct pictures, direct files, channel pictures or channel files on their own device. |
 | Connections and security | Simultaneous logins, minimum RSA identity key size, reconnect behavior, replacing an existing connection, and checks that a connection is still active. |
 | Channel keys in large channels | Whether to keep channel encryption keys after someone joins or leaves, and the minimum active user counts for doing so. |
@@ -56,6 +56,14 @@ For example, if people should attach documents to a conversation, scroll to **ch
 ![Chat settings showing private messages, file uploads enabled, a 10 MB file limit and a 4 MB picture limit.](images/server-chat-upload-settings.jpg)
 
 *This example allows file uploads up to 10 MB. The file limit and the picture limit are separate controls; the displayed values are example settings.*
+
+### Maximum channel count
+
+Suppose you want a server with root and four discussion channels. Set **maximum channels, including root** to **5** under **voice and channels**, then save. Root uses one place; each permanent or temporary channel uses another. Once all five places are occupied, the server rejects another creation request with a message explaining that the maximum channel count has been reached. This applies to admins too.
+
+Deleting a channel makes room for another. The limit counts existing channels, so gaps in their IDs do not use places. If five channels already exist and you lower the limit to three, all five remain usable. Creation is blocked until fewer than three remain, or you raise the limit. Restarting preserves saved channels even when they exceed the new limit.
+
+The setting accepts whole numbers from **1 to 100**; 100 is the server's existing channel capacity and remains the default. A limit of 1 allows only root on a new server. Setup also asks for this limit, and the settings file stores it as `"max_channel_count": 5`. Older files without it use 100. Invalid file values stop startup with an explanation; invalid live updates are rejected without changing the settings.
 
 ### Blocking incoming attachments
 
@@ -105,7 +113,11 @@ Video streaming is off in the server's default settings. The browser's **Create 
 
 **Fast reconnect** lets a returning client resume a session that the server still has open. The client must use the same identity and prove again that it holds the private key.
 
-A successful reconnect keeps the client ID, channel, name, groups and roles, but establishes new connection keys. Any upload on the old connection is stopped and must be sent again. A session that has already ended cannot be resumed. Fast reconnect is off by default.
+A successful reconnect keeps the client ID, channel, name, groups and roles, but establishes new connection keys. Any upload on the old connection is stopped and must be sent again.
+
+The browser retries temporary connection failures for up to 60 seconds, with a short pause between attempts. Every attempt must pass the server's normal login checks. A session that has already ended cannot be resumed; if the server accepts a fresh login instead, the browser clears the old chat state and reconnects normally.
+
+Fast reconnect is off by default.
 
 **Identity takeover** lets a new connection replace an existing connection using the same identity. It also requires proof of the private key. The old session closes and the replacement begins as a new login in root. This option is off by default.
 
@@ -115,9 +127,25 @@ Allow multiple clients from the same IP address when several people share an int
 
 ### Checking whether a connection is still active
 
-Clients send regular keep-alive messages so the server can check that the connection still works. **Disconnect clients when keep-alive messages time out** closes a client's connection when those messages stop arriving in time. It is on by default and can be changed while the server runs.
+Suppose someone is uploading a picture on a slow connection. Each valid upload chunk reaching the server proves that their connection is still active, just as a chat message or a dedicated keep-alive message does. The server refreshes its activity timestamp after decrypting and validating a message from the current authenticated connection. Malformed messages and messages belonging to a replaced session do not refresh it.
+
+For example, with idle mode disabled, a client sends a valid upload chunk 70 seconds after its last keep-alive. The server starts its 80-second inactivity allowance again from that chunk. Without this rule, it could disconnect an active uploader only ten seconds later. When idle mode is allowed, the allowance is 150 seconds so idle clients can use their slower keep-alive interval.
+
+**Disconnect clients when keep-alive messages time out** enables this inactivity check. It is on by default and can be changed while the server runs. Clients still send dedicated keep-alives during quiet periods; those replies also measure round-trip time. The browser likewise treats any valid decrypted server message as evidence that the server is reachable, instead of waiting only for a keep-alive reply.
 
 **Additional WebSocket ping check** is a separate connection check. It is off by default. Changing one of these options does not change the other.
+
+### Sharing files over a slow connection
+
+When an upload fills the browser's outgoing buffer beyond 64 KiB, the browser waits before sending the next file chunk. It checks for room again every 25 milliseconds. Chat and keep-alive messages can still be queued while the upload waits. A chunk already handed to the socket cannot be overtaken, so this pacing keeps the upload backlog small rather than removing network delays. If no room becomes available within two minutes, the upload stops and can be retried.
+
+The server also allows an outgoing socket to make no progress for up to two minutes before closing it. This replaces the former ten-second transport cutoff and is separate from the inactivity setting above. A permanently blocked socket must eventually close: once part of a WebSocket frame has been sent, the server cannot safely discard the rest and continue with another message. Outgoing queue limits still apply, and a slow recipient's file transfer can be cancelled separately without ending their chat session.
+
+On Windows, the receive thread checks for transport cancellation once a second so a silent peer cannot leave a timed-out connection occupying a slot.
+
+When investigating another disconnect, enable **log users disconnecting** in the server settings and check the server log alongside the browser's connection log. With that option enabled, the server records transport causes such as a stalled outgoing socket, a queue limit, a failed send, or a peer closure. The browser records the WebSocket close code, reason and whether the close was clean.
+
+These diagnostics identify the observed failure; an abnormal close alone cannot establish whether an ISP, Funnel, or the remote browser caused it.
 
 ### Waiting after failed WebRTC connections
 
@@ -181,6 +209,14 @@ Leaving a channel stops the server from sending that channel's messages to the u
 *Scroll down in **log** to find the size and retention controls and recent entries. Use **save log settings** for these options and **refresh** to fetch current events. These entries come from the demonstration server.*
 
 Defaults in this guide apply when no saved value replaces them. An existing server uses its saved configuration.
+
+## Setup questions and their prerequisites
+
+When setting up a simple chat, you may choose not to save client identities on the server. The wizard then skips the saved-user list, last-seen times and offline messaging, and saves those options as disabled. Saving an identity in a browser is a separate choice: it lets that browser reuse its identity after reopening the page, even when the server does not keep a saved profile.
+
+If you enable server identity storage, the next relevant choice is whether to expose the saved-user list. Only after enabling that list does setup ask about last-seen times and offline messages. Without the list, users cannot obtain offline recipients' public keys through the normal contact workflow. When groups are disabled, these questions explicitly refer to password admins, because ordinary users cannot use those features in that mode.
+
+Setup asks about voice chat, music-bot audio and video before asking how audio and video should connect. Music-bot audio is independent of voice chat: you can disable microphones while keeping music playback. If all three features are disabled, the transport question is skipped and WebSocket is selected for any later activation. Funnel, Cloudflare Tunnel and ngrok select WebSocket automatically. For an existing WireGuard setup, the wizard asks for the WebRTC UDP range only when WebRTC is enabled.
 
 ## Optional groups and permissions
 

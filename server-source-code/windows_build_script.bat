@@ -26,13 +26,6 @@ set "THIRD_PARTY_DIRECTORY=%ROOT_DIRECTORY%third-party"
 set "CMAKE_MAKE_PROGRAM=%MINGWPATH%\ninja.exe"
 SET "PATH=%MINGWPATH%;%PATH%"
 
-where node >nul 2>nul
-if errorlevel 1 (
-    echo Node.js is required for the browser client. Install it from https://nodejs.org/
-    echo Optional minification: npm install --global terser
-    exit /b 1
-)
-
 :: third-party projects still declare ancient cmake_minimum_required versions; CMake 4
 :: refuses those outright unless this floor is set (same fix the linux script uses)
 set "CMAKE_POLICY_VERSION_MINIMUM=3.5"
@@ -505,10 +498,25 @@ copy "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a" "%ROOT_DIRECTORY%\main\li
 :: CLIENT | Generate the browser page
 :: =============================================================================
 
-:: Build with installed Node.js. Stop on failure so an old page is not shipped.
+:: Client rebuilding is optional; its failure must not stop the server build.
+where node >nul 2>nul
+if errorlevel 1 goto client_build_skipped
 echo Building the browser client client.html ...
 node "%ROOT_DIRECTORY%\..\client-source-code\client-development\browser\build.cjs"
-if errorlevel 1 goto build_failed
+if errorlevel 1 goto client_build_failed
+goto client_build_done
+
+:client_build_failed
+echo   WARNING: Browser client build failed; continuing the server build.
+goto client_build_fallback
+
+:client_build_skipped
+echo   WARNING: Node.js not found; skipping browser client rebuild and continuing the server build.
+
+:client_build_fallback
+echo   WARNING: The existing client-source-code/client.html will be packaged if available; it may be outdated.
+
+:client_build_done
 
 :: =============================================================================
 :: SERVER | Build chat-server
@@ -532,7 +540,7 @@ if errorlevel 1 goto deployment_failed
 copy /Y "%SERVER_BUILD_DIRECTORY%\chat-server.exe" "%ROOT_DIRECTORY%\..\buildresult\"
 if errorlevel 1 goto deployment_failed
 
-:: the page the bundled http server serves (built above)
+:: Package the rebuilt page, or the existing page if the client rebuild was skipped or failed.
 if exist "%ROOT_DIRECTORY%\..\client-source-code\client.html" (
     copy /Y "%ROOT_DIRECTORY%\..\client-source-code\client.html" "%ROOT_DIRECTORY%\..\buildresult\"
 ) else (
