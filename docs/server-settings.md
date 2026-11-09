@@ -270,6 +270,8 @@ Tailscale must already be installed, running and signed in. At startup, Lemon Ch
 
 The startup summary prints the public addresses after checking both routes. If the check fails, Lemon Chat ignores forwarded IP headers for that run.
 
+If the computer is renamed in Tailscale, old routes can still use its previous hostname. Lemon Chat adds routes for the current hostname when the old routes are already public and point only to the same local page and chat ports. It keeps the old routes. Routes pointing elsewhere, private paths and ports held by foreground Tailscale commands are left unchanged and reported as conflicts.
+
 With Funnel enabled and verified, a WebSocket connection from `127.0.0.1` can provide one client IP address in the `X-Forwarded-For` header. This header lets the local proxy report the original user's address. Connections from other addresses cannot use it. Local connections without the header are still accepted, and plain WS access remains available.
 
 Use Funnel's HTTP proxy mode. Programs on the server computer must be trusted because local connections can provide this header. See the [Funnel instructions](../selfhosting-tools/README.md#client-ip-addresses).

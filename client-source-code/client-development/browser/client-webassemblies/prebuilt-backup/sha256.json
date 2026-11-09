@@ -1,7 +1,0 @@
-{
-    "connection_crypto.wasm": "f4b62174faaf0e7918c8c4087dc05352b4d5b9aab7e7dc48508b0a125a22cd2c",
-    "libopus.emscripten.js": "db306a2f7e3f7b8ecf5faf1da71ae115e38f3d420ce7fa6a8a20e3235f19a312",
-    "libopus.wasm": "cf853eb3430d69ecdb5aeb5d245cbb002772a1ad636d2fe8d4fcc8c9f2163133",
-    "mp3_decoder.wasm": "49baf93d839e3d1c393824e1f87084ad1ed5bfd4132d5be683bb735c9fa26c71",
-    "rsa_keygen.wasm": "190ffc0259451d0d13af1a8209fec3eb678223d5bc73810acbd82b8456bac3dc"
-}

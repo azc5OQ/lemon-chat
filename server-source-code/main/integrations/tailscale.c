@@ -738,7 +738,16 @@ static int64 _tailscale_internal__check_route(cJSON *status, int64 public_port, 
         name_length = clib__strlen(item->string);
         if (name_length >= suffix_length && clib__strcmp(item->string + name_length - suffix_length, suffix) == 0 && clib__strcmp(item->string, endpoint) != 0)
         {
-            return -1;
+            // A renamed computer can leave its old public Lemon Chat route behind.
+            // Only accept a single root proxy to this same backend; never publish private paths.
+            handlers = cJSON_GetObjectItemCaseSensitive(item, "Handlers");
+            root = cJSON_GetObjectItemCaseSensitive(handlers, "/");
+            proxy = cJSON_GetObjectItemCaseSensitive(root, "Proxy");
+            if (!cJSON_IsObject(item) || cJSON_GetArraySize(item) != 1 || !cJSON_IsObject(handlers) || cJSON_GetArraySize(handlers) != 1 || !cJSON_IsObject(root) || cJSON_GetArraySize(root) != 1 || !cJSON_IsString(proxy) || clib__strcmp(proxy->valuestring, target) != 0 || !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(public_map, item->string)))
+            {
+                printf("%s Existing Tailscale route %s conflicts with Lemon Chat's target %s or contains private paths.\n", g_mark_warn, item->string, target);
+                return -1;
+            }
         }
     }
     tcp = cJSON_GetObjectItemCaseSensitive(tcp_map, port);
@@ -862,6 +871,10 @@ boole tailscale__configure(void)
     {
         printf("%s Funnel port %lld already has a conflicting service or private paths. Check tailscale funnel status and tailscale serve status. No routes were changed.\n", g_mark_warn, page_state < 0 ? (int64)443 : g_server_settings.wss_port);
         return FALSE;
+    }
+    if (page_state > 0 || chat_state > 0)
+    {
+        printf("%s Updating Lemon Chat Funnel routes for %s. Existing matching public routes are kept.\n", g_mark_info, g_tailscale_hostname);
     }
     if (page_state > 0 && !_tailscale_internal__set_route(443, page_target))
     {
