@@ -156,8 +156,8 @@ static boole _client_msg_server_settings_internal__is_save_server_settings_reque
  *        audio, hide-in-password-channels, temp channels) are applied to g_server_settings, each
  *        only when present and boolean. then everything persistable - those toggles plus the
  *        channel layout, the groups/icons and the identity snapshot - is written into
- *        server_settings.json. Music bots and their MP3 data are included in a separate snapshot only
- *        when include_music_bots is true; channel maintainers remain runtime-only state.
+ *        server_settings.json. Music bots and their MP3 data are included in a separate snapshot unless
+ *        include_music_bots is false; channel maintainers remain runtime-only state.
  *        If the file cannot be written the toggles are rolled back to their previous
  *        values, so the running state stays consistent with what is on disk.
  *
@@ -764,7 +764,7 @@ void client_msg__server_settings__process_save_request(cJSON *json_root, uint64 
 
     identity_store__snapshot_connected_clients_into_identity_store();
     save_succeeded = http_server__set_mode(g_server_settings.is_client_http_enabled, g_server_settings.is_client_http_blank_when_disabled);
-    if (save_succeeded && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json_message_object, "include_music_bots")))
+    if (save_succeeded && !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(json_message_object, "include_music_bots")))
     {
         save_succeeded = musicbot_store__prepare(new_snapshot);
         if (save_succeeded)
@@ -862,7 +862,7 @@ void client_msg__server_settings__process_save_request(cJSON *json_root, uint64 
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__server_settings__process_save_request: save failed, rolled back the general-settings toggles");
     }
 
-    if (save_succeeded && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json_message_object, "include_music_bots")))
+    if (save_succeeded && !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(json_message_object, "include_music_bots")))
     {
         musicbot_store__commit();
         if (musicbot_store__remove_file(g_server_settings.music_bot_snapshot_previous))

@@ -150,7 +150,6 @@ var server_settings_drafts =
 };
 var server_settings_pending_save = null;
 var server_settings_password_revision = 0;
-var server_settings_music_snapshot_revision = 0;
 var server_settings_save_notice = "";
 var server_settings_active_page = "general";
 var server_settings_page_scroll = {};
@@ -228,7 +227,6 @@ function server_settings_tab__begin_save(tab, settings)
     {
         tab: tab,
         revision: draft.revision,
-        music_snapshot_revision: server_settings_music_snapshot_revision,
         password_revision: server_settings_password_revision,
         password_count: Array.isArray(settings.connection_passwords) ? settings.connection_passwords.length : null
     };
@@ -249,7 +247,6 @@ function server_settings_tab__reset_drafts()
     server_settings_pending_save = null;
     server_music_snapshot_action = null;
     server_settings_password_revision = 0;
-    server_settings_music_snapshot_revision = 0;
     server_settings_save_notice = "";
     for (let id of ["server-encryption-password-rows", "server-music-snapshot-key-rows"])
     {
@@ -262,7 +259,7 @@ function server_settings_tab__reset_drafts()
     }
     document.getElementById("server-encryption-replace-passwords").checked = false;
     document.getElementById("server-encryption-password-editor").hidden = true;
-    document.getElementById("server-save-music-bots").checked = false;
+    document.getElementById("server-save-music-bots").checked = true;
     server_settings_tab__refresh_save_state();
 }
 
@@ -277,10 +274,6 @@ function server_settings_tab__setup()
         if (event.target.closest("#server-music-snapshot-key-rows") || event.target.id === "server-banner-file-input")
         {
             return;
-        }
-        if (event.target.id === "server-save-music-bots")
-        {
-            server_settings_music_snapshot_revision++;
         }
         server_settings_tab__mark_dirty("general", event.target.id === "server-encryption-replace-passwords"
             || event.target.closest("#server-encryption-password-rows") !== null);
@@ -480,10 +473,7 @@ function server_settings_tab__collect_server_settings_from_tab(tab)
         }
     }
 
-    if (tab === "general")
-    {
-        settings.include_music_bots = document.getElementById("server-save-music-bots").checked;
-    }
+    settings.include_music_bots = document.getElementById("server-save-music-bots").checked;
     if (tab === "general" && document.getElementById("server-encryption-replace-passwords").checked)
     {
         settings.connection_passwords = [];
@@ -1052,10 +1042,6 @@ function server_settings_tab__encryption_save_result(message)
     }
     if (pending.tab === "general")
     {
-        if (message.success === true && pending.music_snapshot_revision === server_settings_music_snapshot_revision)
-        {
-            document.getElementById("server-save-music-bots").checked = false;
-        }
         server_settings_save_notice = message.success !== true
             ? "Settings could not be saved; your edits are still here."
             : draft.dirty ? "Settings saved. Newer edits are not saved yet." : "Settings saved.";
@@ -1099,7 +1085,7 @@ function server_settings_tab__apply_music_snapshot_status(values)
     let status = document.getElementById("server-music-snapshot-status");
     status.textContent = values.music_bot_snapshot_error || (values.music_bot_snapshot_present
         ? "Saved songs and playlists remain on disk until replaced by another music save or cleared with Clear from disk."
-        : "No saved music snapshot is on disk. Songs stay in RAM unless you include them in a save.");
+        : "No saved music snapshot is on disk. Save server settings to save the songs and playlists.");
     status.className = values.music_bot_snapshot_error ? "server-settings-general-warning" : "server-settings-general-help";
     status.setAttribute("role", values.music_bot_snapshot_error ? "alert" : "status");
     document.getElementById("server-music-snapshot-recovery").hidden = !values.music_bot_snapshot_present;

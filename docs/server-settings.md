@@ -53,9 +53,9 @@ exposed as HTTP files.
 
 ## Keeping music bots for a restart
 
-Suppose Alice has a music bot with three uploaded songs and wants that playlist back after restarting. Uploads and playback normally stay in RAM. Saving ordinary server settings does not save those songs. Under **Voice and video**, Alice must explicitly select **include music bots and uploaded playlists in this save**, then **Save all settings**; the checkbox clears after a successful save.
+Suppose Alice has a music bot with three uploaded songs and wants that playlist back after restarting. Uploads and playback normally stay in RAM. Selecting **Save all settings** also saves the music bots and their uploaded playlists by default. Under **Voice and video**, Alice can turn off **include music bots and uploaded playlists in this save** to save settings without updating the saved music. The checkbox keeps her choice after saving.
 
-The server collects the bot names, permanent channels, playlist slots, song names, uploaded MP3 bytes and paused state into one snapshot. It writes a separate `music-bots-<random>.bin` file beside `server_settings.json`, which stores only the file reference. A later explicit music save replaces that snapshot and removes the previous copy. No snapshot file is created when there are no bots. Incomplete uploads must finish before a music save, and a snapshot's playlist data is limited to 1 GiB.
+The server collects the bot names, permanent channels, playlist slots, song names, uploaded MP3 bytes and paused state into one snapshot. It writes a separate `music-bots-<random>.bin` file beside `server_settings.json`, which stores only the file reference. A later save that includes music replaces that snapshot and removes the previous copy. No snapshot file is created when there are no bots. Incomplete uploads must finish before a music save, and a snapshot's playlist data is limited to 1 GiB.
 
 If there are no bots in RAM but an older saved playlist is still on disk, a music save keeps
 that copy and reports that there is nothing to save. Use **Clear from disk** to remove it.
@@ -70,7 +70,8 @@ not prevent restoration into RAM.
 
 To remove the saved copy, Alice selects **Clear from disk** and confirms. The server overwrites
 the file's contents, flushes those writes, then deletes the file. Songs already in RAM remain
-available. Overwriting cannot guarantee removal from SSD storage, filesystem snapshots or backups.
+available. Saving settings again with music included creates a new saved copy.
+Overwriting cannot guarantee removal from SSD storage, filesystem snapshots or backups.
 
 ### Encryption on disk
 
@@ -82,7 +83,7 @@ Restoration needs the passwords and types used **when the snapshot was saved**, 
 
 If Alice restarts with different keys, the server keeps the snapshot and shows a restoration warning in server settings. She can supply the original typed passwords and select **Retry restoration**, or explicitly choose **Clear from disk**. Recovery passwords are used only for that attempt and do not replace connection passwords or get saved to the settings file. Leaving the recovery list empty retries with the current server keys.
 
-Wrong keys, damaged data, unavailable channels, insufficient client slots or insufficient RAM leave the saved file in place. Restoration rolls back partially created bots. Ordinary settings saves preserve a failed snapshot, and another music save cannot overwrite it until the failure is resolved or the saved file is explicitly deleted. The delete button asks for confirmation because unrestored songs would be lost. Songs already in RAM remain available.
+Wrong keys, damaged data, unavailable channels, insufficient client slots or insufficient RAM leave the saved file in place. Restoration rolls back partially created bots. A failed snapshot cannot be overwritten until the failure is resolved or the saved file is explicitly deleted. To save other settings in the meantime, turn off **include music bots and uploaded playlists in this save**; the saved music remains on disk. The delete button asks for confirmation because unrestored songs would be lost. Songs already in RAM remain available.
 
 Restoration does not delete or rewrite the saved file, and the same playlist cannot be restored
 twice during one server run. If **Clear from disk** cannot overwrite, flush or delete a file,
