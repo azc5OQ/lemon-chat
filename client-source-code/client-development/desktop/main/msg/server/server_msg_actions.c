@@ -11,8 +11,8 @@
 void server_msg__actions__receive(desktop_session_t *session, const cJSON *message)
 {
     const char *type = server_msg__read_string(message, "type");
-    const char *text = NULL;
-    const cJSON *actions = NULL;
+    const char *text = NULL_POINTER;
+    const cJSON *actions = NULL_POINTER;
     int64 slot = desktop_session__client(session, server_msg__read_number(message, "client_id"));
     desktop_client_t *client = slot >= 0 ? &session->model.clients[slot] : NULL;
     uint64 length = 0;
@@ -21,8 +21,8 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
     desktop_channel_t *channel = channel_slot >= 0 ? &session->model.channels[channel_slot] : NULL;
     const char *rights[6] = { "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers", "edit_channel_options", "delete_channel" };
     int64 capacity = 0;
-    const cJSON *feature = NULL;
-    const cJSON *role = NULL;
+    const cJSON *feature = NULL_POINTER;
+    const cJSON *role = NULL_POINTER;
     int64 role_id = 0;
     desktop_server_info_t *info = &session->model.server_info;
     if (clib__strcmp(type, "authentication_status") == 0)

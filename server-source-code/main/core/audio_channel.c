@@ -161,7 +161,6 @@ static void _audio_channel_internal__relay(uint64 sender_id, uint64 channel_id, 
  */
 void audio_channel__relay_voice(uint64 sender_id, ws_cli_conn_t *socket, int data_channel, const ubyte *data, uint64 size)
 {
-    boole status = FALSE;
     ubyte body[AUDIO_PACKET_MAX] = { 0 };
     uint64 body_size = 0;
     client_t *sender = NULL_POINTER;
@@ -194,8 +193,7 @@ void audio_channel__relay_voice(uint64 sender_id, ws_cli_conn_t *socket, int dat
         DBG_AUDIO_CHANNEL log_info("%s %llu %s", "relay: data channel frame of client", sender_id, "dropped: webrtc audio is not allowed, or the channel is not the client's current one");
         goto done;
     }
-    status = permissions__can_use_channel(sender, &g_channel_array[channel_id], PERMISSION_TALK_POWER);
-    if (status == FALSE)
+    if (permissions__can_use_channel(sender, &g_channel_array[channel_id], PERMISSION_TALK_POWER) == FALSE)
     {
         goto done;
     }
@@ -218,7 +216,6 @@ done:
  */
 void audio_channel__apply_permission_changes(void)
 {
-    boole status = FALSE;
     uint64 i = 0;
     client_t *client = NULL_POINTER;
     boole *muted_channels = NULL_POINTER;
@@ -231,8 +228,7 @@ void audio_channel__apply_permission_changes(void)
         {
             continue;
         }
-        status = permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER);
-        if (status == TRUE)
+        if (permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER) == TRUE)
         {
             continue;
         }

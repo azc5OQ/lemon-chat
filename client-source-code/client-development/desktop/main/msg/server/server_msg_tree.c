@@ -61,7 +61,7 @@ static void _server_msg_tree_internal__song(desktop_client_t *client, const cJSO
  */
 void server_msg__tree__read_client(desktop_client_t *client, const cJSON *item)
 {
-    const cJSON *group = NULL;
+    const cJSON *group = NULL_POINTER;
     const cJSON *groups = cJSON_GetObjectItemCaseSensitive(item, "group_ids");
     int64 id = 0;
     client->channel_group = server_msg__read_number(item, "channel_group_id");
@@ -94,7 +94,7 @@ static void _server_msg_tree_internal__group(desktop_session_t *session, const c
 {
     int64 id = server_msg__read_number(item, "group_id");
     const cJSON *icon = cJSON_GetObjectItemCaseSensitive(item, "icon_id");
-    desktop_tree_group_t *group = NULL;
+    desktop_tree_group_t *group = NULL_POINTER;
     const cJSON *access = cJSON_GetObjectItemCaseSensitive(item, "access");
     const cJSON *permissions = cJSON_GetObjectItemCaseSensitive(item, "permissions");
     const cJSON *flags = cJSON_GetObjectItemCaseSensitive(permissions, "flags");
@@ -192,9 +192,9 @@ boole desktop_session__tree_icon(desktop_session_t *session, int64 id, uint64 re
 void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
 {
     const char *type = server_msg__read_string(message, "type");
-    const cJSON *item = NULL;
-    const cJSON *items = NULL;
-    const cJSON *feature = NULL;
+    const cJSON *item = NULL_POINTER;
+    const cJSON *items = NULL_POINTER;
+    const cJSON *feature = NULL_POINTER;
     int64 slot = desktop_session__client(session, server_msg__read_number(message, "client_id"));
     desktop_client_t *client = slot >= 0 ? &session->model.clients[slot] : NULL;
     int64 id = server_msg__read_number(message, "group_id");

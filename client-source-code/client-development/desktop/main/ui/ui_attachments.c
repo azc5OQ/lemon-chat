@@ -123,7 +123,7 @@ static gui_node_t *_ui_attachments_internal__node(gui_node_t *parent, gui_node_t
 void desktop_ui_attachments__append(gui_node_t *parent, uint64 id)
 {
     const desktop_attachment_t *attachment = _ui_attachments_internal__find(id);
-    gui_node_t *actions = NULL;
+    gui_node_t *actions = NULL_POINTER;
     char text[384] = { 0 };
     if (!attachment)
     {
@@ -346,7 +346,7 @@ static void _ui_attachments_internal__settings(gui_event_t *event)
     desktop_chat_preferences_t *preferences = &g_attachment_settings->chat;
     int64 values[5] = { 0 };
     int64 index = 0;
-    gui_node_t *node = NULL;
+    gui_node_t *node = NULL_POINTER;
     char text[32] = { 0 };
     (void)event;
     values[0] = preferences->scale_percent;

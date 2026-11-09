@@ -1,3 +1,27 @@
+/**
+ * @brief Uses the device's server default unless the user has saved an allowed theme.
+ */
+function main__apply_startup_theme()
+{
+    let config = window.__SERVER_CONFIG__ || {};
+    let theme = g_is_client_running_under_touch_device ? "default-mobile" : "default";
+    let server_theme = g_is_client_running_under_touch_device ? (config.mobile_theme || config.theme) : config.theme;
+    let saved_theme = utils__storage_get("lemon_theme");
+
+    // Older server pages may supply only one default; mobile still requires a mobile theme.
+    if (server_theme && document.getElementById("style-theme-" + server_theme) && UI.is_theme_allowed_on_this_device(server_theme))
+    {
+        theme = server_theme;
+    }
+
+    // A user's own choice takes priority over the server's suggestion.
+    if (saved_theme && document.getElementById("style-theme-" + saved_theme) && UI.is_theme_allowed_on_this_device(saved_theme))
+    {
+        theme = saved_theme;
+    }
+    UI.apply_theme(theme, false);
+}
+
 // main.js is embedded in template.html along with the other client files, and in the node bundle
 // it is the startup: main__window_onload wires the page (buttons, keys, panels, local settings), and the
 // export seam at the end hands the node runtime what it needs
@@ -1807,32 +1831,7 @@ async function main__window_onload()
         document.getElementById("style-theme-default").removeAttribute("media"); // set default theme
     }
 
-    // default theme set by the server (from the injected config); applied unless the user has their own saved choice. persist=false so it is never saved.
-    // on a phone a desktop theme is ignored here so the mobile default set above stays in effect
-    let startup_theme_applied = false;
-
-    if (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.theme && UI.is_theme_allowed_on_this_device(window.__SERVER_CONFIG__.theme))
-    {
-        UI.apply_theme(window.__SERVER_CONFIG__.theme, false);
-        startup_theme_applied = true;
-    }
-
-    // restore a theme the user previously picked (from the in-app menu); wins over the server default.
-    // a saved desktop theme is ignored on a phone (keeps the mobile default)
-    let saved_theme = utils__storage_get("lemon_theme");
-    if (saved_theme != null && UI.is_theme_allowed_on_this_device(saved_theme))
-    {
-        UI.apply_theme(saved_theme, false);
-        startup_theme_applied = true;
-    }
-
-    // no default theme from the server and nothing saved: activate the default sheet explicitly.
-    // without this ALL four theme <style> elements stay active at once and the cascade
-    // mixes them (the last sheet mostly wins), which is never an intended look
-    if (startup_theme_applied == false)
-    {
-        UI.apply_theme(g_is_client_running_under_touch_device ? "default-mobile" : "default", false);
-    }
+    main__apply_startup_theme();
 
     // the wrapper app's mode drives the theme (both directions). runs after the restore
     // above so it wins, and is re-run whenever android pushes a mode change

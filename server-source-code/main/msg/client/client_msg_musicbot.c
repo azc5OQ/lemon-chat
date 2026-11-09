@@ -37,8 +37,8 @@ static boole _client_msg_musicbot_internal__is_index_valid(cJSON *value, uint64 
  */
 static boole _client_msg_musicbot_internal__is_json_start_song_stream_message_valid(cJSON *json_root)
 {
-    cJSON *json_song_name = 0;
-    cJSON *json_message_object = 0;
+    cJSON *json_song_name = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
     int64 song_name_length = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -77,9 +77,9 @@ static boole _client_msg_musicbot_internal__is_json_start_song_stream_message_va
 void client_msg__musicbot__process_start_song_stream_message(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
-    client_t *client = 0;
-    cJSON *json_song_name = 0;
-    cJSON *json_message_object = 0;
+    client_t *client = NULL_POINTER;
+    cJSON *json_song_name = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
 
     status = _client_msg_musicbot_internal__is_json_start_song_stream_message_valid(json_root);
     if (status == FALSE)
@@ -131,7 +131,7 @@ label_client_msg__process_start_song_stream_end:
 void client_msg__musicbot__process_stop_song_stream_message(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
-    client_t *client = 0;
+    client_t *client = NULL_POINTER;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
 
@@ -162,10 +162,9 @@ label_client_msg__process_stop_song_stream_end:
  */
 static boole _client_msg_musicbot_internal__is_client_msg__process_create_music_bot_request_valid(cJSON *json_root)
 {
-    boole status = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_channel_id = 0;
-    cJSON *json_music_bot_username = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_channel_id = NULL_POINTER;
+    cJSON *json_music_bot_username = NULL_POINTER;
     uint64 json_music_bot_username_length = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -178,8 +177,7 @@ static boole _client_msg_musicbot_internal__is_client_msg__process_create_music_
         return FALSE;
     }
 
-    status = _client_msg_musicbot_internal__is_index_valid(json_channel_id, g_server_settings.max_channel_count);
-    if (status == FALSE)
+    if (_client_msg_musicbot_internal__is_index_valid(json_channel_id, g_server_settings.max_channel_count) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_musicbot_internal__is_client_msg__process_create_music_bot_request_valid cJSON_IsNumber(json_channel_id)");
         return FALSE;
@@ -231,16 +229,13 @@ static boole _client_msg_musicbot_internal__is_client_msg__process_create_music_
  */
 void client_msg__musicbot__process_create_request(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status1 = FALSE;
-    boole status = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_channel_id = 0;
-    cJSON *json_music_bot_username = 0;
-    client_t *admin = 0;
-    client_t *music_bot = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_channel_id = NULL_POINTER;
+    cJSON *json_music_bot_username = NULL_POINTER;
+    client_t *admin = NULL_POINTER;
+    client_t *music_bot = NULL_POINTER;
 
-    status = _client_msg_musicbot_internal__is_client_msg__process_create_music_bot_request_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_musicbot_internal__is_client_msg__process_create_music_bot_request_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_create_music_bot is not valid");
         return;
@@ -255,15 +250,13 @@ void client_msg__musicbot__process_create_request(cJSON *json_root, uint64 sende
 
     // check if the client that sent the message is valid: connected and existing.
     // this was checked before but not within write lock like here
-    status1 = base__is_current_client_request(sender_client_id);
-    if (status1 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         goto label_client_msg__process_create_music_bot_end;
     }
     admin = &g_clients_array[sender_client_id];
 
-    status1 = permissions__is_allowed(admin, PERMISSION_CREATE_MUSIC_BOTS);
-    if (status1 == FALSE)
+    if (permissions__is_allowed(admin, PERMISSION_CREATE_MUSIC_BOTS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(admin, NULL_POINTER);
         goto label_client_msg__process_create_music_bot_end;
@@ -320,9 +313,8 @@ label_client_msg__process_create_music_bot_end:
  */
 static boole _client_msg_musicbot_internal__is_client_msg__process_delete_music_bot_request_valid(cJSON *json_root)
 {
-    boole status = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_channel_id = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_channel_id = NULL_POINTER;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
@@ -334,8 +326,7 @@ static boole _client_msg_musicbot_internal__is_client_msg__process_delete_music_
         return FALSE;
     }
 
-    status = _client_msg_musicbot_internal__is_index_valid(json_channel_id, g_server_settings.max_channel_count);
-    if (status == FALSE)
+    if (_client_msg_musicbot_internal__is_index_valid(json_channel_id, g_server_settings.max_channel_count) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_musicbot_internal__is_client_msg__process_delete_music_bot_request_valid cJSON_IsNumber(json_channel_id)");
         return FALSE;
@@ -360,16 +351,13 @@ static boole _client_msg_musicbot_internal__is_client_msg__process_delete_music_
  */
 void client_msg__musicbot__process_delete_request(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status0 = FALSE;
-    boole status = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_channel_id = 0;
-    client_t *music_bot = 0;
-    client_t *admin = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_channel_id = NULL_POINTER;
+    client_t *music_bot = NULL_POINTER;
+    client_t *admin = NULL_POINTER;
     uint64 bot_loop_index = 0;
 
-    status = _client_msg_musicbot_internal__is_client_msg__process_delete_music_bot_request_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_musicbot_internal__is_client_msg__process_delete_music_bot_request_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__musicbot__process_delete_request is not valid");
         return;
@@ -383,15 +371,13 @@ void client_msg__musicbot__process_delete_request(cJSON *json_root, uint64 sende
 
     // check if the client that sent the message is valid: connected and existing.
     // this was checked before but not within write lock like here
-    status0 = base__is_current_client_request(sender_client_id);
-    if (status0 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         goto label_client_msg__process_delete_music_bot_end;
     }
     admin = &g_clients_array[sender_client_id];
 
-    status0 = permissions__is_allowed(admin, PERMISSION_DELETE_MUSIC_BOTS);
-    if (status0 == FALSE)
+    if (permissions__is_allowed(admin, PERMISSION_DELETE_MUSIC_BOTS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(admin, NULL_POINTER);
         goto label_client_msg__process_delete_music_bot_end;
@@ -428,8 +414,7 @@ void client_msg__musicbot__process_delete_request(cJSON *json_root, uint64 sende
         DBG_CLIENT_MESSAGE log_info("%s %lld %s", "client_msg__musicbot__process_delete_request music bot id -> ", music_bot->client_id, "\n");
         DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__musicbot__process_delete_request music bot username -> ", music_bot->username, "\n");
 
-        status0 = musicbot__begin_delete(music_bot);
-        if (status0 == TRUE)
+        if (musicbot__begin_delete(music_bot) == TRUE)
         {
             server_msg__connection__send_client_disconnect_message_to_all_clients(music_bot->client_id, NULL_POINTER);
         }
@@ -462,9 +447,8 @@ label_client_msg__process_delete_music_bot_end:
  */
 static boole _client_msg_musicbot_internal__is_musicbot_get_song_list_request_valid(cJSON *json_root)
 {
-    boole status = FALSE;
-    cJSON *json_musicbot_id = 0;
-    cJSON *json_message_object = 0;
+    cJSON *json_musicbot_id = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
@@ -476,8 +460,7 @@ static boole _client_msg_musicbot_internal__is_musicbot_get_song_list_request_va
         return FALSE;
     }
 
-    status = _client_msg_musicbot_internal__is_index_valid(json_musicbot_id, g_server_settings.max_client_count);
-    if (status == FALSE)
+    if (_client_msg_musicbot_internal__is_index_valid(json_musicbot_id, g_server_settings.max_client_count) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(musicbot_id) \n");
         return FALSE;
@@ -502,17 +485,12 @@ static boole _client_msg_musicbot_internal__is_musicbot_get_song_list_request_va
  */
 void client_msg__musicbot__process_get_song_list_request(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_musicbot_id = 0;
-    client_t *client = 0;
-    client_t *music_bot = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_musicbot_id = NULL_POINTER;
+    client_t *client = NULL_POINTER;
+    client_t *music_bot = NULL_POINTER;
 
-    status = _client_msg_musicbot_internal__is_musicbot_get_song_list_request_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_musicbot_internal__is_musicbot_get_song_list_request_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__musicbot__process_get_song_list_request is not valid");
         return;
@@ -527,29 +505,15 @@ void client_msg__musicbot__process_get_song_list_request(cJSON *json_root, uint6
     // this was checked before but not within read lock like here
     client = &g_clients_array[sender_client_id];
 
-    status0 = base__is_current_client_request(sender_client_id) == FALSE;
-    if (status0 == FALSE)
-    {
-        status1 = client->is_authenticated == FALSE;
-        status2 = client->is_existing == FALSE;
-        status0 = status1 == TRUE || status2 == TRUE;
-    }
-    if (status0 == TRUE)
+    if (base__is_current_client_request(sender_client_id) == FALSE || client->is_authenticated == FALSE || client->is_existing == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client->is_authenticated == FALSE || client->is_existing == FALSE goto label_client_msg__process_musicbot_get_song_list_request_end end");
         goto label_client_msg__process_musicbot_get_song_list_request_end;
     }
 
-    status0 = permissions__is_allowed(client, PERMISSION_UPLOAD_MUSIC_TRACKS) == FALSE;
-    if (status0 == TRUE)
-    {
-        status0 = permissions__is_allowed(client, PERMISSION_DELETE_MUSIC_TRACKS) == FALSE;
-    }
-    if (status0 == TRUE)
-    {
-        status0 = permissions__is_allowed(client, PERMISSION_CONTROL_MUSIC_PLAYBACK) == FALSE;
-    }
-    if (status0 == TRUE)
+    if (permissions__is_allowed(client, PERMISSION_UPLOAD_MUSIC_TRACKS) == FALSE &&
+        permissions__is_allowed(client, PERMISSION_DELETE_MUSIC_TRACKS) == FALSE &&
+        permissions__is_allowed(client, PERMISSION_CONTROL_MUSIC_PLAYBACK) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client->is_admin == FALSE goto label_client_msg__process_musicbot_get_song_list_request_end end");
         server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
@@ -581,10 +545,9 @@ label_client_msg__process_musicbot_get_song_list_request_end:
  */
 static boole _client_msg_musicbot_internal__is_remove_song_from_music_bot_request_valid(cJSON *json_root)
 {
-    boole status = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_song_id = 0;
-    cJSON *json_musicbot_id = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_song_id = NULL_POINTER;
+    cJSON *json_musicbot_id = NULL_POINTER;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_song_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "song_id");
@@ -596,8 +559,7 @@ static boole _client_msg_musicbot_internal__is_remove_song_from_music_bot_reques
         return FALSE;
     }
 
-    status = _client_msg_musicbot_internal__is_index_valid(json_song_id, MUSIC_BOT_MAX_FILE_COUNT);
-    if (status == FALSE)
+    if (_client_msg_musicbot_internal__is_index_valid(json_song_id, MUSIC_BOT_MAX_FILE_COUNT) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(json_song_id) \n");
         return FALSE;
@@ -615,8 +577,7 @@ static boole _client_msg_musicbot_internal__is_remove_song_from_music_bot_reques
         return FALSE;
     }
 
-    status = _client_msg_musicbot_internal__is_index_valid(json_musicbot_id, g_server_settings.max_client_count);
-    if (status == FALSE)
+    if (_client_msg_musicbot_internal__is_index_valid(json_musicbot_id, g_server_settings.max_client_count) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(musicbot_id) \n");
         return FALSE;
@@ -641,16 +602,13 @@ static boole _client_msg_musicbot_internal__is_remove_song_from_music_bot_reques
  */
 void client_msg__musicbot__process_remove_song_request(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status0 = FALSE;
-    boole status = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_song_id = 0;
-    cJSON *json_musicbot_id = 0;
-    client_t *sender_client = 0;
-    client_t *music_bot = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_song_id = NULL_POINTER;
+    cJSON *json_musicbot_id = NULL_POINTER;
+    client_t *sender_client = NULL_POINTER;
+    client_t *music_bot = NULL_POINTER;
 
-    status = _client_msg_musicbot_internal__is_remove_song_from_music_bot_request_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_musicbot_internal__is_remove_song_from_music_bot_request_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__musicbot__process_remove_song_request is not valid");
         return;
@@ -662,8 +620,7 @@ void client_msg__musicbot__process_remove_song_request(cJSON *json_root, uint64 
     json_song_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "song_id");
     json_musicbot_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "musicbot_id");
 
-    status0 = base__is_current_client_request(sender_client_id);
-    if (status0 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         goto label_client_msg__process_remove_song_from_music_bot_request_end;
     }
@@ -682,8 +639,7 @@ void client_msg__musicbot__process_remove_song_request(cJSON *json_root, uint64 
         goto label_client_msg__process_remove_song_from_music_bot_request_end;
     }
 
-    status0 = permissions__is_allowed(sender_client, PERMISSION_DELETE_MUSIC_TRACKS);
-    if (status0 == FALSE)
+    if (permissions__is_allowed(sender_client, PERMISSION_DELETE_MUSIC_TRACKS) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "sender is not admin");
         server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);

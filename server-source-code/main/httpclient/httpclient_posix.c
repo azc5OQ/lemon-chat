@@ -271,7 +271,7 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t *reques
     socklen_t length = 0;
     static const ubyte purpose[] = "lemon-chat-url-resolver";
     struct addrinfo hints = { 0 };
-    struct addrinfo *addresses = NULL;
+    struct addrinfo *addresses = NULL_POINTER;
     httpclient_error_t error = HTTPCLIENT_SOCKET;
     httpclient_connection_t *connection = calloc(1, sizeof(*connection));
 

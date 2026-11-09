@@ -110,7 +110,6 @@ static void _video_channel_internal__clear_viewer(client_t *client, client_t *st
  */
 boole video_channel__start(client_t *streamer, cstring source, cstring codec, int64 width, int64 height, int64 fps, boole is_sound_included, cstring *out_refusal_reason)
 {
-    boole status = FALSE;
     channel_t *channel = NULL_POINTER;
     client_t *member = NULL_POINTER;
     uint64 i = 0;
@@ -149,8 +148,7 @@ boole video_channel__start(client_t *streamer, cstring source, cstring codec, in
         return FALSE;
     }
 
-    status = permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER);
-    if (status == FALSE)
+    if (permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER) == FALSE)
     {
         *out_refusal_reason = "insufficient_permissions";
         return FALSE;
@@ -288,7 +286,6 @@ void video_channel__stop(uint64 channel_id, cstring reason)
  */
 void video_channel__apply_permission_changes(void)
 {
-    boole status = FALSE;
     uint64 i = 0;
     channel_t *channel = NULL_POINTER;
     client_t *streamer = NULL_POINTER;
@@ -310,8 +307,7 @@ void video_channel__apply_permission_changes(void)
         {
             continue;
         }
-        status = permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER);
-        if (status == TRUE)
+        if (permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER) == TRUE)
         {
             continue;
         }
@@ -652,7 +648,6 @@ void video_channel__process_transport_lost(uint64 client_id)
  */
 void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t *socket, int data_channel, const ubyte *data, uint64 size)
 {
-    boole status = FALSE;
     ubyte body[WS_VIDEO_FRAME_MAX] = { 0 };
     ubyte frame[WS_VIDEO_FRAME_MAX] = { 0 };
     uint64 body_size = 0;
@@ -683,8 +678,7 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t *socket, int da
     {
         goto done;
     }
-    status = permissions__can_use_channel(sender, channel, PERMISSION_STREAM_POWER);
-    if (status == FALSE)
+    if (permissions__can_use_channel(sender, channel, PERMISSION_STREAM_POWER) == FALSE)
     {
         goto done;
     }
@@ -725,8 +719,7 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t *socket, int da
             }
             continue;
         }
-        status = video_webrtc__can_send(i);
-        if (status == FALSE)
+        if (video_webrtc__can_send(i) == FALSE)
         {
             continue;
         }

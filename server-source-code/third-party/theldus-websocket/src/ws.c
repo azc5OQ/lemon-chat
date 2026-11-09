@@ -228,7 +228,7 @@ struct ws_connection
 /**
  * @brief Clients list.
  */
-static struct ws_connection *client_socks = NULL;
+static struct ws_connection *client_socks = NULL_POINTER;
 static uint32_t client_capacity = 0;
 
 /**
@@ -238,7 +238,7 @@ static uint32_t client_capacity = 0;
  */
 static void record_close_reason(ws_cli_conn_t *client, const char *reason)
 {
-	const char *expected = NULL;
+	const char *expected = NULL_POINTER;
 
 	if (client != NULL)
 	{
@@ -725,10 +725,10 @@ static pthread_cond_t chat_encode_ready = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t chat_write_ready = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t chat_cleanup_changed = PTHREAD_COND_INITIALIZER;
 static pthread_once_t chat_once = PTHREAD_ONCE_INIT;
-static struct ws_chat_queue *chat_first = NULL;
-static struct ws_chat_queue *chat_last = NULL;
-static struct ws_chat_job *chat_cancelled_first = NULL;
-static struct ws_chat_job *chat_cancelled_last = NULL;
+static struct ws_chat_queue *chat_first = NULL_POINTER;
+static struct ws_chat_queue *chat_last = NULL_POINTER;
+static struct ws_chat_job *chat_cancelled_first = NULL_POINTER;
+static struct ws_chat_job *chat_cancelled_last = NULL_POINTER;
 static size_t chat_bytes = 0;
 static const size_t chat_byte_limit = WS_CHAT_TOTAL_BYTES;
 static size_t chat_messages = 0;
@@ -743,11 +743,11 @@ static volatile size_t chat_failures_stall = 0;
 #endif
 static bool chat_workers_running = false;
 static bool chat_workers_stopping = false;
-static pthread_t *chat_workers = NULL;
+static pthread_t *chat_workers = NULL_POINTER;
 static size_t chat_worker_count = 0;
 static pthread_t chat_writer;
-static ws_pollfd_t *chat_pollfds = NULL;
-static struct ws_chat_queue **chat_polled_queues = NULL;
+static ws_pollfd_t *chat_pollfds = NULL_POINTER;
+static struct ws_chat_queue **chat_polled_queues = NULL_POINTER;
 
 /**
  * @brief Waits until one of the supplied sockets is ready for reading or writing.
@@ -1187,7 +1187,7 @@ static struct ws_chat_job *_ws_internal__chat_abort_locked(struct ws_chat_queue 
  */
 static void _ws_internal__chat_abort(ws_cli_conn_t *client)
 {
-	struct ws_chat_job *cancelled = NULL;
+	struct ws_chat_job *cancelled = NULL_POINTER;
 
 	pthread_mutex_lock(&chat_mutex);
 	if (client->chat != NULL)
@@ -1212,9 +1212,9 @@ static void _ws_internal__chat_abort(ws_cli_conn_t *client)
 static int _ws_internal__chat_add_job(ws_cli_conn_t *client, struct ws_chat_job *job)
 {
 	struct ws_chat_queue *queue;
-	struct ws_chat_job *cancelled = NULL;
-	struct ws_chat_job *previous = NULL;
-	struct ws_chat_job *next = NULL;
+	struct ws_chat_job *cancelled = NULL_POINTER;
+	struct ws_chat_job *previous = NULL_POINTER;
+	struct ws_chat_job *next = NULL_POINTER;
 	size_t byte_limit;
 	size_t client_byte_limit;
 	size_t client_message_limit;
@@ -1343,7 +1343,7 @@ static int _ws_internal__chat_add_job(ws_cli_conn_t *client, struct ws_chat_job 
  */
 static int _ws_internal__queue_text(ws_cli_conn_t *client, void *context, size_t charged_bytes, char *(*encode)(void *context, size_t *encoded_size), void (*release_context)(void *context), void (*release_encoded)(char *encoded), bool bulk, bool priority)
 {
-	struct ws_chat_job *job = NULL;
+	struct ws_chat_job *job = NULL_POINTER;
 
 	if (encode != NULL && release_context != NULL && release_encoded != NULL && charged_bytes <= SIZE_MAX - sizeof(*job))
 	{
@@ -2846,8 +2846,10 @@ static int read_handshake(struct ws_frame_data *wfd)
 	size_t received = 0;
 	uint64_t deadline = audio_clock_ms() + WS_HANDSHAKE_TIMEOUT_MS;
 
+	// Bound the header size and leave room for its final zero byte.
 	while (received < sizeof(wfd->frm) - 1)
 	{
+		// Use one deadline for the whole header, including slow partial reads.
 		now = audio_clock_ms();
 		if (now >= deadline)
 		{
@@ -2864,6 +2866,8 @@ static int read_handshake(struct ws_frame_data *wfd)
 		{
 			return -1;
 		}
+
+		// Also search across the boundary between the previous read and this one.
 		search_from = received > 3 ? received - 3 : 0;
 		received += (size_t)count;
 		wfd->frm[received] = '\0';
@@ -2882,6 +2886,8 @@ static int read_handshake(struct ws_frame_data *wfd)
 					return -1;
 				}
 #endif
+
+				// Keep any bytes received after the header for the first WebSocket frame.
 				wfd->amt_read = received;
 				wfd->cur_pos = header_size;
 				return 0;
@@ -2897,7 +2903,7 @@ static int do_handshake(struct ws_frame_data *wfd)
 	int response_status = 0;
 	int enabled = 0;
 	char *response; /* Handshake response message. */
-	const char *forwarded_header = NULL;
+	const char *forwarded_header = NULL_POINTER;
 	int forwarded_status = 0;
 
 	/* A socket is not visible to the application's auth timeout until onopen.
@@ -2909,6 +2915,8 @@ static int do_handshake(struct ws_frame_data *wfd)
 
 	wfd->client->is_using_forwarded_ip_address = false;
 	wfd->client->forwarded_ip_address[0] = '\0';
+
+	// Only accept forwarded client addresses from the configured local proxy.
 	if (strcmp(wfd->client->ip, "127.0.0.1") == 0)
 	{
 		if (forwarded_ip_mode == WS_FORWARDED_IP_FUNNEL)
@@ -2942,6 +2950,7 @@ static int do_handshake(struct ws_frame_data *wfd)
 		wfd->client->media_purpose = WS_MEDIA_PURPOSE_VIDEO;
 	}
 
+	// Temporarily end the header string without losing the first frame byte.
 	first_frame_byte = wfd->frm[wfd->cur_pos];
 	wfd->frm[wfd->cur_pos] = '\0';
 	response_status = get_handshake_response((char *)wfd->frm, &response);

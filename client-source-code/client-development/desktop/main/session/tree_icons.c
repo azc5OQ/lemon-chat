@@ -71,7 +71,7 @@ static void _tree_icons_internal__abort(void)
 static void *_tree_icons_internal__allocate(uint64 capacity)
 {
     int64 index = 0;
-    void *pointer = NULL;
+    void *pointer = NULL_POINTER;
     if (!capacity || capacity > 8 * 1024 * 1024 - g_svg_bytes)
     {
         _tree_icons_internal__abort();
@@ -130,7 +130,7 @@ static void _tree_icons_internal__release(void *pointer)
 static void *_tree_icons_internal__resize(void *pointer, uint64 capacity)
 {
     int64 index = 0;
-    void *replacement = NULL;
+    void *replacement = NULL_POINTER;
     if (!pointer)
     {
         return _tree_icons_internal__allocate(capacity);
@@ -160,10 +160,10 @@ static void *_tree_icons_internal__resize(void *pointer, uint64 capacity)
  */
 static boole _tree_icons_internal__svg(char *source, ubyte *pixels)
 {
-    NSVGimage *svg = NULL;
-    NSVGrasterizer *raster = NULL;
-    NSVGshape *shape = NULL;
-    NSVGpath *path = NULL;
+    NSVGimage *svg = NULL_POINTER;
+    NSVGrasterizer *raster = NULL_POINTER;
+    NSVGshape *shape = NULL_POINTER;
+    NSVGpath *path = NULL_POINTER;
     int64 index = 0;
     int64 points = 0;
     float scale = 0;
@@ -232,9 +232,9 @@ label_finished:
  */
 boole desktop_tree_icons__decode(const char *data, ubyte *pixels, uint64 capacity)
 {
-    const char *payload = NULL;
-    ubyte *bytes = NULL;
-    ubyte *image = NULL;
+    const char *payload = NULL_POINTER;
+    ubyte *bytes = NULL_POINTER;
+    ubyte *image = NULL_POINTER;
     size_t decoded_size = 0;
     uint64 length = 0;
     int64 width = 0;
@@ -300,8 +300,8 @@ label_finished:
 boole desktop_tree_icons__flag(const char *country, ubyte *pixels, uint64 capacity)
 {
     char path[64] = { 0 };
-    ubyte *bytes = NULL;
-    char *text = NULL;
+    ubyte *bytes = NULL_POINTER;
+    char *text = NULL_POINTER;
     uint64 size = 0;
     boole valid = FALSE;
     if (!pixels || capacity < 4096 || !country || clib__strlen(country) != 2 || country[0] < 'a' || country[0] > 'z' || country[1] < 'a' || country[1] > 'z')

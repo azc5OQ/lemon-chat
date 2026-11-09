@@ -15,6 +15,7 @@
 #include "core/audio_channel.h"
 #include "../third-party/rxi-log/log.h"
 #include <string.h>
+#include <ctype.h>
 
 #ifdef WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -59,7 +60,9 @@ static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_
 static boole _first_time_setup_internal__ask_yes_no(const char *question, boole default_answer);
 static boole _first_time_setup_internal__ask_yes_no_with_note(const char *question, const char *note, boole default_answer);
 static void _first_time_setup_internal__ask_admin_password(char *out_plaintext, uint64 out_capacity);
-static int64 _first_time_setup_internal__scan_client_themes(char *client_html_path, char out_themes[][32], int64 max_themes);
+static boole _first_time_setup_internal__theme_attribute(const char *tag, const char *end, const char *name, char *out, uint64 capacity);
+static uint64 _first_time_setup_internal__scan_client_themes(const char *client_html_path, char out_themes[][32], uint64 max_themes, boole mobile_only);
+static void _first_time_setup_internal__ask_theme(const char *path, boole mobile, char out_theme[32]);
 static void _first_time_setup_internal__ask_certificate_paths(void);
 static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_hosting_t hosting);
 static boole _first_time_setup_internal__is_tunnel_setup_available(void);
@@ -260,53 +263,113 @@ static int64 _first_time_setup_internal__file_size(FILE *file)
 }
 
 /**
- * @brief scans the served client.html for the selectable theme names written into it, so first-time
- *        setup can offer them as a default
- *
- *        reads the whole file into memory, blanks out every <!-- --> region first so a commented-out
- *        theme entry is never offered, then walks the remaining text collecting each
- *        choose-theme-item' data-name="X" value, skipping duplicates and names of 31 characters or
- *        more. yields nothing (0) when the file cannot be opened, is empty, or the buffer cannot be
- *        allocated.
- *
- * @param char* client_html_path -> path of the client.html to scan
- * @param char out_themes[][32] -> receives the theme names found, one null-terminated name per row
- * @param int64 max_themes -> number of rows available in out_themes; scanning stops collecting past it
- *
- * @return int64 -> how many theme names were written into out_themes
+ * @brief Reads one HTML attribute, accepting either quote style or an unquoted value.
  */
-static int64 _first_time_setup_internal__scan_client_themes(char *client_html_path, char out_themes[][32], int64 max_themes)
+static boole _first_time_setup_internal__theme_attribute(const char *tag, const char *end, const char *name, char *out, uint64 capacity)
+{
+    const char *cursor = tag + 1;
+    const char *attribute = NULL_POINTER;
+    const char *value = NULL_POINTER;
+    uint64 name_length = clib__strlen(name);
+    uint64 attribute_length = 0;
+    uint64 value_length = 0;
+    char quote = 0;
+
+    // Skip the element name before reading its attributes.
+    while (cursor < end && !isspace((unsigned char)*cursor))
+    {
+        cursor++;
+    }
+    while (cursor < end)
+    {
+        while (cursor < end && (isspace((unsigned char)*cursor) || *cursor == '/'))
+        {
+            cursor++;
+        }
+        attribute = cursor;
+        while (cursor < end && !isspace((unsigned char)*cursor) && *cursor != '=' && *cursor != '/')
+        {
+            cursor++;
+        }
+        attribute_length = (uint64)(cursor - attribute);
+        while (cursor < end && isspace((unsigned char)*cursor))
+        {
+            cursor++;
+        }
+        if (cursor == end)
+        {
+            break;
+        }
+        if (*cursor != '=')
+        {
+            continue;
+        }
+        cursor++;
+        while (cursor < end && isspace((unsigned char)*cursor))
+        {
+            cursor++;
+        }
+        quote = cursor < end && (*cursor == '"' || *cursor == '\'') ? *cursor++ : 0;
+        value = cursor;
+        while (cursor < end && (quote != 0 ? *cursor != quote : !isspace((unsigned char)*cursor)))
+        {
+            cursor++;
+        }
+        value_length = (uint64)(cursor - value);
+        if (quote != 0 && cursor == end)
+        {
+            return FALSE;
+        }
+        if (attribute_length == name_length && clib__strncmp(attribute, name, name_length) == 0)
+        {
+            if (value_length >= capacity)
+            {
+                return FALSE;
+            }
+            clib__memcpy(out, value, value_length);
+            out[value_length] = 0;
+            return TRUE;
+        }
+        if (quote != 0)
+        {
+            cursor++;
+        }
+    }
+    return FALSE;
+}
+
+/**
+ * @brief Finds theme menu entries in the served page, optionally keeping only mobile themes.
+ */
+static uint64 _first_time_setup_internal__scan_client_themes(const char *client_html_path, char out_themes[][32], uint64 max_themes, boole mobile_only)
 {
     FILE *file = NULL_POINTER;
     int64 file_size = 0;
     char *buffer = NULL_POINTER;
-    uint64 bytes_read = 0;
-    int64 count = 0;
     char *cursor = NULL_POINTER;
-    char *found = NULL_POINTER;
-    char *value_start = NULL_POINTER;
-    char *value_end = NULL_POINTER;
-    int64 length = 0;
-    int64 j = 0;
+    char *end = NULL_POINTER;
+    char *closing = NULL_POINTER;
+    char *theme_class = NULL_POINTER;
+    char classes[128] = { 0 };
+    char name[32] = { 0 };
+    char mobile[8] = { 0 };
+    char quote = 0;
+    uint64 bytes_read = 0;
+    uint64 count = 0;
+    uint64 i = 0;
     boole duplicate = FALSE;
-    char *comment_open = NULL_POINTER;
-    char *comment_close = NULL_POINTER;
-    char *blank_p = NULL_POINTER;
-    const char *marker = "choose-theme-item' data-name=\"";
 
     file = fopen(client_html_path, "rb");
     if (file == NULL_POINTER)
     {
         return 0;
     }
-
     file_size = _first_time_setup_internal__file_size(file);
     if (file_size <= 0 || (uint64)file_size >= SIZE_MAX)
     {
         fclose(file);
         return 0;
     }
-
     buffer = (char *)malloc((uint64)file_size + 1);
     if (buffer == NULL_POINTER)
     {
@@ -317,69 +380,157 @@ static int64 _first_time_setup_internal__scan_client_themes(char *client_html_pa
     buffer[bytes_read] = 0;
     fclose(file);
 
-    // blank out HTML comments first, so a commented-out theme entry is never offered
     cursor = buffer;
-    for (;;)
+    while (count < max_themes && (cursor = (char *)clib__strchr(cursor, '<')) != NULL_POINTER)
     {
-        comment_open = (char *)clib__strstr(cursor, "<!--");
-        if (comment_open == NULL_POINTER)
+        // Commented-out entries are not available themes.
+        if (clib__strncmp(cursor, "<!--", 4) == 0)
         {
-            break;
-        }
-        comment_close = (char *)clib__strstr(comment_open, "-->");
-        if (comment_close == NULL_POINTER)
-        {
-            break;
-        }
-        for (blank_p = comment_open; blank_p < (comment_close + 3); blank_p++)
-        {
-            *blank_p = ' ';
-        }
-        cursor = comment_close + 3;
-    }
-
-    cursor = buffer;
-    for (;;)
-    {
-        found = (char *)clib__strstr(cursor, marker);
-        if (found == NULL_POINTER)
-        {
-            break;
-        }
-
-        value_start = found + clib__strlen(marker);
-        value_end = (char *)clib__strchr(value_start, '"');
-        if (value_end == NULL_POINTER)
-        {
-            break;
-        }
-
-        length = (int64)(value_end - value_start);
-        if ((length > 0) && (length < 31) && (count < max_themes))
-        {
-            duplicate = FALSE;
-            for (j = 0; j < count; j++)
+            closing = (char *)clib__strstr(cursor + 4, "-->");
+            if (closing == NULL_POINTER)
             {
-                if ((clib__strncmp(out_themes[j], value_start, length) == 0) && (out_themes[j][length] == 0))
+                break;
+            }
+            cursor = closing + 3;
+            continue;
+        }
+
+        // A quoted '>' belongs to an attribute, not the end of the tag.
+        end = cursor + 1;
+        quote = 0;
+        while (*end != 0)
+        {
+            if (quote != 0)
+            {
+                if (*end == quote)
                 {
-                    duplicate = TRUE;
-                    break;
+                    quote = 0;
                 }
             }
-
-            if (duplicate == FALSE)
+            else if (*end == '"' || *end == '\'')
             {
-                clib__null_memory(out_themes[count], 32);
-                clib__string_copy_n(out_themes[count], 32, value_start, length);
-                count++;
+                quote = *end;
             }
+            else if (*end == '>')
+            {
+                break;
+            }
+            end++;
+        }
+        if (*end == 0)
+        {
+            break;
         }
 
-        cursor = value_end;
-    }
+        // Ignore markup strings inside the page's scripts and styles.
+        if (clib__strncmp(cursor, "<script", 7) == 0 || clib__strncmp(cursor, "<style", 6) == 0)
+        {
+            closing = (char *)clib__strstr(end + 1, cursor[2] == 'c' ? "</script" : "</style");
+            if (closing == NULL_POINTER)
+            {
+                break;
+            }
+            cursor = closing;
+            continue;
+        }
+        classes[0] = 0;
+        name[0] = 0;
+        mobile[0] = 0;
+        if (_first_time_setup_internal__theme_attribute(cursor, end, "class", classes, sizeof(classes)) == FALSE ||
+            _first_time_setup_internal__theme_attribute(cursor, end, "data-name", name, sizeof(name)) == FALSE)
+        {
+            cursor = end + 1;
+            continue;
+        }
+        _first_time_setup_internal__theme_attribute(cursor, end, "data-mobile", mobile, sizeof(mobile));
+        cursor = end + 1;
+        theme_class = (char *)clib__strstr(classes, "choose-theme-item");
+        if (theme_class == NULL_POINTER || (theme_class != classes && !isspace((unsigned char)theme_class[-1])) ||
+            (theme_class[17] != 0 && !isspace((unsigned char)theme_class[17])) ||
+            (mobile_only == TRUE && clib__strcmp(mobile, "true") != 0))
+        {
+            continue;
+        }
 
+        // Theme IDs become style element IDs; keep only simple, complete names.
+        for (i = 0; name[i] != 0; i++)
+        {
+            if (!isalnum((unsigned char)name[i]) && name[i] != '-' && name[i] != '_')
+            {
+                break;
+            }
+        }
+        if (i == 0 || name[i] != 0)
+        {
+            continue;
+        }
+        duplicate = FALSE;
+        for (i = 0; i < count; i++)
+        {
+            if (clib__strcmp(out_themes[i], name) == 0)
+            {
+                duplicate = TRUE;
+                break;
+            }
+        }
+        if (duplicate == FALSE)
+        {
+            clib__string_copy(out_themes[count], 32, name);
+            count++;
+        }
+    }
     free(buffer);
     return count;
+}
+
+/**
+ * @brief Offers the available themes for one device type and saves the selection.
+ */
+static void _first_time_setup_internal__ask_theme(const char *path, boole mobile, char out_theme[32])
+{
+    char themes[64][32] = { 0 };
+    char input[64] = { 0 };
+    char *end = NULL_POINTER;
+    const char *device = mobile == TRUE ? "mobile" : "desktop";
+    uint64 count = _first_time_setup_internal__scan_client_themes(path, themes, 64, mobile);
+    uint64 i = 0;
+    int64 choice = 0;
+
+    if (count == 0)
+    {
+        printf("%s No %s themes found in %s. Keeping the client's default.\n", g_mark_info, device, path);
+        return;
+    }
+    printf("%s Themes available for %s browsers:\n", g_mark_info, device);
+    for (i = 0; i < count; i++)
+    {
+        printf("      %llu) %s\n", i + 1, themes[i]);
+    }
+    while (TRUE)
+    {
+        printf("%s Default %s theme number (Enter to keep the client's default): ", g_mark_ask, device);
+        if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
+        {
+            return;
+        }
+        clib__string_trim_newline(input, sizeof(input));
+        if (input[0] == 0)
+        {
+            return;
+        }
+        choice = clib__strtol(input, &end, 10);
+        while (isspace((unsigned char)*end))
+        {
+            end++;
+        }
+        if (end != input && *end == 0 && choice >= 1 && (uint64)choice <= count)
+        {
+            clib__string_copy(out_theme, 32, themes[choice - 1]);
+            printf("%s Default %s theme: %s\n", g_mark_ok, device, out_theme);
+            return;
+        }
+        printf("%s Enter a theme number from 1 to %llu, or press Enter.\n", g_mark_warn, count);
+    }
 }
 
 /**
@@ -427,8 +578,8 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
 #ifndef WIN32
     char found_domains[32][256] = { 0 };
     char domain[256] = { 0 };
-    DIR *cert_dir = 0;
-    struct dirent *entry = 0;
+    DIR *cert_dir = NULL_POINTER;
+    struct dirent *entry = NULL_POINTER;
     uint64 found_count = 0;
     uint64 i = 0;
     int64 selection = 0;
@@ -831,12 +982,7 @@ static int64 _first_time_setup_internal__ask_port(const char *question, int64 de
  */
 static void _first_time_setup_internal__prompt_network_settings(first_time_setup_hosting_t hosting)
 {
-    char input[256] = { 0 };
-    char client_themes[16][32] = { 0 };
     char theme_scan_path[600] = { 0 };
-    uint64 i = 0;
-    int64 client_theme_count = 0;
-    int64 theme_choice = 0;
     boole is_same_public_hostname = TRUE;
     boole status0 = FALSE;
     boole is_http_tunnel = (hosting == HOSTING_FUNNEL || hosting == HOSTING_CLOUDFLARE || hosting == HOSTING_NGROK);
@@ -918,41 +1064,17 @@ static void _first_time_setup_internal__prompt_network_settings(first_time_setup
             printf("%s %s\n", g_mark_info, "Automatic connection: disabled. Users enter the server connection details themselves.");
         }
 
-        // offer a default theme written into the served client.html, scanned from the page itself
-        clib__null_memory(theme_scan_path, sizeof(theme_scan_path));
+        // Scan the served page so custom themes are offered too.
         if (g_server_settings.http_webroot[0] != 0)
         {
             clib__string_format(theme_scan_path, sizeof(theme_scan_path), "%s/client.html", g_server_settings.http_webroot);
         }
         else
         {
-            clib__string_format(theme_scan_path, sizeof(theme_scan_path), "client.html");
+            clib__string_copy(theme_scan_path, sizeof(theme_scan_path), "client.html");
         }
-
-        client_theme_count = _first_time_setup_internal__scan_client_themes(theme_scan_path, client_themes, 16);
-        if (client_theme_count > 0)
-        {
-            printf("%s %s\n", g_mark_info, "Themes available in client.html:");
-            for (i = 0; i < (uint64)client_theme_count; i++)
-            {
-                printf("      %llu) %s\n", (uint64)(i + 1), client_themes[i]);
-            }
-
-            clib__null_memory(input, sizeof(input));
-            printf("%s %s", g_mark_ask, "Default theme number (Enter to keep the client's default): ");
-            fgets(input, sizeof(input), stdin);
-            clib__string_trim_newline(input, sizeof(input));
-            theme_choice = clib__atoi(input);
-            if ((theme_choice >= 1) && (theme_choice <= client_theme_count))
-            {
-                clib__string_copy(g_server_settings.default_theme, sizeof(g_server_settings.default_theme), client_themes[theme_choice - 1]);
-                printf("%s %s%s\n", g_mark_ok, "default theme: ", g_server_settings.default_theme);
-            }
-        }
-        else
-        {
-            printf("%s %s\n", g_mark_info, "No themes found in client.html. Clients will use their own default theme.");
-        }
+        _first_time_setup_internal__ask_theme(theme_scan_path, FALSE, g_server_settings.default_theme);
+        _first_time_setup_internal__ask_theme(theme_scan_path, TRUE, g_server_settings.default_mobile_theme);
 
         status0 = _first_time_setup_internal__ask_yes_no_with_note("Save each user's identity in their browser?",
                                                                    "    The browser reuses the same identity after the page is reloaded or reopened.\n"
@@ -975,8 +1097,6 @@ static void _first_time_setup_internal__prompt_network_settings(first_time_setup
             } while (g_server_settings.http_port == g_server_settings.websocket_port || (g_server_settings.is_stunnel_enabled && g_server_settings.http_port == g_server_settings.wss_port));
         }
     }
-    clib__null_memory(input, sizeof(input));
-
     if (is_http_tunnel == TRUE)
     {
         g_server_settings.is_same_ip_address_allowed = TRUE;
@@ -1001,7 +1121,6 @@ static void _first_time_setup_internal__prompt_network_settings(first_time_setup
 static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_hosting_t hosting)
 {
     char input[256] = { 0 };
-    boole status0 = FALSE;
     boole is_tunnel_setup_requested = FALSE;
     boole is_http_tunnel = (hosting == HOSTING_FUNNEL || hosting == HOSTING_CLOUDFLARE || hosting == HOSTING_NGROK);
 
@@ -1058,8 +1177,7 @@ static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_
     {
         // the tunnel setup asks for the router itself and writes the address and the range, so
         // the two detail questions are asked only when it does not run
-        status0 = _first_time_setup_internal__is_tunnel_setup_available();
-        if (status0 == TRUE)
+        if (_first_time_setup_internal__is_tunnel_setup_available() == TRUE)
         {
             printf("\n");
             is_tunnel_setup_requested = _first_time_setup_internal__ask_yes_no_with_note("Run the WireGuard setup script after saving these settings?",
@@ -1420,7 +1538,7 @@ void first_time_setup__run(char plaintext_keys[][256])
  */
 static boole _first_time_setup_internal__is_tunnel_setup_available(void)
 {
-    FILE *script_file = 0;
+    FILE *script_file = NULL_POINTER;
     boole is_same_directory = FALSE;
 
 #ifdef WIN32
@@ -1429,8 +1547,8 @@ static boole _first_time_setup_internal__is_tunnel_setup_available(void)
     uint64 working_directory_length = 0;
     uint64 settings_directory_length = 0;
 #else
-    char *working_directory = 0;
-    char *settings_directory = 0;
+    char *working_directory = NULL_POINTER;
+    char *settings_directory = NULL_POINTER;
 #endif
 
     script_file = fopen(g_tunnel_setup_script_path, "rb");
@@ -1566,7 +1684,7 @@ static void _first_time_setup_internal__run_tunnel_setup(void)
  */
 static void _first_time_setup_internal__reload_tunnel_settings(void)
 {
-    FILE *settings_file = 0;
+    FILE *settings_file = NULL_POINTER;
     int64 file_length = 0;
     uint64 bytes_read = 0;
     char *file_buffer = NULL_POINTER;

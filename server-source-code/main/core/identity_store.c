@@ -35,15 +35,13 @@ pthread_mutex_t g_client_stored_data_mutex = PTHREAD_MUTEX_INITIALIZER;
 boole identity_store__is_public_key_present_in_client_stored_data(char *public_key)
 {
     boole result = FALSE;
-    boole status = FALSE;
     uint64 i = 0;
 
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
-        status = clib__is_string_equal(g_client_stored_data[i].public_key, public_key);
-        if (status == TRUE)
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, public_key) == TRUE)
         {
             DBG_IDENTITIES log_info("%s %s %s %s", "public key found in client stored data ", g_client_stored_data[i].public_key, public_key, "\n");
             result = TRUE;
@@ -234,9 +232,6 @@ void identity_store__snapshot_connected_clients_into_identity_store(void)
  */
 void identity_store__sync_client_identity_in_store(client_t *client)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
     char identity_hash[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
     uint64 group_count = 0;
     uint64 t = 0;
@@ -253,10 +248,7 @@ void identity_store__sync_client_identity_in_store(client_t *client)
         return;
     }
 
-    status0 = client->is_existing;
-    status1 = client->is_authenticated;
-    status2 = (boole)(client->is_music_bot != TRUE);
-    if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
+    if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
     {
         return;
     }
@@ -511,8 +503,6 @@ void identity_store__touch_identity_last_seen_by_hash(char *identity_hash)
  */
 void identity_store__store_identity_raw_public_key(char *identity_hash, char *raw_public_key)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
     uint64 i = 0;
     int64 slot = -1;
 
@@ -521,9 +511,7 @@ void identity_store__store_identity_raw_public_key(char *identity_hash, char *ra
         return;
     }
 
-    status0 = (boole)(identity_hash != NULL_POINTER && identity_hash[0] != 0);
-    status1 = (boole)(raw_public_key != NULL_POINTER && raw_public_key[0] != 0);
-    if (status0 == FALSE || status1 == FALSE)
+    if (!(identity_hash != NULL_POINTER && identity_hash[0] != 0) || !(raw_public_key != NULL_POINTER && raw_public_key[0] != 0))
     {
         return;
     }
@@ -767,14 +755,10 @@ void identity_store__free_offline_messages_for_identity(char *identity_hash)
  */
 boole identity_store__get_identity_avatar_by_hash(char *identity_hash, char *out_buffer, uint64 out_buffer_size)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
     uint64 i = 0;
     boole found = FALSE;
 
-    status0 = (boole)(identity_hash != NULL_POINTER && identity_hash[0] != 0);
-    status1 = (boole)(out_buffer != NULL_POINTER && out_buffer_size != 0);
-    if (status0 == FALSE || status1 == FALSE)
+    if (!(identity_hash != NULL_POINTER && identity_hash[0] != 0) || !(out_buffer != NULL_POINTER && out_buffer_size != 0))
     {
         return FALSE;
     }

@@ -23,7 +23,7 @@
  */
 ubyte *desktop_attachment_file__read(const char *path, uint64 limit, uint64 *size)
 {
-    ubyte *bytes = NULL;
+    ubyte *bytes = NULL_POINTER;
     uint64 length = 0;
     uint64 offset = 0;
 #ifdef _WIN32

@@ -614,7 +614,7 @@ static void _audio_internal__append(audio_peer_t *peer, const float *pcm, uint64
 static void _audio_internal__decode(desktop_audio_t *audio, audio_peer_t *peers, const desktop_audio_packet_t *packet, float *scratch)
 {
     int64 index = 0;
-    audio_peer_t *peer = NULL;
+    audio_peer_t *peer = NULL_POINTER;
     int64 frames = 0;
     ushort delta = 0;
     uint64 now = desktop_system__milliseconds();
@@ -693,8 +693,8 @@ static void _audio_internal__mix(audio_peer_t *peers, float *mixed, int64 volume
     uint64 frame = 0;
     uint64 available = 0;
     uint64 position = 0;
-    audio_peer_t *peer = NULL;
-    const float *pcm = NULL;
+    audio_peer_t *peer = NULL_POINTER;
+    const float *pcm = NULL_POINTER;
     uint64 capacity = 0;
     float gain = (float)volume / 100.0f;
     float concealed[DESKTOP_AUDIO_FRAME * 2] = { 0 };
@@ -765,7 +765,7 @@ static void _audio_internal__worker(void *context)
     desktop_audio_t *audio = context;
     desktop_audio_options_t options = { 0 };
     audio_peer_t *peers = calloc(AUDIO_PEERS, sizeof(*peers));
-    OpusEncoder *encoder = NULL;
+    OpusEncoder *encoder = NULL_POINTER;
     desktop_activity_t *activity = desktop_activity__create();
     ma_device playback = { 0 };
     ma_device capture = { 0 };

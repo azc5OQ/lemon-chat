@@ -164,9 +164,6 @@ boole crypto_metadata__key_from_password(crypto_key_t *key, crypto_key_type_t ty
     ubyte digest[32] = { 0 };
     const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     int64 result = 0;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
 
     if (key == NULL)
     {
@@ -177,13 +174,9 @@ boole crypto_metadata__key_from_password(crypto_key_t *key, crypto_key_type_t ty
     // The server settings currently store passwords as text. SHA256 turns each
     // password into its 32 stored key bytes, just as the client does. The key
     // type records which supported encryption method will use those bytes.
-    status0 = ciphers__name(type) != NULL;
-    status1 = password != NULL;
-    status2 = md != NULL;
-    if (status0 == TRUE && status1 == TRUE && status2 == TRUE)
+    if (ciphers__name(type) != NULL && password != NULL && md != NULL)
     {
-        status0 = mbedtls_md(md, (const ubyte *)password, clib__strlen(password), digest) == 0;
-        if (status0 == TRUE)
+        if (mbedtls_md(md, (const ubyte *)password, clib__strlen(password), digest) == 0)
         {
             result = crypto_metadata__key_init(key, type, digest, sizeof(digest));
         }
@@ -290,16 +283,8 @@ boole crypto_metadata__derive_session_keys(const char *shared_secret, crypto_ses
 boole crypto_metadata__crypt(const crypto_key_t *key, const ubyte *nonce, uint64 nonce_size, ubyte *data, uint64 size, crypto_direction_t direction)
 {
     struct AES_ctx aes = { 0 };
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    boole status3 = FALSE;
 
-    status0 = key == NULL;
-    status1 = nonce == NULL;
-    status2 = data == NULL || size > SIZE_MAX;
-    status3 = direction != CRYPTO_ENCRYPT && direction != CRYPTO_DECRYPT;
-    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
+    if (key == NULL || nonce == NULL || data == NULL || size > SIZE_MAX || direction != CRYPTO_ENCRYPT && direction != CRYPTO_DECRYPT)
     {
         return 0;
     }
@@ -351,16 +336,15 @@ boole crypto_metadata__crypt_layers(const crypto_key_t *keys, uint64 count, cons
 {
     uint64 i = 0;
     uint64 index = 0;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    boole status3 = FALSE;
 
-    status0 = (count != 0 && keys == NULL) || count > SIZE_MAX / sizeof(*keys);
-    status1 = nonce == NULL;
-    status2 = data == NULL || size > SIZE_MAX;
-    status3 = direction != CRYPTO_ENCRYPT && direction != CRYPTO_DECRYPT;
-    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
+    if (count != 0 &&
+        keys == NULL ||
+        count > SIZE_MAX / sizeof(*keys) ||
+        nonce == NULL ||
+        data == NULL ||
+        size > SIZE_MAX ||
+        direction != CRYPTO_ENCRYPT &&
+        direction != CRYPTO_DECRYPT)
     {
         return 0;
     }
@@ -397,22 +381,20 @@ boole crypto_metadata__hmac_sha256(const crypto_key_t *key, const ubyte *first, 
     const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     mbedtls_md_context_t context;
     int64 result = 0;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    boole status3 = FALSE;
-    boole status4 = FALSE;
 
     if (key == NULL)
     {
         return 0;
     }
-    status0 = key->type != CRYPTO_KEY_HMAC_SHA256;
-    status1 = out_tag == NULL;
-    status2 = md == NULL;
-    status3 = (first == NULL && first_size != 0) || first_size > SIZE_MAX;
-    status4 = (second == NULL && second_size != 0) || second_size > SIZE_MAX;
-    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE || status4 == TRUE)
+    if (key->type != CRYPTO_KEY_HMAC_SHA256 ||
+        out_tag == NULL ||
+        md == NULL ||
+        first == NULL &&
+        first_size != 0 ||
+        first_size > SIZE_MAX ||
+        second == NULL &&
+        second_size != 0 ||
+        second_size > SIZE_MAX)
     {
         return 0;
     }
@@ -422,15 +404,11 @@ boole crypto_metadata__hmac_sha256(const crypto_key_t *key, const ubyte *first, 
     {
         result = mbedtls_md_hmac_starts(&context, key->material.hmac_sha256, sizeof(key->material.hmac_sha256));
     }
-    status0 = result == 0;
-    status1 = first_size != 0;
-    if (status0 == TRUE && status1 == TRUE)
+    if (result == 0 && first_size != 0)
     {
         result = mbedtls_md_hmac_update(&context, first, first_size);
     }
-    status0 = result == 0;
-    status1 = second_size != 0;
-    if (status0 == TRUE && status1 == TRUE)
+    if (result == 0 && second_size != 0)
     {
         result = mbedtls_md_hmac_update(&context, second, second_size);
     }
@@ -540,6 +518,8 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
     {
         return NULL_POINTER;
     }
+
+    // Check the padded size before calculating the Base64 buffer size.
     text_size = clib__strlen(plaintext);
     buffer_size = text_size < METADATA_PADDED_SIZE ? METADATA_PADDED_SIZE : text_size;
     status0 = buffer_size > (uint64)g_server_settings.websocket_message_max_length;
@@ -554,6 +534,8 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
     {
         return NULL_POINTER;
     }
+
+    // Generate a fresh IV for this encrypted request.
     status0 = util__fill_secure_random_bytes(iv, sizeof(iv)) == FALSE;
     if (status0 == TRUE)
     {
@@ -588,6 +570,8 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
             goto done;
         }
     }
+
+    // Encode the encrypted bytes as text for the JSON envelope.
     status0 = mbedtls_base64_encode(encoded, encoded_capacity, &written, buffer, buffer_size) == 0;
     if (status0 == FALSE)
     {

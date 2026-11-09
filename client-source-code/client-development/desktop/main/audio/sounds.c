@@ -67,11 +67,11 @@ static boole _sounds_internal__decode(sound_clip_t *clip, const ubyte *bytes, si
 boole desktop_sounds__reload(desktop_sounds_t *sounds)
 {
     FILE *file = fopen(sounds->path, "rb");
-    char *source = NULL;
-    ubyte *bytes = NULL;
-    cJSON *root = NULL;
-    const cJSON *value = NULL;
-    const char *base64 = NULL;
+    char *source = NULL_POINTER;
+    ubyte *bytes = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    const cJSON *value = NULL_POINTER;
+    const char *base64 = NULL_POINTER;
     const char *failed_entry = "catalog";
     sound_clip_t clips[DESKTOP_SOUND_COUNT] = { 0 };
     sound_clip_t previous[DESKTOP_SOUND_COUNT] = { 0 };
@@ -299,8 +299,8 @@ void desktop_sounds__mix(desktop_sounds_t *sounds, float *stereo, uint64 frames,
     uint64 frame = 0;
     float value = 0;
     float gain = (float)volume / 100.0f;
-    sound_playback_t *playback = NULL;
-    sound_clip_t *clip = NULL;
+    sound_playback_t *playback = NULL_POINTER;
+    sound_clip_t *clip = NULL_POINTER;
     if (!sounds || !desktop_mutex__try_lock(sounds->mutex))
     {
         return;

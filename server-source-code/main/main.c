@@ -467,7 +467,7 @@ int main(void)
     char input[50] = { 0 };
     char http_webroot_resolved[512] = { 0 };
     char client_html_path[640] = { 0 };
-    FILE *client_html_file = 0;
+    FILE *client_html_file = NULL_POINTER;
 
     base__start_server_uptime();
 

@@ -39,7 +39,7 @@ static int64 _client_msg_channel_internal__member_count(desktop_session_t *sessi
 {
     int64 count = 0;
     int64 index = 0;
-    desktop_client_t *client = NULL;
+    desktop_client_t *client = NULL_POINTER;
 
     for (index = 0; index < session->model.client_count; index++)
     {
@@ -190,14 +190,14 @@ void client_msg__channel__member_changed(desktop_session_t *session, const deskt
  */
 boole client_msg__channel__distribute_keys(desktop_session_t *session)
 {
-    desktop_client_t *client = NULL;
+    desktop_client_t *client = NULL_POINTER;
     desktop_content_keys_t direct_keys = { 0 };
-    cJSON *body = NULL;
-    cJSON *message = NULL;
-    char *keys_json = NULL;
-    char *body_json = NULL;
-    char *encrypted_body = NULL;
-    char *envelope_json = NULL;
+    cJSON *body = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    char *keys_json = NULL_POINTER;
+    char *body_json = NULL_POINTER;
+    char *encrypted_body = NULL_POINTER;
+    char *envelope_json = NULL_POINTER;
     boole complete = 0;
     int64 slot = 0;
     int64 index = 0;

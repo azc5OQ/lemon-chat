@@ -93,7 +93,7 @@ void server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_cha
     uint64 i = 0;
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
-    client_t *client = 0;
+    client_t *client = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -147,7 +147,7 @@ void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_chan
     char discard_counter[32] = { 0 };
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
-    client_t *client = 0;
+    client_t *client = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -207,8 +207,8 @@ void server_msg__musicbot__send_song_list_to_single_client(client_t *receiver, c
     cJSON *song = NULL_POINTER;
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
-    cJSON *json_songs_array = 0;
-    music_bot_single_song_data_t *single_song_in_loop = 0;
+    cJSON *json_songs_array = NULL_POINTER;
+    music_bot_single_song_data_t *single_song_in_loop = NULL_POINTER;
     uint64 loop_index = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);

@@ -123,7 +123,7 @@ boole desktop_session__can_edit(const desktop_session_view_t *view, const deskto
 boole desktop_session__edit(desktop_session_t *session, uint64 sequence, uint64 connection_serial, const char *text)
 {
     desktop_session_command_t command = { 0 };
-    const desktop_chat_t *chat = NULL;
+    const desktop_chat_t *chat = NULL_POINTER;
     int64 index = 0;
     boole queued = FALSE;
     if (!session || !desktop_chat__valid_text(text))

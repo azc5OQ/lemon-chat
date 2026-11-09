@@ -61,7 +61,7 @@ static boole _client_attachments_internal__valid(desktop_session_t *session, con
 void client_msg__attachments__send(desktop_session_t *session, const desktop_attachment_request_t *request)
 {
     desktop_attachments_t *attachments = session->attachments;
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
     int64 slot = desktop_session__client(session, request->peer);
     int64 local = desktop_session__client(session, session->model.local_id);
     int64 index = 0;
@@ -126,9 +126,9 @@ void client_msg__attachments__send(desktop_session_t *session, const desktop_att
 void client_msg__attachments__tick(desktop_session_t *session)
 {
     desktop_attachments_t *attachments = session->attachments;
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
     desktop_chat_preferences_t *prefs = &attachments->preferences;
-    cJSON *message = NULL;
+    cJSON *message = NULL_POINTER;
     char chunk[16385] = { 0 };
     uint64 count = 0;
     uint64 now = desktop_system__milliseconds();

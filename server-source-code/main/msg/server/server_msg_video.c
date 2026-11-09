@@ -22,7 +22,7 @@ void server_msg__video__send_state_to_clients_in_same_channel(uint64 channel_id,
 {
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
-    client_t *streamer = 0;
+    client_t *streamer = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 

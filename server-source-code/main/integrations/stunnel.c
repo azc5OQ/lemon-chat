@@ -383,7 +383,7 @@ static boole _stunnel_internal__run_and_wait(char *command_line, uint64 timeout_
  */
 static void _stunnel_internal__terminate_stale_stunnel(const char *pid_path)
 {
-    FILE *pid_file = 0;
+    FILE *pid_file = NULL_POINTER;
     uint64 old_pid = 0;
     uint64 saved_creation_high = 0;
     uint64 saved_creation_low = 0;
@@ -531,7 +531,7 @@ void stunnel__launch(void)
     char exe_dir[600] = { 0 };
     char conf_path[700] = { 0 };
     char stunnel_path[700] = { 0 };
-    FILE *conf_file = 0;
+    FILE *conf_file = NULL_POINTER;
     boole success = FALSE;
 
     clib__null_memory(exe_dir, sizeof(exe_dir));
@@ -616,8 +616,8 @@ void stunnel__launch(void)
     char pid_path[700] = { 0 };
     char stunnel_path[700] = { 0 };
     char command_line[1500] = { 0 };
-    FILE *conf_file = 0;
-    FILE *pid_file = 0;
+    FILE *conf_file = NULL_POINTER;
+    FILE *pid_file = NULL_POINTER;
     STARTUPINFOA startup_info;
     PROCESS_INFORMATION process_info;
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_limits;

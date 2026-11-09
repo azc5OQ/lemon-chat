@@ -790,6 +790,13 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
             goto done;
         }
     }
+    if (g_server_settings.default_mobile_theme[0] != 0)
+    {
+        if (cJSON_AddStringToObject(config_object, "mobile_theme", &g_server_settings.default_mobile_theme[0]) == NULL_POINTER)
+        {
+            goto done;
+        }
+    }
 
     // Page policy is included even when connection passwords are not embedded.
     if (cJSON_AddBoolToObject(config_object, "persist_identity", g_server_settings.is_identity_localstorage_enabled == TRUE) == NULL_POINTER || cJSON_AddBoolToObject(config_object, "is_avatar_upload_allowed", g_server_settings.is_avatar_upload_allowed == TRUE) == NULL_POINTER)
@@ -861,11 +868,6 @@ done:
  */
 void settings__read_wireguard_fields(cJSON *json_root)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    boole status3 = FALSE;
-    boole status4 = FALSE;
     cJSON *json_field = NULL_POINTER;
 
     json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_wireguard_mode_active");
@@ -895,12 +897,11 @@ void settings__read_wireguard_fields(cJSON *json_root)
     // an unusable address or range switches the mode off rather than starting with a broken voice path
     if (g_server_settings.is_wireguard_mode_active == TRUE)
     {
-        status0 = (boole)(g_server_settings.webrtc_public_address[0] != 0);
-        status1 = (boole)(g_server_settings.webrtc_port_range_begin >= 1024);
-        status2 = (boole)(g_server_settings.webrtc_port_range_begin <= 65535);
-        status3 = (boole)(g_server_settings.webrtc_port_range_end >= g_server_settings.webrtc_port_range_begin);
-        status4 = (boole)(g_server_settings.webrtc_port_range_end <= 65535);
-        if (status0 == FALSE || status1 == FALSE || status2 == FALSE || status3 == FALSE || status4 == FALSE)
+        if (g_server_settings.webrtc_public_address[0] == 0 ||
+            !(g_server_settings.webrtc_port_range_begin >= 1024) ||
+            !(g_server_settings.webrtc_port_range_begin <= 65535) ||
+            !(g_server_settings.webrtc_port_range_end >= g_server_settings.webrtc_port_range_begin) ||
+            !(g_server_settings.webrtc_port_range_end <= 65535))
         {
             printf("%s %s\n", g_mark_warn, "wireguard mode: webrtc_public_address or the webrtc_port_range is not usable, mode switched off for this run");
             g_server_settings.is_wireguard_mode_active = FALSE;
@@ -920,10 +921,9 @@ void settings__load(void)
     cJSON *password = NULL_POINTER;
     cJSON *type = NULL_POINTER;
     int64 cipher = 0;
-    boole status = FALSE;
     char plaintext_keys[100][256] = { 0 };
     char default_client_name[30] = "user";
-    FILE *settings_file = 0;
+    FILE *settings_file = NULL_POINTER;
     int64 file_length = 0;
     char *file_buffer = NULL_POINTER;
     cJSON *json_root = NULL_POINTER;
@@ -1154,8 +1154,7 @@ void settings__load(void)
                         fprintf(stderr, "Each connection key must be a password string or a supported {type, password} object (password shorter than 256 bytes).\n");
                         exit(EXIT_FAILURE);
                     }
-                    status = crypto_metadata__key_from_password(&g_server_settings.keys[key_index], cipher, password->valuestring) != 0;
-                    if (status == FALSE)
+                    if (crypto_metadata__key_from_password(&g_server_settings.keys[key_index], cipher, password->valuestring) == 0)
                     {
                         fprintf(stderr, "Failed to derive a configured encryption key.\n");
                         exit(EXIT_FAILURE);
@@ -1479,6 +1478,11 @@ void settings__load(void)
                 {
                     clib__string_copy(g_server_settings.default_theme, sizeof(g_server_settings.default_theme), json_field->valuestring);
                 }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "default_mobile_theme");
+                if (cJSON_IsString(json_field) && (json_field->valuestring != NULL_POINTER))
+                {
+                    clib__string_copy(g_server_settings.default_mobile_theme, sizeof(g_server_settings.default_mobile_theme), json_field->valuestring);
+                }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_server_uptime_published");
                 if (cJSON_IsBool(json_field))
                 {
@@ -1596,8 +1600,7 @@ void settings__load(void)
                         {
                             break;
                         }
-                        status = util__normalize_country_code(json_key, &g_server_settings.blocked_countries[g_server_settings.blocked_countries_count][0]);
-                        if (status == TRUE)
+                        if (util__normalize_country_code(json_key, &g_server_settings.blocked_countries[g_server_settings.blocked_countries_count][0]) == TRUE)
                         {
                             g_server_settings.blocked_countries_count++;
                         }
@@ -2654,10 +2657,9 @@ json_failure:
 void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
 {
     cJSON *entry = NULL_POINTER;
-    boole status = FALSE;
-    cJSON *json_root = 0;
-    cJSON *json_keys = 0;
-    char *json_text = 0;
+    cJSON *json_root = NULL_POINTER;
+    cJSON *json_keys = NULL_POINTER;
+    char *json_text = NULL_POINTER;
     uint64 i = 0;
 
     json_root = cJSON_CreateObject();
@@ -2910,6 +2912,10 @@ void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
     {
         goto json_failure;
     }
+    if (!cJSON_AddStringToObject(json_root, "default_mobile_theme", &g_server_settings.default_mobile_theme[0]))
+    {
+        goto json_failure;
+    }
     if (!util__json_add_owned_object(json_root, "is_client_config_embedded", cJSON_CreateBool(g_server_settings.is_client_config_embedded == TRUE)))
     {
         goto json_failure;
@@ -3061,8 +3067,7 @@ void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
     json_text = cJSON_Print(json_root);
     if (json_text != NULL_POINTER)
     {
-        status = settings__write_file_atomically("server_settings.json", json_text);
-        if (status == TRUE)
+        if (settings__write_file_atomically("server_settings.json", json_text) == TRUE)
         {
             printf("%s %s\n", g_mark_ok, "settings saved to server_settings.json (next start skips these prompts)");
         }

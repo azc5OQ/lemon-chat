@@ -15,8 +15,8 @@ typedef struct login_waiter_t
 } login_waiter_t;
 
 static pthread_mutex_t g_login_mutex = PTHREAD_MUTEX_INITIALIZER;
-static login_waiter_t *g_first_waiter = NULL;
-static login_waiter_t *g_last_waiter = NULL;
+static login_waiter_t *g_first_waiter = NULL_POINTER;
+static login_waiter_t *g_last_waiter = NULL_POINTER;
 static uint64 g_active_logins = 0;
 static uint64 g_login_limit = 4;
 

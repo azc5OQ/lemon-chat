@@ -21,7 +21,7 @@ boole desktop_endpoint__compose(const char *host, const char *port, const char *
 {
     desktop_endpoint_t endpoint = { 0 };
     ubyte address[16] = { 0 };
-    const char *cursor = NULL;
+    const char *cursor = NULL_POINTER;
     int64 length = 0;
     int64 label = 0;
     int64 number = 0;
@@ -117,9 +117,9 @@ boole desktop_endpoint__compose(const char *host, const char *port, const char *
 /* ws/wss only. No embedded credentials, fragments or whitespace. */
 boole desktop_endpoint__parse(const char *url, desktop_endpoint_t *endpoint)
 {
-    const char *cursor = NULL;
-    const char *host = NULL;
-    const char *end = NULL;
+    const char *cursor = NULL_POINTER;
+    const char *host = NULL_POINTER;
+    const char *end = NULL_POINTER;
     int64 port = 0;
 
     port = 0;

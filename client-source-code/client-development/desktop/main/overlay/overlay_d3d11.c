@@ -74,7 +74,7 @@ static void _overlay_d3d11_internal__log(meek_log_level_e level, const char *fil
 static boole _overlay_d3d11_internal__scene(void)
 {
     char path[32768] = { 0 };
-    gui_node_t *root = NULL;
+    gui_node_t *root = NULL_POINTER;
 
     clib__null_memory(&path, sizeof(path));
     if (!font__init() || clib__string_format(path, sizeof(path), "%sfonts/SpaceGrotesk-Regular.ttf", g_directory) < 0 || !font__register_from_file("SpaceGrotesk-Regular", path))
@@ -107,17 +107,17 @@ static boole _overlay_d3d11_internal__scene(void)
 static void _overlay_d3d11_internal__draw(IDXGISwapChain *chain)
 {
     DXGI_SWAP_CHAIN_DESC description = { 0 };
-    ID3D11Texture2D *buffer = NULL;
+    ID3D11Texture2D *buffer = NULL_POINTER;
     D3D11_TEXTURE2D_DESC texture = { 0 };
     meek_host_services_t services = { 0 };
-    gui_node_t *title = NULL;
-    gui_node_t *caption = NULL;
+    gui_node_t *title = NULL_POINTER;
+    gui_node_t *caption = NULL_POINTER;
     desktop_overlay_snapshot_t visible = { 0 };
     uint maximum = 0;
     boole speaking = 0;
     uint index = 0;
-    gui_node_t *members = NULL;
-    gui_node_t *panel = NULL;
+    gui_node_t *members = NULL_POINTER;
+    gui_node_t *panel = NULL_POINTER;
     float list_height = 0;
     char caption_text[64] = { 0 };
     uint omitted = 0;
@@ -319,14 +319,14 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_start(void *ignored)
     wchar_t wide_path[32768] = { 0 };
     DWORD length = 0;
     HWND window = NULL;
-    IDXGISwapChain *chain = NULL;
-    ID3D11Device *device = NULL;
-    ID3D11DeviceContext *context = NULL;
+    IDXGISwapChain *chain = NULL_POINTER;
+    ID3D11Device *device = NULL_POINTER;
+    ID3D11DeviceContext *context = NULL_POINTER;
     DXGI_SWAP_CHAIN_DESC description = { 0 };
     HRESULT result = 0;
     boole success = 0;
-    void *present = NULL;
-    void *resize = NULL;
+    void *present = NULL_POINTER;
+    void *resize = NULL_POINTER;
     HMODULE pinned = NULL;
 
     (void)ignored;

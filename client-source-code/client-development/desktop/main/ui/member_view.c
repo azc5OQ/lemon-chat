@@ -18,7 +18,7 @@ static gui_node_t *_member_view_internal__label(gui_node_t *row, const char *kla
  */
 static gui_node_t *_member_view_internal__label(gui_node_t *row, const char *klass, const char *text)
 {
-    gui_node_t *label = NULL;
+    gui_node_t *label = NULL_POINTER;
 
     label = scene__node_new(GUI_NODE_TYPE__TEXT);
     if (label)
@@ -40,14 +40,14 @@ static gui_node_t *_member_view_internal__label(gui_node_t *row, const char *kla
  */
 void desktop_member_view__update(gui_node_t *container, const desktop_overlay_snapshot_t *snapshot)
 {
-    gui_node_t *child = NULL;
-    gui_node_t *next = NULL;
+    gui_node_t *child = NULL_POINTER;
+    gui_node_t *next = NULL_POINTER;
     uint index = 0;
-    const desktop_overlay_member_t *member = NULL;
-    gui_node_t *row = NULL;
+    const desktop_overlay_member_t *member = NULL_POINTER;
+    gui_node_t *row = NULL_POINTER;
     boole speaking = 0;
     boole local = 0;
-    const char *klass = NULL;
+    const char *klass = NULL_POINTER;
     int64 audio = 0;
 
     if (!container || !desktop_overlay_data__valid(snapshot))

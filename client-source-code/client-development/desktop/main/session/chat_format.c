@@ -48,7 +48,7 @@ boole desktop_chat_format__valid(const desktop_chat_format_t *format)
 void desktop_chat_format__read(desktop_chat_format_t *format, const cJSON *object)
 {
     desktop_chat_format_t candidate;
-    const cJSON *field = NULL;
+    const cJSON *field = NULL_POINTER;
     desktop_chat_format__default(format);
     candidate = *format;
     field = cJSON_GetObjectItemCaseSensitive(object, "font");

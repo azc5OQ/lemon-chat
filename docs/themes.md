@@ -6,6 +6,13 @@ If you want different colors or a different arrangement of the chat controls, op
 
 Your choice is saved in the browser. When you open the client again, it uses your saved theme instead of the server's suggested theme. Without a saved choice or a server suggestion, the client uses **Default** on a computer and **Mobile** on a detected touch device.
 
+When setting up the server, choose a default theme for desktop browsers and another for mobile browsers.
+The mobile list contains only themes marked for mobile use. The browser detects a touch device and uses the mobile default.
+These defaults apply even if automatic connection is disabled.
+
+The choices are saved in `server_settings.json`: `default_theme` for desktop and `default_mobile_theme` for mobile.
+To change them after setup, edit those values and restart the server. Users who already saved a theme keep their own choice.
+
 On a computer, you can choose any of the twelve themes below, including the themes designed for phones. On a detected touch device, the menu shows only the six themes marked for mobile use. These have a small phone symbol in the menu.
 
 The Android app's simple mode uses **Bluebell**. Its advanced mode uses a saved mobile theme other than Bluebell, or **Mobile** if there is no such saved choice.

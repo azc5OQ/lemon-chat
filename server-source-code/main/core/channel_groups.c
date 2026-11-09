@@ -53,13 +53,11 @@ void channel_groups__init(void)
  */
 boole channel_groups__can_edit_definition(const client_t *actor, permission_t permission, const channel_group_t *previous, const channel_group_t *proposed)
 {
-    boole status = FALSE;
     uint64 i = 0;
     uint64 management = 0;
     uint64 limit = 0;
 
-    status = permissions__is_allowed(actor, permission);
-    if (status == FALSE)
+    if (permissions__is_allowed(actor, permission) == FALSE)
     {
         return FALSE;
     }
@@ -324,28 +322,23 @@ cstring channel_groups__power_name(permission_power_t power)
  */
 boole channel_groups__can_assign(const client_t *actor, const client_t *target, const channel_t *channel, uint64 group_id)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
     uint64 target_group = channel_groups__role(target, channel);
     uint64 available = 0;
     uint64 i = 0;
 
-    status0 = group_id >= CHANNEL_GROUP_LIMIT;
-    if (status0 == TRUE)
+    // Check the group index; zero means removing the channel assignment.
+    if (group_id >= CHANNEL_GROUP_LIMIT)
     {
         return FALSE;
     }
     if (group_id != 0)
     {
-        status1 = g_channel_groups[group_id].is_existing == FALSE;
-        if (status1 == TRUE)
+        if (g_channel_groups[group_id].is_existing == FALSE)
         {
             return FALSE;
         }
     }
-    status2 = channel_groups__is_allowed(actor, channel, PERMISSION_ASSIGN_CHANNEL_GROUPS);
-    if (status2 == FALSE)
+    if (channel_groups__is_allowed(actor, channel, PERMISSION_ASSIGN_CHANNEL_GROUPS) == FALSE)
     {
         return FALSE;
     }
@@ -361,11 +354,15 @@ boole channel_groups__can_assign(const client_t *actor, const client_t *target, 
     {
         return FALSE;
     }
+
+    // Require enough management power to change this user.
     available = permissions__power_in_channel(actor, channel, PERMISSION_GROUP_MANAGEMENT_POWER);
     if (available < permissions__power_in_channel(target, channel, PERMISSION_GROUP_PROTECTION))
     {
         return FALSE;
     }
+
+    // Do not grant an action the sender cannot perform.
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         if (channel_groups__allows(group_id, (permission_t)i) && !channel_groups__is_allowed(actor, channel, (permission_t)i))
@@ -373,6 +370,8 @@ boole channel_groups__can_assign(const client_t *actor, const client_t *target, 
             return FALSE;
         }
     }
+
+    // Do not grant power levels above the sender's own levels.
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         available = permissions__power_in_channel(actor, channel, (permission_power_t)i);
@@ -404,26 +403,11 @@ boole channel_groups__is_allowed(const client_t *client, const channel_t *channe
  */
 boole channel_groups__can_moderate(const client_t *actor, const client_t *target, const channel_t *channel, permission_t permission)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    boole status3 = FALSE;
-    boole status4 = FALSE;
-    boole status5 = FALSE;
-
-    status0 = actor == NULL_POINTER;
-    status1 = target == NULL_POINTER;
-    if (status0 == TRUE || status1 == TRUE)
+    if (actor == NULL_POINTER || target == NULL_POINTER)
     {
         return FALSE;
     }
-    status0 = actor->is_authenticated == FALSE;
-    status1 = target->is_authenticated == FALSE;
-    status2 = actor->is_existing == FALSE;
-    status3 = target->is_existing == FALSE;
-    status4 = target->is_music_bot != FALSE;
-    status5 = actor == target;
-    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE || status4 == TRUE || status5 == TRUE)
+    if (actor->is_authenticated == FALSE || target->is_authenticated == FALSE || actor->is_existing == FALSE || target->is_existing == FALSE || target->is_music_bot != FALSE || actor == target)
     {
         return FALSE;
     }
@@ -446,26 +430,18 @@ boole channel_groups__can_moderate(const client_t *actor, const client_t *target
  */
 boole channel_groups__set(channel_t *channel, cstring identity, uint64 role)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    boole status3 = FALSE;
     uint64 i = 0;
     channel_group_member_t member;
 
-    status0 = role >= CHANNEL_GROUP_LIMIT;
-    status1 = identity == NULL_POINTER;
-    if (status0 == TRUE || status1 == TRUE)
+    if (role >= CHANNEL_GROUP_LIMIT || identity == NULL_POINTER)
     {
         return FALSE;
     }
-    status2 = clib__strlen(identity) == 0;
-    if (status2 == TRUE)
+    if (clib__strlen(identity) == 0)
     {
         return FALSE;
     }
-    status3 = clib__strlen(identity) >= sizeof(member.identity);
-    if (status3 == TRUE)
+    if (clib__strlen(identity) >= sizeof(member.identity))
     {
         return FALSE;
     }
@@ -495,8 +471,7 @@ boole channel_groups__set(channel_t *channel, cstring identity, uint64 role)
     clib__memset(&member, 0, sizeof(member));
     clib__memcpy(member.identity, identity, clib__strlen(identity));
     member.role = role;
-    status0 = _channel_groups_internal__append_member(channel, &member);
-    if (status0 == FALSE)
+    if (_channel_groups_internal__append_member(channel, &member) == FALSE)
     {
         clib__null_memory(&member, sizeof(member));
         return FALSE;
@@ -559,24 +534,18 @@ void channel_groups__refresh_locked(client_t *client)
  */
 boole channel_groups__mute(channel_t *channel, cstring identity, uint64 until_ms)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
     uint64 i = 0;
     channel_group_member_t member;
 
-    status0 = identity == NULL_POINTER;
-    if (status0 == TRUE)
+    if (identity == NULL_POINTER)
     {
         return FALSE;
     }
-    status1 = identity[0] == 0;
-    if (status1 == TRUE)
+    if (identity[0] == 0)
     {
         return FALSE;
     }
-    status2 = clib__strlen(identity) >= sizeof(member.identity);
-    if (status2 == TRUE)
+    if (clib__strlen(identity) >= sizeof(member.identity))
     {
         return FALSE;
     }
@@ -599,8 +568,7 @@ boole channel_groups__mute(channel_t *channel, cstring identity, uint64 until_ms
     clib__memset(&member, 0, sizeof(member));
     clib__memcpy(member.identity, identity, clib__strlen(identity));
     member.muted_until_ms = until_ms;
-    status0 = _channel_groups_internal__append_member(channel, &member);
-    if (status0 == FALSE)
+    if (_channel_groups_internal__append_member(channel, &member) == FALSE)
     {
         clib__null_memory(&member, sizeof(member));
         return FALSE;

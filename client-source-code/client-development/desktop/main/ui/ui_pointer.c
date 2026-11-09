@@ -138,7 +138,7 @@ static BOOL CALLBACK _ui_pointer_internal__attach(HWND window, LPARAM context)
  */
 boole desktop_ui_pointer__initialize(void)
 {
-    const widget_vtable_t *original = NULL;
+    const widget_vtable_t *original = NULL_POINTER;
     int64 type = 0;
     for (type = 0; type < GUI_NODE_TYPE__COUNT; type++)
     {

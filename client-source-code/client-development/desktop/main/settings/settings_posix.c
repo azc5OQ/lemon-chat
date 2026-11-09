@@ -21,8 +21,8 @@ static boole _settings_internal__path(char *path, uint64 capacity, boole create)
  */
 static boole _settings_internal__path(char *path, uint64 capacity, boole create)
 {
-    const char *home = NULL;
-    const char *configuration = NULL;
+    const char *home = NULL_POINTER;
+    const char *configuration = NULL_POINTER;
     uint64 index = 0;
     uint64 length = 0;
     int result = 0;

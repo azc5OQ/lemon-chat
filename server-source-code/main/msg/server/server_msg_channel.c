@@ -41,9 +41,9 @@ void server_msg__channel__send_list_to_single_client(client_t *receiver)
 {
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
-    cJSON *json_channel_array = 0;
+    cJSON *json_channel_array = NULL_POINTER;
     uint64 i = 0;
-    cJSON *single_channel = 0;
+    cJSON *single_channel = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -212,8 +212,8 @@ void server_msg__channel__send_join_message_to_all_clients(client_t *subject, ch
     uint64 x = 0;
     char *plaintext = NULL_POINTER;
     char *plaintext_hidden = NULL_POINTER;
-    client_t *client_in_loop = 0;
-    char *song_name = 0;
+    client_t *client_in_loop = NULL_POINTER;
+    char *song_name = NULL_POINTER;
     boole is_streaming_song = FALSE;
     int64 audio_state = 0;
 
@@ -319,7 +319,7 @@ void server_msg__channel__send_join_message_to_single_client(client_t *receiver,
 {
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
-    char *song_name = 0;
+    char *song_name = NULL_POINTER;
     boole is_streaming_song = FALSE;
     int64 audio_state = 0;
 

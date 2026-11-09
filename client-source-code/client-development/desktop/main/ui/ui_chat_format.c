@@ -56,8 +56,8 @@ void desktop_ui_chat_format__message(gui_node_t *node, const desktop_chat_format
 static void _ui_chat_format_internal__choices(void)
 {
     gui_node_t *select = scene__find_by_id("chat-font");
-    gui_node_t *child = NULL;
-    gui_node_t *next = NULL;
+    gui_node_t *child = NULL_POINTER;
+    gui_node_t *next = NULL_POINTER;
     int64 index = 0;
     if (!select || !g_format_settings)
     {

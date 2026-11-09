@@ -64,8 +64,8 @@ void desktop_ui_layout__theme(const char *name)
 void desktop_ui_layout__raise(gui_node_t *node)
 {
     gui_node_t *root = scene__root();
-    gui_node_t *previous = NULL;
-    gui_node_t *child = NULL;
+    gui_node_t *previous = NULL_POINTER;
+    gui_node_t *child = NULL_POINTER;
     int64 order = 10;
     while (node && node->parent != root)
     {
@@ -133,7 +133,7 @@ static void _ui_layout_internal__composer(float scale)
     gui_node_t *send = scene__find_by_id("send-button");
     gui_node_t *actions = scene__find_by_id("composer-actions");
     gui_node_t *controls = scene__find_by_id("chat-format-controls");
-    gui_font_t *font = NULL;
+    gui_font_t *font = NULL_POINTER;
     float chat_scale = 1;
     float line_height = 0;
     float input_height = 0;
@@ -272,7 +272,7 @@ static void _ui_layout_internal__workspace(gui_node_t *node, float x, float y, f
  */
 static void _ui_layout_internal__window(gui_node_t *node, float x, float y, float width, float height, float scale)
 {
-    gui_node_t *child = NULL;
+    gui_node_t *child = NULL_POINTER;
     gui_node_t *editor = scene__find_by_id("channel-editor-sidebar");
     float available_w = width / scale;
     float available_h = height / scale;
@@ -333,7 +333,7 @@ static void _ui_layout_internal__window(gui_node_t *node, float x, float y, floa
  */
 static void _ui_layout_internal__tabs(gui_node_t *node, float x, float y, float width, float height, float scale)
 {
-    gui_node_t *child = NULL;
+    gui_node_t *child = NULL_POINTER;
     gui_node_t *previous = scene__find_by_id("tabs-previous");
     gui_node_t *next = scene__find_by_id("tabs-next");
     float cursor = 0;
@@ -519,11 +519,11 @@ static void _ui_layout_internal__key(gui_node_t *node, int64 key, boole down)
  */
 static void _ui_layout_internal__div(gui_node_t *node, float x, float y, float width, float height, float scale)
 {
-    gui_node_t *child = NULL;
+    gui_node_t *child = NULL_POINTER;
     float button_width = 0;
     float audio_width = 0;
-    gui_node_t *members = NULL;
-    gui_node_t *audio = NULL;
+    gui_node_t *members = NULL_POINTER;
+    gui_node_t *audio = NULL_POINTER;
     int64 count = node->child_count;
     if (clib__strcmp(node->id, "workspace") == 0)
     {

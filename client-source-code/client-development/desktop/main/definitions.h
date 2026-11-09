@@ -12,8 +12,19 @@ typedef unsigned int uint;
 typedef unsigned short ushort;
 typedef unsigned long long uint64;
 typedef signed long long int64;
-typedef size_t nuint;
-typedef ptrdiff_t nint;
+// Match the compiled target's address width.
+#if defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
+typedef unsigned long long nuint;
+typedef signed long long nint;
+#elif defined(_WIN32) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 4)
+typedef unsigned int nuint;
+typedef signed int nint;
+#elif (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 2)
+typedef unsigned short nuint;
+typedef signed short nint;
+#else
+#error Unsupported target address width
+#endif
 typedef unsigned long long timestamp;
 typedef const char *cstring;
 

@@ -38,9 +38,9 @@ static void _ui_server_internal__text(const char *id, const char *text)
 static void _ui_server_internal__rows(void)
 {
     gui_node_t *parent = scene__find_by_id("server-info-features");
-    gui_node_t *row = NULL;
-    gui_node_t *label = NULL;
-    gui_node_t *value = NULL;
+    gui_node_t *row = NULL_POINTER;
+    gui_node_t *label = NULL_POINTER;
+    gui_node_t *value = NULL_POINTER;
     int64 index = 0;
     if (!parent || scene__find_by_id("server-info-feature-0"))
     {

@@ -70,8 +70,6 @@ static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int i
     webrtc_peer_t *peer = (webrtc_peer_t *)ptr;
     uint64 client_id = 0;
     boole is_current = FALSE;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
 
     DBG_VIDEO_WEBRTC log_info("%s", "_video_webrtc_internal__datachannel_on_closed_callback");
 
@@ -84,9 +82,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int i
     clib__write_lock(&g_webrtc_peers_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
-    status0 = peer->is_existing == TRUE;
-    status1 = peer->video_data_channel_handle == id;
-    if (status0 == TRUE && status1 == TRUE)
+    if (peer->is_existing == TRUE && peer->video_data_channel_handle == id)
     {
         is_current = TRUE;
         client_id = peer->client_id;
@@ -116,12 +112,8 @@ static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int i
 static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int id, const char *message, int size, void *ptr)
 {
     webrtc_peer_t *peer_sender = (webrtc_peer_t *)ptr;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
 
-    status0 = size <= 0;
-    status1 = peer_sender == NULL_POINTER;
-    if (status0 == TRUE || status1 == TRUE)
+    if (size <= 0 || peer_sender == NULL_POINTER)
     {
         return;
     }
@@ -192,12 +184,8 @@ void video_webrtc__create_data_channel(webrtc_peer_t *peer)
 boole video_webrtc__is_connected(uint64 client_id)
 {
     webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
-    boole status0 = FALSE;
-    boole status1 = FALSE;
 
-    status0 = peer->is_existing == TRUE;
-    status1 = peer->is_video_channel_connected == TRUE;
-    return status0 == TRUE && status1 == TRUE;
+    return peer->is_existing == TRUE && peer->is_video_channel_connected == TRUE;
 }
 
 /**
@@ -213,14 +201,8 @@ boole video_webrtc__is_connected(uint64 client_id)
 boole video_webrtc__is_data_channel_current(uint64 client_id, int data_channel)
 {
     webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
-    boole status = FALSE;
 
-    status = video_webrtc__is_connected(client_id) == TRUE;
-    if (status == TRUE)
-    {
-        status = peer->video_data_channel_handle == data_channel;
-    }
-    return status;
+    return video_webrtc__is_connected(client_id) == TRUE && peer->video_data_channel_handle == data_channel;
 }
 
 /**
@@ -236,19 +218,13 @@ boole video_webrtc__can_send(uint64 client_id)
 {
     webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
     int64 buffered = 0;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
 
-    status0 = video_webrtc__is_connected(client_id) == FALSE;
-    status1 = peer->video_data_channel_handle == 0;
-    if (status0 == TRUE || status1 == TRUE)
+    if (video_webrtc__is_connected(client_id) == FALSE || peer->video_data_channel_handle == 0)
     {
         return FALSE;
     }
     buffered = rtcGetBufferedAmount(peer->video_data_channel_handle);
-    status0 = buffered >= 0;
-    status1 = buffered <= VIDEO_RELAY_MAX_BUFFERED_BYTES;
-    return status0 == TRUE && status1 == TRUE;
+    return buffered >= 0 && buffered <= VIDEO_RELAY_MAX_BUFFERED_BYTES;
 }
 
 /**
@@ -265,12 +241,8 @@ boole video_webrtc__can_send(uint64 client_id)
 boole video_webrtc__send(uint64 client_id, const ubyte *packet, uint64 size)
 {
     webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
-    boole status0 = FALSE;
-    boole status1 = FALSE;
 
-    status0 = video_webrtc__is_connected(client_id) == FALSE;
-    status1 = peer->video_data_channel_handle == 0;
-    if (status0 == TRUE || status1 == TRUE)
+    if (video_webrtc__is_connected(client_id) == FALSE || peer->video_data_channel_handle == 0)
     {
         return FALSE;
     }

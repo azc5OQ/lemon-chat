@@ -12,7 +12,7 @@
  */
 boole desktop_session__allows(const desktop_session_view_t *view, const desktop_client_t *client, desktop_action_e action, int64 value)
 {
-    const desktop_tree_group_t *group = NULL;
+    const desktop_tree_group_t *group = NULL_POINTER;
     int64 index = 0;
     int64 kind = action == DESKTOP_ACTION_BAN ? 1 : 0;
     int64 protection = 0;

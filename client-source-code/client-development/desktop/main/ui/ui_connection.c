@@ -67,7 +67,7 @@ void desktop_ui_connection__state(boole connected, boole busy)
 void desktop_ui_connection__apply_identity(void)
 {
     gui_node_t *select = scene__find_by_id("identity-bits");
-    gui_node_t *option = NULL;
+    gui_node_t *option = NULL_POINTER;
     gui_node_t *reveal = scene__find_by_id("identity-reveal");
     gui_node_t *identity = scene__find_by_id("identity-string");
     char number[16] = { 0 };
@@ -123,9 +123,9 @@ static void _ui_connection_internal__settings_save(gui_event_t *event)
 {
     gui_node_t *identity = scene__find_by_id("identity-string");
     gui_node_t *select = scene__find_by_id("identity-bits");
-    gui_node_t *option = NULL;
+    gui_node_t *option = NULL_POINTER;
     desktop_settings_t settings = { 0 };
-    char *end = NULL;
+    char *end = NULL_POINTER;
     long bits = 0;
     int64 index = 0;
     (void)event;
@@ -311,8 +311,8 @@ boole desktop_ui_connection__identity_decode(const ubyte *bytes, uint64 size, ch
  */
 boole desktop_ui_connection__refresh(void)
 {
-    gui_node_t *row = NULL;
-    gui_node_t *input = NULL;
+    gui_node_t *row = NULL_POINTER;
+    gui_node_t *input = NULL_POINTER;
     gui_node_t *add = scene__find_by_id("server-key-add");
     gui_node_t *identity = scene__find_by_id("identity-string");
     gui_node_t *reveal = scene__find_by_id("identity-reveal");
@@ -349,7 +349,7 @@ boole desktop_ui_connection__refresh(void)
  */
 static void _ui_connection_internal__add(gui_event_t *event)
 {
-    gui_node_t *input = NULL;
+    gui_node_t *input = NULL_POINTER;
     (void)event;
     if (g_connection_key_count >= DESKTOP_SERVER_KEY_LIMIT)
     {
@@ -372,9 +372,9 @@ static void _ui_connection_internal__add(gui_event_t *event)
  */
 static void _ui_connection_internal__remove(gui_event_t *event)
 {
-    gui_node_t *input = NULL;
-    gui_node_t *next = NULL;
-    gui_node_t *button = NULL;
+    gui_node_t *input = NULL_POINTER;
+    gui_node_t *next = NULL_POINTER;
+    gui_node_t *button = NULL_POINTER;
     int64 index = 0;
     int64 selected = -1;
     if (!event || !event->sender)
@@ -424,7 +424,7 @@ static void _ui_connection_internal__remove(gui_event_t *event)
  */
 void desktop_ui_connection__clear_keys(void)
 {
-    gui_node_t *input = NULL;
+    gui_node_t *input = NULL_POINTER;
     int64 index = 0;
     for (index = 0; index < DESKTOP_SERVER_KEY_LIMIT; index++)
     {
@@ -452,11 +452,11 @@ boole desktop_ui_connection__load_keys(const char *keys)
     int64 count = 0;
     int64 start = 0;
     int64 index = 0;
-    gui_node_t *input = NULL;
-    gui_node_t *type = NULL;
-    cJSON *entry = NULL;
-    const char *password = NULL;
-    const char *cipher = NULL;
+    gui_node_t *input = NULL_POINTER;
+    gui_node_t *type = NULL_POINTER;
+    cJSON *entry = NULL_POINTER;
+    const char *password = NULL_POINTER;
+    const char *cipher = NULL_POINTER;
     int selected = 0;
     if (length < 0)
     {
@@ -525,11 +525,11 @@ boole desktop_ui_connection__load_keys(const char *keys)
  */
 boole desktop_ui_connection__keys(char *output, uint64 capacity)
 {
-    gui_node_t *input = NULL;
-    gui_node_t *type = NULL;
+    gui_node_t *input = NULL_POINTER;
+    gui_node_t *type = NULL_POINTER;
     int64 index = 0;
-    cJSON *entry = NULL;
-    char *encoded = NULL;
+    cJSON *entry = NULL_POINTER;
+    char *encoded = NULL_POINTER;
     boole complete = FALSE;
     if (!output || !capacity)
     {
@@ -721,7 +721,7 @@ static void _ui_connection_internal__identity_submit(gui_event_t *event)
     gui_node_t *filename = scene__find_by_id("identity-file-name");
     gui_node_t *picker = scene__find_by_id("identity-file-picker");
     const char *directory = picker ? widget_filepicker__path(picker) : NULL;
-    ubyte *bytes = NULL;
+    ubyte *bytes = NULL_POINTER;
     uint64 size = 0;
     int64 name_length = 0;
     char imported[sizeof(((desktop_connection_t *)0)->identity)] = { 0 };

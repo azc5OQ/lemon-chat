@@ -440,12 +440,9 @@ static void *_musicbot_internal__reaper_thread(void *arg_void)
  */
 boole musicbot__begin_delete(client_t *music_bot_client)
 {
-    boole status = FALSE;
-
     // The caller holds the clients write lock, so cleanup cannot release the
     // table before these flags are set. If creation fails, leave the bot alive.
-    status = util__start_detached_thread(_musicbot_internal__reaper_thread, music_bot_client);
-    if (status == FALSE)
+    if (util__start_detached_thread(_musicbot_internal__reaper_thread, music_bot_client) == FALSE)
     {
         return FALSE;
     }
@@ -517,7 +514,6 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
     boole decoder_initialized = FALSE;
     music_bot_single_song_data_t *song_in_loop = NULL_POINTER;
     drmp3 mp3;
-    boole status = FALSE;
     boole is_song_added_succesfully = FALSE;
     void *mp3_data_buffer1 = NULL_POINTER;
     int64 mp3_data_buffer_length1 = 0;
@@ -536,9 +532,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
 
         clib__write_lock(&g_clients_global_rwlock_guard);
 
-        status = base__is_client_valid_musicbot(arg->music_bot->client_id) && arg->music_bot->music_bot_client_extension.next_song_generation < UINT64_MAX && permissions__is_allowed(&g_clients_array[arg->sender_client_id], PERMISSION_UPLOAD_MUSIC_TRACKS) && clib__strcmp(g_clients_array[arg->sender_client_id].public_key, arg->sender_identity) == 0;
-
-        if (status == FALSE)
+        if (!(base__is_client_valid_musicbot(arg->music_bot->client_id) && arg->music_bot->music_bot_client_extension.next_song_generation < UINT64_MAX && permissions__is_allowed(&g_clients_array[arg->sender_client_id], PERMISSION_UPLOAD_MUSIC_TRACKS) && clib__strcmp(g_clients_array[arg->sender_client_id].public_key, arg->sender_identity) == 0))
         {
             memorymanager__free((nuint)arg->mp3_data_buffer);
             memorymanager__free((nuint)arg);
@@ -585,8 +579,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
 
             // release the slot claimed above, it would stay burned otherwise
             clib__write_lock(&g_clients_global_rwlock_guard);
-            status = base__is_client_valid_musicbot(arg->music_bot->client_id);
-            if (status == TRUE)
+            if (base__is_client_valid_musicbot(arg->music_bot->client_id) == TRUE)
             {
                 song_in_loop->is_being_uploaded = FALSE;
                 song_in_loop->mp3_data_buffer = NULL_POINTER;
@@ -607,9 +600,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
         // do check here, again
         clib__write_lock(&g_clients_global_rwlock_guard);
 
-        status = base__is_client_valid_musicbot(arg->music_bot->client_id);
-
-        if (status == FALSE)
+        if (base__is_client_valid_musicbot(arg->music_bot->client_id) == FALSE)
         {
             memorymanager__free((nuint)arg->mp3_data_buffer);
             memorymanager__free((nuint)arg);
@@ -720,7 +711,6 @@ void *musicbot__threadstart(void *argument)
     uint64 probe_elapsed = 0;
     uint64 probe_audio_ms = 0;
     drmp3_uint64 frame_offset = 0;
-    boole status = FALSE;
     client_t *music_bot_client = (client_t *)argument;
 
     // A restore starts every worker behind this gate. Failed startup can stop
@@ -878,16 +868,14 @@ void *musicbot__threadstart(void *argument)
 
             for (frame_offset = 0; frame_offset < prepared_song.frame_count; frame_offset += frame_size)
             {
-                status = _musicbot_internal__wait_for_playback(music_bot_client, &song_playback_start_ms, song_index, prepared_song.generation);
-                if (status == FALSE)
+                if (_musicbot_internal__wait_for_playback(music_bot_client, &song_playback_start_ms, song_index, prepared_song.generation) == FALSE)
                 {
                     is_stop_reason_sudden_song_deletion = TRUE;
                     break;
                 }
 
                 // stop mid-song if the bot was shut down or the song was deleted
-                status = _musicbot_internal__song_matches(music_bot_client, song_index, prepared_song.generation);
-                if (status == FALSE)
+                if (_musicbot_internal__song_matches(music_bot_client, song_index, prepared_song.generation) == FALSE)
                 {
                     is_stop_reason_sudden_song_deletion = TRUE;
                     break;

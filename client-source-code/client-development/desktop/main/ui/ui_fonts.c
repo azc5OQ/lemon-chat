@@ -139,12 +139,12 @@ static void _ui_fonts_internal__entry(const char *name, boole directory, int64 s
 {
     char path[128];
     char family[64];
-    ubyte *bytes = NULL;
+    ubyte *bytes = NULL_POINTER;
     uint64 read_size = 0;
     uint64 modified = 0;
     int64 length = clib__strlen(name);
     int64 index = 0;
-    desktop_font_file_t *font = NULL;
+    desktop_font_file_t *font = NULL_POINTER;
     (void)context;
     if (directory || length < 5 || length - 4 >= (int64)sizeof(family) || size <= 0 || (uint64)size > DESKTOP_FONT_BYTES || (_ui_fonts_internal__compare_names(name + length - 4, ".ttf") != 0 && _ui_fonts_internal__compare_names(name + length - 4, ".otf") != 0))
     {

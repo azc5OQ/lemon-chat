@@ -34,10 +34,10 @@ static void _devices_internal__append(desktop_device_catalog_t *catalog, ma_back
 boole desktop_device_key__make(ma_backend backend, const ma_device_id *id, char *key, uint64 capacity)
 {
     static const char hex[] = "0123456789abcdef";
-    const char *tag = NULL;
-    const ubyte *bytes = NULL;
-    const char *text = NULL;
-    const char *end = NULL;
+    const char *tag = NULL_POINTER;
+    const ubyte *bytes = NULL_POINTER;
+    const char *text = NULL_POINTER;
+    const char *end = NULL_POINTER;
     ubyte number[4] = { 0 };
     uint64 length = 0;
     uint64 maximum = 0;
@@ -159,7 +159,7 @@ boole desktop_device_key__make(ma_backend backend, const ma_device_id *id, char 
  */
 static void _devices_internal__append(desktop_device_catalog_t *catalog, ma_backend backend, const ma_device_info *info, boole capture)
 {
-    desktop_device_t *item = NULL;
+    desktop_device_t *item = NULL_POINTER;
     int64 index = 0;
     if (catalog->view.count >= DESKTOP_DEVICE_LIMIT)
     {
@@ -197,8 +197,8 @@ static void _devices_internal__worker(void *context)
     desktop_devices_t *devices = context;
     desktop_device_catalog_t *catalog = calloc(1, sizeof(*catalog));
     ma_context *native = calloc(1, sizeof(*native));
-    ma_device_info *outputs = NULL;
-    ma_device_info *inputs = NULL;
+    ma_device_info *outputs = NULL_POINTER;
+    ma_device_info *inputs = NULL_POINTER;
     ma_uint32 output_count = 0;
     ma_uint32 input_count = 0;
     uint64 index = 0;

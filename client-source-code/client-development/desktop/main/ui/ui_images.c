@@ -40,7 +40,7 @@ static void _ui_images_internal__layout(gui_node_t *node, float x, float y, floa
     float ratio = 1;
     float maximum_w = 0;
     float maximum_h = 0;
-    desktop_image_texture_t *image = NULL;
+    desktop_image_texture_t *image = NULL_POINTER;
     if (clib__strcmp(node->klass, "chat-picture") != 0 || index < 0 || index >= DESKTOP_ATTACHMENT_COUNT)
     {
         g_image_original.layout(node, x, y, width, height, scale);
@@ -112,9 +112,9 @@ void desktop_ui_images__initialize(desktop_attachments_t *attachments, desktop_c
  */
 void desktop_ui_images__append(gui_node_t *parent, const desktop_attachment_t *attachment)
 {
-    desktop_image_texture_t *image = NULL;
-    gui_node_t *node = NULL;
-    ubyte *pixels = NULL;
+    desktop_image_texture_t *image = NULL_POINTER;
+    gui_node_t *node = NULL_POINTER;
+    ubyte *pixels = NULL_POINTER;
     int64 index = 0;
     int64 free_slot = -1;
     uint64 total = 0;

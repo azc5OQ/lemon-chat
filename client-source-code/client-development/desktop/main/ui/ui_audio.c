@@ -34,8 +34,8 @@ static boole _ui_audio_internal__key_list(gui_node_t *parent);
  */
 static boole _ui_audio_internal__key_list(gui_node_t *parent)
 {
-    gui_node_t *node = NULL;
-    const char *name = NULL;
+    gui_node_t *node = NULL_POINTER;
+    const char *name = NULL_POINTER;
     int64 index = 0;
     for (index = parent->child_count; index < desktop_hotkey__count(); index++)
     {
@@ -65,8 +65,8 @@ static boole _ui_audio_internal__key_list(gui_node_t *parent)
 static void _ui_audio_internal__device_list(const char *id, boole capture, const char *selected)
 {
     gui_node_t *parent = scene__find_by_id((char *)id);
-    gui_node_t *node = NULL;
-    gui_node_t *next = NULL;
+    gui_node_t *node = NULL_POINTER;
+    gui_node_t *next = NULL_POINTER;
     int64 index = 0;
     int64 option = 0;
     int64 ordinal = 0;
@@ -156,7 +156,7 @@ static void _ui_audio_internal__choose_device(gui_event_t *event)
     gui_node_t *option = parent ? parent->first_child : NULL;
     int64 index = 0;
     int64 slot = -1;
-    char *selected = NULL;
+    char *selected = NULL_POINTER;
     if (!parent)
     {
         return;

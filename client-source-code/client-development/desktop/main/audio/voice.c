@@ -206,7 +206,7 @@ static boole _voice_internal__request(desktop_session_t *session, const char *ty
 static voice_bot_t *_voice_internal__bot(desktop_voice_t *voice, uint id)
 {
     int64 index = 0;
-    voice_bot_t *available = NULL;
+    voice_bot_t *available = NULL_POINTER;
     for (index = 0; index < VOICE_BOTS; index++)
     {
         if (voice->bots[index].used && voice->bots[index].id == id)
@@ -270,11 +270,11 @@ void desktop_voice__message(desktop_session_t *session, const cJSON *message)
 {
     desktop_voice_t *voice = session->voice;
     const char *type = server_msg__read_string(message, "type");
-    const cJSON *value = NULL;
-    const cJSON *keys = NULL;
+    const cJSON *value = NULL_POINTER;
+    const cJSON *keys = NULL_POINTER;
     desktop_endpoint_t endpoint = { 0 };
     char url[1024] = { 0 };
-    voice_bot_t *bot = NULL;
+    voice_bot_t *bot = NULL_POINTER;
     int64 id = -1;
     int64 slot = -1;
     int64 index = 0;
@@ -387,7 +387,7 @@ static void _voice_internal__receive(desktop_session_t *session, const ubyte *by
     uint64 length = 0;
     int64 index = 0;
     int64 slot = -1;
-    voice_bot_t *bot = NULL;
+    voice_bot_t *bot = NULL_POINTER;
     const desktop_content_keys_t *keys = &session->keys;
     length = crypto_media__open(&voice->media, bytes, size, &packet.sender, &counter, &frame_counter, content, sizeof(content));
     if (!length || (voice->received_any && frame_counter <= voice->received_counter))

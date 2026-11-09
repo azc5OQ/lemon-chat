@@ -24,7 +24,7 @@ struct desktop_overlay_ipc_t
 desktop_overlay_ipc_t *desktop_overlay_ipc__open(uint game_pid, boole writer)
 {
     char name[96] = { 0 };
-    desktop_overlay_ipc_t *ipc = NULL;
+    desktop_overlay_ipc_t *ipc = NULL_POINTER;
 
     clib__null_memory(&name, sizeof(name));
     ipc = calloc(1, sizeof(*ipc));

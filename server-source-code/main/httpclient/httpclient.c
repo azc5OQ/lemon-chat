@@ -180,7 +180,7 @@ httpclient_error_t _httpclient_internal__append(http_buffer_t *buffer, const voi
 {
     uint64 needed = 0;
     uint64 capacity = 0;
-    void *allocation = NULL;
+    void *allocation = NULL_POINTER;
 
     // Check buffer limit
     if (limit >= SIZE_MAX || buffer->size > limit || size > limit - buffer->size)
@@ -316,7 +316,6 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
     boole has_length = 0;
     boole chunked = 0;
     boole no_body = 0;
-    boole status0 = FALSE;
 
     // Check header limit
     if (size > HTTP_HEADER_LIMIT - parser->metadata_bytes)
@@ -395,8 +394,7 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
         }
         else if (_httpclient_internal__equal(text + position, colon, "Content-Encoding"))
         {
-            status0 = _httpclient_internal__equal(text + start, end - start, "identity");
-            if (status0 == FALSE)
+            if (_httpclient_internal__equal(text + start, end - start, "identity") == FALSE)
             {
                 return HTTPCLIENT_UNSUPPORTED;
             }
@@ -465,7 +463,6 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
     int64 line = 0;
     ubyte value = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
-    boole status = FALSE;
 
     for (;;)
     {
@@ -548,8 +545,7 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
                 {
                     digits++;
                 }
-                status = _httpclient_internal__number((const char *)parser->pending.data, digits, 16, &parser->remaining);
-                if (status == FALSE)
+                if (_httpclient_internal__number((const char *)parser->pending.data, digits, 16, &parser->remaining) == FALSE)
                 {
                     return HTTPCLIENT_HTTP;
                 }
@@ -620,10 +616,10 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
 static httpclient_error_t _httpclient_internal__request_head(http_buffer_t *buffer, const httpclient_request_t *request, const char *host, const char *port, const char *target, boole ipv6)
 {
     static const char *methods[] = { "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS" };
-    const char *method = NULL;
+    const char *method = NULL_POINTER;
     const char *parts[15];
-    const char *name = NULL;
-    const char *value = NULL;
+    const char *name = NULL_POINTER;
+    const char *value = NULL_POINTER;
     char number[21] = { 0 };
     uint64 offset = sizeof(number) - 1;
     uint64 remaining = 0;
@@ -884,7 +880,7 @@ httpclient_error_t httpclient__request(const httpclient_request_t *request, http
 {
     uint64 native = 0;
     uint64 protocol = 0;
-    httpclient_connection_t *connection = NULL;
+    httpclient_connection_t *connection = NULL_POINTER;
     http_parser_t parser = { 0 };
     http_buffer_t header = { 0 };
     httpclient_url_t url;

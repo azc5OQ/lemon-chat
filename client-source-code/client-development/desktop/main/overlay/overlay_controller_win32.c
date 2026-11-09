@@ -230,7 +230,7 @@ static DWORD _overlay_controller_internal__wait(desktop_overlay_controller_t *co
  */
 static boole _overlay_controller_internal__attach(desktop_overlay_controller_t *controller, desktop_overlay_ipc_t *ipc, DWORD process_id)
 {
-    const wchar_t *dll_name = NULL;
+    const wchar_t *dll_name = NULL_POINTER;
     wchar_t dll_path[32768] = { 0 };
     DWORD length = 0;
     uint64 index = 0;
@@ -245,7 +245,7 @@ static boole _overlay_controller_internal__attach(desktop_overlay_controller_t *
     DWORD owner_length = 0;
     nuint remote_owner = 0;
     uint64 bytes = 0;
-    void *remote_path = NULL;
+    void *remote_path = NULL_POINTER;
     SIZE_T written = 0;
     LPTHREAD_START_ROUTINE remote_loader = NULL;
     HANDLE thread = NULL;
@@ -256,8 +256,8 @@ static boole _overlay_controller_internal__attach(desktop_overlay_controller_t *
     IMAGE_DOS_HEADER dos = { 0 };
     IMAGE_NT_HEADERS header = { 0 };
     SIZE_T read = 0;
-    IMAGE_DOS_HEADER *local_dos = NULL;
-    IMAGE_NT_HEADERS *local_header = NULL;
+    IMAGE_DOS_HEADER *local_dos = NULL_POINTER;
+    IMAGE_NT_HEADERS *local_header = NULL_POINTER;
     boole same_image = 0;
     DWORD exit_code = 0;
 
@@ -409,9 +409,9 @@ finished:
  */
 static DWORD WINAPI _overlay_controller_internal__worker(void *parameter)
 {
-    desktop_overlay_controller_t *controller = NULL;
+    desktop_overlay_controller_t *controller = NULL_POINTER;
     desktop_settings_t previous = { 0 };
-    desktop_overlay_ipc_t *ipc = NULL;
+    desktop_overlay_ipc_t *ipc = NULL_POINTER;
     HANDLE game = NULL;
     DWORD process_id = 0;
     boole attempted = 0;
@@ -420,7 +420,7 @@ static DWORD WINAPI _overlay_controller_internal__worker(void *parameter)
     desktop_overlay_snapshot_t hidden = { 0 };
     BOOL own_wow = 0;
     BOOL game_wow = 0;
-    const char *detail = NULL;
+    const char *detail = NULL_POINTER;
     boole unchanged = 0;
 
     controller = parameter;
@@ -559,7 +559,7 @@ static DWORD WINAPI _overlay_controller_internal__worker(void *parameter)
  */
 desktop_overlay_controller_t *desktop_overlay_controller__create(void)
 {
-    desktop_overlay_controller_t *controller = NULL;
+    desktop_overlay_controller_t *controller = NULL_POINTER;
 
     controller = calloc(1, sizeof(*controller));
     if (!controller)

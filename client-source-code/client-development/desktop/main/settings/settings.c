@@ -105,15 +105,15 @@ boole desktop_settings__valid_game(const char *executable)
  */
 void desktop_settings__load(desktop_settings_t *settings)
 {
-    char *bytes = NULL;
+    char *bytes = NULL_POINTER;
     uint64 length = 0;
-    cJSON *root = NULL;
-    const cJSON *game = NULL;
-    const cJSON *enabled = NULL;
-    const cJSON *field = NULL;
-    const cJSON *bookmarks = NULL;
-    const cJSON *name = NULL;
-    const cJSON *address = NULL;
+    cJSON *root = NULL_POINTER;
+    const cJSON *game = NULL_POINTER;
+    const cJSON *enabled = NULL_POINTER;
+    const cJSON *field = NULL_POINTER;
+    const cJSON *bookmarks = NULL_POINTER;
+    const cJSON *name = NULL_POINTER;
+    const cJSON *address = NULL_POINTER;
     desktop_bookmark_t bookmark = { 0 };
     int64 index = 0;
 
@@ -270,12 +270,12 @@ void desktop_settings__load(desktop_settings_t *settings)
  */
 boole desktop_settings__save(const desktop_settings_t *settings)
 {
-    cJSON *root = NULL;
-    char *bytes = NULL;
+    cJSON *root = NULL_POINTER;
+    char *bytes = NULL_POINTER;
     boole complete = 0;
     boole saved = 0;
-    cJSON *bookmarks = NULL;
-    cJSON *bookmark = NULL;
+    cJSON *bookmarks = NULL_POINTER;
+    cJSON *bookmark = NULL_POINTER;
     int64 index = 0;
 
     if (!settings || !desktop_settings__valid_theme(settings->theme) || !clib__memchr(settings->game_executable, 0, sizeof(settings->game_executable)) || !clib__memchr(settings->address, 0, sizeof(settings->address)) || !clib__memchr(settings->username, 0, sizeof(settings->username)) || !clib__memchr(settings->identity, 0, sizeof(settings->identity)) || !clib__memchr(settings->server_keys, 0, sizeof(settings->server_keys)) || !clib__memchr(settings->input_device, 0, sizeof(settings->input_device)) || !clib__memchr(settings->output_device, 0, sizeof(settings->output_device)) || (settings->overlay_enabled && !desktop_settings__valid_game(settings->game_executable)) || settings->bookmark_count < 0 || settings->bookmark_count > DESKTOP_BOOKMARK_LIMIT)

@@ -51,7 +51,7 @@ static void _server_attachments_internal__append(desktop_session_t *session, des
 static void _server_attachments_internal__offer(desktop_session_t *session, const cJSON *message)
 {
     desktop_attachments_t *attachments = session->attachments;
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
     const char *id = server_msg__read_string(message, "offer_id");
     const char *status = server_msg__read_string(message, "status");
     const char *preview = server_msg__read_string(message, "preview");
@@ -142,8 +142,8 @@ static void _server_attachments_internal__offer(desktop_session_t *session, cons
 static void _server_attachments_internal__metadata(desktop_session_t *session, const cJSON *message, boole direct, boole picture)
 {
     desktop_attachments_t *attachments = session->attachments;
-    desktop_attachment_record_t *record = NULL;
-    desktop_attachment_record_t *candidate = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
+    desktop_attachment_record_t *candidate = NULL_POINTER;
     int64 sender = server_msg__read_number(message, "sender_id");
     int64 slot = desktop_session__client(session, sender);
     int64 channel = direct ? -1 : server_msg__read_number(message, "channel_id");
@@ -231,10 +231,10 @@ static void _server_attachments_internal__metadata(desktop_session_t *session, c
 void server_msg__attachments__receive(desktop_session_t *session, const cJSON *message)
 {
     desktop_attachments_t *attachments = session->attachments;
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
     const char *type = server_msg__read_string(message, "type");
     const char *value = server_msg__read_string(message, "value");
-    const char *expected = NULL;
+    const char *expected = NULL_POINTER;
     int64 sender = server_msg__read_number(message, "sender_id");
     int64 server_id = server_msg__read_number(message, "server_chat_message_id");
     int64 slot = desktop_session__client(session, sender);

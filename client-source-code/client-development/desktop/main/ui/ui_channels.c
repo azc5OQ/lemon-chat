@@ -236,8 +236,8 @@ static void _ui_channels_internal__select(int64 id)
 static void _ui_channels_internal__list(void)
 {
     gui_node_t *parent = scene__find_by_id("channel-editor-list");
-    gui_node_t *node = NULL;
-    gui_node_t *next = NULL;
+    gui_node_t *node = NULL_POINTER;
+    gui_node_t *next = NULL_POINTER;
     int64 index = 0;
     if (!parent)
     {
@@ -524,7 +524,7 @@ static void _ui_channels_internal__cancel_delete(gui_event_t *event)
  */
 void desktop_ui_channels__update(void)
 {
-    const desktop_channel_t *current = NULL;
+    const desktop_channel_t *current = NULL_POINTER;
     uint64 access = 0;
     int64 index = 0;
     boole creating = g_channels_draft.action == DESKTOP_CHANNEL_CREATE;

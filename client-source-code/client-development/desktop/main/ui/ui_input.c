@@ -27,7 +27,7 @@ boole desktop_ui_input__limits(void)
         const char *id;
         int64 bytes;
     } limits[] = { { "message-input", DESKTOP_CHAT_CAPACITY - 1 }, { "chat-color-hex", 7 }, { "message-edit-text", DESKTOP_CHAT_CAPACITY - 1 }, { "attachment-filename", 255 }, { "chat-theme", DESKTOP_THEME_NAME_CAPACITY - 1 }, { "chat-image-width", 4 }, { "chat-image-height", 4 }, { "server-address", 253 }, { "server-port", 5 }, { "username", sizeof(((desktop_connection_t *)0)->username) - 1 }, { "identity-string", sizeof(((desktop_connection_t *)0)->identity) - 1 }, { "bookmark-name", sizeof(((desktop_bookmark_t *)0)->name) - 1 }, { "bookmark-address", sizeof(((desktop_bookmark_t *)0)->address) - 1 }, { "channel-password", sizeof(((desktop_channel_request_t *)0)->password) - 1 }, { "action-value", sizeof(((desktop_action_t *)0)->text) - 1 }, { "channel-edit-name", sizeof(((desktop_channel_t *)0)->name) - 1 }, { "channel-edit-description", sizeof(((desktop_channel_t *)0)->description) - 1 }, { "channel-edit-password", sizeof(((desktop_channel_request_t *)0)->password) - 1 }, { "channel-edit-capacity", 10 }, { "channel-talk-power", 4 }, { "channel-message-power", 4 }, { "channel-picture-power", 4 }, { "channel-stream-power", 4 }, { "game-executable", DESKTOP_GAME_NAME_CAPACITY - 1 } };
-    gui_node_t *node = NULL;
+    gui_node_t *node = NULL_POINTER;
     int64 index = 0;
     boole complete = TRUE;
     for (index = 0; index < (int64)(sizeof(limits) / sizeof(limits[0])); index++)

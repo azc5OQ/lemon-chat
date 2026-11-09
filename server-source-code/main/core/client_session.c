@@ -75,8 +75,7 @@ void client_session__close_websocket_connection(uint64 client_index, boole use_r
  */
 boole client_session__assign_username_for_newly_joined_client(uint64 client_index, cstring default_name)
 {
-    boole status = FALSE;
-    char *public_key = 0;
+    char *public_key = NULL_POINTER;
     char candidate_username[USERNAME_MAX_LENGTH] = { 0 };
     char index_suffix_buffer[16] = { 0 };
     uint64 username_suffix_number = 0;
@@ -86,9 +85,7 @@ boole client_session__assign_username_for_newly_joined_client(uint64 client_inde
     public_key = &g_clients_array[client_index].public_key[0];
     DBG_AUTHENTICATION log_info("%s %s %s", "newly joined client public key is -> ", public_key, "\n");
 
-    status = identity_store__is_public_key_present_in_client_stored_data(public_key);
-
-    if (status == TRUE)
+    if (identity_store__is_public_key_present_in_client_stored_data(public_key) == TRUE)
     {
         DBG_AUTHENTICATION log_info("%s", "public key present \n");
     }
@@ -139,9 +136,7 @@ boole client_session__assign_username_for_newly_joined_client(uint64 client_inde
                     goto final_check;
                 }
 
-                status = clib__is_string_equal(g_clients_array[i].username, candidate_username);
-
-                if (status == TRUE)
+                if (clib__is_string_equal(g_clients_array[i].username, candidate_username) == TRUE)
                 { // username used by some of the clients, start another loop, with incremented numeric part of client's username
                     DBG_AUTHENTICATION log_info("%s %s %s", "username ", candidate_username, " it is not available \n");
                     break;
@@ -265,9 +260,6 @@ uint64 client_session__disconnect_other_clients_with_same_public_key(uint64 clie
  */
 int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index, cstring public_key)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
     uint64 i = 0;
     uint64 timestamp_now = 0;
     client_t *old_session = NULL_POINTER;
@@ -281,10 +273,7 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        status0 = (boole)(i != new_client_index);
-        status1 = g_clients_array[i].is_existing;
-        status2 = g_clients_array[i].is_authenticated;
-        if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
+        if (i == new_client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
         {
             continue;
         }
@@ -370,9 +359,6 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
  */
 boole client_session__is_there_another_authenticated_client_with_same_public_key(uint64 client_index, cstring public_key)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
     uint64 i = 0;
 
     if (public_key == NULL_POINTER || public_key[0] == 0)
@@ -382,10 +368,7 @@ boole client_session__is_there_another_authenticated_client_with_same_public_key
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        status0 = (boole)(i != client_index);
-        status1 = g_clients_array[i].is_existing;
-        status2 = g_clients_array[i].is_authenticated;
-        if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
+        if (i == client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
         {
             continue;
         }
@@ -477,17 +460,11 @@ boole client_session__is_there_an_unfinished_handshake_from_same_ip_address(cstr
  */
 boole client_session__is_there_another_authenticated_client_with_same_ip_address(uint64 client_index, cstring ip_address, cstring public_key)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
     uint64 i = 0;
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
-        status0 = (boole)(i != client_index);
-        status1 = g_clients_array[i].is_existing;
-        status2 = g_clients_array[i].is_authenticated;
-        if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
+        if (i == client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
         {
             continue;
         }
@@ -519,7 +496,6 @@ void client_session__process_client_disconnect(uint64 client_index)
 {
     char last_seen_identity_hash[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
     const char *disconnect_reason = NULL_POINTER;
-    boole status = FALSE;
     uint64 channel_id = 0;
     boole is_client_also_channel_maintainer = FALSE;
     boole owns_temp_channel = FALSE;
@@ -599,8 +575,7 @@ void client_session__process_client_disconnect(uint64 client_index)
         {
             DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "client_session__process_client_disconnect client was maintainer of channel ", client_index, "\n");
 
-            status = channel__replace_departed_maintainer(&g_channel_array[channel_id], client_index);
-            if (status == TRUE)
+            if (channel__replace_departed_maintainer(&g_channel_array[channel_id], client_index) == TRUE)
             {
                 server_msg__channel__send_maintainer_id_to_clients_in_same_channel(&g_channel_array[channel_id], g_channel_array[channel_id].maintainer_id);
             }

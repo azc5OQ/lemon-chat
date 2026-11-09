@@ -292,7 +292,7 @@ void desktop_ui_voice__register(void)
  */
 void desktop_ui_voice__append(gui_node_t *parent, int64 audio, boole muted)
 {
-    gui_node_t *icon = NULL;
+    gui_node_t *icon = NULL_POINTER;
     const char *klass = muted ? "voice-icon-muted" : audio == 1 ? "voice-icon-active" : audio >= 3 ? "voice-icon-disabled" : "voice-icon";
     if (!parent)
     {

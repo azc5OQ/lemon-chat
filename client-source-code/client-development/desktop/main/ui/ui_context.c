@@ -330,8 +330,8 @@ void desktop_ui_context__open(const desktop_client_t *member, int64 x, int64 y)
 static void _ui_context_internal__submenu(int64 kind)
 {
     const desktop_client_t *member = _ui_context_internal__member();
-    const desktop_tree_group_t *group = NULL;
-    desktop_menu_entry_t *entry = NULL;
+    const desktop_tree_group_t *group = NULL_POINTER;
+    desktop_menu_entry_t *entry = NULL_POINTER;
     desktop_menu_t *menu = &g_menus[1];
     gui_node_t *node = scene__find_by_id("context-submenu");
     gui_node_t *parent = scene__find_by_id("context-menu");
@@ -404,8 +404,8 @@ static void _ui_context_internal__activate(int64 menu, int64 row)
 {
     const desktop_client_t *member = _ui_context_internal__member();
     desktop_action_t action = g_context_target;
-    desktop_menu_entry_t *entry = NULL;
-    gui_node_t *node = NULL;
+    desktop_menu_entry_t *entry = NULL_POINTER;
+    gui_node_t *node = NULL_POINTER;
     int64 kind = menu ? g_menus[1].kind : row >= 0 && row < g_menus[0].count ? g_menus[0].entries[row].value : -1;
     const char *action_ids[CONTEXT_COUNT] = { "", "", "", "", "", "", "member-poke", "", "", "member-kick-channel", "member-stop-stream", "member-kick", "member-ban" };
     if (g_context_is_channel && !menu && row >= 0 && row < g_menus[0].count && _ui_context_internal__allowed(kind, NULL))
@@ -685,12 +685,12 @@ static void _ui_context_internal__draw(gui_node_t *node, float scale)
     int64 index = _ui_context_internal__index(node);
     int64 row = 0;
     int64 kind = 0;
-    desktop_menu_t *menu = NULL;
-    desktop_menu_entry_t *entry = NULL;
+    desktop_menu_t *menu = NULL_POINTER;
+    desktop_menu_entry_t *entry = NULL_POINTER;
     gui_rect_t rect = { 0 };
     gui_rect_t icon = { 0 };
     gui_color_t color = { 0 };
-    gui_font_t *font = NULL;
+    gui_font_t *font = NULL_POINTER;
     float text_x = 0;
     float baseline = 0;
     float row_height = _ui_context_internal__row_height(node);
@@ -867,8 +867,8 @@ static void _ui_context_internal__key(gui_node_t *node, int64 key, boole down)
  */
 boole desktop_ui_context__tick(void)
 {
-    const desktop_client_t *member = NULL;
-    gui_node_t *node = NULL;
+    const desktop_client_t *member = NULL_POINTER;
+    gui_node_t *node = NULL_POINTER;
     gui_node_t *pressed = scene__pressed();
     int64 index = 0;
     int64 row = 0;
@@ -877,7 +877,7 @@ boole desktop_ui_context__tick(void)
     boole changed = g_context_changed;
     boole pointer = scene__pointer_position(&x, &y);
     boole moved = pointer && (x != g_context_pointer_x || y != g_context_pointer_y);
-    desktop_menu_entry_t *entry = NULL;
+    desktop_menu_entry_t *entry = NULL_POINTER;
     desktop_action_e action = DESKTOP_ACTION_NONE;
     boole checked = FALSE;
     boole enabled = FALSE;

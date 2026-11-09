@@ -23,8 +23,8 @@ static char *_client_chat_internal__text(desktop_session_t *session, const char 
 {
     static const char hex[] = "0123456789abcdef";
     ubyte random[16] = { 0 };
-    cJSON *wrapper = NULL;
-    char *result = NULL;
+    cJSON *wrapper = NULL_POINTER;
+    char *result = NULL_POINTER;
     int64 index = 0;
     if (capacity < 33 || !crypto_session__random(session->crypto, random, sizeof(random)))
     {
@@ -57,9 +57,9 @@ static char *_client_chat_internal__text(desktop_session_t *session, const char 
  */
 static boole _client_chat_internal__channel(desktop_session_t *session, int64 channel, const char *payload, uint64 local_id)
 {
-    char *encrypted = NULL;
-    char *envelope = NULL;
-    cJSON *message = NULL;
+    char *encrypted = NULL_POINTER;
+    char *envelope = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
     boole complete = 0;
     boole sent = FALSE;
 
@@ -91,11 +91,11 @@ static boole _client_chat_internal__direct(desktop_session_t *session, int64 pee
 {
     int64 slot = desktop_session__client(session, peer);
     desktop_content_keys_t keys = { 0 };
-    cJSON *body = NULL;
-    cJSON *message = NULL;
-    char *body_json = NULL;
-    char *encrypted_body = NULL;
-    char *envelope_json = NULL;
+    cJSON *body = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    char *body_json = NULL_POINTER;
+    char *encrypted_body = NULL_POINTER;
+    char *envelope_json = NULL_POINTER;
     boole complete = 0;
     boole sent = FALSE;
     boole keys_ready = FALSE;
@@ -206,9 +206,9 @@ void client_msg__chat__send_direct_message(desktop_session_t *session, int64 pee
  */
 void client_msg__chat__send_edit(desktop_session_t *session, uint64 sequence, uint64 connection_serial, const char *text)
 {
-    desktop_chat_t *chat = NULL;
-    cJSON *edit = NULL;
-    char *payload = NULL;
+    desktop_chat_t *chat = NULL_POINTER;
+    cJSON *edit = NULL_POINTER;
+    char *payload = NULL_POINTER;
     int64 index = 0;
     uint64 local_id = 0;
     boole sent = FALSE;

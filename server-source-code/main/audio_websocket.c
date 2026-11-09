@@ -79,20 +79,15 @@ static uint64 _audio_websocket_internal__read_u32(const ubyte *bytes)
  */
 static boole _audio_websocket_internal__authentication_code(mbedtls_md_context_t *context, const ubyte *data, uint64 size, ubyte *out_code)
 {
-    boole status = FALSE;
-
-    status = mbedtls_md_hmac_reset(context) == 0;
-    if (status == FALSE)
+    if (mbedtls_md_hmac_reset(context) != 0)
     {
         return FALSE;
     }
-    status = mbedtls_md_hmac_update(context, data, size) == 0;
-    if (status == FALSE)
+    if (mbedtls_md_hmac_update(context, data, size) != 0)
     {
         return FALSE;
     }
-    status = mbedtls_md_hmac_finish(context, out_code) == 0;
-    return status;
+    return mbedtls_md_hmac_finish(context, out_code) == 0;
 }
 
 /**
@@ -164,19 +159,7 @@ static boole _audio_websocket_internal__issue_session(client_t *client)
 
     // the ticket and the key are random; the HMAC context is set up with the key once, for the proof
     // frame and the acknowledgement
-    status = util__fill_secure_random_bytes(session->auth_key, sizeof(session->auth_key));
-    if (status == TRUE)
-    {
-        status = util__fill_secure_random_bytes(session->ticket, sizeof(session->ticket));
-    }
-    if (status == TRUE)
-    {
-        status = mbedtls_md_setup(&session->receive_mac, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1) == 0;
-    }
-    if (status == TRUE)
-    {
-        status = mbedtls_md_hmac_starts(&session->receive_mac, session->auth_key, 32) == 0;
-    }
+    status = (((util__fill_secure_random_bytes(session->auth_key, sizeof(session->auth_key))) && (util__fill_secure_random_bytes(session->ticket, sizeof(session->ticket)))) && (mbedtls_md_setup(&session->receive_mac, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1) == 0)) && (mbedtls_md_hmac_starts(&session->receive_mac, session->auth_key, 32) == 0);
     if (status == FALSE)
     {
         audio_websocket__disconnect(client);
@@ -238,21 +221,20 @@ static uint64 _audio_websocket_internal__attach(ws_cli_conn_t *socket, const uby
     audio_websocket_session_t *session = NULL_POINTER;
     client_t *client = NULL_POINTER;
     uint64 id = 0;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    boole status3 = FALSE;
 
-    status0 = size != 53;
-    if (status0 == TRUE)
+    // Require the complete proof packet before reading its fields.
+    if (size != 53)
     {
         return UINT64_MAX;
     }
-    status0 = data[0] != 1;
-    if (status0 == TRUE)
+
+    // Accept the session proof packet type only.
+    if (data[0] != 1)
     {
         return UINT64_MAX;
     }
+
+    // Read the client ID and check it before indexing the clients array.
     id = _audio_websocket_internal__read_u32(data + 1);
     if (id >= g_server_settings.max_client_count)
     {
@@ -263,32 +245,31 @@ static uint64 _audio_websocket_internal__attach(ws_cli_conn_t *socket, const uby
 
     // the client must be logged in and not idle, must have asked for a session that has not expired and
     // has no socket yet, and the ticket and the authentication code must be the ones of that session
-    status0 = client->is_existing == FALSE;
-    status1 = client->is_authenticated == FALSE;
-    status2 = client->is_idle == TRUE;
-    status3 = session == NULL_POINTER;
-    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
+    if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_idle == TRUE || session == NULL_POINTER)
     {
         goto rejected;
     }
-    status0 = session->socket != NULL_POINTER;
-    status1 = now > session->expires_at;
-    if (status0 == TRUE || status1 == TRUE)
+
+    // Reject expired tickets and sessions already attached to another socket.
+    if (session->socket != NULL_POINTER || now > session->expires_at)
     {
         goto rejected;
     }
-    status0 = _audio_websocket_internal__is_equal(session->ticket, data + 5, 16);
-    if (status0 == FALSE)
+
+    // Require the ticket issued to this client.
+    if (_audio_websocket_internal__is_equal(session->ticket, data + 5, 16) == FALSE)
     {
         goto rejected;
     }
-    status0 = _audio_websocket_internal__authentication_code(&session->receive_mac, data, 21, code);
-    if (status0 == FALSE)
+
+    // Calculate the expected authentication code for the packet.
+    if (_audio_websocket_internal__authentication_code(&session->receive_mac, data, 21, code) == FALSE)
     {
         goto rejected;
     }
-    status0 = _audio_websocket_internal__is_equal(code, data + 21, 32);
-    if (status0 == FALSE)
+
+    // Reject a proof whose authentication code does not match.
+    if (_audio_websocket_internal__is_equal(code, data + 21, 32) == FALSE)
     {
         goto rejected;
     }
@@ -297,11 +278,12 @@ static uint64 _audio_websocket_internal__attach(ws_cli_conn_t *socket, const uby
     // that answers is the one that issued the session
     acknowledgement[0] = 2;
     clib__memcpy(acknowledgement + 1, session->ticket, 16);
-    status0 = _audio_websocket_internal__authentication_code(&session->receive_mac, acknowledgement, 17, acknowledgement + 17);
-    if (status0 == FALSE)
+    if (_audio_websocket_internal__authentication_code(&session->receive_mac, acknowledgement, 17, acknowledgement + 17) == FALSE)
     {
         return UINT64_MAX;
     }
+
+    // Attach the verified socket and queue the acknowledgement.
     session->socket = socket;
     ws_media_bind(socket, id);
     client->is_audio_websocket_authenticated = TRUE;
@@ -346,18 +328,11 @@ static boole _audio_websocket_internal__is_frame_allowed(audio_websocket_session
  */
 static boole _audio_websocket_internal__is_served(void)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-
-    status0 = g_server_settings.is_audio_over_websocket_allowed == TRUE;
-    if (status0 == FALSE)
+    if (g_server_settings.is_audio_over_websocket_allowed == FALSE)
     {
         return FALSE;
     }
-    status1 = g_server_settings.is_voice_chat_active == TRUE;
-    status2 = g_server_settings.is_music_bot_audio_active == TRUE;
-    return status1 == TRUE || status2 == TRUE;
+    return g_server_settings.is_voice_chat_active == TRUE || g_server_settings.is_music_bot_audio_active == TRUE;
 }
 
 /**
@@ -374,22 +349,15 @@ static boole _audio_websocket_internal__is_served(void)
  */
 boole audio_websocket__send(client_t *client, const ubyte *data, uint64 size, boole is_music)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-
-    status0 = size < MEDIA_FRAME_OVERHEAD;
-    status1 = size > WS_AUDIO_FRAME_MAX;
-    if (status0 == TRUE || status1 == TRUE)
+    if (size < MEDIA_FRAME_OVERHEAD || size > WS_AUDIO_FRAME_MAX)
     {
         return FALSE;
     }
-    status0 = client->audio_websocket == NULL_POINTER;
-    if (status0 == TRUE)
+    if (client->audio_websocket == NULL_POINTER)
     {
         return FALSE;
     }
-    status0 = client->audio_websocket->socket == NULL_POINTER;
-    if (status0 == TRUE)
+    if (client->audio_websocket->socket == NULL_POINTER)
     {
         return FALSE;
     }
@@ -492,15 +460,9 @@ void audio_websocket__onmessage(ws_cli_conn_t *socket, ubyte *data, uint64 size,
     client_t *client = NULL_POINTER;
     boole valid = FALSE;
     boole relay = FALSE;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    boole status3 = FALSE;
     uint64 now = util__get_timestamp_ms();
 
-    status0 = type != WS_FR_OP_BIN;
-    status1 = size > WS_AUDIO_FRAME_MAX;
-    if (status0 == TRUE || status1 == TRUE)
+    if (type != WS_FR_OP_BIN || size > WS_AUDIO_FRAME_MAX)
     {
         DBG_AUDIO_WEBSOCKET log_info("%s %llu %s", "audio frame of", size, "bytes refused: not binary or too large; socket closed");
         ws_abort_client(socket);
@@ -532,29 +494,21 @@ void audio_websocket__onmessage(ws_cli_conn_t *socket, ubyte *data, uint64 size,
     }
 
     clib__read_lock(&g_clients_global_rwlock_guard);
-    status0 = id >= g_server_settings.max_client_count;
-    status1 = size == 1;
-    if (status0 == TRUE || status1 == TRUE)
+    if (id >= g_server_settings.max_client_count || size == 1)
     {
         goto done;
     }
     client = &g_clients_array[id];
     session = client->audio_websocket;
-    status0 = client->is_existing == FALSE;
-    status1 = client->is_authenticated == FALSE;
-    status2 = client->is_idle == TRUE;
-    status3 = session == NULL_POINTER;
-    if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
+    if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_idle == TRUE || session == NULL_POINTER)
     {
         goto done;
     }
-    status0 = session->socket != socket;
-    if (status0 == TRUE)
+    if (session->socket != socket)
     {
         goto done;
     }
-    status0 = _audio_websocket_internal__is_frame_allowed(session, now, AUDIO_WEBSOCKET_MAX_FRAMES_PER_SECOND);
-    if (status0 == FALSE)
+    if (_audio_websocket_internal__is_frame_allowed(session, now, AUDIO_WEBSOCKET_MAX_FRAMES_PER_SECOND) == FALSE)
     {
         DBG_AUDIO_WEBSOCKET log_info("%s %llu %s", "client", id, "sent more than 250 audio frames within a second; socket closed");
         goto done;
@@ -590,24 +544,17 @@ void audio_websocket__onclose(ws_cli_conn_t *socket)
 {
     uint64 id = ws_media_client_id(socket);
     client_t *client = NULL_POINTER;
-    boole status = FALSE;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__read_lock(&g_webrtc_peers_rwlock_guard);
     if (id < g_server_settings.max_client_count)
     {
         client = &g_clients_array[id];
-        status = audio_websocket__owns_socket(client, socket);
-        if (status == TRUE)
+        if (audio_websocket__owns_socket(client, socket) == TRUE)
         {
             DBG_AUDIO_WEBSOCKET log_info("%s %llu %s", "audio websocket of client", id, "closed");
             audio_websocket__disconnect(client);
-            status = g_server_settings.is_audio_over_webrtc_allowed == FALSE;
-            if (status == FALSE)
-            {
-                status = audio_webrtc__is_connected(id) == FALSE;
-            }
-            if (status == TRUE)
+            if (g_server_settings.is_audio_over_webrtc_allowed == FALSE || audio_webrtc__is_connected(id) == FALSE)
             {
                 client->audio_state = AUDIO_STATE__AUDIO_COMPLETELY_DISABLED;
                 server_msg__audio__send_state_of_client_to_all_clients(client, client->audio_state);

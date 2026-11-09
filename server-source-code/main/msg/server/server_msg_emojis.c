@@ -94,14 +94,12 @@ void server_msg__emojis__send_deleted(cstring id)
  */
 void server_msg__emojis__send_error(client_t *receiver, cstring operation, cstring reason, cstring id)
 {
-    boole status = FALSE;
     cJSON *message = NULL_POINTER;
     cJSON *root = server_msg__delivery__new_message("server_emoji_error", &message);
 
     cJSON_AddStringToObject(message, "operation", operation);
     cJSON_AddStringToObject(message, "reason", reason);
-    status = emojis__is_id_valid(id);
-    if (status != FALSE)
+    if (emojis__is_id_valid(id) != FALSE)
     {
         cJSON_AddStringToObject(message, "emoji_id", id);
     }

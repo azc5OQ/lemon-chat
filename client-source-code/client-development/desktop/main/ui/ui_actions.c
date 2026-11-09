@@ -41,7 +41,7 @@ static void _ui_actions_internal__toolbar_hint(void)
 {
     static const char *ids[] = { "server-info-button", "channels-button", "profile-button", "idle-button", "audio-settings-button", "local-settings-button" };
     static const char *names[] = { "Server info", "Channels", "Profile and identity", "Go idle", "Audio settings", "Local settings" };
-    gui_node_t *node = NULL;
+    gui_node_t *node = NULL_POINTER;
     const char *hint = "";
     int64 index = 0;
     for (index = 0; index < 6; index++)
@@ -205,8 +205,8 @@ static void _ui_actions_internal__idle(gui_event_t *event)
 static void _ui_actions_internal__destinations(void)
 {
     gui_node_t *parent = scene__find_by_id("move-destinations");
-    gui_node_t *node = NULL;
-    gui_node_t *next = NULL;
+    gui_node_t *node = NULL_POINTER;
+    gui_node_t *next = NULL_POINTER;
     int64 index = 0;
     if (!parent)
     {
@@ -342,7 +342,7 @@ void desktop_ui_actions__activate(const char *id)
 static void _ui_actions_internal__submit(gui_event_t *event)
 {
     gui_node_t *value = scene__find_by_id("action-value");
-    char *end = NULL;
+    char *end = NULL_POINTER;
     long minutes = 0;
     uint64 index = 0;
     (void)event;

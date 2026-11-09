@@ -25,6 +25,10 @@
 #ifndef WS_H
 #define WS_H
 
+#ifndef NULL_POINTER
+#define NULL_POINTER 0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -67,8 +67,8 @@ static void _client_msg_administration_internal__refresh_guest_membership(client
  */
 static boole _client_msg_administration_internal__is_admin_password_message_valid(cJSON *json_root)
 {
-    cJSON *json_admin_password = 0;
-    cJSON *json_message_object = 0;
+    cJSON *json_admin_password = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
     int64 password_length = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -107,24 +107,20 @@ static boole _client_msg_administration_internal__is_admin_password_message_vali
  */
 void client_msg__administration__process_admin_password_message(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status0 = FALSE;
-    boole status = FALSE;
-    client_t *client = 0;
-    cJSON *admin_password = 0;
-    cJSON *json_message_object = 0;
+    client_t *client = NULL_POINTER;
+    cJSON *admin_password = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
     uint64 cvector_loop_index = 0;
     boole is_group_found = FALSE;
 
-    status = _client_msg_administration_internal__is_admin_password_message_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_administration_internal__is_admin_password_message_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_admin_password_message _client_msg_administration_internal__is_admin_password_message_valid == FALSE \n");
         return;
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status0 = base__is_current_client_request(sender_client_id);
-    if (status0 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -145,9 +141,7 @@ void client_msg__administration__process_admin_password_message(cJSON *json_root
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     admin_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
 
-    status = util__password_matches(admin_password->valuestring, g_server_settings.admin_password);
-
-    if (status == FALSE)
+    if (util__password_matches(admin_password->valuestring, g_server_settings.admin_password) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", sender_client_id, "admin password is not correct \n");
         server_logs__admin_password_failed(client->username, client->ip_address);
@@ -225,26 +219,22 @@ label_client_msg__process_admin_password_message_end:
  */
 void client_msg__administration__process_change_admin_password_message(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status0 = FALSE;
-    boole status = FALSE;
-    client_t *client = 0;
-    cJSON *new_password = 0;
-    cJSON *json_message_object = 0;
+    client_t *client = NULL_POINTER;
+    cJSON *new_password = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
     char previous_password[ADMIN_PASSWORD_MAX_LENGTH] = { 0 };
     char replacement_password[ADMIN_PASSWORD_MAX_LENGTH] = { 0 };
     boole previous_initial_password = FALSE;
     boole saved = FALSE;
 
-    status = _client_msg_administration_internal__is_admin_password_message_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_administration_internal__is_admin_password_message_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_change_admin_password_message invalid message \n");
         return;
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status0 = base__is_current_client_request(sender_client_id);
-    if (status0 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -300,9 +290,9 @@ label_client_msg__process_change_admin_password_message_end:
  */
 static boole _client_msg_administration_internal__is_add_group_to_client_valid(cJSON *json_root)
 {
-    cJSON *json_client_id = 0;
-    cJSON *json_group_id = 0;
-    cJSON *json_message_object = 0;
+    cJSON *json_client_id = NULL_POINTER;
+    cJSON *json_group_id = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
@@ -346,29 +336,22 @@ static boole _client_msg_administration_internal__is_add_group_to_client_valid(c
  */
 void client_msg__administration__process_add_group_to_client_message(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status3 = FALSE;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
     boole powers_changed = FALSE;
-    boole status = FALSE;
     boole does_sender_have_permissions_to_add_group = FALSE;
-    client_t *client = 0;
-    client_t *client_to_add_group_to = 0;
-    cJSON *json_message_object = 0;
-    cJSON *json_client_id_to_add_group_to = 0;
-    cJSON *json_group_id = 0;
+    client_t *client = NULL_POINTER;
+    client_t *client_to_add_group_to = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_client_id_to_add_group_to = NULL_POINTER;
+    cJSON *json_group_id = NULL_POINTER;
 
-    status = _client_msg_administration_internal__is_add_group_to_client_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_administration_internal__is_add_group_to_client_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_add_group_to_client_message _client_msg_administration_internal__is_add_group_to_client_valid == FALSE \n");
         return;
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status3 = base__is_current_client_request(sender_client_id);
-    if (status3 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -425,17 +408,14 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
     }
 
     // check if the group itself that is about to be added exists
-    status = server_admin__is_group_id_real(json_group_id->valueint);
-
-    if (status == FALSE)
+    if (server_admin__is_group_id_real(json_group_id->valueint) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %d %s", "group id : ", json_group_id->valueint, "does not exist \n");
         goto label_client_msg__process_add_group_to_client_message_end;
     }
 
     // now check if the client already has the group id about to be added
-    status = server_admin__is_client_already_assigned_this_group_id(json_client_id_to_add_group_to->valueint, json_group_id->valueint);
-    if (status == TRUE)
+    if (server_admin__is_client_already_assigned_this_group_id(json_client_id_to_add_group_to->valueint, json_group_id->valueint) == TRUE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %d %s %d %s", "group id : ", json_group_id->valueint, " already is assigned to client ", json_client_id_to_add_group_to->valueint, "\n");
         goto label_client_msg__process_add_group_to_client_message_end;
@@ -476,14 +456,9 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
     // send admin status to other clients possibly, or not, do they have to know you are an admin
 label_client_msg__process_add_group_to_client_message_end:
     clib__unlock(&g_groups_global_rwlock_guard);
-    status0 = client_to_add_group_to != NULL_POINTER;
-    if (status0 == TRUE)
-    {
-        status1 = client_to_add_group_to->is_existing == TRUE;
-        status2 = client_to_add_group_to->is_authenticated == TRUE;
-        status0 = status1 == TRUE && status2 == TRUE;
-    }
-    if (status0 == TRUE)
+    if (client_to_add_group_to != NULL_POINTER &&
+        client_to_add_group_to->is_existing == TRUE &&
+        client_to_add_group_to->is_authenticated == TRUE)
     {
         if (powers_changed == TRUE)
         {
@@ -505,9 +480,9 @@ label_client_msg__process_add_group_to_client_message_end:
  */
 static boole _client_msg_administration_internal__is_remove_group_from_client_valid(cJSON *json_root)
 {
-    cJSON *json_client_id = 0;
-    cJSON *json_group_id = 0;
-    cJSON *json_message_object = 0;
+    cJSON *json_client_id = NULL_POINTER;
+    cJSON *json_group_id = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
@@ -550,30 +525,23 @@ static boole _client_msg_administration_internal__is_remove_group_from_client_va
  */
 void client_msg__administration__process_remove_group_from_client_message(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status3 = FALSE;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
     boole powers_changed = FALSE;
-    boole status = FALSE;
     boole does_sender_have_permissions_to_remove_group = FALSE;
-    client_t *client = 0;
-    client_t *client_to_remove_group_id_from = 0;
-    cJSON *json_message_object = 0;
-    cJSON *json_client_id_to_remove_group_id_from = 0;
-    cJSON *json_group_id = 0;
+    client_t *client = NULL_POINTER;
+    client_t *client_to_remove_group_id_from = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_client_id_to_remove_group_id_from = NULL_POINTER;
+    cJSON *json_group_id = NULL_POINTER;
     int64 group_id_index = 0;
 
-    status = _client_msg_administration_internal__is_remove_group_from_client_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_administration_internal__is_remove_group_from_client_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_remove_group_from_client_message _client_msg_administration_internal__is_remove_group_from_client_valid == FALSE \n");
         return;
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status3 = base__is_current_client_request(sender_client_id);
-    if (status3 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -631,17 +599,14 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
     }
 
     // check if the group itself that is about to be removed exists
-    status = server_admin__is_group_id_real(json_group_id->valueint);
-
-    if (status == FALSE)
+    if (server_admin__is_group_id_real(json_group_id->valueint) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %d %s", "group id : ", json_group_id->valueint, "does not exist \n");
         goto label_client_msg__process_remove_group_from_client_message_end;
     }
 
     // now check if the client actually has the group id about to be removed
-    status = server_admin__is_client_already_assigned_this_group_id(json_client_id_to_remove_group_id_from->valueint, json_group_id->valueint);
-    if (status == FALSE)
+    if (server_admin__is_client_already_assigned_this_group_id(json_client_id_to_remove_group_id_from->valueint, json_group_id->valueint) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %d %s %d %s", "group id : ", json_group_id->valueint, " already is not assigned to client ", json_client_id_to_remove_group_id_from->valueint, "\n");
         goto label_client_msg__process_remove_group_from_client_message_end;
@@ -681,14 +646,9 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
 
 label_client_msg__process_remove_group_from_client_message_end:
     clib__unlock(&g_groups_global_rwlock_guard);
-    status0 = client_to_remove_group_id_from != NULL_POINTER;
-    if (status0 == TRUE)
-    {
-        status1 = client_to_remove_group_id_from->is_existing == TRUE;
-        status2 = client_to_remove_group_id_from->is_authenticated == TRUE;
-        status0 = status1 == TRUE && status2 == TRUE;
-    }
-    if (status0 == TRUE)
+    if (client_to_remove_group_id_from != NULL_POINTER &&
+        client_to_remove_group_id_from->is_existing == TRUE &&
+        client_to_remove_group_id_from->is_authenticated == TRUE)
     {
         if (powers_changed == TRUE)
         {
@@ -710,8 +670,8 @@ label_client_msg__process_remove_group_from_client_message_end:
  */
 static boole _client_msg_administration_internal__is_process_server_settings_icon_upload_message_valid(cJSON *json_root)
 {
-    cJSON *json_message_object = 0;
-    cJSON *base64_icon_value = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *base64_icon_value = NULL_POINTER;
     uint64 base64_icon_length = 0;
     uint64 max_base64_length = 0;
 
@@ -748,16 +708,13 @@ static boole _client_msg_administration_internal__is_process_server_settings_ico
 void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 sender_client_id)
 {
     icon_t *icon = NULL_POINTER;
-    boole status0 = FALSE;
-    boole status = FALSE;
     boole does_sender_have_permissions_to_upload_icon = FALSE;
     uint64 icon_index = 0;
-    icon_t *found_icon = 0;
-    cJSON *base64_icon_value = 0;
-    cJSON *json_message_object = 0;
+    icon_t *found_icon = NULL_POINTER;
+    cJSON *base64_icon_value = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
 
-    status = _client_msg_administration_internal__is_process_server_settings_icon_upload_message_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_administration_internal__is_process_server_settings_icon_upload_message_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_administration_internal__is_process_server_settings_icon_upload_message_valid is not valid");
         return;
@@ -767,8 +724,7 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
     base64_icon_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "base64_icon_value");
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status0 = base__is_current_client_request(sender_client_id);
-    if (status0 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -791,8 +747,7 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
         goto label_client_msg__process_server_settings_icon_upload_end;
     }
 
-    status0 = base__is_server_ram_budget_reached();
-    if (status0 != FALSE)
+    if (base__is_server_ram_budget_reached() != FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "The server has reached its RAM budget. Try uploading again later.");
         goto label_client_msg__process_server_settings_icon_upload_end;
@@ -805,8 +760,7 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
         icon = &g_icons_array[icon_index];
         if (icon->is_existing == FALSE)
         {
-            status0 = server_admin__set_icon_base64(icon, base64_icon_value->valuestring);
-            if (status0 == FALSE)
+            if (server_admin__set_icon_base64(icon, base64_icon_value->valuestring) == FALSE)
             {
                 break; // out of memory: the slot stays free and nothing is announced
             }
@@ -844,9 +798,9 @@ label_client_msg__process_server_settings_icon_upload_end:
  */
 static boole _client_msg_administration_internal__is_process_server_settings_add_new_group_message_valid(cJSON *json_root)
 {
-    cJSON *json_message_object = 0;
-    cJSON *json_group_name = 0;
-    cJSON *json_linked_icon_id = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_group_name = NULL_POINTER;
+    cJSON *json_linked_icon_id = NULL_POINTER;
     uint64 new_group_name_length = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -896,23 +850,19 @@ static boole _client_msg_administration_internal__is_process_server_settings_add
  */
 void client_msg__administration__process_add_group(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status1 = FALSE;
-    boole status = FALSE;
-    boole status0 = FALSE;
     boole does_sender_have_permissions_to_add_new_group_to_server = FALSE;
-    cJSON *json_linked_icon_id = 0;
-    cJSON *json_group_name = 0;
+    cJSON *json_linked_icon_id = NULL_POINTER;
+    cJSON *json_group_name = NULL_POINTER;
     cJSON *json_group_type = NULL_POINTER;
     group_type_t group_type = GROUP_TYPE_NORMAL;
     group_permissions_t preset_permissions;
-    cJSON *json_message_object = 0;
-    group_t *newly_added_group = 0;
-    group_t *group_in_loop = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    group_t *newly_added_group = NULL_POINTER;
+    group_t *group_in_loop = NULL_POINTER;
     uint64 group_index = 0;
     boole is_same_group_name_found = FALSE;
 
-    status = _client_msg_administration_internal__is_process_server_settings_add_new_group_message_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_administration_internal__is_process_server_settings_add_new_group_message_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_add_group is not valid");
         return;
@@ -922,24 +872,15 @@ void client_msg__administration__process_add_group(cJSON *json_root, uint64 send
     json_linked_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "linked_icon_id");
     json_group_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_name");
     json_group_type = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_type");
-    status0 = json_group_type != NULL_POINTER;
-    if (status0 == TRUE)
-    {
-        status0 = cJSON_IsString(json_group_type) == FALSE;
-        if (status0 == FALSE)
-        {
-            status0 = permissions__parse_group_type(json_group_type->valuestring, &group_type) == FALSE;
-        }
-    }
-    if (status0 == TRUE)
+    if (json_group_type != NULL_POINTER &&
+        (cJSON_IsString(json_group_type) == FALSE || permissions__parse_group_type(json_group_type->valuestring, &group_type) == FALSE))
     {
         return;
     }
     permissions__set_preset(group_type, &preset_permissions);
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status1 = base__is_current_client_request(sender_client_id);
-    if (status1 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -957,9 +898,7 @@ void client_msg__administration__process_add_group(cJSON *json_root, uint64 send
     // range already checked in the validator); when none is given the group is created without an icon
     if (json_linked_icon_id != NULL_POINTER)
     {
-        status = g_icons_array[json_linked_icon_id->valueint].is_existing;
-
-        if (status == FALSE)
+        if (g_icons_array[json_linked_icon_id->valueint].is_existing == FALSE)
         {
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_add_group linked icon id does not exist \n");
             goto label_client_msg__process_server_settings_add_new_group_end;
@@ -982,9 +921,7 @@ void client_msg__administration__process_add_group(cJSON *json_root, uint64 send
         group_in_loop = &g_groups_array[group_index];
         if (group_in_loop->is_existing == TRUE)
         {
-            status = clib__is_string_equal(json_group_name->valuestring, group_in_loop->name);
-
-            if (status == TRUE)
+            if (clib__is_string_equal(json_group_name->valuestring, group_in_loop->name) == TRUE)
             {
                 is_same_group_name_found = TRUE;
                 break;
@@ -1055,12 +992,11 @@ label_client_msg__process_server_settings_add_new_group_end:
  */
 void client_msg__administration__process_delete_group(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
     boole powers_changed = FALSE;
-    client_t *sender_client = 0;
-    client_t *client = 0;
-    cJSON *json_message_object = 0;
-    cJSON *json_group_id = 0;
+    client_t *sender_client = NULL_POINTER;
+    client_t *client = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_group_id = NULL_POINTER;
     uint64 group_id = 0;
     uint64 i = 0;
     int64 group_id_index = 0;
@@ -1077,8 +1013,7 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
     group_id = (uint64)json_group_id->valueint;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -1094,8 +1029,7 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
 
     sender_client = &g_clients_array[sender_client_id];
 
-    status = permissions__can_delete_group(sender_client, group_id);
-    if (status == FALSE)
+    if (permissions__can_delete_group(sender_client, group_id) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
         goto label_client_msg__process_set_server_settings_delete_group_end;
@@ -1108,8 +1042,7 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
         goto label_client_msg__process_set_server_settings_delete_group_end;
     }
 
-    status = server_admin__is_group_id_real(group_id);
-    if (status == FALSE)
+    if (server_admin__is_group_id_real(group_id) == FALSE)
     {
         goto label_client_msg__process_set_server_settings_delete_group_end;
     }
@@ -1164,12 +1097,10 @@ label_client_msg__process_set_server_settings_delete_group_end:
  */
 void client_msg__administration__process_request_identity_list(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
-    client_t *sender_client = 0;
+    client_t *sender_client = NULL_POINTER;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -1177,8 +1108,7 @@ void client_msg__administration__process_request_identity_list(cJSON *json_root,
 
     sender_client = &g_clients_array[sender_client_id];
 
-    status = permissions__is_allowed(sender_client, PERMISSION_VIEW_GROUP_MEMBERS);
-    if (status == FALSE)
+    if (permissions__is_allowed(sender_client, PERMISSION_VIEW_GROUP_MEMBERS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
         goto label_client_msg__process_request_identity_list_end;
@@ -1205,14 +1135,10 @@ label_client_msg__process_request_identity_list_end:
  */
 void client_msg__administration__process_delete_identity(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    client_t *sender_client = 0;
-    client_t *holder = 0;
-    cJSON *json_message_object = 0;
-    cJSON *json_hash = 0;
+    client_t *sender_client = NULL_POINTER;
+    client_t *holder = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_hash = NULL_POINTER;
     char target_hash[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
     char client_hash[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
     uint64 groups_to_remove[MAX_GROUPS_FOR_SINGLE_CLIENT];
@@ -1236,8 +1162,7 @@ void client_msg__administration__process_delete_identity(cJSON *json_root, uint6
     clib__string_copy(target_hash, sizeof(target_hash), json_hash->valuestring);
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -1245,10 +1170,7 @@ void client_msg__administration__process_delete_identity(cJSON *json_root, uint6
 
     sender_client = &g_clients_array[sender_client_id];
 
-    status0 = sender_client->is_authenticated == FALSE;
-    status1 = sender_client->is_existing == FALSE;
-    status2 = sender_client->is_admin == FALSE;
-    if (status0 == TRUE || status1 == TRUE || status2 == TRUE)
+    if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE || sender_client->is_admin == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
         goto label_client_msg__process_delete_identity_end;
@@ -1346,11 +1268,6 @@ label_client_msg__process_delete_identity_end:
  */
 void client_msg__administration__process_modify_identity_group(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    boole status3 = FALSE;
     cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     cJSON *hash = cJSON_GetObjectItemCaseSensitive(message, "public_key_hash");
     cJSON *id = cJSON_GetObjectItemCaseSensitive(message, "group_id");
@@ -1367,39 +1284,21 @@ void client_msg__administration__process_modify_identity_group(cJSON *json_root,
     boole changed = FALSE;
 
     clib__memset(&stored_client, 0, sizeof(stored_client));
-    status0 = cJSON_IsString(hash) == FALSE;
-    if (status0 == FALSE)
-    {
-        status0 = hash->valuestring == NULL_POINTER;
-    }
-    if (status0 == FALSE)
-    {
-        status0 = clib__strlen(hash->valuestring) >= sizeof(client_hash);
-    }
-    if (status0 == FALSE)
-    {
-        status0 = cJSON_IsNumber(id) == FALSE;
-    }
-    if (status0 == FALSE)
-    {
-        status1 = id->valuedouble != (double)id->valueint;
-        status2 = id->valueint < 0;
-        status3 = id->valueint >= MAX_GROUPS;
-        status0 = status1 == TRUE || status2 == TRUE || status3 == TRUE;
-    }
-    if (status0 == FALSE)
-    {
-        status0 = cJSON_IsBool(json_add) == FALSE;
-    }
-    if (status0 == TRUE)
+    if (cJSON_IsString(hash) == FALSE ||
+        hash->valuestring == NULL_POINTER ||
+        clib__strlen(hash->valuestring) >= sizeof(client_hash) ||
+        cJSON_IsNumber(id) == FALSE ||
+        id->valuedouble != (double)id->valueint ||
+        id->valueint < 0 ||
+        id->valueint >= MAX_GROUPS ||
+        cJSON_IsBool(json_add) == FALSE)
     {
         return;
     }
     group_id = (uint64)id->valueint;
     add = (boole)cJSON_IsTrue(json_add);
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -1522,10 +1421,9 @@ label_modify_identity_group_end:
  */
 void client_msg__administration__process_delete_icon(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
-    client_t *sender_client = 0;
-    cJSON *json_message_object = 0;
-    cJSON *json_icon_id = 0;
+    client_t *sender_client = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_icon_id = NULL_POINTER;
     uint64 icon_id = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -1540,8 +1438,7 @@ void client_msg__administration__process_delete_icon(cJSON *json_root, uint64 se
     icon_id = (uint64)json_icon_id->valueint;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -1557,8 +1454,7 @@ void client_msg__administration__process_delete_icon(cJSON *json_root, uint64 se
 
     sender_client = &g_clients_array[sender_client_id];
 
-    status = permissions__is_allowed(sender_client, PERMISSION_DELETE_ICONS);
-    if (status == FALSE)
+    if (permissions__is_allowed(sender_client, PERMISSION_DELETE_ICONS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
         goto label_client_msg__process_set_server_settings_delete_icon_end;
@@ -1592,11 +1488,10 @@ label_client_msg__process_set_server_settings_delete_icon_end:
  */
 void client_msg__administration__process_set_group_icon(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
-    client_t *sender_client = 0;
-    cJSON *json_message_object = 0;
-    cJSON *json_group_id = 0;
-    cJSON *json_icon_id = 0;
+    client_t *sender_client = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_group_id = NULL_POINTER;
+    cJSON *json_icon_id = NULL_POINTER;
     uint64 group_id = 0;
     uint64 icon_id = 0;
     boole wants_icon = FALSE;
@@ -1626,8 +1521,7 @@ void client_msg__administration__process_set_group_icon(cJSON *json_root, uint64
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -1643,15 +1537,13 @@ void client_msg__administration__process_set_group_icon(cJSON *json_root, uint64
 
     sender_client = &g_clients_array[sender_client_id];
 
-    status = permissions__can_manage_group(sender_client, group_id, PERMISSION_EDIT_GROUPS);
-    if (status == FALSE)
+    if (permissions__can_manage_group(sender_client, group_id, PERMISSION_EDIT_GROUPS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
         goto label_client_msg__process_set_server_settings_set_group_icon_end;
     }
 
-    status = server_admin__is_group_id_real(group_id);
-    if (status == FALSE)
+    if (server_admin__is_group_id_real(group_id) == FALSE)
     {
         goto label_client_msg__process_set_server_settings_set_group_icon_end;
     }
@@ -1692,15 +1584,13 @@ label_client_msg__process_set_server_settings_set_group_icon_end:
  */
 void client_msg__administration__process_admin_log_request(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
     boole is_sender_admin = FALSE;
 
     (void)json_root; // the request has no fields to read
 
     // the reply is sent under the clients read lock, which also covers reading the sender's slot
     clib__read_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -1733,14 +1623,12 @@ void client_msg__administration__process_admin_log_request(cJSON *json_root, uin
  */
 void client_msg__administration__process_admin_log_clear(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
     boole is_sender_admin = FALSE;
 
     (void)json_root; // the request has no fields to read
 
     clib__read_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -1772,8 +1660,8 @@ void client_msg__administration__process_admin_log_clear(cJSON *json_root, uint6
  */
 static boole _client_msg_administration_internal__is_kick_ban_request_valid(cJSON *json_root)
 {
-    cJSON *json_message_object = 0;
-    cJSON *json_client_id = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_client_id = NULL_POINTER;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
@@ -1803,15 +1691,12 @@ static boole _client_msg_administration_internal__is_kick_ban_request_valid(cJSO
  */
 void client_msg__administration__process_kick_request(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status0 = FALSE;
-    boole status = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_client_id = 0;
-    client_t *admin = 0;
-    client_t *receiver = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_client_id = NULL_POINTER;
+    client_t *admin = NULL_POINTER;
+    client_t *receiver = NULL_POINTER;
 
-    status = _client_msg_administration_internal__is_kick_ban_request_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_administration_internal__is_kick_ban_request_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_kick_request is not valid");
         return;
@@ -1821,8 +1706,7 @@ void client_msg__administration__process_kick_request(cJSON *json_root, uint64 s
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status0 = base__is_current_client_request(sender_client_id);
-    if (status0 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -1843,8 +1727,7 @@ void client_msg__administration__process_kick_request(cJSON *json_root, uint64 s
         goto label_client_msg__process_kick_request_end;
     }
 
-    status0 = permissions__can_moderate(admin, receiver, PERMISSION_KICK);
-    if (status0 == FALSE)
+    if (permissions__can_moderate(admin, receiver, PERMISSION_KICK) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(admin, NULL_POINTER);
         goto label_client_msg__process_kick_request_end;
@@ -1868,18 +1751,15 @@ label_client_msg__process_kick_request_end:
  */
 void client_msg__administration__process_ban_request(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status0 = FALSE;
-    boole status = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_client_id = 0;
-    client_t *admin = 0;
-    client_t *receiver = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_client_id = NULL_POINTER;
+    client_t *admin = NULL_POINTER;
+    client_t *receiver = NULL_POINTER;
     boole recorded = FALSE;
     boole saved = FALSE;
     int64 added_index = -1;
 
-    status = _client_msg_administration_internal__is_kick_ban_request_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_administration_internal__is_kick_ban_request_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_ban_request is not valid");
         return;
@@ -1889,8 +1769,7 @@ void client_msg__administration__process_ban_request(cJSON *json_root, uint64 se
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status0 = base__is_current_client_request(sender_client_id);
-    if (status0 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -1911,8 +1790,7 @@ void client_msg__administration__process_ban_request(cJSON *json_root, uint64 se
         goto label_client_msg__process_ban_request_end;
     }
 
-    status0 = permissions__can_moderate(admin, receiver, PERMISSION_BAN);
-    if (status0 == FALSE)
+    if (permissions__can_moderate(admin, receiver, PERMISSION_BAN) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(admin, NULL_POINTER);
         goto label_client_msg__process_ban_request_end;
@@ -1959,9 +1837,8 @@ label_client_msg__process_ban_request_end:
  */
 void client_msg__administration__process_remove_ban_request(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_ip = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_ip = NULL_POINTER;
     boole is_admin = FALSE;
     boole removed = FALSE;
     boole saved = FALSE;
@@ -1976,8 +1853,7 @@ void client_msg__administration__process_remove_ban_request(cJSON *json_root, ui
     }
 
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -2041,15 +1917,12 @@ void client_msg__administration__process_remove_ban_request(cJSON *json_root, ui
  */
 void client_msg__administration__process_get_client_info_request(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status0 = FALSE;
-    boole status = FALSE;
-    cJSON *json_message_object = 0;
-    cJSON *json_client_id = 0;
-    client_t *receiver = 0;
-    client_t *target = 0;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_client_id = NULL_POINTER;
+    client_t *receiver = NULL_POINTER;
+    client_t *target = NULL_POINTER;
 
-    status = _client_msg_administration_internal__is_kick_ban_request_valid(json_root);
-    if (status == FALSE)
+    if (_client_msg_administration_internal__is_kick_ban_request_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_get_client_info_request is not valid");
         return;
@@ -2059,8 +1932,7 @@ void client_msg__administration__process_get_client_info_request(cJSON *json_roo
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
 
     clib__read_lock(&g_clients_global_rwlock_guard);
-    status0 = base__is_current_client_request(sender_client_id);
-    if (status0 == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -2093,7 +1965,6 @@ label_client_msg__process_get_client_info_request_end:
  */
 void client_msg__administration__process_set_group_permissions(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
     boole status0 = FALSE;
     boole powers_changed = FALSE;
     cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -2102,18 +1973,10 @@ void client_msg__administration__process_set_group_permissions(cJSON *json_root,
     client_t *sender = NULL_POINTER;
     uint64 group_id = 0;
 
-    status0 = sender_client_id >= g_server_settings.max_client_count;
+    status0 = (sender_client_id >= g_server_settings.max_client_count) || (cJSON_IsNumber(id) == FALSE);
     if (status0 == FALSE)
     {
-        status0 = cJSON_IsNumber(id) == FALSE;
-    }
-    if (status0 == FALSE)
-    {
-        status0 = id->valuedouble >= ADMIN_GROUP_ID;
-        if (status0 == TRUE)
-        {
-            status0 = id->valuedouble < MAX_GROUPS;
-        }
+        status0 = (id->valuedouble >= ADMIN_GROUP_ID) && (id->valuedouble < MAX_GROUPS);
         status0 = status0 == FALSE;
     }
     if (status0 == FALSE)
@@ -2130,8 +1993,7 @@ void client_msg__administration__process_set_group_permissions(cJSON *json_root,
     }
     group_id = (uint64)id->valueint;
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -2173,54 +2035,30 @@ void client_msg__administration__process_set_group_permissions(cJSON *json_root,
  */
 void client_msg__administration__process_rename_group(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-    boole status3 = FALSE;
     cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     cJSON *id = cJSON_GetObjectItemCaseSensitive(message, "group_id");
     cJSON *name = cJSON_GetObjectItemCaseSensitive(message, "group_name");
     uint64 i = 0;
 
-    status0 = cJSON_IsNumber(id) == FALSE;
-    if (status0 == FALSE)
-    {
-        status1 = id->valuedouble != (double)id->valueint;
-        status2 = id->valueint < 0;
-        status3 = id->valueint >= MAX_GROUPS;
-        status0 = status1 == TRUE || status2 == TRUE || status3 == TRUE;
-    }
-    if (status0 == FALSE)
-    {
-        status0 = cJSON_IsString(name) == FALSE;
-    }
-    if (status0 == FALSE)
-    {
-        status0 = name->valuestring == NULL_POINTER;
-    }
-    if (status0 == FALSE)
-    {
-        status0 = name->valuestring[0] == 0;
-    }
-    if (status0 == FALSE)
-    {
-        status0 = clib__strlen(name->valuestring) >= GROUP_MAX_NAME_LENGTH;
-    }
-    if (status0 == TRUE)
+    if (cJSON_IsNumber(id) == FALSE ||
+        id->valuedouble != (double)id->valueint ||
+        id->valueint < 0 ||
+        id->valueint >= MAX_GROUPS ||
+        cJSON_IsString(name) == FALSE ||
+        name->valuestring == NULL_POINTER ||
+        name->valuestring[0] == 0 ||
+        clib__strlen(name->valuestring) >= GROUP_MAX_NAME_LENGTH)
     {
         return;
     }
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
     clib__write_lock(&g_groups_global_rwlock_guard);
-    status = permissions__can_manage_group(&g_clients_array[sender_client_id], (uint64)id->valueint, PERMISSION_EDIT_GROUPS);
-    if (status == FALSE)
+    if (permissions__can_manage_group(&g_clients_array[sender_client_id], (uint64)id->valueint, PERMISSION_EDIT_GROUPS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
         goto label_rename_group_end;
@@ -2247,14 +2085,12 @@ label_rename_group_end:
  */
 void client_msg__administration__process_save_groups(cJSON *json_root, uint64 sender_client_id)
 {
-    boole status = FALSE;
     client_t *sender = NULL_POINTER;
     boole allowed = FALSE;
 
     (void)json_root;
     clib__write_lock(&g_clients_global_rwlock_guard);
-    status = base__is_current_client_request(sender_client_id);
-    if (status == FALSE)
+    if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;

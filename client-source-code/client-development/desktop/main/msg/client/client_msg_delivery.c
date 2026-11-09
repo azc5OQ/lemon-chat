@@ -14,8 +14,8 @@
 boole client_msg__delivery__try_send(desktop_session_t *session, cJSON *message)
 {
     cJSON *root = cJSON_CreateObject();
-    char *json = NULL;
-    char *wire = NULL;
+    char *json = NULL_POINTER;
+    char *wire = NULL_POINTER;
     boole sent = FALSE;
     if (root && message && cJSON_AddItemToObject(root, "message", message))
     {
@@ -59,8 +59,8 @@ cJSON *client_msg__delivery__new_message(const char *type)
 boole client_msg__delivery__send(desktop_session_t *session, cJSON *message, boole complete)
 {
     cJSON *root = cJSON_CreateObject();
-    char *json = NULL;
-    char *wire = NULL;
+    char *json = NULL_POINTER;
+    char *wire = NULL_POINTER;
     uint64 deadline = desktop_system__milliseconds() + 2000;
     boole sent = 0;
 

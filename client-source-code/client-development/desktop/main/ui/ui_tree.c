@@ -45,7 +45,7 @@ static void _ui_tree_internal__unread(gui_event_t *event);
  */
 static gui_node_t *_ui_tree_internal__node(gui_node_t *parent, gui_node_type_e type, const char *klass, const char *text)
 {
-    gui_node_t *node = NULL;
+    gui_node_t *node = NULL_POINTER;
     if (!parent)
     {
         return NULL;
@@ -114,10 +114,10 @@ static void _ui_tree_internal__badge(gui_rect_t rect, gui_color_t color, boole c
 static void _ui_tree_internal__draw(gui_node_t *node, float scale)
 {
     gui_color_t white = { 1, 1, 1, 1 };
-    gui_font_t *font = NULL;
+    gui_font_t *font = NULL_POINTER;
     gui_rect_t rect = node->bounds;
     int64 id = (int64)node->value;
-    void *texture = NULL;
+    void *texture = NULL_POINTER;
     float length = 0;
     float offset = 0;
     float travel = 0;
@@ -287,7 +287,7 @@ void *desktop_ui_tree__prepare_icon(int64 id)
  */
 static void _ui_tree_internal__icon(gui_node_t *parent, int64 id, const char *name)
 {
-    gui_node_t *node = NULL;
+    gui_node_t *node = NULL_POINTER;
     if (id == -1)
     {
         return;
@@ -311,9 +311,9 @@ static void _ui_tree_internal__icon(gui_node_t *parent, int64 id, const char *na
 void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view, int64 member, int64 depth)
 {
     const desktop_client_t *client = &view->clients[member];
-    const desktop_tree_group_t *group = NULL;
-    gui_node_t *node = NULL;
-    gui_node_t *label = NULL;
+    const desktop_tree_group_t *group = NULL_POINTER;
+    gui_node_t *node = NULL_POINTER;
+    gui_node_t *label = NULL_POINTER;
     char name[128] = { 0 };
     char summary[224] = { 0 };
     char extra[24] = { 0 };
@@ -462,7 +462,7 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
  */
 void desktop_ui_tree__channel(gui_node_t *row, const desktop_channel_t *channel, int64 depth)
 {
-    gui_node_t *node = NULL;
+    gui_node_t *node = NULL_POINTER;
     char name[160] = { 0 };
     node = _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-spacer", "");
     if (node)
@@ -488,8 +488,8 @@ void desktop_ui_tree__channel(gui_node_t *row, const desktop_channel_t *channel,
  */
 static gui_node_t *_ui_tree_internal__hover(gui_node_t *node)
 {
-    gui_node_t *child = NULL;
-    gui_node_t *found = NULL;
+    gui_node_t *child = NULL_POINTER;
+    gui_node_t *found = NULL_POINTER;
     if (!node)
     {
         return NULL;
@@ -525,9 +525,9 @@ static gui_node_t *_ui_tree_internal__hover(gui_node_t *node)
 boole desktop_ui_tree__tick(boole visible)
 {
     uint64 now = desktop_system__milliseconds();
-    gui_node_t *caption = NULL;
-    gui_node_t *hovered = NULL;
-    const char *text = NULL;
+    gui_node_t *caption = NULL_POINTER;
+    gui_node_t *hovered = NULL_POINTER;
+    const char *text = NULL_POINTER;
     boole changed = FALSE;
     if (!visible || now - g_tree_frame < 33)
     {

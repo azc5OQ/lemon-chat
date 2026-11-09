@@ -353,7 +353,7 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
  */
 static httpclient_error_t _httpclient_internal__encrypt(https_connection_t *connection, const void *data, uint64 size)
 {
-    ubyte *record = NULL;
+    ubyte *record = NULL_POINTER;
     SecBuffer buffers[4];
     SecBufferDesc message;
     int64 status = SEC_E_OK;
@@ -547,8 +547,8 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t *conn
 {
     uint64 now = 0;
     ADDRINFOA hints;
-    ADDRINFOA *addresses = NULL;
-    ADDRINFOA *current = NULL;
+    ADDRINFOA *addresses = NULL_POINTER;
+    ADDRINFOA *current = NULL_POINTER;
     ULONG nonblocking = 1; // ioctlsocket requires ULONG*.
     int native = 0; // getsockopt writes an int.
     int64 result = 0;

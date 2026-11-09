@@ -197,9 +197,9 @@ static char *_server_msg_connection_internal__encode_client_list(void *context, 
     outgoing_client_list_t *outgoing = context;
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
-    cJSON *json_client_array = 0;
-    cJSON *json_group_ids_array = 0;
-    listed_client_t *client_in_loop = 0;
+    cJSON *json_client_array = NULL_POINTER;
+    cJSON *json_group_ids_array = NULL_POINTER;
+    listed_client_t *client_in_loop = NULL_POINTER;
     cJSON *single_client = NULL_POINTER;
     cJSON *music_keys = NULL_POINTER;
     char key_hex[65] = { 0 };
@@ -423,9 +423,9 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
     char identity_hash[IDENTITY_HASH_MAX_LENGTH] = { 0 };
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
-    cJSON *json_group_ids_array = 0;
+    cJSON *json_group_ids_array = NULL_POINTER;
     uint64 x = 0;
-    client_t *client_in_loop = 0;
+    client_t *client_in_loop = NULL_POINTER;
     char *texts[4] = { 0 };
     uint64 variant = 0;
     int64 audio_state_to_send = 0;

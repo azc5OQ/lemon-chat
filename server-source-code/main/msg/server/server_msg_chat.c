@@ -212,7 +212,7 @@ void server_msg__chat__send_typing_indicator(client_t *subject, char *receiver_t
 {
     uint64 i = 0;
     boole is_direct_message = FALSE;
-    client_t *client_in_loop = 0;
+    client_t *client_in_loop = NULL_POINTER;
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 

@@ -456,7 +456,7 @@ void util__sleep_for_milliseconds(uint64 milliseconds)
  */
 void util__get_executable_directory(char *out_directory, uint64 out_directory_size)
 {
-    const char *last_slash = 0;
+    const char *last_slash = NULL_POINTER;
 #if defined(__APPLE__)
     uint image_path_size = 0; // _NSGetExecutablePath takes a pointer to an unsigned 32-bit capacity.
     char image_path[4096] = { 0 }; // raw (possibly relative/symlinked) path from the loader
@@ -521,7 +521,7 @@ void util__get_executable_directory(char *out_directory, uint64 out_directory_si
  */
 void util__get_executable_directory(char *out_directory, uint64 out_directory_size)
 {
-    char *last_separator = 0;
+    char *last_separator = NULL_POINTER;
     uint64 length = 0;
     uint64 capacity = 0;
 
@@ -601,13 +601,11 @@ boole util__fill_secure_random_bytes(ubyte *out_buffer, uint64 length)
  */
 boole util__fill_block_of_data_with_ascii_characters(char *block, uint64 length)
 {
-    boole status = FALSE;
     uint64 lowerbound = 33;
     uint64 upperbound = 126;
     uint64 i = 0;
 
-    status = util__fill_secure_random_bytes((ubyte *)block, length);
-    if (status == FALSE)
+    if (util__fill_secure_random_bytes((ubyte *)block, length) == FALSE)
     {
         return FALSE;
     }

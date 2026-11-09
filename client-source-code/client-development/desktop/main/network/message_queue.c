@@ -19,7 +19,7 @@ boole desktop_message_queue__has_space(const desktop_message_queue_t *queue, uin
  */
 boole desktop_message_queue__push(desktop_message_queue_t *queue, const char *data, uint64 size, boole binary)
 {
-    desktop_message_t *message = NULL;
+    desktop_message_t *message = NULL_POINTER;
 
     if (!data || !desktop_message_queue__has_space(queue, size))
     {

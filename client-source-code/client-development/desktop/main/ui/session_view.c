@@ -260,8 +260,8 @@ static void _session_view_internal__text(gui_node_t *parent, const char *text, c
 static void _session_view_internal__tabs(const desktop_session_view_t *view)
 {
     gui_node_t *parent = scene__find_by_id("conversation-tabs");
-    gui_node_t *button = NULL;
-    gui_node_t *tab = NULL;
+    gui_node_t *button = NULL_POINTER;
+    gui_node_t *tab = NULL_POINTER;
     int64 index = 0;
     int64 member = 0;
     uint64 unread = 0;
@@ -337,8 +337,8 @@ static void _session_view_internal__tabs(const desktop_session_view_t *view)
  */
 static void _session_view_internal__clear(gui_node_t *parent)
 {
-    gui_node_t *child = NULL;
-    gui_node_t *next = NULL;
+    gui_node_t *child = NULL_POINTER;
+    gui_node_t *next = NULL_POINTER;
     if (!parent)
     {
         return;
@@ -367,7 +367,7 @@ static void _session_view_internal__clear(gui_node_t *parent)
  */
 static gui_node_t *_session_view_internal__node(gui_node_t *parent, gui_node_type_e type, const char *klass, const char *text)
 {
-    gui_node_t *node = NULL;
+    gui_node_t *node = NULL_POINTER;
     if (!parent)
     {
         return NULL;
@@ -394,19 +394,19 @@ static gui_node_t *_session_view_internal__node(gui_node_t *parent, gui_node_typ
 static void _session_view_internal__tree(const desktop_session_view_t *view)
 {
     gui_node_t *container = scene__find_by_id("member-list");
-    gui_node_t *button = NULL;
-    gui_node_t *row = NULL;
-    const desktop_channel_t *channel = NULL;
-    const desktop_client_t *client = NULL;
+    gui_node_t *button = NULL_POINTER;
+    gui_node_t *row = NULL_POINTER;
+    const desktop_channel_t *channel = NULL_POINTER;
+    const desktop_client_t *client = NULL_POINTER;
     int64 index = 0;
     int64 member = 0;
     int64 parent_index = 0;
     int64 depth = 0;
     int64 pass = 0;
     boole idle_heading = 0;
-    ubyte *visited = NULL;
+    ubyte *visited = NULL_POINTER;
     int64 parent = -1;
-    const char *klass = NULL;
+    const char *klass = NULL_POINTER;
 
     desktop_ui_tree__begin(view);
     _session_view_internal__clear(container);
@@ -534,10 +534,10 @@ static void _session_view_internal__tree(const desktop_session_view_t *view)
 static void _session_view_internal__messages(const desktop_session_view_t *view)
 {
     gui_node_t *container = scene__find_by_id("chat-history");
-    gui_node_t *row = NULL;
-    gui_node_t *heading = NULL;
-    gui_node_t *edit = NULL;
-    const desktop_chat_t *chat = NULL;
+    gui_node_t *row = NULL_POINTER;
+    gui_node_t *heading = NULL_POINTER;
+    gui_node_t *edit = NULL_POINTER;
+    const desktop_chat_t *chat = NULL_POINTER;
     int64 index = 0;
     char sender[160] = { 0 };
     uint64 serial = 0;

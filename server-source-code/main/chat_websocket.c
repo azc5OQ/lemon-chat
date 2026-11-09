@@ -81,7 +81,6 @@ static void _chat_websocket_internal__onopen(ws_cli_conn_t *client)
     uint64 acquired_ms = 0;
     char *ip_address = NULL_POINTER;
     int64 index = 0;
-    boole status = FALSE;
 
     if (ws_media_purpose(client) == WS_MEDIA_PURPOSE_AUDIO)
     {
@@ -122,8 +121,7 @@ static void _chat_websocket_internal__onopen(ws_cli_conn_t *client)
     server_logs__socket_opened(ip_address);
 
     // drop banned ips right away, before any client slot is set up
-    status = server_admin__is_ip_banned(ip_address);
-    if (status == TRUE)
+    if (server_admin__is_ip_banned(ip_address) == TRUE)
     {
         DBG_AUTHENTICATION log_info("%s", "ip address is banned, closing socket");
         server_logs__join_refused("banned ip", ip_address);
@@ -135,8 +133,7 @@ static void _chat_websocket_internal__onopen(ws_cli_conn_t *client)
     // client's own earlier session must not block it), so only a second unfinished handshake is refused this early
     if (g_server_settings.is_same_ip_address_allowed == FALSE)
     {
-        status = client_session__is_there_an_unfinished_handshake_from_same_ip_address(ip_address);
-        if (status == TRUE)
+        if (client_session__is_there_an_unfinished_handshake_from_same_ip_address(ip_address) == TRUE)
         {
             DBG_AUTHENTICATION log_info("%s", "another handshake from this ip is still in progress, closing socket");
             server_logs__join_refused("same ip already connected", ip_address);
@@ -258,15 +255,12 @@ static void _chat_websocket_internal__onmessage(ws_cli_conn_t *websocket, ubyte 
 {
     boole is_authenticated = FALSE;
     boole is_existing = FALSE;
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
     int64 client_index = 0;
     uint64 started_ms = 0;
     uint64 found_ms = 0;
     uint64 decrypted_ms = 0;
     uint64 finished_ms = 0;
-    char *decrypted_metadata_cstring = 0;
+    char *decrypted_metadata_cstring = NULL_POINTER;
     client_request_context_t previous_request;
 
     if (ws_media_purpose(websocket) == WS_MEDIA_PURPOSE_AUDIO)
@@ -294,18 +288,21 @@ static void _chat_websocket_internal__onmessage(ws_cli_conn_t *websocket, ubyte 
 
     DBG_ONMESSAGE log_info("%s %llu %s", "_chat_websocket_internal__onmessage received websocket data size is : ", size, "\n");
 
+    // Reject oversized messages before allocating a decryption buffer.
     if (size > g_server_settings.websocket_message_max_length)
     {
         ws_close_client(websocket);
         return;
     }
 
+    // Reject empty messages; they cannot contain an encrypted request.
     if (size == 0)
     {
         ws_close_client(websocket);
         return;
     }
 
+    // Reserve space for the decrypted request.
     decrypted_metadata_cstring = (char *)(ubyte *)memorymanager__allocate(size, MEMALLOC_TYPE_DECRYPT);
 
     if (decrypted_metadata_cstring == NULL_POINTER)
@@ -320,13 +317,9 @@ static void _chat_websocket_internal__onmessage(ws_cli_conn_t *websocket, ubyte 
 
     // The index lookup and decryption are separate lock scopes. A disconnect or
     // session takeover between them must never select the replacement's keys.
-    status0 = (boole)(client_index >= 0 && (uint64)client_index < (uint64)g_server_settings.max_client_count);
-    if (status0 == TRUE)
-    {
-        status1 = g_clients_array[client_index].is_existing;
-        status2 = (boole)(g_clients_array[client_index].p_ws_connection == websocket);
-    }
-    if (status0 == FALSE || status1 == FALSE || status2 == FALSE)
+    if (client_index < 0 || (uint64)client_index >= (uint64)g_server_settings.max_client_count ||
+        g_clients_array[client_index].is_existing == FALSE ||
+        g_clients_array[client_index].p_ws_connection != websocket)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         memorymanager__free((nuint)decrypted_metadata_cstring);
@@ -334,8 +327,7 @@ static void _chat_websocket_internal__onmessage(ws_cli_conn_t *websocket, ubyte 
     }
     is_authenticated = g_clients_array[client_index].is_authenticated;
     is_existing = g_clients_array[client_index].is_existing;
-    status0 = crypto_metadata__decrypt_from_client(&g_clients_array[client_index], (const char *)base64_to_process_and_decrypt, (ubyte *)decrypted_metadata_cstring, size);
-    if (status0 == FALSE)
+    if (crypto_metadata__decrypt_from_client(&g_clients_array[client_index], (const char *)base64_to_process_and_decrypt, (ubyte *)decrypted_metadata_cstring, size) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         memorymanager__free((nuint)decrypted_metadata_cstring);
@@ -469,10 +461,9 @@ void *chat_websocket__check_connections_thread(void *argument)
     uint64 upload_now = 0;
     uint64 timestamp_now = 0;
     uint64 i = 0;
-    int64 *marked_client_ids_for_disconnect = 0;
+    int64 *marked_client_ids_for_disconnect = NULL_POINTER;
     int64 number_of_marked_clients = 0;
     boole send_websocket_ping = FALSE;
-    boole status = FALSE;
     client_t *client = NULL_POINTER;
 
     (void)argument;
@@ -508,8 +499,7 @@ void *chat_websocket__check_connections_thread(void *argument)
 
         for (i = 0; i < g_server_settings.max_client_count; i++)
         {
-            status = _chat_websocket_internal__has_connection_timed_out(&g_clients_array[i], timestamp_now);
-            if (status == TRUE)
+            if (_chat_websocket_internal__has_connection_timed_out(&g_clients_array[i], timestamp_now) == TRUE)
             {
                 marked_client_ids_for_disconnect[number_of_marked_clients] = i;
                 number_of_marked_clients++;
@@ -529,8 +519,7 @@ void *chat_websocket__check_connections_thread(void *argument)
 
                 // A message, new login, or settings change may have happened while
                 // the read lock was released. Only close a connection still overdue.
-                status = _chat_websocket_internal__has_connection_timed_out(client, util__get_timestamp_ms());
-                if (status == FALSE)
+                if (_chat_websocket_internal__has_connection_timed_out(client, util__get_timestamp_ms()) == FALSE)
                 {
                     continue;
                 }

@@ -69,7 +69,7 @@ static void _ui_effects_internal__draw(gui_node_t *node, float scale)
  */
 void desktop_ui_effects__register(void)
 {
-    const widget_vtable_t *original = NULL;
+    const widget_vtable_t *original = NULL_POINTER;
     int64 index = 0;
     if (g_effect_registered)
     {

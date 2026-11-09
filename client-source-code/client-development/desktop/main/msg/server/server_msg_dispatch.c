@@ -21,7 +21,7 @@ void server_msg__channel__read_key_policy(desktop_session_t *session, const cJSO
     int64 *thresholds[2] = { &session->key_reuse_join_min_clients, &session->key_reuse_leave_min_clients };
     boole previous_flags[3] = { session->key_reuse_enabled, session->key_reuse_on_join, session->key_reuse_on_leave };
     int64 previous_limits[2] = { session->key_reuse_join_min_clients, session->key_reuse_leave_min_clients };
-    const cJSON *value = NULL;
+    const cJSON *value = NULL_POINTER;
     int64 number = 0;
     int64 index = 0;
     boole changed = FALSE;
@@ -76,8 +76,8 @@ void server_msg__channel__read_key_policy(desktop_session_t *session, const cJSO
 void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
 {
     const char *type = server_msg__read_string(message, "type");
-    const cJSON *items = NULL;
-    const cJSON *item = NULL;
+    const cJSON *items = NULL_POINTER;
+    const cJSON *item = NULL_POINTER;
     int64 id = server_msg__read_number(message, "client_id");
     int64 channel = server_msg__read_number(message, "channel_id");
     int64 slot = desktop_session__client(session, id);
@@ -87,8 +87,8 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     int64 generation = -1;
     desktop_client_t previous = { 0 };
     boole had_client = slot >= 0;
-    char *plaintext = NULL;
-    char *encrypted_body = NULL;
+    char *plaintext = NULL_POINTER;
+    char *encrypted_body = NULL_POINTER;
     boole valid = 1;
     boole client_list = clib__strcmp(type, "client_list") == 0;
 

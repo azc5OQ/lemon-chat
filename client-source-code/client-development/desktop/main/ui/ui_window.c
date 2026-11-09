@@ -243,7 +243,7 @@ static void _ui_window_internal__on_close_conversation(gui_event_t *event)
  */
 static void _ui_window_internal__panel(const char *id, boole visible)
 {
-    gui_node_t *node = NULL;
+    gui_node_t *node = NULL_POINTER;
 
     node = scene__find_by_id((char *)id);
     if (node)
@@ -320,7 +320,7 @@ static void _ui_window_internal__on_close_settings(gui_event_t *event)
  */
 static void _ui_window_internal__set_text(const char *id, const char *text)
 {
-    gui_node_t *node = NULL;
+    gui_node_t *node = NULL_POINTER;
 
     node = scene__find_by_id((char *)id);
     if (node && clib__strcmp(node->text, text) != 0)
@@ -339,7 +339,7 @@ static void _ui_window_internal__set_text(const char *id, const char *text)
  */
 static void _ui_window_internal__on_connect(gui_event_t *event)
 {
-    gui_node_t *username = NULL;
+    gui_node_t *username = NULL_POINTER;
     desktop_connection_t connection = { 0 };
     desktop_settings_t settings = { 0 };
     boole connect_now = !event || !event->sender || clib__strcmp(event->sender->id, "connection-save") != 0;
@@ -489,7 +489,7 @@ static void _ui_window_internal__on_join_channel(gui_event_t *event)
  */
 static void _ui_window_internal__join_channel(int64 id)
 {
-    const desktop_channel_t *channel = NULL;
+    const desktop_channel_t *channel = NULL_POINTER;
     desktop_action_t action = { 0 };
     int64 index = 0;
     for (index = 0; index < g_view->channel_count; index++)
@@ -578,8 +578,8 @@ static void _ui_window_internal__on_overlay_preview(gui_event_t *event)
  */
 static void _ui_window_internal__on_save_overlay(gui_event_t *event)
 {
-    gui_node_t *enabled = NULL;
-    gui_node_t *game = NULL;
+    gui_node_t *enabled = NULL_POINTER;
+    gui_node_t *game = NULL_POINTER;
     desktop_settings_t settings = { 0 };
 
     (void)event;
@@ -701,7 +701,7 @@ boole desktop_ui_window__initialize(desktop_session_t *session, desktop_session_
  */
 void desktop_ui_window__apply_settings(void)
 {
-    gui_node_t *enabled = NULL;
+    gui_node_t *enabled = NULL_POINTER;
 
     if (g_settings->theme[0] && !desktop_ui_theme__load(g_settings->theme))
     {

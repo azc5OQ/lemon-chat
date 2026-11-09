@@ -88,8 +88,8 @@ ubyte *desktop_attachment_image__decode_bounded(const ubyte *bytes, uint64 size,
     int decoded_w = 0;
     int decoded_h = 0;
     boole webp = mime && clib__strcmp(mime, "image/webp") == 0;
-    ubyte *decoded = NULL;
-    ubyte *preview = NULL;
+    ubyte *decoded = NULL_POINTER;
+    ubyte *preview = NULL_POINTER;
     int64 target_w = 0;
     int64 target_h = 0;
     int64 x = 0;

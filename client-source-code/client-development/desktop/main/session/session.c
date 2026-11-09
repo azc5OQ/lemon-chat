@@ -137,10 +137,10 @@ static void _session_internal__worker(void *context)
     desktop_session_t *session = context;
     desktop_transport_status_t status = { 0 };
     desktop_message_t frame = { 0 };
-    cJSON *root = NULL;
-    const cJSON *incoming = NULL;
-    const char *type = NULL;
-    char *plaintext = NULL;
+    cJSON *root = NULL_POINTER;
+    const cJSON *incoming = NULL_POINTER;
+    const char *type = NULL_POINTER;
+    char *plaintext = NULL_POINTER;
     char mix[DESKTOP_DH_TEXT_CAPACITY] = { 0 };
     uint64 deadline = 0;
     uint64 keepalive = 0;
@@ -714,8 +714,8 @@ void desktop_session__overlay(const desktop_session_view_t *view, desktop_overla
 {
     int64 index = 0;
     boole speaking = 0;
-    const desktop_client_t *client = NULL;
-    desktop_overlay_member_t *member = NULL;
+    const desktop_client_t *client = NULL_POINTER;
+    desktop_overlay_member_t *member = NULL_POINTER;
     desktop_overlay_data__clear(overlay);
     if (!view->connected || view->idle || view->channel < 0)
     {

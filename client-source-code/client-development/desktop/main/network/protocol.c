@@ -13,8 +13,8 @@
  */
 struct cJSON *desktop_protocol__parse_json(const char *bytes, uint64 size, uint64 limit, uint64 maximum_depth)
 {
-    cJSON *root = NULL;
-    const char *end = NULL;
+    cJSON *root = NULL_POINTER;
+    const char *end = NULL_POINTER;
     uint64 index = 0;
     uint64 depth = 0;
     boole quoted = FALSE;
@@ -104,9 +104,9 @@ struct cJSON *desktop_protocol__parse_json(const char *bytes, uint64 size, uint6
 boole desktop_protocol__message_type(const char *bytes, uint64 size, char *type, uint64 capacity)
 {
     boole valid = 0;
-    cJSON *root = NULL;
-    cJSON *message = NULL;
-    cJSON *field = NULL;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *field = NULL_POINTER;
 
     valid = 0;
     if (type && capacity)

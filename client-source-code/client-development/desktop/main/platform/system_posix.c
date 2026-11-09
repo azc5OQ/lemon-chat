@@ -55,7 +55,7 @@ boole desktop_system__asset_directory(void)
     char path[4096] = { 0 };
     uint64 length = 0;
 #ifdef __APPLE__
-    char *resolved = NULL;
+    char *resolved = NULL_POINTER;
     uint capacity = sizeof(path);
 #else
     ssize_t received = 0;
@@ -109,7 +109,7 @@ boole desktop_system__asset_directory(void)
  */
 boole desktop_system__font_path(char *path, uint64 capacity, boole bold)
 {
-    const char *candidate = NULL;
+    const char *candidate = NULL_POINTER;
 #ifdef __APPLE__
     candidate = bold ? "/System/Library/Fonts/Supplemental/Arial Bold.ttf" : "/System/Library/Fonts/Supplemental/Arial.ttf";
 #else

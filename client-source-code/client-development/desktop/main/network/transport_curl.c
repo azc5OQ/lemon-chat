@@ -41,7 +41,7 @@ static boole _transport_internal__send(desktop_transport_t *transport, const cha
  */
 static void _transport_internal__initialize(void)
 {
-    const curl_version_info_data *information = NULL;
+    const curl_version_info_data *information = NULL_POINTER;
     const char *const *protocol = NULL;
     boole ws = 0;
     boole wss = 0;
@@ -118,16 +118,16 @@ static int _transport_internal__progress(void *context, curl_off_t total_down, c
 static void *_transport_internal__worker(void *context)
 {
     desktop_transport_t *transport = context;
-    CURL *connection = NULL;
+    CURL *connection = NULL_POINTER;
     CURLcode result = CURLE_OK;
     CURLcode received_result = CURLE_OK;
     curl_socket_t socket = CURL_SOCKET_BAD;
-    const struct curl_ws_frame *frame = NULL;
+    const struct curl_ws_frame *frame = NULL_POINTER;
     struct pollfd poll_socket = { 0 };
     char chunk[16384] = { 0 };
     char message_type[64] = { 0 };
     char detail[256] = { 0 };
-    char *message = NULL;
+    char *message = NULL_POINTER;
     desktop_message_t outgoing = { 0 };
     uint64 used = 0;
     ubyte close_payload[2] = { 0 };
@@ -334,7 +334,7 @@ label_finished:
  */
 desktop_transport_t *desktop_transport__create(void)
 {
-    desktop_transport_t *transport = NULL;
+    desktop_transport_t *transport = NULL_POINTER;
 
     pthread_once(&g_curl_once, _transport_internal__initialize);
     transport = calloc(1, sizeof(*transport));

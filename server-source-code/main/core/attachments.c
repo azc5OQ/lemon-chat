@@ -79,26 +79,19 @@ static void *_file_transfer_internal__file_download_thread(void *argument);
  */
 static boole _file_transfer_internal__file_client_is_current(uint64 client_id, const crypto_key_t *authentication_key)
 {
-    boole status0 = FALSE;
-    boole status1 = FALSE;
-    boole status2 = FALSE;
-
     if (client_id >= g_server_settings.max_client_count || base__is_client_valid_and_not_music_bot(client_id) == FALSE)
     {
         return FALSE;
     }
-    status0 = g_clients_array[client_id].session_keys.is_ready != FALSE;
-    if (status0 == FALSE)
+    if (g_clients_array[client_id].session_keys.is_ready == FALSE)
     {
         return FALSE;
     }
-    status1 = g_clients_array[client_id].session_keys.authentication.type == authentication_key->type;
-    if (status1 == FALSE)
+    if (g_clients_array[client_id].session_keys.authentication.type != authentication_key->type)
     {
         return FALSE;
     }
-    status2 = clib__memcmp(&g_clients_array[client_id].session_keys.authentication.material, &authentication_key->material, sizeof(authentication_key->material)) == 0;
-    return status2;
+    return clib__memcmp(&g_clients_array[client_id].session_keys.authentication.material, &authentication_key->material, sizeof(authentication_key->material)) == 0;
 }
 
 /**
@@ -285,7 +278,6 @@ file_download_end:
  */
 static void _file_transfer_internal__start_file_download(data_for_file_send_thread_t *arg)
 {
-    boole status = FALSE;
     uint64 count = arg->send_type == FILE_SEND_TYPE_TO_CHANNEL ? arg->receiving_clients_count : 1;
     uint64 i = 0;
     uint64 receiver_id = 0;
@@ -306,8 +298,7 @@ static void _file_transfer_internal__start_file_download(data_for_file_send_thre
         for (i = 0; i < arg->receiving_clients_count; i++)
         {
             receiver_id = arg->receiving_client_ids[i];
-            status = base__is_attachment_blocked(&g_clients_array[receiver_id], arg->receive_type);
-            if (status == FALSE)
+            if (base__is_attachment_blocked(&g_clients_array[receiver_id], arg->receive_type) == FALSE)
             {
                 arg->receiving_client_ids[count++] = receiver_id;
             }
@@ -854,8 +845,6 @@ static void *_file_transfer_internal__add_song_thread(void *argument)
  */
 void file_transfer__add_uploaded_song(musicbot_add_song_arg_struct_t *arguments)
 {
-    boole status = FALSE;
-
     if (g_song_upload_workers >= 4 || arguments->music_bot->music_bot_client_extension.pending_song_uploads >= 1)
     {
         memorymanager__free((nuint)arguments->mp3_data_buffer);
@@ -864,8 +853,7 @@ void file_transfer__add_uploaded_song(musicbot_add_song_arg_struct_t *arguments)
     }
     g_song_upload_workers++;
     arguments->music_bot->music_bot_client_extension.pending_song_uploads++;
-    status = util__start_detached_thread(_file_transfer_internal__add_song_thread, arguments);
-    if (status == FALSE)
+    if (util__start_detached_thread(_file_transfer_internal__add_song_thread, arguments) == FALSE)
     {
         memorymanager__free((nuint)arguments->mp3_data_buffer);
         arguments->music_bot->music_bot_client_extension.pending_song_uploads--;

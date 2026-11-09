@@ -99,7 +99,7 @@ void server_msg__profile__send_client_country_code_changed_to_all_clients(client
 void server_msg__profile__send_admin_country_codes_to_all_clients(void)
 {
     uint64 i = 0;
-    client_t *client = 0;
+    client_t *client = NULL_POINTER;
 
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
@@ -182,9 +182,9 @@ void server_msg__profile__send_stored_clients_to_single_client(client_t *receive
     uint64 t = 0;
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
-    cJSON *json_stored_clients = 0;
-    cJSON *json_stored_client = 0;
-    cJSON *json_group_ids = 0;
+    cJSON *json_stored_clients = NULL_POINTER;
+    cJSON *json_stored_client = NULL_POINTER;
+    cJSON *json_group_ids = NULL_POINTER;
     uint64 group_id = 0;
     boole has_assigned_group = FALSE;
 

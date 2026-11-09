@@ -30,12 +30,12 @@ static int64 _client_msg_actions_internal__target(desktop_session_t *session, co
  */
 void client_msg__actions__send(desktop_session_t *session, const desktop_action_t *action)
 {
-    cJSON *message = NULL;
+    cJSON *message = NULL_POINTER;
     boole complete = 0;
     int64 slot = -1;
     uint64 required = 0;
-    const char *name = NULL;
-    const desktop_client_t *target = NULL;
+    const char *name = NULL_POINTER;
+    const desktop_client_t *target = NULL_POINTER;
 
     if (session->model.idle && action->type != DESKTOP_ACTION_RETURN && action->type < DESKTOP_ACTION_IGNORE)
     {

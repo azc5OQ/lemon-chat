@@ -15,7 +15,7 @@
 int main(int argc, char **argv)
 {
     static const char probe[] = "{\"message\":{\"type\":\"desktop_transport_probe\"}}";
-    desktop_transport_t *transport = NULL;
+    desktop_transport_t *transport = NULL_POINTER;
     boole sent = 0;
     int result = 0;
     int64 attempt = 0;

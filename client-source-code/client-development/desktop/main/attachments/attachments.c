@@ -98,8 +98,8 @@ desktop_attachment_record_t *desktop_attachments__find(desktop_attachments_t *at
  */
 desktop_attachment_record_t *desktop_attachments__reserve(desktop_attachments_t *attachments)
 {
-    desktop_attachment_record_t *selected = NULL;
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *selected = NULL_POINTER;
+    desktop_attachment_record_t *record = NULL_POINTER;
     int64 index = 0;
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
@@ -150,8 +150,8 @@ static boole _attachments_internal__make_room(desktop_attachments_t *attachments
 {
     uint64 total = 0;
     int64 index = 0;
-    desktop_attachment_record_t *oldest = NULL;
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *oldest = NULL_POINTER;
+    desktop_attachment_record_t *record = NULL_POINTER;
     while (TRUE)
     {
         total = required;
@@ -189,10 +189,10 @@ static boole _attachments_internal__make_room(desktop_attachments_t *attachments
 static void _attachments_internal__worker(void *context)
 {
     desktop_attachments_t *attachments = context;
-    desktop_crypto_t *crypto = NULL;
-    desktop_crypto_t *replacement = NULL;
+    desktop_crypto_t *crypto = NULL_POINTER;
+    desktop_crypto_t *replacement = NULL_POINTER;
     desktop_attachment_record_t work = { 0 };
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
     int64 index = 0;
     int64 job = 0;
     boole stop = FALSE;
@@ -390,7 +390,7 @@ boole desktop_attachments__start(desktop_attachments_t *attachments, const deskt
 void desktop_attachments__disconnect(desktop_attachments_t *attachments)
 {
     int64 index = 0;
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
     desktop_mutex__lock(attachments->mutex);
     attachments->connected = FALSE;
     attachments->uploading = 0;
@@ -446,7 +446,7 @@ boole desktop_attachments__view(desktop_attachments_t *attachments, desktop_atta
  */
 boole desktop_attachments__decide(desktop_attachments_t *attachments, uint64 id, boole accept)
 {
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
     boole queued = FALSE;
     desktop_mutex__lock(attachments->mutex);
     record = desktop_attachments__find(attachments, id);
@@ -467,7 +467,7 @@ boole desktop_attachments__decide(desktop_attachments_t *attachments, uint64 id,
  */
 boole desktop_attachments__cancel(desktop_attachments_t *attachments, uint64 id)
 {
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
     boole queued = FALSE;
     desktop_mutex__lock(attachments->mutex);
     record = desktop_attachments__find(attachments, id);
@@ -494,7 +494,7 @@ boole desktop_attachments__cancel(desktop_attachments_t *attachments, uint64 id)
  */
 boole desktop_attachments__save(desktop_attachments_t *attachments, uint64 id, const char *path)
 {
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
     boole queued = FALSE;
     desktop_mutex__lock(attachments->mutex);
     record = desktop_attachments__find(attachments, id);
@@ -519,8 +519,8 @@ boole desktop_attachments__save(desktop_attachments_t *attachments, uint64 id, c
  */
 ubyte *desktop_attachments__image(desktop_attachments_t *attachments, uint64 id, int64 *width, int64 *height)
 {
-    desktop_attachment_record_t *record = NULL;
-    ubyte *pixels = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
+    ubyte *pixels = NULL_POINTER;
     uint64 size = 0;
     *width = 0;
     *height = 0;
@@ -550,7 +550,7 @@ ubyte *desktop_attachments__image(desktop_attachments_t *attachments, uint64 id,
 void desktop_attachments__preferences(desktop_attachments_t *attachments, const desktop_chat_preferences_t *preferences)
 {
     int64 index = 0;
-    desktop_attachment_record_t *record = NULL;
+    desktop_attachment_record_t *record = NULL_POINTER;
     boole blocked = FALSE;
     desktop_mutex__lock(attachments->mutex);
     attachments->preferences = *preferences;

@@ -33,7 +33,7 @@ typedef struct memorymanager_header_t
 } memorymanager_header_t;
 
 #if LEMON_TRACK_ALLOCATIONS
-static memorymanager_header_t *g_memorymanager_head = 0;
+static memorymanager_header_t *g_memorymanager_head = NULL_POINTER;
 static uint64 g_memorymanager_live_count = 0;
 static pthread_mutex_t g_memorymanager_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
@@ -189,7 +189,7 @@ void memorymanager__init(void)
  */
 nuint memorymanager__allocate(uint64 size, uint64 type)
 {
-    memorymanager_header_t *header = 0;
+    memorymanager_header_t *header = NULL_POINTER;
     nuint result = 0;
 
     if (size == 0 || size > (uint64)INT64_MAX || size > SIZE_MAX - sizeof(memorymanager_header_t))
@@ -301,7 +301,7 @@ nuint memorymanager__realloc(nuint address, uint64 newsize)
  */
 boole memorymanager__free(nuint address)
 {
-    memorymanager_header_t *header = 0;
+    memorymanager_header_t *header = NULL_POINTER;
     uint64 size = 0;
 
     if (address == 0)
@@ -361,7 +361,7 @@ boole memorymanager__free(nuint address)
 void memorymanager__print_all_allocations(void)
 {
 #if LEMON_TRACK_ALLOCATIONS
-    memorymanager_header_t *header = 0;
+    memorymanager_header_t *header = NULL_POINTER;
 
     pthread_mutex_lock(&g_memorymanager_lock);
 

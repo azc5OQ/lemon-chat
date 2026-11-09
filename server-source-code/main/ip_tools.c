@@ -274,9 +274,9 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
         return;
     }
 #endif
-    cJSON *json_root_object1 = 0;
-    cJSON *json_message_object = 0;
-    cJSON *json_country_iso_code = 0;
+    cJSON *json_root_object1 = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_country_iso_code = NULL_POINTER;
     char mmdb_file[] = "dbip-country-lite-2025-06.mmdb";
     MMDB_s mmdb = { 0 };
     int64 status = 0;
@@ -287,7 +287,7 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
     int64 gstatus = 0;
     boole is_database_open = FALSE;
     StringBuffer sb = { 0 };
-    char *json_mmdb_entry_data_list = 0;
+    char *json_mmdb_entry_data_list = NULL_POINTER;
 
     if (ip_address_to_resolve == NULL_POINTER || out_memory_to_write_country_code_to == NULL_POINTER)
     {

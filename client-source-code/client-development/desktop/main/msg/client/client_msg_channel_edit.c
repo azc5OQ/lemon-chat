@@ -38,10 +38,10 @@ void client_msg__channel__send_change(desktop_session_t *session, const desktop_
     int64 slot = desktop_session__channel(session, request->channel.id);
     const desktop_channel_t *current = slot >= 0 ? &session->model.channels[slot] : NULL;
     const desktop_channel_t *draft = &request->channel;
-    cJSON *message = NULL;
+    cJSON *message = NULL_POINTER;
     boole complete = 0;
     int64 index = 0;
-    const char *type = NULL;
+    const char *type = NULL_POINTER;
     const char *names[4] = { "required_talk_power", "required_message_power", "required_picture_power", "required_stream_power" };
     if (!current || current->revision != draft->revision || session->model.idle)
     {

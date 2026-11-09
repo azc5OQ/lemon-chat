@@ -21,7 +21,7 @@ static void _server_chat_internal__edit(desktop_session_t *session, int64 channe
  */
 void server_msg__chat__append(desktop_session_t *session, int64 channel, const char *sender, const char *text, uint64 local_id)
 {
-    desktop_chat_t *chat = NULL;
+    desktop_chat_t *chat = NULL_POINTER;
     if (session->model.chat_count == DESKTOP_SESSION_HISTORY)
     {
         clib__memmove(session->model.chats, session->model.chats + 1, sizeof(session->model.chats[0]) * (DESKTOP_SESSION_HISTORY - 1));
@@ -59,7 +59,7 @@ void server_msg__chat__append(desktop_session_t *session, int64 channel, const c
  */
 void server_msg__chat__append_direct(desktop_session_t *session, int64 slot, const char *text, uint64 local_id)
 {
-    desktop_chat_t *chat = NULL;
+    desktop_chat_t *chat = NULL_POINTER;
     int64 local = desktop_session__client(session, session->model.local_id);
     desktop_client_t *peer = &session->model.clients[slot];
     if (!local_id && peer->direct_received < 0xffffffffffffffffULL)
@@ -90,7 +90,7 @@ void server_msg__chat__receive_text(desktop_session_t *session, int64 channel, i
     const cJSON *value = cJSON_GetObjectItemCaseSensitive(wrapper, "value");
     const char *text = cJSON_IsString(value) ? value->valuestring : payload;
     const char *id = server_msg__read_string(wrapper, "reaction_id");
-    desktop_chat_t *chat = NULL;
+    desktop_chat_t *chat = NULL_POINTER;
     if (clib__strcmp(server_msg__read_string(wrapper, "type"), "chat_message_edit") == 0)
     {
         _server_chat_internal__edit(session, channel, slot, author_slot, server_id, wrapper);
@@ -139,9 +139,9 @@ static void _server_chat_internal__edit(desktop_session_t *session, int64 channe
     const char *id = server_msg__read_string(edit, "message_id");
     const char *author = server_msg__read_string(edit, "author_public_key");
     const char *replacement = server_msg__read_string(edit, "new_message_value");
-    const desktop_client_t *sender = NULL;
-    desktop_chat_t *target = NULL;
-    desktop_chat_t *chat = NULL;
+    const desktop_client_t *sender = NULL_POINTER;
+    desktop_chat_t *target = NULL_POINTER;
+    desktop_chat_t *chat = NULL_POINTER;
     int64 index = 0;
     if (author_slot < 0 || author_slot >= session->model.client_count || server_id < 0 || !desktop_chat__valid_id(id) || !desktop_chat__valid_text(replacement) || !author[0] || clib__strcmp(author, session->client_keys[author_slot]) != 0)
     {
@@ -186,7 +186,7 @@ void server_msg__chat__acknowledge(desktop_session_t *session, const cJSON *mess
     int64 id = server_msg__read_number(message, "local_message_id");
     int64 server_id = server_msg__read_number(message, "server_chat_message_id");
     int64 index = 0;
-    desktop_chat_t *chat = NULL;
+    desktop_chat_t *chat = NULL_POINTER;
     if (id <= 0 || server_id < 0)
     {
         return;
@@ -220,10 +220,10 @@ void server_msg__chat__acknowledge(desktop_session_t *session, const cJSON *mess
  */
 void server_msg__chat__process_direct(desktop_session_t *session, const cJSON *message)
 {
-    cJSON *envelope = NULL;
-    cJSON *body = NULL;
-    char *encrypted_body = NULL;
-    char *plaintext = NULL;
+    cJSON *envelope = NULL_POINTER;
+    cJSON *body = NULL_POINTER;
+    char *encrypted_body = NULL_POINTER;
+    char *plaintext = NULL_POINTER;
     desktop_content_keys_t direct_keys = { 0 };
     desktop_content_keys_t channel_keys = { 0 };
     boole complete = 0;

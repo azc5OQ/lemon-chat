@@ -228,7 +228,7 @@ static DWORD WINAPI _transport_internal__worker(void *context)
     USHORT close_code = 0;
     DWORD close_reason_size = 0;
     char message_type[64] = { 0 };
-    char *message = NULL;
+    char *message = NULL_POINTER;
     desktop_message_t outgoing = { 0 };
     HANDLE events[4] = { 0 };
     DWORD error = 0;

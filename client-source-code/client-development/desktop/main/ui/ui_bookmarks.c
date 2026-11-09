@@ -63,8 +63,8 @@ static void _ui_bookmarks_internal__panel(const char *id, boole visible)
 static void _ui_bookmarks_internal__list(void)
 {
     gui_node_t *parent = scene__find_by_id("bookmark-list");
-    gui_node_t *node = NULL;
-    gui_node_t *next = NULL;
+    gui_node_t *node = NULL_POINTER;
+    gui_node_t *next = NULL_POINTER;
     int64 index = 0;
     if (!parent)
     {

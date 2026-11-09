@@ -78,7 +78,7 @@ boole desktop_ui_theme__scale(int64 percent)
  */
 static void _ui_theme_internal__clear_node_styles(gui_node_t *node)
 {
-    gui_node_t *child = NULL;
+    gui_node_t *child = NULL_POINTER;
     if (!node)
     {
         return;
@@ -135,7 +135,7 @@ void desktop_ui_theme__apply(void)
 static boole _ui_theme_internal__load(const char *name, const desktop_settings_t *settings)
 {
     char path[128] = { 0 };
-    ubyte *bytes = NULL;
+    ubyte *bytes = NULL_POINTER;
     uint64 length = 0;
     boole loaded = FALSE;
     if (!desktop_settings__valid_theme(name) || clib__string_format(path, sizeof(path), "assets/themes/%s", name[0] ? name : "classic.css") <= 0)

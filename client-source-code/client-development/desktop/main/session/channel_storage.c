@@ -7,7 +7,7 @@ boole desktop_session__reserve_channels(desktop_session_view_t *view, int64 coun
 {
     uint64 limit = SIZE_MAX / sizeof(desktop_channel_t);
     int64 capacity = 0;
-    desktop_channel_t *replacement = NULL;
+    desktop_channel_t *replacement = NULL_POINTER;
     if (limit > INT_MAX)
     {
         limit = INT_MAX;
@@ -57,7 +57,7 @@ void desktop_session__view_release(desktop_session_view_t *view)
 /** @brief Deep-copies into a zero-initialized or previously owned view; failure retains the old view. */
 boole desktop_session__view_copy(desktop_session_view_t *destination, const desktop_session_view_t *source)
 {
-    desktop_channel_t *channels = NULL;
+    desktop_channel_t *channels = NULL_POINTER;
     int64 capacity = 0;
     if (!destination || !source || source->channel_count < 0 || (source->channel_count > 0 && !source->channels))
     {

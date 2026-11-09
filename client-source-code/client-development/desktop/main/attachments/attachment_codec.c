@@ -111,8 +111,8 @@ static char *_attachment_codec_internal__base64(const ubyte *bytes, uint64 size)
 static char *_attachment_codec_internal__seal(desktop_attachment_record_t *record, desktop_crypto_t *crypto, const char *text, uint64 padding)
 {
     desktop_content_keys_t keys = { 0 };
-    char *encrypted_body = NULL;
-    char *result = NULL;
+    char *encrypted_body = NULL_POINTER;
+    char *result = NULL_POINTER;
 
     if (record->view.peer < 0)
     {
@@ -144,10 +144,10 @@ static char *_attachment_codec_internal__seal(desktop_attachment_record_t *recor
  */
 static char *_attachment_codec_internal__open(desktop_attachment_record_t *record, desktop_crypto_t *crypto, const char *text, const desktop_content_keys_t *keys)
 {
-    cJSON *envelope = NULL;
+    cJSON *envelope = NULL_POINTER;
     desktop_content_keys_t direct = { 0 };
-    char *encrypted_body = NULL;
-    char *result = NULL;
+    char *encrypted_body = NULL_POINTER;
+    char *result = NULL_POINTER;
 
     if (!text || clib__strlen(text) > DESKTOP_ATTACHMENT_WIRE_LIMIT)
     {
@@ -184,12 +184,12 @@ static char *_attachment_codec_internal__open(desktop_attachment_record_t *recor
  */
 void desktop_attachment_codec__pack(desktop_attachment_record_t *record, desktop_crypto_t *crypto)
 {
-    const char *mime = NULL;
-    char *base64 = NULL;
-    char *plaintext = NULL;
-    char *header = NULL;
-    char *offer = NULL;
-    cJSON *root = NULL;
+    const char *mime = NULL_POINTER;
+    char *base64 = NULL_POINTER;
+    char *plaintext = NULL_POINTER;
+    char *header = NULL_POINTER;
+    char *offer = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
     ubyte random[16] = { 0 };
     static const char hex[] = "0123456789abcdef";
     uint64 index = 0;
@@ -295,22 +295,22 @@ label_finished:
  */
 static boole _attachment_codec_internal__body(desktop_attachment_record_t *record, const char *plaintext, const char *header)
 {
-    cJSON *root = NULL;
-    cJSON *metadata = NULL;
-    const cJSON *name = NULL;
-    const cJSON *size = NULL;
-    const cJSON *data = NULL;
-    const cJSON *header_name = NULL;
-    const cJSON *header_size = NULL;
-    const char *encoded = NULL;
-    const char *separator = NULL;
-    const char *mime = NULL;
+    cJSON *root = NULL_POINTER;
+    cJSON *metadata = NULL_POINTER;
+    const cJSON *name = NULL_POINTER;
+    const cJSON *size = NULL_POINTER;
+    const cJSON *data = NULL_POINTER;
+    const cJSON *header_name = NULL_POINTER;
+    const cJSON *header_size = NULL_POINTER;
+    const char *encoded = NULL_POINTER;
+    const char *separator = NULL_POINTER;
+    const char *mime = NULL_POINTER;
     uint64 length = 0;
     uint64 capacity = 0;
     uint64 maximum = record->view.picture ? DESKTOP_ATTACHMENT_IMAGE_LIMIT : DESKTOP_ATTACHMENT_RAW_LIMIT;
     size_t written = 0;
-    ubyte *bytes = NULL;
-    ubyte *pixels = NULL;
+    ubyte *bytes = NULL_POINTER;
+    ubyte *pixels = NULL_POINTER;
     int64 width = 0;
     int64 height = 0;
     boole valid = FALSE;
@@ -320,6 +320,7 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
     }
     if (record->view.picture)
     {
+        // Check the image data URL before reading its Base64 contents.
         separator = clib__strchr(plaintext, ',');
         if (!separator || separator - plaintext > 40 || clib__strncmp(plaintext, "data:image/", 11) != 0 || separator - plaintext < 7 || clib__memcmp(separator - 7, ";base64", 7) != 0)
         {
@@ -336,18 +337,24 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
         data = cJSON_GetObjectItemCaseSensitive(root, "data");
         header_name = cJSON_GetObjectItemCaseSensitive(metadata, "name");
         header_size = cJSON_GetObjectItemCaseSensitive(metadata, "size");
+
+        // Require the file body's name and size to match its decrypted header.
         if (!cJSON_IsString(name) || clib__strlen(name->valuestring) > 255 || !cJSON_IsNumber(size) || !(size->valuedouble >= 1 && size->valuedouble <= (double)maximum) || size->valuedouble != (double)(uint64)size->valuedouble || !cJSON_IsString(data) || !cJSON_IsString(header_name) || !cJSON_IsNumber(header_size) || clib__strcmp(name->valuestring, header_name->valuestring) != 0 || size->valuedouble != header_size->valuedouble)
         {
             goto label_finished;
         }
         encoded = data->valuestring;
     }
+
+    // Bound the decoded allocation before allocating or decoding any bytes.
     length = clib__strlen(encoded);
     capacity = length / 4 * 3 + 3;
     if (!length || length > (maximum + 2) / 3 * 4 || capacity > maximum + 3)
     {
         goto label_finished;
     }
+
+    // Decode Base64 and check the actual byte count against the file size.
     bytes = calloc(1, capacity);
     if (!bytes || mbedtls_base64_decode(bytes, capacity, &written, (const ubyte *)encoded, length) != 0 || !written || written > maximum || (!record->view.picture && (double)written != size->valuedouble))
     {
@@ -355,6 +362,7 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
     }
     if (record->view.picture)
     {
+        // Identify and decode the image before keeping it for display.
         mime = desktop_attachment_image__mime(bytes, written);
         pixels = desktop_attachment_image__decode(bytes, written, &width, &height);
         if (!mime || !pixels)
@@ -372,12 +380,16 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
     record->view.size = written;
     record->view.image_width = width;
     record->view.image_height = height;
+
+    // Transfer ownership to the record so cleanup keeps the accepted data.
     record->bytes = bytes;
     record->bytes_capacity = capacity;
     record->pixels = pixels;
     bytes = NULL;
     pixels = NULL;
     valid = TRUE;
+
+// Clear and release any data that was not accepted.
 label_finished:
     if (bytes)
     {
@@ -402,9 +414,9 @@ label_finished:
  */
 void desktop_attachment_codec__decode(desktop_attachment_record_t *record, desktop_crypto_t *crypto)
 {
-    char *plaintext = NULL;
-    char *header = NULL;
-    const desktop_content_keys_t *keys = NULL;
+    char *plaintext = NULL_POINTER;
+    char *header = NULL_POINTER;
+    const desktop_content_keys_t *keys = NULL_POINTER;
     int64 attempt = 0;
     boole valid = FALSE;
     for (attempt = 0; attempt < (record->view.peer < 0 && record->have_previous ? 2 : 1); attempt++)

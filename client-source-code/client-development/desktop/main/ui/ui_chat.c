@@ -128,7 +128,7 @@ static void _ui_chat_internal__open(gui_event_t *event)
 {
     gui_node_t *panel = scene__find_by_id("message-edit-panel");
     gui_node_t *input = scene__find_by_id("message-edit-text");
-    const desktop_chat_t *chat = NULL;
+    const desktop_chat_t *chat = NULL_POINTER;
     uint64 sequence = event && event->sender ? (uint64)(nint)event->sender->user_data : 0;
     if (!g_chat_view || !panel || !input || !event || !event->sender || event->mouse.button != 0 || event->sender->resolved.visibility == GUI_VISIBILITY__HIDDEN)
     {

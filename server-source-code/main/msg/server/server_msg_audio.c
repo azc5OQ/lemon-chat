@@ -20,9 +20,9 @@ void server_msg__audio__send_active_microphone_usage_for_current_channel_to_sing
     cJSON *single_object = NULL_POINTER;
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
-    cJSON *json_clients_array = 0;
+    cJSON *json_clients_array = NULL_POINTER;
     uint64 x = 0;
-    client_t *client_in_loop = 0;
+    client_t *client_in_loop = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -152,7 +152,6 @@ void server_msg__audio__send_webrtc_sdp_offer_to_single_client(client_t *receive
  */
 void server_msg__audio__send_state_of_client_to_all_clients(client_t *subject, uint64 state)
 {
-    boole status = FALSE;
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
     cJSON *root_other_channel = NULL_POINTER;
@@ -184,8 +183,7 @@ void server_msg__audio__send_state_of_client_to_all_clients(client_t *subject, u
     {
         client = &g_clients_array[i];
 
-        status = base__is_client_valid_and_not_music_bot(i);
-        if (status == FALSE)
+        if (base__is_client_valid_and_not_music_bot(i) == FALSE)
         {
             continue;
         }

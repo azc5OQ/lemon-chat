@@ -183,7 +183,7 @@ void crypto_session__destroy(desktop_crypto_t *crypto)
  */
 boole crypto_session__new_identity(char *identity, uint64 identity_capacity)
 {
-    desktop_crypto_t *crypto = NULL;
+    desktop_crypto_t *crypto = NULL_POINTER;
     ubyte bytes[100] = { 0 };
     const char hex[] = "0123456789abcdef";
     uint64 index = 0;
@@ -224,7 +224,7 @@ boole crypto_session__identity(desktop_crypto_t *crypto, const char *identity, i
     ubyte digest[32] = { 0 };
     ubyte modulus[1024] = { 0 };
     const char hex[] = "0123456789abcdef";
-    ubyte *seed = NULL;
+    ubyte *seed = NULL_POINTER;
     mbedtls_mpi values[5] = { 0 };
     uint64 index = 0;
     uint64 size = 0;
@@ -281,7 +281,7 @@ boole crypto_session__identity(desktop_crypto_t *crypto, const char *identity, i
 boole crypto_session__server_keys(desktop_crypto_t *crypto, const char *keys)
 {
     const char *cursor = keys;
-    const char *start = NULL;
+    const char *start = NULL_POINTER;
     uint64 length = 0;
     cJSON *entry;
     cJSON *password;
@@ -472,10 +472,10 @@ char *crypto_session__encrypt(desktop_crypto_t *crypto, const char *plaintext)
     ubyte checksum[32] = { 0 };
     char encoded_iv[25] = { 0 };
     char encoded_tag[45] = { 0 };
-    ubyte *bytes = NULL;
-    char *encoded = NULL;
-    char *result = NULL;
-    cJSON *root = NULL;
+    ubyte *bytes = NULL_POINTER;
+    char *encoded = NULL_POINTER;
+    char *result = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
     uint64 length = clib__strlen(plaintext);
     uint64 padded = length < 1024 ? 1024 : length;
     uint64 capacity = (padded + 2) / 3 * 4 + 1;
@@ -548,14 +548,14 @@ label_finished:
  */
 char *crypto_session__decrypt(desktop_crypto_t *crypto, const char *envelope, uint64 length)
 {
-    cJSON *root = NULL;
-    const cJSON *iv_value = NULL;
-    const cJSON *data_value = NULL;
-    const cJSON *tag_value = NULL;
+    cJSON *root = NULL_POINTER;
+    const cJSON *iv_value = NULL_POINTER;
+    const cJSON *data_value = NULL_POINTER;
+    const cJSON *tag_value = NULL_POINTER;
     ubyte iv[16] = { 0 };
     ubyte checksum[32] = { 0 };
     ubyte received_tag[32] = { 0 };
-    char *bytes = NULL;
+    char *bytes = NULL_POINTER;
     size_t iv_length = 0;
     size_t tag_length = 0;
     size_t data_length = 0;
@@ -654,7 +654,7 @@ void crypto_session__free_text(char *text)
  */
 void crypto_session__free_json(cJSON *json)
 {
-    cJSON *next = NULL;
+    cJSON *next = NULL_POINTER;
     while (json)
     {
         next = json->next;
@@ -693,10 +693,10 @@ boole crypto_session__content_keys(desktop_crypto_t *crypto, desktop_content_key
 char *crypto_session__keys_json(const desktop_content_keys_t *keys)
 {
     cJSON *root = cJSON_CreateArray();
-    cJSON *entry = NULL;
-    cJSON *key = NULL;
-    cJSON *iv = NULL;
-    char *result = NULL;
+    cJSON *entry = NULL_POINTER;
+    cJSON *key = NULL_POINTER;
+    cJSON *iv = NULL_POINTER;
+    char *result = NULL_POINTER;
     uint64 index = 0;
     uint64 byte = 0;
     boole complete = root != NULL;
@@ -738,16 +738,16 @@ char *crypto_session__keys_json(const desktop_content_keys_t *keys)
  */
 boole crypto_session__read_keys(const char *json, desktop_content_keys_t *keys)
 {
-    cJSON *root = NULL;
-    const cJSON *entry = NULL;
-    const cJSON *array = NULL;
-    const cJSON *value = NULL;
+    cJSON *root = NULL_POINTER;
+    const cJSON *entry = NULL_POINTER;
+    const cJSON *array = NULL_POINTER;
+    const cJSON *value = NULL_POINTER;
     int64 index = 0;
     int64 part = 0;
     int64 byte = 0;
     int64 count = 0;
     boole complete = 0;
-    ubyte *output = NULL;
+    ubyte *output = NULL_POINTER;
 
     clib__null_memory(keys, sizeof(*keys));
     root = json ? desktop_protocol__parse_json(json, clib__strlen(json), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT) : NULL;
@@ -866,8 +866,8 @@ static boole _crypto_session_internal__flat_envelope(const char *text, uint64 le
  */
 static boole _crypto_session_internal__content_envelope(const char *text, uint64 length, cJSON **root, ubyte iv[16], const char **encoded)
 {
-    const cJSON *iv_value = NULL;
-    const cJSON *data_value = NULL;
+    const cJSON *iv_value = NULL_POINTER;
+    const cJSON *data_value = NULL_POINTER;
     size_t written = 0;
     if (!_crypto_session_internal__flat_envelope(text, length, 2))
     {
@@ -894,14 +894,14 @@ static boole _crypto_session_internal__content_envelope(const char *text, uint64
  */
 static char *_crypto_session_internal__content(desktop_crypto_t *crypto, const desktop_content_keys_t *keys, const char *text, boole encrypt)
 {
-    cJSON *root = NULL;
+    cJSON *root = NULL_POINTER;
     const char *encoded_data = text;
     ubyte iv[16] = { 0 };
     ubyte counter[16] = { 0 };
     char iv_text[25] = { 0 };
-    char *bytes = NULL;
-    char *encoded = NULL;
-    char *result = NULL;
+    char *bytes = NULL_POINTER;
+    char *encoded = NULL_POINTER;
+    char *result = NULL_POINTER;
     uint64 length = clib__strlen(text);
     uint64 size = 0;
     size_t written = 0;
@@ -1063,11 +1063,11 @@ static boole _crypto_session_internal__attachment_tag(const ubyte derived[160], 
 static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, const desktop_content_keys_t *keys, const char *text, boole encrypt, boole picture, uint64 padding, boole require_authentication)
 {
     const uint64 limit = 40ULL * 1024 * 1024;
-    cJSON *root = NULL;
-    const cJSON *version = NULL;
-    const cJSON *nonce = NULL;
-    const cJSON *data = NULL;
-    const cJSON *code = NULL;
+    cJSON *root = NULL_POINTER;
+    const cJSON *version = NULL_POINTER;
+    const cJSON *nonce = NULL_POINTER;
+    const cJSON *data = NULL_POINTER;
+    const cJSON *code = NULL_POINTER;
     const char *encoded_data = text;
     ubyte iv[16] = { 0 };
     ubyte derived[160] = { 0 };
@@ -1084,9 +1084,9 @@ static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, cons
     uint64 index = 0;
     uint64 byte = 0;
     size_t written = 0;
-    ubyte *bytes = NULL;
-    char *result = NULL;
-    char *encoded = NULL;
+    ubyte *bytes = NULL_POINTER;
+    char *result = NULL_POINTER;
+    char *encoded = NULL_POINTER;
     char iv_text[25] = { 0 };
     if (!keys || !length || length > limit || padding > 4096)
     {
@@ -1312,18 +1312,18 @@ static boole _crypto_session_internal__channel_derive(const desktop_content_keys
 char *crypto_session__channel_seal(const desktop_content_keys_t *keys, const char *content)
 {
     const uint64 limit = 40ULL * 1024 * 1024;
-    cJSON *body = NULL;
-    cJSON *envelope = NULL;
-    const cJSON *version = NULL;
-    const cJSON *nonce = NULL;
-    const cJSON *data = NULL;
-    const cJSON *file_tag = NULL;
+    cJSON *body = NULL_POINTER;
+    cJSON *envelope = NULL_POINTER;
+    const cJSON *version = NULL_POINTER;
+    const cJSON *nonce = NULL_POINTER;
+    const cJSON *data = NULL_POINTER;
+    const cJSON *file_tag = NULL_POINTER;
     mbedtls_aes_context aes = { 0 };
     ubyte derived[32] = { 0 };
     ubyte iv[16] = { 0 };
-    ubyte *packet = NULL;
-    char *encoded = NULL;
-    char *result = NULL;
+    ubyte *packet = NULL_POINTER;
+    char *encoded = NULL_POINTER;
+    char *result = NULL_POINTER;
     uint64 length = 0;
     uint64 data_length = 0;
     uint64 packet_capacity = 0;
@@ -1434,17 +1434,17 @@ label_finished:
 char *crypto_session__channel_open(const desktop_content_keys_t *keys, const char *text)
 {
     const uint64 limit = 40ULL * 1024 * 1024;
-    cJSON *envelope = NULL;
-    cJSON *body = NULL;
-    const cJSON *value = NULL;
+    cJSON *envelope = NULL_POINTER;
+    cJSON *body = NULL_POINTER;
+    const cJSON *value = NULL_POINTER;
     mbedtls_aes_context aes = { 0 };
     ubyte derived[32] = { 0 };
     ubyte iv[16] = { 0 };
     char iv_text[25] = { 0 };
     char file_tag_text[45] = { 0 };
-    ubyte *packet = NULL;
-    char *encoded = NULL;
-    char *result = NULL;
+    ubyte *packet = NULL_POINTER;
+    char *encoded = NULL_POINTER;
+    char *result = NULL_POINTER;
     uint64 length = 0;
     uint64 data_length = 0;
     uint64 packet_capacity = 0;
@@ -1594,17 +1594,17 @@ static boole _crypto_session_internal__direct_file_tag(const ubyte derived[160],
 static char *_crypto_session_internal__direct_content(const desktop_content_keys_t *keys, const char *text, uint64 padding, boole authenticated, boole encrypt)
 {
     const uint64 limit = 40ULL * 1024 * 1024;
-    cJSON *body = NULL;
-    const cJSON *data = NULL;
-    const cJSON *code = NULL;
-    const char *encoded_data = NULL;
+    cJSON *body = NULL_POINTER;
+    const cJSON *data = NULL_POINTER;
+    const cJSON *code = NULL_POINTER;
+    const char *encoded_data = NULL_POINTER;
     ubyte derived[160] = { 0 };
     ubyte tag[32] = { 0 };
     ubyte expected[32] = { 0 };
     char tag_text[45] = { 0 };
-    ubyte *bytes = NULL;
-    char *encoded = NULL;
-    char *result = NULL;
+    ubyte *bytes = NULL_POINTER;
+    char *encoded = NULL_POINTER;
+    char *result = NULL_POINTER;
     uint64 length = 0;
     uint64 size = 0;
     uint64 bytes_capacity = 0;
@@ -1784,18 +1784,18 @@ char *crypto_session__direct_content_decrypt(const desktop_content_keys_t *keys,
 char *crypto_session__direct_seal(desktop_crypto_t *crypto, const char *public_key, const desktop_content_keys_t *keys, const char *content)
 {
     const uint64 limit = 40ULL * 1024 * 1024;
-    cJSON *body = NULL;
-    cJSON *protected_keys = NULL;
-    cJSON *file_body = NULL;
-    cJSON *envelope = NULL;
-    const cJSON *data = NULL;
-    const cJSON *tag = NULL;
-    const char *value = NULL;
-    char *keys_json = NULL;
-    char *protected_json = NULL;
-    char *encrypted_keys = NULL;
-    char *file_json = NULL;
-    char *result = NULL;
+    cJSON *body = NULL_POINTER;
+    cJSON *protected_keys = NULL_POINTER;
+    cJSON *file_body = NULL_POINTER;
+    cJSON *envelope = NULL_POINTER;
+    const cJSON *data = NULL_POINTER;
+    const cJSON *tag = NULL_POINTER;
+    const char *value = NULL_POINTER;
+    char *keys_json = NULL_POINTER;
+    char *protected_json = NULL_POINTER;
+    char *encrypted_keys = NULL_POINTER;
+    char *file_json = NULL_POINTER;
+    char *result = NULL_POINTER;
     ubyte decoded_tag[32] = { 0 };
     size_t written = 0;
     uint64 length = content ? clib__strlen(content) : 0;
@@ -1878,14 +1878,14 @@ char *crypto_session__direct_open(desktop_crypto_t *crypto, const struct cJSON *
     const uint64 limit = 40ULL * 1024 * 1024;
     const cJSON *encrypted_keys = cJSON_GetObjectItemCaseSensitive(envelope, "message_keys");
     const cJSON *value = cJSON_GetObjectItemCaseSensitive(envelope, "message_value");
-    const cJSON *data = NULL;
-    const cJSON *tag = NULL;
-    cJSON *protected_keys = NULL;
-    cJSON *file_body = NULL;
-    cJSON *body = NULL;
-    char *protected_json = NULL;
-    char *keys_json = NULL;
-    char *result = NULL;
+    const cJSON *data = NULL_POINTER;
+    const cJSON *tag = NULL_POINTER;
+    cJSON *protected_keys = NULL_POINTER;
+    cJSON *file_body = NULL_POINTER;
+    cJSON *body = NULL_POINTER;
+    char *protected_json = NULL_POINTER;
+    char *keys_json = NULL_POINTER;
+    char *result = NULL_POINTER;
     ubyte decoded_tag[32] = { 0 };
     size_t written = 0;
     uint64 length = 0;
@@ -1981,9 +1981,9 @@ char *crypto_session__hybrid_encrypt(desktop_crypto_t *crypto, const char *publi
     ubyte iv[16] = { 0 };
     ubyte encrypted_key[1024] = { 0 };
     char key_text[1369] = { 0 };
-    ubyte *body = NULL;
-    char *body_text = NULL;
-    char *result = NULL;
+    ubyte *body = NULL_POINTER;
+    char *body_text = NULL_POINTER;
+    char *result = NULL_POINTER;
     uint64 length = clib__strlen(text);
     uint64 padded = (length + 15) / 16 * 16;
     size_t modulus_length = 0;
@@ -2070,8 +2070,8 @@ char *crypto_session__hybrid_decrypt(desktop_crypto_t *crypto, const char *text)
     ubyte utf8_key[1024] = { 0 };
     ubyte key[32] = { 0 };
     ubyte iv[16] = { 0 };
-    ubyte *body = NULL;
-    char *result = NULL;
+    ubyte *body = NULL_POINTER;
+    char *result = NULL_POINTER;
     size_t length = 0;
     uint64 rsa_length = mbedtls_rsa_get_len(&crypto->rsa);
     size_t decoded_length = 0;
@@ -2171,9 +2171,9 @@ cJSON *crypto_session__negotiate(desktop_crypto_t *crypto, const cJSON *policy, 
     const char *cipher = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(policy, "session_cipher"));
     const char *nonce = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(policy, "nonce"));
     ubyte nonce_bytes[16];
-    cJSON *request = NULL;
-    cJSON *mixes = NULL;
-    cJSON *mix = NULL;
+    cJSON *request = NULL_POINTER;
+    cJSON *mixes = NULL_POINTER;
+    cJSON *mix = NULL_POINTER;
     if (crypto->policy.exchanges || !cJSON_IsNumber(version) || version->valuedouble != 2 || !cJSON_IsNumber(exchanges) || exchanges->valuedouble != exchanges->valueint || exchanges->valueint < 1 || exchanges->valueint > LEMON_MAX_DH_EXCHANGES || !cJSON_IsNumber(layers) || layers->valuedouble != layers->valueint || layers->valueint < 1 || layers->valueint > LEMON_MAX_SESSION_LAYERS || !cJSON_IsBool(random) || !ciphers__type(cipher) || !crypto_media__hex(nonce, nonce_bytes, sizeof(nonce_bytes)))
     {
         return NULL;
